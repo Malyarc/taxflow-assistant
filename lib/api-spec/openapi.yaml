@@ -3,20 +3,32 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Tax Filing Efficiency API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: clients
+    description: Client management
+  - name: documents
+    description: Tax document uploads
+  - name: w2data
+    description: W-2 form data
+  - name: taxReturns
+    description: Tax return calculations
+  - name: adjustments
+    description: CPA manual adjustments
+  - name: dashboard
+    description: Dashboard summary data
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +36,838 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  # ── Clients ──────────────────────────────────────────────────────────────
+  /clients:
+    get:
+      operationId: listClients
+      tags: [clients]
+      summary: List all clients
+      responses:
+        "200":
+          description: List of clients
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Client"
+    post:
+      operationId: createClient
+      tags: [clients]
+      summary: Create a new client
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateClientBody"
+      responses:
+        "201":
+          description: Created client
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Client"
+
+  /clients/{id}:
+    get:
+      operationId: getClient
+      tags: [clients]
+      summary: Get a client by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Client
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Client"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateClient
+      tags: [clients]
+      summary: Update a client
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateClientBody"
+      responses:
+        "200":
+          description: Updated client
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Client"
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteClient
+      tags: [clients]
+      summary: Delete a client
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  # ── Documents ────────────────────────────────────────────────────────────
+  /clients/{clientId}/documents:
+    get:
+      operationId: listDocuments
+      tags: [documents]
+      summary: List documents for a client
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of documents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TaxDocument"
+    post:
+      operationId: uploadDocument
+      tags: [documents]
+      summary: Upload a tax document and trigger AI extraction
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadDocumentBody"
+      responses:
+        "201":
+          description: Uploaded document with extracted data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaxDocument"
+
+  /clients/{clientId}/documents/{documentId}:
+    delete:
+      operationId: deleteDocument
+      tags: [documents]
+      summary: Delete a tax document
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  # ── W-2 Data ─────────────────────────────────────────────────────────────
+  /clients/{clientId}/w2data:
+    get:
+      operationId: listW2Data
+      tags: [w2data]
+      summary: List all W-2 records for a client
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of W-2 records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/W2Data"
+    post:
+      operationId: createW2Data
+      tags: [w2data]
+      summary: Manually create a W-2 record
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateW2DataBody"
+      responses:
+        "201":
+          description: Created W-2 record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/W2Data"
+
+  /clients/{clientId}/w2data/{w2Id}:
+    patch:
+      operationId: updateW2Data
+      tags: [w2data]
+      summary: Update a W-2 record
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: w2Id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateW2DataBody"
+      responses:
+        "200":
+          description: Updated W-2 record
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/W2Data"
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteW2Data
+      tags: [w2data]
+      summary: Delete a W-2 record
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: w2Id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  # ── Tax Returns ───────────────────────────────────────────────────────────
+  /clients/{clientId}/tax-return:
+    get:
+      operationId: getTaxReturn
+      tags: [taxReturns]
+      summary: Get the current tax return calculation for a client
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Tax return calculation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaxReturn"
+        "404":
+          description: Not found
+    post:
+      operationId: calculateTaxReturn
+      tags: [taxReturns]
+      summary: Calculate or recalculate the tax return for a client
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CalculateTaxReturnBody"
+      responses:
+        "200":
+          description: Calculated tax return
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaxReturn"
+    patch:
+      operationId: updateTaxReturn
+      tags: [taxReturns]
+      summary: Manually update tax return fields
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateTaxReturnBody"
+      responses:
+        "200":
+          description: Updated tax return
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaxReturn"
+
+  # ── Adjustments ───────────────────────────────────────────────────────────
+  /clients/{clientId}/adjustments:
+    get:
+      operationId: listAdjustments
+      tags: [adjustments]
+      summary: List CPA adjustments for a client
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of adjustments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Adjustment"
+    post:
+      operationId: createAdjustment
+      tags: [adjustments]
+      summary: Add a CPA adjustment case
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAdjustmentBody"
+      responses:
+        "201":
+          description: Created adjustment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Adjustment"
+
+  /clients/{clientId}/adjustments/{adjustmentId}:
+    patch:
+      operationId: updateAdjustment
+      tags: [adjustments]
+      summary: Update an adjustment
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: adjustmentId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAdjustmentBody"
+      responses:
+        "200":
+          description: Updated adjustment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Adjustment"
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteAdjustment
+      tags: [adjustments]
+      summary: Delete an adjustment
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: adjustmentId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  # ── Dashboard ─────────────────────────────────────────────────────────────
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      summary: Get dashboard summary stats
+      responses:
+        "200":
+          description: Dashboard summary
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+  /dashboard/recent-clients:
+    get:
+      operationId: getRecentClients
+      tags: [dashboard]
+      summary: Get recently added/updated clients
+      responses:
+        "200":
+          description: Recent clients
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Client"
+
 components:
   schemas:
     HealthStatus:
       type: object
+      required: [status]
       properties:
         status:
           type: string
-      required:
-        - status
 
+    # ── Client ──────────────────────────────────────────────────────────────
+    Client:
+      type: object
+      required: [id, firstName, lastName, email, filingStatus, state, taxYear, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: string
+        phone:
+          type: ["string", "null"]
+        filingStatus:
+          type: string
+          enum: [single, married_filing_jointly, married_filing_separately, head_of_household, qualifying_widow]
+        state:
+          type: string
+        taxYear:
+          type: integer
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateClientBody:
+      type: object
+      required: [firstName, lastName, email, filingStatus, state, taxYear]
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: string
+        phone:
+          type: ["string", "null"]
+        filingStatus:
+          type: string
+          enum: [single, married_filing_jointly, married_filing_separately, head_of_household, qualifying_widow]
+        state:
+          type: string
+        taxYear:
+          type: integer
+        notes:
+          type: ["string", "null"]
+
+    UpdateClientBody:
+      type: object
+      properties:
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: string
+        phone:
+          type: ["string", "null"]
+        filingStatus:
+          type: string
+          enum: [single, married_filing_jointly, married_filing_separately, head_of_household, qualifying_widow]
+        state:
+          type: string
+        taxYear:
+          type: integer
+        notes:
+          type: ["string", "null"]
+
+    # ── TaxDocument ──────────────────────────────────────────────────────────
+    TaxDocument:
+      type: object
+      required: [id, clientId, documentType, fileName, status, createdAt]
+      properties:
+        id:
+          type: integer
+        clientId:
+          type: integer
+        documentType:
+          type: string
+          enum: [w2, form_1099, form_1098, schedule_k1, other]
+        fileName:
+          type: string
+        fileContent:
+          type: ["string", "null"]
+        status:
+          type: string
+          enum: [pending, processing, extracted, failed]
+        extractedText:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    UploadDocumentBody:
+      type: object
+      required: [documentType, fileName, fileContent]
+      properties:
+        documentType:
+          type: string
+          enum: [w2, form_1099, form_1098, schedule_k1, other]
+        fileName:
+          type: string
+        fileContent:
+          type: string
+          description: Base64-encoded file content
+
+    # ── W2Data ───────────────────────────────────────────────────────────────
+    W2Data:
+      type: object
+      required: [id, clientId, taxYear, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+        clientId:
+          type: integer
+        documentId:
+          type: ["integer", "null"]
+        taxYear:
+          type: integer
+        employerName:
+          type: ["string", "null"]
+        employerEin:
+          type: ["string", "null"]
+        employeeSSN:
+          type: ["string", "null"]
+        wagesBox1:
+          type: ["number", "null"]
+        federalTaxWithheldBox2:
+          type: ["number", "null"]
+        socialSecurityWagesBox3:
+          type: ["number", "null"]
+        socialSecurityTaxBox4:
+          type: ["number", "null"]
+        medicareWagesBox5:
+          type: ["number", "null"]
+        medicareTaxBox6:
+          type: ["number", "null"]
+        stateTaxWithheldBox17:
+          type: ["number", "null"]
+        stateWagesBox16:
+          type: ["number", "null"]
+        stateCode:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateW2DataBody:
+      type: object
+      required: [taxYear]
+      properties:
+        documentId:
+          type: ["integer", "null"]
+        taxYear:
+          type: integer
+        employerName:
+          type: ["string", "null"]
+        employerEin:
+          type: ["string", "null"]
+        employeeSSN:
+          type: ["string", "null"]
+        wagesBox1:
+          type: ["number", "null"]
+        federalTaxWithheldBox2:
+          type: ["number", "null"]
+        socialSecurityWagesBox3:
+          type: ["number", "null"]
+        socialSecurityTaxBox4:
+          type: ["number", "null"]
+        medicareWagesBox5:
+          type: ["number", "null"]
+        medicareTaxBox6:
+          type: ["number", "null"]
+        stateTaxWithheldBox17:
+          type: ["number", "null"]
+        stateWagesBox16:
+          type: ["number", "null"]
+        stateCode:
+          type: ["string", "null"]
+
+    UpdateW2DataBody:
+      type: object
+      properties:
+        employerName:
+          type: ["string", "null"]
+        employerEin:
+          type: ["string", "null"]
+        employeeSSN:
+          type: ["string", "null"]
+        wagesBox1:
+          type: ["number", "null"]
+        federalTaxWithheldBox2:
+          type: ["number", "null"]
+        socialSecurityWagesBox3:
+          type: ["number", "null"]
+        socialSecurityTaxBox4:
+          type: ["number", "null"]
+        medicareWagesBox5:
+          type: ["number", "null"]
+        medicareTaxBox6:
+          type: ["number", "null"]
+        stateTaxWithheldBox17:
+          type: ["number", "null"]
+        stateWagesBox16:
+          type: ["number", "null"]
+        stateCode:
+          type: ["string", "null"]
+
+    # ── TaxReturn ────────────────────────────────────────────────────────────
+    TaxReturn:
+      type: object
+      required: [id, clientId, taxYear, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+        clientId:
+          type: integer
+        taxYear:
+          type: integer
+        filingStatus:
+          type: ["string", "null"]
+        totalIncome:
+          type: ["number", "null"]
+        adjustedGrossIncome:
+          type: ["number", "null"]
+        standardDeduction:
+          type: ["number", "null"]
+        itemizedDeductions:
+          type: ["number", "null"]
+        taxableIncome:
+          type: ["number", "null"]
+        federalTaxLiability:
+          type: ["number", "null"]
+        federalTaxWithheld:
+          type: ["number", "null"]
+        federalRefundOrOwed:
+          type: ["number", "null"]
+        stateTaxLiability:
+          type: ["number", "null"]
+        stateTaxWithheld:
+          type: ["number", "null"]
+        stateRefundOrOwed:
+          type: ["number", "null"]
+        effectiveTaxRate:
+          type: ["number", "null"]
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CalculateTaxReturnBody:
+      type: object
+      required: [taxYear]
+      properties:
+        taxYear:
+          type: integer
+        useItemizedDeductions:
+          type: boolean
+        additionalDeductions:
+          type: ["number", "null"]
+        additionalIncome:
+          type: ["number", "null"]
+
+    UpdateTaxReturnBody:
+      type: object
+      properties:
+        totalIncome:
+          type: ["number", "null"]
+        adjustedGrossIncome:
+          type: ["number", "null"]
+        standardDeduction:
+          type: ["number", "null"]
+        itemizedDeductions:
+          type: ["number", "null"]
+        taxableIncome:
+          type: ["number", "null"]
+        federalTaxLiability:
+          type: ["number", "null"]
+        federalTaxWithheld:
+          type: ["number", "null"]
+        federalRefundOrOwed:
+          type: ["number", "null"]
+        stateTaxLiability:
+          type: ["number", "null"]
+        stateTaxWithheld:
+          type: ["number", "null"]
+        stateRefundOrOwed:
+          type: ["number", "null"]
+        notes:
+          type: ["string", "null"]
+
+    # ── Adjustment ───────────────────────────────────────────────────────────
+    Adjustment:
+      type: object
+      required: [id, clientId, adjustmentType, amount, description, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+        clientId:
+          type: integer
+        adjustmentType:
+          type: string
+          enum: [deduction, credit, additional_income, withholding_adjustment, other]
+        amount:
+          type: number
+        description:
+          type: string
+        category:
+          type: ["string", "null"]
+        isApplied:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateAdjustmentBody:
+      type: object
+      required: [adjustmentType, amount, description]
+      properties:
+        adjustmentType:
+          type: string
+          enum: [deduction, credit, additional_income, withholding_adjustment, other]
+        amount:
+          type: number
+        description:
+          type: string
+        category:
+          type: ["string", "null"]
+        isApplied:
+          type: boolean
+
+    UpdateAdjustmentBody:
+      type: object
+      properties:
+        adjustmentType:
+          type: string
+          enum: [deduction, credit, additional_income, withholding_adjustment, other]
+        amount:
+          type: number
+        description:
+          type: string
+        category:
+          type: ["string", "null"]
+        isApplied:
+          type: boolean
+
+    # ── Dashboard ─────────────────────────────────────────────────────────────
+    DashboardSummary:
+      type: object
+      required: [totalClients, pendingReturns, completedReturns, totalRefunds, totalOwed, documentsProcessed]
+      properties:
+        totalClients:
+          type: integer
+        pendingReturns:
+          type: integer
+        completedReturns:
+          type: integer
+        totalRefunds:
+          type: number
+        totalOwed:
+          type: number
+        documentsProcessed:
+          type: integer
+        averageRefund:
+          type: ["number", "null"]

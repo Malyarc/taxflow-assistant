@@ -50,9 +50,7 @@ export default defineConfig({
     output: {
       workspace: apiZodSrc,
       client: "zod",
-      target: "generated",
-      schemas: { path: "generated/types", type: "typescript" },
-      mode: "split",
+      target: "generated/api.ts",
       clean: true,
       prettier: true,
       override: {
