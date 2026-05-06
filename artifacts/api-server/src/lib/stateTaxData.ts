@@ -1,7 +1,11 @@
 /**
- * 2024 state income tax data — brackets and standard deductions.
+ * State income tax data — year-keyed brackets and standard deductions.
  *
- * SOURCES: State Department of Revenue official 2024 tables and Tax Foundation summaries.
+ * SOURCES: State Department of Revenue official tables and Tax Foundation summaries.
+ *   - 2024: real published brackets (TY2024 IRS conformity year)
+ *   - 2025: real where states have published (CA, IN, KY, LA, MS, IA), otherwise 2024 brackets
+ *           with federal-conforming standard deductions updated to 2025 values.
+ *           UPDATE THESE VALUES AS STATES PUBLISH OFFICIAL 2025 TABLES.
  *
  * APPROXIMATIONS (read before using for anything real):
  *   - State taxable income = (federal AGI - state standard deduction). Real state calcs
@@ -65,10 +69,23 @@ const FED_STD_DEDUCTION_2024 = {
   qualifying_widow: 29200,
 };
 
+const FED_STD_DEDUCTION_2025 = {
+  single: 15000,
+  married_filing_jointly: 30000,
+  married_filing_separately: 15000,
+  head_of_household: 22500,
+  qualifying_widow: 30000,
+};
+
+// States whose standard deduction is explicitly tied to the federal value (auto-updates each year).
+const FED_CONFORMING_STD_DED_STATES = new Set([
+  "CO", "ID", "MN", "MO", "MT", "NM", "ND", "SC",
+]);
+
 // Helper for flat-rate states: build a single-bracket structure.
 const flat = (rate: number): StateBracket[] => [{ upTo: Infinity, rate }];
 
-export const STATE_TAX_DATA: Record<string, StateTaxInfo> = {
+const STATE_TAX_DATA_2024: Record<string, StateTaxInfo> = {
   // ── No income tax (or wages-exempt) ──────────────────────────────────────
   AK: { name: "Alaska", hasIncomeTax: false },
   FL: { name: "Florida", hasIncomeTax: false },
@@ -687,3 +704,104 @@ export const STATE_TAX_DATA: Record<string, StateTaxInfo> = {
     notes: "WI std deduction phases out at higher AGI; we use the maximum (low-income) value.",
   },
 };
+
+// ── 2025 state data ─────────────────────────────────────────────────────────
+// Strategy: clone 2024 data; auto-update standard deductions for federal-conforming
+// states; apply known 2025 rate changes (some states reduced or restructured rates).
+function build2025Data(): Record<string, StateTaxInfo> {
+  const data: Record<string, StateTaxInfo> = {};
+  for (const [code, info] of Object.entries(STATE_TAX_DATA_2024)) {
+    let next = { ...info };
+    // Federal-conforming standard deduction → bumps to 2025 federal values
+    if (FED_CONFORMING_STD_DED_STATES.has(code) && next.standardDeduction) {
+      next = { ...next, standardDeduction: { ...FED_STD_DEDUCTION_2025 } };
+    }
+    data[code] = next;
+  }
+
+  // ── Known 2025 changes (apply over 2024 baseline) ──────────────────────
+  // Indiana reduced flat rate to 3.0% for 2025
+  data.IN = {
+    ...data.IN,
+    brackets: { single: flat(0.03), married_filing_jointly: flat(0.03) },
+  };
+  // Kentucky reduced flat rate to 3.5% for 2025
+  data.KY = {
+    ...data.KY,
+    brackets: { single: flat(0.035), married_filing_jointly: flat(0.035) },
+    standardDeduction: { single: 3270, married_filing_jointly: 3270 },
+  };
+  // Mississippi reduced flat rate to 4.4% for 2025
+  data.MS = {
+    ...data.MS,
+    brackets: { single: flat(0.044), married_filing_jointly: flat(0.044) },
+  };
+  // Louisiana switched to flat 3% for 2025
+  data.LA = {
+    ...data.LA,
+    brackets: { single: flat(0.03), married_filing_jointly: flat(0.03) },
+    standardDeduction: { single: 12500, married_filing_jointly: 25000, head_of_household: 12500, married_filing_separately: 12500 },
+    notes: "LA TY2025: switched to flat 3% with $12,500/$25,000 std deduction.",
+  };
+  // Iowa moved to flat 3.8% for 2025
+  data.IA = {
+    ...data.IA,
+    brackets: { single: flat(0.038), married_filing_jointly: flat(0.038) },
+  };
+  // North Carolina reduced flat rate to 4.25% for 2025
+  data.NC = {
+    ...data.NC,
+    brackets: { single: flat(0.0425), married_filing_jointly: flat(0.0425) },
+  };
+  // Utah reduced flat rate to 4.50% for 2025
+  data.UT = {
+    ...data.UT,
+    brackets: { single: flat(0.045), married_filing_jointly: flat(0.045) },
+  };
+  // Georgia reduced flat rate to 5.19% for 2025
+  data.GA = {
+    ...data.GA,
+    brackets: { single: flat(0.0519), married_filing_jointly: flat(0.0519) },
+  };
+  // California TY2025 brackets (inflation-adjusted ~3%)
+  data.CA = {
+    ...data.CA,
+    brackets: {
+      single: [
+        { upTo: 11079, rate: 0.01 },
+        { upTo: 26264, rate: 0.02 },
+        { upTo: 41452, rate: 0.04 },
+        { upTo: 57544, rate: 0.06 },
+        { upTo: 72728, rate: 0.08 },
+        { upTo: 371458, rate: 0.093 },
+        { upTo: 445770, rate: 0.103 },
+        { upTo: 742953, rate: 0.113 },
+        { upTo: Infinity, rate: 0.123 },
+      ],
+      married_filing_jointly: [
+        { upTo: 22158, rate: 0.01 },
+        { upTo: 52528, rate: 0.02 },
+        { upTo: 82904, rate: 0.04 },
+        { upTo: 115088, rate: 0.06 },
+        { upTo: 145456, rate: 0.08 },
+        { upTo: 742916, rate: 0.093 },
+        { upTo: 891540, rate: 0.103 },
+        { upTo: 1485906, rate: 0.113 },
+        { upTo: Infinity, rate: 0.123 },
+      ],
+    },
+    standardDeduction: { single: 5707, married_filing_jointly: 11414, head_of_household: 11414, married_filing_separately: 5707 },
+  };
+
+  return data;
+}
+
+const STATE_TAX_DATA_2025: Record<string, StateTaxInfo> = build2025Data();
+
+export const STATE_TAX_DATA_BY_YEAR: Record<number, Record<string, StateTaxInfo>> = {
+  2024: STATE_TAX_DATA_2024,
+  2025: STATE_TAX_DATA_2025,
+};
+
+// Backwards-compat: default to 2024 for any code that imports STATE_TAX_DATA directly.
+export const STATE_TAX_DATA = STATE_TAX_DATA_2024;

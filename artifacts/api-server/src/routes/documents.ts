@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, and } from "drizzle-orm";
-import { db, taxDocumentsTable, w2DataTable } from "@workspace/db";
+import { db, taxDocumentsTable, w2DataTable, clientsTable } from "@workspace/db";
 import {
   ListDocumentsParams,
   UploadDocumentParams,
@@ -15,6 +15,7 @@ import {
   isVisualMimeType,
 } from "../lib/documentExtractor";
 import { logger } from "../lib/logger";
+import { recalculateAndUpsertTaxReturn } from "../lib/taxReturnPipeline";
 
 const router: IRouter = Router();
 
@@ -70,11 +71,17 @@ router.post("/clients/:clientId/documents", async (req, res): Promise<void> => {
           ? await extractW2DataFromFile(parsed.data.fileContent, mimeType)
           : await extractW2DataFromText(extractedText)) as Record<string, unknown>;
 
+        // Pull the client's tax year so the auto-created W-2 matches their return year.
+        const [client] = await db
+          .select()
+          .from(clientsTable)
+          .where(eq(clientsTable.id, params.data.clientId));
+
         // Auto-create a W-2 record with extracted data
         await db.insert(w2DataTable).values({
           clientId: params.data.clientId,
           documentId: doc.id,
-          taxYear: new Date().getFullYear() - 1,
+          taxYear: client?.taxYear ?? new Date().getFullYear() - 1,
           employerName: extractedData.employerName as string | undefined,
           employerEin: extractedData.employerEin as string | undefined,
           employeeSSN: extractedData.employeeSSN as string | undefined,
@@ -88,6 +95,9 @@ router.post("/clients/:clientId/documents", async (req, res): Promise<void> => {
           stateWagesBox16: extractedData.stateWagesBox16 != null ? String(extractedData.stateWagesBox16) : undefined,
           stateCode: extractedData.stateCode as string | undefined,
         });
+
+        // Auto-recalc the tax return so the calculator tab reflects the new W-2 immediately
+        await recalculateAndUpsertTaxReturn(params.data.clientId);
       }
 
       await db
@@ -128,6 +138,9 @@ router.delete("/clients/:clientId/documents/:documentId", async (req, res): Prom
     res.status(404).json({ error: "Document not found" });
     return;
   }
+  // Note: w2_data rows that were auto-created from this doc are NOT deleted (no FK cascade).
+  // Recalc anyway in case any flow does delete W-2s here later.
+  recalculateAndUpsertTaxReturn(params.data.clientId).catch(() => {});
   res.sendStatus(204);
 });
 

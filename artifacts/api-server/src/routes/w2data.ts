@@ -9,6 +9,7 @@ import {
   UpdateW2DataBody,
   DeleteW2DataParams,
 } from "@workspace/api-zod";
+import { recalculateInBackground } from "../lib/taxReturnPipeline";
 
 const router: IRouter = Router();
 
@@ -55,6 +56,7 @@ router.post("/clients/:clientId/w2data", async (req, res): Promise<void> => {
     if (insertData[field] != null) insertData[field] = String(insertData[field]);
   }
   const [record] = await db.insert(w2DataTable).values(insertData as typeof w2DataTable.$inferInsert).returning();
+  recalculateInBackground(params.data.clientId);
   const r = record;
   res.status(201).json({
     ...r,
@@ -94,6 +96,7 @@ router.patch("/clients/:clientId/w2data/:w2Id", async (req, res): Promise<void> 
     res.status(404).json({ error: "W-2 record not found" });
     return;
   }
+  recalculateInBackground(params.data.clientId);
   const r = record;
   res.json({
     ...r,
@@ -122,6 +125,7 @@ router.delete("/clients/:clientId/w2data/:w2Id", async (req, res): Promise<void>
     res.status(404).json({ error: "W-2 record not found" });
     return;
   }
+  recalculateInBackground(params.data.clientId);
   res.sendStatus(204);
 });
 

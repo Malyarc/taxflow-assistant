@@ -42,9 +42,6 @@ function Layout({ children }: { children: React.ReactNode }) {
           <NavLink href="/" label="Dashboard" />
           <NavLink href="/clients" label="Clients" matchPrefix />
         </nav>
-        <div className="px-5 py-4 border-t">
-          <p className="text-[10px] text-muted-foreground">Tax Year 2024</p>
-        </div>
       </aside>
       <main className="flex-1 overflow-auto">
         {children}

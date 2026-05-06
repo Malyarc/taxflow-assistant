@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
-import { db, taxReturnsTable, clientsTable, w2DataTable, adjustmentsTable } from "@workspace/db";
+import { db, taxReturnsTable } from "@workspace/db";
 import {
   GetTaxReturnParams,
   CalculateTaxReturnParams,
@@ -8,14 +8,9 @@ import {
   UpdateTaxReturnParams,
   UpdateTaxReturnBody,
 } from "@workspace/api-zod";
-import { runTaxCalculation, getStandardDeduction } from "../lib/taxCalculator";
+import { recalculateAndUpsertTaxReturn } from "../lib/taxReturnPipeline";
 
 const router: IRouter = Router();
-
-function toNum(val: string | null | undefined): number {
-  if (val == null) return 0;
-  return Number(val) || 0;
-}
 
 function mapReturn(r: typeof taxReturnsTable.$inferSelect) {
   return {
@@ -64,97 +59,17 @@ router.post("/clients/:clientId/tax-return", async (req, res): Promise<void> => 
     return;
   }
 
-  // Load client info
-  const [client] = await db.select().from(clientsTable).where(eq(clientsTable.id, params.data.clientId));
-  if (!client) {
+  const taxReturn = await recalculateAndUpsertTaxReturn(params.data.clientId, {
+    taxYear: parsed.data.taxYear,
+    additionalIncome: parsed.data.additionalIncome ?? 0,
+    additionalDeductions: parsed.data.additionalDeductions ?? 0,
+    useItemizedDeductions: parsed.data.useItemizedDeductions ?? false,
+  });
+
+  if (!taxReturn) {
     res.status(404).json({ error: "Client not found" });
     return;
   }
-
-  // Load W-2 records
-  const w2Records = await db.select().from(w2DataTable).where(eq(w2DataTable.clientId, params.data.clientId));
-  const totalWages = w2Records.reduce((sum, r) => sum + toNum(r.wagesBox1), 0);
-  const totalFederalWithheld = w2Records.reduce((sum, r) => sum + toNum(r.federalTaxWithheldBox2), 0);
-  const totalStateWithheld = w2Records.reduce((sum, r) => sum + toNum(r.stateTaxWithheldBox17), 0);
-  const stateCode = w2Records.find((r) => r.stateCode)?.stateCode ?? client.state;
-
-  // Load applied adjustments
-  const adjustments = await db
-    .select()
-    .from(adjustmentsTable)
-    .where(eq(adjustmentsTable.clientId, params.data.clientId));
-
-  const appliedAdjustments = adjustments.filter((a) => a.isApplied);
-  const deductionAdjustments = appliedAdjustments
-    .filter((a) => a.adjustmentType === "deduction")
-    .reduce((sum, a) => sum + toNum(a.amount), 0);
-  const creditAdjustments = appliedAdjustments
-    .filter((a) => a.adjustmentType === "credit")
-    .reduce((sum, a) => sum + toNum(a.amount), 0);
-  const additionalIncomeAdjustments = appliedAdjustments
-    .filter((a) => a.adjustmentType === "additional_income")
-    .reduce((sum, a) => sum + toNum(a.amount), 0);
-  const withholdingAdjustments = appliedAdjustments
-    .filter((a) => a.adjustmentType === "withholding_adjustment")
-    .reduce((sum, a) => sum + toNum(a.amount), 0);
-  const otherDeductions = appliedAdjustments
-    .filter((a) => a.adjustmentType === "other")
-    .reduce((sum, a) => sum + toNum(a.amount), 0);
-
-  const additionalIncome = (parsed.data.additionalIncome ?? 0) + additionalIncomeAdjustments;
-  // Above-the-line adjustments (reduce AGI regardless of itemizing).
-  const aboveTheLineAdjustments = deductionAdjustments + otherDeductions;
-  // Itemized (Schedule A) deductions — only applied when itemizing.
-  const itemizedDeductions = parsed.data.additionalDeductions ?? 0;
-
-  const result = runTaxCalculation({
-    totalWages,
-    additionalIncome,
-    filingStatus: client.filingStatus,
-    stateCode: stateCode ?? "CA",
-    useItemizedDeductions: parsed.data.useItemizedDeductions ?? false,
-    itemizedDeductions,
-    adjustments: aboveTheLineAdjustments,
-  });
-
-  const federalRefundOrOwed = totalFederalWithheld + withholdingAdjustments - result.federalTaxLiability + creditAdjustments;
-  const stateRefundOrOwed = totalStateWithheld - result.stateTaxLiability;
-
-  const payload = {
-    clientId: params.data.clientId,
-    taxYear: parsed.data.taxYear,
-    filingStatus: client.filingStatus,
-    totalIncome: String(result.totalIncome),
-    adjustedGrossIncome: String(result.adjustedGrossIncome),
-    standardDeduction: String(result.standardDeduction),
-    itemizedDeductions: parsed.data.useItemizedDeductions ? String(itemizedDeductions) : null,
-    taxableIncome: String(result.taxableIncome),
-    federalTaxLiability: String(result.federalTaxLiability),
-    federalTaxWithheld: String(totalFederalWithheld + withholdingAdjustments),
-    federalRefundOrOwed: String(federalRefundOrOwed),
-    stateTaxLiability: String(result.stateTaxLiability),
-    stateTaxWithheld: String(totalStateWithheld),
-    stateRefundOrOwed: String(stateRefundOrOwed),
-    effectiveTaxRate: String(result.effectiveTaxRate),
-  };
-
-  // Upsert the tax return
-  const [existing] = await db
-    .select()
-    .from(taxReturnsTable)
-    .where(eq(taxReturnsTable.clientId, params.data.clientId));
-
-  let taxReturn;
-  if (existing) {
-    [taxReturn] = await db
-      .update(taxReturnsTable)
-      .set({ ...payload, updatedAt: new Date() })
-      .where(eq(taxReturnsTable.clientId, params.data.clientId))
-      .returning();
-  } else {
-    [taxReturn] = await db.insert(taxReturnsTable).values(payload).returning();
-  }
-
   res.json(mapReturn(taxReturn));
 });
 

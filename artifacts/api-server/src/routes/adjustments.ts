@@ -9,6 +9,7 @@ import {
   UpdateAdjustmentBody,
   DeleteAdjustmentParams,
 } from "@workspace/api-zod";
+import { recalculateInBackground } from "../lib/taxReturnPipeline";
 
 const router: IRouter = Router();
 
@@ -40,6 +41,7 @@ router.post("/clients/:clientId/adjustments", async (req, res): Promise<void> =>
     .insert(adjustmentsTable)
     .values({ ...parsed.data, clientId: params.data.clientId, amount: String(parsed.data.amount) })
     .returning();
+  recalculateInBackground(params.data.clientId);
   res.status(201).json(adjustment);
 });
 
@@ -72,6 +74,7 @@ router.patch("/clients/:clientId/adjustments/:adjustmentId", async (req, res): P
     res.status(404).json({ error: "Adjustment not found" });
     return;
   }
+  recalculateInBackground(params.data.clientId);
   res.json(adjustment);
 });
 
@@ -94,6 +97,7 @@ router.delete("/clients/:clientId/adjustments/:adjustmentId", async (req, res): 
     res.status(404).json({ error: "Adjustment not found" });
     return;
   }
+  recalculateInBackground(params.data.clientId);
   res.sendStatus(204);
 });
 

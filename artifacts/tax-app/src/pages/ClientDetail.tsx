@@ -28,7 +28,7 @@ import type {
   UpdateAdjustmentBodyAdjustmentType,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -63,7 +63,16 @@ function pct(n: number | null | undefined) {
 
 function DocumentsTab({ clientId }: { clientId: number }) {
   const { data: docs, isLoading } = useListDocuments(clientId, {
-    query: { queryKey: getListDocumentsQueryKey(clientId) },
+    query: {
+      queryKey: getListDocumentsQueryKey(clientId),
+      // Poll while any doc is still processing — extraction is async on the server.
+      // When extraction finishes, the status flips to "extracted" and polling stops.
+      refetchInterval: (query) => {
+        const data = query.state.data;
+        if (!Array.isArray(data)) return false;
+        return data.some((d) => d.status === "processing") ? 2500 : false;
+      },
+    },
   });
   const upload = useUploadDocument();
   const deleteDoc = useDeleteDocument();
@@ -71,6 +80,15 @@ function DocumentsTab({ clientId }: { clientId: number }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [docType, setDocType] = useState("w2");
   const [uploading, setUploading] = useState(false);
+
+  // When a processing doc transitions to extracted, refresh W-2 list + tax return.
+  const extractedCount = (docs ?? []).filter((d) => d.status === "extracted").length;
+  useEffect(() => {
+    qc.invalidateQueries({ queryKey: getListW2DataQueryKey(clientId) });
+    qc.invalidateQueries({ queryKey: getGetTaxReturnQueryKey(clientId) });
+    qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [extractedCount, clientId]);
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -86,7 +104,9 @@ function DocumentsTab({ clientId }: { clientId: number }) {
           onSuccess: () => {
             qc.invalidateQueries({ queryKey: getListDocumentsQueryKey(clientId) });
             qc.invalidateQueries({ queryKey: getListW2DataQueryKey(clientId) });
-            toast({ title: "Document uploaded", description: "AI extraction running in background." });
+            qc.invalidateQueries({ queryKey: getGetTaxReturnQueryKey(clientId) });
+            qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
+            toast({ title: "Document uploaded", description: "AI extraction running — calculations will refresh automatically." });
             if (fileRef.current) fileRef.current.value = "";
           },
           onError: () => toast({ title: "Upload failed", variant: "destructive" }),
@@ -294,6 +314,8 @@ function W2DataTab({ clientId }: { clientId: number }) {
       {
         onSuccess: () => {
           qc.invalidateQueries({ queryKey: getListW2DataQueryKey(clientId) });
+          qc.invalidateQueries({ queryKey: getGetTaxReturnQueryKey(clientId) });
+          qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
           toast({ title: "W-2 record updated" });
           setEditingId(null);
         },
@@ -308,6 +330,8 @@ function W2DataTab({ clientId }: { clientId: number }) {
       {
         onSuccess: () => {
           qc.invalidateQueries({ queryKey: getListW2DataQueryKey(clientId) });
+          qc.invalidateQueries({ queryKey: getGetTaxReturnQueryKey(clientId) });
+          qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
           toast({ title: "W-2 record added" });
           setShowNew(false);
           setNewForm(blankW2Form());
@@ -324,6 +348,8 @@ function W2DataTab({ clientId }: { clientId: number }) {
       {
         onSuccess: () => {
           qc.invalidateQueries({ queryKey: getListW2DataQueryKey(clientId) });
+          qc.invalidateQueries({ queryKey: getGetTaxReturnQueryKey(clientId) });
+          qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
           toast({ title: "W-2 record deleted" });
         },
       }
@@ -627,6 +653,8 @@ function AdjustmentsTab({ clientId }: { clientId: number }) {
 
   function invalidate() {
     qc.invalidateQueries({ queryKey: getListAdjustmentsQueryKey(clientId) });
+    qc.invalidateQueries({ queryKey: getGetTaxReturnQueryKey(clientId) });
+    qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
   }
 
   function toPayload(f: AdjFormData) {

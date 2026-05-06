@@ -6,6 +6,8 @@ import {
   useUpdateClient,
   getListClientsQueryKey,
   getGetClientQueryKey,
+  getGetTaxReturnQueryKey,
+  getGetDashboardSummaryQueryKey,
 } from "@workspace/api-client-react";
 import type {
   CreateClientBodyFilingStatus,
@@ -71,14 +73,16 @@ export default function ClientForm({ editId }: Props) {
   useEffect(() => {
     if (existing) {
       setForm({
-        firstName: existing.firstName ?? "",
-        lastName: existing.lastName ?? "",
-        email: existing.email ?? "",
-        phone: existing.phone ?? "",
-        filingStatus: existing.filingStatus ?? "single",
-        state: existing.state ?? "CA",
-        taxYear: existing.taxYear ?? new Date().getFullYear() - 1,
-        notes: existing.notes ?? "",
+        firstName: existing.firstName || "",
+        lastName: existing.lastName || "",
+        email: existing.email || "",
+        phone: existing.phone || "",
+        filingStatus: existing.filingStatus || "single",
+        // Use || (not ??) so empty strings fall back to default — Select component
+        // doesn't display anything for empty value.
+        state: existing.state || "CA",
+        taxYear: existing.taxYear || new Date().getFullYear() - 1,
+        notes: existing.notes || "",
       });
     }
   }, [existing]);
@@ -99,8 +103,14 @@ export default function ClientForm({ editId }: Props) {
         { id: editId, data: { ...payload, filingStatus: payload.filingStatus as UpdateClientBodyFilingStatus } },
         {
           onSuccess: (client) => {
+            // Set the cache to the response data immediately so navigation doesn't show stale data
+            qc.setQueryData(getGetClientQueryKey(editId), client);
+            // Invalidate so any other consumer refetches
             qc.invalidateQueries({ queryKey: getListClientsQueryKey() });
             qc.invalidateQueries({ queryKey: getGetClientQueryKey(editId) });
+            // Filing status / state / tax year changes affect the calculation — refresh tax return + dashboard
+            qc.invalidateQueries({ queryKey: getGetTaxReturnQueryKey(editId) });
+            qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
             toast({ title: "Client updated" });
             navigate(`/clients/${client.id}`);
           },
@@ -112,7 +122,9 @@ export default function ClientForm({ editId }: Props) {
         { data: { ...payload, filingStatus: payload.filingStatus as CreateClientBodyFilingStatus } },
         {
           onSuccess: (client) => {
+            qc.setQueryData(getGetClientQueryKey(client.id), client);
             qc.invalidateQueries({ queryKey: getListClientsQueryKey() });
+            qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
             toast({ title: "Client created" });
             navigate(`/clients/${client.id}`);
           },

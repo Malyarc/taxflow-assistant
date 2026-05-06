@@ -1,77 +1,157 @@
 /**
- * 2024 federal + state tax calculator.
+ * Year-aware federal + state tax calculator.
  *
- * Federal: real 2024 IRS brackets and standard deductions (Rev. Proc. 2023-34).
- * State:   real 2024 brackets/std deductions for all 41 income-tax states + DC.
+ * Federal: real IRS brackets and standard deductions for each supported tax year.
+ *   - 2024: Rev. Proc. 2023-34
+ *   - 2025: Rev. Proc. 2024-40
+ *
+ * State:   real brackets/std deductions per state per year. See stateTaxData.ts.
+ *
+ * If a year is unsupported, falls back to the most recent available year and logs a warning.
  *
  * Limitations (read before treating output as authoritative):
  *   - Federal: no AMT, no QBI, no EITC, no CTC math (use Adjustments tab for credits).
- *   - State: no state credits, exemptions, or local taxes (NYC, MD counties, OH cities). See stateTaxData.ts.
+ *   - State: no state credits, exemptions, or local taxes (NYC, MD counties, OH cities).
  *   - Calculator is for estimation; actual filings need professional software.
  */
 
 import {
-  STATE_TAX_DATA,
+  STATE_TAX_DATA_BY_YEAR,
   type StateBracket,
   type StateFilingStatus,
 } from "./stateTaxData";
 
-// ── Federal: 2024 brackets (IRS Rev. Proc. 2023-34) ──────────────────────────
-const FEDERAL_BRACKETS_2024: Record<string, StateBracket[]> = {
-  single: [
-    { upTo: 11600, rate: 0.10 },
-    { upTo: 47150, rate: 0.12 },
-    { upTo: 100525, rate: 0.22 },
-    { upTo: 191950, rate: 0.24 },
-    { upTo: 243725, rate: 0.32 },
-    { upTo: 609350, rate: 0.35 },
-    { upTo: Infinity, rate: 0.37 },
-  ],
-  married_filing_jointly: [
-    { upTo: 23200, rate: 0.10 },
-    { upTo: 94300, rate: 0.12 },
-    { upTo: 201050, rate: 0.22 },
-    { upTo: 383900, rate: 0.24 },
-    { upTo: 487450, rate: 0.32 },
-    { upTo: 731200, rate: 0.35 },
-    { upTo: Infinity, rate: 0.37 },
-  ],
-  married_filing_separately: [
-    { upTo: 11600, rate: 0.10 },
-    { upTo: 47150, rate: 0.12 },
-    { upTo: 100525, rate: 0.22 },
-    { upTo: 191950, rate: 0.24 },
-    { upTo: 243725, rate: 0.32 },
-    { upTo: 365600, rate: 0.35 },
-    { upTo: Infinity, rate: 0.37 },
-  ],
-  head_of_household: [
-    { upTo: 16550, rate: 0.10 },
-    { upTo: 63100, rate: 0.12 },
-    { upTo: 100500, rate: 0.22 },
-    { upTo: 191950, rate: 0.24 },
-    { upTo: 243700, rate: 0.32 },
-    { upTo: 609350, rate: 0.35 },
-    { upTo: Infinity, rate: 0.37 },
-  ],
-  qualifying_widow: [
-    { upTo: 23200, rate: 0.10 },
-    { upTo: 94300, rate: 0.12 },
-    { upTo: 201050, rate: 0.22 },
-    { upTo: 383900, rate: 0.24 },
-    { upTo: 487450, rate: 0.32 },
-    { upTo: 731200, rate: 0.35 },
-    { upTo: Infinity, rate: 0.37 },
-  ],
+export const SUPPORTED_TAX_YEARS = [2024, 2025] as const;
+export type TaxYear = (typeof SUPPORTED_TAX_YEARS)[number];
+const LATEST_YEAR: TaxYear = 2025;
+
+// ── Federal brackets per year ─────────────────────────────────────────────────
+const FEDERAL_BRACKETS: Record<TaxYear, Record<string, StateBracket[]>> = {
+  // IRS Rev. Proc. 2023-34 (TY2024)
+  2024: {
+    single: [
+      { upTo: 11600, rate: 0.10 },
+      { upTo: 47150, rate: 0.12 },
+      { upTo: 100525, rate: 0.22 },
+      { upTo: 191950, rate: 0.24 },
+      { upTo: 243725, rate: 0.32 },
+      { upTo: 609350, rate: 0.35 },
+      { upTo: Infinity, rate: 0.37 },
+    ],
+    married_filing_jointly: [
+      { upTo: 23200, rate: 0.10 },
+      { upTo: 94300, rate: 0.12 },
+      { upTo: 201050, rate: 0.22 },
+      { upTo: 383900, rate: 0.24 },
+      { upTo: 487450, rate: 0.32 },
+      { upTo: 731200, rate: 0.35 },
+      { upTo: Infinity, rate: 0.37 },
+    ],
+    married_filing_separately: [
+      { upTo: 11600, rate: 0.10 },
+      { upTo: 47150, rate: 0.12 },
+      { upTo: 100525, rate: 0.22 },
+      { upTo: 191950, rate: 0.24 },
+      { upTo: 243725, rate: 0.32 },
+      { upTo: 365600, rate: 0.35 },
+      { upTo: Infinity, rate: 0.37 },
+    ],
+    head_of_household: [
+      { upTo: 16550, rate: 0.10 },
+      { upTo: 63100, rate: 0.12 },
+      { upTo: 100500, rate: 0.22 },
+      { upTo: 191950, rate: 0.24 },
+      { upTo: 243700, rate: 0.32 },
+      { upTo: 609350, rate: 0.35 },
+      { upTo: Infinity, rate: 0.37 },
+    ],
+    qualifying_widow: [
+      { upTo: 23200, rate: 0.10 },
+      { upTo: 94300, rate: 0.12 },
+      { upTo: 201050, rate: 0.22 },
+      { upTo: 383900, rate: 0.24 },
+      { upTo: 487450, rate: 0.32 },
+      { upTo: 731200, rate: 0.35 },
+      { upTo: Infinity, rate: 0.37 },
+    ],
+  },
+
+  // IRS Rev. Proc. 2024-40 (TY2025)
+  2025: {
+    single: [
+      { upTo: 11925, rate: 0.10 },
+      { upTo: 48475, rate: 0.12 },
+      { upTo: 103350, rate: 0.22 },
+      { upTo: 197300, rate: 0.24 },
+      { upTo: 250525, rate: 0.32 },
+      { upTo: 626350, rate: 0.35 },
+      { upTo: Infinity, rate: 0.37 },
+    ],
+    married_filing_jointly: [
+      { upTo: 23850, rate: 0.10 },
+      { upTo: 96950, rate: 0.12 },
+      { upTo: 206700, rate: 0.22 },
+      { upTo: 394600, rate: 0.24 },
+      { upTo: 501050, rate: 0.32 },
+      { upTo: 751600, rate: 0.35 },
+      { upTo: Infinity, rate: 0.37 },
+    ],
+    married_filing_separately: [
+      { upTo: 11925, rate: 0.10 },
+      { upTo: 48475, rate: 0.12 },
+      { upTo: 103350, rate: 0.22 },
+      { upTo: 197300, rate: 0.24 },
+      { upTo: 250525, rate: 0.32 },
+      { upTo: 375800, rate: 0.35 },
+      { upTo: Infinity, rate: 0.37 },
+    ],
+    head_of_household: [
+      { upTo: 17000, rate: 0.10 },
+      { upTo: 64850, rate: 0.12 },
+      { upTo: 103350, rate: 0.22 },
+      { upTo: 197300, rate: 0.24 },
+      { upTo: 250500, rate: 0.32 },
+      { upTo: 626350, rate: 0.35 },
+      { upTo: Infinity, rate: 0.37 },
+    ],
+    qualifying_widow: [
+      { upTo: 23850, rate: 0.10 },
+      { upTo: 96950, rate: 0.12 },
+      { upTo: 206700, rate: 0.22 },
+      { upTo: 394600, rate: 0.24 },
+      { upTo: 501050, rate: 0.32 },
+      { upTo: 751600, rate: 0.35 },
+      { upTo: Infinity, rate: 0.37 },
+    ],
+  },
 };
 
-const FEDERAL_STANDARD_DEDUCTIONS_2024: Record<string, number> = {
-  single: 14600,
-  married_filing_jointly: 29200,
-  married_filing_separately: 14600,
-  head_of_household: 21900,
-  qualifying_widow: 29200,
+const FEDERAL_STANDARD_DEDUCTIONS: Record<TaxYear, Record<string, number>> = {
+  2024: {
+    single: 14600,
+    married_filing_jointly: 29200,
+    married_filing_separately: 14600,
+    head_of_household: 21900,
+    qualifying_widow: 29200,
+  },
+  2025: {
+    single: 15000,
+    married_filing_jointly: 30000,
+    married_filing_separately: 15000,
+    head_of_household: 22500,
+    qualifying_widow: 30000,
+  },
 };
+
+export function resolveTaxYear(input: number | undefined | null): TaxYear {
+  if (input == null) return LATEST_YEAR;
+  if ((SUPPORTED_TAX_YEARS as readonly number[]).includes(input)) {
+    return input as TaxYear;
+  }
+  // Unsupported: fall back to nearest available year
+  if (input < 2024) return 2024;
+  return LATEST_YEAR;
+}
 
 /** Apply progressive brackets to taxable income. */
 function applyBrackets(taxableIncome: number, brackets: StateBracket[]): number {
@@ -89,13 +169,21 @@ function applyBrackets(taxableIncome: number, brackets: StateBracket[]): number 
   return tax;
 }
 
-export function calculateFederalTax(taxableIncome: number, filingStatus: string): number {
-  const brackets = FEDERAL_BRACKETS_2024[filingStatus] ?? FEDERAL_BRACKETS_2024.single;
+export function calculateFederalTax(
+  taxableIncome: number,
+  filingStatus: string,
+  taxYear: number,
+): number {
+  const year = resolveTaxYear(taxYear);
+  const yearBrackets = FEDERAL_BRACKETS[year];
+  const brackets = yearBrackets[filingStatus] ?? yearBrackets.single;
   return Math.max(0, applyBrackets(taxableIncome, brackets));
 }
 
-export function getFederalStandardDeduction(filingStatus: string): number {
-  return FEDERAL_STANDARD_DEDUCTIONS_2024[filingStatus] ?? FEDERAL_STANDARD_DEDUCTIONS_2024.single;
+export function getFederalStandardDeduction(filingStatus: string, taxYear: number): number {
+  const year = resolveTaxYear(taxYear);
+  const yearDeductions = FEDERAL_STANDARD_DEDUCTIONS[year];
+  return yearDeductions[filingStatus] ?? yearDeductions.single;
 }
 
 /**
@@ -103,7 +191,7 @@ export function getFederalStandardDeduction(filingStatus: string): number {
  * for MFS/HoH and to MFJ for QW when the state doesn't publish separate ones.
  */
 function pickStateBrackets(
-  state: NonNullable<(typeof STATE_TAX_DATA)[string]["brackets"]>,
+  state: { single: StateBracket[]; married_filing_jointly: StateBracket[]; married_filing_separately?: StateBracket[]; head_of_household?: StateBracket[]; qualifying_widow?: StateBracket[]; },
   filingStatus: StateFilingStatus,
 ): StateBracket[] {
   switch (filingStatus) {
@@ -122,7 +210,7 @@ function pickStateBrackets(
 }
 
 function pickStateStdDeduction(
-  state: NonNullable<(typeof STATE_TAX_DATA)[string]["standardDeduction"]>,
+  state: { single: number; married_filing_jointly: number; married_filing_separately?: number; head_of_household?: number; qualifying_widow?: number; },
   filingStatus: StateFilingStatus,
 ): number {
   switch (filingStatus) {
@@ -141,15 +229,18 @@ function pickStateStdDeduction(
 }
 
 /**
- * Compute state tax liability using real 2024 brackets.
+ * Compute state tax liability using brackets for the given year.
  * Pass federal AGI; the state-specific standard deduction is applied internally.
  */
 export function calculateStateTax(
   federalAgi: number,
   stateCode: string,
   filingStatus: string,
+  taxYear: number,
 ): number {
-  const info = STATE_TAX_DATA[stateCode.toUpperCase()];
+  const year = resolveTaxYear(taxYear);
+  const yearData = STATE_TAX_DATA_BY_YEAR[year];
+  const info = yearData[stateCode.toUpperCase()];
   if (!info || !info.hasIncomeTax || !info.brackets || !info.standardDeduction) {
     return 0;
   }
@@ -174,6 +265,7 @@ export interface TaxCalculationResult {
   federalTaxLiability: number;
   stateTaxLiability: number;
   effectiveTaxRate: number;
+  taxYear: TaxYear;
 }
 
 export function runTaxCalculation(params: {
@@ -184,6 +276,7 @@ export function runTaxCalculation(params: {
   useItemizedDeductions: boolean;
   itemizedDeductions: number;
   adjustments: number;
+  taxYear: number;
 }): TaxCalculationResult {
   const {
     totalWages,
@@ -193,18 +286,20 @@ export function runTaxCalculation(params: {
     useItemizedDeductions,
     itemizedDeductions,
     adjustments,
+    taxYear,
   } = params;
 
+  const year = resolveTaxYear(taxYear);
   const totalIncome = totalWages + additionalIncome;
   const adjustedGrossIncome = Math.max(0, totalIncome - adjustments);
-  const fedStdDeduction = getFederalStandardDeduction(filingStatus);
+  const fedStdDeduction = getFederalStandardDeduction(filingStatus, year);
   const fedDeduction = useItemizedDeductions
     ? Math.max(itemizedDeductions, fedStdDeduction)
     : fedStdDeduction;
   const taxableIncome = Math.max(0, adjustedGrossIncome - fedDeduction);
 
-  const federalTaxLiability = calculateFederalTax(taxableIncome, filingStatus);
-  const stateTaxLiability = calculateStateTax(adjustedGrossIncome, stateCode, filingStatus);
+  const federalTaxLiability = calculateFederalTax(taxableIncome, filingStatus, year);
+  const stateTaxLiability = calculateStateTax(adjustedGrossIncome, stateCode, filingStatus, year);
 
   const effectiveTaxRate =
     totalIncome > 0 ? (federalTaxLiability + stateTaxLiability) / totalIncome : 0;
@@ -217,10 +312,11 @@ export function runTaxCalculation(params: {
     federalTaxLiability,
     stateTaxLiability,
     effectiveTaxRate,
+    taxYear: year,
   };
 }
 
 // Backwards-compat alias used by existing routes.
-export function getStandardDeduction(filingStatus: string): number {
-  return getFederalStandardDeduction(filingStatus);
+export function getStandardDeduction(filingStatus: string, taxYear?: number): number {
+  return getFederalStandardDeduction(filingStatus, taxYear ?? LATEST_YEAR);
 }
