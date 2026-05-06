@@ -1,18 +1,21 @@
 import OpenAI from "openai";
 
-if (!process.env.AI_INTEGRATIONS_OPENAI_BASE_URL) {
-  throw new Error(
-    "AI_INTEGRATIONS_OPENAI_BASE_URL must be set. Did you forget to provision the OpenAI AI integration?",
-  );
-}
+// Defaults to Google Gemini's OpenAI-compatible endpoint if no base URL is set,
+// so a vanilla `AI_API_KEY` (a Google AI Studio key) is enough to enable AI extraction.
+const baseURL =
+  process.env.AI_INTEGRATIONS_OPENAI_BASE_URL ??
+  "https://generativelanguage.googleapis.com/v1beta/openai/";
 
-if (!process.env.AI_INTEGRATIONS_OPENAI_API_KEY) {
-  throw new Error(
-    "AI_INTEGRATIONS_OPENAI_API_KEY must be set. Did you forget to provision the OpenAI AI integration?",
-  );
-}
+const apiKey =
+  process.env.AI_INTEGRATIONS_OPENAI_API_KEY ??
+  process.env.AI_API_KEY ??
+  "";
 
 export const openai = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+  apiKey: apiKey || "missing-key",
+  baseURL,
 });
+
+export const aiEnabled = Boolean(apiKey);
+
+export const aiModel = process.env.AI_MODEL ?? "gemini-2.5-flash";

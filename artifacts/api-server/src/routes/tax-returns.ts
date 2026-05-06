@@ -102,7 +102,10 @@ router.post("/clients/:clientId/tax-return", async (req, res): Promise<void> => 
     .reduce((sum, a) => sum + toNum(a.amount), 0);
 
   const additionalIncome = (parsed.data.additionalIncome ?? 0) + additionalIncomeAdjustments;
-  const additionalDeductions = (parsed.data.additionalDeductions ?? 0) + deductionAdjustments + otherDeductions;
+  // Above-the-line adjustments (reduce AGI regardless of itemizing).
+  const aboveTheLineAdjustments = deductionAdjustments + otherDeductions;
+  // Itemized (Schedule A) deductions — only applied when itemizing.
+  const itemizedDeductions = parsed.data.additionalDeductions ?? 0;
 
   const result = runTaxCalculation({
     totalWages,
@@ -110,11 +113,11 @@ router.post("/clients/:clientId/tax-return", async (req, res): Promise<void> => 
     filingStatus: client.filingStatus,
     stateCode: stateCode ?? "CA",
     useItemizedDeductions: parsed.data.useItemizedDeductions ?? false,
-    itemizedDeductions: additionalDeductions,
-    adjustments: additionalDeductions,
+    itemizedDeductions,
+    adjustments: aboveTheLineAdjustments,
   });
 
-  const federalRefundOrOwed = totalFederalWithheld + withholdingAdjustments - result.federalTaxLiability - creditAdjustments;
+  const federalRefundOrOwed = totalFederalWithheld + withholdingAdjustments - result.federalTaxLiability + creditAdjustments;
   const stateRefundOrOwed = totalStateWithheld - result.stateTaxLiability;
 
   const payload = {
@@ -124,7 +127,7 @@ router.post("/clients/:clientId/tax-return", async (req, res): Promise<void> => 
     totalIncome: String(result.totalIncome),
     adjustedGrossIncome: String(result.adjustedGrossIncome),
     standardDeduction: String(result.standardDeduction),
-    itemizedDeductions: parsed.data.useItemizedDeductions ? String(additionalDeductions) : null,
+    itemizedDeductions: parsed.data.useItemizedDeductions ? String(itemizedDeductions) : null,
     taxableIncome: String(result.taxableIncome),
     federalTaxLiability: String(result.federalTaxLiability),
     federalTaxWithheld: String(totalFederalWithheld + withholdingAdjustments),

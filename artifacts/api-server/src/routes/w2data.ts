@@ -54,7 +54,7 @@ router.post("/clients/:clientId/w2data", async (req, res): Promise<void> => {
   for (const field of numericFields) {
     if (insertData[field] != null) insertData[field] = String(insertData[field]);
   }
-  const [record] = await db.insert(w2DataTable).values(insertData as Parameters<typeof db.insert>[0] extends infer T ? T : never).returning();
+  const [record] = await db.insert(w2DataTable).values(insertData as typeof w2DataTable.$inferInsert).returning();
   const r = record;
   res.status(201).json({
     ...r,

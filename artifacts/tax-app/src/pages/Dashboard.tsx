@@ -42,7 +42,7 @@ export default function Dashboard() {
               <CardTitle className="text-sm font-medium">Total Refunds</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold text-accent">${summary.totalRefunds?.toLocaleString()}</div>
+              <div className="text-2xl font-bold text-accent">${(summary.totalRefunds ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
             </CardContent>
           </Card>
           <Card>
@@ -50,7 +50,7 @@ export default function Dashboard() {
               <CardTitle className="text-sm font-medium">Avg Refund</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">${summary.averageRefund?.toLocaleString()}</div>
+              <div className="text-2xl font-bold">{summary.averageRefund != null ? `$${summary.averageRefund.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "—"}</div>
             </CardContent>
           </Card>
         </div>

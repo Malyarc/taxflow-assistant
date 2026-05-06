@@ -7,7 +7,14 @@ import {
   UploadDocumentBody,
   DeleteDocumentParams,
 } from "@workspace/api-zod";
-import { extractTextFromBase64, extractW2DataFromText } from "../lib/documentExtractor";
+import {
+  extractTextFromBase64,
+  extractW2DataFromText,
+  extractW2DataFromFile,
+  detectMimeType,
+  isVisualMimeType,
+} from "../lib/documentExtractor";
+import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
@@ -51,11 +58,17 @@ router.post("/clients/:clientId/documents", async (req, res): Promise<void> => {
   // Run AI extraction asynchronously, then update
   (async () => {
     try {
-      const extractedText = await extractTextFromBase64(parsed.data.fileContent, parsed.data.fileName);
+      const mimeType = detectMimeType(parsed.data.fileName);
+      const isVisual = isVisualMimeType(mimeType);
+      const extractedText = isVisual
+        ? `[${mimeType}: ${parsed.data.fileName}]`
+        : await extractTextFromBase64(parsed.data.fileContent, parsed.data.fileName);
       let extractedData: Record<string, unknown> = {};
 
       if (parsed.data.documentType === "w2") {
-        extractedData = await extractW2DataFromText(extractedText) as Record<string, unknown>;
+        extractedData = (isVisual
+          ? await extractW2DataFromFile(parsed.data.fileContent, mimeType)
+          : await extractW2DataFromText(extractedText)) as Record<string, unknown>;
 
         // Auto-create a W-2 record with extracted data
         await db.insert(w2DataTable).values({
@@ -85,6 +98,7 @@ router.post("/clients/:clientId/documents", async (req, res): Promise<void> => {
         })
         .where(eq(taxDocumentsTable.id, doc.id));
     } catch (err) {
+      logger.error({ err, docId: doc.id, fileName: parsed.data.fileName }, "AI extraction failed");
       await db
         .update(taxDocumentsTable)
         .set({ status: "failed" })
