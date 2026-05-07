@@ -94,6 +94,9 @@ export default function ClientForm({ editId }: Props) {
   }, [existing]);
 
   function set(k: keyof FormState, v: string | number) {
+    // Radix Select can fire onValueChange with "" before SelectItems mount;
+    // ignore that to prevent it from wiping a saved state value during initial render.
+    if (k === "state" && v === "") return;
     setForm((f) => ({ ...f, [k]: v }));
   }
 
@@ -145,7 +148,12 @@ export default function ClientForm({ editId }: Props) {
     }
   }
 
-  if (isEdit && isLoading) {
+  // Wait until existing has loaded AND useEffect has populated form, so the
+  // Radix Select for state/filingStatus mounts with the correct controlled value.
+  // Without this gate, Radix can fire onValueChange("") on initial render when
+  // the value prop is set before SelectItem children are registered.
+  const formReady = !isEdit || (existing != null && form.email === (existing.email ?? ""));
+  if (isEdit && (isLoading || !formReady)) {
     return (
       <div className="p-8 max-w-2xl mx-auto space-y-4">
         <Skeleton className="h-10 w-48" />

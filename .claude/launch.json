@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "frontend",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@workspace/tax-app", "run", "dev"],
+      "port": 3010,
+      "env": {
+        "PORT": "3010"
+      }
+    }
+  ]
+}
