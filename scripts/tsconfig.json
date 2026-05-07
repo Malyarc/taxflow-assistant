@@ -11,6 +11,7 @@
     "src/tax-engine-integration-tests.ts",
     "src/tax-engine-new-features-tests.ts",
     "src/tax-engine-deep-tests.ts",
-    "src/tax-engine-deep-integration-tests.ts"
+    "src/tax-engine-deep-integration-tests.ts",
+    "src/tax-engine-scenarios.ts"
   ]
 }
