@@ -67,9 +67,14 @@ router.post("/clients/:clientId/documents", async (req, res): Promise<void> => {
       let extractedData: Record<string, unknown> = {};
 
       if (parsed.data.documentType === "w2") {
-        extractedData = (isVisual
-          ? await extractW2DataFromFile(parsed.data.fileContent, mimeType)
-          : await extractW2DataFromText(extractedText)) as Record<string, unknown>;
+        let fieldBoxes: Record<string, unknown> = {};
+        if (isVisual) {
+          const { data, boxes } = await extractW2DataFromFile(parsed.data.fileContent, mimeType);
+          extractedData = data as Record<string, unknown>;
+          fieldBoxes = boxes as Record<string, unknown>;
+        } else {
+          extractedData = (await extractW2DataFromText(extractedText)) as Record<string, unknown>;
+        }
 
         // Pull the client's tax year so the auto-created W-2 matches their return year.
         const [client] = await db
@@ -94,6 +99,7 @@ router.post("/clients/:clientId/documents", async (req, res): Promise<void> => {
           stateTaxWithheldBox17: extractedData.stateTaxWithheldBox17 != null ? String(extractedData.stateTaxWithheldBox17) : undefined,
           stateWagesBox16: extractedData.stateWagesBox16 != null ? String(extractedData.stateWagesBox16) : undefined,
           stateCode: extractedData.stateCode as string | undefined,
+          fieldBoxes: Object.keys(fieldBoxes).length > 0 ? fieldBoxes : null,
         });
 
         // Auto-recalc the tax return so the calculator tab reflects the new W-2 immediately

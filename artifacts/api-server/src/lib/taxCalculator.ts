@@ -396,14 +396,195 @@ export function getStandardDeduction(filingStatus: string, taxYear?: number): nu
   return getFederalStandardDeduction(filingStatus, taxYear ?? LATEST_YEAR);
 }
 
+// ── Self-Employment Tax (Schedule SE) ──────────────────────────────────────
+// 2024 + 2025: 15.3% combined rate (12.4% Social Security + 2.9% Medicare).
+// SS portion only applies up to the wage base ($168,600 in 2024, $176,100 in 2025).
+// Net earnings = SE income × 0.9235 (the 7.65% employer-equivalent reduction).
+// Half of SE tax is deductible above-the-line on Form 1040.
+const SS_WAGE_BASE: Record<TaxYear, number> = { 2024: 168600, 2025: 176100 };
+const SS_RATE = 0.124;
+const MEDICARE_RATE = 0.029;
+const SE_NET_EARNINGS_FACTOR = 0.9235;
+
+export interface SeTaxCalculation {
+  seIncomeReported: number;
+  netSeEarnings: number;
+  socialSecurityPortion: number;
+  medicarePortion: number;
+  seTaxTotal: number;
+  /** Half of SE tax — above-the-line deduction. */
+  deductibleHalf: number;
+}
+
+export function calculateSelfEmploymentTax(
+  seIncome: number,
+  taxYear: number,
+): SeTaxCalculation {
+  const year = resolveTaxYear(taxYear);
+  if (seIncome <= 0) {
+    return { seIncomeReported: seIncome, netSeEarnings: 0, socialSecurityPortion: 0, medicarePortion: 0, seTaxTotal: 0, deductibleHalf: 0 };
+  }
+  // Form Schedule SE: net SE earnings = gross × 92.35%
+  const netSeEarnings = seIncome * SE_NET_EARNINGS_FACTOR;
+  // Below the SS wage base threshold: charged 12.4% SS + 2.9% Medicare on full net earnings.
+  // Above: only Medicare applies on the excess.
+  const ssBase = SS_WAGE_BASE[year];
+  const ssPortion = Math.min(netSeEarnings, ssBase) * SS_RATE;
+  const medicarePortion = netSeEarnings * MEDICARE_RATE;
+  const seTaxTotal = ssPortion + medicarePortion;
+  return {
+    seIncomeReported: seIncome,
+    netSeEarnings,
+    socialSecurityPortion: ssPortion,
+    medicarePortion,
+    seTaxTotal,
+    deductibleHalf: seTaxTotal / 2,
+  };
+}
+
+// ── NIIT (Net Investment Income Tax, IRC §1411) ────────────────────────────
+// 3.8% on the LESSER of (net investment income, MAGI − threshold).
+// Thresholds (not inflation-adjusted): $200k single, $250k MFJ, $125k MFS.
+const NIIT_RATE = 0.038;
+function niitThreshold(filingStatus: string): number {
+  switch (filingStatus) {
+    case "married_filing_jointly":
+    case "qualifying_widow":
+      return 250000;
+    case "married_filing_separately":
+      return 125000;
+    default:
+      return 200000; // single, head_of_household
+  }
+}
+
+export interface NiitCalculation {
+  investmentIncome: number;
+  threshold: number;
+  excessOverThreshold: number;
+  taxableAmount: number;
+  niitTax: number;
+}
+
+export function calculateNiit(params: {
+  investmentIncome: number;
+  modifiedAgi: number;
+  filingStatus: string;
+}): NiitCalculation {
+  const { investmentIncome, modifiedAgi, filingStatus } = params;
+  const threshold = niitThreshold(filingStatus);
+  const excess = Math.max(0, modifiedAgi - threshold);
+  const taxableAmount = Math.min(Math.max(0, investmentIncome), excess);
+  return {
+    investmentIncome: Math.max(0, investmentIncome),
+    threshold,
+    excessOverThreshold: excess,
+    taxableAmount,
+    niitTax: taxableAmount * NIIT_RATE,
+  };
+}
+
+// ── QBI Deduction (Section 199A) ───────────────────────────────────────────
+// Simplified: 20% of QBI, capped at 20% of (taxable income before QBI − net capital gains).
+// The full §199A has W-2-wages limits + SSTB phase-outs above income thresholds — we
+// model the simple case (low/middle-income, non-SSTB). For high earners or SSTBs the
+// real number can be lower.
+export interface QbiCalculation {
+  qbiAmount: number;
+  preliminaryDeduction: number;
+  taxableIncomeCap: number;
+  finalDeduction: number;
+}
+
+export function calculateQbi(params: {
+  qbiIncome: number;
+  taxableIncomeBeforeQbi: number;
+}): QbiCalculation {
+  const { qbiIncome, taxableIncomeBeforeQbi } = params;
+  if (qbiIncome <= 0) {
+    return { qbiAmount: 0, preliminaryDeduction: 0, taxableIncomeCap: 0, finalDeduction: 0 };
+  }
+  const preliminary = qbiIncome * 0.20;
+  const cap = Math.max(0, taxableIncomeBeforeQbi) * 0.20;
+  return {
+    qbiAmount: qbiIncome,
+    preliminaryDeduction: preliminary,
+    taxableIncomeCap: cap,
+    finalDeduction: Math.min(preliminary, cap),
+  };
+}
+
+// ── AMT (Alternative Minimum Tax) ──────────────────────────────────────────
+// Simplified: AMTI = taxable income + AMT preferences (we accept these from caller).
+// AMT = max(0, AMT_rate × (AMTI − exemption) − regular tax).
+// AMT exemptions phase out at high income (25¢ per $1 over threshold).
+// 2024: 26% to $232,600, 28% above. Exemptions: $85,700 single, $133,300 MFJ.
+// 2025: 26% to $239,100, 28% above. Exemptions: $88,100 single, $137,000 MFJ.
+const AMT_DATA: Record<TaxYear, {
+  exemption: Record<string, number>;
+  exemptionPhaseOutStart: Record<string, number>;
+  rateBreakpoint: number;
+}> = {
+  2024: {
+    exemption: { single: 85700, married_filing_jointly: 133300, married_filing_separately: 66650, head_of_household: 85700, qualifying_widow: 133300 },
+    exemptionPhaseOutStart: { single: 609350, married_filing_jointly: 1218700, married_filing_separately: 609350, head_of_household: 609350, qualifying_widow: 1218700 },
+    rateBreakpoint: 232600,
+  },
+  2025: {
+    exemption: { single: 88100, married_filing_jointly: 137000, married_filing_separately: 68500, head_of_household: 88100, qualifying_widow: 137000 },
+    exemptionPhaseOutStart: { single: 626350, married_filing_jointly: 1252700, married_filing_separately: 626350, head_of_household: 626350, qualifying_widow: 1252700 },
+    rateBreakpoint: 239100,
+  },
+};
+
+export interface AmtCalculation {
+  amti: number;
+  exemption: number;
+  amtBeforeRegular: number;
+  regularTax: number;
+  amtTax: number;
+}
+
+export function calculateAmt(params: {
+  taxableIncome: number;
+  amtPreferences: number;
+  filingStatus: string;
+  regularTax: number;
+  taxYear: number;
+}): AmtCalculation {
+  const year = resolveTaxYear(params.taxYear);
+  const data = AMT_DATA[year];
+  const { taxableIncome, amtPreferences, filingStatus, regularTax } = params;
+  const fs = filingStatus in data.exemption ? filingStatus : "single";
+  const baseExemption = data.exemption[fs];
+  const phaseStart = data.exemptionPhaseOutStart[fs];
+  const amti = taxableIncome + Math.max(0, amtPreferences);
+  // Phase out: 25¢ per $1 over threshold
+  const phaseOut = amti > phaseStart ? (amti - phaseStart) * 0.25 : 0;
+  const exemption = Math.max(0, baseExemption - phaseOut);
+  const amtBase = Math.max(0, amti - exemption);
+  const amtBeforeRegular =
+    amtBase <= data.rateBreakpoint
+      ? amtBase * 0.26
+      : data.rateBreakpoint * 0.26 + (amtBase - data.rateBreakpoint) * 0.28;
+  const amtTax = Math.max(0, amtBeforeRegular - regularTax);
+  return { amti, exemption, amtBeforeRegular, regularTax, amtTax };
+}
+
 // ── Child Tax Credit (federal) ─────────────────────────────────────────────
 // 2024 + 2025 rules: $2,000 per qualifying child under 17 with SSN; phase out
 // $50 per $1,000 (or fraction) of AGI over $200,000 single ($400,000 MFJ).
 // Other dependents: $500 Credit for Other Dependents (subject to same phase-out).
-// We model only the non-refundable portion (ignoring Additional CTC refundable
-// component) for simplicity.
+//
+// Two components:
+//   - Non-refundable portion: reduces tax, but only down to $0
+//   - Refundable Additional Child Tax Credit (ACTC): up to $1,700 per qualifying child
+//     in 2024 ($1,700 in 2025), computed as MIN(unused CTC, 15% × max(0, earned − $2,500))
 const CTC_PER_CHILD = 2000;
 const ODC_PER_DEPENDENT = 500;
+const ACTC_REFUNDABLE_PER_CHILD: Record<TaxYear, number> = { 2024: 1700, 2025: 1700 };
+const ACTC_EARNED_INCOME_THRESHOLD = 2500;
+const ACTC_RATE = 0.15;
 
 export interface CtcCalculation {
   /** Qualifying children counted */
@@ -414,10 +595,14 @@ export interface CtcCalculation {
   preliminaryCredit: number;
   /** Dollars reduced due to AGI phase-out */
   phaseOutReduction: number;
-  /** Final credit applied */
+  /** Total credit (non-refundable + refundable portions, after phase-out) */
   appliedCredit: number;
-  /** AGI threshold above which phase-out begins (filing-status dependent) */
+  /** AGI threshold above which phase-out begins */
   phaseOutThreshold: number;
+  /** Non-refundable portion (limited by tax owed) */
+  nonRefundablePortion: number;
+  /** Refundable Additional Child Tax Credit portion */
+  refundableActc: number;
 }
 
 export function calculateChildTaxCredit(params: {
@@ -426,33 +611,56 @@ export function calculateChildTaxCredit(params: {
   agi: number;
   filingStatus: string;
   taxYear: number;
+  /** Tax owed before CTC (non-refundable portion is capped at this). Optional. */
+  taxBeforeCredit?: number;
+  /** Earned income (wages + SE) for ACTC calc. Optional — defaults to AGI. */
+  earnedIncome?: number;
 }): CtcCalculation {
-  const { qualifyingChildren, otherDependents, agi, filingStatus } = params;
+  const { qualifyingChildren, otherDependents, agi, filingStatus, taxYear } = params;
+  const year = resolveTaxYear(taxYear);
   const safeChildren = Math.max(0, Math.floor(qualifyingChildren));
   const safeOther = Math.max(0, Math.floor(otherDependents));
 
   const preliminaryCredit =
     safeChildren * CTC_PER_CHILD + safeOther * ODC_PER_DEPENDENT;
 
-  // MFJ uses $400k threshold; everyone else uses $200k. (MFS uses $200k as well.)
+  // MFJ uses $400k threshold; everyone else uses $200k. (MFS uses $200k.)
   const phaseOutThreshold = filingStatus === "married_filing_jointly" ? 400000 : 200000;
 
   let phaseOutReduction = 0;
   if (agi > phaseOutThreshold) {
     const excess = agi - phaseOutThreshold;
-    // Round up to next $1,000 increment, then $50 per increment
     const increments = Math.ceil(excess / 1000);
     phaseOutReduction = increments * 50;
   }
 
-  const appliedCredit = Math.max(0, preliminaryCredit - phaseOutReduction);
+  const totalCreditAvailable = Math.max(0, preliminaryCredit - phaseOutReduction);
+
+  // If we know tax before credit, split into non-refundable + refundable.
+  // Otherwise treat the whole credit as a single number (legacy behavior).
+  const taxBefore = params.taxBeforeCredit;
+  const earned = params.earnedIncome ?? agi;
+
+  let nonRefundablePortion = totalCreditAvailable;
+  let refundableActc = 0;
+
+  if (taxBefore != null) {
+    nonRefundablePortion = Math.min(totalCreditAvailable, Math.max(0, taxBefore));
+    const unusedNonRefundable = totalCreditAvailable - nonRefundablePortion;
+    // ACTC refundable cap: $1,700 per qualifying child (2024 + 2025), AND 15% of (earned − $2,500).
+    const actcCap = safeChildren * ACTC_REFUNDABLE_PER_CHILD[year];
+    const earnedIncomeBased = Math.max(0, earned - ACTC_EARNED_INCOME_THRESHOLD) * ACTC_RATE;
+    refundableActc = Math.min(unusedNonRefundable, actcCap, earnedIncomeBased);
+  }
 
   return {
     qualifyingChildren: safeChildren,
     otherDependents: safeOther,
     preliminaryCredit,
     phaseOutReduction,
-    appliedCredit,
+    appliedCredit: nonRefundablePortion + refundableActc,
     phaseOutThreshold,
+    nonRefundablePortion,
+    refundableActc,
   };
 }

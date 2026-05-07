@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, and } from "drizzle-orm";
-import { db, w2DataTable } from "@workspace/db";
+import { db, w2DataTable, clientsTable } from "@workspace/db";
 import {
   ListW2DataParams,
   CreateW2DataParams,
@@ -10,8 +10,56 @@ import {
   DeleteW2DataParams,
 } from "@workspace/api-zod";
 import { recalculateInBackground } from "../lib/taxReturnPipeline";
+import { validateW2 } from "../lib/w2Validation";
 
 const router: IRouter = Router();
+
+// Validation flags for all W-2s belonging to a client (mismatch SSNs, off-by-amount
+// withholding, year mismatch with client's filing year, etc.)
+router.get("/clients/:clientId/w2data/flags", async (req, res): Promise<void> => {
+  const params = ListW2DataParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const records = await db
+    .select()
+    .from(w2DataTable)
+    .where(eq(w2DataTable.clientId, params.data.clientId));
+  const [client] = await db
+    .select()
+    .from(clientsTable)
+    .where(eq(clientsTable.id, params.data.clientId));
+
+  const knownSsns = records.map((r) => r.employeeSSN).filter((s): s is string => !!s);
+
+  const out = records.map((r) => ({
+    w2Id: r.id,
+    flags: validateW2(
+      {
+        taxYear: r.taxYear,
+        employerName: r.employerName,
+        employerEin: r.employerEin,
+        employeeSSN: r.employeeSSN,
+        wagesBox1: r.wagesBox1,
+        federalTaxWithheldBox2: r.federalTaxWithheldBox2,
+        socialSecurityWagesBox3: r.socialSecurityWagesBox3,
+        socialSecurityTaxBox4: r.socialSecurityTaxBox4,
+        medicareWagesBox5: r.medicareWagesBox5,
+        medicareTaxBox6: r.medicareTaxBox6,
+        stateTaxWithheldBox17: r.stateTaxWithheldBox17,
+        stateWagesBox16: r.stateWagesBox16,
+        stateCode: r.stateCode,
+      },
+      {
+        clientTaxYear: client?.taxYear,
+        clientState: client?.state,
+        knownSsns: knownSsns.filter((s) => s !== r.employeeSSN),
+      },
+    ),
+  }));
+  res.json(out);
+});
 
 router.get("/clients/:clientId/w2data", async (req, res): Promise<void> => {
   const params = ListW2DataParams.safeParse(req.params);

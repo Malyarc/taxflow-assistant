@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, numeric, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, numeric, timestamp, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -19,6 +19,8 @@ export const w2DataTable = pgTable("w2_data", {
   stateTaxWithheldBox17: numeric("state_tax_withheld_box17", { precision: 12, scale: 2 }),
   stateWagesBox16: numeric("state_wages_box16", { precision: 12, scale: 2 }),
   stateCode: text("state_code"),
+  /** Per-field bounding boxes in 0-1000 normalized image coordinates (set when AI extracted from image/PDF) */
+  fieldBoxes: jsonb("field_boxes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

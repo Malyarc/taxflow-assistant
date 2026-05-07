@@ -18,6 +18,10 @@ import {
   getFederalStandardDeduction,
   calculateStateTax,
   calculateChildTaxCredit,
+  calculateSelfEmploymentTax,
+  calculateNiit,
+  calculateQbi,
+  calculateAmt,
   runTaxCalculation,
   resolveTaxYear,
 } from "../../artifacts/api-server/src/lib/taxCalculator";
@@ -368,6 +372,172 @@ checkExact("Invalid state 'XX' → $0", calculateStateTax(80000, "XX", "single",
 
 // Filing status that doesn't exist falls back to single
 check("Unknown filing status falls back to single", calculateFederalTax(50000, "weird_status", 2024), calculateFederalTax(50000, "single", 2024));
+
+// ── H. Self-employment tax ──────────────────────────────────────────────────
+header("H. Self-employment tax");
+// Below SS wage base: full 15.3% on net earnings (= gross × 0.9235)
+{
+  const r = calculateSelfEmploymentTax(50000, 2024);
+  // net = 50000 * 0.9235 = 46175
+  // SS = 46175 * 0.124 = 5725.7
+  // Medicare = 46175 * 0.029 = 1339.075
+  // Total ≈ 7064.78
+  check("SE tax: $50k 2024 → ~$7,064.77", r.seTaxTotal, 7064.78);
+  check("SE deductible half: ~$3,532.39", r.deductibleHalf, 3532.39);
+}
+// Above SS wage base ($168,600 in 2024): only Medicare on excess
+{
+  const r = calculateSelfEmploymentTax(200000, 2024);
+  // net = 200000 * 0.9235 = 184700
+  // SS = min(184700, 168600) * 0.124 = 168600 * 0.124 = 20906.4
+  // Medicare = 184700 * 0.029 = 5356.3
+  // Total = 26262.7
+  check("SE tax: $200k 2024 → ~$26,262.70", r.seTaxTotal, 26262.7);
+}
+// 2025 SS wage base bumps to $176,100
+{
+  const r = calculateSelfEmploymentTax(200000, 2025);
+  // net = 184700, SS = min(184700, 176100) * 0.124 = 176100 * 0.124 = 21836.4
+  // Medicare = 5356.3
+  // Total = 27192.7
+  check("SE tax: $200k 2025 → ~$27,192.70 (higher SS base)", r.seTaxTotal, 27192.7);
+}
+checkExact("SE tax: $0 income → $0", calculateSelfEmploymentTax(0, 2024).seTaxTotal, 0);
+checkExact("SE tax: negative income → $0", calculateSelfEmploymentTax(-1000, 2024).seTaxTotal, 0);
+
+// ── I. NIIT ────────────────────────────────────────────────────────────────
+header("I. NIIT (Net Investment Income Tax)");
+// Below threshold: no NIIT
+{
+  const r = calculateNiit({ investmentIncome: 10000, modifiedAgi: 150000, filingStatus: "single" });
+  checkExact("NIIT: AGI $150k single (< $200k) → $0", r.niitTax, 0);
+}
+// Above threshold, full investment income taxed
+{
+  const r = calculateNiit({ investmentIncome: 10000, modifiedAgi: 250000, filingStatus: "single" });
+  // excess over threshold = 50000; min(10000, 50000) = 10000; * 3.8% = 380
+  checkExact("NIIT: $10k inv income, AGI $250k single → $380", r.niitTax, 380);
+}
+// Investment income greater than excess: limited by excess
+{
+  const r = calculateNiit({ investmentIncome: 100000, modifiedAgi: 220000, filingStatus: "single" });
+  // excess = 20000; min(100000, 20000) = 20000; * 3.8% = 760
+  checkExact("NIIT: $100k inv, AGI $220k single → $760 (capped by excess)", r.niitTax, 760);
+}
+// MFJ uses $250k threshold
+{
+  const r = calculateNiit({ investmentIncome: 50000, modifiedAgi: 300000, filingStatus: "married_filing_jointly" });
+  // threshold $250k, excess = 50000; min(50000, 50000) = 50000; * 3.8% = 1900
+  checkExact("NIIT: $50k inv, AGI $300k MFJ → $1,900", r.niitTax, 1900);
+}
+// MFS uses $125k threshold
+{
+  const r = calculateNiit({ investmentIncome: 20000, modifiedAgi: 200000, filingStatus: "married_filing_separately" });
+  // threshold $125k, excess = 75000; min(20000, 75000) = 20000; * 3.8% = 760
+  checkExact("NIIT: $20k inv, AGI $200k MFS → $760", r.niitTax, 760);
+}
+
+// ── J. QBI deduction ───────────────────────────────────────────────────────
+header("J. QBI deduction (§199A)");
+// Simple case: 20% of QBI, capped at 20% of taxable income
+{
+  const r = calculateQbi({ qbiIncome: 50000, taxableIncomeBeforeQbi: 100000 });
+  // preliminary = 50000 * 0.20 = 10000
+  // cap = 100000 * 0.20 = 20000
+  // final = min(10000, 20000) = 10000
+  checkExact("QBI: $50k income, $100k taxable → $10,000 deduction", r.finalDeduction, 10000);
+}
+// Capped by taxable income
+{
+  const r = calculateQbi({ qbiIncome: 50000, taxableIncomeBeforeQbi: 30000 });
+  // preliminary = 10000, cap = 30000 * 0.20 = 6000, final = 6000
+  checkExact("QBI: $50k QBI, $30k taxable → $6,000 (capped by 20% of taxable)", r.finalDeduction, 6000);
+}
+checkExact("QBI: $0 income → $0", calculateQbi({ qbiIncome: 0, taxableIncomeBeforeQbi: 100000 }).finalDeduction, 0);
+checkExact("QBI: negative QBI → $0", calculateQbi({ qbiIncome: -1000, taxableIncomeBeforeQbi: 100000 }).finalDeduction, 0);
+
+// ── K. AMT ─────────────────────────────────────────────────────────────────
+header("K. AMT (Alternative Minimum Tax)");
+// Low income: AMT exemption fully covers
+{
+  const r = calculateAmt({ taxableIncome: 50000, amtPreferences: 0, filingStatus: "single", regularTax: 4000, taxYear: 2024 });
+  checkExact("AMT: $50k taxable, no prefs → $0 AMT (covered by exemption)", r.amtTax, 0);
+}
+// Without preferences, AMT rarely kicks in for typical cases
+{
+  const r = calculateAmt({ taxableIncome: 200000, amtPreferences: 0, filingStatus: "single", regularTax: 35000, taxYear: 2024 });
+  // AMTI = 200000, exemption single 2024 = 85700, AMT base = 114300
+  // 26% of 114300 = 29718; AMT = max(0, 29718 - 35000) = 0 (regular tax higher)
+  checkExact("AMT: $200k taxable, no prefs, regular $35k → $0 (regular > AMT)", r.amtTax, 0);
+}
+// With significant preferences, AMT kicks in
+{
+  const r = calculateAmt({ taxableIncome: 200000, amtPreferences: 50000, filingStatus: "single", regularTax: 35000, taxYear: 2024 });
+  // AMTI = 250000, exemption 85700 (no phaseout since under 609k), AMT base = 164300
+  // 26% of 164300 = 42718; AMT delta = max(0, 42718 - 35000) = 7718
+  check("AMT: $50k preferences pushes AMT above regular → ~$7,718", r.amtTax, 7718);
+}
+// Exemption phase-out for very high income
+{
+  const r = calculateAmt({ taxableIncome: 700000, amtPreferences: 0, filingStatus: "single", regularTax: 200000, taxYear: 2024 });
+  // AMTI = 700000; phaseout = (700000 - 609350) * 0.25 = 22662.5; exemption = 85700 - 22662.5 = 63037.5
+  // AMT base = 700000 - 63037.5 = 636962.5
+  // 26% of 232600 + 28% of (636962.5 - 232600) = 60476 + 113221.5 = 173697.5
+  // AMT = max(0, 173697.5 - 200000) = 0 (regular tax larger)
+  checkExact("AMT: $700k income with phaseout, regular $200k → $0", r.amtTax, 0);
+}
+
+// ── L. ACTC (refundable Child Tax Credit) ──────────────────────────────────
+header("L. ACTC (refundable Additional Child Tax Credit)");
+// Low-income family with kids: ACTC kicks in when regular tax doesn't absorb full CTC
+{
+  // 2 children, low earnings, low tax owed
+  // CTC available: $4,000
+  // Tax before credit: $500 → non-refundable = $500, unused = $3,500
+  // ACTC cap: 2 × $1,700 = $3,400
+  // Earned income: $25,000 → 15% × ($25,000 - $2,500) = $3,375
+  // Refundable = min($3,500, $3,400, $3,375) = $3,375
+  // Total applied = $500 + $3,375 = $3,875
+  const r = calculateChildTaxCredit({
+    qualifyingChildren: 2, otherDependents: 0, agi: 25000,
+    filingStatus: "single", taxYear: 2024,
+    taxBeforeCredit: 500, earnedIncome: 25000,
+  });
+  checkExact("ACTC: 2 ch, $25k earned, $500 tax → $500 NR + $3,375 ACTC", r.appliedCredit, 3875);
+  checkExact("  refundable portion = $3,375", r.refundableActc, 3375);
+  checkExact("  non-refundable portion = $500", r.nonRefundablePortion, 500);
+}
+// Earned income too low — ACTC limited by 15% rule
+{
+  // 2 children, earned income $5,000
+  // ACTC capped by: 15% × ($5,000 - $2,500) = $375
+  const r = calculateChildTaxCredit({
+    qualifyingChildren: 2, otherDependents: 0, agi: 5000,
+    filingStatus: "single", taxYear: 2024,
+    taxBeforeCredit: 0, earnedIncome: 5000,
+  });
+  checkExact("ACTC: $5k earned → refundable = $375 (limited by 15% rule)", r.refundableActc, 375);
+}
+// Earned income just at threshold — no ACTC
+{
+  const r = calculateChildTaxCredit({
+    qualifyingChildren: 2, otherDependents: 0, agi: 2500,
+    filingStatus: "single", taxYear: 2024,
+    taxBeforeCredit: 0, earnedIncome: 2500,
+  });
+  checkExact("ACTC: $2.5k earned (= threshold) → $0 refundable", r.refundableActc, 0);
+}
+// High tax owed — full credit used non-refundable, no ACTC
+{
+  const r = calculateChildTaxCredit({
+    qualifyingChildren: 2, otherDependents: 0, agi: 80000,
+    filingStatus: "single", taxYear: 2024,
+    taxBeforeCredit: 10000, earnedIncome: 80000,
+  });
+  checkExact("ACTC: $10k tax owed > $4k CTC → full $4k non-refundable, $0 refundable", r.nonRefundablePortion, 4000);
+  checkExact("  refundable = $0", r.refundableActc, 0);
+  checkExact("  total applied = $4,000", r.appliedCredit, 4000);
+}
 
 // ── Summary ────────────────────────────────────────────────────────────────
 console.log("\n");

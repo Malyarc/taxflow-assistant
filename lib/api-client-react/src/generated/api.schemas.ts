@@ -266,6 +266,16 @@ export interface TaxReturn {
   /** @nullable */
   effectiveTaxRate?: number | null;
   /** @nullable */
+  selfEmploymentTax?: number | null;
+  /** @nullable */
+  qbiDeduction?: number | null;
+  /** @nullable */
+  amtTax?: number | null;
+  /** @nullable */
+  niitTax?: number | null;
+  /** @nullable */
+  additionalChildTaxCredit?: number | null;
+  /** @nullable */
   notes?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -316,6 +326,10 @@ export const AdjustmentAdjustmentType = {
   additional_income: "additional_income",
   withholding_adjustment: "withholding_adjustment",
   other: "other",
+  self_employment_income: "self_employment_income",
+  investment_income: "investment_income",
+  qbi_income: "qbi_income",
+  amt_preferences: "amt_preferences",
 } as const;
 
 export interface Adjustment {
@@ -340,6 +354,10 @@ export const CreateAdjustmentBodyAdjustmentType = {
   additional_income: "additional_income",
   withholding_adjustment: "withholding_adjustment",
   other: "other",
+  self_employment_income: "self_employment_income",
+  investment_income: "investment_income",
+  qbi_income: "qbi_income",
+  amt_preferences: "amt_preferences",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -360,6 +378,10 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   additional_income: "additional_income",
   withholding_adjustment: "withholding_adjustment",
   other: "other",
+  self_employment_income: "self_employment_income",
+  investment_income: "investment_income",
+  qbi_income: "qbi_income",
+  amt_preferences: "amt_preferences",
 } as const;
 
 export interface UpdateAdjustmentBody {

@@ -758,6 +758,16 @@ components:
           type: ["number", "null"]
         effectiveTaxRate:
           type: ["number", "null"]
+        selfEmploymentTax:
+          type: ["number", "null"]
+        qbiDeduction:
+          type: ["number", "null"]
+        amtTax:
+          type: ["number", "null"]
+        niitTax:
+          type: ["number", "null"]
+        additionalChildTaxCredit:
+          type: ["number", "null"]
         notes:
           type: ["string", "null"]
         createdAt:
@@ -819,7 +829,7 @@ components:
           type: integer
         adjustmentType:
           type: string
-          enum: [deduction, credit, additional_income, withholding_adjustment, other]
+          enum: [deduction, credit, additional_income, withholding_adjustment, other, self_employment_income, investment_income, qbi_income, amt_preferences]
         amount:
           type: number
         description:
@@ -841,7 +851,7 @@ components:
       properties:
         adjustmentType:
           type: string
-          enum: [deduction, credit, additional_income, withholding_adjustment, other]
+          enum: [deduction, credit, additional_income, withholding_adjustment, other, self_employment_income, investment_income, qbi_income, amt_preferences]
         amount:
           type: number
         description:
@@ -856,7 +866,7 @@ components:
       properties:
         adjustmentType:
           type: string
-          enum: [deduction, credit, additional_income, withholding_adjustment, other]
+          enum: [deduction, credit, additional_income, withholding_adjustment, other, self_employment_income, investment_income, qbi_income, amt_preferences]
         amount:
           type: number
         description:

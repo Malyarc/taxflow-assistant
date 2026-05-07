@@ -29,6 +29,7 @@ import type {
 } from "@workspace/api-client-react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { useState, useRef, useEffect } from "react";
+import * as React from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -40,6 +41,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { toast } from "@/hooks/use-toast";
 
 const FILING_STATUS_LABELS: Record<string, string> = {
@@ -298,6 +300,126 @@ function blankW2Form(): W2FormData {
   };
 }
 
+interface W2Flag { field: string | null; severity: "error" | "warning" | "info"; message: string }
+interface W2FlagsResponse { w2Id: number; flags: W2Flag[] }
+
+interface BoundingBox { ymin: number; xmin: number; ymax: number; xmax: number }
+type FieldBoxes = Record<string, BoundingBox>;
+
+const BOX_FIELD_LABELS: Record<string, string> = {
+  employerName: "Employer Name",
+  employerEin: "Employer EIN",
+  employeeSSN: "SSN",
+  wagesBox1: "Box 1 — Wages",
+  federalTaxWithheldBox2: "Box 2 — Fed W/H",
+  socialSecurityWagesBox3: "Box 3 — SS Wages",
+  socialSecurityTaxBox4: "Box 4 — SS Tax",
+  medicareWagesBox5: "Box 5 — Medicare Wages",
+  medicareTaxBox6: "Box 6 — Medicare Tax",
+  stateTaxWithheldBox17: "Box 17 — State W/H",
+  stateWagesBox16: "Box 16 — State Wages",
+  stateCode: "State Code",
+};
+
+function ReviewDialog({ clientId, rec, onClose }: { clientId: number; rec: any; onClose: () => void }) {
+  const boxes: FieldBoxes = (rec.fieldBoxes as FieldBoxes | null) ?? {};
+  const docId: number | null = rec.documentId ?? null;
+  const [highlightedField, setHighlightedField] = React.useState<string | null>(null);
+  const [imgSize, setImgSize] = React.useState<{ w: number; h: number } | null>(null);
+
+  const fieldEntries: Array<[string, unknown]> = [
+    ["employerName", rec.employerName],
+    ["employerEin", rec.employerEin],
+    ["employeeSSN", rec.employeeSSN],
+    ["wagesBox1", rec.wagesBox1],
+    ["federalTaxWithheldBox2", rec.federalTaxWithheldBox2],
+    ["socialSecurityWagesBox3", rec.socialSecurityWagesBox3],
+    ["socialSecurityTaxBox4", rec.socialSecurityTaxBox4],
+    ["medicareWagesBox5", rec.medicareWagesBox5],
+    ["medicareTaxBox6", rec.medicareTaxBox6],
+    ["stateTaxWithheldBox17", rec.stateTaxWithheldBox17],
+    ["stateWagesBox16", rec.stateWagesBox16],
+    ["stateCode", rec.stateCode],
+  ];
+
+  return (
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="max-w-6xl max-h-[90vh] overflow-auto">
+        <DialogHeader>
+          <DialogTitle>Review extracted W-2 — click a field to highlight on the source</DialogTitle>
+        </DialogHeader>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Left: source document with overlays */}
+          <div className="relative border rounded bg-muted overflow-hidden">
+            {docId == null ? (
+              <div className="p-8 text-sm text-muted-foreground text-center">No source document linked to this W-2 (manually entered).</div>
+            ) : (
+              <div className="relative inline-block w-full">
+                <img
+                  src={`/api/clients/${clientId}/documents/${docId}/content`}
+                  alt="Source W-2"
+                  className="w-full h-auto block"
+                  onLoad={(e) => {
+                    const img = e.currentTarget;
+                    setImgSize({ w: img.clientWidth, h: img.clientHeight });
+                  }}
+                />
+                {imgSize && Object.entries(boxes).map(([field, box]) => {
+                  const isHighlighted = highlightedField === field;
+                  // Boxes are 0-1000 normalized; multiply by image size / 1000
+                  const left = (box.xmin / 1000) * imgSize.w;
+                  const top = (box.ymin / 1000) * imgSize.h;
+                  const width = ((box.xmax - box.xmin) / 1000) * imgSize.w;
+                  const height = ((box.ymax - box.ymin) / 1000) * imgSize.h;
+                  return (
+                    <div
+                      key={field}
+                      onClick={() => setHighlightedField(field)}
+                      className={`absolute cursor-pointer transition-all ${isHighlighted ? "border-2 border-amber-500 bg-amber-200/40 z-10" : "border border-blue-400 bg-blue-200/20 hover:bg-blue-200/30"}`}
+                      style={{ left, top, width, height }}
+                      title={BOX_FIELD_LABELS[field] ?? field}
+                    />
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          {/* Right: extracted fields */}
+          <div className="space-y-1">
+            <div className="text-xs text-muted-foreground mb-2">
+              {Object.keys(boxes).length > 0
+                ? "Click a field below to highlight where Gemini found it on the source. Click a box on the source to highlight here."
+                : "No bounding boxes from extraction — Gemini didn't return them, or this W-2 wasn't AI-extracted."}
+            </div>
+            {fieldEntries.map(([field, val]) => {
+              const hasValue = val != null && val !== "";
+              const hasBox = field in boxes;
+              const isHighlighted = highlightedField === field;
+              return (
+                <div
+                  key={field}
+                  onClick={() => hasBox && setHighlightedField(field)}
+                  className={`flex justify-between items-center px-2 py-1.5 rounded text-sm transition-colors ${
+                    isHighlighted ? "bg-amber-100" : hasBox ? "hover:bg-blue-50 cursor-pointer" : ""
+                  }`}
+                >
+                  <span className={`text-muted-foreground ${!hasValue ? "italic" : ""}`}>{BOX_FIELD_LABELS[field] ?? field}</span>
+                  <span className="font-mono font-semibold">
+                    {field === "employeeSSN" && typeof val === "string" ? maskSSN(val) :
+                      typeof val === "number" ? fmt(val) :
+                      hasValue ? String(val) : "—"}
+                    {hasBox && <span className="ml-2 text-[10px] text-blue-600">▣</span>}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function W2DataTab({ clientId }: { clientId: number }) {
   const { data: w2Records, isLoading } = useListW2Data(clientId, {
     query: { queryKey: getListW2DataQueryKey(clientId) },
@@ -307,10 +429,26 @@ function W2DataTab({ clientId }: { clientId: number }) {
   const deleteW2 = useDeleteW2Data();
   const qc = useQueryClient();
 
+  // Pull validation flags (sanity checks) for all W-2s
+  const flagsQuery = useQuery<W2FlagsResponse[]>({
+    queryKey: ["w2-flags", clientId, w2Records?.length],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${clientId}/w2data/flags`);
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!w2Records && w2Records.length > 0,
+    retry: false,
+  });
+  const flagsByW2: Record<number, W2Flag[]> = {};
+  for (const item of flagsQuery.data ?? []) flagsByW2[item.w2Id] = item.flags;
+
   const [editingId, setEditingId] = useState<number | null>(null);
   const [showNew, setShowNew] = useState(false);
   const [newForm, setNewForm] = useState<W2FormData>(blankW2Form());
   const [editForms, setEditForms] = useState<Record<number, W2FormData>>({});
+  const [reviewingId, setReviewingId] = useState<number | null>(null);
+  const reviewingRec = w2Records?.find((r) => r.id === reviewingId);
 
   function toPayload(f: W2FormData) {
     return {
@@ -431,12 +569,9 @@ function W2DataTab({ clientId }: { clientId: number }) {
         ].map(({ key, label }) => (
           <div key={key} className="space-y-1">
             <Label className="text-xs text-muted-foreground">{label}</Label>
-            <Input
+            <CurrencyInput
               value={form[key as keyof W2FormData]}
-              onChange={(e) => onChange(key as keyof W2FormData, e.target.value)}
-              type="number"
-              step="0.01"
-              placeholder="0.00"
+              onChange={(v) => onChange(key as keyof W2FormData, v)}
             />
           </div>
         ))}
@@ -471,6 +606,9 @@ function W2DataTab({ clientId }: { clientId: number }) {
                   </>
                 ) : (
                   <>
+                    {(rec as any).documentId != null && (
+                      <Button size="sm" variant="outline" onClick={() => setReviewingId(rec.id)}>Review</Button>
+                    )}
                     <Button size="sm" variant="outline" onClick={() => startEdit(rec.id)}>Edit</Button>
                     <Button size="sm" variant="ghost" className="text-destructive" onClick={() => handleDelete(rec.id)}>Delete</Button>
                   </>
@@ -479,6 +617,23 @@ function W2DataTab({ clientId }: { clientId: number }) {
             </div>
           </CardHeader>
           <CardContent>
+            {(flagsByW2[rec.id]?.length ?? 0) > 0 && (
+              <div className="mb-4 space-y-1.5">
+                {flagsByW2[rec.id].map((flag, i) => {
+                  const tone =
+                    flag.severity === "error" ? "bg-red-50 border-red-200 text-red-900" :
+                    flag.severity === "warning" ? "bg-amber-50 border-amber-200 text-amber-900" :
+                    "bg-blue-50 border-blue-200 text-blue-900";
+                  const icon = flag.severity === "error" ? "⚠" : flag.severity === "warning" ? "▲" : "ℹ";
+                  return (
+                    <div key={i} className={`text-xs px-3 py-2 rounded border ${tone}`}>
+                      <span className="font-mono mr-1.5">{icon}</span>
+                      {flag.field && <span className="font-mono font-semibold">[{flag.field}]</span>} {flag.message}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
             {editingId === rec.id ? (
               <W2Fields
                 form={editForms[rec.id] ?? blankW2Form()}
@@ -526,6 +681,9 @@ function W2DataTab({ clientId }: { clientId: number }) {
         </Card>
       ) : (
         <Button variant="outline" onClick={() => setShowNew(true)}>+ Add W-2 Record</Button>
+      )}
+      {reviewingRec && (
+        <ReviewDialog clientId={clientId} rec={reviewingRec} onClose={() => setReviewingId(null)} />
       )}
     </div>
   );
@@ -610,11 +768,11 @@ function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: nu
           <div className="grid grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label>Additional Income</Label>
-              <Input value={additionalIncome} onChange={(e) => setAdditionalIncome(e.target.value)} type="number" step="0.01" placeholder="0.00" />
+              <CurrencyInput value={additionalIncome} onChange={setAdditionalIncome} />
             </div>
             <div className="space-y-2">
               <Label>Additional Deductions</Label>
-              <Input value={additionalDeductions} onChange={(e) => setAdditionalDeductions(e.target.value)} type="number" step="0.01" placeholder="0.00" />
+              <CurrencyInput value={additionalDeductions} onChange={setAdditionalDeductions} />
             </div>
             <div className="flex items-end pb-1 gap-3">
               <div className="flex items-center gap-2">
@@ -679,16 +837,21 @@ function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: nu
               <CardHeader><CardTitle className="text-sm">Tax Liability</CardTitle></CardHeader>
               <CardContent className="space-y-3 text-sm">
                 {[
-                  ["Federal Tax", taxReturn.federalTaxLiability],
+                  ["Federal Tax (total)", taxReturn.federalTaxLiability],
+                  ...((Number(taxReturn.selfEmploymentTax) || 0) > 0 ? [["  └─ SE Tax", taxReturn.selfEmploymentTax]] as Array<[string, unknown]> : []),
+                  ...((Number(taxReturn.amtTax) || 0) > 0 ? [["  └─ AMT", taxReturn.amtTax]] as Array<[string, unknown]> : []),
+                  ...((Number(taxReturn.niitTax) || 0) > 0 ? [["  └─ NIIT", taxReturn.niitTax]] as Array<[string, unknown]> : []),
+                  ...((Number(taxReturn.qbiDeduction) || 0) > 0 ? [["  └─ QBI Deduction", taxReturn.qbiDeduction]] as Array<[string, unknown]> : []),
+                  ...((Number(taxReturn.additionalChildTaxCredit) || 0) > 0 ? [["  └─ Refundable ACTC", taxReturn.additionalChildTaxCredit]] as Array<[string, unknown]> : []),
                   ["Federal Withheld", taxReturn.federalTaxWithheld],
                   ["Federal Refund/Owed", taxReturn.federalRefundOrOwed],
                   ["State Tax", taxReturn.stateTaxLiability],
                   ["State Withheld", taxReturn.stateTaxWithheld],
                   ["State Refund/Owed", taxReturn.stateRefundOrOwed],
                 ].map(([label, val]) => (
-                  <div key={String(label)} className="flex justify-between">
+                  <div key={String(label)} className={`flex justify-between ${String(label).startsWith("  └─") ? "text-xs" : ""}`}>
                     <span className="text-muted-foreground">{String(label)}</span>
-                    <span className={`font-mono font-semibold ${String(label).includes("Refund") && Number(val) > 0 ? "text-green-600" : String(label).includes("Refund") && Number(val) < 0 ? "text-amber-600" : ""}`}>
+                    <span className={`font-mono font-semibold ${String(label).includes("Refund/Owed") && Number(val) > 0 ? "text-green-600" : String(label).includes("Refund/Owed") && Number(val) < 0 ? "text-amber-600" : ""}`}>
                       {fmt(Number(val))}
                     </span>
                   </div>
@@ -729,7 +892,21 @@ function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: nu
             </>
           )}
 
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2 print:hidden">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                const link = document.createElement("a");
+                link.href = `/api/clients/${clientId}/tax-return/pdf?taxYear=${taxYear}`;
+                link.download = "";
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+              }}
+            >
+              Download PDF
+            </Button>
             <Button variant="outline" size="sm" onClick={() => window.print()}>
               Print return
             </Button>
@@ -1181,10 +1358,14 @@ function AdjustmentsTab({ clientId }: { clientId: number }) {
   }
 
   const TYPE_LABELS: Record<string, string> = {
-    deduction: "Deduction",
-    credit: "Credit",
+    deduction: "Deduction (above-the-line)",
+    credit: "Credit (non-refundable)",
     additional_income: "Additional Income",
-    withholding_adjustment: "Withholding Adj.",
+    withholding_adjustment: "Withholding / Estimated Payment",
+    self_employment_income: "Self-Employment Income",
+    investment_income: "Investment Income (NIIT)",
+    qbi_income: "Qualified Business Income (QBI)",
+    amt_preferences: "AMT Preferences",
     other: "Other",
   };
 
@@ -1209,7 +1390,7 @@ function AdjustmentsTab({ clientId }: { clientId: number }) {
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs">Amount</Label>
-                    <Input type="number" step="0.01" value={editForms[adj.id]?.amount} onChange={(e) => setEditForms((p) => ({ ...p, [adj.id]: { ...(p[adj.id] ?? blankAdj()), amount: e.target.value } }))} />
+                    <CurrencyInput value={editForms[adj.id]?.amount ?? ""} onChange={(v) => setEditForms((p) => ({ ...p, [adj.id]: { ...(p[adj.id] ?? blankAdj()), amount: v } }))} />
                   </div>
                 </div>
                 <div className="space-y-1">
@@ -1269,7 +1450,7 @@ function AdjustmentsTab({ clientId }: { clientId: number }) {
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Amount</Label>
-                <Input type="number" step="0.01" value={newForm.amount} onChange={(e) => setNewForm((p) => ({ ...p, amount: e.target.value }))} placeholder="0.00" />
+                <CurrencyInput value={newForm.amount} onChange={(v) => setNewForm((p) => ({ ...p, amount: v }))} />
               </div>
             </div>
             <div className="space-y-1">

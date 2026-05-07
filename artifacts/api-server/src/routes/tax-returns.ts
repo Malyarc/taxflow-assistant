@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { db, taxReturnsTable, clientsTable } from "@workspace/db";
 import {
   GetTaxReturnParams,
@@ -9,6 +9,7 @@ import {
   UpdateTaxReturnBody,
 } from "@workspace/api-zod";
 import { recalculateAndUpsertTaxReturn, computeTaxReturn } from "../lib/taxReturnPipeline";
+import { buildTaxReturnPdf } from "../lib/pdfExport";
 import {
   calculateFederalTaxWithBreakdown,
   calculateStateTaxWithBreakdown,
@@ -42,15 +43,85 @@ router.get("/clients/:clientId/tax-return", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-  const [taxReturn] = await db
-    .select()
-    .from(taxReturnsTable)
-    .where(eq(taxReturnsTable.clientId, params.data.clientId));
+  // Optional ?taxYear=YYYY query param. Default: client's current taxYear,
+  // falling back to most recently updated return if no exact match.
+  const yearRaw = req.query.taxYear;
+  let yearFilter: number | null = null;
+  if (typeof yearRaw === "string" && yearRaw.length > 0) {
+    const n = Number(yearRaw);
+    if (!Number.isFinite(n)) {
+      res.status(400).json({ error: "Invalid taxYear query parameter" });
+      return;
+    }
+    yearFilter = n;
+  } else {
+    const [client] = await db
+      .select()
+      .from(clientsTable)
+      .where(eq(clientsTable.id, params.data.clientId));
+    if (client) yearFilter = client.taxYear;
+  }
+
+  let taxReturn: typeof taxReturnsTable.$inferSelect | undefined;
+  if (yearFilter != null) {
+    [taxReturn] = await db
+      .select()
+      .from(taxReturnsTable)
+      .where(and(eq(taxReturnsTable.clientId, params.data.clientId), eq(taxReturnsTable.taxYear, yearFilter)));
+  }
+  // Fallback: most recently updated return for this client (if year-filtered miss)
+  if (!taxReturn) {
+    [taxReturn] = await db
+      .select()
+      .from(taxReturnsTable)
+      .where(eq(taxReturnsTable.clientId, params.data.clientId))
+      .orderBy(desc(taxReturnsTable.updatedAt))
+      .limit(1);
+  }
   if (!taxReturn) {
     res.status(404).json({ error: "Tax return not found" });
     return;
   }
   res.json(mapReturn(taxReturn));
+});
+
+// List all tax returns for a client (one per year that's been calculated)
+router.get("/clients/:clientId/tax-returns", async (req, res): Promise<void> => {
+  const params = GetTaxReturnParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const returns = await db
+    .select()
+    .from(taxReturnsTable)
+    .where(eq(taxReturnsTable.clientId, params.data.clientId))
+    .orderBy(desc(taxReturnsTable.taxYear));
+  res.json(returns.map(mapReturn));
+});
+
+// PDF download of the tax return summary
+router.get("/clients/:clientId/tax-return/pdf", async (req, res): Promise<void> => {
+  const params = GetTaxReturnParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const yearRaw = req.query.taxYear;
+  const overrideYear = typeof yearRaw === "string" && Number.isFinite(Number(yearRaw))
+    ? Number(yearRaw)
+    : undefined;
+  const computed = await computeTaxReturn(params.data.clientId, overrideYear ? { taxYear: overrideYear } : {});
+  if (!computed) {
+    res.status(404).json({ error: "Client not found" });
+    return;
+  }
+  const pdf = await buildTaxReturnPdf(computed.client, computed.result);
+  const fileName = `tax-return-${computed.client.firstName}-${computed.client.lastName}-${computed.result.taxYear}.pdf`.replace(/\s+/g, "_");
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+  res.setHeader("Content-Length", pdf.length.toString());
+  res.send(pdf);
 });
 
 // Compute (without saving) the tax return for any specified year. Used by the
@@ -82,20 +153,33 @@ router.get("/clients/:clientId/tax-return/breakdown", async (req, res): Promise<
     res.status(400).json({ error: params.error.message });
     return;
   }
-  const [taxReturn] = await db
-    .select()
-    .from(taxReturnsTable)
-    .where(eq(taxReturnsTable.clientId, params.data.clientId));
-  if (!taxReturn) {
-    res.status(404).json({ error: "Tax return not found" });
-    return;
-  }
   const [client] = await db
     .select()
     .from(clientsTable)
     .where(eq(clientsTable.id, params.data.clientId));
   if (!client) {
     res.status(404).json({ error: "Client not found" });
+    return;
+  }
+  // Match the year on the saved row, falling back to most recent if no exact-year row.
+  const yearRaw = req.query.taxYear;
+  const yearFilter = typeof yearRaw === "string" && yearRaw.length > 0 && Number.isFinite(Number(yearRaw))
+    ? Number(yearRaw)
+    : client.taxYear;
+  let [taxReturn] = await db
+    .select()
+    .from(taxReturnsTable)
+    .where(and(eq(taxReturnsTable.clientId, params.data.clientId), eq(taxReturnsTable.taxYear, yearFilter)));
+  if (!taxReturn) {
+    [taxReturn] = await db
+      .select()
+      .from(taxReturnsTable)
+      .where(eq(taxReturnsTable.clientId, params.data.clientId))
+      .orderBy(desc(taxReturnsTable.updatedAt))
+      .limit(1);
+  }
+  if (!taxReturn) {
+    res.status(404).json({ error: "Tax return not found" });
     return;
   }
 
