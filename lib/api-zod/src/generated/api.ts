@@ -32,6 +32,16 @@ export const ListClientsResponseItem = zod.object({
   ]),
   state: zod.string(),
   taxYear: zod.number(),
+  dependentsUnder17: zod
+    .number()
+    .describe(
+      "Number of qualifying children under 17 with SSN (drives Child Tax Credit).",
+    ),
+  otherDependents: zod
+    .number()
+    .describe(
+      "Other qualifying dependents (drives the $500 Credit for Other Dependents).",
+    ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -55,6 +65,8 @@ export const CreateClientBody = zod.object({
   ]),
   state: zod.string(),
   taxYear: zod.number(),
+  dependentsUnder17: zod.number().optional(),
+  otherDependents: zod.number().optional(),
   notes: zod.string().nullish(),
 });
 
@@ -80,6 +92,16 @@ export const GetClientResponse = zod.object({
   ]),
   state: zod.string(),
   taxYear: zod.number(),
+  dependentsUnder17: zod
+    .number()
+    .describe(
+      "Number of qualifying children under 17 with SSN (drives Child Tax Credit).",
+    ),
+  otherDependents: zod
+    .number()
+    .describe(
+      "Other qualifying dependents (drives the $500 Credit for Other Dependents).",
+    ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -108,6 +130,8 @@ export const UpdateClientBody = zod.object({
     .optional(),
   state: zod.string().optional(),
   taxYear: zod.number().optional(),
+  dependentsUnder17: zod.number().optional(),
+  otherDependents: zod.number().optional(),
   notes: zod.string().nullish(),
 });
 
@@ -126,6 +150,16 @@ export const UpdateClientResponse = zod.object({
   ]),
   state: zod.string(),
   taxYear: zod.number(),
+  dependentsUnder17: zod
+    .number()
+    .describe(
+      "Number of qualifying children under 17 with SSN (drives Child Tax Credit).",
+    ),
+  otherDependents: zod
+    .number()
+    .describe(
+      "Other qualifying dependents (drives the $500 Credit for Other Dependents).",
+    ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -532,6 +566,16 @@ export const GetRecentClientsResponseItem = zod.object({
   ]),
   state: zod.string(),
   taxYear: zod.number(),
+  dependentsUnder17: zod
+    .number()
+    .describe(
+      "Number of qualifying children under 17 with SSN (drives Child Tax Credit).",
+    ),
+  otherDependents: zod
+    .number()
+    .describe(
+      "Other qualifying dependents (drives the $500 Credit for Other Dependents).",
+    ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),

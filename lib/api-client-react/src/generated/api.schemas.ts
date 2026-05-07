@@ -30,6 +30,10 @@ export interface Client {
   filingStatus: ClientFilingStatus;
   state: string;
   taxYear: number;
+  /** Number of qualifying children under 17 with SSN (drives Child Tax Credit). */
+  dependentsUnder17: number;
+  /** Other qualifying dependents (drives the $500 Credit for Other Dependents). */
+  otherDependents: number;
   /** @nullable */
   notes?: string | null;
   createdAt: string;
@@ -56,6 +60,8 @@ export interface CreateClientBody {
   filingStatus: CreateClientBodyFilingStatus;
   state: string;
   taxYear: number;
+  dependentsUnder17?: number;
+  otherDependents?: number;
   /** @nullable */
   notes?: string | null;
 }
@@ -80,6 +86,8 @@ export interface UpdateClientBody {
   filingStatus?: UpdateClientBodyFilingStatus;
   state?: string;
   taxYear?: number;
+  dependentsUnder17?: number;
+  otherDependents?: number;
   /** @nullable */
   notes?: string | null;
 }

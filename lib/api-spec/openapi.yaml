@@ -493,7 +493,7 @@ components:
     # ── Client ──────────────────────────────────────────────────────────────
     Client:
       type: object
-      required: [id, firstName, lastName, email, filingStatus, state, taxYear, createdAt, updatedAt]
+      required: [id, firstName, lastName, email, filingStatus, state, taxYear, dependentsUnder17, otherDependents, createdAt, updatedAt]
       properties:
         id:
           type: integer
@@ -512,6 +512,12 @@ components:
           type: string
         taxYear:
           type: integer
+        dependentsUnder17:
+          type: integer
+          description: Number of qualifying children under 17 with SSN (drives Child Tax Credit).
+        otherDependents:
+          type: integer
+          description: Other qualifying dependents (drives the $500 Credit for Other Dependents).
         notes:
           type: ["string", "null"]
         createdAt:
@@ -540,6 +546,10 @@ components:
           type: string
         taxYear:
           type: integer
+        dependentsUnder17:
+          type: integer
+        otherDependents:
+          type: integer
         notes:
           type: ["string", "null"]
 
@@ -560,6 +570,10 @@ components:
         state:
           type: string
         taxYear:
+          type: integer
+        dependentsUnder17:
+          type: integer
+        otherDependents:
           type: integer
         notes:
           type: ["string", "null"]

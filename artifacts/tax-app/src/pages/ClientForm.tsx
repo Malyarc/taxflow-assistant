@@ -38,6 +38,8 @@ interface FormState {
   filingStatus: string;
   state: string;
   taxYear: number;
+  dependentsUnder17: number;
+  otherDependents: number;
   notes: string;
 }
 
@@ -49,6 +51,8 @@ const defaultForm: FormState = {
   filingStatus: "single",
   state: "CA",
   taxYear: new Date().getFullYear() - 1,
+  dependentsUnder17: 0,
+  otherDependents: 0,
   notes: "",
 };
 
@@ -82,6 +86,8 @@ export default function ClientForm({ editId }: Props) {
         // doesn't display anything for empty value.
         state: existing.state || "CA",
         taxYear: existing.taxYear || new Date().getFullYear() - 1,
+        dependentsUnder17: existing.dependentsUnder17 ?? 0,
+        otherDependents: existing.otherDependents ?? 0,
         notes: existing.notes || "",
       });
     }
@@ -97,7 +103,12 @@ export default function ClientForm({ editId }: Props) {
       toast({ title: "Please fill in required fields", variant: "destructive" });
       return;
     }
-    const payload = { ...form, taxYear: Number(form.taxYear) };
+    const payload = {
+      ...form,
+      taxYear: Number(form.taxYear),
+      dependentsUnder17: Number(form.dependentsUnder17) || 0,
+      otherDependents: Number(form.otherDependents) || 0,
+    };
     if (isEdit) {
       updateClient.mutate(
         { id: editId, data: { ...payload, filingStatus: payload.filingStatus as UpdateClientBodyFilingStatus } },
@@ -217,9 +228,35 @@ export default function ClientForm({ editId }: Props) {
                 type="number"
                 value={form.taxYear}
                 onChange={(e) => set("taxYear", Number(e.target.value))}
-                min={2020}
+                min={2024}
                 max={2025}
               />
+              <p className="text-xs text-muted-foreground">Supported: 2024 and 2025.</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Qualifying Children &lt; 17</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={form.dependentsUnder17}
+                  onChange={(e) => set("dependentsUnder17", Number(e.target.value))}
+                />
+                <p className="text-xs text-muted-foreground">Drives Child Tax Credit ($2,000/child).</p>
+              </div>
+              <div className="space-y-2">
+                <Label>Other Dependents</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={form.otherDependents}
+                  onChange={(e) => set("otherDependents", Number(e.target.value))}
+                />
+                <p className="text-xs text-muted-foreground">Drives $500 Credit for Other Dependents.</p>
+              </div>
             </div>
 
             <div className="space-y-2">

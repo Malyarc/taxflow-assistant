@@ -545,6 +545,14 @@ interface BreakdownResponse {
   filingStatus: string;
   federal: { taxableIncome: number; total: number; marginalRate: number; brackets: BracketBreakdownRow[] };
   state: { stateCode: string; stateName: string; hasIncomeTax: boolean; total: number; marginalRate: number; brackets: BracketBreakdownRow[] };
+  childTaxCredit: {
+    qualifyingChildren: number;
+    otherDependents: number;
+    preliminaryCredit: number;
+    phaseOutReduction: number;
+    appliedCredit: number;
+    phaseOutThreshold: number;
+  };
 }
 
 function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: number }) {
@@ -690,7 +698,35 @@ function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: nu
           </div>
 
           {breakdown.data && (
-            <BracketBreakdownPanel data={breakdown.data} />
+            <>
+              {breakdown.data.childTaxCredit.preliminaryCredit > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-sm">Child Tax Credit (auto-calculated)</CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-sm space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">
+                        {breakdown.data.childTaxCredit.qualifyingChildren} qualifying {breakdown.data.childTaxCredit.qualifyingChildren === 1 ? "child" : "children"} × $2,000
+                        {breakdown.data.childTaxCredit.otherDependents > 0 && ` + ${breakdown.data.childTaxCredit.otherDependents} other × $500`}
+                      </span>
+                      <span className="font-mono font-semibold">{fmt(breakdown.data.childTaxCredit.preliminaryCredit)}</span>
+                    </div>
+                    {breakdown.data.childTaxCredit.phaseOutReduction > 0 && (
+                      <div className="flex justify-between text-amber-700">
+                        <span>Phase-out reduction (AGI over ${breakdown.data.childTaxCredit.phaseOutThreshold.toLocaleString()})</span>
+                        <span className="font-mono">−{fmt(breakdown.data.childTaxCredit.phaseOutReduction)}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between border-t pt-2">
+                      <span className="font-semibold">Applied credit</span>
+                      <span className="font-mono font-semibold text-green-700">{fmt(breakdown.data.childTaxCredit.appliedCredit)}</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+              <BracketBreakdownPanel data={breakdown.data} />
+            </>
           )}
 
           <div className="flex justify-end">
@@ -707,6 +743,244 @@ function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: nu
         </Card>
       )}
     </div>
+  );
+}
+
+// ─── Year Compare Tab ────────────────────────────────────────────────────────
+
+interface PreviewResponse {
+  taxYear: number;
+  filingStatus: string;
+  stateCode: string;
+  totalIncome: number;
+  adjustedGrossIncome: number;
+  standardDeduction: number;
+  itemizedDeductions: number | null;
+  taxableIncome: number;
+  federalTaxLiability: number;
+  federalTaxWithheld: number;
+  federalRefundOrOwed: number;
+  stateTaxLiability: number;
+  stateTaxWithheld: number;
+  stateRefundOrOwed: number;
+  effectiveTaxRate: number;
+  manualCreditsApplied: number;
+  childTaxCredit: {
+    qualifyingChildren: number;
+    otherDependents: number;
+    preliminaryCredit: number;
+    phaseOutReduction: number;
+    appliedCredit: number;
+    phaseOutThreshold: number;
+  };
+  w2Count: number;
+}
+
+function YearCompareTab({ clientId }: { clientId: number }) {
+  const [yearA, setYearA] = useState(2024);
+  const [yearB, setYearB] = useState(2025);
+
+  const previewA = useQuery<PreviewResponse>({
+    queryKey: ["tax-return-preview", clientId, yearA],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${clientId}/tax-return/preview?taxYear=${yearA}`);
+      if (!res.ok) throw new Error("preview A failed");
+      return res.json();
+    },
+    retry: false,
+  });
+  const previewB = useQuery<PreviewResponse>({
+    queryKey: ["tax-return-preview", clientId, yearB],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${clientId}/tax-return/preview?taxYear=${yearB}`);
+      if (!res.ok) throw new Error("preview B failed");
+      return res.json();
+    },
+    retry: false,
+  });
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Compare two tax years side-by-side</CardTitle>
+        </CardHeader>
+        <CardContent className="text-sm text-muted-foreground">
+          Each side computes a complete return for that year using only the W-2s tagged with that year.
+          Adjustments and dependent counts apply to both sides. Nothing here is saved — the persisted
+          tax return on the Calculator tab is unaffected.
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <CompareColumn
+          label="Year A"
+          year={yearA}
+          onYearChange={setYearA}
+          preview={previewA.data}
+          isLoading={previewA.isLoading}
+        />
+        <CompareColumn
+          label="Year B"
+          year={yearB}
+          onYearChange={setYearB}
+          preview={previewB.data}
+          isLoading={previewB.isLoading}
+        />
+      </div>
+
+      {previewA.data && previewB.data && (
+        <DiffCard a={previewA.data} b={previewB.data} />
+      )}
+    </div>
+  );
+}
+
+function CompareColumn({
+  label,
+  year,
+  onYearChange,
+  preview,
+  isLoading,
+}: {
+  label: string;
+  year: number;
+  onYearChange: (y: number) => void;
+  preview: PreviewResponse | undefined;
+  isLoading: boolean;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center justify-between gap-3">
+          <CardTitle className="text-sm">{label}</CardTitle>
+          <Select value={String(year)} onValueChange={(v) => onYearChange(Number(v))}>
+            <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="2024">TY 2024</SelectItem>
+              <SelectItem value="2025">TY 2025</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <Skeleton className="h-72 w-full" />
+        ) : !preview ? (
+          <div className="text-sm text-muted-foreground">Loading...</div>
+        ) : (
+          <div className="space-y-3 text-sm">
+            <div className="text-xs text-muted-foreground">
+              {preview.w2Count} W-2 record{preview.w2Count === 1 ? "" : "s"} tagged for TY {preview.taxYear}
+            </div>
+            {preview.w2Count === 0 && (
+              <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                No W-2s tagged for {preview.taxYear}. Numbers reflect adjustments only.
+              </div>
+            )}
+            {[
+              ["Total Income", preview.totalIncome],
+              ["Adjusted Gross Income", preview.adjustedGrossIncome],
+              ["Standard Deduction", preview.standardDeduction],
+              ["Taxable Income", preview.taxableIncome],
+            ].map(([label, val]) => (
+              <div key={String(label)} className="flex justify-between">
+                <span className="text-muted-foreground">{String(label)}</span>
+                <span className="font-mono font-semibold">{fmt(Number(val))}</span>
+              </div>
+            ))}
+            <div className="border-t my-2"></div>
+            {[
+              ["Federal Tax", preview.federalTaxLiability],
+              ["Federal Withheld", preview.federalTaxWithheld],
+              ["CTC Applied", preview.childTaxCredit.appliedCredit],
+              ["Federal Refund/Owed", preview.federalRefundOrOwed],
+            ].map(([label, val]) => {
+              const isRefundLine = String(label) === "Federal Refund/Owed";
+              const num = Number(val);
+              return (
+                <div key={String(label)} className="flex justify-between">
+                  <span className="text-muted-foreground">{String(label)}</span>
+                  <span className={`font-mono font-semibold ${isRefundLine ? (num > 0 ? "text-green-700" : num < 0 ? "text-amber-700" : "") : ""}`}>
+                    {isRefundLine && num !== 0 ? (num > 0 ? "+" : "−") : ""}{fmt(Math.abs(num))}
+                  </span>
+                </div>
+              );
+            })}
+            <div className="border-t my-2"></div>
+            {[
+              ["State Tax", preview.stateTaxLiability],
+              ["State Withheld", preview.stateTaxWithheld],
+              ["State Refund/Owed", preview.stateRefundOrOwed],
+            ].map(([label, val]) => {
+              const isRefundLine = String(label) === "State Refund/Owed";
+              const num = Number(val);
+              return (
+                <div key={String(label)} className="flex justify-between">
+                  <span className="text-muted-foreground">{String(label)}</span>
+                  <span className={`font-mono font-semibold ${isRefundLine ? (num > 0 ? "text-green-700" : num < 0 ? "text-amber-700" : "") : ""}`}>
+                    {isRefundLine && num !== 0 ? (num > 0 ? "+" : "−") : ""}{fmt(Math.abs(num))}
+                  </span>
+                </div>
+              );
+            })}
+            <div className="border-t my-2"></div>
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Effective Tax Rate</span>
+              <span className="font-mono font-semibold">{pct(preview.effectiveTaxRate)}</span>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function DiffCard({ a, b }: { a: PreviewResponse; b: PreviewResponse }) {
+  const rows: { label: string; aVal: number; bVal: number }[] = [
+    { label: "Total Income", aVal: a.totalIncome, bVal: b.totalIncome },
+    { label: "AGI", aVal: a.adjustedGrossIncome, bVal: b.adjustedGrossIncome },
+    { label: "Standard Deduction", aVal: a.standardDeduction, bVal: b.standardDeduction },
+    { label: "Taxable Income", aVal: a.taxableIncome, bVal: b.taxableIncome },
+    { label: "Federal Tax", aVal: a.federalTaxLiability, bVal: b.federalTaxLiability },
+    { label: "State Tax", aVal: a.stateTaxLiability, bVal: b.stateTaxLiability },
+    { label: "Federal Refund/Owed", aVal: a.federalRefundOrOwed, bVal: b.federalRefundOrOwed },
+    { label: "State Refund/Owed", aVal: a.stateRefundOrOwed, bVal: b.stateRefundOrOwed },
+  ];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm">Year-over-year delta · TY{a.taxYear} → TY{b.taxYear}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <table className="w-full text-sm">
+          <thead className="text-muted-foreground text-xs">
+            <tr>
+              <th className="text-left pb-2">Metric</th>
+              <th className="text-right pb-2">TY {a.taxYear}</th>
+              <th className="text-right pb-2">TY {b.taxYear}</th>
+              <th className="text-right pb-2">Δ (B − A)</th>
+            </tr>
+          </thead>
+          <tbody className="font-mono">
+            {rows.map((row) => {
+              const delta = row.bVal - row.aVal;
+              return (
+                <tr key={row.label} className="border-t border-muted/60">
+                  <td className="py-1.5 font-sans">{row.label}</td>
+                  <td className="py-1.5 text-right">{fmt(row.aVal)}</td>
+                  <td className="py-1.5 text-right">{fmt(row.bVal)}</td>
+                  <td className={`py-1.5 text-right font-semibold ${delta > 0 ? "text-green-700" : delta < 0 ? "text-amber-700" : ""}`}>
+                    {delta === 0 ? "—" : `${delta > 0 ? "+" : "−"}${fmt(Math.abs(delta))}`}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -1060,7 +1334,14 @@ export default function ClientDetail() {
             <h2 className="text-3xl font-bold tracking-tight">{client.firstName} {client.lastName}</h2>
             <Badge variant="outline">{FILING_STATUS_LABELS[client.filingStatus] ?? client.filingStatus}</Badge>
           </div>
-          <p className="text-muted-foreground mt-1">{client.email} {client.phone ? `· ${client.phone}` : ""} {client.state ? `· ${client.state}` : ""} · TY{client.taxYear}</p>
+          <p className="text-muted-foreground mt-1">
+            {client.email}
+            {client.phone ? ` · ${client.phone}` : ""}
+            {client.state ? ` · ${client.state}` : ""}
+            {` · TY${client.taxYear}`}
+            {(client.dependentsUnder17 ?? 0) > 0 ? ` · ${client.dependentsUnder17} child${client.dependentsUnder17 === 1 ? "" : "ren"}` : ""}
+            {(client.otherDependents ?? 0) > 0 ? ` · ${client.otherDependents} other dep` : ""}
+          </p>
           {client.notes && <p className="text-sm mt-2 text-muted-foreground italic">{client.notes}</p>}
         </div>
         <div className="flex gap-2">
@@ -1074,10 +1355,11 @@ export default function ClientDetail() {
       </div>
 
       <Tabs defaultValue="documents">
-        <TabsList className="grid grid-cols-4 w-full max-w-xl">
+        <TabsList className="grid grid-cols-5 w-full max-w-2xl">
           <TabsTrigger value="documents">Documents</TabsTrigger>
           <TabsTrigger value="w2data">W-2 Data</TabsTrigger>
           <TabsTrigger value="calculator">Tax Calculator</TabsTrigger>
+          <TabsTrigger value="compare">Year Compare</TabsTrigger>
           <TabsTrigger value="adjustments">Adjustments</TabsTrigger>
         </TabsList>
 
@@ -1089,6 +1371,9 @@ export default function ClientDetail() {
         </TabsContent>
         <TabsContent value="calculator" className="mt-6">
           <TaxCalculatorTab clientId={clientId} taxYear={client.taxYear ?? 2024} />
+        </TabsContent>
+        <TabsContent value="compare" className="mt-6">
+          <YearCompareTab clientId={clientId} />
         </TabsContent>
         <TabsContent value="adjustments" className="mt-6">
           <AdjustmentsTab clientId={clientId} />

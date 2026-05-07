@@ -11,6 +11,10 @@ export const clientsTable = pgTable("clients", {
   filingStatus: text("filing_status").notNull().default("single"),
   state: text("state").notNull(),
   taxYear: integer("tax_year").notNull(),
+  /** Number of qualifying children under 17 with SSN (drives Child Tax Credit). */
+  dependentsUnder17: integer("dependents_under_17").notNull().default(0),
+  /** Other qualifying dependents (drives the $500 Credit for Other Dependents). */
+  otherDependents: integer("other_dependents").notNull().default(0),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),

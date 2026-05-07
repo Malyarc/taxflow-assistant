@@ -8,10 +8,11 @@ import {
   UpdateTaxReturnParams,
   UpdateTaxReturnBody,
 } from "@workspace/api-zod";
-import { recalculateAndUpsertTaxReturn } from "../lib/taxReturnPipeline";
+import { recalculateAndUpsertTaxReturn, computeTaxReturn } from "../lib/taxReturnPipeline";
 import {
   calculateFederalTaxWithBreakdown,
   calculateStateTaxWithBreakdown,
+  calculateChildTaxCredit,
   resolveTaxYear,
 } from "../lib/taxCalculator";
 
@@ -52,6 +53,28 @@ router.get("/clients/:clientId/tax-return", async (req, res): Promise<void> => {
   res.json(mapReturn(taxReturn));
 });
 
+// Compute (without saving) the tax return for any specified year. Used by the
+// year-comparison view to render TY2024 vs TY2025 side-by-side.
+router.get("/clients/:clientId/tax-return/preview", async (req, res): Promise<void> => {
+  const params = GetTaxReturnParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const yearRaw = req.query.taxYear;
+  const yearNum = typeof yearRaw === "string" ? Number(yearRaw) : NaN;
+  if (!Number.isFinite(yearNum) || yearNum < 2000 || yearNum > 2100) {
+    res.status(400).json({ error: "Query param taxYear must be a 4-digit year" });
+    return;
+  }
+  const computed = await computeTaxReturn(params.data.clientId, { taxYear: yearNum });
+  if (!computed) {
+    res.status(404).json({ error: "Client not found" });
+    return;
+  }
+  res.json(computed.result);
+});
+
 // Per-bracket breakdown for the current tax return — for the UI's "show your work" panel.
 router.get("/clients/:clientId/tax-return/breakdown", async (req, res): Promise<void> => {
   const params = GetTaxReturnParams.safeParse(req.params);
@@ -83,6 +106,13 @@ router.get("/clients/:clientId/tax-return/breakdown", async (req, res): Promise<
 
   const fed = calculateFederalTaxWithBreakdown(taxableIncome, filingStatus, year);
   const state = calculateStateTaxWithBreakdown(agi, client.state, filingStatus, year);
+  const ctc = calculateChildTaxCredit({
+    qualifyingChildren: client.dependentsUnder17 ?? 0,
+    otherDependents: client.otherDependents ?? 0,
+    agi,
+    filingStatus,
+    taxYear: year,
+  });
 
   res.json({
     taxYear: year,
@@ -101,6 +131,7 @@ router.get("/clients/:clientId/tax-return/breakdown", async (req, res): Promise<
       marginalRate: state.marginalRate,
       brackets: state.breakdown,
     },
+    childTaxCredit: ctc,
   });
 });
 

@@ -395,3 +395,64 @@ export function runTaxCalculation(params: {
 export function getStandardDeduction(filingStatus: string, taxYear?: number): number {
   return getFederalStandardDeduction(filingStatus, taxYear ?? LATEST_YEAR);
 }
+
+// ── Child Tax Credit (federal) ─────────────────────────────────────────────
+// 2024 + 2025 rules: $2,000 per qualifying child under 17 with SSN; phase out
+// $50 per $1,000 (or fraction) of AGI over $200,000 single ($400,000 MFJ).
+// Other dependents: $500 Credit for Other Dependents (subject to same phase-out).
+// We model only the non-refundable portion (ignoring Additional CTC refundable
+// component) for simplicity.
+const CTC_PER_CHILD = 2000;
+const ODC_PER_DEPENDENT = 500;
+
+export interface CtcCalculation {
+  /** Qualifying children counted */
+  qualifyingChildren: number;
+  /** Other dependents counted */
+  otherDependents: number;
+  /** Maximum credit before phase-out */
+  preliminaryCredit: number;
+  /** Dollars reduced due to AGI phase-out */
+  phaseOutReduction: number;
+  /** Final credit applied */
+  appliedCredit: number;
+  /** AGI threshold above which phase-out begins (filing-status dependent) */
+  phaseOutThreshold: number;
+}
+
+export function calculateChildTaxCredit(params: {
+  qualifyingChildren: number;
+  otherDependents: number;
+  agi: number;
+  filingStatus: string;
+  taxYear: number;
+}): CtcCalculation {
+  const { qualifyingChildren, otherDependents, agi, filingStatus } = params;
+  const safeChildren = Math.max(0, Math.floor(qualifyingChildren));
+  const safeOther = Math.max(0, Math.floor(otherDependents));
+
+  const preliminaryCredit =
+    safeChildren * CTC_PER_CHILD + safeOther * ODC_PER_DEPENDENT;
+
+  // MFJ uses $400k threshold; everyone else uses $200k. (MFS uses $200k as well.)
+  const phaseOutThreshold = filingStatus === "married_filing_jointly" ? 400000 : 200000;
+
+  let phaseOutReduction = 0;
+  if (agi > phaseOutThreshold) {
+    const excess = agi - phaseOutThreshold;
+    // Round up to next $1,000 increment, then $50 per increment
+    const increments = Math.ceil(excess / 1000);
+    phaseOutReduction = increments * 50;
+  }
+
+  const appliedCredit = Math.max(0, preliminaryCredit - phaseOutReduction);
+
+  return {
+    qualifyingChildren: safeChildren,
+    otherDependents: safeOther,
+    preliminaryCredit,
+    phaseOutReduction,
+    appliedCredit,
+    phaseOutThreshold,
+  };
+}

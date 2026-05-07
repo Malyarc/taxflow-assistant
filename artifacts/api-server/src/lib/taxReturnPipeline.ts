@@ -1,15 +1,11 @@
 /**
  * Single source of truth for tax return calculation + persistence.
  *
- * Used both by the explicit POST /clients/:id/tax-return route and by every
- * mutation that should auto-recalculate (client patch, W-2 add/edit/delete,
- * adjustment add/edit/delete, AI W-2 extraction).
- *
- * Behavior:
- *   - If a tax return already exists for the client, preserves the user's last
- *     manual settings (taxYear, useItemizedDeductions, additionalIncome=0 default).
- *   - If no return exists, creates one using the client's taxYear and defaults.
- *   - Always upserts (one row per client).
+ * Layered:
+ *   - computeTaxReturn(): pure calculation (no DB writes). Used by both the
+ *     persistent recalc path and the on-demand "/preview" endpoint.
+ *   - recalculateAndUpsertTaxReturn(): wraps compute + writes the result row.
+ *   - recalculateInBackground(): fire-and-forget version used by mutation routes.
  */
 
 import { eq, and } from "drizzle-orm";
@@ -20,7 +16,11 @@ import {
   adjustmentsTable,
   taxReturnsTable,
 } from "@workspace/db";
-import { runTaxCalculation } from "./taxCalculator";
+import {
+  runTaxCalculation,
+  calculateChildTaxCredit,
+  type CtcCalculation,
+} from "./taxCalculator";
 import { logger } from "./logger";
 
 export interface RecalcOverrides {
@@ -35,40 +35,61 @@ function toNum(val: string | null | undefined): number {
   return Number(val) || 0;
 }
 
-export async function recalculateAndUpsertTaxReturn(
+export interface ComputedTaxReturn {
+  /** Tax year actually computed for */
+  taxYear: number;
+  filingStatus: string;
+  stateCode: string;
+  totalIncome: number;
+  adjustedGrossIncome: number;
+  standardDeduction: number;
+  itemizedDeductions: number | null;
+  taxableIncome: number;
+  federalTaxLiability: number;
+  federalTaxWithheld: number;
+  federalRefundOrOwed: number;
+  stateTaxLiability: number;
+  stateTaxWithheld: number;
+  stateRefundOrOwed: number;
+  effectiveTaxRate: number;
+  /** Sum of CPA-authored "credit" adjustments applied (manual entries) */
+  manualCreditsApplied: number;
+  /** Auto-computed Child Tax Credit + Credit for Other Dependents */
+  childTaxCredit: CtcCalculation;
+  /** Number of W-2s included in the total wages */
+  w2Count: number;
+}
+
+/**
+ * Pure compute — no DB writes. Loads client/W-2/adjustments, computes the
+ * full tax return, and returns numeric results. Same logic used by the
+ * persistent recalc path and the preview endpoint.
+ */
+export async function computeTaxReturn(
   clientId: number,
   overrides: RecalcOverrides = {},
-): Promise<typeof taxReturnsTable.$inferSelect | null> {
-  // Load client (required)
+): Promise<{ result: ComputedTaxReturn; client: typeof clientsTable.$inferSelect } | null> {
   const [client] = await db
     .select()
     .from(clientsTable)
     .where(eq(clientsTable.id, clientId));
-  if (!client) {
-    logger.warn({ clientId }, "recalculateAndUpsertTaxReturn: client not found");
-    return null;
-  }
+  if (!client) return null;
 
-  // Existing return (if any) supplies defaults for fields we haven't been told about
   const [existing] = await db
     .select()
     .from(taxReturnsTable)
     .where(eq(taxReturnsTable.clientId, clientId));
 
-  // Tax year resolution:
-  //   1. Explicit override from /tax-return POST
-  //   2. Client's current taxYear (source of truth — recalcs follow client edits)
-  //   3. Fall back to existing tax return's year only if client.taxYear is missing
-  const taxYear = overrides.taxYear ?? client.taxYear ?? existing?.taxYear ?? new Date().getFullYear() - 1;
+  // Tax year resolution: explicit override > client.taxYear > existing.taxYear
+  const taxYear =
+    overrides.taxYear ?? client.taxYear ?? existing?.taxYear ?? new Date().getFullYear() - 1;
   const additionalIncome = overrides.additionalIncome ?? 0;
   const useItemizedDeductions =
     overrides.useItemizedDeductions ?? Boolean(existing?.itemizedDeductions);
   const additionalDeductions =
     overrides.additionalDeductions ?? toNum(existing?.itemizedDeductions);
 
-  // Sum W-2 totals — filter by the tax year being calculated.
-  // A client may have W-2s from multiple years on file; including a different
-  // year's wages would inflate income and produce a wrong return.
+  // W-2s for the requested year only
   const w2Records = await db
     .select()
     .from(w2DataTable)
@@ -84,17 +105,13 @@ export async function recalculateAndUpsertTaxReturn(
     (s, r) => s + toNum(r.stateTaxWithheldBox17),
     0,
   );
-  // Use the client's state of residence to determine state tax brackets.
-  // Falls back to a W-2's stateCode only if client.state is missing/empty.
-  // Use || (not ??) so empty strings also fall back.
-  // Note: this is a simplification — multi-state filings (resident + non-resident)
-  // are not supported. For most single-state filers this is correct.
+
   const stateCode =
     (client.state && client.state.trim()) ||
     w2Records.find((r) => r.stateCode)?.stateCode ||
     "";
 
-  // Apply CPA-authored adjustments (only "applied" ones)
+  // CPA-authored adjustments (only "applied" ones)
   const adjustments = await db
     .select()
     .from(adjustmentsTable)
@@ -116,7 +133,7 @@ export async function recalculateAndUpsertTaxReturn(
   const aboveTheLineAdjustments = deductionAdjustments + otherDeductions;
   const itemizedDeductions = additionalDeductions;
 
-  const result = runTaxCalculation({
+  const calc = runTaxCalculation({
     totalWages,
     additionalIncome: totalAdditionalIncome,
     filingStatus: client.filingStatus,
@@ -127,28 +144,77 @@ export async function recalculateAndUpsertTaxReturn(
     taxYear,
   });
 
+  const ctc = calculateChildTaxCredit({
+    qualifyingChildren: client.dependentsUnder17 ?? 0,
+    otherDependents: client.otherDependents ?? 0,
+    agi: calc.adjustedGrossIncome,
+    filingStatus: client.filingStatus,
+    taxYear,
+  });
+
   const federalRefundOrOwed =
     totalFederalWithheld +
     withholdingAdjustments -
-    result.federalTaxLiability +
-    creditAdjustments;
-  const stateRefundOrOwed = totalStateWithheld - result.stateTaxLiability;
+    calc.federalTaxLiability +
+    creditAdjustments +
+    ctc.appliedCredit;
+  const stateRefundOrOwed = totalStateWithheld - calc.stateTaxLiability;
+
+  const result: ComputedTaxReturn = {
+    taxYear: calc.taxYear,
+    filingStatus: client.filingStatus,
+    stateCode,
+    totalIncome: calc.totalIncome,
+    adjustedGrossIncome: calc.adjustedGrossIncome,
+    standardDeduction: calc.standardDeduction,
+    itemizedDeductions: useItemizedDeductions ? itemizedDeductions : null,
+    taxableIncome: calc.taxableIncome,
+    federalTaxLiability: calc.federalTaxLiability,
+    federalTaxWithheld: totalFederalWithheld + withholdingAdjustments,
+    federalRefundOrOwed,
+    stateTaxLiability: calc.stateTaxLiability,
+    stateTaxWithheld: totalStateWithheld,
+    stateRefundOrOwed,
+    effectiveTaxRate: calc.effectiveTaxRate,
+    manualCreditsApplied: creditAdjustments,
+    childTaxCredit: ctc,
+    w2Count: w2Records.length,
+  };
+
+  return { result, client };
+}
+
+export async function recalculateAndUpsertTaxReturn(
+  clientId: number,
+  overrides: RecalcOverrides = {},
+): Promise<typeof taxReturnsTable.$inferSelect | null> {
+  const computed = await computeTaxReturn(clientId, overrides);
+  if (!computed) {
+    logger.warn({ clientId }, "recalculateAndUpsertTaxReturn: client not found");
+    return null;
+  }
+  const { result } = computed;
+
+  const [existing] = await db
+    .select()
+    .from(taxReturnsTable)
+    .where(eq(taxReturnsTable.clientId, clientId));
 
   const payload = {
     clientId,
     taxYear: result.taxYear,
-    filingStatus: client.filingStatus,
+    filingStatus: result.filingStatus,
     totalIncome: String(result.totalIncome),
     adjustedGrossIncome: String(result.adjustedGrossIncome),
     standardDeduction: String(result.standardDeduction),
-    itemizedDeductions: useItemizedDeductions ? String(itemizedDeductions) : null,
+    itemizedDeductions: result.itemizedDeductions != null ? String(result.itemizedDeductions) : null,
     taxableIncome: String(result.taxableIncome),
     federalTaxLiability: String(result.federalTaxLiability),
-    federalTaxWithheld: String(totalFederalWithheld + withholdingAdjustments),
-    federalRefundOrOwed: String(federalRefundOrOwed),
+    federalTaxWithheld: String(result.federalTaxWithheld),
+    federalRefundOrOwed: String(result.federalRefundOrOwed),
     stateTaxLiability: String(result.stateTaxLiability),
-    stateTaxWithheld: String(totalStateWithheld),
-    stateRefundOrOwed: String(stateRefundOrOwed),
+    stateTaxWithheld: String(result.stateTaxWithheld),
+    stateRefundOrOwed: String(result.stateRefundOrOwed),
     effectiveTaxRate: String(result.effectiveTaxRate),
   };
 
