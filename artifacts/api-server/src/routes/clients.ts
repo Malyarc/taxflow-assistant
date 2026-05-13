@@ -46,15 +46,18 @@ router.post("/clients", async (req, res): Promise<void> => {
     res.status(400).json({ error: `Invalid US state code: "${parsed.data.state}". Use a 2-letter code like "CA" or "NY".` });
     return;
   }
-  // Drizzle's numeric() columns are typed as string for inserts. Convert the
-  // OpenAPI-typed `spouseEarnedIncome: number | null` to that shape.
-  const { spouseEarnedIncome, ...rest } = parsed.data;
+  // Drizzle's numeric() columns are typed as string for inserts. Convert
+  // OpenAPI-typed `number | null` fields to that shape.
+  const { spouseEarnedIncome, acaAnnualPremium, acaAnnualSlcsp, acaAdvanceAptc, ...rest } = parsed.data;
   const [client] = await db
     .insert(clientsTable)
     .values({
       ...rest,
       state: normalizedState ?? parsed.data.state,
       ...(spouseEarnedIncome != null ? { spouseEarnedIncome: String(spouseEarnedIncome) } : {}),
+      ...(acaAnnualPremium != null ? { acaAnnualPremium: String(acaAnnualPremium) } : {}),
+      ...(acaAnnualSlcsp != null ? { acaAnnualSlcsp: String(acaAnnualSlcsp) } : {}),
+      ...(acaAdvanceAptc != null ? { acaAdvanceAptc: String(acaAdvanceAptc) } : {}),
     })
     .returning();
   res.status(201).json(client);

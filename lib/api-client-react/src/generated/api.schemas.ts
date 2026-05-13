@@ -44,6 +44,28 @@ export interface Client {
   spouseEarnedIncome?: number | null;
   hsaIsFamilyCoverage?: boolean;
   iraCoveredByWorkplacePlan?: boolean;
+  /** Count of eligible K-12 educators on the return (0/1/2). Each gets up to $300 above-the-line. */
+  eligibleEducatorCount?: number;
+  /**
+   * Form 1095-A annual premium total (Marketplace plan).
+   * @nullable
+   */
+  acaAnnualPremium?: number | null;
+  /**
+   * Form 1095-A Second Lowest Cost Silver Plan annual benchmark.
+   * @nullable
+   */
+  acaAnnualSlcsp?: number | null;
+  /**
+   * Advance premium tax credit payments received during the year.
+   * @nullable
+   */
+  acaAdvanceAptc?: number | null;
+  /**
+   * Household size used for FPL determination. Defaults to filer + dependents if null.
+   * @nullable
+   */
+  acaHouseholdSize?: number | null;
   /** @nullable */
   notes?: string | null;
   createdAt: string;
@@ -81,6 +103,15 @@ export interface CreateClientBody {
   spouseEarnedIncome?: number | null;
   hsaIsFamilyCoverage?: boolean;
   iraCoveredByWorkplacePlan?: boolean;
+  eligibleEducatorCount?: number;
+  /** @nullable */
+  acaAnnualPremium?: number | null;
+  /** @nullable */
+  acaAnnualSlcsp?: number | null;
+  /** @nullable */
+  acaAdvanceAptc?: number | null;
+  /** @nullable */
+  acaHouseholdSize?: number | null;
   /** @nullable */
   notes?: string | null;
 }
@@ -116,6 +147,15 @@ export interface UpdateClientBody {
   spouseEarnedIncome?: number | null;
   hsaIsFamilyCoverage?: boolean;
   iraCoveredByWorkplacePlan?: boolean;
+  eligibleEducatorCount?: number;
+  /** @nullable */
+  acaAnnualPremium?: number | null;
+  /** @nullable */
+  acaAnnualSlcsp?: number | null;
+  /** @nullable */
+  acaAdvanceAptc?: number | null;
+  /** @nullable */
+  acaHouseholdSize?: number | null;
   /** @nullable */
   notes?: string | null;
 }
@@ -628,6 +668,13 @@ export const AdjustmentAdjustmentType = {
   qualified_education_expenses_aoc: "qualified_education_expenses_aoc",
   qualified_education_expenses_llc: "qualified_education_expenses_llc",
   retirement_contributions_savers: "retirement_contributions_savers",
+  educator_expenses: "educator_expenses",
+  student_loan_interest: "student_loan_interest",
+  foreign_tax_paid: "foreign_tax_paid",
+  residential_clean_energy: "residential_clean_energy",
+  energy_efficient_home: "energy_efficient_home",
+  energy_efficient_heatpump: "energy_efficient_heatpump",
+  ev_charger_property: "ev_charger_property",
 } as const;
 
 export interface Adjustment {
@@ -671,6 +718,13 @@ export const CreateAdjustmentBodyAdjustmentType = {
   qualified_education_expenses_aoc: "qualified_education_expenses_aoc",
   qualified_education_expenses_llc: "qualified_education_expenses_llc",
   retirement_contributions_savers: "retirement_contributions_savers",
+  educator_expenses: "educator_expenses",
+  student_loan_interest: "student_loan_interest",
+  foreign_tax_paid: "foreign_tax_paid",
+  residential_clean_energy: "residential_clean_energy",
+  energy_efficient_home: "energy_efficient_home",
+  energy_efficient_heatpump: "energy_efficient_heatpump",
+  ev_charger_property: "ev_charger_property",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -710,6 +764,13 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   qualified_education_expenses_aoc: "qualified_education_expenses_aoc",
   qualified_education_expenses_llc: "qualified_education_expenses_llc",
   retirement_contributions_savers: "retirement_contributions_savers",
+  educator_expenses: "educator_expenses",
+  student_loan_interest: "student_loan_interest",
+  foreign_tax_paid: "foreign_tax_paid",
+  residential_clean_energy: "residential_clean_energy",
+  energy_efficient_home: "energy_efficient_home",
+  energy_efficient_heatpump: "energy_efficient_heatpump",
+  ev_charger_property: "ev_charger_property",
 } as const;
 
 export interface UpdateAdjustmentBody {

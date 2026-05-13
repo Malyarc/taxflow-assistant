@@ -303,25 +303,72 @@ function pickStateStdDeduction(
   }
 }
 
+// ── Oregon federal-tax-paid subtraction (Form 40 Line 13) ──────────────────
+// OR allows a subtraction for federal income tax liability paid, capped and
+// phased out by AGI. Sources: OR Pub 17, Form 40 instructions.
+// 2024: max $8,250 ($4,125 MFS); phase-out from AGI $125,000 to $145,000.
+// 2025: values held same pending official Oregon publication.
+const OR_FED_TAX_SUBTRACTION: Record<TaxYear, { capMfs: number; capOther: number; phaseStart: number; phaseEnd: number }> = {
+  2024: { capMfs: 4125, capOther: 8250, phaseStart: 125000, phaseEnd: 145000 },
+  2025: { capMfs: 4250, capOther: 8500, phaseStart: 125000, phaseEnd: 145000 },
+};
+
+export function calculateOregonFederalTaxSubtraction(params: {
+  federalIncomeTaxPaid: number;
+  federalAgi: number;
+  filingStatus: string;
+  taxYear: number;
+}): { subtraction: number; cap: number; phaseOutFraction: number } {
+  const year = resolveTaxYear(params.taxYear);
+  const cfg = OR_FED_TAX_SUBTRACTION[year];
+  const isMfs = params.filingStatus === "married_filing_separately";
+  const cap = isMfs ? cfg.capMfs : cfg.capOther;
+  let phaseOutFraction = 1;
+  if (params.federalAgi >= cfg.phaseEnd) phaseOutFraction = 0;
+  else if (params.federalAgi > cfg.phaseStart) {
+    phaseOutFraction = (cfg.phaseEnd - params.federalAgi) / (cfg.phaseEnd - cfg.phaseStart);
+  }
+  const subtraction = Math.min(Math.max(0, params.federalIncomeTaxPaid), cap) * phaseOutFraction;
+  return { subtraction, cap, phaseOutFraction };
+}
+
 /**
  * Compute state tax liability using brackets for the given year.
  * Pass federal AGI; the state-specific standard deduction is applied internally.
+ *
+ * Optionally pass `federalIncomeTaxPaid` to apply state-specific federal tax
+ * subtractions (currently: Oregon Form 40 Line 13).
  */
 export function calculateStateTax(
   federalAgi: number,
   stateCode: string,
   filingStatus: string,
   taxYear: number,
+  options?: { federalIncomeTaxPaid?: number },
 ): number {
   const year = resolveTaxYear(taxYear);
   const yearData = STATE_TAX_DATA_BY_YEAR[year];
-  const info = yearData[stateCode.toUpperCase()];
+  const code = stateCode.toUpperCase();
+  const info = yearData[code];
   if (!info || !info.hasIncomeTax || !info.brackets || !info.standardDeduction) {
     return 0;
   }
   const status = filingStatus as StateFilingStatus;
   const stdDed = pickStateStdDeduction(info.standardDeduction, status);
-  const stateTaxable = Math.max(0, federalAgi - stdDed);
+
+  // OR-specific: subtract federal tax liability before applying state brackets
+  let oregonSubtraction = 0;
+  if (code === "OR" && options?.federalIncomeTaxPaid != null) {
+    const r = calculateOregonFederalTaxSubtraction({
+      federalIncomeTaxPaid: options.federalIncomeTaxPaid,
+      federalAgi,
+      filingStatus,
+      taxYear,
+    });
+    oregonSubtraction = r.subtraction;
+  }
+
+  const stateTaxable = Math.max(0, federalAgi - stdDed - oregonSubtraction);
   const brackets = pickStateBrackets(info.brackets, status);
   let tax = applyBrackets(stateTaxable, brackets);
 
@@ -913,6 +960,373 @@ export function calculateDependentCareCredit(params: {
   return {
     expenses, qualifyingChildren: qualifyingDependents, expenseLimit, earnedIncomeLimit,
     eligibleExpenses, rate, appliedCredit: eligibleExpenses * rate,
+  };
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Phase 1.5 — Everyday-filer credits and deductions
+// ════════════════════════════════════════════════════════════════════════════
+
+// ── Educator expenses (IRC §62(a)(2)(D)) ────────────────────────────────────
+// $300 above-the-line per eligible K-12 educator (teacher, instructor, counselor,
+// principal, aide working 900+ hours). MFJ with two eligible educators can
+// deduct up to $600 combined. 2024 and 2025: $300/educator.
+const EDUCATOR_PER_FILER_CAP_2024 = 300;
+const EDUCATOR_PER_FILER_CAP_2025 = 300;
+
+export interface EducatorExpensesCalculation {
+  expenses: number;
+  eligibleEducatorCount: number;
+  cap: number;
+  deductible: number;
+}
+
+export function calculateEducatorExpenses(params: {
+  expenses: number;
+  eligibleEducatorCount: number;
+  taxYear: number;
+}): EducatorExpensesCalculation {
+  const year = resolveTaxYear(params.taxYear);
+  const perFilerCap = year === 2025 ? EDUCATOR_PER_FILER_CAP_2025 : EDUCATOR_PER_FILER_CAP_2024;
+  const count = Math.max(0, Math.min(2, Math.floor(params.eligibleEducatorCount)));
+  const cap = count * perFilerCap;
+  const deductible = Math.min(Math.max(0, params.expenses), cap);
+  return {
+    expenses: params.expenses,
+    eligibleEducatorCount: count,
+    cap,
+    deductible,
+  };
+}
+
+// ── Student loan interest deduction (IRC §221) ──────────────────────────────
+// Up to $2,500 per return (NOT per filer). Phase-out by MAGI.
+// MAGI for SLI = AGI before SLI itself + foreign earned income exclusion (we
+// don't model foreign exclusions; approximating MAGI ≈ AGI-before-SLI).
+// MFS is ineligible per §221(e)(2).
+// 2024 thresholds: single/HoH $80k-$95k; MFJ $165k-$195k.
+// 2025 thresholds (Rev. Proc. 2024-40): single/HoH $85k-$100k; MFJ $170k-$200k.
+const STUDENT_LOAN_INTEREST_MAX = 2500;
+
+const SLI_PHASE_OUT: Record<TaxYear, Record<string, { start: number; end: number } | null>> = {
+  2024: {
+    single: { start: 80000, end: 95000 },
+    head_of_household: { start: 80000, end: 95000 },
+    qualifying_widow: { start: 165000, end: 195000 },
+    married_filing_jointly: { start: 165000, end: 195000 },
+    married_filing_separately: null,
+  },
+  2025: {
+    single: { start: 85000, end: 100000 },
+    head_of_household: { start: 85000, end: 100000 },
+    qualifying_widow: { start: 170000, end: 200000 },
+    married_filing_jointly: { start: 170000, end: 200000 },
+    married_filing_separately: null,
+  },
+};
+
+export interface StudentLoanInterestCalculation {
+  interestPaid: number;
+  cappedAtStatutoryMax: number;
+  magi: number;
+  phaseOutFraction: number;
+  deductible: number;
+  eligible: boolean;
+}
+
+export function calculateStudentLoanInterest(params: {
+  interestPaid: number;
+  magi: number;
+  filingStatus: string;
+  taxYear: number;
+}): StudentLoanInterestCalculation {
+  const year = resolveTaxYear(params.taxYear);
+  const phase = SLI_PHASE_OUT[year][params.filingStatus];
+
+  if (phase == null) {
+    return {
+      interestPaid: params.interestPaid,
+      cappedAtStatutoryMax: 0,
+      magi: params.magi,
+      phaseOutFraction: 0,
+      deductible: 0,
+      eligible: false,
+    };
+  }
+
+  const cappedAtStatutoryMax = Math.min(Math.max(0, params.interestPaid), STUDENT_LOAN_INTEREST_MAX);
+
+  let phaseOutFraction = 1;
+  if (params.magi >= phase.end) phaseOutFraction = 0;
+  else if (params.magi > phase.start) {
+    phaseOutFraction = (phase.end - params.magi) / (phase.end - phase.start);
+  }
+
+  return {
+    interestPaid: params.interestPaid,
+    cappedAtStatutoryMax,
+    magi: params.magi,
+    phaseOutFraction,
+    deductible: cappedAtStatutoryMax * phaseOutFraction,
+    eligible: true,
+  };
+}
+
+// ── Foreign Tax Credit (IRC §901, §904) ─────────────────────────────────────
+// Nonrefundable credit for foreign taxes paid on foreign-source income.
+// Simplified path (no Form 1116) under IRC §904(j): all foreign source income
+// is passive AND total qualifying foreign tax ≤ $300 single / $600 MFJ.
+// Above the threshold, real Form 1116 limits credit to (foreign source income
+// / total taxable income) × US tax. We don't model the Form 1116 limitation;
+// we apply the full foreign-tax-paid amount and flag the approximation.
+const FTC_SIMPLIFIED_LIMIT_SINGLE = 300;
+const FTC_SIMPLIFIED_LIMIT_MFJ = 600;
+
+export interface ForeignTaxCreditCalculation {
+  foreignTaxPaid: number;
+  filingStatus: string;
+  simplifiedLimit: number;
+  usedSimplifiedPath: boolean;
+  exceededSimplifiedLimit: boolean;
+  credit: number;
+}
+
+export function calculateForeignTaxCredit(params: {
+  foreignTaxPaid: number;
+  filingStatus: string;
+}): ForeignTaxCreditCalculation {
+  const isMfj =
+    params.filingStatus === "married_filing_jointly" ||
+    params.filingStatus === "qualifying_widow";
+  const simplifiedLimit = isMfj ? FTC_SIMPLIFIED_LIMIT_MFJ : FTC_SIMPLIFIED_LIMIT_SINGLE;
+  const amount = Math.max(0, params.foreignTaxPaid);
+  const exceededSimplifiedLimit = amount > simplifiedLimit;
+
+  return {
+    foreignTaxPaid: amount,
+    filingStatus: params.filingStatus,
+    simplifiedLimit,
+    usedSimplifiedPath: !exceededSimplifiedLimit,
+    exceededSimplifiedLimit,
+    credit: amount,
+  };
+}
+
+// ── Residential Energy Credits (Form 5695, Form 8911) ───────────────────────
+// 1. Residential Clean Energy Credit (IRC §25D): 30% of solar PV, solar water,
+//    wind, geothermal, fuel cell, battery storage (2023+). No annual cap, no
+//    income limit, indefinite carryforward. Through 2032 at 30%.
+// 2. Energy Efficient Home Improvement Credit (IRC §25C): 30% with annual caps.
+//    - General cap $1,200 (windows/doors/insulation/audit, with sub-caps)
+//    - Heat pump + biomass cap $2,000 (separate from general)
+//    - Max combined $3,200/year, no carryforward
+//    Sub-caps (windows $600, doors $500, audit $150) not modeled.
+// 3. EV Charger Property (IRC §30C, Form 8911): 30% of cost, max $1,000
+//    individual. Property must be in eligible census tract (assumed in scope).
+const CLEAN_ENERGY_RATE = 0.30;
+const EFFICIENT_HOME_RATE = 0.30;
+const EFFICIENT_HOME_GENERAL_CAP = 1200;
+const EFFICIENT_HOME_HEATPUMP_CAP = 2000;
+const EV_CHARGER_RATE = 0.30;
+const EV_CHARGER_CAP = 1000;
+
+export interface ResidentialEnergyCreditsCalculation {
+  cleanEnergySpend: number;
+  efficientHomeSpend: number;
+  heatPumpSpend: number;
+  evChargerSpend: number;
+  cleanEnergyCredit: number;
+  efficientHomeCredit: number;
+  heatPumpCredit: number;
+  evChargerCredit: number;
+  total: number;
+}
+
+export function calculateResidentialEnergyCredits(params: {
+  cleanEnergySpend: number;
+  efficientHomeSpend: number;
+  heatPumpSpend: number;
+  evChargerSpend: number;
+}): ResidentialEnergyCreditsCalculation {
+  const cleanEnergyBase = Math.max(0, params.cleanEnergySpend);
+  const efficientHomeBase = Math.max(0, params.efficientHomeSpend);
+  const heatPumpBase = Math.max(0, params.heatPumpSpend);
+  const evChargerBase = Math.max(0, params.evChargerSpend);
+
+  // §25D — no cap
+  const cleanEnergyCredit = cleanEnergyBase * CLEAN_ENERGY_RATE;
+  // §25C — annual caps split between general and heat pump
+  const efficientHomeCredit = Math.min(efficientHomeBase * EFFICIENT_HOME_RATE, EFFICIENT_HOME_GENERAL_CAP);
+  const heatPumpCredit = Math.min(heatPumpBase * EFFICIENT_HOME_RATE, EFFICIENT_HOME_HEATPUMP_CAP);
+  // §30C — $1,000 cap
+  const evChargerCredit = Math.min(evChargerBase * EV_CHARGER_RATE, EV_CHARGER_CAP);
+
+  return {
+    cleanEnergySpend: params.cleanEnergySpend,
+    efficientHomeSpend: params.efficientHomeSpend,
+    heatPumpSpend: params.heatPumpSpend,
+    evChargerSpend: params.evChargerSpend,
+    cleanEnergyCredit,
+    efficientHomeCredit,
+    heatPumpCredit,
+    evChargerCredit,
+    total: cleanEnergyCredit + efficientHomeCredit + heatPumpCredit + evChargerCredit,
+  };
+}
+
+// ── ACA Premium Tax Credit (Form 8962, IRC §36B) ────────────────────────────
+// Premium Tax Credit = min(annual premium, max(0, annual SLCSP − expected contribution))
+// Expected contribution = MAGI × applicable figure (contribution percentage based on FPL%).
+// Reconciles against advance APTC: net = computed PTC − advance APTC.
+//   Net > 0 → refundable credit (added to refund)
+//   Net < 0 → excess APTC owed (capped if FPL < 400%, full repayment if ≥ 400%)
+// ARPA/IRA extension (through 2025): no 400% FPL cliff, top rate 8.5%.
+// FPL guidelines used are from the PRIOR year (2024 PTC uses 2023 FPL).
+// MFS generally ineligible (some exceptions for abuse victims, not modeled).
+
+// 48-states + DC Federal Poverty Level guidelines (Pub 974)
+// AK and HI use higher amounts (not modeled; flagged as known limitation).
+const FPL_GUIDELINE_BY_PTC_YEAR: Record<TaxYear, { base: number; perAdditional: number }> = {
+  2024: { base: 14580, perAdditional: 5140 }, // 2023 FPL guidelines
+  2025: { base: 15060, perAdditional: 5380 }, // 2024 FPL guidelines
+};
+
+// Excess APTC repayment caps (Rev. Proc. 2023-34 for 2024; assume same struct 2025)
+const PTC_REPAYMENT_CAPS_2024 = {
+  // [maxFplFraction, capSingleHoHMfsQw, capMfj]
+  // Repayment is fully required when FPL% ≥ 400%
+  tiers: [
+    { fplLessThan: 2.00, capSingle: 375, capMfj: 750 },
+    { fplLessThan: 3.00, capSingle: 975, capMfj: 1950 },
+    { fplLessThan: 4.00, capSingle: 1625, capMfj: 3250 },
+  ],
+};
+const PTC_REPAYMENT_CAPS_2025 = {
+  tiers: [
+    { fplLessThan: 2.00, capSingle: 400, capMfj: 800 },
+    { fplLessThan: 3.00, capSingle: 1050, capMfj: 2100 },
+    { fplLessThan: 4.00, capSingle: 1750, capMfj: 3500 },
+  ],
+};
+
+function getApplicableFigure(fplFraction: number): number {
+  // ARPA/IRA enhanced PTC schedule (2021-2025): no 400% cliff, top rate 8.5%.
+  if (fplFraction < 1.50) return 0;
+  if (fplFraction < 2.00) return interpolateLinear(fplFraction, 1.50, 2.00, 0.00, 0.02);
+  if (fplFraction < 2.50) return interpolateLinear(fplFraction, 2.00, 2.50, 0.02, 0.04);
+  if (fplFraction < 3.00) return interpolateLinear(fplFraction, 2.50, 3.00, 0.04, 0.06);
+  if (fplFraction < 4.00) return interpolateLinear(fplFraction, 3.00, 4.00, 0.06, 0.085);
+  return 0.085;
+}
+
+function interpolateLinear(x: number, x1: number, x2: number, y1: number, y2: number): number {
+  return y1 + ((y2 - y1) * (x - x1)) / (x2 - x1);
+}
+
+export interface PremiumTaxCreditCalculation {
+  annualPremium: number;
+  annualSlcsp: number;
+  modifiedAgi: number;
+  householdSize: number;
+  fplGuideline: number;
+  fplFraction: number;
+  applicableFigure: number;
+  expectedContribution: number;
+  computedPtc: number;
+  advanceAptc: number;
+  repaymentCap: number;
+  netPtc: number; // > 0 = refundable credit; < 0 = excess APTC owed
+  eligible: boolean;
+}
+
+export function calculatePremiumTaxCredit(params: {
+  annualPremium: number;
+  annualSlcsp: number;
+  advanceAptc: number;
+  modifiedAgi: number;
+  householdSize: number;
+  filingStatus: string;
+  taxYear: number;
+}): PremiumTaxCreditCalculation {
+  const year = resolveTaxYear(params.taxYear);
+  const advanceAptc = Math.max(0, params.advanceAptc);
+
+  // MFS generally ineligible; must repay all advance APTC (uncapped).
+  if (params.filingStatus === "married_filing_separately") {
+    return {
+      annualPremium: params.annualPremium,
+      annualSlcsp: params.annualSlcsp,
+      modifiedAgi: params.modifiedAgi,
+      householdSize: params.householdSize,
+      fplGuideline: 0,
+      fplFraction: 0,
+      applicableFigure: 0,
+      expectedContribution: 0,
+      computedPtc: 0,
+      advanceAptc,
+      repaymentCap: Infinity,
+      netPtc: -advanceAptc,
+      eligible: false,
+    };
+  }
+
+  if (params.annualPremium <= 0 || params.annualSlcsp <= 0 || params.householdSize <= 0) {
+    return {
+      annualPremium: params.annualPremium,
+      annualSlcsp: params.annualSlcsp,
+      modifiedAgi: params.modifiedAgi,
+      householdSize: params.householdSize,
+      fplGuideline: 0,
+      fplFraction: 0,
+      applicableFigure: 0,
+      expectedContribution: 0,
+      computedPtc: 0,
+      advanceAptc,
+      repaymentCap: 0,
+      netPtc: -advanceAptc, // Any advance must be repaid if no PTC eligibility
+      eligible: false,
+    };
+  }
+
+  const fpl = FPL_GUIDELINE_BY_PTC_YEAR[year];
+  const fplGuideline = fpl.base + Math.max(0, params.householdSize - 1) * fpl.perAdditional;
+  const fplFraction = params.modifiedAgi / fplGuideline;
+  const applicableFigure = getApplicableFigure(fplFraction);
+  const expectedContribution = Math.max(0, params.modifiedAgi) * applicableFigure;
+  const ptcUncapped = Math.max(0, params.annualSlcsp - expectedContribution);
+  const computedPtc = Math.min(params.annualPremium, ptcUncapped);
+
+  let netPtc = computedPtc - advanceAptc;
+  let repaymentCap = Infinity;
+  if (netPtc < 0) {
+    const caps = year === 2025 ? PTC_REPAYMENT_CAPS_2025 : PTC_REPAYMENT_CAPS_2024;
+    const isMfj =
+      params.filingStatus === "married_filing_jointly" ||
+      params.filingStatus === "qualifying_widow";
+    for (const tier of caps.tiers) {
+      if (fplFraction < tier.fplLessThan) {
+        repaymentCap = isMfj ? tier.capMfj : tier.capSingle;
+        break;
+      }
+    }
+    // FPL ≥ 400%: no cap, full repayment
+    netPtc = Math.max(netPtc, -repaymentCap);
+  }
+
+  return {
+    annualPremium: params.annualPremium,
+    annualSlcsp: params.annualSlcsp,
+    modifiedAgi: params.modifiedAgi,
+    householdSize: params.householdSize,
+    fplGuideline,
+    fplFraction,
+    applicableFigure,
+    expectedContribution,
+    computedPtc,
+    advanceAptc,
+    repaymentCap,
+    netPtc,
+    eligible: true,
   };
 }
 

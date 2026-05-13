@@ -21,6 +21,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { CurrencyInput } from "@/components/ui/currency-input";
 import { toast } from "@/hooks/use-toast";
 
 const US_STATES = [
@@ -44,9 +45,15 @@ interface FormState {
   dependentsForCareCredit: number;
   taxpayerAge: number | "";
   spouseAge: number | "";
-  spouseEarnedIncome: number | "";
+  spouseEarnedIncome: string;
   hsaIsFamilyCoverage: boolean;
   iraCoveredByWorkplacePlan: boolean;
+  // Phase 1.5 — educator count, ACA PTC inputs
+  eligibleEducatorCount: number;
+  acaAnnualPremium: string;
+  acaAnnualSlcsp: string;
+  acaAdvanceAptc: string;
+  acaHouseholdSize: number | "";
   notes: string;
 }
 
@@ -66,6 +73,11 @@ const defaultForm: FormState = {
   spouseEarnedIncome: "",
   hsaIsFamilyCoverage: false,
   iraCoveredByWorkplacePlan: false,
+  eligibleEducatorCount: 0,
+  acaAnnualPremium: "",
+  acaAnnualSlcsp: "",
+  acaAdvanceAptc: "",
+  acaHouseholdSize: "",
   notes: "",
 };
 
@@ -112,9 +124,14 @@ export default function ClientForm({ editId }: Props) {
         dependentsForCareCredit: e.dependentsForCareCredit ?? 0,
         taxpayerAge: e.taxpayerAge ?? "",
         spouseAge: e.spouseAge ?? "",
-        spouseEarnedIncome: e.spouseEarnedIncome ?? "",
+        spouseEarnedIncome: e.spouseEarnedIncome != null ? String(e.spouseEarnedIncome) : "",
         hsaIsFamilyCoverage: e.hsaIsFamilyCoverage ?? false,
         iraCoveredByWorkplacePlan: e.iraCoveredByWorkplacePlan ?? false,
+        eligibleEducatorCount: e.eligibleEducatorCount ?? 0,
+        acaAnnualPremium: e.acaAnnualPremium != null ? String(e.acaAnnualPremium) : "",
+        acaAnnualSlcsp: e.acaAnnualSlcsp != null ? String(e.acaAnnualSlcsp) : "",
+        acaAdvanceAptc: e.acaAdvanceAptc != null ? String(e.acaAdvanceAptc) : "",
+        acaHouseholdSize: e.acaHouseholdSize ?? "",
         notes: existing.notes || "",
       });
     }
@@ -144,6 +161,11 @@ export default function ClientForm({ editId }: Props) {
       spouseEarnedIncome: form.spouseEarnedIncome === "" ? null : Number(form.spouseEarnedIncome),
       hsaIsFamilyCoverage: Boolean(form.hsaIsFamilyCoverage),
       iraCoveredByWorkplacePlan: Boolean(form.iraCoveredByWorkplacePlan),
+      eligibleEducatorCount: Number(form.eligibleEducatorCount) || 0,
+      acaAnnualPremium: form.acaAnnualPremium === "" ? null : Number(form.acaAnnualPremium),
+      acaAnnualSlcsp: form.acaAnnualSlcsp === "" ? null : Number(form.acaAnnualSlcsp),
+      acaAdvanceAptc: form.acaAdvanceAptc === "" ? null : Number(form.acaAdvanceAptc),
+      acaHouseholdSize: form.acaHouseholdSize === "" ? null : Number(form.acaHouseholdSize),
     };
     if (isEdit) {
       updateClient.mutate(
@@ -314,15 +336,12 @@ export default function ClientForm({ editId }: Props) {
               </div>
               <div className="space-y-2">
                 <Label>Spouse Earned Income</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  step={1}
+                <CurrencyInput
                   value={form.spouseEarnedIncome}
-                  onChange={(e) => set("spouseEarnedIncome", e.target.value === "" ? "" : Number(e.target.value))}
-                  placeholder="MFJ: must be > 0 for dep care credit"
+                  onChange={(v) => set("spouseEarnedIncome", v)}
+                  placeholder="0.00"
                 />
-                <p className="text-xs text-muted-foreground">Required for Dep Care Credit if MFJ.</p>
+                <p className="text-xs text-muted-foreground">MFJ: spouse's portion of household wages. Used for Dep Care Credit earned-income split.</p>
               </div>
             </div>
 
@@ -379,6 +398,71 @@ export default function ClientForm({ editId }: Props) {
                   IRA: Covered by workplace retirement plan
                   <p className="text-xs text-muted-foreground mt-1">Triggers IRA deduction phase-out by AGI.</p>
                 </Label>
+              </div>
+            </div>
+
+            <div className="border-t pt-4 space-y-4">
+              <div>
+                <h3 className="text-sm font-semibold">Phase 1.5: Educator + ACA PTC</h3>
+                <p className="text-xs text-muted-foreground">Optional fields for educator expenses and ACA Premium Tax Credit reconciliation.</p>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Eligible Educator Count (0, 1, or 2)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  max={2}
+                  step={1}
+                  value={form.eligibleEducatorCount}
+                  onChange={(e) => set("eligibleEducatorCount", Number(e.target.value))}
+                />
+                <p className="text-xs text-muted-foreground">K-12 teacher/counselor/aide. Each eligible educator gets $300 above-the-line.</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>ACA: Annual Premium (Form 1095-A)</Label>
+                  <CurrencyInput
+                    value={form.acaAnnualPremium}
+                    onChange={(v) => set("acaAnnualPremium", v)}
+                    placeholder="0.00"
+                  />
+                  <p className="text-xs text-muted-foreground">Total annual Marketplace plan premium.</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>ACA: Annual SLCSP (Form 1095-A)</Label>
+                  <CurrencyInput
+                    value={form.acaAnnualSlcsp}
+                    onChange={(v) => set("acaAnnualSlcsp", v)}
+                    placeholder="0.00"
+                  />
+                  <p className="text-xs text-muted-foreground">Second Lowest Cost Silver Plan benchmark.</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>ACA: Advance APTC Received</Label>
+                  <CurrencyInput
+                    value={form.acaAdvanceAptc}
+                    onChange={(v) => set("acaAdvanceAptc", v)}
+                    placeholder="0.00"
+                  />
+                  <p className="text-xs text-muted-foreground">Advance Premium Tax Credit paid during year.</p>
+                </div>
+                <div className="space-y-2">
+                  <Label>ACA: Household Size</Label>
+                  <Input
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={form.acaHouseholdSize}
+                    onChange={(e) => set("acaHouseholdSize", e.target.value === "" ? "" : Number(e.target.value))}
+                    placeholder="auto"
+                  />
+                  <p className="text-xs text-muted-foreground">For FPL%. Auto = filer + spouse (MFJ) + dependents.</p>
+                </div>
               </div>
             </div>
 

@@ -858,6 +858,11 @@ function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: nu
                   ...((Number((taxReturn as any).llcCredit) || 0) > 0 ? [["  └─ Education LLC", (taxReturn as any).llcCredit]] as Array<[string, unknown]> : []),
                   ...((Number((taxReturn as any).saversCredit) || 0) > 0 ? [["  └─ Saver's Credit", (taxReturn as any).saversCredit]] as Array<[string, unknown]> : []),
                   ...((Number((taxReturn as any).dependentCareCredit) || 0) > 0 ? [["  └─ Dependent Care Credit", (taxReturn as any).dependentCareCredit]] as Array<[string, unknown]> : []),
+                  ...((Number((taxReturn as any).educatorExpensesDeduction) || 0) > 0 ? [["  └─ Educator Expenses", (taxReturn as any).educatorExpensesDeduction]] as Array<[string, unknown]> : []),
+                  ...((Number((taxReturn as any).studentLoanInterestDeduction) || 0) > 0 ? [["  └─ Student Loan Interest", (taxReturn as any).studentLoanInterestDeduction]] as Array<[string, unknown]> : []),
+                  ...((Number((taxReturn as any).foreignTaxCredit) || 0) > 0 ? [["  └─ Foreign Tax Credit", (taxReturn as any).foreignTaxCredit]] as Array<[string, unknown]> : []),
+                  ...((Number((taxReturn as any).residentialEnergyCredits) || 0) > 0 ? [["  └─ Residential Energy Credits", (taxReturn as any).residentialEnergyCredits]] as Array<[string, unknown]> : []),
+                  ...((Number((taxReturn as any).premiumTaxCredit) || 0) !== 0 ? [[`  └─ Premium Tax Credit ${Number((taxReturn as any).premiumTaxCredit) > 0 ? "(refundable)" : "(repayment)"}`, (taxReturn as any).premiumTaxCredit]] as Array<[string, unknown]> : []),
                   ["Federal Withheld", taxReturn.federalTaxWithheld],
                   ["Federal Refund/Owed", taxReturn.federalRefundOrOwed],
                   ["State Tax", taxReturn.stateTaxLiability],
@@ -1754,6 +1759,14 @@ function AdjustmentsTab({ clientId }: { clientId: number }) {
     qualified_education_expenses_aoc: "Education Expenses — AOC (per student)",
     qualified_education_expenses_llc: "Education Expenses — LLC",
     retirement_contributions_savers: "Retirement Contributions (Saver's Credit)",
+    // Phase 1.5
+    educator_expenses: "Educator Expenses (K-12, $300/educator)",
+    student_loan_interest: "Student Loan Interest (1098-E)",
+    foreign_tax_paid: "Foreign Tax Paid (1099-DIV Box 7)",
+    residential_clean_energy: "Residential Clean Energy (§25D — solar/wind/geo, 30%)",
+    energy_efficient_home: "Energy Efficient Home (§25C — windows/doors/insulation)",
+    energy_efficient_heatpump: "Energy Efficient Heat Pump (§25C — heat pump/biomass)",
+    ev_charger_property: "EV Charger Property (§30C — Form 8911)",
     other: "Other",
   };
 

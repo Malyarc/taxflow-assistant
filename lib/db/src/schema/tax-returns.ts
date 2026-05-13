@@ -46,6 +46,14 @@ export const taxReturnsTable = pgTable(
     dependentCareCredit: numeric("dependent_care_credit", { precision: 12, scale: 2 }),
     // Schedule C
     scheduleCExpenses: numeric("schedule_c_expenses", { precision: 12, scale: 2 }),
+    // Phase 1.5: above-the-line deductions
+    educatorExpensesDeduction: numeric("educator_expenses_deduction", { precision: 12, scale: 2 }),
+    studentLoanInterestDeduction: numeric("student_loan_interest_deduction", { precision: 12, scale: 2 }),
+    // Phase 1.5: credits
+    foreignTaxCredit: numeric("foreign_tax_credit", { precision: 12, scale: 2 }),
+    residentialEnergyCredits: numeric("residential_energy_credits", { precision: 12, scale: 2 }),
+    /** Net Premium Tax Credit (Form 8962). Positive = refundable; negative = excess advance owed (capped). */
+    premiumTaxCredit: numeric("premium_tax_credit", { precision: 12, scale: 2 }),
     notes: text("notes"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),

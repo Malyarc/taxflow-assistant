@@ -626,6 +626,21 @@ components:
           type: boolean
         iraCoveredByWorkplacePlan:
           type: boolean
+        eligibleEducatorCount:
+          type: integer
+          description: Count of eligible K-12 educators on the return (0/1/2). Each gets up to $300 above-the-line.
+        acaAnnualPremium:
+          type: ["number", "null"]
+          description: Form 1095-A annual premium total (Marketplace plan).
+        acaAnnualSlcsp:
+          type: ["number", "null"]
+          description: Form 1095-A Second Lowest Cost Silver Plan annual benchmark.
+        acaAdvanceAptc:
+          type: ["number", "null"]
+          description: Advance premium tax credit payments received during the year.
+        acaHouseholdSize:
+          type: ["integer", "null"]
+          description: Household size used for FPL determination. Defaults to filer + dependents if null.
         notes:
           type: ["string", "null"]
         createdAt:
@@ -670,6 +685,16 @@ components:
           type: boolean
         iraCoveredByWorkplacePlan:
           type: boolean
+        eligibleEducatorCount:
+          type: integer
+        acaAnnualPremium:
+          type: ["number", "null"]
+        acaAnnualSlcsp:
+          type: ["number", "null"]
+        acaAdvanceAptc:
+          type: ["number", "null"]
+        acaHouseholdSize:
+          type: ["integer", "null"]
         notes:
           type: ["string", "null"]
 
@@ -707,6 +732,16 @@ components:
           type: boolean
         iraCoveredByWorkplacePlan:
           type: boolean
+        eligibleEducatorCount:
+          type: integer
+        acaAnnualPremium:
+          type: ["number", "null"]
+        acaAnnualSlcsp:
+          type: ["number", "null"]
+        acaAdvanceAptc:
+          type: ["number", "null"]
+        acaHouseholdSize:
+          type: ["integer", "null"]
         notes:
           type: ["string", "null"]
 
@@ -1199,7 +1234,7 @@ components:
           type: integer
         adjustmentType:
           type: string
-          enum: [deduction, credit, additional_income, withholding_adjustment, other, self_employment_income, investment_income, qbi_income, amt_preferences, medical_expenses, state_income_tax, state_property_tax, state_sales_tax, mortgage_interest, charitable_cash, charitable_property, hsa_contribution, ira_contribution_traditional, ira_contribution_roth, schedule_c_expenses, dependent_care_expenses, qualified_education_expenses_aoc, qualified_education_expenses_llc, retirement_contributions_savers]
+          enum: [deduction, credit, additional_income, withholding_adjustment, other, self_employment_income, investment_income, qbi_income, amt_preferences, medical_expenses, state_income_tax, state_property_tax, state_sales_tax, mortgage_interest, charitable_cash, charitable_property, hsa_contribution, ira_contribution_traditional, ira_contribution_roth, schedule_c_expenses, dependent_care_expenses, qualified_education_expenses_aoc, qualified_education_expenses_llc, retirement_contributions_savers, educator_expenses, student_loan_interest, foreign_tax_paid, residential_clean_energy, energy_efficient_home, energy_efficient_heatpump, ev_charger_property]
         amount:
           type: number
         description:
@@ -1221,7 +1256,7 @@ components:
       properties:
         adjustmentType:
           type: string
-          enum: [deduction, credit, additional_income, withholding_adjustment, other, self_employment_income, investment_income, qbi_income, amt_preferences, medical_expenses, state_income_tax, state_property_tax, state_sales_tax, mortgage_interest, charitable_cash, charitable_property, hsa_contribution, ira_contribution_traditional, ira_contribution_roth, schedule_c_expenses, dependent_care_expenses, qualified_education_expenses_aoc, qualified_education_expenses_llc, retirement_contributions_savers]
+          enum: [deduction, credit, additional_income, withholding_adjustment, other, self_employment_income, investment_income, qbi_income, amt_preferences, medical_expenses, state_income_tax, state_property_tax, state_sales_tax, mortgage_interest, charitable_cash, charitable_property, hsa_contribution, ira_contribution_traditional, ira_contribution_roth, schedule_c_expenses, dependent_care_expenses, qualified_education_expenses_aoc, qualified_education_expenses_llc, retirement_contributions_savers, educator_expenses, student_loan_interest, foreign_tax_paid, residential_clean_energy, energy_efficient_home, energy_efficient_heatpump, ev_charger_property]
         amount:
           type: number
         description:
@@ -1236,7 +1271,7 @@ components:
       properties:
         adjustmentType:
           type: string
-          enum: [deduction, credit, additional_income, withholding_adjustment, other, self_employment_income, investment_income, qbi_income, amt_preferences, medical_expenses, state_income_tax, state_property_tax, state_sales_tax, mortgage_interest, charitable_cash, charitable_property, hsa_contribution, ira_contribution_traditional, ira_contribution_roth, schedule_c_expenses, dependent_care_expenses, qualified_education_expenses_aoc, qualified_education_expenses_llc, retirement_contributions_savers]
+          enum: [deduction, credit, additional_income, withholding_adjustment, other, self_employment_income, investment_income, qbi_income, amt_preferences, medical_expenses, state_income_tax, state_property_tax, state_sales_tax, mortgage_interest, charitable_cash, charitable_property, hsa_contribution, ira_contribution_traditional, ira_contribution_roth, schedule_c_expenses, dependent_care_expenses, qualified_education_expenses_aoc, qualified_education_expenses_llc, retirement_contributions_savers, educator_expenses, student_loan_interest, foreign_tax_paid, residential_clean_energy, energy_efficient_home, energy_efficient_heatpump, ev_charger_property]
         amount:
           type: number
         description:

@@ -32,6 +32,12 @@ import {
   calculateRetirementDeductions,
   calculateSaversCredit,
   calculateDependentCareCredit,
+  calculateEducatorExpenses,
+  calculateStudentLoanInterest,
+  calculateForeignTaxCredit,
+  calculateResidentialEnergyCredits,
+  calculatePremiumTaxCredit,
+  calculateStateTax,
   getFederalStandardDeduction,
   type CtcCalculation,
   type SeTaxCalculation,
@@ -45,6 +51,11 @@ import {
   type RetirementDeductionsCalculation,
   type SaversCreditCalculation,
   type DependentCareCreditCalculation,
+  type EducatorExpensesCalculation,
+  type StudentLoanInterestCalculation,
+  type ForeignTaxCreditCalculation,
+  type ResidentialEnergyCreditsCalculation,
+  type PremiumTaxCreditCalculation,
 } from "./taxCalculator";
 import { logger } from "./logger";
 
@@ -231,6 +242,17 @@ export interface ComputedTaxReturn {
   saversCredit: SaversCreditCalculation;
   /** Dependent Care Credit (non-refundable) */
   dependentCareCredit: DependentCareCreditCalculation;
+  // ── Phase 1.5 line items ───────────────────────────────────────────────
+  /** Above-the-line educator expenses deduction ($300/educator) */
+  educatorExpenses: EducatorExpensesCalculation;
+  /** Above-the-line student loan interest deduction ($2,500 cap, MAGI phase-out) */
+  studentLoanInterest: StudentLoanInterestCalculation;
+  /** Foreign tax credit (simplified path or full Form 1116) */
+  foreignTaxCredit: ForeignTaxCreditCalculation;
+  /** Residential energy credits (§25D + §25C + §30C) */
+  residentialEnergyCredits: ResidentialEnergyCreditsCalculation;
+  /** Premium Tax Credit (Form 8962) — net refundable / excess repayment */
+  premiumTaxCredit: PremiumTaxCreditCalculation;
   /** Detailed breakdowns for transparency */
   detail: {
     se: SeTaxCalculation;
@@ -353,6 +375,15 @@ export async function computeTaxReturn(
   const llcExpensesAdj = sumByType("qualified_education_expenses_llc");
   const saversContributionsAdj = sumByType("retirement_contributions_savers");
 
+  // ── Phase 1.5 adjustment types ───────────────────────────────────────
+  const educatorExpensesAdj = sumByType("educator_expenses");
+  const studentLoanInterestAdj = sumByType("student_loan_interest");
+  const foreignTaxPaidAdj = sumByType("foreign_tax_paid");
+  const residentialCleanEnergyAdj = sumByType("residential_clean_energy");
+  const energyEfficientHomeAdj = sumByType("energy_efficient_home");
+  const energyEfficientHeatpumpAdj = sumByType("energy_efficient_heatpump");
+  const evChargerPropertyAdj = sumByType("ev_charger_property");
+
   // ── Step 1: Schedule C — net SE income before SE tax ─────────────────
   // Real Schedule C subtracts expenses from gross 1099-NEC income.
   // Cap expenses at gross (no NOL — that's Phase 2).
@@ -391,28 +422,57 @@ export async function computeTaxReturn(
   const totalIncomeProvisional = totalWages + ordinaryAdditionalIncome;
 
   // ── Step 3: Above-the-line deductions ───────────────────────────────
-  // SE half + HSA (no AGI phase-out) + legacy "deduction"/"other" + IRA (with phase-out).
-  // IRA phase-out uses MAGI ≈ AGI computed WITHOUT the IRA deduction itself
-  // (per IRS Pub 590-A). So compute AGI before IRA, then derive IRA, then final AGI.
+  // SE half + HSA + Educator (deterministic, no AGI phase-out) + legacy "deduction"/"other"
+  // + Student Loan Interest (MAGI phase-out before IRA) + IRA (MAGI phase-out before IRA).
+  //
+  // Order for MAGI bootstrap (per IRS Pub 590-A / Pub 970 ch. 4):
+  //   1. Compute deterministic deductions first (SE/2, HSA, educator, legacy).
+  //   2. SLI MAGI ≈ AGI excluding SLI itself; approximated as AGI before SLI and IRA.
+  //   3. IRA MAGI ≈ AGI excluding IRA itself; we fold SLI in (real Form 1040
+  //      worksheet uses iterative; this matches Pub 590-A's simplifying approach).
 
   const ageTaxpayer = client.taxpayerAge ?? 0;
+
+  // Educator — no AGI phase-out, deterministic
+  const educatorExpenses = calculateEducatorExpenses({
+    expenses: educatorExpensesAdj,
+    eligibleEducatorCount: client.eligibleEducatorCount ?? 0,
+    taxYear,
+  });
+  const educatorDeduction = educatorExpenses.deductible;
+
+  // First pass — provisional AGI for HSA upper-bound (HSA has no AGI phase-out
+  // but the call signature requires AGI; provisional value is fine).
   const retirementForLimits = calculateRetirementDeductions({
     hsaContribution: hsaContributionAdj,
     hsaIsFamilyCoverage: client.hsaIsFamilyCoverage ?? false,
     iraContribution: iraTraditionalAdj,
     iraCoveredByWorkplacePlan: client.iraCoveredByWorkplacePlan ?? false,
     age: ageTaxpayer,
-    // Provisional AGI — recomputed once we have the IRA deduction.
-    // We use AGI before IRA (i.e. above-the-line minus IRA) for the phase-out.
-    agi: Math.max(0, totalIncomeProvisional - (deductionAdjustments + otherDeductions + se.deductibleHalf + Math.min(hsaContributionAdj, /*upper-bound*/ 10000))),
+    agi: Math.max(0, totalIncomeProvisional - (deductionAdjustments + otherDeductions + se.deductibleHalf + educatorDeduction + Math.min(hsaContributionAdj, /*upper-bound*/ 10000))),
     filingStatus: client.filingStatus,
     taxYear,
   });
   const hsaDeduction = retirementForLimits.hsaDeductible;
 
-  // AGI before IRA = total income - all above-the-line EXCEPT IRA deduction
-  const aboveTheLineExcludingIra =
-    deductionAdjustments + otherDeductions + se.deductibleHalf + hsaDeduction;
+  // Deterministic above-the-line subtotal — used as the MAGI baseline for SLI.
+  const aboveTheLineDeterministic =
+    deductionAdjustments + otherDeductions + se.deductibleHalf + hsaDeduction + educatorDeduction;
+
+  // Student loan interest — phase-out by MAGI ≈ AGI before SLI.
+  // Approximation: AGI before SLI but excluding IRA (matches Pub 970 worksheet's
+  // first-pass ordering: compute SLI first, then IRA using AGI that includes SLI).
+  const magiForSli = Math.max(0, totalIncomeProvisional - aboveTheLineDeterministic);
+  const studentLoanInterest = calculateStudentLoanInterest({
+    interestPaid: studentLoanInterestAdj,
+    magi: magiForSli,
+    filingStatus: client.filingStatus,
+    taxYear,
+  });
+  const sliDeduction = studentLoanInterest.deductible;
+
+  // IRA — phase-out by MAGI ≈ AGI before IRA. AGI before IRA includes SLI.
+  const aboveTheLineExcludingIra = aboveTheLineDeterministic + sliDeduction;
   const agiBeforeIra = Math.max(0, totalIncomeProvisional - aboveTheLineExcludingIra);
 
   // Recompute IRA deduction with the precise pre-IRA AGI
@@ -428,8 +488,7 @@ export async function computeTaxReturn(
   });
   const iraDeduction = retirement.iraDeductible;
 
-  const aboveTheLineAdjustments =
-    deductionAdjustments + otherDeductions + se.deductibleHalf + hsaDeduction + iraDeduction;
+  const aboveTheLineAdjustments = aboveTheLineExcludingIra + iraDeduction;
 
   // ── Step 4: Schedule A itemized vs Standard ────────────────────────
   // Compute Schedule A using AGI (medical 7.5% threshold uses AGI)
@@ -518,19 +577,42 @@ export async function computeTaxReturn(
     filingStatus: client.filingStatus,
   });
 
+  // ── Oregon federal-tax-paid subtraction (Form 40 Line 13) ──
+  // OR recomputes state tax with federal income tax (regular + AMT) subtracted
+  // from state taxable income, capped and phased out by AGI.
+  // We override `calc.stateTaxLiability` after federal tax is known.
+  let stateTaxLiability = calc.stateTaxLiability;
+  if ((stateCode ?? "").toUpperCase() === "OR") {
+    const federalIncomeTaxForOr = regularFederalTax + amt.amtTax;
+    stateTaxLiability = calculateStateTax(
+      calc.adjustedGrossIncome,
+      stateCode ?? "OR",
+      client.filingStatus,
+      taxYear,
+      { federalIncomeTaxPaid: federalIncomeTaxForOr },
+    );
+  }
+
   // Total federal liability (gross — before credits applied)
   const totalFederalLiability =
     regularFederalTax + amt.amtTax + niit.niitTax + se.seTaxTotal;
 
-  // ── Step 7: Non-refundable credits in IRS order ────────────────────
-  // CTC first (Form 1040 Line 19), then Schedule 3 credits (Line 20).
+  // ── Step 7: Non-refundable credits in IRS Form 1040 / Schedule 3 order ──
+  // Form 1040 Line 19: Child Tax Credit & Credit for Other Dependents
+  // Form 1040 Line 20: Schedule 3 Part I (nonrefundable) subtotal:
+  //   Line 1  — Foreign tax credit
+  //   Line 2  — Credit for child and dependent care expenses
+  //   Line 3  — Education credits (Form 8863, nonrefundable portion only)
+  //   Line 4  — Retirement savings contributions credit (Saver's, Form 8880)
+  //   Line 5a — Residential clean energy credit (§25D, Form 5695)
+  //   Line 5b — Energy efficient home improvement credit (§25C, Form 5695)
+  //   Line 6  — Other credits incl. alternative fuel vehicle refueling (§30C, Form 8911)
   // Each is capped at the remaining "income tax" (regular + AMT, NOT SE/NIIT).
   const incomeTaxOnly = regularFederalTax + amt.amtTax;
   let availableForNonRefundable = incomeTaxOnly;
 
-  // CTC handles its own refundable split. The non-refundable portion reduces
-  // availableForNonRefundable; refundable ACTC is separate.
-  const earnedIncome = totalWages + Math.max(0, netSeIncome - se.deductibleHalf);
+  // CTC nonrefundable (Line 19). The refundable ACTC portion is separate.
+  const earnedIncomeHousehold = totalWages + Math.max(0, netSeIncome - se.deductibleHalf);
   const ctc = calculateChildTaxCredit({
     qualifyingChildren: client.dependentsUnder17 ?? 0,
     otherDependents: client.otherDependents ?? 0,
@@ -538,33 +620,45 @@ export async function computeTaxReturn(
     filingStatus: client.filingStatus,
     taxYear,
     taxBeforeCredit: availableForNonRefundable,
-    earnedIncome,
+    earnedIncome: earnedIncomeHousehold,
   });
   availableForNonRefundable = Math.max(0, availableForNonRefundable - ctc.nonRefundablePortion);
 
-  // Saver's Credit (Form 8880) — non-refundable
-  const totalRetirementContribsForSavers =
-    iraTraditionalAdj + iraRothAdj + saversContributionsAdj;
-  const saversCredit = calculateSaversCredit({
+  // ── Schedule 3 Line 1: Foreign Tax Credit ──
+  const foreignTaxCredit = calculateForeignTaxCredit({
+    foreignTaxPaid: foreignTaxPaidAdj,
     filingStatus: client.filingStatus,
-    agi: calc.adjustedGrossIncome,
-    retirementContributions: totalRetirementContribsForSavers,
-    taxYear,
   });
-  const saversApplied = Math.min(saversCredit.appliedCredit, availableForNonRefundable);
-  availableForNonRefundable = Math.max(0, availableForNonRefundable - saversApplied);
+  const foreignTaxApplied = Math.min(foreignTaxCredit.credit, availableForNonRefundable);
+  availableForNonRefundable = Math.max(0, availableForNonRefundable - foreignTaxApplied);
 
-  // Education credits (Form 8863):
-  //   AOC — 60% non-refundable + 40% refundable (split inside the calc)
-  //   LLC — 100% non-refundable
-  // Build per-student AOC expenses array — we get a single aggregate from the
-  // adjustment, so divide by 1 (one student) by default. Real per-student detail
-  // is still TODO; for now the aggregate flows as one large expense and the
-  // function caps at $4k per student, so multiple students should be entered as
-  // multiple adjustments (one per student).
+  // ── Schedule 3 Line 2: Dependent Care Credit (Form 2441) ──
+  // MFJ earned-income limit: lesser of taxpayer's and spouse's individual earned income.
+  // Bug fix: previously passed combined household earned income as `earnedIncomeTaxpayer`,
+  // overstating the limit when spouse outearned taxpayer.
+  const isMfj =
+    client.filingStatus === "married_filing_jointly" ||
+    client.filingStatus === "qualifying_widow";
+  const spouseEarnedIncome = isMfj ? toNum(client.spouseEarnedIncome ?? null) : 0;
+  const taxpayerEarnedIncomeOnly = isMfj
+    ? Math.max(0, earnedIncomeHousehold - spouseEarnedIncome)
+    : earnedIncomeHousehold;
+  const dependentCareCredit = calculateDependentCareCredit({
+    expenses: dependentCareExpensesAdj,
+    qualifyingDependents: client.dependentsForCareCredit ?? 0,
+    earnedIncomeTaxpayer: taxpayerEarnedIncomeOnly,
+    earnedIncomeSpouse: spouseEarnedIncome,
+    agi: calc.adjustedGrossIncome,
+    filingStatus: client.filingStatus,
+  });
+  const depCareApplied = Math.min(dependentCareCredit.appliedCredit, availableForNonRefundable);
+  availableForNonRefundable = Math.max(0, availableForNonRefundable - depCareApplied);
+
+  // ── Schedule 3 Line 3: Education credits (Form 8863) ──
+  //   AOC: 60% non-refundable + 40% refundable (refundable split applied below)
+  //   LLC: 100% non-refundable
+  // AOC expenses are per-student; each adjustment row = one student's expenses.
   const aocExpensesPerStudent: number[] = [];
-  // Treat the aggregate as one student's expenses unless the user enters multiple
-  // adjustments — each adjustment row represents one student's expenses.
   for (const a of applied) {
     if (a.adjustmentType === "qualified_education_expenses_aoc") {
       aocExpensesPerStudent.push(toNum(a.amount));
@@ -581,47 +675,95 @@ export async function computeTaxReturn(
   const llcApplied = Math.min(educationCredits.llcApplied, availableForNonRefundable);
   availableForNonRefundable = Math.max(0, availableForNonRefundable - llcApplied);
 
-  // Dependent Care Credit (Form 2441) — non-refundable
-  const dependentCareCredit = calculateDependentCareCredit({
-    expenses: dependentCareExpensesAdj,
-    qualifyingDependents: client.dependentsForCareCredit ?? 0,
-    earnedIncomeTaxpayer: earnedIncome,
-    earnedIncomeSpouse: toNum(client.spouseEarnedIncome ?? null),
-    agi: calc.adjustedGrossIncome,
+  // ── Schedule 3 Line 4: Saver's Credit (Form 8880) ──
+  const totalRetirementContribsForSavers =
+    iraTraditionalAdj + iraRothAdj + saversContributionsAdj;
+  const saversCredit = calculateSaversCredit({
     filingStatus: client.filingStatus,
+    agi: calc.adjustedGrossIncome,
+    retirementContributions: totalRetirementContribsForSavers,
+    taxYear,
   });
-  const depCareApplied = Math.min(dependentCareCredit.appliedCredit, availableForNonRefundable);
-  availableForNonRefundable = Math.max(0, availableForNonRefundable - depCareApplied);
+  const saversApplied = Math.min(saversCredit.appliedCredit, availableForNonRefundable);
+  availableForNonRefundable = Math.max(0, availableForNonRefundable - saversApplied);
 
-  // ── Step 8: Refundable credits ──────────────────────────────────────
+  // ── Schedule 3 Line 5a/5b + Line 6: Residential energy + EV charger ──
+  const residentialEnergy = calculateResidentialEnergyCredits({
+    cleanEnergySpend: residentialCleanEnergyAdj,
+    efficientHomeSpend: energyEfficientHomeAdj,
+    heatPumpSpend: energyEfficientHeatpumpAdj,
+    evChargerSpend: evChargerPropertyAdj,
+  });
+  // §25D first (Line 5a), then §25C (Line 5b), then §30C (Line 6)
+  const cleanEnergyApplied = Math.min(residentialEnergy.cleanEnergyCredit, availableForNonRefundable);
+  availableForNonRefundable = Math.max(0, availableForNonRefundable - cleanEnergyApplied);
+  const efficientHomeApplied = Math.min(residentialEnergy.efficientHomeCredit, availableForNonRefundable);
+  availableForNonRefundable = Math.max(0, availableForNonRefundable - efficientHomeApplied);
+  const heatPumpApplied = Math.min(residentialEnergy.heatPumpCredit, availableForNonRefundable);
+  availableForNonRefundable = Math.max(0, availableForNonRefundable - heatPumpApplied);
+  const evChargerApplied = Math.min(residentialEnergy.evChargerCredit, availableForNonRefundable);
+  availableForNonRefundable = Math.max(0, availableForNonRefundable - evChargerApplied);
+  const residentialEnergyApplied =
+    cleanEnergyApplied + efficientHomeApplied + heatPumpApplied + evChargerApplied;
+
+  // ── Step 8: Refundable credits + Premium Tax Credit reconciliation ───
   // EITC — refundable, uses earned income + AGI
   const eitcInvestmentIncome = totalInvestmentIncomeForNiit;
   const eitc = calculateEitc({
     filingStatus: client.filingStatus,
     qualifyingChildren: client.dependentsUnder17 ?? 0,
-    earnedIncome,
+    earnedIncome: earnedIncomeHousehold,
     agi: calc.adjustedGrossIncome,
     investmentIncome: eitcInvestmentIncome,
     taxYear,
   });
 
+  // Premium Tax Credit (Form 8962, Sched 3 Line 8 refundable; Sched 2 Line 2 excess repayment)
+  // MAGI for PTC ≈ AGI (approximation; real MAGI adds back tax-exempt interest +
+  // foreign earned income exclusion + non-taxable Social Security — not modeled).
+  // Household size defaults to filer + dependents if not explicitly set.
+  const acaHouseholdSizeDefault =
+    1 +
+    (isMfj ? 1 : 0) +
+    (client.dependentsUnder17 ?? 0) +
+    (client.otherDependents ?? 0);
+  const acaHouseholdSize = client.acaHouseholdSize ?? acaHouseholdSizeDefault;
+  const premiumTaxCredit = calculatePremiumTaxCredit({
+    annualPremium: toNum(client.acaAnnualPremium ?? null),
+    annualSlcsp: toNum(client.acaAnnualSlcsp ?? null),
+    advanceAptc: toNum(client.acaAdvanceAptc ?? null),
+    modifiedAgi: calc.adjustedGrossIncome,
+    householdSize: acaHouseholdSize,
+    filingStatus: client.filingStatus,
+    taxYear,
+  });
+  // Positive netPtc → refundable credit. Negative → additional tax owed (Sched 2).
+  const netPremiumTaxCreditRefundable = Math.max(0, premiumTaxCredit.netPtc);
+  const excessAdvanceAptcOwed = Math.max(0, -premiumTaxCredit.netPtc);
+
   // Total credits applied (for refund/owe formula)
   const totalNonRefundableApplied =
     ctc.nonRefundablePortion +
-    saversApplied +
+    foreignTaxApplied +
+    depCareApplied +
     aocNonRefundableApplied +
     llcApplied +
-    depCareApplied;
+    saversApplied +
+    residentialEnergyApplied;
   const totalRefundableCreditsApplied =
     ctc.refundableActc +
     educationCredits.aocRefundable +
-    eitc.appliedCredit;
+    eitc.appliedCredit +
+    netPremiumTaxCreditRefundable;
   const totalCreditsAppliedForRefund =
     totalNonRefundableApplied + totalRefundableCreditsApplied;
 
+  // Excess advance APTC owed flows into total liability (Schedule 2 Line 2 additional tax).
+  const totalFederalLiabilityWithRepayment = totalFederalLiability + excessAdvanceAptcOwed;
+
   // Final refund/owe formula:
   //   refund = withheld + manual_credit_adj + (computed credits) - liability
-  //   liability already includes SE + NIIT + AMT + regular fed tax.
+  //   liability now includes SE + NIIT + AMT + regular fed tax + excess APTC repayment.
   //   Non-refundable credits cap themselves at incomeTaxOnly (above), so
   //   they can't over-refund.
   const federalRefundOrOwed =
@@ -629,12 +771,12 @@ export async function computeTaxReturn(
     withholdingAdjustments +
     creditAdjustments +
     totalCreditsAppliedForRefund -
-    totalFederalLiability;
+    totalFederalLiabilityWithRepayment;
 
-  const stateRefundOrOwed = totalStateWithheld - calc.stateTaxLiability;
+  const stateRefundOrOwed = totalStateWithheld - stateTaxLiability;
 
   // Effective tax rate uses the full federal + state liability (before credits)
-  const totalTaxBurden = totalFederalLiability + calc.stateTaxLiability;
+  const totalTaxBurden = totalFederalLiabilityWithRepayment + stateTaxLiability;
   const effectiveRate = calc.totalIncome > 0 ? totalTaxBurden / calc.totalIncome : 0;
 
   const result: ComputedTaxReturn = {
@@ -647,10 +789,10 @@ export async function computeTaxReturn(
     itemizedDeductions: useItemizedDeductions ? itemizedTotal : null,
     qbiDeduction: qbi.finalDeduction,
     taxableIncome: taxableAfterQbi,
-    federalTaxLiability: totalFederalLiability,
+    federalTaxLiability: totalFederalLiabilityWithRepayment,
     federalTaxWithheld: totalFederalWithheld + withholdingAdjustments,
     federalRefundOrOwed,
-    stateTaxLiability: calc.stateTaxLiability,
+    stateTaxLiability,
     stateTaxWithheld: totalStateWithheld,
     stateRefundOrOwed,
     effectiveTaxRate: effectiveRate,
@@ -670,6 +812,11 @@ export async function computeTaxReturn(
     educationCredits,
     saversCredit,
     dependentCareCredit,
+    educatorExpenses,
+    studentLoanInterest,
+    foreignTaxCredit,
+    residentialEnergyCredits: residentialEnergy,
+    premiumTaxCredit,
     detail: { se, niit, qbi, amt, capitalGains: capGains },
     w2Count: w2Records.length,
     form1099Count: form1099Records.length,
@@ -747,6 +894,13 @@ export async function recalculateAndUpsertTaxReturn(
     dependentCareCredit: String(result.dependentCareCredit.appliedCredit),
     // Phase 1: Schedule C
     scheduleCExpenses: String(result.scheduleCExpenses),
+    // Phase 1.5: Above-the-line deductions
+    educatorExpensesDeduction: String(result.educatorExpenses.deductible),
+    studentLoanInterestDeduction: String(result.studentLoanInterest.deductible),
+    // Phase 1.5: Credits
+    foreignTaxCredit: String(result.foreignTaxCredit.credit),
+    residentialEnergyCredits: String(result.residentialEnergyCredits.total),
+    premiumTaxCredit: String(result.premiumTaxCredit.netPtc),
   };
 
   if (existing) {

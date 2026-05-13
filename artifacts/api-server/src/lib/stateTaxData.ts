@@ -658,6 +658,7 @@ const STATE_TAX_DATA_2024: Record<string, StateTaxInfo> = {
       ],
     },
     standardDeduction: { single: 7400, married_filing_jointly: 14850, head_of_household: 11150, married_filing_separately: 7400 },
+    notes: "VT std ded matches official 2024 values. NOT MODELED: personal exemption $4,850/person (Form IN-111 Line 5b) and taxable Social Security addback/subtraction. VT calc remains approximate.",
   },
   VA: {
     name: "Virginia", hasIncomeTax: true,

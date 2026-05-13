@@ -545,26 +545,24 @@ async function testSaversCredit() {
 async function testDependentCareCredit() {
   console.log("\n══════════ 7. Dependent Care Credit ══════════\n");
 
-  // 7a. MFJ, both spouses earn, 2 kids in daycare $7k expenses, AGI $50k → 20% × min($6k, $7k) = $1,200
-  // Spouse earned income required for MFJ.
-  console.log("── 7a. MFJ 2 kids, $7k daycare, AGI $50k both work → $1,200 ──");
+  // 7a. MFJ, BOTH spouses work, 2 kids in daycare. W-2 represents combined household wages.
+  // W-2 $30k combined, spouseEarnedIncome $10k → taxpayer's portion = $30k - $10k = $20k.
+  // For dep-care MFJ earned-income limit: min(taxpayer $20k, spouse $10k) = $10k.
+  // Eligible expenses = min($7k actual, $6k 2-child cap, $10k earned limit) = $6k.
+  // AGI = $30k → reductions = floor((30000-15000)/2000) = 7 → rate = 35% - 7% = 28%.
+  // Credit = $6k × 28% = $1,680.
+  console.log("── 7a. MFJ 2 kids, $7k daycare, AGI $30k both work → $1,680 ──");
   {
     const cid = await makeClient({
       firstName: "DepCare1", filingStatus: "married_filing_jointly", state: "FL",
-      dependentsForCareCredit: 2, spouseEarnedIncome: 30000,
+      dependentsForCareCredit: 2, spouseEarnedIncome: 10000,
     });
     try {
       await api(`/clients/${cid}/w2data`, { method: "POST", body: JSON.stringify({ taxYear: 2024, wagesBox1: 30000, federalTaxWithheldBox2: 1500, stateCode: "FL" }) });
       await api(`/clients/${cid}/adjustments`, { method: "POST", body: JSON.stringify({ adjustmentType: "dependent_care_expenses", amount: 7000, description: "Daycare", isApplied: true }) });
       await settle();
       const r = await getReturn(cid);
-      // Note: total income with W-2 $30k + spouseEarnedIncome $30k? Spouse W-2 isn't entered separately.
-      // For depCare, expenses limited to min($7k, $6k limit, $30k earned) = $6k. AGI $30k > $15k → reductions = (30000-15000)/2000 = 7. Rate = 35% - 7% = 28%.
-      // Wait, but spouse earned income is $30k, taxpayer earned is $30k (W-2). Limit = min(taxpayer, spouse) for MFJ = $30k.
-      // Wait more — earnings test: earnedIncomeLimit for MFJ = min(taxpayer, spouse) = min($30k, $30k) = $30k. Eligible exp = min($7k, $6k, $30k) = $6k.
-      // AGI = $30k (W-2 only — note spouseEarnedIncome is just for the depcare limit, not summed into AGI here).
-      // Rate at AGI $30k: floor((30000-15000)/2000) = 7. Rate = 35% - 7×1% = 28%.
-      check("Dep care: 28% × $6k = $1,680 at AGI $30k", Number(r.dependentCareCredit), 1680, 1);
+      check("Dep care: 28% × $6k = $1,680 at AGI $30k (MFJ split)", Number(r.dependentCareCredit), 1680, 1);
     } finally {
       await delClient(cid);
     }

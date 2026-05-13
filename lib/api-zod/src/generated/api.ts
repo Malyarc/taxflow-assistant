@@ -53,6 +53,30 @@ export const ListClientsResponseItem = zod.object({
   spouseEarnedIncome: zod.number().nullish(),
   hsaIsFamilyCoverage: zod.boolean().optional(),
   iraCoveredByWorkplacePlan: zod.boolean().optional(),
+  eligibleEducatorCount: zod
+    .number()
+    .optional()
+    .describe(
+      "Count of eligible K-12 educators on the return (0\/1\/2). Each gets up to $300 above-the-line.",
+    ),
+  acaAnnualPremium: zod
+    .number()
+    .nullish()
+    .describe("Form 1095-A annual premium total (Marketplace plan)."),
+  acaAnnualSlcsp: zod
+    .number()
+    .nullish()
+    .describe("Form 1095-A Second Lowest Cost Silver Plan annual benchmark."),
+  acaAdvanceAptc: zod
+    .number()
+    .nullish()
+    .describe("Advance premium tax credit payments received during the year."),
+  acaHouseholdSize: zod
+    .number()
+    .nullish()
+    .describe(
+      "Household size used for FPL determination. Defaults to filer + dependents if null.",
+    ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -84,6 +108,11 @@ export const CreateClientBody = zod.object({
   spouseEarnedIncome: zod.number().nullish(),
   hsaIsFamilyCoverage: zod.boolean().optional(),
   iraCoveredByWorkplacePlan: zod.boolean().optional(),
+  eligibleEducatorCount: zod.number().optional(),
+  acaAnnualPremium: zod.number().nullish(),
+  acaAnnualSlcsp: zod.number().nullish(),
+  acaAdvanceAptc: zod.number().nullish(),
+  acaHouseholdSize: zod.number().nullish(),
   notes: zod.string().nullish(),
 });
 
@@ -130,6 +159,30 @@ export const GetClientResponse = zod.object({
   spouseEarnedIncome: zod.number().nullish(),
   hsaIsFamilyCoverage: zod.boolean().optional(),
   iraCoveredByWorkplacePlan: zod.boolean().optional(),
+  eligibleEducatorCount: zod
+    .number()
+    .optional()
+    .describe(
+      "Count of eligible K-12 educators on the return (0\/1\/2). Each gets up to $300 above-the-line.",
+    ),
+  acaAnnualPremium: zod
+    .number()
+    .nullish()
+    .describe("Form 1095-A annual premium total (Marketplace plan)."),
+  acaAnnualSlcsp: zod
+    .number()
+    .nullish()
+    .describe("Form 1095-A Second Lowest Cost Silver Plan annual benchmark."),
+  acaAdvanceAptc: zod
+    .number()
+    .nullish()
+    .describe("Advance premium tax credit payments received during the year."),
+  acaHouseholdSize: zod
+    .number()
+    .nullish()
+    .describe(
+      "Household size used for FPL determination. Defaults to filer + dependents if null.",
+    ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -166,6 +219,11 @@ export const UpdateClientBody = zod.object({
   spouseEarnedIncome: zod.number().nullish(),
   hsaIsFamilyCoverage: zod.boolean().optional(),
   iraCoveredByWorkplacePlan: zod.boolean().optional(),
+  eligibleEducatorCount: zod.number().optional(),
+  acaAnnualPremium: zod.number().nullish(),
+  acaAnnualSlcsp: zod.number().nullish(),
+  acaAdvanceAptc: zod.number().nullish(),
+  acaHouseholdSize: zod.number().nullish(),
   notes: zod.string().nullish(),
 });
 
@@ -205,6 +263,30 @@ export const UpdateClientResponse = zod.object({
   spouseEarnedIncome: zod.number().nullish(),
   hsaIsFamilyCoverage: zod.boolean().optional(),
   iraCoveredByWorkplacePlan: zod.boolean().optional(),
+  eligibleEducatorCount: zod
+    .number()
+    .optional()
+    .describe(
+      "Count of eligible K-12 educators on the return (0\/1\/2). Each gets up to $300 above-the-line.",
+    ),
+  acaAnnualPremium: zod
+    .number()
+    .nullish()
+    .describe("Form 1095-A annual premium total (Marketplace plan)."),
+  acaAnnualSlcsp: zod
+    .number()
+    .nullish()
+    .describe("Form 1095-A Second Lowest Cost Silver Plan annual benchmark."),
+  acaAdvanceAptc: zod
+    .number()
+    .nullish()
+    .describe("Advance premium tax credit payments received during the year."),
+  acaHouseholdSize: zod
+    .number()
+    .nullish()
+    .describe(
+      "Household size used for FPL determination. Defaults to filer + dependents if null.",
+    ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -753,6 +835,13 @@ export const ListAdjustmentsResponseItem = zod.object({
     "qualified_education_expenses_aoc",
     "qualified_education_expenses_llc",
     "retirement_contributions_savers",
+    "educator_expenses",
+    "student_loan_interest",
+    "foreign_tax_paid",
+    "residential_clean_energy",
+    "energy_efficient_home",
+    "energy_efficient_heatpump",
+    "ev_charger_property",
   ]),
   amount: zod.number(),
   description: zod.string(),
@@ -796,6 +885,13 @@ export const CreateAdjustmentBody = zod.object({
     "qualified_education_expenses_aoc",
     "qualified_education_expenses_llc",
     "retirement_contributions_savers",
+    "educator_expenses",
+    "student_loan_interest",
+    "foreign_tax_paid",
+    "residential_clean_energy",
+    "energy_efficient_home",
+    "energy_efficient_heatpump",
+    "ev_charger_property",
   ]),
   amount: zod.number(),
   description: zod.string(),
@@ -838,6 +934,13 @@ export const UpdateAdjustmentBody = zod.object({
       "qualified_education_expenses_aoc",
       "qualified_education_expenses_llc",
       "retirement_contributions_savers",
+      "educator_expenses",
+      "student_loan_interest",
+      "foreign_tax_paid",
+      "residential_clean_energy",
+      "energy_efficient_home",
+      "energy_efficient_heatpump",
+      "ev_charger_property",
     ])
     .optional(),
   amount: zod.number().optional(),
@@ -874,6 +977,13 @@ export const UpdateAdjustmentResponse = zod.object({
     "qualified_education_expenses_aoc",
     "qualified_education_expenses_llc",
     "retirement_contributions_savers",
+    "educator_expenses",
+    "student_loan_interest",
+    "foreign_tax_paid",
+    "residential_clean_energy",
+    "energy_efficient_home",
+    "energy_efficient_heatpump",
+    "ev_charger_property",
   ]),
   amount: zod.number(),
   description: zod.string(),
@@ -943,6 +1053,30 @@ export const GetRecentClientsResponseItem = zod.object({
   spouseEarnedIncome: zod.number().nullish(),
   hsaIsFamilyCoverage: zod.boolean().optional(),
   iraCoveredByWorkplacePlan: zod.boolean().optional(),
+  eligibleEducatorCount: zod
+    .number()
+    .optional()
+    .describe(
+      "Count of eligible K-12 educators on the return (0\/1\/2). Each gets up to $300 above-the-line.",
+    ),
+  acaAnnualPremium: zod
+    .number()
+    .nullish()
+    .describe("Form 1095-A annual premium total (Marketplace plan)."),
+  acaAnnualSlcsp: zod
+    .number()
+    .nullish()
+    .describe("Form 1095-A Second Lowest Cost Silver Plan annual benchmark."),
+  acaAdvanceAptc: zod
+    .number()
+    .nullish()
+    .describe("Advance premium tax credit payments received during the year."),
+  acaHouseholdSize: zod
+    .number()
+    .nullish()
+    .describe(
+      "Household size used for FPL determination. Defaults to filer + dependents if null.",
+    ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),

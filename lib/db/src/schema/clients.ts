@@ -27,6 +27,16 @@ export const clientsTable = pgTable("clients", {
   hsaIsFamilyCoverage: boolean("hsa_is_family_coverage").notNull().default(false),
   /** Whether taxpayer is covered by a workplace retirement plan — drives IRA deduction phase-out */
   iraCoveredByWorkplacePlan: boolean("ira_covered_by_workplace_plan").notNull().default(false),
+  /** Count of eligible K-12 educators (0/1/2). Each eligible educator gets a $300 above-the-line deduction. */
+  eligibleEducatorCount: integer("eligible_educator_count").notNull().default(0),
+  /** ACA: Form 1095-A annual premium total. Required for PTC reconciliation. */
+  acaAnnualPremium: numeric("aca_annual_premium", { precision: 12, scale: 2 }),
+  /** ACA: Second Lowest Cost Silver Plan benchmark (annual). Required for PTC reconciliation. */
+  acaAnnualSlcsp: numeric("aca_annual_slcsp", { precision: 12, scale: 2 }),
+  /** ACA: Advance Premium Tax Credit payments received during the year. */
+  acaAdvanceAptc: numeric("aca_advance_aptc", { precision: 12, scale: 2 }),
+  /** ACA: Household size for FPL determination. Defaults to filer + dependents if null. */
+  acaHouseholdSize: integer("aca_household_size"),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
