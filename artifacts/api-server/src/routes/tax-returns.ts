@@ -11,6 +11,11 @@ import {
 import { recalculateAndUpsertTaxReturn, computeTaxReturn } from "../lib/taxReturnPipeline";
 import { buildTaxReturnPdf } from "../lib/pdfExport";
 import {
+  buildTaxReturnCsvExport,
+  buildTaxReturnJsonExport,
+  buildUltraTaxGenExport,
+} from "../lib/taxReturnExports";
+import {
   calculateFederalTaxWithBreakdown,
   calculateStateTaxWithBreakdown,
   calculateChildTaxCredit,
@@ -122,6 +127,75 @@ router.get("/clients/:clientId/tax-return/pdf", async (req, res): Promise<void> 
   res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
   res.setHeader("Content-Length", pdf.length.toString());
   res.send(pdf);
+});
+
+// CSV export — UltraTax CS / Lacerte / ProConnect / Drake friendly
+router.get("/clients/:clientId/tax-return/csv", async (req, res): Promise<void> => {
+  const params = GetTaxReturnParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const yearRaw = req.query.taxYear;
+  const overrideYear = typeof yearRaw === "string" && Number.isFinite(Number(yearRaw))
+    ? Number(yearRaw)
+    : undefined;
+  const computed = await computeTaxReturn(params.data.clientId, overrideYear ? { taxYear: overrideYear } : {});
+  if (!computed) {
+    res.status(404).json({ error: "Client not found" });
+    return;
+  }
+  const csv = buildTaxReturnCsvExport(computed.client, computed.result);
+  const fileName = `tax-return-${computed.client.firstName}-${computed.client.lastName}-${computed.result.taxYear}.csv`.replace(/\s+/g, "_");
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+  res.send(csv);
+});
+
+// JSON export — machine-readable full export for integration with other tools
+router.get("/clients/:clientId/tax-return/json", async (req, res): Promise<void> => {
+  const params = GetTaxReturnParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const yearRaw = req.query.taxYear;
+  const overrideYear = typeof yearRaw === "string" && Number.isFinite(Number(yearRaw))
+    ? Number(yearRaw)
+    : undefined;
+  const computed = await computeTaxReturn(params.data.clientId, overrideYear ? { taxYear: overrideYear } : {});
+  if (!computed) {
+    res.status(404).json({ error: "Client not found" });
+    return;
+  }
+  const json = buildTaxReturnJsonExport(computed.client, computed.result);
+  const fileName = `tax-return-${computed.client.firstName}-${computed.client.lastName}-${computed.result.taxYear}.json`.replace(/\s+/g, "_");
+  res.setHeader("Content-Type", "application/json; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+  res.send(json);
+});
+
+// UltraTax CS .GEN-style export (1040 Generic Tax Data key=value format)
+router.get("/clients/:clientId/tax-return/ultratax", async (req, res): Promise<void> => {
+  const params = GetTaxReturnParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const yearRaw = req.query.taxYear;
+  const overrideYear = typeof yearRaw === "string" && Number.isFinite(Number(yearRaw))
+    ? Number(yearRaw)
+    : undefined;
+  const computed = await computeTaxReturn(params.data.clientId, overrideYear ? { taxYear: overrideYear } : {});
+  if (!computed) {
+    res.status(404).json({ error: "Client not found" });
+    return;
+  }
+  const gen = buildUltraTaxGenExport(computed.client, computed.result);
+  const fileName = `tax-return-${computed.client.firstName}-${computed.client.lastName}-${computed.result.taxYear}.gen`.replace(/\s+/g, "_");
+  res.setHeader("Content-Type", "text/plain; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+  res.send(gen);
 });
 
 // Compute (without saving) the tax return for any specified year. Used by the

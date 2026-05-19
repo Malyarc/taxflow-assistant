@@ -912,10 +912,11 @@ function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: nu
             </>
           )}
 
-          <div className="flex justify-end gap-2 print:hidden">
+          <div className="flex flex-wrap justify-end gap-2 print:hidden">
             <Button
               variant="outline"
               size="sm"
+              title="Form 1040-style summary PDF with all schedules"
               onClick={() => {
                 const link = document.createElement("a");
                 link.href = `/api/clients/${clientId}/tax-return/pdf?taxYear=${taxYear}`;
@@ -926,6 +927,51 @@ function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: nu
               }}
             >
               Download PDF
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              title="CSV export with IRS line numbers + UltraTax/Lacerte/ProConnect/Drake field codes"
+              onClick={() => {
+                const link = document.createElement("a");
+                link.href = `/api/clients/${clientId}/tax-return/csv?taxYear=${taxYear}`;
+                link.download = "";
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+              }}
+            >
+              CSV (for CPA tools)
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              title="UltraTax CS .GEN format (1040 Generic Tax Data) — key=value text file"
+              onClick={() => {
+                const link = document.createElement("a");
+                link.href = `/api/clients/${clientId}/tax-return/ultratax?taxYear=${taxYear}`;
+                link.download = "";
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+              }}
+            >
+              UltraTax (.gen)
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              title="Complete machine-readable JSON export for integration with other tools"
+              onClick={() => {
+                const link = document.createElement("a");
+                link.href = `/api/clients/${clientId}/tax-return/json?taxYear=${taxYear}`;
+                link.download = "";
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+              }}
+            >
+              JSON
             </Button>
             <Button variant="outline" size="sm" onClick={() => window.print()}>
               Print return

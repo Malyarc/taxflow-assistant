@@ -88,30 +88,96 @@ export function buildTaxReturnPdf(client: Client, ret: ComputedTaxReturn): Promi
       ["Taxable income", fmt(ret.taxableIncome)],
     ]);
 
+    // Above-the-line adjustments (Schedule 1 Part II)
+    const atlRows: Array<[string, string]> = [];
+    if (ret.retirementDeductions.hsaDeductible > 0) atlRows.push(["HSA deduction (Sched 1 L13)", fmt(ret.retirementDeductions.hsaDeductible)]);
+    if (ret.retirementDeductions.iraDeductible > 0) atlRows.push(["Traditional IRA deduction (Sched 1 L20)", fmt(ret.retirementDeductions.iraDeductible)]);
+    if (ret.educatorExpenses.deductible > 0) atlRows.push(["Educator expenses (Sched 1 L11)", fmt(ret.educatorExpenses.deductible)]);
+    if (ret.studentLoanInterest.deductible > 0) atlRows.push(["Student loan interest (Sched 1 L21)", fmt(ret.studentLoanInterest.deductible)]);
+    if (ret.scheduleCExpenses > 0) atlRows.push(["Schedule C business expenses", fmt(ret.scheduleCExpenses)]);
+    if (atlRows.length > 0) section("Above-the-line adjustments", atlRows);
+
+    // Schedule A itemized (if itemizing)
+    if (ret.itemizedDeductions != null) {
+      const schARows: Array<[string, string]> = [];
+      if (ret.scheduleA.medicalDeductible > 0) schARows.push(["Medical (Sched A L4)", fmt(ret.scheduleA.medicalDeductible)]);
+      if (ret.scheduleA.saltDeductible > 0) schARows.push(["SALT capped (Sched A L7)", fmt(ret.scheduleA.saltDeductible)]);
+      if (ret.scheduleA.mortgageDeductible > 0) schARows.push(["Mortgage interest (Sched A L10)", fmt(ret.scheduleA.mortgageDeductible)]);
+      if (ret.scheduleA.charitableDeductible > 0) schARows.push(["Charitable (Sched A L14)", fmt(ret.scheduleA.charitableDeductible)]);
+      schARows.push(["Total itemized (Sched A L17)", fmt(ret.itemizedDeductions)]);
+      section("Schedule A (Itemized)", schARows);
+    }
+
+    // Schedule D (Capital Gains/Losses)
+    if (ret.netCapitalGainLoss !== 0 || ret.capitalLossDeducted > 0) {
+      const sdRows: Array<[string, string]> = [
+        ["Net capital gain/loss (Sched D L16)", fmt(ret.netCapitalGainLoss)],
+      ];
+      if (ret.capitalLossDeducted > 0) sdRows.push(["Capital loss deducted (Sched D L21)", `(${fmt(ret.capitalLossDeducted)})`]);
+      if (ret.capitalLossCarryforwardShort > 0) sdRows.push(["Short-term carryforward to next year", fmt(ret.capitalLossCarryforwardShort)]);
+      if (ret.capitalLossCarryforwardLong > 0) sdRows.push(["Long-term carryforward to next year", fmt(ret.capitalLossCarryforwardLong)]);
+      section("Schedule D (Capital Gains/Losses)", sdRows);
+    }
+
+    // Schedule E (Rental Real Estate)
+    if (ret.scheduleERentalGrossNet !== 0 || ret.scheduleERentalAppliedToAgi !== 0) {
+      const seRows: Array<[string, string]> = [
+        ["Gross rental net income/loss", fmt(ret.scheduleERentalGrossNet)],
+        ["Applied to AGI (after PAL limit)", fmt(ret.scheduleERentalAppliedToAgi)],
+      ];
+      if (ret.scheduleEPassiveLossSuspended > 0) seRows.push(["§469 passive loss suspended to next year", fmt(ret.scheduleEPassiveLossSuspended)]);
+      section("Schedule E (Rental Real Estate)", seRows);
+    }
+
     const fedRows: Array<[string, string]> = [
-      ["Federal income tax (regular)", fmt(ret.federalTaxLiability - (ret.amtTax ?? 0) - (ret.niitTax ?? 0) - (ret.selfEmploymentTax ?? 0))],
+      ["Federal income tax (regular, 1040 L16)", fmt(ret.federalTaxLiability - (ret.amtTax ?? 0) - (ret.niitTax ?? 0) - (ret.selfEmploymentTax ?? 0))],
     ];
-    if (ret.selfEmploymentTax > 0) fedRows.push(["Self-employment tax (Schedule SE)", fmt(ret.selfEmploymentTax)]);
-    if (ret.niitTax > 0) fedRows.push(["Net investment income tax (NIIT)", fmt(ret.niitTax)]);
-    if (ret.amtTax > 0) fedRows.push(["Alternative minimum tax (AMT)", fmt(ret.amtTax)]);
-    fedRows.push(["Total federal tax liability", fmt(ret.federalTaxLiability)]);
+    if (ret.selfEmploymentTax > 0) fedRows.push(["Self-employment tax (Sched SE)", fmt(ret.selfEmploymentTax)]);
+    if (ret.niitTax > 0) fedRows.push(["Net investment income tax (Form 8960)", fmt(ret.niitTax)]);
+    if (ret.amtTax > 0) fedRows.push(["Alternative minimum tax (Form 6251)", fmt(ret.amtTax)]);
+    fedRows.push(["Total federal tax liability (1040 L24)", fmt(ret.federalTaxLiability)]);
+    // Credits
     if (ret.childTaxCredit.appliedCredit > 0) {
-      fedRows.push(["Child Tax Credit", `(${fmt(ret.childTaxCredit.appliedCredit)})`]);
+      fedRows.push(["Child Tax Credit (1040 L19)", `(${fmt(ret.childTaxCredit.appliedCredit)})`]);
       if (ret.childTaxCredit.refundableActc > 0) {
         fedRows.push(["  └─ Refundable ACTC", fmt(ret.childTaxCredit.refundableActc)]);
       }
     }
-    if (ret.manualCreditsApplied > 0) fedRows.push(["Other credits applied", `(${fmt(ret.manualCreditsApplied)})`]);
-    fedRows.push(["Federal tax withheld", fmt(ret.federalTaxWithheld)]);
+    if (ret.foreignTaxCredit.credit > 0) fedRows.push(["Foreign Tax Credit (Sched 3 L1)", `(${fmt(ret.foreignTaxCredit.credit)})`]);
+    if (ret.dependentCareCredit.appliedCredit > 0) fedRows.push(["Dependent Care Credit (Sched 3 L2)", `(${fmt(ret.dependentCareCredit.appliedCredit)})`]);
+    if (ret.educationCredits.aocApplied > 0) fedRows.push(["AOC Credit (Sched 3 L3a)", `(${fmt(ret.educationCredits.aocApplied)})`]);
+    if (ret.educationCredits.llcApplied > 0) fedRows.push(["LLC Credit (Sched 3 L3b)", `(${fmt(ret.educationCredits.llcApplied)})`]);
+    if (ret.saversCredit.appliedCredit > 0) fedRows.push(["Saver's Credit (Sched 3 L4)", `(${fmt(ret.saversCredit.appliedCredit)})`]);
+    if (ret.residentialEnergyCredits.total > 0) fedRows.push(["Residential Energy Credits (Sched 3 L5a/5b)", `(${fmt(ret.residentialEnergyCredits.total)})`]);
+    if (ret.eitc.appliedCredit > 0) fedRows.push(["EITC (1040 L27, refundable)", `(${fmt(ret.eitc.appliedCredit)})`]);
+    if (ret.premiumTaxCredit.netPtc > 0) fedRows.push(["Net Premium Tax Credit (Sched 3 L8)", `(${fmt(ret.premiumTaxCredit.netPtc)})`]);
+    if (ret.premiumTaxCredit.netPtc < 0) fedRows.push(["Excess Advance APTC (Sched 2 L2)", fmt(Math.abs(ret.premiumTaxCredit.netPtc))]);
+    if (ret.manualCreditsApplied > 0) fedRows.push(["Other credits applied (manual)", `(${fmt(ret.manualCreditsApplied)})`]);
+    fedRows.push(["Federal tax withheld (1040 L25a)", fmt(ret.federalTaxWithheld)]);
     const fedRefund = ret.federalRefundOrOwed;
-    fedRows.push([fedRefund >= 0 ? "Federal refund" : "Federal balance due", fmt(Math.abs(fedRefund))]);
+    fedRows.push([fedRefund >= 0 ? "Federal refund (1040 L34)" : "Federal balance due (1040 L37)", fmt(Math.abs(fedRefund))]);
     section("Federal", fedRows);
 
-    section("State", [
-      [`State (${ret.stateCode}) income tax`, fmt(ret.stateTaxLiability)],
-      ["State tax withheld", fmt(ret.stateTaxWithheld)],
-      [ret.stateRefundOrOwed >= 0 ? "State refund" : "State balance due", fmt(Math.abs(ret.stateRefundOrOwed))],
-    ]);
+    const stateRows: Array<[string, string]> = [
+      [`Resident state (${ret.stateCode}) tax`, fmt(ret.multiState.residentStateTax)],
+    ];
+    if (ret.stateRetirementExemption > 0) stateRows.push(["State retirement exemption applied", `(${fmt(ret.stateRetirementExemption)})`]);
+    if (ret.multiState.nonresidentStateTaxes.length > 0) {
+      for (const nr of ret.multiState.nonresidentStateTaxes) {
+        if (nr.reciprocityApplied) {
+          stateRows.push([`Non-resident ${nr.state} (reciprocity, no tax)`, fmt(0)]);
+        } else {
+          stateRows.push([`Non-resident ${nr.state} tax on $${nr.wages.toFixed(0)} wages`, fmt(nr.tax)]);
+        }
+      }
+      if (ret.multiState.residentCreditApplied > 0) {
+        stateRows.push(["  └─ Resident credit for NR tax paid", `(${fmt(ret.multiState.residentCreditApplied)})`]);
+      }
+    }
+    stateRows.push(["Total state tax", fmt(ret.stateTaxLiability)]);
+    stateRows.push(["State tax withheld", fmt(ret.stateTaxWithheld)]);
+    stateRows.push([ret.stateRefundOrOwed >= 0 ? "State refund" : "State balance due", fmt(Math.abs(ret.stateRefundOrOwed))]);
+    section("State", stateRows);
 
     section("Summary metrics", [
       ["Effective tax rate (federal + state)", pct(ret.effectiveTaxRate)],
