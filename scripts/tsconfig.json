@@ -16,6 +16,7 @@
     "src/tax-engine-phase1-unit-tests.ts",
     "src/tax-engine-phase1-integration-tests.ts",
     "src/tax-engine-phase15-unit-tests.ts",
-    "src/tax-engine-phase15-integration-tests.ts"
+    "src/tax-engine-phase15-integration-tests.ts",
+    "src/tax-engine-pure-tests.ts"
   ]
 }
