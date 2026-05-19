@@ -40,8 +40,10 @@ import {
   calculateResidentialEnergyCredits,
   calculatePremiumTaxCredit,
   calculateStateTax,
+  calculateMultiStateTax,
   getStateRetirementExemption,
   getFederalStandardDeduction,
+  type MultiStateTaxResult,
   type CtcCalculation,
   type SeTaxCalculation,
   type NiitCalculation,
@@ -345,6 +347,8 @@ export interface ComputedTaxReturn {
   netCapitalGainLoss: number;
   /** State retirement-income exemption applied (PA, IL, MS subtract qualified retirement) */
   stateRetirementExemption: number;
+  /** Multi-state breakdown — resident state tax (after credit), non-resident state taxes, reciprocity status */
+  multiState: MultiStateTaxResult;
   /** Detailed breakdowns for transparency */
   detail: {
     se: SeTaxCalculation;
@@ -682,23 +686,35 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     filingStatus: client.filingStatus,
   });
 
-  // ── State tax recompute with full options ──
+  // ── State tax (multi-state with resident credit + reciprocity) ──
   // Always recompute (not just for OR) because state retirement-income
-  // exemptions (PA, IL, MS) apply to many filers — the runTaxCalculation
-  // call earlier didn't have access to retirement income or taxpayer age.
+  // exemptions (PA, IL, MS), per-W-2 state allocation, and reciprocity
+  // agreements all need full info that runTaxCalculation didn't have.
   const stateUpper = (stateCode ?? "").toUpperCase();
   const federalIncomeTaxForOr = stateUpper === "OR" ? regularFederalTax + amt.amtTax : undefined;
-  const stateTaxLiability = calculateStateTax(
-    calc.adjustedGrossIncome,
-    stateCode ?? "CA",
-    client.filingStatus,
+
+  // Aggregate W-2 wages by stateCode for non-resident allocation
+  const perStateWages = new Map<string, number>();
+  for (const w of w2Records) {
+    const code = (w.stateCode || stateUpper || "").toUpperCase();
+    if (!code) continue;
+    perStateWages.set(code, (perStateWages.get(code) ?? 0) + toNum(w.wagesBox1));
+  }
+  const perStateWagesArr = [...perStateWages.entries()].map(([code, wages]) => ({ stateCode: code, wages }));
+
+  const multiState = calculateMultiStateTax({
+    residentState: stateCode ?? "CA",
+    federalAgi: calc.adjustedGrossIncome,
+    filingStatus: client.filingStatus,
     taxYear,
-    {
+    perStateWages: perStateWagesArr,
+    options: {
       federalIncomeTaxPaid: federalIncomeTaxForOr,
       retirementIncomeForExemption: form1099Summary.retirementIncome,
       taxpayerAge: client.taxpayerAge ?? undefined,
     },
-  );
+  });
+  const stateTaxLiability = multiState.totalStateTax;
 
   const totalFederalLiability =
     regularFederalTax + amt.amtTax + niit.niitTax + se.seTaxTotal;
@@ -900,6 +916,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     capitalLossCarryforwardLong,
     netCapitalGainLoss: netCapitalTotal,
     stateRetirementExemption: stateRetirementExemptionInfo.exemption,
+    multiState,
     detail: { se, niit, qbi, amt, capitalGains: capGains },
     w2Count: w2Records.length,
     form1099Count: form1099Records.length,

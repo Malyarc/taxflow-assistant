@@ -84,6 +84,42 @@ const FED_CONFORMING_STD_DED_STATES = new Set([
   "CO", "ID", "IA", "MN", "MO", "MT", "NM", "ND", "SC",
 ]);
 
+// ── Multi-state reciprocity agreements ─────────────────────────────────────
+// If filer resides in a STATE and works in a state listed in their value array,
+// the WORK state does NOT tax the wages — only the resident state taxes them.
+// Sources: state DOR reciprocity bulletins (current as of TY2024).
+// Note: most agreements require the filer to file a non-resident certificate
+// with their employer (e.g., NJ-165, PA Form REV-419, IL IL-W-5-NR). We
+// assume that paperwork is filed correctly.
+export const STATE_RECIPROCITY: Record<string, readonly string[]> = {
+  DC: ["MD", "VA"],
+  IL: ["IA", "KY", "MI", "WI"],
+  IN: ["KY", "MI", "OH", "PA", "WI"],
+  IA: ["IL"],
+  KY: ["IL", "IN", "MI", "OH", "VA", "WV", "WI"],
+  MD: ["DC", "PA", "VA", "WV"],
+  MI: ["IL", "IN", "KY", "MN", "OH", "WI"],
+  MN: ["MI", "ND"],
+  MT: ["ND"],
+  NJ: ["PA"],
+  ND: ["MN", "MT"],
+  OH: ["IN", "KY", "MI", "PA", "WV"],
+  PA: ["IN", "MD", "NJ", "OH", "VA", "WV"],
+  VA: ["DC", "KY", "MD", "PA", "WV"],
+  WV: ["KY", "MD", "OH", "PA", "VA"],
+  WI: ["IL", "IN", "KY", "MI"],
+};
+
+/**
+ * Returns true if a resident of `residentState` who works in `workState`
+ * is covered by a reciprocity agreement (workState does not tax).
+ */
+export function hasReciprocity(residentState: string, workState: string): boolean {
+  const list = STATE_RECIPROCITY[residentState.toUpperCase()];
+  if (!list) return false;
+  return list.includes(workState.toUpperCase());
+}
+
 // Helper for flat-rate states: build a single-bracket structure.
 const flat = (rate: number): StateBracket[] => [{ upTo: Infinity, rate }];
 

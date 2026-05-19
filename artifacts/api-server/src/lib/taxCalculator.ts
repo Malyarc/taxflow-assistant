@@ -17,6 +17,7 @@
 
 import {
   STATE_TAX_DATA_BY_YEAR,
+  hasReciprocity,
   type StateBracket,
   type StateFilingStatus,
 } from "./stateTaxData";
@@ -369,6 +370,124 @@ export function calculateOregonFederalTaxSubtraction(params: {
  * Optionally pass `federalIncomeTaxPaid` to apply state-specific federal tax
  * subtractions (currently: Oregon Form 40 Line 13).
  */
+// ── Multi-state tax computation (resident + non-resident + reciprocity) ────
+// IRS Form 1040 doesn't address multi-state — each state files separately.
+// Common scenarios:
+//   1. Single-state resident: no allocation, simple.
+//   2. Non-resident state income (e.g. commute to NY): NR state taxes the
+//      income earned there; resident state taxes all income; resident state
+//      gives credit for NR state tax.
+//   3. Reciprocity (e.g. NJ resident working in PA): NR state does NOT tax;
+//      resident state taxes all income with no credit needed.
+//   4. Part-year residency (moved mid-year): pro-rate income — NOT MODELED
+//      in this initial implementation (deferred to future phase).
+//
+// We compute:
+//   - Non-resident state tax: marginal tax on state-source wages only,
+//     using NR state's brackets (simplified — many states have complex
+//     allocation rules and NR-specific exemptions/deductions we don't model).
+//   - Resident state tax: full computation on worldwide AGI.
+//   - Resident credit-for-tax-paid: min(NR tax actually paid, resident
+//     state's marginal tax on that same income).
+//   - Reciprocity: skip NR state tax entirely.
+
+export interface PerStateWageAllocation {
+  /** State 2-letter code (e.g., "NY", "PA"). Empty/null = unallocated. */
+  stateCode: string;
+  /** Wages earned in this state (W-2 Box 1 allocated by stateCode). */
+  wages: number;
+}
+
+export interface MultiStateTaxResult {
+  /** Resident state's tax liability (after credit for NR tax paid) */
+  residentStateTax: number;
+  /** Tax paid to each non-resident state */
+  nonresidentStateTaxes: Array<{ state: string; tax: number; wages: number; reciprocityApplied: boolean }>;
+  /** Total state tax across all states (= resident after credit + sum of NR taxes) */
+  totalStateTax: number;
+  /** Credit applied at resident state for taxes paid to non-resident states */
+  residentCreditApplied: number;
+  /** Resident state's tax BEFORE applying the credit (informational) */
+  residentStateTaxBeforeCredit: number;
+}
+
+export function calculateMultiStateTax(params: {
+  residentState: string;
+  federalAgi: number;
+  filingStatus: string;
+  taxYear: number;
+  /** Per-state W-2 wage allocation (one entry per W-2 stateCode). Unallocated wages stay with resident state. */
+  perStateWages: PerStateWageAllocation[];
+  options?: {
+    federalIncomeTaxPaid?: number;
+    retirementIncomeForExemption?: number;
+    taxpayerAge?: number;
+  };
+}): MultiStateTaxResult {
+  const resident = params.residentState.toUpperCase();
+  const nonresidentTotalsByState = new Map<string, number>();
+
+  // Aggregate per-state wages excluding resident state
+  for (const entry of params.perStateWages) {
+    const code = (entry.stateCode || "").toUpperCase();
+    if (!code || code === resident) continue; // resident-state wages are covered by resident calc
+    const wages = Math.max(0, entry.wages);
+    if (wages === 0) continue;
+    nonresidentTotalsByState.set(code, (nonresidentTotalsByState.get(code) ?? 0) + wages);
+  }
+
+  // Compute non-resident state tax for each (skip reciprocity pairs)
+  const nonresidentStateTaxes: MultiStateTaxResult["nonresidentStateTaxes"] = [];
+  let totalNrTax = 0;
+  let totalNrWages = 0; // Track total NR wages for credit cap
+
+  for (const [nrState, nrWages] of nonresidentTotalsByState.entries()) {
+    const reciprocity = hasReciprocity(resident, nrState);
+    if (reciprocity) {
+      // Reciprocity: NR state does not tax. Resident state taxes the wages.
+      nonresidentStateTaxes.push({ state: nrState, tax: 0, wages: nrWages, reciprocityApplied: true });
+      continue;
+    }
+    // NR state taxes its source wages. We use NR state's bracket on those wages
+    // (simplified — real NR returns often have additional adjustments).
+    const nrTax = calculateStateTax(nrWages, nrState, params.filingStatus, params.taxYear, {
+      // NR state does NOT apply resident-state retirement exemption or OR fed subtraction
+    });
+    nonresidentStateTaxes.push({ state: nrState, tax: nrTax, wages: nrWages, reciprocityApplied: false });
+    totalNrTax += nrTax;
+    totalNrWages += nrWages;
+  }
+
+  // Resident state tax on worldwide AGI (full computation, with state-specific options)
+  const residentTaxFull = calculateStateTax(
+    params.federalAgi,
+    resident,
+    params.filingStatus,
+    params.taxYear,
+    params.options,
+  );
+
+  // Resident credit-for-tax-paid: limited to resident's tax on the same wages
+  // (approximation: resident's marginal rate × NR wages, capped at actual NR tax)
+  // To compute the credit cap, find resident's tax on NR wages only:
+  let residentCreditCap = 0;
+  if (totalNrWages > 0 && params.federalAgi > 0) {
+    // Approximation: ratio of NR wages to AGI × resident tax
+    const proRataResidentTax = (totalNrWages / params.federalAgi) * residentTaxFull;
+    residentCreditCap = proRataResidentTax;
+  }
+  const residentCreditApplied = Math.min(totalNrTax, residentCreditCap);
+  const residentStateTax = Math.max(0, residentTaxFull - residentCreditApplied);
+
+  return {
+    residentStateTax,
+    nonresidentStateTaxes,
+    totalStateTax: residentStateTax + totalNrTax,
+    residentCreditApplied,
+    residentStateTaxBeforeCredit: residentTaxFull,
+  };
+}
+
 export function calculateStateTax(
   federalAgi: number,
   stateCode: string,

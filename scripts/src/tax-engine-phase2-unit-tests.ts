@@ -7,8 +7,10 @@
 
 import {
   calculateStateTax,
+  calculateMultiStateTax,
   getStateRetirementExemption,
 } from "../../artifacts/api-server/src/lib/taxCalculator";
+import { hasReciprocity } from "../../artifacts/api-server/src/lib/stateTaxData";
 import {
   computeTaxReturnPure,
   type TaxReturnInputs,
@@ -224,6 +226,165 @@ header("End-to-end: PA retiree with 1099-R retirement income");
   check("Federal tax ~$2,816", r.federalTaxLiability, 2816, 2);
   check("PA state tax = $0 (retirement exempt)", r.stateTaxLiability, 0, 0.01);
   check("State retirement exemption = $40,000", r.stateRetirementExemption, 40000, 1);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// MULTI-STATE — reciprocity table
+// ════════════════════════════════════════════════════════════════════════════
+header("Multi-state — reciprocity table");
+{
+  checkExact("NJ resident working in PA → reciprocity (PA doesn't tax)", hasReciprocity("NJ", "PA"), true);
+  checkExact("PA resident working in NJ → reciprocity (NJ doesn't tax)", hasReciprocity("PA", "NJ"), true);
+  checkExact("IL resident working in WI → reciprocity", hasReciprocity("IL", "WI"), true);
+  checkExact("IL resident working in CA → NO reciprocity", hasReciprocity("IL", "CA"), false);
+  checkExact("MD resident working in DC → reciprocity", hasReciprocity("MD", "DC"), true);
+  checkExact("MD resident working in VA → reciprocity", hasReciprocity("MD", "VA"), true);
+  checkExact("PA resident working in WV → reciprocity", hasReciprocity("PA", "WV"), true);
+  checkExact("CA resident working in NY → NO reciprocity (CA not in table)", hasReciprocity("CA", "NY"), false);
+  checkExact("Case insensitive", hasReciprocity("nj", "pa"), true);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// MULTI-STATE — calculateMultiStateTax
+// ════════════════════════════════════════════════════════════════════════════
+header("Multi-state — NJ resident commuting to PA (reciprocity)");
+{
+  // NJ resident, $100k all wages from PA employer.
+  // Reciprocity: PA doesn't tax. NJ taxes full $100k.
+  // NJ 2024 single brackets: 1.4% to $20k, 1.75% to $35k, 3.5% to $40k, 5.525% to $75k, 6.37% to $500k, 8.97% to $1M, 10.75% above.
+  // Tax: 20000×0.014 + (35000-20000)×0.0175 + (40000-35000)×0.035 + (75000-40000)×0.05525 + (100000-75000)×0.0637
+  //    = 280 + 262.50 + 175 + 1933.75 + 1592.50 = $4,243.75
+  // NJ has $1,000 std ded for single — actually NJ has no std ded; we have 0 in our data probably.
+  // Let me just verify with calculateStateTax to get the actual NJ tax for $100k AGI.
+  const njDirectTax = calculateStateTax(100000, "NJ", "single", 2024);
+
+  const r = calculateMultiStateTax({
+    residentState: "NJ",
+    federalAgi: 100000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "PA", wages: 100000 }],
+  });
+
+  checkExact("PA non-resident tax = $0 (reciprocity)", r.nonresidentStateTaxes[0]?.tax ?? -1, 0);
+  checkExact("PA reciprocityApplied = true", r.nonresidentStateTaxes[0]?.reciprocityApplied ?? false, true);
+  check("NJ resident tax = full NJ liability (no credit needed)", r.residentStateTax, njDirectTax, 1);
+  check("Total state tax = NJ tax", r.totalStateTax, njDirectTax, 1);
+  checkExact("Resident credit applied = $0 (reciprocity)", r.residentCreditApplied, 0);
+}
+
+header("Multi-state — NJ resident commuting to NY (no reciprocity, credit applies)");
+{
+  // NJ resident, $100k all wages from NY employer.
+  // NY 2024 single brackets are progressive ~4% to 10.9%. NY tax on $100k ≈ ?
+  // NJ resident tax on $100k AGI = njFullTax.
+  // Credit: NJ gives credit for NY tax paid, capped at NJ's tax on the same income.
+  // For all wages = AGI, the credit cap is the full NJ tax → credit = min(NY tax, NJ tax).
+  // Net resident NJ tax = max(0, NJ tax - credit). Total = NJ + NY = NJ + NY-credit-applied at NY level.
+  // Actually: totalStateTax = residentStateTax (post-credit) + sum(NR taxes)
+  //   = (NJ - min(NY, NJ)) + NY
+  //   = If NY ≤ NJ: (NJ - NY) + NY = NJ
+  //   = If NY > NJ: 0 + NY = NY
+  // So total = max(NJ, NY) when all wages from NY.
+
+  const nyTax = calculateStateTax(100000, "NY", "single", 2024);
+  const njFullTax = calculateStateTax(100000, "NJ", "single", 2024);
+
+  const r = calculateMultiStateTax({
+    residentState: "NJ",
+    federalAgi: 100000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "NY", wages: 100000 }],
+  });
+
+  check("NY non-resident tax matches calculateStateTax(NY)", r.nonresidentStateTaxes[0].tax, nyTax, 1);
+  checkExact("NY reciprocityApplied = false", r.nonresidentStateTaxes[0]?.reciprocityApplied ?? true, false);
+  check("Total state tax = max(NJ, NY) when 100% from NY", r.totalStateTax, Math.max(njFullTax, nyTax), 1);
+}
+
+header("Multi-state — Partial NR allocation (50% CA, 50% TX)");
+{
+  // CA resident, $100k W-2: $50k CA-sourced + $50k TX-sourced.
+  // TX: no income tax. CA: taxes worldwide $100k AGI.
+  // No NR tax (TX = $0). No credit needed.
+  const caFullTax = calculateStateTax(100000, "CA", "single", 2024);
+  const r = calculateMultiStateTax({
+    residentState: "CA",
+    federalAgi: 100000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [
+      { stateCode: "CA", wages: 50000 },
+      { stateCode: "TX", wages: 50000 },
+    ],
+  });
+  // CA wages omitted from NR allocation (resident state); only TX is in the NR list.
+  const txEntry = r.nonresidentStateTaxes.find((s) => s.state === "TX");
+  checkExact("TX NR tax = $0 (no income tax)", txEntry?.tax ?? -1, 0);
+  check("Total state tax = full CA tax", r.totalStateTax, caFullTax, 1);
+}
+
+header("Multi-state — TX resident with CA-sourced W-2 (no reciprocity)");
+{
+  // TX resident (no income tax), $100k W-2 from CA employer.
+  // CA NR taxes the $100k. TX resident tax = $0. No credit.
+  // Total = CA NR tax.
+  const caTax = calculateStateTax(100000, "CA", "single", 2024);
+  const r = calculateMultiStateTax({
+    residentState: "TX",
+    federalAgi: 100000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "CA", wages: 100000 }],
+  });
+  check("CA NR tax = full CA tax on $100k", r.nonresidentStateTaxes[0].tax, caTax, 1);
+  checkExact("TX resident tax = $0", r.residentStateTax, 0);
+  check("Total state tax = CA NR amount", r.totalStateTax, caTax, 1);
+  checkExact("No resident credit (TX has no tax to credit against)", r.residentCreditApplied, 0);
+}
+
+header("Multi-state — Two non-resident states + resident");
+{
+  // CA resident, $150k W-2 split: $50k CA + $60k NY + $40k OR.
+  // NY NR tax on $60k. OR NR tax on $40k.
+  // CA resident tax on $150k AGI. Credit-for-tax-paid limited to CA's share.
+  const r = calculateMultiStateTax({
+    residentState: "CA",
+    federalAgi: 150000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [
+      { stateCode: "CA", wages: 50000 },
+      { stateCode: "NY", wages: 60000 },
+      { stateCode: "OR", wages: 40000 },
+    ],
+  });
+  checkExact("2 non-resident states tracked", r.nonresidentStateTaxes.length, 2);
+  if (r.totalStateTax > 0) PASS.push(`✓ Total state tax = $${r.totalStateTax.toFixed(2)} (CA resident + NY/OR NR)`);
+  else FAIL.push(`✗ Total state tax should be positive, got $${r.totalStateTax}`);
+  if (r.residentCreditApplied > 0) PASS.push(`✓ Resident credit applied (CA credits NY/OR tax): $${r.residentCreditApplied.toFixed(2)}`);
+  else FAIL.push(`✗ Resident credit should be > 0 when CA gets NR tax credit`);
+}
+
+header("End-to-end multi-state — NJ resident, PA wages (reciprocity)");
+{
+  // NJ resident, $80k W-2 with PA stateCode.
+  // Federal: AGI $80k, std ded $14,600, taxable $65,400.
+  //   Tax = $1,160 + ($47,150-$11,600)×0.12 + ($65,400-$47,150)×0.22 = $9,441.
+  // State: PA reciprocity → PA = $0. NJ taxes full $80k worldwide.
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "NJ", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 80000, federalTaxWithheldBox2: 9000, stateCode: "PA" }],
+    form1099s: [],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  check("Federal tax $9,441", r.federalTaxLiability, 9441, 2);
+  // NJ tax on $80k single — verify via direct call
+  const njDirectTax = calculateStateTax(80000, "NJ", "single", 2024);
+  check("State tax = NJ tax on $80k (reciprocity gives no credit needed)", r.stateTaxLiability, njDirectTax, 1);
+  checkExact("PA reciprocity reflected in multi-state breakdown", r.multiState.nonresidentStateTaxes[0]?.reciprocityApplied ?? false, true);
 }
 
 // ── Summary ─────────────────────────────────────────────────────────────────
