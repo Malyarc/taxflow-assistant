@@ -54,6 +54,9 @@ interface FormState {
   acaAnnualSlcsp: string;
   acaAdvanceAptc: string;
   acaHouseholdSize: number | "";
+  // Phase 2e — Schedule E rental flags
+  rentalActiveParticipant: boolean;
+  rentalRealEstateProfessional: boolean;
   notes: string;
 }
 
@@ -78,6 +81,8 @@ const defaultForm: FormState = {
   acaAnnualSlcsp: "",
   acaAdvanceAptc: "",
   acaHouseholdSize: "",
+  rentalActiveParticipant: true,  // IRS default — most rental owners qualify
+  rentalRealEstateProfessional: false,
   notes: "",
 };
 
@@ -132,6 +137,8 @@ export default function ClientForm({ editId }: Props) {
         acaAnnualSlcsp: e.acaAnnualSlcsp != null ? String(e.acaAnnualSlcsp) : "",
         acaAdvanceAptc: e.acaAdvanceAptc != null ? String(e.acaAdvanceAptc) : "",
         acaHouseholdSize: e.acaHouseholdSize ?? "",
+        rentalActiveParticipant: e.rentalActiveParticipant ?? true,
+        rentalRealEstateProfessional: e.rentalRealEstateProfessional ?? false,
         notes: existing.notes || "",
       });
     }
@@ -166,6 +173,8 @@ export default function ClientForm({ editId }: Props) {
       acaAnnualSlcsp: form.acaAnnualSlcsp === "" ? null : Number(form.acaAnnualSlcsp),
       acaAdvanceAptc: form.acaAdvanceAptc === "" ? null : Number(form.acaAdvanceAptc),
       acaHouseholdSize: form.acaHouseholdSize === "" ? null : Number(form.acaHouseholdSize),
+      rentalActiveParticipant: Boolean(form.rentalActiveParticipant),
+      rentalRealEstateProfessional: Boolean(form.rentalRealEstateProfessional),
     };
     if (isEdit) {
       updateClient.mutate(
@@ -462,6 +471,42 @@ export default function ClientForm({ editId }: Props) {
                     placeholder="auto"
                   />
                   <p className="text-xs text-muted-foreground">For FPL%. Auto = filer + spouse (MFJ) + dependents.</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t pt-4 space-y-4">
+              <div>
+                <h3 className="text-sm font-semibold">Phase 2: Schedule E Rental Real Estate</h3>
+                <p className="text-xs text-muted-foreground">§469 participation flags (drives passive loss deductibility).</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex items-start gap-2">
+                  <input
+                    id="rental-active"
+                    type="checkbox"
+                    className="mt-1"
+                    checked={form.rentalActiveParticipant}
+                    onChange={(e) => set("rentalActiveParticipant", e.target.checked)}
+                  />
+                  <Label htmlFor="rental-active" className="font-normal">
+                    Active participant in rental
+                    <p className="text-xs text-muted-foreground mt-1">Enables $25k special allowance ($12.5k MFS) with MAGI $100k–$150k phase-out.</p>
+                  </Label>
+                </div>
+                <div className="flex items-start gap-2">
+                  <input
+                    id="rental-pro"
+                    type="checkbox"
+                    className="mt-1"
+                    checked={form.rentalRealEstateProfessional}
+                    onChange={(e) => set("rentalRealEstateProfessional", e.target.checked)}
+                  />
+                  <Label htmlFor="rental-pro" className="font-normal">
+                    Real estate professional (§469(c)(7))
+                    <p className="text-xs text-muted-foreground mt-1">750+ hours/year AND &gt; 50% of total work time → no passive loss limit.</p>
+                  </Label>
                 </div>
               </div>
             </div>

@@ -863,6 +863,10 @@ function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: nu
                   ...((Number((taxReturn as any).foreignTaxCredit) || 0) > 0 ? [["  └─ Foreign Tax Credit", (taxReturn as any).foreignTaxCredit]] as Array<[string, unknown]> : []),
                   ...((Number((taxReturn as any).residentialEnergyCredits) || 0) > 0 ? [["  └─ Residential Energy Credits", (taxReturn as any).residentialEnergyCredits]] as Array<[string, unknown]> : []),
                   ...((Number((taxReturn as any).premiumTaxCredit) || 0) !== 0 ? [[`  └─ Premium Tax Credit ${Number((taxReturn as any).premiumTaxCredit) > 0 ? "(refundable)" : "(repayment)"}`, (taxReturn as any).premiumTaxCredit]] as Array<[string, unknown]> : []),
+                  ...((Number((taxReturn as any).capitalLossDeducted) || 0) > 0 ? [["  └─ Capital Loss Deducted ($3k cap)", (taxReturn as any).capitalLossDeducted]] as Array<[string, unknown]> : []),
+                  ...((Number((taxReturn as any).scheduleERentalAppliedToAgi) || 0) !== 0 ? [[`  └─ Schedule E Rental ${Number((taxReturn as any).scheduleERentalAppliedToAgi) > 0 ? "(income)" : "(loss applied)"}`, (taxReturn as any).scheduleERentalAppliedToAgi]] as Array<[string, unknown]> : []),
+                  ...((Number((taxReturn as any).scheduleEPassiveLossSuspended) || 0) > 0 ? [["  └─ §469 Passive Loss Suspended", (taxReturn as any).scheduleEPassiveLossSuspended]] as Array<[string, unknown]> : []),
+                  ...((Number((taxReturn as any).stateRetirementExemption) || 0) > 0 ? [["  └─ State Retirement Exemption (PA/IL/MS)", (taxReturn as any).stateRetirementExemption]] as Array<[string, unknown]> : []),
                   ["Federal Withheld", taxReturn.federalTaxWithheld],
                   ["Federal Refund/Owed", taxReturn.federalRefundOrOwed],
                   ["State Tax", taxReturn.stateTaxLiability],
@@ -1813,6 +1817,13 @@ function AdjustmentsTab({ clientId }: { clientId: number }) {
     energy_efficient_home: "Energy Efficient Home (§25C — windows/doors/insulation)",
     energy_efficient_heatpump: "Energy Efficient Heat Pump (§25C — heat pump/biomass)",
     ev_charger_property: "EV Charger Property (§30C — Form 8911)",
+    // Phase 2
+    capital_loss_carryforward_short: "Capital Loss Carryforward — Short-term (from prior year)",
+    capital_loss_carryforward_long: "Capital Loss Carryforward — Long-term (from prior year)",
+    schedule_e_rental_income: "Schedule E Rental Income (gross rents received)",
+    schedule_e_rental_expenses: "Schedule E Rental Expenses (excl. depreciation)",
+    schedule_e_macrs_depreciation: "Schedule E MACRS Depreciation",
+    schedule_e_passive_loss_carryforward: "Schedule E Passive Loss Carryforward (prior year suspended)",
     other: "Other",
   };
 
