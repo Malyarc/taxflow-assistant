@@ -114,6 +114,7 @@ export interface W2Fact {
 export interface Form1099Fact {
   taxYear?: number | null;
   formType: string; // "nec" | "misc" | "int" | "div" | "b" | "r" | "g" | "k"
+  payerName?: string | null;
   // form-specific fields, all coerced via toNum
   nonemployeeCompensation?: Numish;
   interestIncome?: Numish;
@@ -168,6 +169,17 @@ export interface TaxReturnInputs {
 
 // ── 1099 summary ────────────────────────────────────────────────────────────
 
+/** Schedule B Part I (interest) and Part II (dividends) per-payer detail */
+export interface ScheduleBPayer {
+  payerName: string;
+  interestIncome: number;
+  taxExemptInterest: number;
+  ordinaryDividends: number;
+  qualifiedDividends: number;
+  totalCapitalGainDistribution: number;
+  federalWithheld: number;
+}
+
 export interface Form1099Summary {
   /** Self-employment income (1099-NEC) */
   seIncome: number;
@@ -199,6 +211,10 @@ export interface Form1099Summary {
   totalInvestmentIncome: number;
   /** Number of 1099 records included */
   recordCount: number;
+  /** Schedule B Part I/II per-payer breakdown — interest & dividend payers (1099-INT, 1099-DIV) */
+  scheduleBPayers: ScheduleBPayer[];
+  /** Whether Schedule B is REQUIRED to be filed (interest > $1,500 OR ordinary dividends > $1,500) */
+  scheduleBRequired: boolean;
 }
 
 export function summarize1099s(records: Form1099Fact[]): Form1099Summary {
@@ -268,6 +284,51 @@ export function summarize1099s(records: Form1099Fact[]): Form1099Summary {
   const totalInvestmentIncome =
     interestIncome + ordinaryDividends + qualifiedDividends + longTermCapitalGains + shortTermCapitalGains;
 
+  // ── Schedule B per-payer aggregation ──
+  // Group 1099-INT and 1099-DIV records by payerName for Schedule B reporting.
+  // Schedule B is REQUIRED when interest > $1,500 OR ordinary dividends > $1,500.
+  const payerMap = new Map<string, ScheduleBPayer>();
+  const ensurePayer = (name: string | null | undefined): ScheduleBPayer => {
+    const key = (name && name.trim()) || "(Unspecified Payer)";
+    let p = payerMap.get(key);
+    if (!p) {
+      p = {
+        payerName: key,
+        interestIncome: 0,
+        taxExemptInterest: 0,
+        ordinaryDividends: 0,
+        qualifiedDividends: 0,
+        totalCapitalGainDistribution: 0,
+        federalWithheld: 0,
+      };
+      payerMap.set(key, p);
+    }
+    return p;
+  };
+
+  for (const r of intRecords) {
+    const p = ensurePayer(r.payerName);
+    p.interestIncome += Math.max(0, toNum(r.interestIncome) - toNum(r.taxExemptInterest));
+    p.taxExemptInterest += toNum(r.taxExemptInterest);
+    p.federalWithheld += toNum(r.federalTaxWithheld);
+  }
+  for (const r of divRecords) {
+    const p = ensurePayer(r.payerName);
+    p.qualifiedDividends += toNum(r.qualifiedDividends);
+    p.ordinaryDividends += Math.max(0, toNum(r.ordinaryDividends) - toNum(r.qualifiedDividends));
+    p.totalCapitalGainDistribution += toNum(r.totalCapitalGainDistribution);
+    p.federalWithheld += toNum(r.federalTaxWithheld);
+  }
+
+  const scheduleBPayers = [...payerMap.values()].sort((a, b) =>
+    a.payerName.localeCompare(b.payerName),
+  );
+  // Schedule B required when interest > $1,500 OR dividends > $1,500
+  // Note: this uses ordinary dividends as reported on 1099-DIV Box 1a (which
+  // INCLUDES qualified dividends per IRS Sched B instructions)
+  const totalOrdinaryDivsForSchedB = ordinaryDividends + qualifiedDividends;
+  const scheduleBRequired = interestIncome > 1500 || totalOrdinaryDivsForSchedB > 1500;
+
   return {
     seIncome,
     interestIncome,
@@ -284,6 +345,8 @@ export function summarize1099s(records: Form1099Fact[]): Form1099Summary {
     totalOrdinaryIncome,
     totalInvestmentIncome,
     recordCount: records.length,
+    scheduleBPayers,
+    scheduleBRequired,
   };
 }
 
