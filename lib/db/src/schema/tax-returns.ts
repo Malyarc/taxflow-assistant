@@ -65,6 +65,15 @@ export const taxReturnsTable = pgTable(
     netCapitalGainLoss: numeric("net_capital_gain_loss", { precision: 12, scale: 2 }),
     /** State retirement-income exemption (PA, IL, MS exempt qualified retirement) */
     stateRetirementExemption: numeric("state_retirement_exemption", { precision: 12, scale: 2 }),
+    // Phase 2e: Schedule E rental real estate
+    /** Schedule E gross net (rental income - expenses - depreciation - prior carryforward) */
+    scheduleERentalGrossNet: numeric("schedule_e_rental_gross_net", { precision: 12, scale: 2 }),
+    /** Net rental amount applied to AGI (after §469 PAL limit) */
+    scheduleERentalAppliedToAgi: numeric("schedule_e_rental_applied_to_agi", { precision: 12, scale: 2 }),
+    /** §469 passive loss allowance applied this year */
+    scheduleEPalAllowance: numeric("schedule_e_pal_allowance", { precision: 12, scale: 2 }),
+    /** §469 passive loss suspended to next year */
+    scheduleEPassiveLossSuspended: numeric("schedule_e_passive_loss_suspended", { precision: 12, scale: 2 }),
     notes: text("notes"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),

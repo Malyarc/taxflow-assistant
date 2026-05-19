@@ -9,6 +9,8 @@ import {
   calculateStateTax,
   calculateMultiStateTax,
   getStateRetirementExemption,
+  calculateMacrsDepreciation,
+  calculatePassiveActivityLossAllowance,
 } from "../../artifacts/api-server/src/lib/taxCalculator";
 import { hasReciprocity } from "../../artifacts/api-server/src/lib/stateTaxData";
 import {
@@ -385,6 +387,253 @@ header("End-to-end multi-state — NJ resident, PA wages (reciprocity)");
   const njDirectTax = calculateStateTax(80000, "NJ", "single", 2024);
   check("State tax = NJ tax on $80k (reciprocity gives no credit needed)", r.stateTaxLiability, njDirectTax, 1);
   checkExact("PA reciprocity reflected in multi-state breakdown", r.multiState.nonresidentStateTaxes[0]?.reciprocityApplied ?? false, true);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// MACRS DEPRECIATION (27.5yr residential, 39yr commercial, mid-month)
+// ════════════════════════════════════════════════════════════════════════════
+header("MACRS — Residential rental, placed in January (first year)");
+{
+  // $275,000 basis, residential 27.5yr SL, placed in service Jan 2024.
+  // First year mid-month: (12.5 - 1) / 12 = 11.5/12 = 0.9583.
+  // Annual dep = 275000 / 27.5 = $10,000.
+  // First year = $10,000 × 0.9583 = $9,583.33.
+  // Per IRS Table A-6 January: 3.485% × $275,000 = $9,583.75 — close (rounding).
+  const r = calculateMacrsDepreciation({
+    basis: 275000,
+    propertyType: "residential",
+    monthPlacedInService: 1,
+    yearPlacedInService: 2024,
+    taxYear: 2024,
+  });
+  check("Y1 January residential ≈ $9,583.33", r.currentYearDepreciation, 9583.33, 1);
+  check("Accumulated = Y1 dep", r.accumulatedDepreciation, 9583.33, 1);
+  check("Remaining basis ≈ $265,417", r.remainingBasis, 275000 - 9583.33, 1);
+}
+
+header("MACRS — Residential, placed in June (mid-year)");
+{
+  // $275,000 basis, residential, placed in service Jun 2024.
+  // Y1: (12.5 - 6) / 12 = 6.5/12 = 0.5417. Dep = $10,000 × 0.5417 = $5,416.67.
+  // IRS Table A-6 June: 1.970% × $275,000 = $5,417.50 ≈
+  const r = calculateMacrsDepreciation({
+    basis: 275000,
+    propertyType: "residential",
+    monthPlacedInService: 6,
+    yearPlacedInService: 2024,
+    taxYear: 2024,
+  });
+  check("Y1 June residential ≈ $5,416.67", r.currentYearDepreciation, 5416.67, 1);
+}
+
+header("MACRS — Residential, Y2 (full year)");
+{
+  // $275,000 basis, placed Jan 2024. Compute Y2 (2025).
+  // Y1 = $9,583.33. Y2 = $10,000 (full annual).
+  // Accumulated through Y2 = $9,583.33 + $10,000 = $19,583.33.
+  const r = calculateMacrsDepreciation({
+    basis: 275000,
+    propertyType: "residential",
+    monthPlacedInService: 1,
+    yearPlacedInService: 2024,
+    taxYear: 2025,
+  });
+  check("Y2 = $10,000 full year", r.currentYearDepreciation, 10000, 1);
+  check("Accumulated = $19,583.33", r.accumulatedDepreciation, 19583.33, 1);
+}
+
+header("MACRS — Commercial 39yr, Y1 March");
+{
+  // $390,000 basis, commercial 39yr, placed in service March 2024.
+  // Annual dep = $10,000 (= 390000 / 39).
+  // Y1: (12.5 - 3) / 12 = 9.5/12 = 0.7917. Dep = $10,000 × 0.7917 = $7,916.67.
+  const r = calculateMacrsDepreciation({
+    basis: 390000,
+    propertyType: "commercial",
+    monthPlacedInService: 3,
+    yearPlacedInService: 2024,
+    taxYear: 2024,
+  });
+  check("Y1 March commercial ≈ $7,916.67", r.currentYearDepreciation, 7916.67, 1);
+  checkExact("Recovery years = 39", r.recoveryYears, 39);
+}
+
+header("MACRS — Not yet in service (future year placed)");
+{
+  // Placed in 2025, asking for 2024 → $0.
+  const r = calculateMacrsDepreciation({
+    basis: 275000,
+    propertyType: "residential",
+    monthPlacedInService: 1,
+    yearPlacedInService: 2025,
+    taxYear: 2024,
+  });
+  checkExact("Y(-1) → $0 dep", r.currentYearDepreciation, 0);
+  checkExact("Accumulated = $0", r.accumulatedDepreciation, 0);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// §469 PASSIVE ACTIVITY LOSS ALLOWANCE
+// ════════════════════════════════════════════════════════════════════════════
+header("§469 PAL — Active participant, MAGI < $100k, full $25k allowance");
+{
+  // Loss $15,000, active participant, MAGI $80k. Below $100k phase-out start.
+  // Allowance = min($15k, $25k cap) = $15,000. All deductible.
+  const r = calculatePassiveActivityLossAllowance({
+    rentalLoss: 15000,
+    modifiedAgi: 80000,
+    filingStatus: "single",
+    isActiveParticipant: true,
+    isRealEstateProfessional: false,
+  });
+  check("Allowance cap = $25,000", r.allowanceCap, 25000);
+  check("Allowance after phase-out = $25,000 (no phase-out)", r.allowanceAfterPhaseOut, 25000);
+  check("Allowed this year = $15,000 (full loss)", r.allowedThisYear, 15000);
+  checkExact("Suspended = $0", r.suspendedToNextYear, 0);
+}
+
+header("§469 PAL — Active, MAGI $125k (mid phase-out)");
+{
+  // Loss $20k, active, MAGI $125k. Phase-out: ($125k - $100k) × 0.5 = $12,500 reduction.
+  // Allowance = $25,000 - $12,500 = $12,500. Allowed = min($20k, $12,500) = $12,500.
+  // Suspended = $20,000 - $12,500 = $7,500.
+  const r = calculatePassiveActivityLossAllowance({
+    rentalLoss: 20000,
+    modifiedAgi: 125000,
+    filingStatus: "single",
+    isActiveParticipant: true,
+    isRealEstateProfessional: false,
+  });
+  check("Allowance after phase-out = $12,500", r.allowanceAfterPhaseOut, 12500);
+  check("Allowed this year = $12,500", r.allowedThisYear, 12500);
+  check("Suspended = $7,500", r.suspendedToNextYear, 7500);
+}
+
+header("§469 PAL — Active, MAGI $150k+ (fully phased out)");
+{
+  const r = calculatePassiveActivityLossAllowance({
+    rentalLoss: 20000,
+    modifiedAgi: 150000,
+    filingStatus: "single",
+    isActiveParticipant: true,
+    isRealEstateProfessional: false,
+  });
+  checkExact("Fully phased out at $150k", r.allowanceAfterPhaseOut, 0);
+  checkExact("Allowed = $0", r.allowedThisYear, 0);
+  check("All $20k suspended", r.suspendedToNextYear, 20000);
+}
+
+header("§469 PAL — Real estate professional (no limit)");
+{
+  const r = calculatePassiveActivityLossAllowance({
+    rentalLoss: 100000,
+    modifiedAgi: 500000,
+    filingStatus: "single",
+    isActiveParticipant: true,
+    isRealEstateProfessional: true,
+  });
+  check("RE pro → full $100k deductible", r.allowedThisYear, 100000);
+  checkExact("Nothing suspended", r.suspendedToNextYear, 0);
+}
+
+header("§469 PAL — Not active, not pro (full suspension)");
+{
+  const r = calculatePassiveActivityLossAllowance({
+    rentalLoss: 10000,
+    modifiedAgi: 50000,
+    filingStatus: "single",
+    isActiveParticipant: false,
+    isRealEstateProfessional: false,
+  });
+  checkExact("Not active → no allowance", r.allowedThisYear, 0);
+  check("All $10k suspended", r.suspendedToNextYear, 10000);
+}
+
+header("§469 PAL — MFS active participant (halved allowance)");
+{
+  // MFS gets $12,500 cap and $50k-$75k phase-out.
+  const r = calculatePassiveActivityLossAllowance({
+    rentalLoss: 8000,
+    modifiedAgi: 60000,
+    filingStatus: "married_filing_separately",
+    isActiveParticipant: true,
+    isRealEstateProfessional: false,
+  });
+  check("MFS cap = $12,500", r.allowanceCap, 12500);
+  // Phase-out at MAGI $60k: ($60k - $50k) × 0.5 = $5k reduction
+  // Allowance = $12,500 - $5,000 = $7,500. Allowed = min($8k, $7.5k) = $7,500.
+  check("MFS allowance after phase-out = $7,500", r.allowanceAfterPhaseOut, 7500);
+  check("MFS allowed = $7,500", r.allowedThisYear, 7500);
+  check("MFS suspended = $500", r.suspendedToNextYear, 500);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// END-TO-END: Schedule E rental with depreciation + §469 PAL
+// ════════════════════════════════════════════════════════════════════════════
+header("End-to-end Schedule E — rental loss within $25k allowance");
+{
+  // Single, $60k W-2. Rental: $20k income, $12k expenses, $10k depreciation.
+  // Gross rental net = $20k - $12k - $10k = -$2k loss.
+  // Active participant, MAGI ~$60k → full $25k allowance. Loss fully deductible.
+  // AGI = $60k + (-$2k) = $58k.
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, rentalActiveParticipant: true },
+    w2s: [{ taxYear: 2024, wagesBox1: 60000, federalTaxWithheldBox2: 6000, stateCode: "FL" }],
+    form1099s: [],
+    adjustments: [
+      { adjustmentType: "schedule_e_rental_income", amount: 20000, isApplied: true },
+      { adjustmentType: "schedule_e_rental_expenses", amount: 12000, isApplied: true },
+      { adjustmentType: "schedule_e_macrs_depreciation", amount: 10000, isApplied: true },
+    ],
+    taxYear: 2024,
+  });
+  check("Gross rental net = -$2,000", r.scheduleERentalGrossNet, -2000);
+  check("Rental applied to AGI = -$2,000 (fully allowed)", r.scheduleERentalAppliedToAgi, -2000);
+  check("Total income = $58,000 (after rental loss)", r.totalIncome, 58000, 1);
+  checkExact("No suspended losses", r.scheduleEPassiveLossSuspended, 0);
+}
+
+header("End-to-end Schedule E — high-income filer, loss suspended");
+{
+  // Single, $160k W-2 + $10k rental loss.
+  // MAGI for §469 ≈ AGI before rental ≈ $160k. Fully phased out at $150k.
+  // Allowance = $0. All $10k suspended.
+  // AGI = $160k (no deduction).
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, rentalActiveParticipant: true },
+    w2s: [{ taxYear: 2024, wagesBox1: 160000, federalTaxWithheldBox2: 25000, stateCode: "FL" }],
+    form1099s: [],
+    adjustments: [
+      { adjustmentType: "schedule_e_rental_income", amount: 5000, isApplied: true },
+      { adjustmentType: "schedule_e_rental_expenses", amount: 8000, isApplied: true },
+      { adjustmentType: "schedule_e_macrs_depreciation", amount: 7000, isApplied: true },
+    ],
+    taxYear: 2024,
+  });
+  check("Gross rental net = -$10,000", r.scheduleERentalGrossNet, -10000);
+  checkExact("Rental applied to AGI = $0 (fully phased out)", r.scheduleERentalAppliedToAgi, 0);
+  check("Suspended loss = $10,000", r.scheduleEPassiveLossSuspended, 10000);
+  check("Total income = $160,000 (unchanged)", r.totalIncome, 160000, 1);
+}
+
+header("End-to-end Schedule E — rental NET INCOME (positive)");
+{
+  // Rental net positive — flows directly to AGI, no PAL limit.
+  // Single $50k W-2 + $3k rental net income.
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, federalTaxWithheldBox2: 5000, stateCode: "FL" }],
+    form1099s: [],
+    adjustments: [
+      { adjustmentType: "schedule_e_rental_income", amount: 15000, isApplied: true },
+      { adjustmentType: "schedule_e_rental_expenses", amount: 8000, isApplied: true },
+      { adjustmentType: "schedule_e_macrs_depreciation", amount: 4000, isApplied: true },
+    ],
+    taxYear: 2024,
+  });
+  check("Gross rental net = +$3,000", r.scheduleERentalGrossNet, 3000);
+  check("Rental applied to AGI = +$3,000 (positive, no limit)", r.scheduleERentalAppliedToAgi, 3000);
+  check("Total income = $53,000", r.totalIncome, 53000, 1);
 }
 
 // ── Summary ─────────────────────────────────────────────────────────────────

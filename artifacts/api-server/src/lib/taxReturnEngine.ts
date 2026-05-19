@@ -42,8 +42,10 @@ import {
   calculateStateTax,
   calculateMultiStateTax,
   getStateRetirementExemption,
+  calculatePassiveActivityLossAllowance,
   getFederalStandardDeduction,
   type MultiStateTaxResult,
+  type PassiveActivityLossResult,
   type CtcCalculation,
   type SeTaxCalculation,
   type NiitCalculation,
@@ -97,6 +99,8 @@ export interface ClientFacts {
   acaAnnualSlcsp?: Numish;
   acaAdvanceAptc?: Numish;
   acaHouseholdSize?: number | null;
+  rentalActiveParticipant?: boolean | null;
+  rentalRealEstateProfessional?: boolean | null;
 }
 
 export interface W2Fact {
@@ -349,6 +353,14 @@ export interface ComputedTaxReturn {
   stateRetirementExemption: number;
   /** Multi-state breakdown — resident state tax (after credit), non-resident state taxes, reciprocity status */
   multiState: MultiStateTaxResult;
+  /** Schedule E rental real estate — gross net (income - expenses - depreciation - prior carryforward) */
+  scheduleERentalGrossNet: number;
+  /** Schedule E rental income applied to AGI (after §469 PAL limit if loss) */
+  scheduleERentalAppliedToAgi: number;
+  /** §469 passive activity loss allowance result (null if no rental loss) */
+  passiveActivityLoss: PassiveActivityLossResult | null;
+  /** Schedule E passive loss suspended to next year */
+  scheduleEPassiveLossSuspended: number;
   /** Detailed breakdowns for transparency */
   detail: {
     se: SeTaxCalculation;
@@ -460,6 +472,12 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const stcgCarryforward = sumByType("capital_loss_carryforward_short");
   const ltcgCarryforward = sumByType("capital_loss_carryforward_long");
 
+  // Phase 2e: Schedule E rental real estate
+  const scheduleERentalIncomeAdj = sumByType("schedule_e_rental_income");
+  const scheduleERentalExpensesAdj = sumByType("schedule_e_rental_expenses");
+  const scheduleEMacrsDepreciationAdj = sumByType("schedule_e_macrs_depreciation");
+  const scheduleEPassiveLossCarryforwardAdj = sumByType("schedule_e_passive_loss_carryforward");
+
   // ── Step 1: Schedule C — net SE income before SE tax ─────────────────
   const grossSeIncome = seIncomeFromAdj + form1099Summary.seIncome;
   const scheduleCExpenses = Math.min(
@@ -542,7 +560,20 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const longTermGains = ltcgPreferential;
   const shortTermGains = stcgInOrdinary;
 
-  const ordinaryAdditionalIncome =
+  // ── Phase 2e: Schedule E rental net income/loss + §469 PAL limit ──
+  // Step 1: Compute gross rental position (income - expenses - depreciation)
+  // Step 2: Add prior-year suspended passive losses (carryforward)
+  // Step 3: Apply §469 PAL limit (uses provisional AGI as MAGI)
+  // Step 4: Net deductible position flows to AGI; suspended losses tracked
+  const grossRentalNet =
+    scheduleERentalIncomeAdj -
+    scheduleERentalExpensesAdj -
+    scheduleEMacrsDepreciationAdj -
+    scheduleEPassiveLossCarryforwardAdj;
+
+  // Provisional AGI (before applying rental net) — used as MAGI for §469
+  // phase-out and as initial AGI before any rental adjustment.
+  const ordinaryAdditionalIncomeBeforeRental =
     additionalIncome +
     additionalIncomeAdjustments +
     investmentIncomeFromAdj +
@@ -553,10 +584,30 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     form1099Summary.unemploymentIncome +
     form1099Summary.paymentCardIncome +
     form1099Summary.miscIncome +
-    ltcgPreferential +              // positive LTCG (post-netting) flows to AGI
-    qualifiedDividends +            // QDIV always positive
-    stcgInOrdinary -                // positive STCG (post-netting) at ordinary rate
-    capitalLossDeducted;            // $3k cap loss reduces AGI per Sched D Line 21
+    ltcgPreferential +
+    qualifiedDividends +
+    stcgInOrdinary -
+    capitalLossDeducted;
+  const provisionalAgiForPal = Math.max(0, totalWages + ordinaryAdditionalIncomeBeforeRental);
+
+  let rentalNetAppliedToAgi = 0;
+  let passiveLossAllowance: PassiveActivityLossResult | null = null;
+  if (grossRentalNet >= 0) {
+    // Net income: flows directly to AGI (no PAL limit on income)
+    rentalNetAppliedToAgi = grossRentalNet;
+  } else {
+    // Net loss: apply §469 PAL limit ($25k allowance or fully suspended)
+    passiveLossAllowance = calculatePassiveActivityLossAllowance({
+      rentalLoss: Math.abs(grossRentalNet),
+      modifiedAgi: provisionalAgiForPal,
+      filingStatus: client.filingStatus,
+      isActiveParticipant: client.rentalActiveParticipant ?? true,
+      isRealEstateProfessional: client.rentalRealEstateProfessional ?? false,
+    });
+    rentalNetAppliedToAgi = -passiveLossAllowance.allowedThisYear; // negative = reduces AGI
+  }
+
+  const ordinaryAdditionalIncome = ordinaryAdditionalIncomeBeforeRental + rentalNetAppliedToAgi;
 
   const totalIncomeProvisional = totalWages + ordinaryAdditionalIncome;
 
@@ -917,6 +968,10 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     netCapitalGainLoss: netCapitalTotal,
     stateRetirementExemption: stateRetirementExemptionInfo.exemption,
     multiState,
+    scheduleERentalGrossNet: grossRentalNet,
+    scheduleERentalAppliedToAgi: rentalNetAppliedToAgi,
+    passiveActivityLoss: passiveLossAllowance,
+    scheduleEPassiveLossSuspended: passiveLossAllowance?.suspendedToNextYear ?? 0,
     detail: { se, niit, qbi, amt, capitalGains: capGains },
     w2Count: w2Records.length,
     form1099Count: form1099Records.length,

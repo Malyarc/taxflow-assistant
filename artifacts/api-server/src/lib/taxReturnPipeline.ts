@@ -190,6 +190,11 @@ export async function recalculateAndUpsertTaxReturn(
     capitalLossCarryforwardLong: String(result.capitalLossCarryforwardLong),
     netCapitalGainLoss: String(result.netCapitalGainLoss),
     stateRetirementExemption: String(result.stateRetirementExemption),
+    // Phase 2e: Schedule E rental real estate
+    scheduleERentalGrossNet: String(result.scheduleERentalGrossNet),
+    scheduleERentalAppliedToAgi: String(result.scheduleERentalAppliedToAgi),
+    scheduleEPalAllowance: result.passiveActivityLoss?.allowanceAfterPhaseOut != null ? String(result.passiveActivityLoss.allowanceAfterPhaseOut) : null,
+    scheduleEPassiveLossSuspended: String(result.scheduleEPassiveLossSuspended),
   };
 
   if (existing) {

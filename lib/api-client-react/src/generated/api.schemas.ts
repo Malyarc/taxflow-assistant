@@ -66,6 +66,10 @@ export interface Client {
    * @nullable
    */
   acaHouseholdSize?: number | null;
+  /** §469 active participation flag for rental real estate ($25k special allowance). */
+  rentalActiveParticipant?: boolean;
+  /** §469 real estate professional (750+ hours, >50% of time) — no PAL limit. */
+  rentalRealEstateProfessional?: boolean;
   /** @nullable */
   notes?: string | null;
   createdAt: string;
@@ -112,6 +116,8 @@ export interface CreateClientBody {
   acaAdvanceAptc?: number | null;
   /** @nullable */
   acaHouseholdSize?: number | null;
+  rentalActiveParticipant?: boolean;
+  rentalRealEstateProfessional?: boolean;
   /** @nullable */
   notes?: string | null;
 }
@@ -156,6 +162,8 @@ export interface UpdateClientBody {
   acaAdvanceAptc?: number | null;
   /** @nullable */
   acaHouseholdSize?: number | null;
+  rentalActiveParticipant?: boolean;
+  rentalRealEstateProfessional?: boolean;
   /** @nullable */
   notes?: string | null;
 }
@@ -677,6 +685,10 @@ export const AdjustmentAdjustmentType = {
   ev_charger_property: "ev_charger_property",
   capital_loss_carryforward_short: "capital_loss_carryforward_short",
   capital_loss_carryforward_long: "capital_loss_carryforward_long",
+  schedule_e_rental_income: "schedule_e_rental_income",
+  schedule_e_rental_expenses: "schedule_e_rental_expenses",
+  schedule_e_macrs_depreciation: "schedule_e_macrs_depreciation",
+  schedule_e_passive_loss_carryforward: "schedule_e_passive_loss_carryforward",
 } as const;
 
 export interface Adjustment {
@@ -729,6 +741,10 @@ export const CreateAdjustmentBodyAdjustmentType = {
   ev_charger_property: "ev_charger_property",
   capital_loss_carryforward_short: "capital_loss_carryforward_short",
   capital_loss_carryforward_long: "capital_loss_carryforward_long",
+  schedule_e_rental_income: "schedule_e_rental_income",
+  schedule_e_rental_expenses: "schedule_e_rental_expenses",
+  schedule_e_macrs_depreciation: "schedule_e_macrs_depreciation",
+  schedule_e_passive_loss_carryforward: "schedule_e_passive_loss_carryforward",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -777,6 +793,10 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   ev_charger_property: "ev_charger_property",
   capital_loss_carryforward_short: "capital_loss_carryforward_short",
   capital_loss_carryforward_long: "capital_loss_carryforward_long",
+  schedule_e_rental_income: "schedule_e_rental_income",
+  schedule_e_rental_expenses: "schedule_e_rental_expenses",
+  schedule_e_macrs_depreciation: "schedule_e_macrs_depreciation",
+  schedule_e_passive_loss_carryforward: "schedule_e_passive_loss_carryforward",
 } as const;
 
 export interface UpdateAdjustmentBody {

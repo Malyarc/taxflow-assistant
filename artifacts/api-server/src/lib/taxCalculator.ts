@@ -1492,6 +1492,203 @@ export function calculatePremiumTaxCredit(params: {
   };
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// Phase 2e — Schedule E rental real estate + MACRS depreciation + §469 PAL
+// ════════════════════════════════════════════════════════════════════════════
+
+// ── MACRS depreciation (IRC §168) ───────────────────────────────────────────
+// Residential rental real (27.5 years GDS, straight-line, mid-month convention)
+// Nonresidential real (39 years GDS, straight-line, mid-month convention)
+// Mid-month convention: property treated as placed in service mid-month, so
+// the first year (and last partial year) are pro-rated by months in service.
+//
+// §179 expensing NOT allowed for rental real estate (only active T or B).
+// Bonus depreciation NOT applicable (recovery period > 20 years).
+//
+// Source: IRS Pub 946 (How to Depreciate Property), Table A-6 (residential),
+// Table A-7a (nonresidential), Form 4562.
+
+export interface MacrsDepreciationParams {
+  /** Depreciable basis = cost - land value - prior accumulated depreciation */
+  basis: number;
+  propertyType: "residential" | "commercial";
+  monthPlacedInService: number; // 1-12 (1 = January)
+  yearPlacedInService: number;  // e.g., 2020
+  /** Tax year for which to compute depreciation (e.g., 2024) */
+  taxYear: number;
+}
+
+export interface MacrsDepreciationResult {
+  basis: number;
+  recoveryYears: number;
+  monthPlacedInService: number;
+  yearPlacedInService: number;
+  taxYear: number;
+  /** Years between placed-in-service and tax year (0 = first year) */
+  yearsInService: number;
+  /** Depreciation for the current tax year only */
+  currentYearDepreciation: number;
+  /** Cumulative depreciation from placed-in-service through end of tax year */
+  accumulatedDepreciation: number;
+  /** Remaining undepreciated basis */
+  remainingBasis: number;
+  isFullyDepreciated: boolean;
+}
+
+export function calculateMacrsDepreciation(p: MacrsDepreciationParams): MacrsDepreciationResult {
+  const recoveryYears = p.propertyType === "residential" ? 27.5 : 39;
+  const annualRate = 1 / recoveryYears;
+  const fullAnnualDep = p.basis * annualRate;
+  const yearsInService = p.taxYear - p.yearPlacedInService;
+  const monthsRemainingFirstYear = Math.max(0, 12.5 - p.monthPlacedInService); // mid-month convention
+
+  // Cumulative depreciation function: total depreciation from yearPlaced through given year
+  const cumulativeThrough = (throughYear: number): number => {
+    let cum = 0;
+    for (let y = p.yearPlacedInService; y <= throughYear; y++) {
+      if (y < p.yearPlacedInService) continue;
+      if (y === p.yearPlacedInService) {
+        cum += fullAnnualDep * (monthsRemainingFirstYear / 12);
+      } else {
+        cum += fullAnnualDep;
+      }
+      if (cum >= p.basis) {
+        cum = p.basis;
+        break;
+      }
+    }
+    return cum;
+  };
+
+  if (yearsInService < 0) {
+    // Not yet in service
+    return {
+      basis: p.basis,
+      recoveryYears,
+      monthPlacedInService: p.monthPlacedInService,
+      yearPlacedInService: p.yearPlacedInService,
+      taxYear: p.taxYear,
+      yearsInService,
+      currentYearDepreciation: 0,
+      accumulatedDepreciation: 0,
+      remainingBasis: p.basis,
+      isFullyDepreciated: false,
+    };
+  }
+
+  const cumCurrent = cumulativeThrough(p.taxYear);
+  const cumPrev = p.taxYear > p.yearPlacedInService ? cumulativeThrough(p.taxYear - 1) : 0;
+  const currentYearDepreciation = Math.max(0, cumCurrent - cumPrev);
+  const remainingBasis = Math.max(0, p.basis - cumCurrent);
+
+  return {
+    basis: p.basis,
+    recoveryYears,
+    monthPlacedInService: p.monthPlacedInService,
+    yearPlacedInService: p.yearPlacedInService,
+    taxYear: p.taxYear,
+    yearsInService,
+    currentYearDepreciation,
+    accumulatedDepreciation: cumCurrent,
+    remainingBasis,
+    isFullyDepreciated: remainingBasis === 0,
+  };
+}
+
+// ── §469 Passive Activity Loss Limit (Form 8582) ───────────────────────────
+// Rental real estate is per se passive (§469(c)(2)) unless taxpayer materially
+// participates. Losses are limited under §469:
+//   1. Real estate professional (750+ hours, > 50% of total work time): no limit
+//   2. Active participant ($25k special allowance, IRC §469(i)):
+//      - $25,000 ($12,500 MFS living apart, $0 MFS not living apart)
+//      - Phase-out: $0.50/$1 of MAGI > $100,000 ($50,000 MFS)
+//      - Fully phased out at $150,000 ($75,000 MFS)
+//   3. Neither: loss suspended, carries forward indefinitely
+// MAGI for §469 = AGI (we don't model the few addbacks like deductible
+// IRA contributions, taxable SS, etc. — small approximation).
+
+export interface PassiveActivityLossResult {
+  rentalLoss: number;
+  modifiedAgi: number;
+  filingStatus: string;
+  isActiveParticipant: boolean;
+  isRealEstateProfessional: boolean;
+  allowanceCap: number;          // statutory max ($25k / $12.5k MFS)
+  allowanceAfterPhaseOut: number; // post phase-out
+  allowedThisYear: number;       // deductible against ordinary income
+  suspendedToNextYear: number;   // carryforward
+}
+
+export function calculatePassiveActivityLossAllowance(params: {
+  rentalLoss: number;
+  modifiedAgi: number;
+  filingStatus: string;
+  isActiveParticipant: boolean;
+  isRealEstateProfessional: boolean;
+}): PassiveActivityLossResult {
+  const result = {
+    rentalLoss: params.rentalLoss,
+    modifiedAgi: params.modifiedAgi,
+    filingStatus: params.filingStatus,
+    isActiveParticipant: params.isActiveParticipant,
+    isRealEstateProfessional: params.isRealEstateProfessional,
+    allowanceCap: 0,
+    allowanceAfterPhaseOut: 0,
+    allowedThisYear: 0,
+    suspendedToNextYear: 0,
+  };
+
+  if (params.rentalLoss <= 0) return result;
+
+  // Real estate professional → full deduction (no $25k cap)
+  if (params.isRealEstateProfessional) {
+    result.allowedThisYear = params.rentalLoss;
+    return result;
+  }
+
+  // Active participant → $25k allowance with MAGI phase-out
+  if (params.isActiveParticipant) {
+    const isMfs = params.filingStatus === "married_filing_separately";
+    const cap = isMfs ? 12500 : 25000;
+    const phaseStart = isMfs ? 50000 : 100000;
+    const phaseEnd = isMfs ? 75000 : 150000;
+    result.allowanceCap = cap;
+
+    let allowance = cap;
+    if (params.modifiedAgi >= phaseEnd) allowance = 0;
+    else if (params.modifiedAgi > phaseStart) {
+      const reduction = (params.modifiedAgi - phaseStart) * 0.5;
+      allowance = Math.max(0, cap - reduction);
+    }
+    result.allowanceAfterPhaseOut = allowance;
+    const allowed = Math.min(params.rentalLoss, allowance);
+    result.allowedThisYear = allowed;
+    result.suspendedToNextYear = params.rentalLoss - allowed;
+    return result;
+  }
+
+  // Neither: full loss suspended
+  result.suspendedToNextYear = params.rentalLoss;
+  return result;
+}
+
+// ── Schedule E rental net income summary ────────────────────────────────────
+// Aggregates per-property income/expense/depreciation into a single net amount
+// that flows to Form 1040 Line 8 (other income) via Schedule 1 Line 5.
+
+export interface ScheduleERentalSummary {
+  /** Sum of all rental gross income (rents received) */
+  totalRentalIncome: number;
+  /** Sum of all rental expenses (excluding depreciation) */
+  totalRentalExpenses: number;
+  /** Total MACRS depreciation across all properties */
+  totalDepreciation: number;
+  /** Net income or loss (positive = income flows to AGI, negative = loss subject to PAL limits) */
+  netRentalIncomeOrLoss: number;
+  /** Number of properties */
+  propertyCount: number;
+}
+
 // ── Long-term capital gains + qualified dividends tax (preferential rates) ──
 // LTCG and qualified dividends are taxed at 0% / 15% / 20% based on taxable
 // income brackets (different from ordinary brackets). Short-term gains and

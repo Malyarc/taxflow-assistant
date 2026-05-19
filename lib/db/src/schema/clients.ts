@@ -37,6 +37,10 @@ export const clientsTable = pgTable("clients", {
   acaAdvanceAptc: numeric("aca_advance_aptc", { precision: 12, scale: 2 }),
   /** ACA: Household size for FPL determination. Defaults to filer + dependents if null. */
   acaHouseholdSize: integer("aca_household_size"),
+  /** §469 active participation flag for rental real estate (enables $25k special allowance) */
+  rentalActiveParticipant: boolean("rental_active_participant").notNull().default(true),
+  /** §469 real estate professional flag (750+ hours, >50% time → no PAL limit) */
+  rentalRealEstateProfessional: boolean("rental_real_estate_professional").notNull().default(false),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),

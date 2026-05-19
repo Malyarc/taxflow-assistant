@@ -641,6 +641,12 @@ components:
         acaHouseholdSize:
           type: ["integer", "null"]
           description: Household size used for FPL determination. Defaults to filer + dependents if null.
+        rentalActiveParticipant:
+          type: boolean
+          description: §469 active participation flag for rental real estate ($25k special allowance).
+        rentalRealEstateProfessional:
+          type: boolean
+          description: §469 real estate professional (750+ hours, >50% of time) — no PAL limit.
         notes:
           type: ["string", "null"]
         createdAt:
@@ -695,6 +701,10 @@ components:
           type: ["number", "null"]
         acaHouseholdSize:
           type: ["integer", "null"]
+        rentalActiveParticipant:
+          type: boolean
+        rentalRealEstateProfessional:
+          type: boolean
         notes:
           type: ["string", "null"]
 
@@ -742,6 +752,10 @@ components:
           type: ["number", "null"]
         acaHouseholdSize:
           type: ["integer", "null"]
+        rentalActiveParticipant:
+          type: boolean
+        rentalRealEstateProfessional:
+          type: boolean
         notes:
           type: ["string", "null"]
 
@@ -1234,7 +1248,7 @@ components:
           type: integer
         adjustmentType:
           type: string
-          enum: [deduction, credit, additional_income, withholding_adjustment, other, self_employment_income, investment_income, qbi_income, amt_preferences, medical_expenses, state_income_tax, state_property_tax, state_sales_tax, mortgage_interest, charitable_cash, charitable_property, hsa_contribution, ira_contribution_traditional, ira_contribution_roth, schedule_c_expenses, dependent_care_expenses, qualified_education_expenses_aoc, qualified_education_expenses_llc, retirement_contributions_savers, educator_expenses, student_loan_interest, foreign_tax_paid, residential_clean_energy, energy_efficient_home, energy_efficient_heatpump, ev_charger_property, capital_loss_carryforward_short, capital_loss_carryforward_long]
+          enum: [deduction, credit, additional_income, withholding_adjustment, other, self_employment_income, investment_income, qbi_income, amt_preferences, medical_expenses, state_income_tax, state_property_tax, state_sales_tax, mortgage_interest, charitable_cash, charitable_property, hsa_contribution, ira_contribution_traditional, ira_contribution_roth, schedule_c_expenses, dependent_care_expenses, qualified_education_expenses_aoc, qualified_education_expenses_llc, retirement_contributions_savers, educator_expenses, student_loan_interest, foreign_tax_paid, residential_clean_energy, energy_efficient_home, energy_efficient_heatpump, ev_charger_property, capital_loss_carryforward_short, capital_loss_carryforward_long, schedule_e_rental_income, schedule_e_rental_expenses, schedule_e_macrs_depreciation, schedule_e_passive_loss_carryforward]
         amount:
           type: number
         description:
@@ -1256,7 +1270,7 @@ components:
       properties:
         adjustmentType:
           type: string
-          enum: [deduction, credit, additional_income, withholding_adjustment, other, self_employment_income, investment_income, qbi_income, amt_preferences, medical_expenses, state_income_tax, state_property_tax, state_sales_tax, mortgage_interest, charitable_cash, charitable_property, hsa_contribution, ira_contribution_traditional, ira_contribution_roth, schedule_c_expenses, dependent_care_expenses, qualified_education_expenses_aoc, qualified_education_expenses_llc, retirement_contributions_savers, educator_expenses, student_loan_interest, foreign_tax_paid, residential_clean_energy, energy_efficient_home, energy_efficient_heatpump, ev_charger_property, capital_loss_carryforward_short, capital_loss_carryforward_long]
+          enum: [deduction, credit, additional_income, withholding_adjustment, other, self_employment_income, investment_income, qbi_income, amt_preferences, medical_expenses, state_income_tax, state_property_tax, state_sales_tax, mortgage_interest, charitable_cash, charitable_property, hsa_contribution, ira_contribution_traditional, ira_contribution_roth, schedule_c_expenses, dependent_care_expenses, qualified_education_expenses_aoc, qualified_education_expenses_llc, retirement_contributions_savers, educator_expenses, student_loan_interest, foreign_tax_paid, residential_clean_energy, energy_efficient_home, energy_efficient_heatpump, ev_charger_property, capital_loss_carryforward_short, capital_loss_carryforward_long, schedule_e_rental_income, schedule_e_rental_expenses, schedule_e_macrs_depreciation, schedule_e_passive_loss_carryforward]
         amount:
           type: number
         description:
@@ -1271,7 +1285,7 @@ components:
       properties:
         adjustmentType:
           type: string
-          enum: [deduction, credit, additional_income, withholding_adjustment, other, self_employment_income, investment_income, qbi_income, amt_preferences, medical_expenses, state_income_tax, state_property_tax, state_sales_tax, mortgage_interest, charitable_cash, charitable_property, hsa_contribution, ira_contribution_traditional, ira_contribution_roth, schedule_c_expenses, dependent_care_expenses, qualified_education_expenses_aoc, qualified_education_expenses_llc, retirement_contributions_savers, educator_expenses, student_loan_interest, foreign_tax_paid, residential_clean_energy, energy_efficient_home, energy_efficient_heatpump, ev_charger_property, capital_loss_carryforward_short, capital_loss_carryforward_long]
+          enum: [deduction, credit, additional_income, withholding_adjustment, other, self_employment_income, investment_income, qbi_income, amt_preferences, medical_expenses, state_income_tax, state_property_tax, state_sales_tax, mortgage_interest, charitable_cash, charitable_property, hsa_contribution, ira_contribution_traditional, ira_contribution_roth, schedule_c_expenses, dependent_care_expenses, qualified_education_expenses_aoc, qualified_education_expenses_llc, retirement_contributions_savers, educator_expenses, student_loan_interest, foreign_tax_paid, residential_clean_energy, energy_efficient_home, energy_efficient_heatpump, ev_charger_property, capital_loss_carryforward_short, capital_loss_carryforward_long, schedule_e_rental_income, schedule_e_rental_expenses, schedule_e_macrs_depreciation, schedule_e_passive_loss_carryforward]
         amount:
           type: number
         description:

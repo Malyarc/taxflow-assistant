@@ -77,6 +77,18 @@ export const ListClientsResponseItem = zod.object({
     .describe(
       "Household size used for FPL determination. Defaults to filer + dependents if null.",
     ),
+  rentalActiveParticipant: zod
+    .boolean()
+    .optional()
+    .describe(
+      "§469 active participation flag for rental real estate ($25k special allowance).",
+    ),
+  rentalRealEstateProfessional: zod
+    .boolean()
+    .optional()
+    .describe(
+      "§469 real estate professional (750+ hours, >50% of time) — no PAL limit.",
+    ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -113,6 +125,8 @@ export const CreateClientBody = zod.object({
   acaAnnualSlcsp: zod.number().nullish(),
   acaAdvanceAptc: zod.number().nullish(),
   acaHouseholdSize: zod.number().nullish(),
+  rentalActiveParticipant: zod.boolean().optional(),
+  rentalRealEstateProfessional: zod.boolean().optional(),
   notes: zod.string().nullish(),
 });
 
@@ -183,6 +197,18 @@ export const GetClientResponse = zod.object({
     .describe(
       "Household size used for FPL determination. Defaults to filer + dependents if null.",
     ),
+  rentalActiveParticipant: zod
+    .boolean()
+    .optional()
+    .describe(
+      "§469 active participation flag for rental real estate ($25k special allowance).",
+    ),
+  rentalRealEstateProfessional: zod
+    .boolean()
+    .optional()
+    .describe(
+      "§469 real estate professional (750+ hours, >50% of time) — no PAL limit.",
+    ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -224,6 +250,8 @@ export const UpdateClientBody = zod.object({
   acaAnnualSlcsp: zod.number().nullish(),
   acaAdvanceAptc: zod.number().nullish(),
   acaHouseholdSize: zod.number().nullish(),
+  rentalActiveParticipant: zod.boolean().optional(),
+  rentalRealEstateProfessional: zod.boolean().optional(),
   notes: zod.string().nullish(),
 });
 
@@ -286,6 +314,18 @@ export const UpdateClientResponse = zod.object({
     .nullish()
     .describe(
       "Household size used for FPL determination. Defaults to filer + dependents if null.",
+    ),
+  rentalActiveParticipant: zod
+    .boolean()
+    .optional()
+    .describe(
+      "§469 active participation flag for rental real estate ($25k special allowance).",
+    ),
+  rentalRealEstateProfessional: zod
+    .boolean()
+    .optional()
+    .describe(
+      "§469 real estate professional (750+ hours, >50% of time) — no PAL limit.",
     ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
@@ -844,6 +884,10 @@ export const ListAdjustmentsResponseItem = zod.object({
     "ev_charger_property",
     "capital_loss_carryforward_short",
     "capital_loss_carryforward_long",
+    "schedule_e_rental_income",
+    "schedule_e_rental_expenses",
+    "schedule_e_macrs_depreciation",
+    "schedule_e_passive_loss_carryforward",
   ]),
   amount: zod.number(),
   description: zod.string(),
@@ -896,6 +940,10 @@ export const CreateAdjustmentBody = zod.object({
     "ev_charger_property",
     "capital_loss_carryforward_short",
     "capital_loss_carryforward_long",
+    "schedule_e_rental_income",
+    "schedule_e_rental_expenses",
+    "schedule_e_macrs_depreciation",
+    "schedule_e_passive_loss_carryforward",
   ]),
   amount: zod.number(),
   description: zod.string(),
@@ -947,6 +995,10 @@ export const UpdateAdjustmentBody = zod.object({
       "ev_charger_property",
       "capital_loss_carryforward_short",
       "capital_loss_carryforward_long",
+      "schedule_e_rental_income",
+      "schedule_e_rental_expenses",
+      "schedule_e_macrs_depreciation",
+      "schedule_e_passive_loss_carryforward",
     ])
     .optional(),
   amount: zod.number().optional(),
@@ -992,6 +1044,10 @@ export const UpdateAdjustmentResponse = zod.object({
     "ev_charger_property",
     "capital_loss_carryforward_short",
     "capital_loss_carryforward_long",
+    "schedule_e_rental_income",
+    "schedule_e_rental_expenses",
+    "schedule_e_macrs_depreciation",
+    "schedule_e_passive_loss_carryforward",
   ]),
   amount: zod.number(),
   description: zod.string(),
@@ -1084,6 +1140,18 @@ export const GetRecentClientsResponseItem = zod.object({
     .nullish()
     .describe(
       "Household size used for FPL determination. Defaults to filer + dependents if null.",
+    ),
+  rentalActiveParticipant: zod
+    .boolean()
+    .optional()
+    .describe(
+      "§469 active participation flag for rental real estate ($25k special allowance).",
+    ),
+  rentalRealEstateProfessional: zod
+    .boolean()
+    .optional()
+    .describe(
+      "§469 real estate professional (750+ hours, >50% of time) — no PAL limit.",
     ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
