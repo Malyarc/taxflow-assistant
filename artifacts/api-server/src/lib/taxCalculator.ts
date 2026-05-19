@@ -313,6 +313,36 @@ const OR_FED_TAX_SUBTRACTION: Record<TaxYear, { capMfs: number; capOther: number
   2025: { capMfs: 4250, capOther: 8500, phaseStart: 125000, phaseEnd: 145000 },
 };
 
+// ── State retirement-income exemptions ──────────────────────────────────────
+// Some states fully exempt qualified retirement distributions (1099-R taxable
+// amount, pensions, 401(k), IRA) from state taxable income.
+//   - PA: Full exemption for qualified plans + 59½+ (we use age ≥ 60 since we
+//     only store integer ages; lose a few PA filers age 59 in their birth-month-1)
+//   - IL: Full exemption for qualified retirement income regardless of age
+//   - MS: Full exemption at 59½+ (use 60)
+//   - HI/NJ/NY: partial exemptions with caps — NOT modeled, flagged below
+const STATE_RETIREMENT_EXEMPTION_RULES: Record<string, { ageMin?: number; description: string }> = {
+  PA: { ageMin: 60, description: "PA fully exempts qualified retirement income at age 59½+ (we use 60)" },
+  IL: { description: "IL fully exempts qualified retirement income (no age requirement)" },
+  MS: { ageMin: 60, description: "MS fully exempts qualified retirement income at age 59½+ (we use 60)" },
+};
+
+export function getStateRetirementExemption(params: {
+  stateCode: string;
+  retirementIncome: number;
+  taxpayerAge?: number;
+}): { exemption: number; reason?: string } {
+  const cfg = STATE_RETIREMENT_EXEMPTION_RULES[params.stateCode.toUpperCase()];
+  if (!cfg) return { exemption: 0 };
+  if (cfg.ageMin != null && (params.taxpayerAge ?? 0) < cfg.ageMin) {
+    return { exemption: 0, reason: `Age below threshold ${cfg.ageMin}` };
+  }
+  return {
+    exemption: Math.max(0, params.retirementIncome),
+    reason: cfg.description,
+  };
+}
+
 export function calculateOregonFederalTaxSubtraction(params: {
   federalIncomeTaxPaid: number;
   federalAgi: number;
@@ -344,7 +374,13 @@ export function calculateStateTax(
   stateCode: string,
   filingStatus: string,
   taxYear: number,
-  options?: { federalIncomeTaxPaid?: number },
+  options?: {
+    federalIncomeTaxPaid?: number;
+    /** Qualified retirement-income distributions (1099-R taxable amount) for state exemption */
+    retirementIncomeForExemption?: number;
+    /** Taxpayer age — gates state retirement exemption (PA, MS require 59½+) */
+    taxpayerAge?: number;
+  },
 ): number {
   const year = resolveTaxYear(taxYear);
   const yearData = STATE_TAX_DATA_BY_YEAR[year];
@@ -368,7 +404,14 @@ export function calculateStateTax(
     oregonSubtraction = r.subtraction;
   }
 
-  const stateTaxable = Math.max(0, federalAgi - stdDed - oregonSubtraction);
+  // PA / IL / MS: subtract qualified retirement income (age-gated for PA, MS)
+  const retirementExemption = getStateRetirementExemption({
+    stateCode: code,
+    retirementIncome: options?.retirementIncomeForExemption ?? 0,
+    taxpayerAge: options?.taxpayerAge,
+  }).exemption;
+
+  const stateTaxable = Math.max(0, federalAgi - stdDed - oregonSubtraction - retirementExemption);
   const brackets = pickStateBrackets(info.brackets, status);
   let tax = applyBrackets(stateTaxable, brackets);
 

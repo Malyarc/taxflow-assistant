@@ -40,6 +40,7 @@ import {
   calculateResidentialEnergyCredits,
   calculatePremiumTaxCredit,
   calculateStateTax,
+  getStateRetirementExemption,
   getFederalStandardDeduction,
   type CtcCalculation,
   type SeTaxCalculation,
@@ -333,6 +334,17 @@ export interface ComputedTaxReturn {
   foreignTaxCredit: ForeignTaxCreditCalculation;
   residentialEnergyCredits: ResidentialEnergyCreditsCalculation;
   premiumTaxCredit: PremiumTaxCreditCalculation;
+  // ── Phase 2 line items ─────────────────────────────────────────────────
+  /** Capital loss deducted against ordinary income (Schedule D Line 21, $3k/$1.5k cap) */
+  capitalLossDeducted: number;
+  /** Short-term capital loss carryforward to next tax year (preserves character per Pub 550) */
+  capitalLossCarryforwardShort: number;
+  /** Long-term capital loss carryforward to next tax year */
+  capitalLossCarryforwardLong: number;
+  /** Net capital gain or loss (Schedule D Line 16, can be negative) — after netting + cross-netting */
+  netCapitalGainLoss: number;
+  /** State retirement-income exemption applied (PA, IL, MS subtract qualified retirement) */
+  stateRetirementExemption: number;
   /** Detailed breakdowns for transparency */
   detail: {
     se: SeTaxCalculation;
@@ -438,6 +450,12 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const energyEfficientHeatpumpAdj = sumByType("energy_efficient_heatpump");
   const evChargerPropertyAdj = sumByType("ev_charger_property");
 
+  // Phase 2b: Capital loss carryforward from prior years (preserves short/long character)
+  // User enters via adjustment types; engine adds to current year's netting.
+  // (Auto-loading from prior-year tax_returns row is a future enhancement.)
+  const stcgCarryforward = sumByType("capital_loss_carryforward_short");
+  const ltcgCarryforward = sumByType("capital_loss_carryforward_long");
+
   // ── Step 1: Schedule C — net SE income before SE tax ─────────────────
   const grossSeIncome = seIncomeFromAdj + form1099Summary.seIncome;
   const scheduleCExpenses = Math.min(
@@ -449,9 +467,76 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const se = calculateSelfEmploymentTax(netSeIncome, taxYear);
 
   // ── Step 2: Total income (Form 1040 Line 9) ─────────────────────────
-  const longTermGains = form1099Summary.longTermCapitalGains;
-  const shortTermGains = form1099Summary.shortTermCapitalGains;
-  const qualifiedDividends = form1099Summary.qualifiedDividends;
+  //
+  // Capital gain/loss netting per Schedule D (IRC §1211, §1212):
+  //   1. Net within holding period (within-year gains/losses combined)
+  //   2. Apply prior-year carryforwards (preserve short/long character)
+  //   3. Cross-net: if STCG > 0 and LTCG < 0, long loss offsets short gain
+  //      (or vice versa). Excess preserves its original character.
+  //   4. If net total is positive → flows to AGI as ordinary (STCG) + preferential (LTCG)
+  //   5. If net total is negative → up to $3,000 ($1,500 MFS) against ordinary
+  //      income; excess carries to next year preserving short/long character.
+
+  const qualifiedDividends = form1099Summary.qualifiedDividends; // always >= 0
+  // Subtract prior-year carryforwards (entered as positive numbers → applied as losses)
+  let netSTCG = form1099Summary.shortTermCapitalGains - stcgCarryforward;
+  let netLTCG = form1099Summary.longTermCapitalGains - ltcgCarryforward;
+
+  // Cross-netting per Schedule D Lines 7, 15, 16
+  if (netSTCG > 0 && netLTCG < 0) {
+    const ltLoss = -netLTCG;
+    if (ltLoss >= netSTCG) {
+      netLTCG = netLTCG + netSTCG; netSTCG = 0;
+    } else {
+      netSTCG = netSTCG + netLTCG; netLTCG = 0;
+    }
+  } else if (netSTCG < 0 && netLTCG > 0) {
+    const stLoss = -netSTCG;
+    if (stLoss >= netLTCG) {
+      netSTCG = netSTCG + netLTCG; netLTCG = 0;
+    } else {
+      netLTCG = netLTCG + netSTCG; netSTCG = 0;
+    }
+  }
+
+  const netCapitalTotal = netSTCG + netLTCG;
+
+  let capitalLossDeducted = 0;          // Schedule D Line 21 — against ordinary income
+  let capitalLossCarryforwardShort = 0; // To next year, preserves short character
+  let capitalLossCarryforwardLong = 0;  // To next year, preserves long character
+  let stcgInOrdinary = 0;               // Positive STCG flowing to AGI (taxed ordinary)
+  let ltcgPreferential = 0;             // Positive LTCG flowing to preferential calc
+
+  if (netCapitalTotal >= 0) {
+    // Net gain (or zero) — positive components flow as today
+    stcgInOrdinary = Math.max(0, netSTCG);
+    ltcgPreferential = Math.max(0, netLTCG);
+  } else {
+    // Net loss — $3k cap ($1,500 MFS) against ordinary income, rest carries forward
+    const isMfs = client.filingStatus === "married_filing_separately";
+    const cap = isMfs ? 1500 : 3000;
+    capitalLossDeducted = Math.min(Math.abs(netCapitalTotal), cap);
+    const excess = Math.max(0, Math.abs(netCapitalTotal) - cap);
+    // Apportion excess per IRS Pub 550: short losses fully used first against $3k,
+    // then long. Track remaining for carryforward.
+    if (excess > 0) {
+      // Compute what's left of each after the $3k consumption
+      // After cross-netting, both same sign (negative) or one is zero
+      const shortLossRemaining = Math.max(0, -netSTCG);
+      const longLossRemaining = Math.max(0, -netLTCG);
+      // $3k consumed short first, then long (per Pub 550 worksheet)
+      let consumed = cap;
+      const shortConsumed = Math.min(consumed, shortLossRemaining);
+      consumed -= shortConsumed;
+      const longConsumed = Math.min(consumed, longLossRemaining);
+      capitalLossCarryforwardShort = Math.max(0, shortLossRemaining - shortConsumed);
+      capitalLossCarryforwardLong = Math.max(0, longLossRemaining - longConsumed);
+    }
+  }
+
+  // Legacy names (retained for downstream code that referenced them)
+  const longTermGains = ltcgPreferential;
+  const shortTermGains = stcgInOrdinary;
 
   const ordinaryAdditionalIncome =
     additionalIncome +
@@ -464,9 +549,10 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     form1099Summary.unemploymentIncome +
     form1099Summary.paymentCardIncome +
     form1099Summary.miscIncome +
-    Math.max(0, longTermGains) +
-    Math.max(0, qualifiedDividends) +
-    Math.max(0, shortTermGains);
+    ltcgPreferential +              // positive LTCG (post-netting) flows to AGI
+    qualifiedDividends +            // QDIV always positive
+    stcgInOrdinary -                // positive STCG (post-netting) at ordinary rate
+    capitalLossDeducted;            // $3k cap loss reduces AGI per Sched D Line 21
 
   const totalIncomeProvisional = totalWages + ordinaryAdditionalIncome;
 
@@ -567,14 +653,15 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const taxableAfterQbi = Math.max(0, calc.taxableIncome - qbi.finalDeduction);
 
   // ── Step 6: Federal tax (ordinary + preferential) ──────────────────
-  const preferentialIncome = Math.max(0, longTermGains) + Math.max(0, qualifiedDividends);
+  // Use post-netting LTCG (not raw 1099-B value) for preferential calculation.
+  const preferentialIncome = ltcgPreferential + qualifiedDividends;
   const ordinaryPortionOfTaxable = Math.max(0, taxableAfterQbi - preferentialIncome);
 
   const capGains = calculateFederalTaxWithCapitalGains({
     ordinaryTaxableIncome: ordinaryPortionOfTaxable,
-    longTermGains: Math.max(0, longTermGains),
-    qualifiedDividends: Math.max(0, qualifiedDividends),
-    shortTermGains: 0,
+    longTermGains: ltcgPreferential,
+    qualifiedDividends,
+    shortTermGains: 0, // post-netting STCG already in ordinaryPortionOfTaxable
     filingStatus: client.filingStatus,
     taxYear,
   });
@@ -595,18 +682,23 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     filingStatus: client.filingStatus,
   });
 
-  // Oregon fed-tax subtraction (Form 40 Line 13)
-  let stateTaxLiability = calc.stateTaxLiability;
-  if ((stateCode ?? "").toUpperCase() === "OR") {
-    const federalIncomeTaxForOr = regularFederalTax + amt.amtTax;
-    stateTaxLiability = calculateStateTax(
-      calc.adjustedGrossIncome,
-      stateCode ?? "OR",
-      client.filingStatus,
-      taxYear,
-      { federalIncomeTaxPaid: federalIncomeTaxForOr },
-    );
-  }
+  // ── State tax recompute with full options ──
+  // Always recompute (not just for OR) because state retirement-income
+  // exemptions (PA, IL, MS) apply to many filers — the runTaxCalculation
+  // call earlier didn't have access to retirement income or taxpayer age.
+  const stateUpper = (stateCode ?? "").toUpperCase();
+  const federalIncomeTaxForOr = stateUpper === "OR" ? regularFederalTax + amt.amtTax : undefined;
+  const stateTaxLiability = calculateStateTax(
+    calc.adjustedGrossIncome,
+    stateCode ?? "CA",
+    client.filingStatus,
+    taxYear,
+    {
+      federalIncomeTaxPaid: federalIncomeTaxForOr,
+      retirementIncomeForExemption: form1099Summary.retirementIncome,
+      taxpayerAge: client.taxpayerAge ?? undefined,
+    },
+  );
 
   const totalFederalLiability =
     regularFederalTax + amt.amtTax + niit.niitTax + se.seTaxTotal;
@@ -758,6 +850,13 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const totalTaxBurden = totalFederalLiabilityWithRepayment + stateTaxLiability;
   const effectiveRate = calc.totalIncome > 0 ? totalTaxBurden / calc.totalIncome : 0;
 
+  // ── Compute state retirement exemption (for transparency in result) ──
+  const stateRetirementExemptionInfo = getStateRetirementExemption({
+    stateCode: stateUpper,
+    retirementIncome: form1099Summary.retirementIncome,
+    taxpayerAge: client.taxpayerAge ?? undefined,
+  });
+
   return {
     taxYear: calc.taxYear,
     filingStatus: client.filingStatus,
@@ -796,6 +895,11 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     foreignTaxCredit,
     residentialEnergyCredits: residentialEnergy,
     premiumTaxCredit,
+    capitalLossDeducted,
+    capitalLossCarryforwardShort,
+    capitalLossCarryforwardLong,
+    netCapitalGainLoss: netCapitalTotal,
+    stateRetirementExemption: stateRetirementExemptionInfo.exemption,
     detail: { se, niit, qbi, amt, capitalGains: capGains },
     w2Count: w2Records.length,
     form1099Count: form1099Records.length,

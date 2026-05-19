@@ -675,6 +675,8 @@ export const AdjustmentAdjustmentType = {
   energy_efficient_home: "energy_efficient_home",
   energy_efficient_heatpump: "energy_efficient_heatpump",
   ev_charger_property: "ev_charger_property",
+  capital_loss_carryforward_short: "capital_loss_carryforward_short",
+  capital_loss_carryforward_long: "capital_loss_carryforward_long",
 } as const;
 
 export interface Adjustment {
@@ -725,6 +727,8 @@ export const CreateAdjustmentBodyAdjustmentType = {
   energy_efficient_home: "energy_efficient_home",
   energy_efficient_heatpump: "energy_efficient_heatpump",
   ev_charger_property: "ev_charger_property",
+  capital_loss_carryforward_short: "capital_loss_carryforward_short",
+  capital_loss_carryforward_long: "capital_loss_carryforward_long",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -771,6 +775,8 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   energy_efficient_home: "energy_efficient_home",
   energy_efficient_heatpump: "energy_efficient_heatpump",
   ev_charger_property: "ev_charger_property",
+  capital_loss_carryforward_short: "capital_loss_carryforward_short",
+  capital_loss_carryforward_long: "capital_loss_carryforward_long",
 } as const;
 
 export interface UpdateAdjustmentBody {

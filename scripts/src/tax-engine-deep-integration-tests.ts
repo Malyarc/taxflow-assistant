@@ -141,8 +141,13 @@ async function run() {
     check("TY2025 sees only $50k", Number(ty25.totalIncome), 50000);
   });
 
-  // ── Test 5: Capital losses (negative LTCG) clamped, no negative tax ──
-  console.log("\n── 5. Capital losses (negative LTCG/STCG) don't break the calc ──");
+  // ── Test 5: Capital losses — Schedule D Line 21 deduction ($3k cap) + carryforward ──
+  // Per Phase 2b (IRC §1211): net capital loss reduces ordinary income up to
+  // $3,000 ($1,500 MFS). Excess carries forward preserving short/long character.
+  // Hand-calc: net loss = -$5k LTCG + -$2k STCG = -$7,000.
+  //   $3k consumed: short first ($2k), then long ($1k). Total income = $70k - $3k = $67k.
+  //   Carryforward short: $0, carryforward long: $5k - $1k = $4,000.
+  console.log("\n── 5. Capital losses (Schedule D Line 21 $3k cap + carryforward) ──");
   await withTempClient({}, async (cid) => {
     await api(`/clients/${cid}/w2data`, {
       method: "POST",
@@ -154,10 +159,12 @@ async function run() {
     });
     await settle();
     const ret = await api<any>(`/clients/${cid}/tax-return`);
-    // Capital gains tax should be $0 (can't be negative)
     checkExact("Negative LTCG → $0 capital gains tax", Number(ret.capitalGainsTax || 0), 0);
-    // Total income should still reflect wages only ($70k) — losses don't subtract
-    check("Total income = wages (capital losses don't subtract from total income)", Number(ret.totalIncome), 70000);
+    check("Total income = wages - $3k cap loss = $67,000", Number(ret.totalIncome), 67000);
+    check("Capital loss deducted (Sched D Line 21) = $3,000", Number(ret.capitalLossDeducted), 3000);
+    check("Carryforward short = $0 (short consumed first)", Number(ret.capitalLossCarryforwardShort), 0);
+    check("Carryforward long = $4,000 ($5k LT loss - $1k applied after $2k ST)", Number(ret.capitalLossCarryforwardLong), 4000);
+    check("Net capital gain/loss (Sched D Line 16) = -$7,000", Number(ret.netCapitalGainLoss), -7000);
   });
 
   // ── Test 6: NIIT triggered ONLY from 1099 data (no manual adjustment) ──

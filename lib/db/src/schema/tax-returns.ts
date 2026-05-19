@@ -54,6 +54,17 @@ export const taxReturnsTable = pgTable(
     residentialEnergyCredits: numeric("residential_energy_credits", { precision: 12, scale: 2 }),
     /** Net Premium Tax Credit (Form 8962). Positive = refundable; negative = excess advance owed (capped). */
     premiumTaxCredit: numeric("premium_tax_credit", { precision: 12, scale: 2 }),
+    // Phase 2b: Capital loss against ordinary income + carryforwards
+    /** Capital loss deducted against ordinary income (Schedule D Line 21), $3k/$1.5k cap */
+    capitalLossDeducted: numeric("capital_loss_deducted", { precision: 12, scale: 2 }),
+    /** Short-term capital loss carryforward to next tax year */
+    capitalLossCarryforwardShort: numeric("capital_loss_carryforward_short", { precision: 12, scale: 2 }),
+    /** Long-term capital loss carryforward to next tax year */
+    capitalLossCarryforwardLong: numeric("capital_loss_carryforward_long", { precision: 12, scale: 2 }),
+    /** Net capital gain or loss (Schedule D Line 16), post-netting */
+    netCapitalGainLoss: numeric("net_capital_gain_loss", { precision: 12, scale: 2 }),
+    /** State retirement-income exemption (PA, IL, MS exempt qualified retirement) */
+    stateRetirementExemption: numeric("state_retirement_exemption", { precision: 12, scale: 2 }),
     notes: text("notes"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),

@@ -184,6 +184,12 @@ export async function recalculateAndUpsertTaxReturn(
     foreignTaxCredit: String(result.foreignTaxCredit.credit),
     residentialEnergyCredits: String(result.residentialEnergyCredits.total),
     premiumTaxCredit: String(result.premiumTaxCredit.netPtc),
+    // Phase 2b: Capital loss + state retirement exemption
+    capitalLossDeducted: String(result.capitalLossDeducted),
+    capitalLossCarryforwardShort: String(result.capitalLossCarryforwardShort),
+    capitalLossCarryforwardLong: String(result.capitalLossCarryforwardLong),
+    netCapitalGainLoss: String(result.netCapitalGainLoss),
+    stateRetirementExemption: String(result.stateRetirementExemption),
   };
 
   if (existing) {
