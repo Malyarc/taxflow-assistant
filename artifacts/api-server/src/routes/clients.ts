@@ -9,6 +9,7 @@ import {
   DeleteClientParams,
 } from "@workspace/api-zod";
 import { recalculateAfterMutation } from "../lib/taxReturnPipeline";
+import { writeAudit } from "../lib/auditLog";
 
 const router: IRouter = Router();
 
@@ -60,6 +61,7 @@ router.post("/clients", async (req, res): Promise<void> => {
       ...(acaAdvanceAptc != null ? { acaAdvanceAptc: String(acaAdvanceAptc) } : {}),
     })
     .returning();
+  await writeAudit({ clientId: client.id, action: "create", entityType: "client", entityId: client.id, after: client });
   res.status(201).json(client);
 });
 
@@ -100,6 +102,7 @@ router.patch("/clients/:id", async (req, res): Promise<void> => {
     }
     updateData.state = normalized ?? "";
   }
+  const [before] = await db.select().from(clientsTable).where(eq(clientsTable.id, params.data.id));
   const [client] = await db
     .update(clientsTable)
     .set(updateData)
@@ -109,6 +112,7 @@ router.patch("/clients/:id", async (req, res): Promise<void> => {
     res.status(404).json({ error: "Client not found" });
     return;
   }
+  await writeAudit({ clientId: client.id, action: "update", entityType: "client", entityId: client.id, before, after: client });
   // Filing status, state, or tax year changes affect the calculation — refresh.
   await recalculateAfterMutation(client.id);
   res.json(client);
@@ -122,7 +126,16 @@ router.delete("/clients/:id", async (req, res): Promise<void> => {
   }
   // Application-level cascade: schema has no FK constraints, so we delete
   // dependent rows manually before removing the client.
+  // NOTE: audit_log has a real FK with ON DELETE CASCADE, so client delete
+  // also clears the audit history. For compliance hardening, future work
+  // should preserve audit_log on client delete (soft-delete clients instead).
   const id = params.data.id;
+  const [beforeClient] = await db.select().from(clientsTable).where(eq(clientsTable.id, id));
+  if (beforeClient) {
+    // Write the audit BEFORE the cascade (it'll be cascade-deleted as a side
+    // effect; we keep this here for the in-memory transcript at least).
+    await writeAudit({ clientId: id, action: "delete", entityType: "client", entityId: id, before: beforeClient });
+  }
   await db.delete(taxReturnsTable).where(eq(taxReturnsTable.clientId, id));
   await db.delete(adjustmentsTable).where(eq(adjustmentsTable.clientId, id));
   await db.delete(w2DataTable).where(eq(w2DataTable.clientId, id));

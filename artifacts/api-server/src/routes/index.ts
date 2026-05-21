@@ -7,6 +7,7 @@ import form1099DataRouter from "./form1099data";
 import taxReturnsRouter from "./tax-returns";
 import adjustmentsRouter from "./adjustments";
 import dashboardRouter from "./dashboard";
+import auditLogRouter from "./audit-log";
 
 const router: IRouter = Router();
 
@@ -18,5 +19,6 @@ router.use(form1099DataRouter);
 router.use(taxReturnsRouter);
 router.use(adjustmentsRouter);
 router.use(dashboardRouter);
+router.use(auditLogRouter);
 
 export default router;

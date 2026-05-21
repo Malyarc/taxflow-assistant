@@ -9,7 +9,8 @@ import {
   UpdateW2DataBody,
   DeleteW2DataParams,
 } from "@workspace/api-zod";
-import { recalculateInBackground } from "../lib/taxReturnPipeline";
+import { recalculateAfterMutation } from "../lib/taxReturnPipeline";
+import { writeAudit } from "../lib/auditLog";
 import { validateW2 } from "../lib/w2Validation";
 
 const router: IRouter = Router();
@@ -104,7 +105,8 @@ router.post("/clients/:clientId/w2data", async (req, res): Promise<void> => {
     if (insertData[field] != null) insertData[field] = String(insertData[field]);
   }
   const [record] = await db.insert(w2DataTable).values(insertData as typeof w2DataTable.$inferInsert).returning();
-  recalculateInBackground(params.data.clientId);
+  await writeAudit({ clientId: params.data.clientId, action: "create", entityType: "w2", entityId: record.id, after: record });
+  await recalculateAfterMutation(params.data.clientId);
   const r = record;
   res.status(201).json({
     ...r,
@@ -135,6 +137,10 @@ router.patch("/clients/:clientId/w2data/:w2Id", async (req, res): Promise<void> 
   for (const field of numericFields) {
     if (updateData[field] != null) updateData[field] = String(updateData[field]);
   }
+  const [before] = await db
+    .select()
+    .from(w2DataTable)
+    .where(and(eq(w2DataTable.id, params.data.w2Id), eq(w2DataTable.clientId, params.data.clientId)));
   const [record] = await db
     .update(w2DataTable)
     .set(updateData)
@@ -144,7 +150,8 @@ router.patch("/clients/:clientId/w2data/:w2Id", async (req, res): Promise<void> 
     res.status(404).json({ error: "W-2 record not found" });
     return;
   }
-  recalculateInBackground(params.data.clientId);
+  await writeAudit({ clientId: params.data.clientId, action: "update", entityType: "w2", entityId: record.id, before, after: record });
+  await recalculateAfterMutation(params.data.clientId);
   const r = record;
   res.json({
     ...r,
@@ -173,7 +180,8 @@ router.delete("/clients/:clientId/w2data/:w2Id", async (req, res): Promise<void>
     res.status(404).json({ error: "W-2 record not found" });
     return;
   }
-  recalculateInBackground(params.data.clientId);
+  await writeAudit({ clientId: params.data.clientId, action: "delete", entityType: "w2", entityId: record.id, before: record });
+  await recalculateAfterMutation(params.data.clientId);
   res.sendStatus(204);
 });
 

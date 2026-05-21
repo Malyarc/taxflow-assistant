@@ -10,6 +10,7 @@ import {
   DeleteAdjustmentParams,
 } from "@workspace/api-zod";
 import { recalculateAfterMutation } from "../lib/taxReturnPipeline";
+import { writeAudit } from "../lib/auditLog";
 
 const router: IRouter = Router();
 
@@ -41,6 +42,7 @@ router.post("/clients/:clientId/adjustments", async (req, res): Promise<void> =>
     .insert(adjustmentsTable)
     .values({ ...parsed.data, clientId: params.data.clientId, amount: String(parsed.data.amount) })
     .returning();
+  await writeAudit({ clientId: params.data.clientId, action: "create", entityType: "adjustment", entityId: adjustment.id, after: adjustment });
   await recalculateAfterMutation(params.data.clientId);
   res.status(201).json(adjustment);
 });
@@ -60,6 +62,10 @@ router.patch("/clients/:clientId/adjustments/:adjustmentId", async (req, res): P
   if (parsed.data.amount !== undefined) {
     updateData.amount = String(parsed.data.amount);
   }
+  const [before] = await db
+    .select()
+    .from(adjustmentsTable)
+    .where(and(eq(adjustmentsTable.id, params.data.adjustmentId), eq(adjustmentsTable.clientId, params.data.clientId)));
   const [adjustment] = await db
     .update(adjustmentsTable)
     .set(updateData)
@@ -74,6 +80,7 @@ router.patch("/clients/:clientId/adjustments/:adjustmentId", async (req, res): P
     res.status(404).json({ error: "Adjustment not found" });
     return;
   }
+  await writeAudit({ clientId: params.data.clientId, action: "update", entityType: "adjustment", entityId: adjustment.id, before, after: adjustment });
   await recalculateAfterMutation(params.data.clientId);
   res.json(adjustment);
 });
@@ -97,6 +104,7 @@ router.delete("/clients/:clientId/adjustments/:adjustmentId", async (req, res): 
     res.status(404).json({ error: "Adjustment not found" });
     return;
   }
+  await writeAudit({ clientId: params.data.clientId, action: "delete", entityType: "adjustment", entityId: adjustment.id, before: adjustment });
   await recalculateAfterMutation(params.data.clientId);
   res.sendStatus(204);
 });

@@ -10,6 +10,7 @@ import {
   DeleteForm1099DataParams,
 } from "@workspace/api-zod";
 import { recalculateAfterMutation } from "../lib/taxReturnPipeline";
+import { writeAudit } from "../lib/auditLog";
 
 const router: IRouter = Router();
 
@@ -71,6 +72,7 @@ router.post("/clients/:clientId/form1099data", async (req, res): Promise<void> =
     .insert(form1099DataTable)
     .values(insertData as typeof form1099DataTable.$inferInsert)
     .returning();
+  await writeAudit({ clientId: params.data.clientId, action: "create", entityType: "form1099", entityId: record.id, after: record });
   await recalculateAfterMutation(params.data.clientId);
   res.status(201).json(mapRecord(record));
 });
@@ -87,6 +89,10 @@ router.patch("/clients/:clientId/form1099data/:form1099Id", async (req, res): Pr
     return;
   }
   const updateData = stringifyNumerics({ ...parsed.data, updatedAt: new Date() });
+  const [before] = await db
+    .select()
+    .from(form1099DataTable)
+    .where(and(eq(form1099DataTable.id, params.data.form1099Id), eq(form1099DataTable.clientId, params.data.clientId)));
   const [record] = await db
     .update(form1099DataTable)
     .set(updateData)
@@ -101,6 +107,7 @@ router.patch("/clients/:clientId/form1099data/:form1099Id", async (req, res): Pr
     res.status(404).json({ error: "1099 record not found" });
     return;
   }
+  await writeAudit({ clientId: params.data.clientId, action: "update", entityType: "form1099", entityId: record.id, before, after: record });
   await recalculateAfterMutation(params.data.clientId);
   res.json(mapRecord(record));
 });
@@ -124,6 +131,7 @@ router.delete("/clients/:clientId/form1099data/:form1099Id", async (req, res): P
     res.status(404).json({ error: "1099 record not found" });
     return;
   }
+  await writeAudit({ clientId: params.data.clientId, action: "delete", entityType: "form1099", entityId: record.id, before: record });
   await recalculateAfterMutation(params.data.clientId);
   res.sendStatus(204);
 });
