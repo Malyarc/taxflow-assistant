@@ -246,6 +246,62 @@ async function run() {
     checkNear("Cap gains tax = 15% × $4k qualified div", Number((ret as any).capitalGainsTax || 0), 600, 1);
   });
 
+  // ───────────────────────────────────────────────────────────────────────
+  // Auto-load capital-loss carryforward from prior year's tax_returns row.
+  //
+  // Hand-calc TY2024 (single, FL, age 35, W-2 $60k, 1099-B $5k ST loss):
+  //   netSTCG = -5000, netLTCG = 0, netCapTotal = -5000
+  //   capitalLossDeducted = min(5000, 3000) = 3000 (Sched D L21 cap)
+  //   stcgCarryforwardShort to next year = 5000 - 3000 = 2000
+  //
+  // Switching client.taxYear to 2025 should auto-load that $2000 STCG carry:
+  //   netSTCG = 0 - 2000 = -2000  →  capitalLossDeducted = 2000  →  carryforward 0
+  // ───────────────────────────────────────────────────────────────────────
+  console.log("\n── Auto-load STCG carryforward TY2024 → TY2025 ──");
+  await withTempClient({ taxYear: 2024 }, async (cid) => {
+    // TY2024 setup
+    await api(`/clients/${cid}/w2data`, { method: "POST", body: JSON.stringify({ taxYear: 2024, wagesBox1: 60000, stateCode: "FL" }) });
+    await api(`/clients/${cid}/form1099data`, {
+      method: "POST",
+      body: JSON.stringify({ formType: "b", taxYear: 2024, shortTermGainLoss: -5000, payerName: "Broker" }),
+    });
+    await new Promise((r) => setTimeout(r, 100));
+    const r2024 = await api<any>(`/clients/${cid}/tax-return`);
+    checkNear("TY2024: cap loss against ordinary = $3k", Number(r2024.capitalLossDeducted), 3000, 1);
+    checkNear("TY2024: STCG carryforward to 2025 = $2k", Number(r2024.capitalLossCarryforwardShort), 2000, 1);
+
+    // Flip client to TY2025 + add TY2025 W-2 + no new cap activity
+    await api(`/clients/${cid}`, { method: "PATCH", body: JSON.stringify({ taxYear: 2025 }) });
+    await api(`/clients/${cid}/w2data`, { method: "POST", body: JSON.stringify({ taxYear: 2025, wagesBox1: 60000, stateCode: "FL" }) });
+    await new Promise((r) => setTimeout(r, 100));
+    const r2025 = await api<any>(`/clients/${cid}/tax-return`);
+    checkNear("TY2025: auto-loaded $2k STCG carryforward fully consumed against ordinary", Number(r2025.capitalLossDeducted), 2000, 1);
+    checkNear("TY2025: no further STCG carryforward", Number(r2025.capitalLossCarryforwardShort), 0, 1);
+  });
+
+  // Manual override: explicit adjustment beats auto-load.
+  console.log("\n── Manual carryforward adjustment overrides auto-load ──");
+  await withTempClient({ taxYear: 2024 }, async (cid) => {
+    await api(`/clients/${cid}/w2data`, { method: "POST", body: JSON.stringify({ taxYear: 2024, wagesBox1: 60000, stateCode: "FL" }) });
+    await api(`/clients/${cid}/form1099data`, {
+      method: "POST",
+      body: JSON.stringify({ formType: "b", taxYear: 2024, shortTermGainLoss: -5000, payerName: "Broker" }),
+    });
+    await new Promise((r) => setTimeout(r, 100));
+    await api(`/clients/${cid}/tax-return`); // ensure TY2024 row is computed + persisted
+
+    // Flip to TY2025 + manually entered carryforward of $500 (NOT the auto-load $2k)
+    await api(`/clients/${cid}`, { method: "PATCH", body: JSON.stringify({ taxYear: 2025 }) });
+    await api(`/clients/${cid}/w2data`, { method: "POST", body: JSON.stringify({ taxYear: 2025, wagesBox1: 60000, stateCode: "FL" }) });
+    await api(`/clients/${cid}/adjustments`, {
+      method: "POST",
+      body: JSON.stringify({ adjustmentType: "capital_loss_carryforward_short", amount: 500, description: "Manual override", isApplied: true }),
+    });
+    await new Promise((r) => setTimeout(r, 100));
+    const r = await api<any>(`/clients/${cid}/tax-return`);
+    checkNear("TY2025: manual $500 overrides auto-load $2k", Number(r.capitalLossDeducted), 500, 1);
+  });
+
   console.log("\n── Currency input + bounding boxes are frontend-only — verified separately ──");
 
   console.log("\n══════════════════════════════════════════════════════════════════");

@@ -94,18 +94,98 @@ export async function computeTaxReturn(
     .from(adjustmentsTable)
     .where(eq(adjustmentsTable.clientId, clientId));
 
+  // Auto-load capital-loss + §469 PAL carryforwards from the prior tax year.
+  // We synthesize "virtual" adjustment rows IFF the user has NOT manually
+  // entered a corresponding carryforward adjustment for the current year.
+  // Manual adjustment always overrides — if a CPA explicitly enters $0 as the
+  // carryforward, that suppresses the auto-load. This matches IRS expectation
+  // that carryforwards roll from Pub 550 Schedule D / Pub 925 §469 worksheet.
+  const synthesizedAdjustments = await synthesizePriorYearCarryforwards(
+    clientId,
+    taxYear,
+    adjustments as AdjustmentFact[],
+  );
+
   // Drizzle rows satisfy the engine's Fact types via structural typing.
   const result = computeTaxReturnPure({
     client: client as ClientFacts,
     w2s: w2Records as W2Fact[],
     form1099s: form1099Records as Form1099Fact[],
-    adjustments: adjustments as AdjustmentFact[],
+    adjustments: [...adjustments, ...synthesizedAdjustments] as AdjustmentFact[],
     taxYear,
     overrides,
     existingItemizedFallback: existing?.itemizedDeductions,
   });
 
   return { result, client };
+}
+
+/**
+ * Auto-load prior-year carryforwards as synthetic adjustments.
+ *
+ * For tax year N, we look up the stored tax_returns row for year N-1 and pull
+ * forward:
+ *   - capital_loss_carryforward_short  (Sched D, preserves short character per Pub 550)
+ *   - capital_loss_carryforward_long
+ *   - schedule_e_passive_loss_carryforward (§469 suspended loss)
+ *
+ * If the user has already manually created a non-zero adjustment of the
+ * matching type for year N, we DO NOT auto-load (manual override).
+ * If the user has manually created a $0 adjustment, that's also a manual
+ * override (suppresses auto-load).
+ *
+ * Returns synthetic AdjustmentFact rows (in-memory only; never written to DB).
+ */
+async function synthesizePriorYearCarryforwards(
+  clientId: number,
+  currentYear: number,
+  existingAdjustments: AdjustmentFact[],
+): Promise<AdjustmentFact[]> {
+  const [priorReturn] = await db
+    .select()
+    .from(taxReturnsTable)
+    .where(
+      and(
+        eq(taxReturnsTable.clientId, clientId),
+        eq(taxReturnsTable.taxYear, currentYear - 1),
+      ),
+    );
+  if (!priorReturn) return []; // No prior year row → no carryforward to load
+
+  const synthetic: AdjustmentFact[] = [];
+  // Manual override semantics: if the CPA has explicitly entered an applied
+  // adjustment of the matching type (even $0), do NOT auto-load.
+  const hasManualOverride = (type: string) =>
+    existingAdjustments.some((a) => a.adjustmentType === type && a.isApplied);
+
+  const stcgCarry = Number(priorReturn.capitalLossCarryforwardShort ?? 0);
+  if (stcgCarry > 0 && !hasManualOverride("capital_loss_carryforward_short")) {
+    synthetic.push({
+      adjustmentType: "capital_loss_carryforward_short",
+      amount: stcgCarry,
+      isApplied: true,
+    });
+  }
+
+  const ltcgCarry = Number(priorReturn.capitalLossCarryforwardLong ?? 0);
+  if (ltcgCarry > 0 && !hasManualOverride("capital_loss_carryforward_long")) {
+    synthetic.push({
+      adjustmentType: "capital_loss_carryforward_long",
+      amount: ltcgCarry,
+      isApplied: true,
+    });
+  }
+
+  const palCarry = Number(priorReturn.scheduleEPassiveLossSuspended ?? 0);
+  if (palCarry > 0 && !hasManualOverride("schedule_e_passive_loss_carryforward")) {
+    synthetic.push({
+      adjustmentType: "schedule_e_passive_loss_carryforward",
+      amount: palCarry,
+      isApplied: true,
+    });
+  }
+
+  return synthetic;
 }
 
 export async function recalculateAndUpsertTaxReturn(

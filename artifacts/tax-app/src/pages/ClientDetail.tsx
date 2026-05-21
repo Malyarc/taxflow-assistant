@@ -1003,6 +1003,7 @@ interface PreviewResponse {
   adjustedGrossIncome: number;
   standardDeduction: number;
   itemizedDeductions: number | null;
+  qbiDeduction: number;
   taxableIncome: number;
   federalTaxLiability: number;
   federalTaxWithheld: number;
@@ -1020,6 +1021,30 @@ interface PreviewResponse {
     appliedCredit: number;
     phaseOutThreshold: number;
   };
+  // Phase 1
+  scheduleCExpenses?: number;
+  retirementDeductions?: { hsaDeductible: number; iraDeductible: number };
+  eitc?: { appliedCredit: number };
+  educationCredits?: { aocApplied: number; llcApplied: number; aocRefundable: number };
+  saversCredit?: { appliedCredit: number };
+  dependentCareCredit?: { appliedCredit: number };
+  // Phase 1.5
+  educatorExpenses?: { deductible: number };
+  studentLoanInterest?: { deductible: number };
+  foreignTaxCredit?: { credit: number };
+  residentialEnergyCredits?: { total: number };
+  premiumTaxCredit?: { netPtc: number };
+  // Phase 2
+  capitalLossDeducted?: number;
+  netCapitalGainLoss?: number;
+  scheduleERentalAppliedToAgi?: number;
+  stateRetirementExemption?: number;
+  // Federal sub-components
+  selfEmploymentTax?: number;
+  niitTax?: number;
+  amtTax?: number;
+  capitalGainsTax?: number;
+  additionalChildTaxCredit?: number;
   w2Count: number;
 }
 
@@ -1129,13 +1154,38 @@ function CompareColumn({
               ["Total Income", preview.totalIncome],
               ["Adjusted Gross Income", preview.adjustedGrossIncome],
               ["Standard Deduction", preview.standardDeduction],
+              ["QBI Deduction", preview.qbiDeduction ?? 0],
               ["Taxable Income", preview.taxableIncome],
-            ].map(([label, val]) => (
-              <div key={String(label)} className="flex justify-between">
-                <span className="text-muted-foreground">{String(label)}</span>
-                <span className="font-mono font-semibold">{fmt(Number(val))}</span>
-              </div>
-            ))}
+            ]
+              .filter(([label, val]) => String(label) !== "QBI Deduction" || Number(val) > 0)
+              .map(([label, val]) => (
+                <div key={String(label)} className="flex justify-between">
+                  <span className="text-muted-foreground">{String(label)}</span>
+                  <span className="font-mono font-semibold">{fmt(Number(val))}</span>
+                </div>
+              ))}
+
+            {/* Phase 1.5 + Phase 2 deductions/income — conditionally rendered */}
+            {(
+              [
+                ["Educator Expenses (Sch 1)", preview.educatorExpenses?.deductible ?? 0],
+                ["Student Loan Interest (Sch 1)", preview.studentLoanInterest?.deductible ?? 0],
+                ["HSA Deduction (Sch 1)", preview.retirementDeductions?.hsaDeductible ?? 0],
+                ["IRA Deduction (Sch 1)", preview.retirementDeductions?.iraDeductible ?? 0],
+                ["Sched C Expenses", preview.scheduleCExpenses ?? 0],
+                ["Net Capital Gain/Loss (Sch D)", preview.netCapitalGainLoss ?? 0],
+                ["Capital Loss vs Ordinary (Sch D L21)", preview.capitalLossDeducted ?? 0],
+                ["Rental Net Applied (Sch E)", preview.scheduleERentalAppliedToAgi ?? 0],
+              ] as Array<[string, number]>
+            )
+              .filter(([, val]) => val !== 0)
+              .map(([label, val]) => (
+                <div key={label} className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">{label}</span>
+                  <span className="font-mono">{val < 0 ? "−" : ""}{fmt(Math.abs(val))}</span>
+                </div>
+              ))}
+
             <div className="border-t my-2"></div>
             {[
               ["Federal Tax", preview.federalTaxLiability],
@@ -1154,6 +1204,34 @@ function CompareColumn({
                 </div>
               );
             })}
+
+            {/* Federal sub-components + credits — conditionally rendered */}
+            {(
+              [
+                ["AMT (Form 6251)", preview.amtTax ?? 0],
+                ["SE Tax (Sched SE)", preview.selfEmploymentTax ?? 0],
+                ["NIIT (Form 8960)", preview.niitTax ?? 0],
+                ["Cap Gains Tax (LTCG/QDIV)", preview.capitalGainsTax ?? 0],
+                ["Foreign Tax Credit", preview.foreignTaxCredit?.credit ?? 0],
+                ["Dep Care Credit", preview.dependentCareCredit?.appliedCredit ?? 0],
+                ["Saver's Credit", preview.saversCredit?.appliedCredit ?? 0],
+                ["Education AOC", preview.educationCredits?.aocApplied ?? 0],
+                ["Education LLC", preview.educationCredits?.llcApplied ?? 0],
+                ["Residential Energy", preview.residentialEnergyCredits?.total ?? 0],
+                ["EITC (refundable)", preview.eitc?.appliedCredit ?? 0],
+                ["AOC refundable 40%", preview.educationCredits?.aocRefundable ?? 0],
+                ["Additional CTC (refundable)", preview.additionalChildTaxCredit ?? 0],
+                ["Premium Tax Credit (net)", preview.premiumTaxCredit?.netPtc ?? 0],
+              ] as Array<[string, number]>
+            )
+              .filter(([, val]) => val !== 0)
+              .map(([label, val]) => (
+                <div key={label} className="flex justify-between text-xs">
+                  <span className="text-muted-foreground">{label}</span>
+                  <span className="font-mono">{val < 0 ? "−" : ""}{fmt(Math.abs(val))}</span>
+                </div>
+              ))}
+
             <div className="border-t my-2"></div>
             {[
               ["State Tax", preview.stateTaxLiability],
@@ -1171,6 +1249,13 @@ function CompareColumn({
                 </div>
               );
             })}
+            {(preview.stateRetirementExemption ?? 0) > 0 && (
+              <div className="flex justify-between text-xs">
+                <span className="text-muted-foreground">State retirement-income exempt</span>
+                <span className="font-mono">{fmt(preview.stateRetirementExemption ?? 0)}</span>
+              </div>
+            )}
+
             <div className="border-t my-2"></div>
             <div className="flex justify-between">
               <span className="text-muted-foreground">Effective Tax Rate</span>
@@ -1184,7 +1269,8 @@ function CompareColumn({
 }
 
 function DiffCard({ a, b }: { a: PreviewResponse; b: PreviewResponse }) {
-  const rows: { label: string; aVal: number; bVal: number }[] = [
+  // Always-shown core lines:
+  const core: { label: string; aVal: number; bVal: number }[] = [
     { label: "Total Income", aVal: a.totalIncome, bVal: b.totalIncome },
     { label: "AGI", aVal: a.adjustedGrossIncome, bVal: b.adjustedGrossIncome },
     { label: "Standard Deduction", aVal: a.standardDeduction, bVal: b.standardDeduction },
@@ -1194,6 +1280,27 @@ function DiffCard({ a, b }: { a: PreviewResponse; b: PreviewResponse }) {
     { label: "Federal Refund/Owed", aVal: a.federalRefundOrOwed, bVal: b.federalRefundOrOwed },
     { label: "State Refund/Owed", aVal: a.stateRefundOrOwed, bVal: b.stateRefundOrOwed },
   ];
+  // Conditionally-shown lines (only if non-zero in at least one year):
+  const optional: { label: string; aVal: number; bVal: number }[] = [
+    { label: "CTC Applied", aVal: a.childTaxCredit.appliedCredit, bVal: b.childTaxCredit.appliedCredit },
+    { label: "EITC", aVal: a.eitc?.appliedCredit ?? 0, bVal: b.eitc?.appliedCredit ?? 0 },
+    { label: "Net Capital Gain/Loss (Sch D)", aVal: a.netCapitalGainLoss ?? 0, bVal: b.netCapitalGainLoss ?? 0 },
+    { label: "Capital Loss vs Ordinary", aVal: a.capitalLossDeducted ?? 0, bVal: b.capitalLossDeducted ?? 0 },
+    { label: "Rental Net (Sch E)", aVal: a.scheduleERentalAppliedToAgi ?? 0, bVal: b.scheduleERentalAppliedToAgi ?? 0 },
+    { label: "HSA Deduction", aVal: a.retirementDeductions?.hsaDeductible ?? 0, bVal: b.retirementDeductions?.hsaDeductible ?? 0 },
+    { label: "IRA Deduction", aVal: a.retirementDeductions?.iraDeductible ?? 0, bVal: b.retirementDeductions?.iraDeductible ?? 0 },
+    { label: "Sched C Expenses", aVal: a.scheduleCExpenses ?? 0, bVal: b.scheduleCExpenses ?? 0 },
+    { label: "Educator Expenses", aVal: a.educatorExpenses?.deductible ?? 0, bVal: b.educatorExpenses?.deductible ?? 0 },
+    { label: "Student Loan Interest", aVal: a.studentLoanInterest?.deductible ?? 0, bVal: b.studentLoanInterest?.deductible ?? 0 },
+    { label: "Foreign Tax Credit", aVal: a.foreignTaxCredit?.credit ?? 0, bVal: b.foreignTaxCredit?.credit ?? 0 },
+    { label: "Premium Tax Credit (net)", aVal: a.premiumTaxCredit?.netPtc ?? 0, bVal: b.premiumTaxCredit?.netPtc ?? 0 },
+    { label: "Residential Energy", aVal: a.residentialEnergyCredits?.total ?? 0, bVal: b.residentialEnergyCredits?.total ?? 0 },
+    { label: "AMT", aVal: a.amtTax ?? 0, bVal: b.amtTax ?? 0 },
+    { label: "SE Tax", aVal: a.selfEmploymentTax ?? 0, bVal: b.selfEmploymentTax ?? 0 },
+    { label: "NIIT", aVal: a.niitTax ?? 0, bVal: b.niitTax ?? 0 },
+    { label: "State Retirement Exempt", aVal: a.stateRetirementExemption ?? 0, bVal: b.stateRetirementExemption ?? 0 },
+  ].filter((r) => r.aVal !== 0 || r.bVal !== 0);
+  const rows = [...core, ...optional];
 
   return (
     <Card>
