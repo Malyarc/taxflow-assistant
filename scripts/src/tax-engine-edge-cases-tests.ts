@@ -754,6 +754,37 @@ header("State EITC — other states (unmodeled) → $0");
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// 27. Vermont — personal exemption $4,850/$9,700 per Form IN-111 Line 5b
+// ════════════════════════════════════════════════════════════════════════════
+header("Vermont — personal exemption (Form IN-111 Line 5b)");
+{
+  // Single, VT, $50k W-2 → AGI 50k. Std ded $7,400 + new $4,850 personal exemption.
+  // VT taxable: 50000 - 7400 - 4850 = 37,750. First VT bracket 3.35% to $45,400.
+  // VT tax: 37,750 × 3.35% = $1,264.63
+  const single50k: TaxReturnInputs = {
+    client: { filingStatus: "single", state: "VT", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, stateCode: "VT" }],
+    form1099s: [], adjustments: [],
+    taxYear: 2024,
+  };
+  const r1 = computeTaxReturnPure(single50k);
+  check("VT single $50k → VT tax ~$1,264.63 (after $4,850 personal exemption)", r1.stateTaxLiability, 1264.63, 0.5);
+
+  // MFJ, VT, $100k → AGI 100k. Std ded $14,850 + personal exemption $9,700.
+  // VT taxable: 100000 - 14850 - 9700 = 75,450. Falls in 2nd MFJ bracket (3.35% to $75,850).
+  // Wait, 75450 < 75850 → still in first MFJ bracket (3.35%).
+  // VT tax: 75450 × 3.35% = $2,527.58
+  const mfj100k: TaxReturnInputs = {
+    client: { filingStatus: "married_filing_jointly", state: "VT", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 100000, stateCode: "VT" }],
+    form1099s: [], adjustments: [],
+    taxYear: 2024,
+  };
+  const r2 = computeTaxReturnPure(mfj100k);
+  check("VT MFJ $100k → VT tax ~$2,527.58 (after $9,700 personal exemption)", r2.stateTaxLiability, 2527.58, 0.5);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // SUMMARY
 // ════════════════════════════════════════════════════════════════════════════
 console.log("\n══════════════════════ Edge Case Test Summary ══════════════════════");

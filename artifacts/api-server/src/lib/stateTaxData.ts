@@ -56,6 +56,8 @@ export interface StateTaxInfo {
   hasIncomeTax: boolean;
   brackets?: StateBrackets;
   standardDeduction?: StateStandardDeduction;
+  /** Per-filer personal exemption (e.g. VT $4,850/filer). Subtracts from state taxable income. */
+  personalExemption?: StateStandardDeduction;
   /** Surtax on income above a threshold, e.g. MA "millionaire's tax". Applied on AGI. */
   surtax?: { threshold: number; rate: number };
   notes?: string;
@@ -694,7 +696,10 @@ const STATE_TAX_DATA_2024: Record<string, StateTaxInfo> = {
       ],
     },
     standardDeduction: { single: 7400, married_filing_jointly: 14850, head_of_household: 11150, married_filing_separately: 7400 },
-    notes: "VT std ded matches official 2024 values. NOT MODELED: personal exemption $4,850/person (Form IN-111 Line 5b) and taxable Social Security addback/subtraction. VT calc remains approximate.",
+    // VT Form IN-111 Line 5b — personal exemption per filer (taxpayer + spouse).
+    // Dependents not yet wired (would need to pass dependent count into state calc).
+    personalExemption: { single: 4850, married_filing_jointly: 9700, head_of_household: 4850, married_filing_separately: 4850 },
+    notes: "VT std ded matches official 2024 values + per-filer personal exemption $4,850/$9,700 (Form IN-111 Line 5b). NOT MODELED: dependent personal exemption ($4,850/dependent) and taxable Social Security exclusion (Schedule IN-112 Part II Line 9).",
   },
   VA: {
     name: "Virginia", hasIncomeTax: true,

@@ -510,6 +510,8 @@ export function calculateStateTax(
   }
   const status = filingStatus as StateFilingStatus;
   const stdDed = pickStateStdDeduction(info.standardDeduction, status);
+  // VT (and any future state) — per-filer personal exemption deducted from taxable.
+  const personalExemption = info.personalExemption ? pickStateStdDeduction(info.personalExemption, status) : 0;
 
   // OR-specific: subtract federal tax liability before applying state brackets
   let oregonSubtraction = 0;
@@ -530,7 +532,7 @@ export function calculateStateTax(
     taxpayerAge: options?.taxpayerAge,
   }).exemption;
 
-  const stateTaxable = Math.max(0, federalAgi - stdDed - oregonSubtraction - retirementExemption);
+  const stateTaxable = Math.max(0, federalAgi - stdDed - personalExemption - oregonSubtraction - retirementExemption);
   const brackets = pickStateBrackets(info.brackets, status);
   let tax = applyBrackets(stateTaxable, brackets);
 
