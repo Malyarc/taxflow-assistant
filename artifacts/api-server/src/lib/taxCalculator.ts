@@ -867,6 +867,24 @@ export function calculateEducationCredits(params: {
   llcExpenses: number;
 }): EducationCreditsCalculation {
   const { agi, filingStatus, aocExpenses, llcExpenses } = params;
+
+  // IRS Form 8863 + Publication 970: Married Filing Separately filers are NOT
+  // eligible for either the American Opportunity Credit or the Lifetime
+  // Learning Credit. Return all-zero with a phase-out fraction of 0.
+  if (filingStatus === "married_filing_separately") {
+    return {
+      aocEligibleStudents: aocExpenses.filter(e => e > 0).length,
+      aocPreliminary: 0,
+      aocApplied: 0,
+      aocRefundable: 0,
+      aocNonRefundable: 0,
+      llcEligibleExpenses: 0,
+      llcPreliminary: 0,
+      llcApplied: 0,
+      phaseOutFraction: 0,
+    };
+  }
+
   const isMfj = filingStatus === "married_filing_jointly" || filingStatus === "qualifying_widow";
   const phaseRange = isMfj ? EDUCATION_PHASE_OUT_MFJ : EDUCATION_PHASE_OUT_SINGLE;
 
@@ -1846,6 +1864,12 @@ export function calculateSelfEmploymentTax(
   }
   // Form Schedule SE: net SE earnings = gross × 92.35%
   const netSeEarnings = seIncome * SE_NET_EARNINGS_FACTOR;
+  // IRS Schedule SE Part I Line 4c: if net SE earnings < $400, no SE tax is owed.
+  // (See "Note: If line 4c is less than $400 ... you don't owe self-employment tax.")
+  // This is a true cliff — at $399.99 you owe nothing, at $400.00 the full 15.3% kicks in.
+  if (netSeEarnings < 400) {
+    return { seIncomeReported: seIncome, netSeEarnings, socialSecurityPortion: 0, medicarePortion: 0, seTaxTotal: 0, deductibleHalf: 0 };
+  }
   // Below the SS wage base threshold: charged 12.4% SS + 2.9% Medicare on full net earnings.
   // Above: only Medicare applies on the excess.
   const ssBase = SS_WAGE_BASE[year];

@@ -20,6 +20,7 @@
     "src/tax-engine-pure-tests.ts",
     "src/tax-engine-phase2-unit-tests.ts",
     "src/tax-engine-exports-tests.ts",
-    "src/tax-engine-50state-tests.ts"
+    "src/tax-engine-50state-tests.ts",
+    "src/tax-engine-edge-cases-tests.ts"
   ]
 }

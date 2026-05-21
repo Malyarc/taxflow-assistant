@@ -75,6 +75,7 @@ Future-you will be tempted to "simplify" these. Don't.
   | `tax-engine-phase2-unit-tests.ts` | no |
   | `tax-engine-pure-tests.ts` | no (proves engine is Haven-portable) |
   | `tax-engine-50state-tests.ts` | no |
+  | `tax-engine-edge-cases-tests.ts` | no (boundary/cliff/phase-out edges) |
   | `tax-engine-integration-tests.ts` | yes |
   | `tax-engine-deep-integration-tests.ts` | yes |
   | `tax-engine-new-features-tests.ts` | yes |
