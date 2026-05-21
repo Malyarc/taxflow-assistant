@@ -65,7 +65,7 @@ Future-you will be tempted to "simplify" these. Don't.
 - **Hand-calc every expected value** against IRS published rules before asserting it. The user has been burned by tests passing while the underlying calc was wrong (e.g. the AGI/Line-9 bug shipped despite unit tests passing).
 - **Unit tests alone aren't enough.** Standalone suites verify the calculator; integration suites hit a live API at `localhost:8080` and exercise the full pipeline. Run both.
 - **Adding a new test file** also requires adding it to `scripts/tsconfig.json`'s `exclude` array — the workspace typecheck fails otherwise.
-- **Test files (current set, ~959+ assertions):**
+- **Test files (current set, 1,122 assertions):**
   | File | Needs API |
   |---|---|
   | `tax-engine-tests.ts` | no |
@@ -83,6 +83,7 @@ Future-you will be tempted to "simplify" these. Don't.
   | `tax-engine-phase1-integration-tests.ts` | yes |
   | `tax-engine-phase15-integration-tests.ts` | yes |
   | `tax-engine-exports-tests.ts` | yes (PDF/CSV/JSON/UltraTax-GEN endpoints) |
+  | `tax-engine-ai-overlay-tests.ts` | yes (upload → review → approve gate) |
 - **Scenarios are CPA-style end-to-end cases.** Each one has a `Hand-calc:` comment block — keep that convention. When a scenario fails, double-check your hand-calc before mutating the assertion; the calculator is usually right.
 - **Run all suites after any pipeline or schema change.** The Phase 1 work flushed out one regression (scenario 8 — needed to add EITC to expected refund).
 
@@ -146,7 +147,7 @@ Several Phase 2/3 limitations have been resolved (multi-state foundation, MACRS,
 - **Hates test failures that turn out to be wrong test expectations.** Hand-calc before asserting.
 - **Phase 4: Option A (CPA-tool overlay).** Consumer DIY is parked. Don't build interview UI, e-file, or ERO-related infra.
 - Explicitly does NOT want a Lacerte clone (5+ years / $20M+). Wants as close as feasible without that scope.
-- Next-phase priorities: validate UltraTax `.gen` with a real design partner; build Lacerte / ProConnect / Drake adapters; build AI-overlay UX (upload doc → AI extracts → CPA reviews → export back); CPA-firm multi-tenancy + audit trail.
+- Next-phase priorities: validate UltraTax `.gen` with a real design partner; build Lacerte / ProConnect / Drake adapters; CPA-firm multi-tenancy auth (organizations / users / RBAC). AI-overlay UX shipped 2026-05-21 — covers upload → extract → CPA review → approve → audit-logged record write → `.gen` export.
 
 ## Where to look first when picking up a session
 
