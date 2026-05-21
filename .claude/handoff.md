@@ -1,109 +1,59 @@
-# Handoff Note — 2026-05-20
+# Handoff Note — 2026-05-21
 
 Session continuation point for the next Claude (or human) working on TaxFlow Assistant.
 
+## Headline
+
+**Phase 4 committed: Option A — CPA-tool overlay.** Consumer DIY (Option B) is parked.
+
+This session executed Tier A (cleanup + carryforward auto-load + recalc race fix), Tier D (state EITC, VT fix, FTC Form 1116), and Tier B (audit log table) — plus a deep edge-case hunt that surfaced and fixed two real engine bugs.
+
+**Test count: 1,092 assertions / 0 failures across 15 suites (was 959 at session start).**
+
 ## What landed this session
 
-Seven commits pushed to `origin/main` between `92fb5b7` (Phase 1.5 baseline) and `9a9a117`:
+Seven commits on `main` (local, not yet pushed to origin):
 
 | Commit | What |
 |---|---|
-| `0fe0e42` | **Engine/adapter split**: `computeTaxReturnPure()` extracted to `taxReturnEngine.ts` — Haven-portable, no DB, no Drizzle |
-| `97a66b1` | **Phase 2b + 2c**: Capital loss $3k cap with cross-netting + short/long carryforward (IRC §1211, Sched D); PA/IL/MS state retirement-income exemptions |
-| `c373f3f` | **Phase 2d**: Multi-state foundation — 17-state reciprocity table + resident credit-for-tax-paid + per-W-2 state allocation |
-| `57413e6` | **Phase 2e**: Schedule E rental real estate + MACRS depreciation (27.5/39 yr SL mid-month) + §469 PAL with $25k allowance + MAGI phase-out |
-| `8f0fb12` | **Phase 3 + UltraTax**: Form 1040-style PDF + CSV (CPA-tool friendly) + JSON + UltraTax `.gen` exports; frontend download buttons for all 4 |
-| `c5c4976` | **Sched B + 50-state suite**: per-payer 1099-INT/DIV aggregation + 187-assertion 50-state validation |
-| `9a9a117` | **Frontend UX**: rental participation flags + Phase 2 adjustment-type labels + Tax Liability breakdown lines |
+| `8611673` | Phase 4 → Option A decision; eliminate background recalc race (sync mutations); doc refresh |
+| `154b505` | Tier A: Year Compare shows Phase 2 lines + auto-load capital-loss / §469 PAL carryforward from prior year |
+| `5649ed6` | Edge case hunt: 97 boundary tests + 2 real bug fixes |
+| `e3fa243` | Tier D: State EITC for California (FTB 3514 approx) + New York (exact 30% of federal) |
+| `030e924` | Tier D: Vermont personal exemption (Form IN-111 Line 5b) |
+| `ff5c88a` | Tier D: Foreign Tax Credit Form 1116 limit (calculator path) |
+| `dfc3732` | Tier B: Audit log table + per-mutation writes (CPA compliance foundation) |
 
-## Test state: 959 / 0 across 14 suites
+Two real bugs found and fixed (both IRS-rule violations):
 
-| Suite | Count | Needs API |
-|---|---:|---|
-| `tax-engine-tests.ts` | 193 | no |
-| `tax-engine-deep-tests.ts` | 37 | no |
-| `tax-engine-phase1-unit-tests.ts` | 44 | no |
-| `tax-engine-phase15-unit-tests.ts` | 90 | no |
-| `tax-engine-pure-tests.ts` | 27 | no (pure engine — proves Haven portability) |
-| `tax-engine-phase2-unit-tests.ts` | 104 | no |
-| `tax-engine-50state-tests.ts` | 187 | no |
-| `tax-engine-integration-tests.ts` | 22 | yes |
-| `tax-engine-deep-integration-tests.ts` | 26 | yes |
-| `tax-engine-new-features-tests.ts` | 23 | yes |
-| `tax-engine-phase1-integration-tests.ts` | 55 | yes |
-| `tax-engine-phase15-integration-tests.ts` | 33 | yes |
-| `tax-engine-exports-tests.ts` | 25 | yes |
-| `tax-engine-scenarios.ts` | 93 | yes |
+1. **SE tax $400 threshold missing.** Engine charged 15.3% on any positive net SE earnings; IRS Schedule SE Line 4c says under $400 net = no SE tax. Was overcharging tiny side-hustle Schedule C filers.
+2. **Education credits (AOC + LLC) didn't block MFS.** Per Form 8863, MFS is ineligible for both. Engine was issuing $2,500 AOC / $1,000 LLC on MFS returns.
 
-**Every test value is hand-calced against IRS published rules.** If a test fails, the calculator is usually right and the expected value needs verification.
+Both surfaced via the new edge-case suite, hand-calced against IRS publications, fixed.
 
-## Adjustment-type enum is now 38 values
+## What this means for Option A
 
-`deduction, credit, additional_income, withholding_adjustment, other, self_employment_income, investment_income, qbi_income, amt_preferences, medical_expenses, state_income_tax, state_property_tax, state_sales_tax, mortgage_interest, charitable_cash, charitable_property, hsa_contribution, ira_contribution_traditional, ira_contribution_roth, schedule_c_expenses, dependent_care_expenses, qualified_education_expenses_aoc, qualified_education_expenses_llc, retirement_contributions_savers, educator_expenses, student_loan_interest, foreign_tax_paid, residential_clean_energy, energy_efficient_home, energy_efficient_heatpump, ev_charger_property, capital_loss_carryforward_short, capital_loss_carryforward_long, schedule_e_rental_income, schedule_e_rental_expenses, schedule_e_macrs_depreciation, schedule_e_passive_loss_carryforward`
+Calc engine is more correct AND we've started laying the CPA-firm-specific compliance foundation. The audit log is the first piece of Tier B.
 
-## Real-world readiness — honest assessment
+Remaining Tier B work (deferred, multi-week):
+- CPA-firm auth model (organizations + users + RBAC + per-client access)
+- Per-client document upload + secure storage (kill the demo banner)
+- AI overlay UX — upload doc → extract → CPA reviews → export back
+- Lacerte / ProConnect / Drake adapter validation against real licenses
+- SOC 2 Type I prep, security audit
+- Stripe billing + subscription metering
 
-### Production-quality
-- Federal tax calc for W-2/SE filers across all 50 states + DC
-- Federal credits: CTC, EITC, education (AOC/LLC), dep care, saver's, foreign tax (simplified), residential energy (§25D + §25C + §30C)
-- Schedule A itemized (medical 7.5% threshold, SALT $10k cap, mortgage, charitable AGI limits)
-- Schedule C net SE income
-- Above-the-line: HSA, traditional IRA (with workplace-plan phase-out), SLI (with MAGI phase-out), educator
-- ACA Premium Tax Credit with advance APTC reconciliation + repayment caps
-- AMT, NIIT, SE tax
-- LTCG/QDIV preferential rates
-- Multi-state with reciprocity + resident credit
-- Capital gain/loss netting + $3k ordinary cap + carryforward
-- State retirement exemptions (PA/IL/MS)
-- Oregon Form 40 Line 13 federal-tax-paid subtraction
-- 959 hand-calced tests
+## Current state
 
-### MVP-quality (works but with approximations)
-- **ACA MAGI** ≈ AGI (doesn't add back tax-exempt interest, foreign earned income exclusion, non-taxable Social Security)
-- **Foreign Tax Credit** — simplified <$300/$600 path only; over-limit cases use full paid amount without Form 1116 limit
-- **Schedule E** — adjustment-based aggregates (not per-property); MACRS calculator exists separately
-- **§469 PAL** — uses provisional AGI as MAGI (close approximation per IRS Pub 925 worksheet)
-- **State retirement exemption** — only PA/IL/MS; HI/NJ/NY partial exemptions not modeled
-- **Capital loss carryforward** — manual entry via adjustments (no auto-load from prior year's `tax_returns` row)
-- **Non-resident state tax** — uses resident-style brackets on allocated wages (slightly overstates; many states have NR-specific rules)
-- **§25C sub-caps** — windows $600 / doors $250 / audit $150 collapsed into the general $1,200 cap
-- **PA/MS age 59½ → integer 60** — loses few birth-month-1 edge cases
-
-### NOT built (would be needed for production filing)
-- **E-filing** (separate IRS ERO approval, ~9-month track)
-- **Actual IRS Form 1040 PDF layout** (we output a clean summary, not the IRS form template)
-- **Schedule D per-transaction detail + wash sale tracking**
-- **Per-property rental tracking** (`rental_properties` table sketched in commit notes)
-- **Part-year residency** for multi-state filers
-- **Local income taxes** (NYC, MD counties, OH cities, IN counties)
-- **State EITC, state CTC** (vary widely; each state has its own rules)
-- **AMT preferences detail** (state-tax addback, ISO bargain element, etc.)
-- **K-1 detail** (partnership / S-corp pass-through)
-- **Trust/estate (1041), partnership (1065), corporate (1120/1120-S)**
-- **Auth / multi-user / multi-tenancy**
-- **Security audit** (HIPAA / SOC 2 / data encryption at rest)
-- **Real document upload** (demo banner still says "do not upload real tax documents")
-
-### Bottom line
-| Use case | Ready? |
-|---|---|
-| **Internal CPA review / what-if scenarios** on simple-to-moderate W-2/1099 returns | ✅ Yes |
-| **Calculation engine for another product (Haven App)** | ✅ Drop-in, pure function |
-| **Demo / prototype for CPA conversations** | ✅ Yes |
-| **Consumer DIY filing (Option B)** | ❌ Needs interview UI, e-file, ERO approval |
-| **Actual paid tax preparation by a CPA** | ❌ Needs real IRS form output, audit trail, security |
-
-The calc engine could power a real product. The current frontend is admin/review, not consumer-facing.
-
-## How to deploy this session's work to EC2
-
-Schema changed (5 new tax_returns columns + 7 new adjustment enum values + 2 new client fields). Standard cycle:
+**Live deploy:** Not yet pushed to origin and not deployed to EC2. Standard cycle:
 
 ```bash
+git push origin main   # not yet done
+# then on EC2:
 ssh ubuntu@ec2-18-188-192-154.us-east-2.compute.amazonaws.com '
   cd ~/taxflow-assistant &&
   git checkout -- pnpm-lock.yaml &&
-  git pull &&
+  git pull origin main &&
   pnpm install &&
   set -a && source ~/.env && set +a &&
   pnpm --filter @workspace/db run push &&
@@ -114,66 +64,106 @@ ssh ubuntu@ec2-18-188-192-154.us-east-2.compute.amazonaws.com '
 '
 ```
 
-**Note: `pnpm --filter @workspace/db run push` will add new columns/fields without losing data** (Drizzle uses ALTER TABLE for additive changes). It's safe to run.
+Schema changed this session — `audit_log` table added. `db run push` is REQUIRED.
+
+**Tests: 1,092 / 0 across 15 suites**
+
+| Suite | Count | Needs API |
+|---|---:|---|
+| `tax-engine-tests.ts` | 193 | no |
+| `tax-engine-deep-tests.ts` | 37 | no |
+| `tax-engine-phase1-unit-tests.ts` | 44 | no |
+| `tax-engine-phase15-unit-tests.ts` | 90 | no |
+| `tax-engine-pure-tests.ts` | 27 | no |
+| `tax-engine-phase2-unit-tests.ts` | 104 | no |
+| `tax-engine-50state-tests.ts` | 187 | no |
+| `tax-engine-edge-cases-tests.ts` | 128 | no (NEW — boundary/cliff hunt) |
+| `tax-engine-integration-tests.ts` | 22 | yes |
+| `tax-engine-deep-integration-tests.ts` | 26 | yes |
+| `tax-engine-new-features-tests.ts` | 28 | yes (+5 for carryforward auto-load) |
+| `tax-engine-phase1-integration-tests.ts` | 55 | yes |
+| `tax-engine-phase15-integration-tests.ts` | 33 | yes |
+| `tax-engine-exports-tests.ts` | 25 | yes |
+| `tax-engine-scenarios.ts` | 93 | yes |
+
+## Key behavior changes this session
+
+1. **Mutation routes are synchronous w.r.t. tax-return recalc.** Previously, POST/PATCH/DELETE on clients / W-2 / 1099 / adjustments fired `recalculateInBackground` and returned immediately, leaving a race where a subsequent GET could read stale data. Now they `await recalculateAfterMutation()`. Tradeoff: mutations are ~50–100ms slower; benefit: API is correct (no stale reads, no test flakes).
+
+2. **Capital-loss + §469 PAL carryforwards auto-load from prior year.** If `tax_returns` row exists for year N-1 with non-zero carryforwards, the pipeline injects synthetic adjustment rows when computing year N. Manual override semantics: if the user has explicitly entered a matching adjustment for the current year, auto-load is suppressed.
+
+3. **State EITC firing for CA + NY.** Engine now computes `stateEitc.credit` and applies to `stateRefundOrOwed`. For low-income CA filers with 1 child, this is up to $1,932; for NY filers, exactly 30% of federal EITC.
+
+4. **Vermont calc improved.** Now applies the per-filer personal exemption from Form IN-111 Line 5b ($4,850 single / $9,700 MFJ). VT tax reduced by ~$162 single / ~$325 MFJ for typical filers.
+
+5. **SE tax respects $400 net threshold.** Tiny Schedule C earnings (under $400 net after the 92.35% reduction) now produce $0 SE tax.
+
+6. **Education credits block MFS.** AOC and LLC return $0 for MFS filers per Form 8863.
+
+7. **Audit log written on every client-scoped mutation.** New `audit_log` table, `writeAudit()` helper, `GET /api/clients/:id/audit-log` endpoint. Captures before/after row snapshots. Foundation for CPA-firm compliance.
+
+8. **Foreign Tax Credit has Form 1116 limit path.** Function signature accepts optional `foreignSourceTaxableIncome` + `totalTaxableIncome` + `preCreditUsTax`. When all provided, applies the actual Form 1116 limit (credit = min(paid, sourceFraction × preCreditTax)). Engine integration deferred — needs a new `foreign_source_taxable_income` adjustment type to wire end-to-end.
+
+## What I did NOT do this session (and why)
+
+Explicitly deferred to keep session scope realistic:
+
+- **NR state brackets for CA** (CA 540NR-specific rate formula) — bigger work, lower priority than the items shipped
+- **Per-property rental table** + per-property MACRS — 1–2 day standalone item
+- **Lacerte / ProConnect / Drake import-adapter validation** — needs a design-partner CPA license + sample files
+- **AI overlay UX** (upload → extract → review → export) — multi-week UX project
+- **CPA-firm multi-tenancy auth** — multi-week (organizations, users, roles, RLS)
+- **Schedule D per-transaction detail + wash sale** — 3–5 days standalone
+- **Real IRS Form 1040 PDF layout** — 2–3 days; would have crowded out bug-hunt + Tier B
+- **EC2 deploy** — committed but not pushed. User decision: ready to deploy when they want it
+
+## Where to pick up next session — ranked by value
+
+### Tier 1 (highest leverage, Option-A specific)
+1. **Push current `main` to origin and deploy to EC2** — ~10 min. Includes schema push for the new `audit_log` table.
+2. **Validate UltraTax `.gen` export with a real CPA design partner.** The export is built but never tested against an actual UltraTax CS install. Highest-confidence way to de-risk Option A.
+3. **AI overlay UX MVP** — minimal flow: upload 1099 PDF → AI extracts → CPA reviews → click "export to UltraTax". This is the actual product.
+
+### Tier 2 (engine accuracy improvements)
+4. **CA 540NR non-resident bracket calc** (CA-source / total × CA tax). Currently uses resident brackets on allocated wages → overstates NR CA tax.
+5. **Schedule D per-transaction detail** + wash-sale tracking. Most CPA clients have brokerage accounts.
+6. **Per-property rental table** (`rental_properties` schema + per-property MACRS).
+7. **HI / NJ / NY partial retirement-income state exemptions** (PA/IL/MS done).
+8. **Real IRS Form 1040 PDF layout** via pdf-lib coordinate fills.
+
+### Tier 3 (compliance / infra hardening)
+9. **CPA-firm auth model** — organizations, users, role-based access, per-client visibility.
+10. **Soft-delete clients** instead of cascading, so audit_log persists past client deletion (real CPA compliance expectation).
+11. **DB-level append-only enforcement** on audit_log (revoke UPDATE/DELETE for the app role).
+12. **Real document upload + secure S3 storage**, remove demo banner.
+
+### Tier 4 (lower-frequency engine items)
+13. **K-1 detail** (S-corp + partnership K-1)
+14. **AMT preferences detail** (state-tax addback, ISO bargain element)
+15. **Local income taxes** (NYC, MD counties, OH cities, IN counties)
+16. **State EITC expansion** to other states (CO, IL, MA, MN, NJ, etc.)
+17. **Form 1116 engine integration** — add `foreign_source_taxable_income` adjustment type, wire engine to call new FTC path
+
+## Codebase reminders (carried forward from CLAUDE.md)
+
+- AGI must include LTCG + QDIV + STCG per Form 1040 Line 9
+- `<CurrencyInput>` for money fields, never `<Input type="number">`
+- Radix `<Select>` needs `formReady` gate before mount in edit mode
+- Adding a new test file requires adding it to `scripts/tsconfig.json`'s `exclude` array
+- When api-server typecheck stalls after schema change: delete `lib/db/dist/` + `lib/db/tsconfig.tsbuildinfo`, then `pnpm --filter @workspace/db exec tsc -b --force`
+
+## Open background processes
+
+- API server on `:8080`
+- Frontend preview on `:3010`
+- Docker `haven-postgres` container
 
 ## How to start the next Claude session
 
 Just say: **"Read .claude/handoff.md and CLAUDE.md. What should we work on next?"**
 
-That triggers the documented context-loading dance. The next Claude will pick up from this handoff.
-
-If you want to work on something specific, say:
-- **"Continue Phase 2: implement Schedule D per-transaction detail with wash sale tracking"**
-- **"Start integrating the tax engine into Haven App. Here's the Haven repo: <path>"**
-- **"Improve the frontend — make ClientForm collapse the Phase 1.5/2 sections by default"**
-- **"Add Schedule D and Schedule E PDFs as separate downloads"**
-
-## Where to pick up next session — ranked by value
-
-### High-value, small-effort
-1. **Auto-load capital loss carryforward from prior year's `tax_returns` row** (~30 min). Manual entry currently. Would close the carryforward loop.
-2. **Year Compare currently doesn't show new Phase 2 lines** — quick check that all rental/cap-loss/state-retirement fields appear in YearCompare component (~1 hour).
-3. **Refresh the `cd40d3b` ghost** — main has a CLAUDE.md commit but the worktree dump was dropped from git history. Verify .claude/handoff.md is current.
-
-### High-value, medium-effort
-4. **Per-property rental table** (`rental_properties` schema). Today rental data is aggregate adjustments. Real CPAs want per-property tracking + per-property MACRS auto-calc. ~1 day.
-5. **Schedule D per-transaction detail** (`capital_transactions` table). Enables wash sale detection. ~2-3 days.
-6. **Actual IRS Form 1040 PDF layout** using `pdf-lib` to fill the official IRS template at coordinates. ~2 days.
-
-### Big bets
-7. **Haven App integration** — engine is now Haven-portable via `computeTaxReturnPure(inputs)`. Need: Haven's stack, ORM, auth model, multi-tenancy approach. Could be days or weeks depending on integration depth.
-8. **Phase 4 strategic commit** — Option A (CPA tool with import adapters) vs Option B (consumer DIY with e-file). Big strategic decision. The current state supports both paths.
-
-### Maintenance items
-9. **Vermont approximation** — VT calc uses 0 personal exemption + no taxable-SS modeling. Acknowledged in stateTaxData.ts notes.
-10. **NR-state tax overstatement** — non-resident state computation uses resident brackets. To fix correctly, each state's NR rules (e.g., NY IT-203, CA 540NR) would need separate modeling.
-
-## Critical reminders for next session
-
-- **Hand-calc every test value** — the user has been burned by tests passing while calc was wrong (CLAUDE.md)
-- **Adding test files** also requires adding to `scripts/tsconfig.json`'s `exclude` array
-- **api-server typecheck stalls** — delete `lib/db/dist/` + `lib/db/tsconfig.tsbuildinfo`, then `pnpm --filter @workspace/db exec tsc -b --force`
-- **Money fields use `<CurrencyInput>`** never `<Input type="number">`
-- **Radix Select edit-mode** needs the `formReady` gate (see `ClientForm.tsx`)
-- **shadcn Tabs** dispatch `mousedown` + `click` MouseEvents when clicking programmatically
-- **EC2 `git pull` conflicts** on `pnpm-lock.yaml` every time — `git checkout -- pnpm-lock.yaml` first
-
-## Background processes still running locally
-
-These may need restart in a new session:
-- API server on `:8080` (last started via `node ./artifacts/api-server/dist/index.mjs` background task — killed by session restart)
-- Frontend preview on `:3010` (started via `preview_start`)
-- Postgres in Docker container `haven-postgres` (shared with another project; user `brookhaven`, db `taxflow_pro` — both created by us)
-
-Restart API server:
-```bash
-DATABASE_URL=postgres://brookhaven:brookhaven@localhost:5432/taxflow_pro \
-  AI_API_KEY=dummy PORT=8080 \
-  node /Users/johntang/Documents/taxflow-assistant/.claude/worktrees/admiring-lehmann-e51bf4/artifacts/api-server/dist/index.mjs
-```
-
-Restart frontend:
-```bash
-pnpm --filter @workspace/tax-app run dev
-# or use the preview server: invoke preview_start with name "frontend"
-```
+Or be more specific:
+- **"Push to origin and deploy to EC2."**
+- **"Build the AI-overlay UX: upload 1099 PDF → extract → review → export."**
+- **"Add CA 540NR non-resident bracket calc."**
+- **"Validate UltraTax .gen against a sample import file [path]."**
