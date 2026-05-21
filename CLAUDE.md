@@ -97,25 +97,40 @@ Future-you will be tempted to "simplify" these. Don't.
 
 ## EC2 deploy
 
-Standard cycle, run on the box:
+SSH: `ssh -i ~/Downloads/taxflow-key.pem ubuntu@ec2-18-188-192-154.us-east-2.compute.amazonaws.com`. Project lives at `~/taxflow-pro` (NOT `taxflow-assistant`).
+
+There is NO `~/.env` on the box. Env vars (DATABASE_URL → Neon, AI_API_KEY) are baked into the running pm2 process. To deploy, source them out of pm2:
+
 ```bash
-ssh ubuntu@ec2-18-188-192-154.us-east-2.compute.amazonaws.com
-cd ~/taxflow-assistant
-git checkout -- pnpm-lock.yaml     # discard pnpm install drift; conflicts every time otherwise
-git pull
+ssh -i ~/Downloads/taxflow-key.pem ubuntu@ec2-18-188-192-154.us-east-2.compute.amazonaws.com
+cd ~/taxflow-pro
+git checkout -- pnpm-lock.yaml
+git pull origin main
 pnpm install
-set -a; source ~/.env; set +a       # exports DATABASE_URL and AI_API_KEY for the next commands
-pnpm --filter @workspace/db run push    # only if schema changed
-pnpm --filter @workspace/tax-app run build
+export DATABASE_URL=$(pm2 env 0 | awk -F": " '/^DATABASE_URL:/ {print $2; exit}')
+export AI_API_KEY=$(pm2 env 0 | awk -F": " '/^AI_API_KEY:/ {print $2; exit}')
+pnpm --filter @workspace/db run push      # only if schema changed
 pnpm --filter @workspace/api-server run build
 pm2 restart taxflow
 curl http://localhost:8080/api/healthz
 ```
 
+**The frontend (tax-app) cannot be built on the box** — the instance has 908 MiB total RAM and Vite OOMs (exit 137). Build locally and rsync:
+
+```bash
+# Local
+pnpm --filter @workspace/tax-app run build
+rsync -e "ssh -i ~/Downloads/taxflow-key.pem" -avz --delete \
+  artifacts/tax-app/dist/public/ \
+  ubuntu@ec2-18-188-192-154.us-east-2.compute.amazonaws.com:~/taxflow-pro/artifacts/tax-app/dist/public/
+```
+
+The api-server serves these static files directly; no nginx.
+
 **EC2 gotchas:**
 - Don't `curl` the public DNS from inside EC2 — AWS networking drops the loopback. Use `localhost:8080`.
 - `git pull` will conflict on `pnpm-lock.yaml` every time — `git checkout -- pnpm-lock.yaml` first.
-- Credentials are in `~/.env` on EC2; never put them in commits, code, or chat.
+- Credentials live in the pm2 process env, NOT in a `~/.env` file. To inspect: `pm2 env 0`. To change: `pm2 restart taxflow --update-env` after setting env vars in the shell.
 
 ## Security / data handling
 

@@ -38,23 +38,12 @@ One commit on `main` (already pushed to origin):
 
 ## Current state
 
-**Live deploy:** Pushed to `origin/main` (commit `c026154`). **Not yet deployed to EC2.** Schema changed this session — `db run push` is required.
+**Live deploy:** Deployed to EC2 (commit `17a03c2` on `origin/main`). Verified end-to-end against `http://ec2-18-188-192-154.us-east-2.compute.amazonaws.com`: upload → pending_review → approve → w2_data row + audit-log entry with source="AI extraction from ...". Schema push applied (tax_documents.linked_record_id, linked_record_type, rejection_reason).
 
-Standard EC2 cycle:
-```bash
-ssh ubuntu@ec2-18-188-192-154.us-east-2.compute.amazonaws.com '
-  cd ~/taxflow-assistant &&
-  git checkout -- pnpm-lock.yaml &&
-  git pull origin main &&
-  pnpm install &&
-  set -a && source ~/.env && set +a &&
-  pnpm --filter @workspace/db run push &&
-  pnpm --filter @workspace/tax-app run build &&
-  pnpm --filter @workspace/api-server run build &&
-  pm2 restart taxflow &&
-  curl -s http://localhost:8080/api/healthz
-'
-```
+**Two EC2 gotchas surfaced during deploy** (now documented in CLAUDE.md):
+1. **Project lives at `~/taxflow-pro` on the box**, not `taxflow-assistant` as previous handoff said.
+2. **The instance has 908 MiB RAM and Vite OOMs (exit 137) on `tax-app` build.** Build the frontend locally and rsync `dist/public/` over. The api-server build is fine on the box.
+3. **No `~/.env` exists.** Env vars (DATABASE_URL → Neon, AI_API_KEY) are baked into the pm2 process. Source them with `export DATABASE_URL=$(pm2 env 0 | awk -F": " '/^DATABASE_URL:/ {print $2; exit}')` before `db run push`.
 
 **Tests: 1,122 / 0 across 16 suites**
 
