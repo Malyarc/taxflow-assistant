@@ -1367,9 +1367,12 @@ export function calculateStudentLoanInterest(params: {
 // Nonrefundable credit for foreign taxes paid on foreign-source income.
 // Simplified path (no Form 1116) under IRC §904(j): all foreign source income
 // is passive AND total qualifying foreign tax ≤ $300 single / $600 MFJ.
-// Above the threshold, real Form 1116 limits credit to (foreign source income
-// / total taxable income) × US tax. We don't model the Form 1116 limitation;
-// we apply the full foreign-tax-paid amount and flag the approximation.
+// Three paths:
+// 1. Simplified (≤ $300/$600 paid): credit = paid, no Form 1116 needed.
+// 2. Form 1116 limit (paid > simplified AND foreign source income known):
+//    credit = min(paid, foreignSourceTaxableIncome / totalTaxableIncome × preCreditUsTax).
+// 3. Approximate (paid > simplified, no foreign source income provided):
+//    credit = paid; flag exceededSimplifiedLimit and formLimitApplied=false.
 const FTC_SIMPLIFIED_LIMIT_SINGLE = 300;
 const FTC_SIMPLIFIED_LIMIT_MFJ = 600;
 
@@ -1379,12 +1382,22 @@ export interface ForeignTaxCreditCalculation {
   simplifiedLimit: number;
   usedSimplifiedPath: boolean;
   exceededSimplifiedLimit: boolean;
+  /** True = Form 1116 limit applied (limit = foreign-source-taxable / total-taxable × preCreditTax) */
+  formLimitApplied: boolean;
+  /** The computed Form 1116 limit (only meaningful if formLimitApplied=true) */
+  formLimit: number | null;
   credit: number;
 }
 
 export function calculateForeignTaxCredit(params: {
   foreignTaxPaid: number;
   filingStatus: string;
+  /** Optional: foreign source taxable income (Form 1116 Line 17). When provided
+   * along with totalTaxableIncome + preCreditUsTax, the engine applies the
+   * actual Form 1116 limit instead of approximating. */
+  foreignSourceTaxableIncome?: number;
+  totalTaxableIncome?: number;
+  preCreditUsTax?: number;
 }): ForeignTaxCreditCalculation {
   const isMfj =
     params.filingStatus === "married_filing_jointly" ||
@@ -1393,12 +1406,51 @@ export function calculateForeignTaxCredit(params: {
   const amount = Math.max(0, params.foreignTaxPaid);
   const exceededSimplifiedLimit = amount > simplifiedLimit;
 
+  // Path 1: under simplified limit — easy path, no Form 1116
+  if (!exceededSimplifiedLimit) {
+    return {
+      foreignTaxPaid: amount,
+      filingStatus: params.filingStatus,
+      simplifiedLimit,
+      usedSimplifiedPath: true,
+      exceededSimplifiedLimit: false,
+      formLimitApplied: false,
+      formLimit: null,
+      credit: amount,
+    };
+  }
+
+  // Path 2: over simplified, AND we have the Form 1116 inputs → apply real limit
+  if (
+    params.foreignSourceTaxableIncome != null &&
+    params.totalTaxableIncome != null &&
+    params.preCreditUsTax != null &&
+    params.totalTaxableIncome > 0
+  ) {
+    const fraction = Math.max(0, Math.min(1, params.foreignSourceTaxableIncome / params.totalTaxableIncome));
+    const formLimit = fraction * params.preCreditUsTax;
+    const credit = Math.min(amount, formLimit);
+    return {
+      foreignTaxPaid: amount,
+      filingStatus: params.filingStatus,
+      simplifiedLimit,
+      usedSimplifiedPath: false,
+      exceededSimplifiedLimit: true,
+      formLimitApplied: true,
+      formLimit,
+      credit,
+    };
+  }
+
+  // Path 3: over simplified, no Form 1116 inputs supplied → approximate (use paid amount)
   return {
     foreignTaxPaid: amount,
     filingStatus: params.filingStatus,
     simplifiedLimit,
-    usedSimplifiedPath: !exceededSimplifiedLimit,
-    exceededSimplifiedLimit,
+    usedSimplifiedPath: false,
+    exceededSimplifiedLimit: true,
+    formLimitApplied: false,
+    formLimit: null,
     credit: amount,
   };
 }

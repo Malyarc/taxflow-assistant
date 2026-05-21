@@ -22,6 +22,7 @@ import {
   calculateDependentCareCredit,
   calculateEducationCredits,
   calculateStateEitc,
+  calculateForeignTaxCredit,
   getFederalStandardDeduction,
 } from "../../artifacts/api-server/src/lib/taxCalculator";
 
@@ -754,7 +755,77 @@ header("State EITC — other states (unmodeled) → $0");
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// 27. Vermont — personal exemption $4,850/$9,700 per Form IN-111 Line 5b
+// 27. Foreign Tax Credit — Form 1116 limit path
+// ════════════════════════════════════════════════════════════════════════════
+header("Foreign Tax Credit — Form 1116 limit (over simplified $300/$600)");
+{
+  // Under simplified limit → easy path, no Form 1116
+  const under = calculateForeignTaxCredit({ foreignTaxPaid: 250, filingStatus: "single" });
+  check("FTC $250 (under limit) → credit = $250", under.credit, 250);
+  checkExact("Used simplified path", under.usedSimplifiedPath, true);
+
+  // Over limit, no Form 1116 inputs → approximate (use paid amount, flag)
+  const overApprox = calculateForeignTaxCredit({ foreignTaxPaid: 1000, filingStatus: "single" });
+  check("FTC $1k over limit, no Form 1116 inputs → approximate $1k", overApprox.credit, 1000);
+  checkExact("Form 1116 not applied (no inputs)", overApprox.formLimitApplied, false);
+  checkExact("Exceeded simplified limit flagged", overApprox.exceededSimplifiedLimit, true);
+
+  // Over limit WITH Form 1116 inputs → applies real limit.
+  // Example: $1,000 paid, $5,000 foreign source, $80,000 total taxable, $15,000 US tax.
+  // Limit = (5000 / 80000) × 15000 = 0.0625 × 15000 = $937.50
+  // Credit = min(1000, 937.50) = $937.50
+  const overForm1116 = calculateForeignTaxCredit({
+    foreignTaxPaid: 1000,
+    filingStatus: "single",
+    foreignSourceTaxableIncome: 5000,
+    totalTaxableIncome: 80000,
+    preCreditUsTax: 15000,
+  });
+  check("FTC Form 1116 limit = $937.50, credit capped", overForm1116.credit, 937.50, 0.01);
+  checkExact("Form 1116 applied", overForm1116.formLimitApplied, true);
+  check("Form 1116 limit value reported", overForm1116.formLimit ?? -1, 937.50, 0.01);
+
+  // Form 1116 limit > paid → credit = paid (limit doesn't bind)
+  // $500 paid, $30,000 foreign source, $80,000 total, $15,000 US tax.
+  // Limit = (30000 / 80000) × 15000 = 0.375 × 15000 = $5,625.
+  // Credit = min(500, 5625) = $500. But $500 is UNDER simplified $300 single... wait, $500 > $300.
+  // OK so still in Form 1116 path, just limit doesn't bind.
+  const limitDoesntBind = calculateForeignTaxCredit({
+    foreignTaxPaid: 500,
+    filingStatus: "single",
+    foreignSourceTaxableIncome: 30000,
+    totalTaxableIncome: 80000,
+    preCreditUsTax: 15000,
+  });
+  check("FTC $500 paid, Form 1116 limit $5,625 > paid → credit = $500", limitDoesntBind.credit, 500);
+
+  // 100% foreign source income → limit = US tax (cap)
+  const all100Foreign = calculateForeignTaxCredit({
+    foreignTaxPaid: 20000,
+    filingStatus: "single",
+    foreignSourceTaxableIncome: 80000,
+    totalTaxableIncome: 80000,
+    preCreditUsTax: 15000,
+  });
+  check("100% foreign → limit = pre-credit US tax $15,000", all100Foreign.credit, 15000);
+
+  // Zero foreign source income → limit = 0 (defensive)
+  const zeroForeign = calculateForeignTaxCredit({
+    foreignTaxPaid: 1000,
+    filingStatus: "single",
+    foreignSourceTaxableIncome: 0,
+    totalTaxableIncome: 80000,
+    preCreditUsTax: 15000,
+  });
+  check("0 foreign source income → limit $0 → credit $0", zeroForeign.credit, 0);
+
+  // MFJ simplified limit is $600 not $300
+  const mfjUnder = calculateForeignTaxCredit({ foreignTaxPaid: 500, filingStatus: "married_filing_jointly" });
+  checkExact("MFJ FTC $500 simplified path (under $600)", mfjUnder.usedSimplifiedPath, true);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 28. Vermont — personal exemption $4,850/$9,700 per Form IN-111 Line 5b
 // ════════════════════════════════════════════════════════════════════════════
 header("Vermont — personal exemption (Form IN-111 Line 5b)");
 {
