@@ -6,6 +6,10 @@ import {
   UploadDocumentParams,
   UploadDocumentBody,
   DeleteDocumentParams,
+  ApproveExtractionParams,
+  ApproveExtractionBody,
+  RejectExtractionParams,
+  RejectExtractionBody,
 } from "@workspace/api-zod";
 import {
   extractTextFromBase64,
@@ -16,7 +20,8 @@ import {
   isVisualMimeType,
 } from "../lib/documentExtractor";
 import { logger } from "../lib/logger";
-import { recalculateAndUpsertTaxReturn } from "../lib/taxReturnPipeline";
+import { recalculateAfterMutation } from "../lib/taxReturnPipeline";
+import { writeAudit } from "../lib/auditLog";
 
 const router: IRouter = Router();
 
@@ -45,7 +50,9 @@ router.post("/clients/:clientId/documents", async (req, res): Promise<void> => {
     return;
   }
 
-  // Insert document in pending state
+  // Insert document in processing state. Extraction runs asynchronously; on
+  // completion the row flips to `pending_review` (CPA must approve before the
+  // extracted values land in w2_data / form_1099_data) or `failed`.
   const [doc] = await db
     .insert(taxDocumentsTable)
     .values({
@@ -57,7 +64,16 @@ router.post("/clients/:clientId/documents", async (req, res): Promise<void> => {
     })
     .returning();
 
-  // Run AI extraction asynchronously, then update
+  await writeAudit({
+    clientId: params.data.clientId,
+    action: "create",
+    entityType: "tax_document",
+    entityId: doc.id,
+    after: { id: doc.id, fileName: doc.fileName, documentType: doc.documentType, status: doc.status },
+    source: "document upload",
+  });
+
+  // Fire-and-forget extraction. Errors are caught and persisted as `failed`.
   (async () => {
     try {
       const mimeType = detectMimeType(parsed.data.fileName);
@@ -66,16 +82,9 @@ router.post("/clients/:clientId/documents", async (req, res): Promise<void> => {
         ? `[${mimeType}: ${parsed.data.fileName}]`
         : await extractTextFromBase64(parsed.data.fileContent, parsed.data.fileName);
       let extractedData: Record<string, unknown> = {};
-
-      // Pull the client's tax year so any auto-created records match their return year.
-      const [client] = await db
-        .select()
-        .from(clientsTable)
-        .where(eq(clientsTable.id, params.data.clientId));
-      const clientTaxYear = client?.taxYear ?? new Date().getFullYear() - 1;
+      let fieldBoxes: Record<string, unknown> = {};
 
       if (parsed.data.documentType === "w2") {
-        let fieldBoxes: Record<string, unknown> = {};
         if (isVisual) {
           const { data, boxes } = await extractW2DataFromFile(parsed.data.fileContent, mimeType);
           extractedData = data as Record<string, unknown>;
@@ -83,86 +92,23 @@ router.post("/clients/:clientId/documents", async (req, res): Promise<void> => {
         } else {
           extractedData = (await extractW2DataFromText(extractedText)) as Record<string, unknown>;
         }
-
-        // Auto-create a W-2 record with extracted data
-        await db.insert(w2DataTable).values({
-          clientId: params.data.clientId,
-          documentId: doc.id,
-          taxYear: clientTaxYear,
-          employerName: extractedData.employerName as string | undefined,
-          employerEin: extractedData.employerEin as string | undefined,
-          employeeSSN: extractedData.employeeSSN as string | undefined,
-          wagesBox1: extractedData.wagesBox1 != null ? String(extractedData.wagesBox1) : undefined,
-          federalTaxWithheldBox2: extractedData.federalTaxWithheldBox2 != null ? String(extractedData.federalTaxWithheldBox2) : undefined,
-          socialSecurityWagesBox3: extractedData.socialSecurityWagesBox3 != null ? String(extractedData.socialSecurityWagesBox3) : undefined,
-          socialSecurityTaxBox4: extractedData.socialSecurityTaxBox4 != null ? String(extractedData.socialSecurityTaxBox4) : undefined,
-          medicareWagesBox5: extractedData.medicareWagesBox5 != null ? String(extractedData.medicareWagesBox5) : undefined,
-          medicareTaxBox6: extractedData.medicareTaxBox6 != null ? String(extractedData.medicareTaxBox6) : undefined,
-          stateTaxWithheldBox17: extractedData.stateTaxWithheldBox17 != null ? String(extractedData.stateTaxWithheldBox17) : undefined,
-          stateWagesBox16: extractedData.stateWagesBox16 != null ? String(extractedData.stateWagesBox16) : undefined,
-          stateCode: extractedData.stateCode as string | undefined,
-          fieldBoxes: Object.keys(fieldBoxes).length > 0 ? fieldBoxes : null,
-        });
-
-        // Auto-recalc the tax return so the calculator tab reflects the new W-2 immediately
-        await recalculateAndUpsertTaxReturn(params.data.clientId);
       } else if (parsed.data.documentType === "form_1099" && isVisual) {
-        // 1099 — auto-detect subtype + extract fields
         const { data, boxes } = await extract1099DataFromFile(parsed.data.fileContent, mimeType);
         extractedData = data as Record<string, unknown>;
-        const fieldBoxes = boxes as Record<string, unknown>;
-
-        if (data.formType) {
-          await db.insert(form1099DataTable).values({
-            clientId: params.data.clientId,
-            documentId: doc.id,
-            taxYear: clientTaxYear,
-            formType: data.formType,
-            payerName: data.payerName,
-            payerTin: data.payerTin,
-            recipientTin: data.recipientTin,
-            federalTaxWithheld: data.federalTaxWithheld != null ? String(data.federalTaxWithheld) : undefined,
-            stateTaxWithheld: data.stateTaxWithheld != null ? String(data.stateTaxWithheld) : undefined,
-            stateCode: data.stateCode,
-            nonemployeeCompensation: data.nonemployeeCompensation != null ? String(data.nonemployeeCompensation) : undefined,
-            rents: data.rents != null ? String(data.rents) : undefined,
-            royalties: data.royalties != null ? String(data.royalties) : undefined,
-            otherIncome: data.otherIncome != null ? String(data.otherIncome) : undefined,
-            fishingBoatProceeds: data.fishingBoatProceeds != null ? String(data.fishingBoatProceeds) : undefined,
-            medicalAndHealthcare: data.medicalAndHealthcare != null ? String(data.medicalAndHealthcare) : undefined,
-            interestIncome: data.interestIncome != null ? String(data.interestIncome) : undefined,
-            earlyWithdrawalPenalty: data.earlyWithdrawalPenalty != null ? String(data.earlyWithdrawalPenalty) : undefined,
-            usTreasuryInterest: data.usTreasuryInterest != null ? String(data.usTreasuryInterest) : undefined,
-            taxExemptInterest: data.taxExemptInterest != null ? String(data.taxExemptInterest) : undefined,
-            ordinaryDividends: data.ordinaryDividends != null ? String(data.ordinaryDividends) : undefined,
-            qualifiedDividends: data.qualifiedDividends != null ? String(data.qualifiedDividends) : undefined,
-            totalCapitalGainDistribution: data.totalCapitalGainDistribution != null ? String(data.totalCapitalGainDistribution) : undefined,
-            nondividendDistributions: data.nondividendDistributions != null ? String(data.nondividendDistributions) : undefined,
-            proceeds: data.proceeds != null ? String(data.proceeds) : undefined,
-            costBasis: data.costBasis != null ? String(data.costBasis) : undefined,
-            shortTermGainLoss: data.shortTermGainLoss != null ? String(data.shortTermGainLoss) : undefined,
-            longTermGainLoss: data.longTermGainLoss != null ? String(data.longTermGainLoss) : undefined,
-            grossDistribution: data.grossDistribution != null ? String(data.grossDistribution) : undefined,
-            taxableAmount: data.taxableAmount != null ? String(data.taxableAmount) : undefined,
-            distributionCode: data.distributionCode,
-            iraSepSimple: data.iraSepSimple,
-            unemploymentCompensation: data.unemploymentCompensation != null ? String(data.unemploymentCompensation) : undefined,
-            stateLocalRefund: data.stateLocalRefund != null ? String(data.stateLocalRefund) : undefined,
-            grossPaymentAmount: data.grossPaymentAmount != null ? String(data.grossPaymentAmount) : undefined,
-            fieldBoxes: Object.keys(fieldBoxes).length > 0 ? fieldBoxes : null,
-          });
-
-          await recalculateAndUpsertTaxReturn(params.data.clientId);
-        } else {
-          logger.warn({ docId: doc.id }, "1099 extraction did not produce a formType");
-        }
+        fieldBoxes = boxes as Record<string, unknown>;
       }
+
+      const payload = {
+        text: extractedText.slice(0, 2000),
+        data: extractedData,
+        boxes: fieldBoxes,
+      };
 
       await db
         .update(taxDocumentsTable)
         .set({
-          status: "extracted",
-          extractedText: JSON.stringify({ text: extractedText.slice(0, 2000), data: extractedData }),
+          status: "pending_review",
+          extractedText: JSON.stringify(payload),
         })
         .where(eq(taxDocumentsTable.id, doc.id));
     } catch (err) {
@@ -177,7 +123,10 @@ router.post("/clients/:clientId/documents", async (req, res): Promise<void> => {
   res.status(201).json(doc);
 });
 
-// Stream the raw file content (image/PDF/text) for preview in the UI.
+/**
+ * Stream the raw file content (image/PDF/text) for preview in the UI.
+ * Used by both the simple preview iframe and the BoundedDocumentViewer.
+ */
 router.get("/clients/:clientId/documents/:documentId/content", async (req, res): Promise<void> => {
   const params = DeleteDocumentParams.safeParse(req.params);
   if (!params.success) {
@@ -216,7 +165,7 @@ router.delete("/clients/:clientId/documents/:documentId", async (req, res): Prom
     .where(
       and(
         eq(taxDocumentsTable.id, params.data.documentId),
-        eq(taxDocumentsTable.clientId, params.data.clientId)
+        eq(taxDocumentsTable.clientId, params.data.clientId),
       )
     )
     .returning();
@@ -224,10 +173,263 @@ router.delete("/clients/:clientId/documents/:documentId", async (req, res): Prom
     res.status(404).json({ error: "Document not found" });
     return;
   }
-  // Note: w2_data rows that were auto-created from this doc are NOT deleted (no FK cascade).
-  // Recalc anyway in case any flow does delete W-2s here later.
-  recalculateAndUpsertTaxReturn(params.data.clientId).catch(() => {});
+  await writeAudit({
+    clientId: params.data.clientId,
+    action: "delete",
+    entityType: "tax_document",
+    entityId: doc.id,
+    before: { id: doc.id, fileName: doc.fileName, status: doc.status, linkedRecordId: doc.linkedRecordId },
+  });
+  // Recalc in case the doc was linked to a w2/1099 (cascades aren't wired, but the recalc
+  // is cheap and keeps the tax return consistent if downstream logic ever does delete).
+  recalculateAfterMutation(params.data.clientId).catch(() => {});
   res.sendStatus(204);
+});
+
+/**
+ * Approve an AI-extracted document. The CPA has reviewed (and possibly edited)
+ * the extracted fields and confirmed they should be written to the income
+ * record. We insert into w2_data or form_1099_data with an explicit audit
+ * source so the audit log distinguishes "AI extraction (CPA-approved)" from
+ * "manual entry" and from machine writes.
+ */
+router.post("/clients/:clientId/documents/:documentId/approve", async (req, res): Promise<void> => {
+  const params = ApproveExtractionParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const parsed = ApproveExtractionBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const [doc] = await db
+    .select()
+    .from(taxDocumentsTable)
+    .where(
+      and(
+        eq(taxDocumentsTable.id, params.data.documentId),
+        eq(taxDocumentsTable.clientId, params.data.clientId),
+      ),
+    );
+  if (!doc) {
+    res.status(404).json({ error: "Document not found" });
+    return;
+  }
+  if (doc.status !== "pending_review") {
+    res.status(400).json({ error: `Document is in '${doc.status}' state; only 'pending_review' can be approved` });
+    return;
+  }
+
+  // Pull the per-field boxes from the extraction payload so the committed
+  // record carries them too (for any future "view source position" UI).
+  let fieldBoxes: Record<string, unknown> | null = null;
+  if (doc.extractedText) {
+    try {
+      const payload = JSON.parse(doc.extractedText) as { boxes?: Record<string, unknown> };
+      if (payload.boxes && Object.keys(payload.boxes).length > 0) fieldBoxes = payload.boxes;
+    } catch {
+      // ignore malformed payload — no boxes
+    }
+  }
+
+  const numericToString = (v: number | null | undefined): string | undefined =>
+    v != null ? String(v) : undefined;
+
+  const auditSource = `AI extraction from ${doc.fileName}`;
+
+  if (parsed.data.recordType === "w2") {
+    const [record] = await db
+      .insert(w2DataTable)
+      .values({
+        clientId: params.data.clientId,
+        documentId: doc.id,
+        taxYear: parsed.data.taxYear,
+        employerName: parsed.data.employerName ?? undefined,
+        employerEin: parsed.data.employerEin ?? undefined,
+        employeeSSN: parsed.data.employeeSSN ?? undefined,
+        wagesBox1: numericToString(parsed.data.wagesBox1),
+        federalTaxWithheldBox2: numericToString(parsed.data.federalTaxWithheldBox2),
+        socialSecurityWagesBox3: numericToString(parsed.data.socialSecurityWagesBox3),
+        socialSecurityTaxBox4: numericToString(parsed.data.socialSecurityTaxBox4),
+        medicareWagesBox5: numericToString(parsed.data.medicareWagesBox5),
+        medicareTaxBox6: numericToString(parsed.data.medicareTaxBox6),
+        stateTaxWithheldBox17: numericToString(parsed.data.stateTaxWithheldBox17),
+        stateWagesBox16: numericToString(parsed.data.stateWagesBox16),
+        stateCode: parsed.data.stateCode ?? undefined,
+        fieldBoxes,
+      })
+      .returning();
+    await writeAudit({
+      clientId: params.data.clientId,
+      action: "create",
+      entityType: "w2",
+      entityId: record.id,
+      after: record,
+      source: auditSource,
+    });
+    const [updatedDoc] = await db
+      .update(taxDocumentsTable)
+      .set({
+        status: "approved",
+        linkedRecordId: record.id,
+        linkedRecordType: "w2",
+      })
+      .where(eq(taxDocumentsTable.id, doc.id))
+      .returning();
+    await writeAudit({
+      clientId: params.data.clientId,
+      action: "update",
+      entityType: "tax_document",
+      entityId: doc.id,
+      before: { status: doc.status, linkedRecordId: doc.linkedRecordId },
+      after: { status: updatedDoc.status, linkedRecordId: updatedDoc.linkedRecordId, linkedRecordType: updatedDoc.linkedRecordType },
+      source: auditSource,
+    });
+    await recalculateAfterMutation(params.data.clientId);
+    res.json(updatedDoc);
+    return;
+  }
+
+  // form1099
+  if (parsed.data.recordType === "form1099") {
+    if (!parsed.data.formType) {
+      res.status(400).json({ error: "formType is required when recordType is form1099" });
+      return;
+    }
+    const [record] = await db
+      .insert(form1099DataTable)
+      .values({
+        clientId: params.data.clientId,
+        documentId: doc.id,
+        taxYear: parsed.data.taxYear,
+        formType: parsed.data.formType,
+        payerName: parsed.data.payerName ?? undefined,
+        payerTin: parsed.data.payerTin ?? undefined,
+        recipientTin: parsed.data.recipientTin ?? undefined,
+        federalTaxWithheld: numericToString(parsed.data.federalTaxWithheld),
+        stateTaxWithheld: numericToString(parsed.data.stateTaxWithheld),
+        stateCode: parsed.data.stateCode ?? undefined,
+        nonemployeeCompensation: numericToString(parsed.data.nonemployeeCompensation),
+        rents: numericToString(parsed.data.rents),
+        royalties: numericToString(parsed.data.royalties),
+        otherIncome: numericToString(parsed.data.otherIncome),
+        fishingBoatProceeds: numericToString(parsed.data.fishingBoatProceeds),
+        medicalAndHealthcare: numericToString(parsed.data.medicalAndHealthcare),
+        interestIncome: numericToString(parsed.data.interestIncome),
+        earlyWithdrawalPenalty: numericToString(parsed.data.earlyWithdrawalPenalty),
+        usTreasuryInterest: numericToString(parsed.data.usTreasuryInterest),
+        taxExemptInterest: numericToString(parsed.data.taxExemptInterest),
+        ordinaryDividends: numericToString(parsed.data.ordinaryDividends),
+        qualifiedDividends: numericToString(parsed.data.qualifiedDividends),
+        totalCapitalGainDistribution: numericToString(parsed.data.totalCapitalGainDistribution),
+        nondividendDistributions: numericToString(parsed.data.nondividendDistributions),
+        proceeds: numericToString(parsed.data.proceeds),
+        costBasis: numericToString(parsed.data.costBasis),
+        shortTermGainLoss: numericToString(parsed.data.shortTermGainLoss),
+        longTermGainLoss: numericToString(parsed.data.longTermGainLoss),
+        grossDistribution: numericToString(parsed.data.grossDistribution),
+        taxableAmount: numericToString(parsed.data.taxableAmount),
+        distributionCode: parsed.data.distributionCode ?? undefined,
+        iraSepSimple: parsed.data.iraSepSimple ?? undefined,
+        unemploymentCompensation: numericToString(parsed.data.unemploymentCompensation),
+        stateLocalRefund: numericToString(parsed.data.stateLocalRefund),
+        grossPaymentAmount: numericToString(parsed.data.grossPaymentAmount),
+        fieldBoxes,
+      })
+      .returning();
+    await writeAudit({
+      clientId: params.data.clientId,
+      action: "create",
+      entityType: "form1099",
+      entityId: record.id,
+      after: record,
+      source: auditSource,
+    });
+    const [updatedDoc] = await db
+      .update(taxDocumentsTable)
+      .set({
+        status: "approved",
+        linkedRecordId: record.id,
+        linkedRecordType: "form1099",
+      })
+      .where(eq(taxDocumentsTable.id, doc.id))
+      .returning();
+    await writeAudit({
+      clientId: params.data.clientId,
+      action: "update",
+      entityType: "tax_document",
+      entityId: doc.id,
+      before: { status: doc.status, linkedRecordId: doc.linkedRecordId },
+      after: { status: updatedDoc.status, linkedRecordId: updatedDoc.linkedRecordId, linkedRecordType: updatedDoc.linkedRecordType },
+      source: auditSource,
+    });
+    await recalculateAfterMutation(params.data.clientId);
+    res.json(updatedDoc);
+    return;
+  }
+
+  res.status(400).json({ error: `Unsupported recordType: ${parsed.data.recordType}` });
+});
+
+/**
+ * Reject an AI-extracted document. No income record is created; the doc moves
+ * to `rejected` status. CPAs use this when extraction quality was too poor to
+ * salvage (or the document was the wrong type entirely).
+ */
+router.post("/clients/:clientId/documents/:documentId/reject", async (req, res): Promise<void> => {
+  const params = RejectExtractionParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  // body is optional; default to empty
+  const parsed = RejectExtractionBody.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const [doc] = await db
+    .select()
+    .from(taxDocumentsTable)
+    .where(
+      and(
+        eq(taxDocumentsTable.id, params.data.documentId),
+        eq(taxDocumentsTable.clientId, params.data.clientId),
+      ),
+    );
+  if (!doc) {
+    res.status(404).json({ error: "Document not found" });
+    return;
+  }
+  if (doc.status !== "pending_review") {
+    res.status(400).json({ error: `Document is in '${doc.status}' state; only 'pending_review' can be rejected` });
+    return;
+  }
+
+  const [updatedDoc] = await db
+    .update(taxDocumentsTable)
+    .set({
+      status: "rejected",
+      rejectionReason: parsed.data.reason ?? null,
+    })
+    .where(eq(taxDocumentsTable.id, doc.id))
+    .returning();
+
+  await writeAudit({
+    clientId: params.data.clientId,
+    action: "update",
+    entityType: "tax_document",
+    entityId: doc.id,
+    before: { status: doc.status, rejectionReason: doc.rejectionReason },
+    after: { status: updatedDoc.status, rejectionReason: updatedDoc.rejectionReason },
+    source: parsed.data.reason ? `CPA rejection: ${parsed.data.reason}` : "CPA rejection",
+  });
+
+  res.json(updatedDoc);
 });
 
 export default router;

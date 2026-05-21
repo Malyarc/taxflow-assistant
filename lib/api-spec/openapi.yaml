@@ -194,6 +194,72 @@ paths:
         "204":
           description: Deleted
 
+  /clients/{clientId}/documents/{documentId}/approve:
+    post:
+      operationId: approveExtraction
+      tags: [documents]
+      summary: Approve extracted document fields, creating the underlying w2/1099 record
+      description: |
+        Called when the CPA has reviewed (and possibly edited) the AI-extracted
+        values for a document in `pending_review` status. Inserts a new
+        w2_data or form_1099_data row, writes an audit-log entry with
+        `source = "AI extraction from {fileName}"`, links the document to
+        the created record, and recalculates the tax return.
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApproveExtractionBody"
+      responses:
+        "200":
+          description: Document approved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaxDocument"
+
+  /clients/{clientId}/documents/{documentId}/reject:
+    post:
+      operationId: rejectExtraction
+      tags: [documents]
+      summary: Reject extracted document fields without writing any income record
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: documentId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RejectExtractionBody"
+      responses:
+        "200":
+          description: Document rejected
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaxDocument"
+
   # ── W-2 Data ─────────────────────────────────────────────────────────────
   /clients/{clientId}/w2data:
     get:
@@ -777,8 +843,20 @@ components:
           type: ["string", "null"]
         status:
           type: string
-          enum: [pending, processing, extracted, failed]
+          enum: [pending, processing, pending_review, approved, rejected, extracted, failed]
+          description: |
+            Lifecycle: pending → processing → pending_review → approved|rejected (or failed).
+            "extracted" is a legacy value for documents uploaded before the CPA-review gate;
+            UI should treat it as a synonym of "approved".
         extractedText:
+          type: ["string", "null"]
+        linkedRecordId:
+          type: ["integer", "null"]
+          description: PK of the w2_data / form_1099_data row this doc was approved into.
+        linkedRecordType:
+          type: ["string", "null"]
+          enum: [w2, form1099, null]
+        rejectionReason:
           type: ["string", "null"]
         createdAt:
           type: string
@@ -796,6 +874,121 @@ components:
         fileContent:
           type: string
           description: Base64-encoded file content
+
+    ApproveExtractionBody:
+      type: object
+      required: [recordType, taxYear]
+      description: |
+        Body for POST /clients/:clientId/documents/:documentId/approve. The CPA
+        confirms (and optionally edits) the extracted values; the server inserts
+        the corresponding w2_data or form_1099_data row with an audit-log entry.
+      properties:
+        recordType:
+          type: string
+          enum: [w2, form1099]
+        taxYear:
+          type: integer
+        # W-2 fields (relevant when recordType === "w2")
+        employerName:
+          type: ["string", "null"]
+        employerEin:
+          type: ["string", "null"]
+        employeeSSN:
+          type: ["string", "null"]
+        wagesBox1:
+          type: ["number", "null"]
+        federalTaxWithheldBox2:
+          type: ["number", "null"]
+        socialSecurityWagesBox3:
+          type: ["number", "null"]
+        socialSecurityTaxBox4:
+          type: ["number", "null"]
+        medicareWagesBox5:
+          type: ["number", "null"]
+        medicareTaxBox6:
+          type: ["number", "null"]
+        stateWagesBox16:
+          type: ["number", "null"]
+        stateTaxWithheldBox17:
+          type: ["number", "null"]
+        # 1099 fields (relevant when recordType === "form1099")
+        formType:
+          type: ["string", "null"]
+          enum: [NEC, MISC, INT, DIV, B, R, G, K, null]
+        payerName:
+          type: ["string", "null"]
+        payerTin:
+          type: ["string", "null"]
+        recipientTin:
+          type: ["string", "null"]
+        federalTaxWithheld:
+          type: ["number", "null"]
+        stateTaxWithheld:
+          type: ["number", "null"]
+        # 1099-NEC / MISC
+        nonemployeeCompensation:
+          type: ["number", "null"]
+        rents:
+          type: ["number", "null"]
+        royalties:
+          type: ["number", "null"]
+        otherIncome:
+          type: ["number", "null"]
+        fishingBoatProceeds:
+          type: ["number", "null"]
+        medicalAndHealthcare:
+          type: ["number", "null"]
+        # 1099-INT
+        interestIncome:
+          type: ["number", "null"]
+        earlyWithdrawalPenalty:
+          type: ["number", "null"]
+        usTreasuryInterest:
+          type: ["number", "null"]
+        taxExemptInterest:
+          type: ["number", "null"]
+        # 1099-DIV
+        ordinaryDividends:
+          type: ["number", "null"]
+        qualifiedDividends:
+          type: ["number", "null"]
+        totalCapitalGainDistribution:
+          type: ["number", "null"]
+        nondividendDistributions:
+          type: ["number", "null"]
+        # 1099-B
+        proceeds:
+          type: ["number", "null"]
+        costBasis:
+          type: ["number", "null"]
+        shortTermGainLoss:
+          type: ["number", "null"]
+        longTermGainLoss:
+          type: ["number", "null"]
+        # 1099-R
+        grossDistribution:
+          type: ["number", "null"]
+        taxableAmount:
+          type: ["number", "null"]
+        distributionCode:
+          type: ["string", "null"]
+        iraSepSimple:
+          type: ["string", "null"]
+        # 1099-G / K
+        unemploymentCompensation:
+          type: ["number", "null"]
+        stateLocalRefund:
+          type: ["number", "null"]
+        grossPaymentAmount:
+          type: ["number", "null"]
+        stateCode:
+          type: ["string", "null"]
+
+    RejectExtractionBody:
+      type: object
+      properties:
+        reason:
+          type: ["string", "null"]
 
     # ── W2Data ───────────────────────────────────────────────────────────────
     W2Data:

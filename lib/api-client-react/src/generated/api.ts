@@ -18,6 +18,7 @@ import type {
 
 import type {
   Adjustment,
+  ApproveExtractionBody,
   CalculateTaxReturnBody,
   Client,
   CreateAdjustmentBody,
@@ -27,6 +28,7 @@ import type {
   DashboardSummary,
   Form1099Data,
   HealthStatus,
+  RejectExtractionBody,
   TaxDocument,
   TaxReturn,
   UpdateAdjustmentBody,
@@ -794,6 +796,240 @@ export const useDeleteDocument = <
   TContext
 > => {
   return useMutation(getDeleteDocumentMutationOptions(options));
+};
+
+/**
+ * Called when the CPA has reviewed (and possibly edited) the AI-extracted
+values for a document in `pending_review` status. Inserts a new
+w2_data or form_1099_data row, writes an audit-log entry with
+`source = "AI extraction from {fileName}"`, links the document to
+the created record, and recalculates the tax return.
+
+ * @summary Approve extracted document fields, creating the underlying w2/1099 record
+ */
+export const getApproveExtractionUrl = (
+  clientId: number,
+  documentId: number,
+) => {
+  return `/api/clients/${clientId}/documents/${documentId}/approve`;
+};
+
+export const approveExtraction = async (
+  clientId: number,
+  documentId: number,
+  approveExtractionBody: ApproveExtractionBody,
+  options?: RequestInit,
+): Promise<TaxDocument> => {
+  return customFetch<TaxDocument>(
+    getApproveExtractionUrl(clientId, documentId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(approveExtractionBody),
+    },
+  );
+};
+
+export const getApproveExtractionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof approveExtraction>>,
+    TError,
+    {
+      clientId: number;
+      documentId: number;
+      data: BodyType<ApproveExtractionBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof approveExtraction>>,
+  TError,
+  {
+    clientId: number;
+    documentId: number;
+    data: BodyType<ApproveExtractionBody>;
+  },
+  TContext
+> => {
+  const mutationKey = ["approveExtraction"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof approveExtraction>>,
+    {
+      clientId: number;
+      documentId: number;
+      data: BodyType<ApproveExtractionBody>;
+    }
+  > = (props) => {
+    const { clientId, documentId, data } = props ?? {};
+
+    return approveExtraction(clientId, documentId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type ApproveExtractionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof approveExtraction>>
+>;
+export type ApproveExtractionMutationBody = BodyType<ApproveExtractionBody>;
+export type ApproveExtractionMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Approve extracted document fields, creating the underlying w2/1099 record
+ */
+export const useApproveExtraction = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof approveExtraction>>,
+    TError,
+    {
+      clientId: number;
+      documentId: number;
+      data: BodyType<ApproveExtractionBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof approveExtraction>>,
+  TError,
+  {
+    clientId: number;
+    documentId: number;
+    data: BodyType<ApproveExtractionBody>;
+  },
+  TContext
+> => {
+  return useMutation(getApproveExtractionMutationOptions(options));
+};
+
+/**
+ * @summary Reject extracted document fields without writing any income record
+ */
+export const getRejectExtractionUrl = (
+  clientId: number,
+  documentId: number,
+) => {
+  return `/api/clients/${clientId}/documents/${documentId}/reject`;
+};
+
+export const rejectExtraction = async (
+  clientId: number,
+  documentId: number,
+  rejectExtractionBody?: RejectExtractionBody,
+  options?: RequestInit,
+): Promise<TaxDocument> => {
+  return customFetch<TaxDocument>(
+    getRejectExtractionUrl(clientId, documentId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(rejectExtractionBody),
+    },
+  );
+};
+
+export const getRejectExtractionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rejectExtraction>>,
+    TError,
+    {
+      clientId: number;
+      documentId: number;
+      data: BodyType<RejectExtractionBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof rejectExtraction>>,
+  TError,
+  {
+    clientId: number;
+    documentId: number;
+    data: BodyType<RejectExtractionBody>;
+  },
+  TContext
+> => {
+  const mutationKey = ["rejectExtraction"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof rejectExtraction>>,
+    {
+      clientId: number;
+      documentId: number;
+      data: BodyType<RejectExtractionBody>;
+    }
+  > = (props) => {
+    const { clientId, documentId, data } = props ?? {};
+
+    return rejectExtraction(clientId, documentId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RejectExtractionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof rejectExtraction>>
+>;
+export type RejectExtractionMutationBody = BodyType<RejectExtractionBody>;
+export type RejectExtractionMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Reject extracted document fields without writing any income record
+ */
+export const useRejectExtraction = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rejectExtraction>>,
+    TError,
+    {
+      clientId: number;
+      documentId: number;
+      data: BodyType<RejectExtractionBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof rejectExtraction>>,
+  TError,
+  {
+    clientId: number;
+    documentId: number;
+    data: BodyType<RejectExtractionBody>;
+  },
+  TContext
+> => {
+  return useMutation(getRejectExtractionMutationOptions(options));
 };
 
 /**

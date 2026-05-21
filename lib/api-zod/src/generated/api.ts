@@ -358,8 +358,30 @@ export const ListDocumentsResponseItem = zod.object({
   ]),
   fileName: zod.string(),
   fileContent: zod.string().nullish(),
-  status: zod.enum(["pending", "processing", "extracted", "failed"]),
+  status: zod
+    .enum([
+      "pending",
+      "processing",
+      "pending_review",
+      "approved",
+      "rejected",
+      "extracted",
+      "failed",
+    ])
+    .describe(
+      'Lifecycle: pending → processing → pending_review → approved|rejected (or failed).\n\"extracted\" is a legacy value for documents uploaded before the CPA-review gate;\nUI should treat it as a synonym of \"approved\".\n',
+    ),
   extractedText: zod.string().nullish(),
+  linkedRecordId: zod
+    .number()
+    .nullish()
+    .describe(
+      "PK of the w2_data \/ form_1099_data row this doc was approved into.",
+    ),
+  linkedRecordType: zod
+    .union([zod.literal("w2"), zod.literal("form1099"), zod.literal(null)])
+    .nullish(),
+  rejectionReason: zod.string().nullish(),
   createdAt: zod.coerce.date(),
 });
 export const ListDocumentsResponse = zod.array(ListDocumentsResponseItem);
@@ -389,6 +411,174 @@ export const UploadDocumentBody = zod.object({
 export const DeleteDocumentParams = zod.object({
   clientId: zod.coerce.number(),
   documentId: zod.coerce.number(),
+});
+
+/**
+ * Called when the CPA has reviewed (and possibly edited) the AI-extracted
+values for a document in `pending_review` status. Inserts a new
+w2_data or form_1099_data row, writes an audit-log entry with
+`source = "AI extraction from {fileName}"`, links the document to
+the created record, and recalculates the tax return.
+
+ * @summary Approve extracted document fields, creating the underlying w2/1099 record
+ */
+export const ApproveExtractionParams = zod.object({
+  clientId: zod.coerce.number(),
+  documentId: zod.coerce.number(),
+});
+
+export const ApproveExtractionBody = zod
+  .object({
+    recordType: zod.enum(["w2", "form1099"]),
+    taxYear: zod.number(),
+    employerName: zod.string().nullish(),
+    employerEin: zod.string().nullish(),
+    employeeSSN: zod.string().nullish(),
+    wagesBox1: zod.number().nullish(),
+    federalTaxWithheldBox2: zod.number().nullish(),
+    socialSecurityWagesBox3: zod.number().nullish(),
+    socialSecurityTaxBox4: zod.number().nullish(),
+    medicareWagesBox5: zod.number().nullish(),
+    medicareTaxBox6: zod.number().nullish(),
+    stateWagesBox16: zod.number().nullish(),
+    stateTaxWithheldBox17: zod.number().nullish(),
+    formType: zod
+      .union([
+        zod.literal("NEC"),
+        zod.literal("MISC"),
+        zod.literal("INT"),
+        zod.literal("DIV"),
+        zod.literal("B"),
+        zod.literal("R"),
+        zod.literal("G"),
+        zod.literal("K"),
+        zod.literal(null),
+      ])
+      .nullish(),
+    payerName: zod.string().nullish(),
+    payerTin: zod.string().nullish(),
+    recipientTin: zod.string().nullish(),
+    federalTaxWithheld: zod.number().nullish(),
+    stateTaxWithheld: zod.number().nullish(),
+    nonemployeeCompensation: zod.number().nullish(),
+    rents: zod.number().nullish(),
+    royalties: zod.number().nullish(),
+    otherIncome: zod.number().nullish(),
+    fishingBoatProceeds: zod.number().nullish(),
+    medicalAndHealthcare: zod.number().nullish(),
+    interestIncome: zod.number().nullish(),
+    earlyWithdrawalPenalty: zod.number().nullish(),
+    usTreasuryInterest: zod.number().nullish(),
+    taxExemptInterest: zod.number().nullish(),
+    ordinaryDividends: zod.number().nullish(),
+    qualifiedDividends: zod.number().nullish(),
+    totalCapitalGainDistribution: zod.number().nullish(),
+    nondividendDistributions: zod.number().nullish(),
+    proceeds: zod.number().nullish(),
+    costBasis: zod.number().nullish(),
+    shortTermGainLoss: zod.number().nullish(),
+    longTermGainLoss: zod.number().nullish(),
+    grossDistribution: zod.number().nullish(),
+    taxableAmount: zod.number().nullish(),
+    distributionCode: zod.string().nullish(),
+    iraSepSimple: zod.string().nullish(),
+    unemploymentCompensation: zod.number().nullish(),
+    stateLocalRefund: zod.number().nullish(),
+    grossPaymentAmount: zod.number().nullish(),
+    stateCode: zod.string().nullish(),
+  })
+  .describe(
+    "Body for POST \/clients\/:clientId\/documents\/:documentId\/approve. The CPA\nconfirms (and optionally edits) the extracted values; the server inserts\nthe corresponding w2_data or form_1099_data row with an audit-log entry.\n",
+  );
+
+export const ApproveExtractionResponse = zod.object({
+  id: zod.number(),
+  clientId: zod.number(),
+  documentType: zod.enum([
+    "w2",
+    "form_1099",
+    "form_1098",
+    "schedule_k1",
+    "other",
+  ]),
+  fileName: zod.string(),
+  fileContent: zod.string().nullish(),
+  status: zod
+    .enum([
+      "pending",
+      "processing",
+      "pending_review",
+      "approved",
+      "rejected",
+      "extracted",
+      "failed",
+    ])
+    .describe(
+      'Lifecycle: pending → processing → pending_review → approved|rejected (or failed).\n\"extracted\" is a legacy value for documents uploaded before the CPA-review gate;\nUI should treat it as a synonym of \"approved\".\n',
+    ),
+  extractedText: zod.string().nullish(),
+  linkedRecordId: zod
+    .number()
+    .nullish()
+    .describe(
+      "PK of the w2_data \/ form_1099_data row this doc was approved into.",
+    ),
+  linkedRecordType: zod
+    .union([zod.literal("w2"), zod.literal("form1099"), zod.literal(null)])
+    .nullish(),
+  rejectionReason: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Reject extracted document fields without writing any income record
+ */
+export const RejectExtractionParams = zod.object({
+  clientId: zod.coerce.number(),
+  documentId: zod.coerce.number(),
+});
+
+export const RejectExtractionBody = zod.object({
+  reason: zod.string().nullish(),
+});
+
+export const RejectExtractionResponse = zod.object({
+  id: zod.number(),
+  clientId: zod.number(),
+  documentType: zod.enum([
+    "w2",
+    "form_1099",
+    "form_1098",
+    "schedule_k1",
+    "other",
+  ]),
+  fileName: zod.string(),
+  fileContent: zod.string().nullish(),
+  status: zod
+    .enum([
+      "pending",
+      "processing",
+      "pending_review",
+      "approved",
+      "rejected",
+      "extracted",
+      "failed",
+    ])
+    .describe(
+      'Lifecycle: pending → processing → pending_review → approved|rejected (or failed).\n\"extracted\" is a legacy value for documents uploaded before the CPA-review gate;\nUI should treat it as a synonym of \"approved\".\n',
+    ),
+  extractedText: zod.string().nullish(),
+  linkedRecordId: zod
+    .number()
+    .nullish()
+    .describe(
+      "PK of the w2_data \/ form_1099_data row this doc was approved into.",
+    ),
+  linkedRecordType: zod
+    .union([zod.literal("w2"), zod.literal("form1099"), zod.literal(null)])
+    .nullish(),
+  rejectionReason: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
 });
 
 /**

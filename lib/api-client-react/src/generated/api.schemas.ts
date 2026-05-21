@@ -179,14 +179,35 @@ export const TaxDocumentDocumentType = {
   other: "other",
 } as const;
 
+/**
+ * Lifecycle: pending → processing → pending_review → approved|rejected (or failed).
+"extracted" is a legacy value for documents uploaded before the CPA-review gate;
+UI should treat it as a synonym of "approved".
+
+ */
 export type TaxDocumentStatus =
   (typeof TaxDocumentStatus)[keyof typeof TaxDocumentStatus];
 
 export const TaxDocumentStatus = {
   pending: "pending",
   processing: "processing",
+  pending_review: "pending_review",
+  approved: "approved",
+  rejected: "rejected",
   extracted: "extracted",
   failed: "failed",
+} as const;
+
+/**
+ * @nullable
+ */
+export type TaxDocumentLinkedRecordType =
+  | (typeof TaxDocumentLinkedRecordType)[keyof typeof TaxDocumentLinkedRecordType]
+  | null;
+
+export const TaxDocumentLinkedRecordType = {
+  w2: "w2",
+  form1099: "form1099",
 } as const;
 
 export interface TaxDocument {
@@ -196,9 +217,22 @@ export interface TaxDocument {
   fileName: string;
   /** @nullable */
   fileContent?: string | null;
+  /** Lifecycle: pending → processing → pending_review → approved|rejected (or failed).
+"extracted" is a legacy value for documents uploaded before the CPA-review gate;
+UI should treat it as a synonym of "approved".
+ */
   status: TaxDocumentStatus;
   /** @nullable */
   extractedText?: string | null;
+  /**
+   * PK of the w2_data / form_1099_data row this doc was approved into.
+   * @nullable
+   */
+  linkedRecordId?: number | null;
+  /** @nullable */
+  linkedRecordType?: TaxDocumentLinkedRecordType;
+  /** @nullable */
+  rejectionReason?: string | null;
   createdAt: string;
 }
 
@@ -218,6 +252,134 @@ export interface UploadDocumentBody {
   fileName: string;
   /** Base64-encoded file content */
   fileContent: string;
+}
+
+export type ApproveExtractionBodyRecordType =
+  (typeof ApproveExtractionBodyRecordType)[keyof typeof ApproveExtractionBodyRecordType];
+
+export const ApproveExtractionBodyRecordType = {
+  w2: "w2",
+  form1099: "form1099",
+} as const;
+
+/**
+ * @nullable
+ */
+export type ApproveExtractionBodyFormType =
+  | (typeof ApproveExtractionBodyFormType)[keyof typeof ApproveExtractionBodyFormType]
+  | null;
+
+export const ApproveExtractionBodyFormType = {
+  NEC: "NEC",
+  MISC: "MISC",
+  INT: "INT",
+  DIV: "DIV",
+  B: "B",
+  R: "R",
+  G: "G",
+  K: "K",
+} as const;
+
+/**
+ * Body for POST /clients/:clientId/documents/:documentId/approve. The CPA
+confirms (and optionally edits) the extracted values; the server inserts
+the corresponding w2_data or form_1099_data row with an audit-log entry.
+
+ */
+export interface ApproveExtractionBody {
+  recordType: ApproveExtractionBodyRecordType;
+  taxYear: number;
+  /** @nullable */
+  employerName?: string | null;
+  /** @nullable */
+  employerEin?: string | null;
+  /** @nullable */
+  employeeSSN?: string | null;
+  /** @nullable */
+  wagesBox1?: number | null;
+  /** @nullable */
+  federalTaxWithheldBox2?: number | null;
+  /** @nullable */
+  socialSecurityWagesBox3?: number | null;
+  /** @nullable */
+  socialSecurityTaxBox4?: number | null;
+  /** @nullable */
+  medicareWagesBox5?: number | null;
+  /** @nullable */
+  medicareTaxBox6?: number | null;
+  /** @nullable */
+  stateWagesBox16?: number | null;
+  /** @nullable */
+  stateTaxWithheldBox17?: number | null;
+  /** @nullable */
+  formType?: ApproveExtractionBodyFormType;
+  /** @nullable */
+  payerName?: string | null;
+  /** @nullable */
+  payerTin?: string | null;
+  /** @nullable */
+  recipientTin?: string | null;
+  /** @nullable */
+  federalTaxWithheld?: number | null;
+  /** @nullable */
+  stateTaxWithheld?: number | null;
+  /** @nullable */
+  nonemployeeCompensation?: number | null;
+  /** @nullable */
+  rents?: number | null;
+  /** @nullable */
+  royalties?: number | null;
+  /** @nullable */
+  otherIncome?: number | null;
+  /** @nullable */
+  fishingBoatProceeds?: number | null;
+  /** @nullable */
+  medicalAndHealthcare?: number | null;
+  /** @nullable */
+  interestIncome?: number | null;
+  /** @nullable */
+  earlyWithdrawalPenalty?: number | null;
+  /** @nullable */
+  usTreasuryInterest?: number | null;
+  /** @nullable */
+  taxExemptInterest?: number | null;
+  /** @nullable */
+  ordinaryDividends?: number | null;
+  /** @nullable */
+  qualifiedDividends?: number | null;
+  /** @nullable */
+  totalCapitalGainDistribution?: number | null;
+  /** @nullable */
+  nondividendDistributions?: number | null;
+  /** @nullable */
+  proceeds?: number | null;
+  /** @nullable */
+  costBasis?: number | null;
+  /** @nullable */
+  shortTermGainLoss?: number | null;
+  /** @nullable */
+  longTermGainLoss?: number | null;
+  /** @nullable */
+  grossDistribution?: number | null;
+  /** @nullable */
+  taxableAmount?: number | null;
+  /** @nullable */
+  distributionCode?: string | null;
+  /** @nullable */
+  iraSepSimple?: string | null;
+  /** @nullable */
+  unemploymentCompensation?: number | null;
+  /** @nullable */
+  stateLocalRefund?: number | null;
+  /** @nullable */
+  grossPaymentAmount?: number | null;
+  /** @nullable */
+  stateCode?: string | null;
+}
+
+export interface RejectExtractionBody {
+  /** @nullable */
+  reason?: string | null;
 }
 
 export interface W2Data {

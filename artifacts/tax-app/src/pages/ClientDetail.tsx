@@ -49,6 +49,7 @@ import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { toast } from "@/hooks/use-toast";
+import { ReviewExtractionModal } from "@/components/ReviewExtractionModal";
 
 const FILING_STATUS_LABELS: Record<string, string> = {
   single: "Single",
@@ -78,12 +79,12 @@ function maskSSN(ssn: string | null | undefined): string {
 
 // ─── Documents Tab ───────────────────────────────────────────────────────────
 
-function DocumentsTab({ clientId }: { clientId: number }) {
+function DocumentsTab({ clientId, clientTaxYear }: { clientId: number; clientTaxYear: number }) {
   const { data: docs, isLoading } = useListDocuments(clientId, {
     query: {
       queryKey: getListDocumentsQueryKey(clientId),
       // Poll while any doc is still processing — extraction is async on the server.
-      // When extraction finishes, the status flips to "extracted" and polling stops.
+      // When extraction finishes, the status flips to "pending_review" and polling stops.
       refetchInterval: (query) => {
         const data = query.state.data;
         if (!Array.isArray(data)) return false;
@@ -98,15 +99,11 @@ function DocumentsTab({ clientId }: { clientId: number }) {
   const [docType, setDocType] = useState("w2");
   const [uploading, setUploading] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<{ id: number; fileName: string } | null>(null);
+  const [reviewDocId, setReviewDocId] = useState<number | null>(null);
 
-  // When a processing doc transitions to extracted, refresh W-2 list + tax return.
-  const extractedCount = (docs ?? []).filter((d) => d.status === "extracted").length;
-  useEffect(() => {
-    qc.invalidateQueries({ queryKey: getListW2DataQueryKey(clientId) });
-    qc.invalidateQueries({ queryKey: getGetTaxReturnQueryKey(clientId) });
-    qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [extractedCount, clientId]);
+  // Pull the current doc whenever reviewDocId is set; gives us the latest extractedText
+  // payload without staleness from the table snapshot.
+  const reviewDoc = (docs ?? []).find((d) => d.id === reviewDocId) ?? null;
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -121,10 +118,7 @@ function DocumentsTab({ clientId }: { clientId: number }) {
         {
           onSuccess: () => {
             qc.invalidateQueries({ queryKey: getListDocumentsQueryKey(clientId) });
-            qc.invalidateQueries({ queryKey: getListW2DataQueryKey(clientId) });
-            qc.invalidateQueries({ queryKey: getGetTaxReturnQueryKey(clientId) });
-            qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
-            toast({ title: "Document uploaded", description: "AI extraction running — calculations will refresh automatically." });
+            toast({ title: "Document uploaded", description: "AI extraction running — you'll review the extracted values before they're saved." });
             if (fileRef.current) fileRef.current.value = "";
           },
           onError: () => toast({ title: "Upload failed", variant: "destructive" }),
@@ -148,11 +142,25 @@ function DocumentsTab({ clientId }: { clientId: number }) {
     );
   }
 
+  // Map document.status → tailwind pill classes.
+  // "extracted" is legacy (pre-review-gate auto-write); display it the same as "approved".
   const statusColors: Record<string, string> = {
     pending: "bg-yellow-100 text-yellow-800",
     processing: "bg-blue-100 text-blue-800",
+    pending_review: "bg-amber-100 text-amber-900",
+    approved: "bg-green-100 text-green-800",
     extracted: "bg-green-100 text-green-800",
+    rejected: "bg-gray-200 text-gray-700",
     failed: "bg-red-100 text-red-800",
+  };
+  const statusLabels: Record<string, string> = {
+    pending: "Pending",
+    processing: "Extracting…",
+    pending_review: "Review needed",
+    approved: "Approved",
+    extracted: "Approved",
+    rejected: "Rejected",
+    failed: "Failed",
   };
 
   return (
@@ -182,7 +190,7 @@ function DocumentsTab({ clientId }: { clientId: number }) {
             </div>
           </div>
           <p className="text-xs text-muted-foreground">
-            For W-2 documents, AI extraction will auto-populate the W-2 Data tab.
+            AI extracts fields from W-2 / 1099 uploads, then you review and approve them before they land in the client record.
           </p>
         </CardContent>
       </Card>
@@ -210,13 +218,21 @@ function DocumentsTab({ clientId }: { clientId: number }) {
                   <td className="px-4 py-3 text-sm text-muted-foreground">{doc.documentType}</td>
                   <td className="px-4 py-3">
                     <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${statusColors[doc.status] ?? ""}`}>
-                      {doc.status}
+                      {statusLabels[doc.status] ?? doc.status}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-sm text-muted-foreground">
                     {doc.createdAt ? new Date(doc.createdAt).toLocaleDateString() : "—"}
                   </td>
                   <td className="px-4 py-3 text-right space-x-1">
+                    {doc.status === "pending_review" && (
+                      <Button
+                        size="sm"
+                        onClick={() => setReviewDocId(doc.id)}
+                      >
+                        Review extraction
+                      </Button>
+                    )}
                     <Button
                       variant="ghost"
                       size="sm"
@@ -249,6 +265,14 @@ function DocumentsTab({ clientId }: { clientId: number }) {
           {previewDoc && <DocumentPreview clientId={clientId} docId={previewDoc.id} fileName={previewDoc.fileName} />}
         </DialogContent>
       </Dialog>
+
+      <ReviewExtractionModal
+        open={reviewDoc != null}
+        onClose={() => setReviewDocId(null)}
+        clientId={clientId}
+        clientTaxYear={clientTaxYear}
+        doc={reviewDoc}
+      />
     </div>
   );
 }
@@ -2111,7 +2135,7 @@ export default function ClientDetail() {
         </TabsList>
 
         <TabsContent value="documents" className="mt-6">
-          <DocumentsTab clientId={clientId} />
+          <DocumentsTab clientId={clientId} clientTaxYear={client.taxYear ?? 2024} />
         </TabsContent>
         <TabsContent value="w2data" className="mt-6">
           <W2DataTab clientId={clientId} />
