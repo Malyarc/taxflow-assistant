@@ -9,7 +9,7 @@ import {
   UpdateForm1099DataBody,
   DeleteForm1099DataParams,
 } from "@workspace/api-zod";
-import { recalculateInBackground } from "../lib/taxReturnPipeline";
+import { recalculateAfterMutation } from "../lib/taxReturnPipeline";
 
 const router: IRouter = Router();
 
@@ -71,7 +71,7 @@ router.post("/clients/:clientId/form1099data", async (req, res): Promise<void> =
     .insert(form1099DataTable)
     .values(insertData as typeof form1099DataTable.$inferInsert)
     .returning();
-  recalculateInBackground(params.data.clientId);
+  await recalculateAfterMutation(params.data.clientId);
   res.status(201).json(mapRecord(record));
 });
 
@@ -101,7 +101,7 @@ router.patch("/clients/:clientId/form1099data/:form1099Id", async (req, res): Pr
     res.status(404).json({ error: "1099 record not found" });
     return;
   }
-  recalculateInBackground(params.data.clientId);
+  await recalculateAfterMutation(params.data.clientId);
   res.json(mapRecord(record));
 });
 
@@ -124,7 +124,7 @@ router.delete("/clients/:clientId/form1099data/:form1099Id", async (req, res): P
     res.status(404).json({ error: "1099 record not found" });
     return;
   }
-  recalculateInBackground(params.data.clientId);
+  await recalculateAfterMutation(params.data.clientId);
   res.sendStatus(204);
 });
 

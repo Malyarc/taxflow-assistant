@@ -4,9 +4,9 @@ Project-level notes for Claude sessions. Things that change every sprint live in
 
 ## What this is
 
-CPA / consumer tax-prep app. Two markets share one calculation engine:
-- **Option A** — AI overlay for existing CPA software (Lacerte / ProConnect / Drake).
-- **Option B** — Consumer DIY filing (TurboTax-style).
+CPA-focused tax-prep app. **Phase 4 decision (2026-05-21): committed to Option A — AI overlay for existing CPA software (Lacerte / ProConnect / Drake / UltraTax CS).** Consumer DIY (Option B) is parked.
+
+The calc engine is still designed to be reusable (`computeTaxReturnPure` in `taxReturnEngine.ts`) — keeping it portable in case Option B ever resurfaces, but no consumer-facing surface area is being built.
 
 Live at `http://ec2-18-188-192-154.us-east-2.compute.amazonaws.com`. Repo: `github.com/Malyarc/taxflow-assistant`.
 
@@ -65,23 +65,29 @@ Future-you will be tempted to "simplify" these. Don't.
 - **Hand-calc every expected value** against IRS published rules before asserting it. The user has been burned by tests passing while the underlying calc was wrong (e.g. the AGI/Line-9 bug shipped despite unit tests passing).
 - **Unit tests alone aren't enough.** Standalone suites verify the calculator; integration suites hit a live API at `localhost:8080` and exercise the full pipeline. Run both.
 - **Adding a new test file** also requires adding it to `scripts/tsconfig.json`'s `exclude` array — the workspace typecheck fails otherwise.
-- **Test files (current set):**
+- **Test files (current set, ~959+ assertions):**
   | File | Needs API |
   |---|---|
   | `tax-engine-tests.ts` | no |
   | `tax-engine-deep-tests.ts` | no |
   | `tax-engine-phase1-unit-tests.ts` | no |
+  | `tax-engine-phase15-unit-tests.ts` | no |
+  | `tax-engine-phase2-unit-tests.ts` | no |
+  | `tax-engine-pure-tests.ts` | no (proves engine is Haven-portable) |
+  | `tax-engine-50state-tests.ts` | no |
   | `tax-engine-integration-tests.ts` | yes |
   | `tax-engine-deep-integration-tests.ts` | yes |
   | `tax-engine-new-features-tests.ts` | yes |
   | `tax-engine-scenarios.ts` | yes |
   | `tax-engine-phase1-integration-tests.ts` | yes |
+  | `tax-engine-phase15-integration-tests.ts` | yes |
+  | `tax-engine-exports-tests.ts` | yes (PDF/CSV/JSON/UltraTax-GEN endpoints) |
 - **Scenarios are CPA-style end-to-end cases.** Each one has a `Hand-calc:` comment block — keep that convention. When a scenario fails, double-check your hand-calc before mutating the assertion; the calculator is usually right.
 - **Run all suites after any pipeline or schema change.** The Phase 1 work flushed out one regression (scenario 8 — needed to add EITC to expected refund).
 
 ## Local dev
 
-- Postgres in Docker: container `brookhaven-postgres`, db `taxflow_pro`, user/pass `brookhaven`. URL `postgres://brookhaven:brookhaven@localhost:5432/taxflow_pro`.
+- Postgres in Docker: container `haven-postgres` (shared with another local project), db `taxflow_pro`, user/pass `brookhaven`. URL `postgres://brookhaven:brookhaven@localhost:5432/taxflow_pro`.
 - API server needs `DATABASE_URL` and `AI_API_KEY` (dummy is fine if you're not exercising AI extraction). No `dotenv` is loaded — pass env vars on the command line or `source ~/.env`.
 - Frontend dev server: `pnpm --filter @workspace/tax-app run dev` on port 3010 (configured in `.claude/launch.json`).
 - The api-server runs from `./artifacts/api-server/dist/index.mjs` after `pnpm run build`. The build script uses esbuild — fast (<200ms).
@@ -115,31 +121,31 @@ curl http://localhost:8080/api/healthz
 - API keys + DB URLs live in `~/.env` on EC2 and the user's local `.env`. Never commit credentials.
 - If the user pastes a credential in chat (it happens), flag it once and recommend rotation; don't keep mentioning.
 
-## Known limitations (intentional, not bugs)
+## Known limitations (current scope)
 
-These are deliberate scope decisions. Don't "fix" them without confirming:
+Several Phase 2/3 limitations have been resolved (multi-state foundation, MACRS, capital-loss $3k+carryforward, PA/IL/MS retirement exemptions, Oregon Form 40 Line 13). Remaining intentional gaps:
 
-- Schedule D per-transaction detail (1099-B is currently summed; no wash-sale, no per-lot, no carryforward)
-- Multi-state filings (resident + non-resident, part-year residency)
+- Schedule D per-transaction detail (1099-B is summed; no wash-sale, no per-lot)
+- Per-property rental tracking (Schedule E is aggregate adjustments, not per-property)
+- Part-year residency in multi-state framework (resident + non-resident work; part-year doesn't)
 - Local income taxes (NYC, MD counties, OH cities, IN counties)
-- State-specific credits (state EITC, state CTC)
+- Most state-specific credits (state EITC for CA + NY are wired; others not)
 - AMT preferences detail (state-tax addback, ISO bargain element, etc.)
 - K-1 detail (partnership / S-corp pass-through specifics)
-- Carryforwards (capital loss, NOL, AMT credit, charitable)
-- Wash-sale rules
-- Depreciation (MACRS, bonus, §179) — blocks Schedule E
-- Foreign income / treaties
+- Other carryforwards: NOL, AMT credit, charitable (capital loss + §469 PAL carryforward ARE supported)
+- Foreign income exclusion (§911 FEIE), treaty positions
 - Trust/estate (1041), partnership/corporate (1065/1120/1120-S)
-- E-filing (separate IRS ERO approval, ~9-month track)
-- State retirement-income exemptions (PA, IL exempt qualified retirement; we tax it)
-- Oregon's federal-tax-paid subtraction (Form 40 Line 13) — Oregon tax is approximate
+- E-filing — Option A means CPAs e-file through *their* software, not ours
+- HI / NJ / NY partial retirement-income exemptions (PA, IL, MS done)
+- Vermont calc has personal exemption + SS exclusion as of 2026-05-21; prior versions were approximate
 
 ## User context
 
 - Direct, pragmatic, doesn't want hand-holding but does want thoroughness.
 - **Hates test failures that turn out to be wrong test expectations.** Hand-calc before asserting.
-- Pursuing both Option A (CPA) and Option B (consumer) simultaneously. Phase 1 built the shared engine. After Phase 1.5, picks one path in Phase 4.
+- **Phase 4: Option A (CPA-tool overlay).** Consumer DIY is parked. Don't build interview UI, e-file, or ERO-related infra.
 - Explicitly does NOT want a Lacerte clone (5+ years / $20M+). Wants as close as feasible without that scope.
+- Next-phase priorities: validate UltraTax `.gen` with a real design partner; build Lacerte / ProConnect / Drake adapters; build AI-overlay UX (upload doc → AI extracts → CPA reviews → export back); CPA-firm multi-tenancy + audit trail.
 
 ## Where to look first when picking up a session
 

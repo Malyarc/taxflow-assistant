@@ -215,11 +215,26 @@ export async function recalculateAndUpsertTaxReturn(
 }
 
 /**
- * Fire-and-forget recalc — for use after non-blocking mutations where we
- * don't want to slow down the request response. Errors are logged.
+ * Synchronous post-mutation recalc — awaits the recalc + upsert before
+ * resolving so that the next read sees fresh data.
+ *
+ * Previously this was fire-and-forget (`recalculateInBackground`) which
+ * caused races where a POST → immediate GET could read stale values. The
+ * recalc is fast enough (sub-100ms in practice) that the slight added
+ * latency on mutation endpoints is worth the correctness guarantee.
+ *
+ * Errors are caught + logged here (matching the prior behavior) so a calc
+ * failure doesn't 500 the mutation, but the row write is preserved.
  */
+export async function recalculateAfterMutation(clientId: number, taxYear?: number): Promise<void> {
+  try {
+    await recalculateAndUpsertTaxReturn(clientId, taxYear ? { taxYear } : {});
+  } catch (err) {
+    logger.error({ err, clientId, taxYear }, "Post-mutation tax-return recalc failed");
+  }
+}
+
+/** @deprecated Use `await recalculateAfterMutation()` instead. Retained for backwards compat. */
 export function recalculateInBackground(clientId: number, taxYear?: number): void {
-  recalculateAndUpsertTaxReturn(clientId, taxYear ? { taxYear } : {}).catch((err) => {
-    logger.error({ err, clientId, taxYear }, "Background tax-return recalc failed");
-  });
+  void recalculateAfterMutation(clientId, taxYear);
 }

@@ -69,7 +69,8 @@ async function delClient(id: number): Promise<void> {
 }
 
 async function settle(): Promise<void> {
-  await new Promise((r) => setTimeout(r, 200));
+  // Routes now await recalc synchronously; this is a small backstop.
+  await new Promise((r) => setTimeout(r, 50));
 }
 
 async function main() {

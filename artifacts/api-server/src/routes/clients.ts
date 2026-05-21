@@ -8,7 +8,7 @@ import {
   UpdateClientParams,
   DeleteClientParams,
 } from "@workspace/api-zod";
-import { recalculateInBackground } from "../lib/taxReturnPipeline";
+import { recalculateAfterMutation } from "../lib/taxReturnPipeline";
 
 const router: IRouter = Router();
 
@@ -110,7 +110,7 @@ router.patch("/clients/:id", async (req, res): Promise<void> => {
     return;
   }
   // Filing status, state, or tax year changes affect the calculation — refresh.
-  recalculateInBackground(client.id);
+  await recalculateAfterMutation(client.id);
   res.json(client);
 });
 

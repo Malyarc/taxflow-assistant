@@ -63,7 +63,8 @@ async function delClient(id: number): Promise<void> {
   await api(`/clients/${id}`, { method: "DELETE" });
 }
 async function settle(): Promise<void> {
-  await new Promise((r) => setTimeout(r, 200));
+  // See phase1-integration-tests.ts for context — routes are now sync.
+  await new Promise((r) => setTimeout(r, 50));
 }
 async function getReturn(cid: number): Promise<any> {
   return await api(`/clients/${cid}/tax-return`);

@@ -72,8 +72,10 @@ async function delClient(id: number): Promise<void> {
   await api(`/clients/${id}`, { method: "DELETE" });
 }
 async function settle(): Promise<void> {
-  // Wait for background recalc to finish
-  await new Promise((r) => setTimeout(r, 200));
+  // Defensive tiny delay. Routes now await recalc synchronously
+  // (recalculateAfterMutation), so this is just a backstop for DB
+  // transaction visibility / connection-pool effects.
+  await new Promise((r) => setTimeout(r, 50));
 }
 async function getReturn(cid: number): Promise<any> {
   return await api(`/clients/${cid}/tax-return`);
