@@ -21,6 +21,7 @@ import {
   calculateRetirementDeductions,
   calculateDependentCareCredit,
   calculateEducationCredits,
+  calculateStateEitc,
   getFederalStandardDeduction,
 } from "../../artifacts/api-server/src/lib/taxCalculator";
 
@@ -609,6 +610,147 @@ header("Cross-netting capital gains — ST loss eats LT gain");
   check("STCG carryforward = $3k (preserves ST char)", r.capitalLossCarryforwardShort, 3000);
   check("LTCG carryforward = $0", r.capitalLossCarryforwardLong, 0);
   check("Cap gain tax = $0 (no preferential income)", r.capitalGainsTax, 0);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 25. State EITC — NY (30% of federal, exact)
+// ════════════════════════════════════════════════════════════════════════════
+header("State EITC — NY (30% of federal, exact)");
+{
+  // Single, 1 kid, NY, $20k W-2 → federal EITC ~$4,213 → NY = $1,263.90
+  const fedEitc = calculateEitc({
+    filingStatus: "single",
+    qualifyingChildren: 1,
+    earnedIncome: 20000,
+    agi: 20000,
+    investmentIncome: 0,
+    taxYear: 2024,
+  });
+  const ny = calculateStateEitc({
+    state: "NY",
+    federalEitcApplied: fedEitc.appliedCredit,
+    federalEitcEligible: fedEitc.eligible,
+    agi: 20000,
+    earnedIncome: 20000,
+    investmentIncome: 0,
+    qualifyingChildren: 1,
+    taxYear: 2024,
+  });
+  check("NY EITC = 30% × federal EITC", ny.credit, fedEitc.appliedCredit * 0.30, 0.01);
+  checkExact("NY EITC NOT flagged approximate", ny.approximate, false);
+
+  // Ineligible (high AGI) federal → NY = 0
+  const highAgi = calculateEitc({
+    filingStatus: "single",
+    qualifyingChildren: 1,
+    earnedIncome: 100000,
+    agi: 100000,
+    investmentIncome: 0,
+    taxYear: 2024,
+  });
+  const nyHigh = calculateStateEitc({
+    state: "NY",
+    federalEitcApplied: highAgi.appliedCredit,
+    federalEitcEligible: highAgi.eligible,
+    agi: 100000,
+    earnedIncome: 100000,
+    investmentIncome: 0,
+    qualifyingChildren: 1,
+    taxYear: 2024,
+  });
+  check("NY EITC: federal-ineligible → $0", nyHigh.credit, 0);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 26. State EITC — CA (approximate FTB 3514)
+// ════════════════════════════════════════════════════════════════════════════
+header("State EITC — CA (FTB 3514 approximation)");
+{
+  // At low earned income (≤ peak $6,800), 1 kid → max $1,932
+  const lowCa = calculateStateEitc({
+    state: "CA",
+    federalEitcApplied: 500, // doesn't matter for CA; uses own formula
+    federalEitcEligible: true,
+    agi: 5000,
+    earnedIncome: 5000,
+    investmentIncome: 100,
+    qualifyingChildren: 1,
+    taxYear: 2024,
+  });
+  check("CA earned $5k (≤ peak), 1 kid → $1,932 (max)", lowCa.credit, 1932, 1);
+  checkExact("CA EITC flagged approximate", lowCa.approximate, true);
+
+  // Phase-out: earned $18k → linear from peak $6,800 to $30,950 limit
+  // fraction = (30950 - 18000) / (30950 - 6800) = 12950 / 24150 ≈ 0.5362
+  // credit ≈ $1,932 × 0.5362 ≈ $1,036
+  const phasingCa = calculateStateEitc({
+    state: "CA",
+    federalEitcApplied: 0,
+    federalEitcEligible: true,
+    agi: 18000,
+    earnedIncome: 18000,
+    investmentIncome: 0,
+    qualifyingChildren: 1,
+    taxYear: 2024,
+  });
+  check("CA earned $18k phasing out → ~$1,036", phasingCa.credit, 1036, 5);
+
+  // Over AGI limit → $0
+  const overCa = calculateStateEitc({
+    state: "CA",
+    federalEitcApplied: 0,
+    federalEitcEligible: true,
+    agi: 31000,
+    earnedIncome: 31000,
+    investmentIncome: 0,
+    qualifyingChildren: 1,
+    taxYear: 2024,
+  });
+  check("CA AGI $31k > limit → $0", overCa.credit, 0);
+
+  // Investment income > $4,929 cliff → $0
+  const invCa = calculateStateEitc({
+    state: "CA",
+    federalEitcApplied: 0,
+    federalEitcEligible: true,
+    agi: 10000,
+    earnedIncome: 10000,
+    investmentIncome: 5000,
+    qualifyingChildren: 2,
+    taxYear: 2024,
+  });
+  check("CA investment income > $4,929 → $0 (cliff)", invCa.credit, 0);
+
+  // 0 qualifying kids → smaller max ($285)
+  const zeroKidsCa = calculateStateEitc({
+    state: "CA",
+    federalEitcApplied: 0,
+    federalEitcEligible: true,
+    agi: 4000,
+    earnedIncome: 4000,
+    investmentIncome: 0,
+    qualifyingChildren: 0,
+    taxYear: 2024,
+  });
+  check("CA 0 kids, low earned → $285 (max)", zeroKidsCa.credit, 285, 1);
+}
+
+// Other states (no EITC modeled) → $0.
+header("State EITC — other states (unmodeled) → $0");
+{
+  for (const state of ["FL", "TX", "WA", "TN", "PA", "IL", "MA", "NJ"]) {
+    const r = calculateStateEitc({
+      state,
+      federalEitcApplied: 4213,
+      federalEitcEligible: true,
+      agi: 20000,
+      earnedIncome: 20000,
+      investmentIncome: 0,
+      qualifyingChildren: 1,
+      taxYear: 2024,
+    });
+    check(`${state} (not modeled) → $0`, r.credit, 0);
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════════════

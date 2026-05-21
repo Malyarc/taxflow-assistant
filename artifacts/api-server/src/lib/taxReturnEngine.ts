@@ -41,10 +41,12 @@ import {
   calculatePremiumTaxCredit,
   calculateStateTax,
   calculateMultiStateTax,
+  calculateStateEitc,
   getStateRetirementExemption,
   calculatePassiveActivityLossAllowance,
   getFederalStandardDeduction,
   type MultiStateTaxResult,
+  type StateEitcCalculation,
   type PassiveActivityLossResult,
   type CtcCalculation,
   type SeTaxCalculation,
@@ -414,6 +416,8 @@ export interface ComputedTaxReturn {
   netCapitalGainLoss: number;
   /** State retirement-income exemption applied (PA, IL, MS subtract qualified retirement) */
   stateRetirementExemption: number;
+  /** State EITC — refundable. CA (approximate per FTB 3514) + NY (30% of federal). */
+  stateEitc: StateEitcCalculation;
   /** Multi-state breakdown — resident state tax (after credit), non-resident state taxes, reciprocity status */
   multiState: MultiStateTaxResult;
   /** Schedule E rental real estate — gross net (income - expenses - depreciation - prior carryforward) */
@@ -975,9 +979,29 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     totalCreditsAppliedForRefund -
     totalFederalLiabilityWithRepayment;
 
-  const stateRefundOrOwed = totalStateWithheld - stateTaxLiability;
+  // ── State EITC (CA + NY) — refundable, applied to state refund/owed ──
+  // Investment income for state EITC eligibility uses 1099-INT/DIV ordinary + qualified
+  // (per FTB 3514: line 11 = interest, dividends, capital gains; line 19 = passive activity)
+  const investmentIncomeForStateEitc =
+    form1099Summary.interestIncome +
+    form1099Summary.ordinaryDividends +
+    Math.max(0, form1099Summary.shortTermCapitalGains) +
+    Math.max(0, form1099Summary.longTermCapitalGains);
+  const stateEitc = calculateStateEitc({
+    state: stateUpper,
+    federalEitcApplied: eitc.appliedCredit,
+    federalEitcEligible: eitc.eligible,
+    agi: calc.adjustedGrossIncome,
+    earnedIncome: earnedIncomeHousehold,
+    investmentIncome: investmentIncomeForStateEitc,
+    qualifyingChildren: client.dependentsUnder17 ?? 0,
+    taxYear: calc.taxYear,
+  });
 
-  const totalTaxBurden = totalFederalLiabilityWithRepayment + stateTaxLiability;
+  // State EITC is refundable — adds to the state refund (or reduces the owed).
+  const stateRefundOrOwed = totalStateWithheld - stateTaxLiability + stateEitc.credit;
+
+  const totalTaxBurden = totalFederalLiabilityWithRepayment + stateTaxLiability - stateEitc.credit;
   const effectiveRate = calc.totalIncome > 0 ? totalTaxBurden / calc.totalIncome : 0;
 
   // ── Compute state retirement exemption (for transparency in result) ──
@@ -1030,6 +1054,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     capitalLossCarryforwardLong,
     netCapitalGainLoss: netCapitalTotal,
     stateRetirementExemption: stateRetirementExemptionInfo.exemption,
+    stateEitc,
     multiState,
     scheduleERentalGrossNet: grossRentalNet,
     scheduleERentalAppliedToAgi: rentalNetAppliedToAgi,

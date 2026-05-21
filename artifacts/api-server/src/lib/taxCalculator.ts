@@ -834,6 +834,115 @@ export function calculateEitc(params: {
   };
 }
 
+// ── State EITC (CA + NY) ─────────────────────────────────────────────────────
+// Refundable state earned-income credits. Different states have wildly
+// different formulas:
+//
+// NY State EITC (Tax Law §606(d)): exactly 30% of federal EITC. Clean.
+// CA EITC (FTB Form 3514): own phase-in/phase-out tables that don't map
+//   cleanly onto federal. Investment income limit $4,929 (vs federal
+//   $11,600). Phases out by AGI ~$30,950. Max credit varies by qualifying
+//   children. We implement a piecewise-linear approximation that pegs at
+//   the FTB-published peak and phases linearly to zero by the income
+//   limit — this is approximate; real CalEITC uses FTB 3514 worksheet
+//   tables. The `approximate` flag flags this.
+//
+// Other states with EITC (not yet modeled): CO, CT, DC, DE, IL, IN, IA, KS,
+// LA, ME, MD, MA, MI, MN, MT, NE, NJ, NM, OH, OK, OR, RI, VT, VA, WA, WI.
+// Future: add a generic stateEitcRate lookup + per-state caps.
+
+interface CaEitcConfig {
+  /** Investment income disqualification cap (FTB Form 3514). */
+  investmentLimit: number;
+  /** AGI / earned-income limit beyond which credit is zero. */
+  agiLimit: number;
+  /** Maximum credit by # qualifying children (0, 1, 2, 3+). */
+  maxByChildren: readonly [number, number, number, number];
+  /** Earned income at which credit peaks (approximate; varies by # kids). */
+  peakEarnedIncome: number;
+}
+
+const CA_EITC: Record<TaxYear, CaEitcConfig> = {
+  2024: {
+    investmentLimit: 4929,
+    agiLimit: 30950,
+    // FTB-published maxima (approximate per FTB Form 3514 instructions; CalEITC
+    // amounts are inflation-indexed annually and slightly higher than 2023 figures).
+    maxByChildren: [285, 1932, 3188, 3529],
+    peakEarnedIncome: 6800,
+  },
+  2025: {
+    investmentLimit: 5050, // estimated CPI bump
+    agiLimit: 31500,        // estimated
+    maxByChildren: [290, 1965, 3243, 3590],
+    peakEarnedIncome: 6900,
+  },
+};
+
+export interface StateEitcCalculation {
+  state: string;
+  credit: number;
+  /** True = simplified approximation; FTB 3514 worksheet may differ. */
+  approximate: boolean;
+  ineligibilityReason?: string;
+}
+
+export function calculateStateEitc(params: {
+  state: string;
+  federalEitcApplied: number;
+  federalEitcEligible: boolean;
+  agi: number;
+  earnedIncome: number;
+  investmentIncome: number;
+  qualifyingChildren: number;
+  taxYear: number;
+}): StateEitcCalculation {
+  const { state, federalEitcApplied, federalEitcEligible, agi, earnedIncome, investmentIncome, qualifyingChildren } = params;
+  const year = resolveTaxYear(params.taxYear);
+
+  const numKids = Math.min(3, Math.max(0, Math.floor(qualifyingChildren))) as 0 | 1 | 2 | 3;
+
+  // NY: clean 30% of federal EITC. Ineligibility cascades from federal.
+  if (state === "NY") {
+    if (!federalEitcEligible) {
+      return { state, credit: 0, approximate: false, ineligibilityReason: "Federal EITC ineligible" };
+    }
+    return { state, credit: federalEitcApplied * 0.30, approximate: false };
+  }
+
+  // CA: own rules (FTB Form 3514). Approximation.
+  if (state === "CA") {
+    const cfg = CA_EITC[year];
+    if (investmentIncome > cfg.investmentLimit) {
+      return { state, credit: 0, approximate: true, ineligibilityReason: `CA EITC: investment income $${investmentIncome.toFixed(0)} > limit $${cfg.investmentLimit}` };
+    }
+    if (agi >= cfg.agiLimit || earnedIncome <= 0) {
+      return { state, credit: 0, approximate: true, ineligibilityReason: agi >= cfg.agiLimit ? `CA EITC: AGI ≥ $${cfg.agiLimit} phase-out complete` : "No earned income" };
+    }
+    const peak = cfg.maxByChildren[numKids];
+    // Piecewise-linear approximation:
+    //   earnedIncome ≤ peakEarnedIncome → credit = peak (max)
+    //   peakEarnedIncome < earnedIncome < agiLimit → linear phase-out
+    //   earnedIncome ≥ agiLimit → 0
+    let credit = peak;
+    if (earnedIncome > cfg.peakEarnedIncome) {
+      const phaseOutRange = cfg.agiLimit - cfg.peakEarnedIncome;
+      const phasedFraction = Math.max(0, (cfg.agiLimit - earnedIncome) / phaseOutRange);
+      credit = peak * phasedFraction;
+    }
+    // Also apply AGI-based phase-out (in case AGI > earned, e.g. investment income)
+    if (agi > cfg.peakEarnedIncome) {
+      const phaseOutRange = cfg.agiLimit - cfg.peakEarnedIncome;
+      const phasedFractionAgi = Math.max(0, (cfg.agiLimit - agi) / phaseOutRange);
+      credit = Math.min(credit, peak * phasedFractionAgi);
+    }
+    return { state, credit: Math.max(0, credit), approximate: true };
+  }
+
+  // Other states: not modeled.
+  return { state, credit: 0, approximate: false };
+}
+
 // ── Education credits (American Opportunity + Lifetime Learning) ─────────────
 // AOC: 100% of first $2,000 + 25% of next $2,000 = max $2,500 per student.
 //      40% refundable. Phase-out: $80k-$90k single, $160k-$180k MFJ.
