@@ -21,6 +21,7 @@ import {
   adjustmentsTable,
   taxReturnsTable,
   rentalPropertiesTable,
+  capitalTransactionsTable,
 } from "@workspace/db";
 import {
   computeTaxReturnPure,
@@ -32,6 +33,7 @@ import {
   type Form1099Fact,
   type AdjustmentFact,
   type RentalPropertyFact,
+  type CapitalTransactionFact,
   type TaxReturnInputs,
 } from "./taxReturnEngine";
 import { logger } from "./logger";
@@ -46,6 +48,7 @@ export type {
   Form1099Fact,
   AdjustmentFact,
   RentalPropertyFact,
+  CapitalTransactionFact,
   TaxReturnInputs,
 };
 
@@ -110,6 +113,18 @@ export async function computeTaxReturn(
       ),
     );
 
+  // Schedule D / Form 8949 per-transaction rows. When present for the tax
+  // year, they replace the 1099-B-derived ST/LT cap-gain totals.
+  const capitalTransactions = await db
+    .select()
+    .from(capitalTransactionsTable)
+    .where(
+      and(
+        eq(capitalTransactionsTable.clientId, clientId),
+        eq(capitalTransactionsTable.taxYear, taxYear),
+      ),
+    );
+
   // Auto-load capital-loss + §469 PAL carryforwards from the prior tax year.
   // We synthesize "virtual" adjustment rows IFF the user has NOT manually
   // entered a corresponding carryforward adjustment for the current year.
@@ -129,6 +144,7 @@ export async function computeTaxReturn(
     form1099s: form1099Records as Form1099Fact[],
     adjustments: [...adjustments, ...synthesizedAdjustments] as AdjustmentFact[],
     rentalProperties: rentalProperties as RentalPropertyFact[],
+    capitalTransactions: capitalTransactions as CapitalTransactionFact[],
     taxYear,
     overrides,
     existingItemizedFallback: existing?.itemizedDeductions,

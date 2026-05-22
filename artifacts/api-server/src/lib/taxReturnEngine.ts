@@ -155,6 +155,33 @@ export interface RecalcOverrides {
 }
 
 /**
+ * Schedule D / Form 8949 per-transaction fact.
+ *
+ * When the engine receives any capitalTransactions for the tax year,
+ * the per-transaction aggregate replaces the 1099-B-derived ST/LT
+ * cap-gain totals. 1099-DIV box 2a cap-gain distributions remain
+ * additive to LT (they're separate from 8949 transactions).
+ *
+ * Per Form 8949: gainLoss = proceeds − costBasis + adjustmentAmount.
+ * Wash-sale-disallowed amounts come in through adjustmentAmount with
+ * adjustmentCode = "W" (broker-reported in 1099-B Box 1g).
+ *
+ * formBox: A/B/C = short-term, D/E/F = long-term.
+ */
+export interface CapitalTransactionFact {
+  taxYear: number;
+  description?: string | null;
+  dateAcquired?: string | null;
+  dateSold?: string | null;
+  proceeds?: Numish;
+  costBasis?: Numish;
+  adjustmentCode?: string | null;
+  adjustmentAmount?: Numish;
+  washSaleDisallowed?: Numish;
+  formBox?: "A" | "B" | "C" | "D" | "E" | "F" | string | null;
+}
+
+/**
  * Per-property rental real estate (Schedule E) fact.
  *
  * When the engine receives any rentalProperties for the tax year, it uses
@@ -186,6 +213,8 @@ export interface TaxReturnInputs {
   adjustments: AdjustmentFact[];
   /** Optional per-property Schedule E rental real estate (overrides aggregate adjustments). */
   rentalProperties?: RentalPropertyFact[];
+  /** Optional Schedule D / Form 8949 per-transaction rows (overrides 1099-B aggregates). */
+  capitalTransactions?: CapitalTransactionFact[];
   /** The resolved tax year. Engine does NOT re-resolve from client.taxYear. */
   taxYear: number;
   overrides?: RecalcOverrides;
@@ -499,7 +528,45 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
 
   // ── 1099 aggregation (filter to tax year) + summary ──
   const form1099Records = form1099s.filter((r) => (r.taxYear ?? taxYear) === taxYear);
-  const form1099Summary = summarize1099s(form1099Records);
+  const baseForm1099Summary = summarize1099s(form1099Records);
+
+  // ── Schedule D per-transaction override ──
+  // When capital_transactions exist for this tax year, the per-transaction
+  // aggregate replaces the 1099-B-derived ST/LT cap-gain totals. 1099-DIV
+  // box 2a capital-gain distributions remain additive to LT (they're not
+  // Form 8949 transactions).
+  const capTxnsForYear = (inputs.capitalTransactions ?? []).filter((t) => t.taxYear === taxYear);
+  let form1099Summary: Form1099Summary;
+  if (capTxnsForYear.length > 0) {
+    const cgDistributions = form1099Records
+      .filter((r) => r.formType === "div")
+      .reduce((s, r) => s + toNum(r.totalCapitalGainDistribution), 0);
+    const txnGainLoss = (t: CapitalTransactionFact) =>
+      toNum(t.proceeds) - toNum(t.costBasis) + toNum(t.adjustmentAmount);
+    const stTransactions = capTxnsForYear.filter((t) =>
+      ["A", "B", "C"].includes((t.formBox ?? "A").toUpperCase()),
+    );
+    const ltTransactions = capTxnsForYear.filter((t) =>
+      ["D", "E", "F"].includes((t.formBox ?? "").toUpperCase()),
+    );
+    const stcgFromTxns = stTransactions.reduce((s, t) => s + txnGainLoss(t), 0);
+    const ltcgFromTxns = ltTransactions.reduce((s, t) => s + txnGainLoss(t), 0);
+    const newStcg = stcgFromTxns;
+    const newLtcg = ltcgFromTxns + cgDistributions;
+    form1099Summary = {
+      ...baseForm1099Summary,
+      shortTermCapitalGains: newStcg,
+      longTermCapitalGains: newLtcg,
+      totalInvestmentIncome:
+        baseForm1099Summary.interestIncome +
+        baseForm1099Summary.ordinaryDividends +
+        baseForm1099Summary.qualifiedDividends +
+        newStcg +
+        newLtcg,
+    };
+  } else {
+    form1099Summary = baseForm1099Summary;
+  }
 
   const totalFederalWithheld = w2FederalWithheld + form1099Summary.federalWithheld;
   const totalStateWithheld = w2StateWithheld + form1099Summary.stateWithheld;

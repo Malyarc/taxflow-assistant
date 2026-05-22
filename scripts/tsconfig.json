@@ -24,6 +24,7 @@
     "src/tax-engine-edge-cases-tests.ts",
     "src/tax-engine-ai-overlay-tests.ts",
     "src/tax-engine-w2-validation-tests.ts",
-    "src/tax-engine-rental-properties-tests.ts"
+    "src/tax-engine-rental-properties-tests.ts",
+    "src/tax-engine-capital-transactions-tests.ts"
   ]
 }

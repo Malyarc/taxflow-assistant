@@ -24,6 +24,8 @@ tags:
     description: Dashboard summary data
   - name: rentalProperties
     description: Schedule E rental real estate (per-property tracking)
+  - name: capitalTransactions
+    description: Schedule D / Form 8949 per-transaction capital gains/losses
 
 paths:
   /healthz:
@@ -700,6 +702,99 @@ paths:
           schema:
             type: integer
         - name: propertyId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  # ── Capital transactions (Schedule D / Form 8949) ────────────────────────
+  /clients/{clientId}/capital-transactions:
+    get:
+      operationId: listCapitalTransactions
+      tags: [capitalTransactions]
+      summary: List all capital transactions for a client
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of capital transactions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CapitalTransaction"
+    post:
+      operationId: createCapitalTransaction
+      tags: [capitalTransactions]
+      summary: Create a capital transaction (Form 8949 row)
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCapitalTransactionBody"
+      responses:
+        "201":
+          description: Created capital transaction
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CapitalTransaction"
+
+  /clients/{clientId}/capital-transactions/{transactionId}:
+    patch:
+      operationId: updateCapitalTransaction
+      tags: [capitalTransactions]
+      summary: Update a capital transaction
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: transactionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCapitalTransactionBody"
+      responses:
+        "200":
+          description: Updated capital transaction
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CapitalTransaction"
+    delete:
+      operationId: deleteCapitalTransaction
+      tags: [capitalTransactions]
+      summary: Delete a capital transaction
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: transactionId
           in: path
           required: true
           schema:
@@ -1680,6 +1775,112 @@ components:
           type: number
         totalExpenses:
           type: number
+        notes:
+          type: ["string", "null"]
+
+    # ── Capital transactions (Schedule D / Form 8949) ─────────────────────────
+    CapitalTransaction:
+      type: object
+      required: [id, clientId, taxYear, description, proceeds, costBasis, adjustmentAmount, washSaleDisallowed, formBox, isCovered, received1099B, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+        clientId:
+          type: integer
+        taxYear:
+          type: integer
+        description:
+          type: string
+        dateAcquired:
+          type: ["string", "null"]
+        dateSold:
+          type: ["string", "null"]
+        proceeds:
+          type: number
+        costBasis:
+          type: number
+        adjustmentCode:
+          type: ["string", "null"]
+        adjustmentAmount:
+          type: number
+        washSaleDisallowed:
+          type: number
+        formBox:
+          type: string
+          enum: [A, B, C, D, E, F]
+        isCovered:
+          type: boolean
+        received1099B:
+          type: boolean
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateCapitalTransactionBody:
+      type: object
+      required: [taxYear, description, proceeds, costBasis, formBox]
+      properties:
+        taxYear:
+          type: integer
+        description:
+          type: string
+        dateAcquired:
+          type: ["string", "null"]
+        dateSold:
+          type: ["string", "null"]
+        proceeds:
+          type: number
+        costBasis:
+          type: number
+        adjustmentCode:
+          type: ["string", "null"]
+        adjustmentAmount:
+          type: number
+        washSaleDisallowed:
+          type: number
+        formBox:
+          type: string
+          enum: [A, B, C, D, E, F]
+        isCovered:
+          type: boolean
+        received1099B:
+          type: boolean
+        notes:
+          type: ["string", "null"]
+
+    UpdateCapitalTransactionBody:
+      type: object
+      properties:
+        taxYear:
+          type: integer
+        description:
+          type: string
+        dateAcquired:
+          type: ["string", "null"]
+        dateSold:
+          type: ["string", "null"]
+        proceeds:
+          type: number
+        costBasis:
+          type: number
+        adjustmentCode:
+          type: ["string", "null"]
+        adjustmentAmount:
+          type: number
+        washSaleDisallowed:
+          type: number
+        formBox:
+          type: string
+          enum: [A, B, C, D, E, F]
+        isCovered:
+          type: boolean
+        received1099B:
+          type: boolean
         notes:
           type: ["string", "null"]
 

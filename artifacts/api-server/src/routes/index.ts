@@ -9,6 +9,7 @@ import adjustmentsRouter from "./adjustments";
 import dashboardRouter from "./dashboard";
 import auditLogRouter from "./audit-log";
 import rentalPropertiesRouter from "./rental-properties";
+import capitalTransactionsRouter from "./capital-transactions";
 
 const router: IRouter = Router();
 
@@ -22,5 +23,6 @@ router.use(adjustmentsRouter);
 router.use(dashboardRouter);
 router.use(auditLogRouter);
 router.use(rentalPropertiesRouter);
+router.use(capitalTransactionsRouter);
 
 export default router;

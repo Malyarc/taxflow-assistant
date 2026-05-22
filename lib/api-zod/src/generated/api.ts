@@ -1361,6 +1361,111 @@ export const DeleteRentalPropertyParams = zod.object({
 });
 
 /**
+ * @summary List all capital transactions for a client
+ */
+export const ListCapitalTransactionsParams = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const ListCapitalTransactionsResponseItem = zod.object({
+  id: zod.number(),
+  clientId: zod.number(),
+  taxYear: zod.number(),
+  description: zod.string(),
+  dateAcquired: zod.string().nullish(),
+  dateSold: zod.string().nullish(),
+  proceeds: zod.number(),
+  costBasis: zod.number(),
+  adjustmentCode: zod.string().nullish(),
+  adjustmentAmount: zod.number(),
+  washSaleDisallowed: zod.number(),
+  formBox: zod.enum(["A", "B", "C", "D", "E", "F"]),
+  isCovered: zod.boolean(),
+  received1099B: zod.boolean(),
+  notes: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+export const ListCapitalTransactionsResponse = zod.array(
+  ListCapitalTransactionsResponseItem,
+);
+
+/**
+ * @summary Create a capital transaction (Form 8949 row)
+ */
+export const CreateCapitalTransactionParams = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const CreateCapitalTransactionBody = zod.object({
+  taxYear: zod.number(),
+  description: zod.string(),
+  dateAcquired: zod.string().nullish(),
+  dateSold: zod.string().nullish(),
+  proceeds: zod.number(),
+  costBasis: zod.number(),
+  adjustmentCode: zod.string().nullish(),
+  adjustmentAmount: zod.number().optional(),
+  washSaleDisallowed: zod.number().optional(),
+  formBox: zod.enum(["A", "B", "C", "D", "E", "F"]),
+  isCovered: zod.boolean().optional(),
+  received1099B: zod.boolean().optional(),
+  notes: zod.string().nullish(),
+});
+
+/**
+ * @summary Update a capital transaction
+ */
+export const UpdateCapitalTransactionParams = zod.object({
+  clientId: zod.coerce.number(),
+  transactionId: zod.coerce.number(),
+});
+
+export const UpdateCapitalTransactionBody = zod.object({
+  taxYear: zod.number().optional(),
+  description: zod.string().optional(),
+  dateAcquired: zod.string().nullish(),
+  dateSold: zod.string().nullish(),
+  proceeds: zod.number().optional(),
+  costBasis: zod.number().optional(),
+  adjustmentCode: zod.string().nullish(),
+  adjustmentAmount: zod.number().optional(),
+  washSaleDisallowed: zod.number().optional(),
+  formBox: zod.enum(["A", "B", "C", "D", "E", "F"]).optional(),
+  isCovered: zod.boolean().optional(),
+  received1099B: zod.boolean().optional(),
+  notes: zod.string().nullish(),
+});
+
+export const UpdateCapitalTransactionResponse = zod.object({
+  id: zod.number(),
+  clientId: zod.number(),
+  taxYear: zod.number(),
+  description: zod.string(),
+  dateAcquired: zod.string().nullish(),
+  dateSold: zod.string().nullish(),
+  proceeds: zod.number(),
+  costBasis: zod.number(),
+  adjustmentCode: zod.string().nullish(),
+  adjustmentAmount: zod.number(),
+  washSaleDisallowed: zod.number(),
+  formBox: zod.enum(["A", "B", "C", "D", "E", "F"]),
+  isCovered: zod.boolean(),
+  received1099B: zod.boolean(),
+  notes: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Delete a capital transaction
+ */
+export const DeleteCapitalTransactionParams = zod.object({
+  clientId: zod.coerce.number(),
+  transactionId: zod.coerce.number(),
+});
+
+/**
  * @summary Get dashboard summary stats
  */
 export const GetDashboardSummaryResponse = zod.object({

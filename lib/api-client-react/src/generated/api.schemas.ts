@@ -1064,6 +1064,106 @@ export interface UpdateRentalPropertyBody {
   notes?: string | null;
 }
 
+export type CapitalTransactionFormBox =
+  (typeof CapitalTransactionFormBox)[keyof typeof CapitalTransactionFormBox];
+
+export const CapitalTransactionFormBox = {
+  A: "A",
+  B: "B",
+  C: "C",
+  D: "D",
+  E: "E",
+  F: "F",
+} as const;
+
+export interface CapitalTransaction {
+  id: number;
+  clientId: number;
+  taxYear: number;
+  description: string;
+  /** @nullable */
+  dateAcquired?: string | null;
+  /** @nullable */
+  dateSold?: string | null;
+  proceeds: number;
+  costBasis: number;
+  /** @nullable */
+  adjustmentCode?: string | null;
+  adjustmentAmount: number;
+  washSaleDisallowed: number;
+  formBox: CapitalTransactionFormBox;
+  isCovered: boolean;
+  received1099B: boolean;
+  /** @nullable */
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CreateCapitalTransactionBodyFormBox =
+  (typeof CreateCapitalTransactionBodyFormBox)[keyof typeof CreateCapitalTransactionBodyFormBox];
+
+export const CreateCapitalTransactionBodyFormBox = {
+  A: "A",
+  B: "B",
+  C: "C",
+  D: "D",
+  E: "E",
+  F: "F",
+} as const;
+
+export interface CreateCapitalTransactionBody {
+  taxYear: number;
+  description: string;
+  /** @nullable */
+  dateAcquired?: string | null;
+  /** @nullable */
+  dateSold?: string | null;
+  proceeds: number;
+  costBasis: number;
+  /** @nullable */
+  adjustmentCode?: string | null;
+  adjustmentAmount?: number;
+  washSaleDisallowed?: number;
+  formBox: CreateCapitalTransactionBodyFormBox;
+  isCovered?: boolean;
+  received1099B?: boolean;
+  /** @nullable */
+  notes?: string | null;
+}
+
+export type UpdateCapitalTransactionBodyFormBox =
+  (typeof UpdateCapitalTransactionBodyFormBox)[keyof typeof UpdateCapitalTransactionBodyFormBox];
+
+export const UpdateCapitalTransactionBodyFormBox = {
+  A: "A",
+  B: "B",
+  C: "C",
+  D: "D",
+  E: "E",
+  F: "F",
+} as const;
+
+export interface UpdateCapitalTransactionBody {
+  taxYear?: number;
+  description?: string;
+  /** @nullable */
+  dateAcquired?: string | null;
+  /** @nullable */
+  dateSold?: string | null;
+  proceeds?: number;
+  costBasis?: number;
+  /** @nullable */
+  adjustmentCode?: string | null;
+  adjustmentAmount?: number;
+  washSaleDisallowed?: number;
+  formBox?: UpdateCapitalTransactionBodyFormBox;
+  isCovered?: boolean;
+  received1099B?: boolean;
+  /** @nullable */
+  notes?: string | null;
+}
+
 export interface DashboardSummary {
   totalClients: number;
   pendingReturns: number;

@@ -20,8 +20,10 @@ import type {
   Adjustment,
   ApproveExtractionBody,
   CalculateTaxReturnBody,
+  CapitalTransaction,
   Client,
   CreateAdjustmentBody,
+  CreateCapitalTransactionBody,
   CreateClientBody,
   CreateForm1099DataBody,
   CreateRentalPropertyBody,
@@ -34,6 +36,7 @@ import type {
   TaxDocument,
   TaxReturn,
   UpdateAdjustmentBody,
+  UpdateCapitalTransactionBody,
   UpdateClientBody,
   UpdateForm1099DataBody,
   UpdateRentalPropertyBody,
@@ -2775,6 +2778,403 @@ export const useDeleteRentalProperty = <
   TContext
 > => {
   return useMutation(getDeleteRentalPropertyMutationOptions(options));
+};
+
+/**
+ * @summary List all capital transactions for a client
+ */
+export const getListCapitalTransactionsUrl = (clientId: number) => {
+  return `/api/clients/${clientId}/capital-transactions`;
+};
+
+export const listCapitalTransactions = async (
+  clientId: number,
+  options?: RequestInit,
+): Promise<CapitalTransaction[]> => {
+  return customFetch<CapitalTransaction[]>(
+    getListCapitalTransactionsUrl(clientId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListCapitalTransactionsQueryKey = (clientId: number) => {
+  return [`/api/clients/${clientId}/capital-transactions`] as const;
+};
+
+export const getListCapitalTransactionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listCapitalTransactions>>,
+  TError = ErrorType<unknown>,
+>(
+  clientId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listCapitalTransactions>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListCapitalTransactionsQueryKey(clientId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listCapitalTransactions>>
+  > = ({ signal }) =>
+    listCapitalTransactions(clientId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!clientId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listCapitalTransactions>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListCapitalTransactionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listCapitalTransactions>>
+>;
+export type ListCapitalTransactionsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List all capital transactions for a client
+ */
+
+export function useListCapitalTransactions<
+  TData = Awaited<ReturnType<typeof listCapitalTransactions>>,
+  TError = ErrorType<unknown>,
+>(
+  clientId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listCapitalTransactions>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListCapitalTransactionsQueryOptions(
+    clientId,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Create a capital transaction (Form 8949 row)
+ */
+export const getCreateCapitalTransactionUrl = (clientId: number) => {
+  return `/api/clients/${clientId}/capital-transactions`;
+};
+
+export const createCapitalTransaction = async (
+  clientId: number,
+  createCapitalTransactionBody: CreateCapitalTransactionBody,
+  options?: RequestInit,
+): Promise<CapitalTransaction> => {
+  return customFetch<CapitalTransaction>(
+    getCreateCapitalTransactionUrl(clientId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(createCapitalTransactionBody),
+    },
+  );
+};
+
+export const getCreateCapitalTransactionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createCapitalTransaction>>,
+    TError,
+    { clientId: number; data: BodyType<CreateCapitalTransactionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createCapitalTransaction>>,
+  TError,
+  { clientId: number; data: BodyType<CreateCapitalTransactionBody> },
+  TContext
+> => {
+  const mutationKey = ["createCapitalTransaction"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createCapitalTransaction>>,
+    { clientId: number; data: BodyType<CreateCapitalTransactionBody> }
+  > = (props) => {
+    const { clientId, data } = props ?? {};
+
+    return createCapitalTransaction(clientId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateCapitalTransactionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createCapitalTransaction>>
+>;
+export type CreateCapitalTransactionMutationBody =
+  BodyType<CreateCapitalTransactionBody>;
+export type CreateCapitalTransactionMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Create a capital transaction (Form 8949 row)
+ */
+export const useCreateCapitalTransaction = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createCapitalTransaction>>,
+    TError,
+    { clientId: number; data: BodyType<CreateCapitalTransactionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createCapitalTransaction>>,
+  TError,
+  { clientId: number; data: BodyType<CreateCapitalTransactionBody> },
+  TContext
+> => {
+  return useMutation(getCreateCapitalTransactionMutationOptions(options));
+};
+
+/**
+ * @summary Update a capital transaction
+ */
+export const getUpdateCapitalTransactionUrl = (
+  clientId: number,
+  transactionId: number,
+) => {
+  return `/api/clients/${clientId}/capital-transactions/${transactionId}`;
+};
+
+export const updateCapitalTransaction = async (
+  clientId: number,
+  transactionId: number,
+  updateCapitalTransactionBody: UpdateCapitalTransactionBody,
+  options?: RequestInit,
+): Promise<CapitalTransaction> => {
+  return customFetch<CapitalTransaction>(
+    getUpdateCapitalTransactionUrl(clientId, transactionId),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(updateCapitalTransactionBody),
+    },
+  );
+};
+
+export const getUpdateCapitalTransactionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateCapitalTransaction>>,
+    TError,
+    {
+      clientId: number;
+      transactionId: number;
+      data: BodyType<UpdateCapitalTransactionBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateCapitalTransaction>>,
+  TError,
+  {
+    clientId: number;
+    transactionId: number;
+    data: BodyType<UpdateCapitalTransactionBody>;
+  },
+  TContext
+> => {
+  const mutationKey = ["updateCapitalTransaction"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateCapitalTransaction>>,
+    {
+      clientId: number;
+      transactionId: number;
+      data: BodyType<UpdateCapitalTransactionBody>;
+    }
+  > = (props) => {
+    const { clientId, transactionId, data } = props ?? {};
+
+    return updateCapitalTransaction(
+      clientId,
+      transactionId,
+      data,
+      requestOptions,
+    );
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateCapitalTransactionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateCapitalTransaction>>
+>;
+export type UpdateCapitalTransactionMutationBody =
+  BodyType<UpdateCapitalTransactionBody>;
+export type UpdateCapitalTransactionMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Update a capital transaction
+ */
+export const useUpdateCapitalTransaction = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateCapitalTransaction>>,
+    TError,
+    {
+      clientId: number;
+      transactionId: number;
+      data: BodyType<UpdateCapitalTransactionBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateCapitalTransaction>>,
+  TError,
+  {
+    clientId: number;
+    transactionId: number;
+    data: BodyType<UpdateCapitalTransactionBody>;
+  },
+  TContext
+> => {
+  return useMutation(getUpdateCapitalTransactionMutationOptions(options));
+};
+
+/**
+ * @summary Delete a capital transaction
+ */
+export const getDeleteCapitalTransactionUrl = (
+  clientId: number,
+  transactionId: number,
+) => {
+  return `/api/clients/${clientId}/capital-transactions/${transactionId}`;
+};
+
+export const deleteCapitalTransaction = async (
+  clientId: number,
+  transactionId: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(
+    getDeleteCapitalTransactionUrl(clientId, transactionId),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
+};
+
+export const getDeleteCapitalTransactionMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteCapitalTransaction>>,
+    TError,
+    { clientId: number; transactionId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteCapitalTransaction>>,
+  TError,
+  { clientId: number; transactionId: number },
+  TContext
+> => {
+  const mutationKey = ["deleteCapitalTransaction"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteCapitalTransaction>>,
+    { clientId: number; transactionId: number }
+  > = (props) => {
+    const { clientId, transactionId } = props ?? {};
+
+    return deleteCapitalTransaction(clientId, transactionId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteCapitalTransactionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteCapitalTransaction>>
+>;
+
+export type DeleteCapitalTransactionMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Delete a capital transaction
+ */
+export const useDeleteCapitalTransaction = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteCapitalTransaction>>,
+    TError,
+    { clientId: number; transactionId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteCapitalTransaction>>,
+  TError,
+  { clientId: number; transactionId: number },
+  TContext
+> => {
+  return useMutation(getDeleteCapitalTransactionMutationOptions(options));
 };
 
 /**

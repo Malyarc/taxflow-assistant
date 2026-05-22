@@ -2141,10 +2141,11 @@ export default function ClientDetail() {
       </div>
 
       <Tabs defaultValue="documents">
-        <TabsList className="grid grid-cols-7 w-full max-w-4xl">
+        <TabsList className="grid grid-cols-8 w-full max-w-5xl">
           <TabsTrigger value="documents">Documents</TabsTrigger>
           <TabsTrigger value="w2data">W-2 Data</TabsTrigger>
           <TabsTrigger value="form1099">1099 Forms</TabsTrigger>
+          <TabsTrigger value="schedD">Schedule D</TabsTrigger>
           <TabsTrigger value="rentals">Rentals</TabsTrigger>
           <TabsTrigger value="calculator">Tax Calculator</TabsTrigger>
           <TabsTrigger value="compare">Year Compare</TabsTrigger>
@@ -2160,6 +2161,9 @@ export default function ClientDetail() {
         <TabsContent value="form1099" className="mt-6">
           <Form1099Tab clientId={clientId} taxYear={client.taxYear ?? 2024} />
         </TabsContent>
+        <TabsContent value="schedD" className="mt-6">
+          <CapitalTransactionsTab clientId={clientId} taxYear={client.taxYear ?? 2024} />
+        </TabsContent>
         <TabsContent value="rentals" className="mt-6">
           <RentalPropertiesTab clientId={clientId} taxYear={client.taxYear ?? 2024} />
         </TabsContent>
@@ -2174,6 +2178,272 @@ export default function ClientDetail() {
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+// ─── Capital Transactions Tab (B4 — Schedule D / Form 8949) ──────────────────
+
+interface CapitalTxnRow {
+  id: number;
+  clientId: number;
+  taxYear: number;
+  description: string;
+  dateAcquired: string | null;
+  dateSold: string | null;
+  proceeds: number;
+  costBasis: number;
+  adjustmentCode: string | null;
+  adjustmentAmount: number;
+  washSaleDisallowed: number;
+  formBox: "A" | "B" | "C" | "D" | "E" | "F";
+  isCovered: boolean;
+  received1099B: boolean;
+  notes: string | null;
+}
+
+function CapitalTransactionsTab({ clientId, taxYear }: { clientId: number; taxYear: number }) {
+  const qc = useQueryClient();
+  const { data: rows, isLoading } = useQuery<CapitalTxnRow[]>({
+    queryKey: ["capital-transactions", clientId],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${clientId}/capital-transactions`);
+      return res.json();
+    },
+  });
+  const txnsForYear = (rows ?? []).filter((r) => r.taxYear === taxYear);
+  const [editing, setEditing] = useState<CapitalTxnRow | null>(null);
+  const [showForm, setShowForm] = useState(false);
+
+  function invalidate() {
+    qc.invalidateQueries({ queryKey: ["capital-transactions", clientId] });
+    qc.invalidateQueries({ queryKey: getGetTaxReturnQueryKey(clientId) });
+  }
+
+  async function handleDelete(id: number) {
+    if (!confirm("Delete this transaction? Tax return will recalculate.")) return;
+    await fetch(`/api/clients/${clientId}/capital-transactions/${id}`, { method: "DELETE" });
+    invalidate();
+    toast({ title: "Transaction deleted" });
+  }
+
+  const gainLoss = (t: CapitalTxnRow): number =>
+    Number(t.proceeds) - Number(t.costBasis) + Number(t.adjustmentAmount);
+  const stTxns = txnsForYear.filter((t) => ["A", "B", "C"].includes(t.formBox));
+  const ltTxns = txnsForYear.filter((t) => ["D", "E", "F"].includes(t.formBox));
+  const stTotal = stTxns.reduce((s, t) => s + gainLoss(t), 0);
+  const ltTotal = ltTxns.reduce((s, t) => s + gainLoss(t), 0);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-base font-semibold">Schedule D — Form 8949 transactions</h3>
+          <p className="text-xs text-muted-foreground">
+            Per-transaction tracking with Form 8949 box (A-F), wash-sale adjustments, and basis-reporting flag. When transactions are added here, the engine ignores the 1099-B aggregate short-term/long-term gain fields. 1099-DIV box 2a cap-gain distributions remain additive.
+          </p>
+        </div>
+        <Button onClick={() => { setEditing(null); setShowForm(true); }} size="sm">Add transaction</Button>
+      </div>
+
+      {isLoading ? (
+        <Skeleton className="h-24 w-full" />
+      ) : txnsForYear.length === 0 ? (
+        <Card><CardContent className="py-8 text-center text-muted-foreground text-sm">No transactions for TY{taxYear}. Click "Add transaction" to enter one — or use the 1099-B aggregate fields under the 1099 Forms tab.</CardContent></Card>
+      ) : (
+        <div className="rounded-lg border overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/40 border-b">
+              <tr>
+                <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">Description</th>
+                <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">Box</th>
+                <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">Acq / Sold</th>
+                <th className="text-right px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">Proceeds</th>
+                <th className="text-right px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">Basis</th>
+                <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">Adj</th>
+                <th className="text-right px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">Gain/(Loss)</th>
+                <th className="px-3 py-2"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {txnsForYear.map((t) => {
+                const gl = gainLoss(t);
+                return (
+                  <tr key={t.id} className="hover:bg-muted/20">
+                    <td className="px-3 py-2 font-medium">{t.description}</td>
+                    <td className="px-3 py-2 text-muted-foreground">{t.formBox}</td>
+                    <td className="px-3 py-2 text-muted-foreground text-xs">
+                      {t.dateAcquired ?? "—"} → {t.dateSold ?? "—"}
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono">{fmt(t.proceeds)}</td>
+                    <td className="px-3 py-2 text-right font-mono">{fmt(t.costBasis)}</td>
+                    <td className="px-3 py-2 text-muted-foreground text-xs">
+                      {t.adjustmentCode ? `${t.adjustmentCode}: ${fmt(t.adjustmentAmount)}` : ""}
+                    </td>
+                    <td className={`px-3 py-2 text-right font-mono ${gl < 0 ? "text-destructive" : ""}`}>
+                      {fmt(gl)}
+                    </td>
+                    <td className="px-3 py-2 text-right space-x-1">
+                      <Button variant="ghost" size="sm" onClick={() => { setEditing(t); setShowForm(true); }}>Edit</Button>
+                      <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => handleDelete(t.id)}>Delete</Button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot className="bg-muted/20 border-t">
+              <tr><td colSpan={6} className="px-3 py-2 text-right font-semibold">Short-term total (Box A/B/C):</td><td className={`px-3 py-2 text-right font-mono font-semibold ${stTotal < 0 ? "text-destructive" : ""}`}>{fmt(stTotal)}</td><td></td></tr>
+              <tr><td colSpan={6} className="px-3 py-2 text-right font-semibold">Long-term total (Box D/E/F):</td><td className={`px-3 py-2 text-right font-mono font-semibold ${ltTotal < 0 ? "text-destructive" : ""}`}>{fmt(ltTotal)}</td><td></td></tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+
+      {showForm && (
+        <CapitalTransactionForm
+          clientId={clientId}
+          taxYear={taxYear}
+          existing={editing}
+          onClose={() => { setShowForm(false); setEditing(null); }}
+          onSaved={() => { invalidate(); setShowForm(false); setEditing(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function CapitalTransactionForm({
+  clientId, taxYear, existing, onClose, onSaved,
+}: {
+  clientId: number;
+  taxYear: number;
+  existing: CapitalTxnRow | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [description, setDescription] = useState(existing?.description ?? "");
+  const [dateAcquired, setDateAcquired] = useState(existing?.dateAcquired ?? "");
+  const [dateSold, setDateSold] = useState(existing?.dateSold ?? "");
+  const [proceeds, setProceeds] = useState(existing != null ? String(existing.proceeds) : "");
+  const [costBasis, setCostBasis] = useState(existing != null ? String(existing.costBasis) : "");
+  const [adjustmentCode, setAdjustmentCode] = useState(existing?.adjustmentCode ?? "");
+  const [adjustmentAmount, setAdjustmentAmount] = useState(existing != null ? String(existing.adjustmentAmount) : "0");
+  const [washSaleDisallowed, setWashSaleDisallowed] = useState(existing != null ? String(existing.washSaleDisallowed) : "0");
+  const [formBox, setFormBox] = useState<"A" | "B" | "C" | "D" | "E" | "F">(existing?.formBox ?? "A");
+  const [isCovered, setIsCovered] = useState(existing?.isCovered ?? true);
+  const [received1099B, setReceived1099B] = useState(existing?.received1099B ?? true);
+  const [notes, setNotes] = useState(existing?.notes ?? "");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!description.trim()) {
+      toast({ title: "Description is required", variant: "destructive" });
+      return;
+    }
+    setSubmitting(true);
+    const body = {
+      taxYear,
+      description: description.trim(),
+      dateAcquired: dateAcquired || null,
+      dateSold: dateSold || null,
+      proceeds: proceeds === "" ? 0 : Number(proceeds),
+      costBasis: costBasis === "" ? 0 : Number(costBasis),
+      adjustmentCode: adjustmentCode.trim() === "" ? null : adjustmentCode.trim().toUpperCase(),
+      adjustmentAmount: adjustmentAmount === "" ? 0 : Number(adjustmentAmount),
+      washSaleDisallowed: washSaleDisallowed === "" ? 0 : Number(washSaleDisallowed),
+      formBox,
+      isCovered,
+      received1099B,
+      notes: notes.trim() === "" ? null : notes.trim(),
+    };
+    try {
+      if (existing) {
+        await fetch(`/api/clients/${clientId}/capital-transactions/${existing.id}`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+        });
+        toast({ title: "Transaction updated" });
+      } else {
+        await fetch(`/api/clients/${clientId}/capital-transactions`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+        });
+        toast({ title: "Transaction added" });
+      }
+      onSaved();
+    } catch (err) {
+      toast({ title: "Save failed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={true} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader><DialogTitle>{existing ? "Edit Form 8949 transaction" : "Add Form 8949 transaction"}</DialogTitle></DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div className="space-y-1">
+            <Label>Description (Form 8949 col a)</Label>
+            <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="e.g. 100 sh AAPL" />
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="space-y-1">
+              <Label>Date acquired (col b)</Label>
+              <Input value={dateAcquired ?? ""} onChange={(e) => setDateAcquired(e.target.value)} placeholder="YYYY-MM-DD or VARIOUS" />
+            </div>
+            <div className="space-y-1">
+              <Label>Date sold (col c)</Label>
+              <Input value={dateSold ?? ""} onChange={(e) => setDateSold(e.target.value)} placeholder="YYYY-MM-DD" />
+            </div>
+            <div className="space-y-1">
+              <Label>Form 8949 box</Label>
+              <Select value={formBox} onValueChange={(v) => setFormBox(v as "A" | "B" | "C" | "D" | "E" | "F")}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="A">A — ST, 1099-B + basis to IRS</SelectItem>
+                  <SelectItem value="B">B — ST, 1099-B, no basis to IRS</SelectItem>
+                  <SelectItem value="C">C — ST, no 1099-B</SelectItem>
+                  <SelectItem value="D">D — LT, 1099-B + basis to IRS</SelectItem>
+                  <SelectItem value="E">E — LT, 1099-B, no basis to IRS</SelectItem>
+                  <SelectItem value="F">F — LT, no 1099-B</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label>Proceeds (col d)</Label>
+              <CurrencyInput value={proceeds} onChange={setProceeds} />
+            </div>
+            <div className="space-y-1">
+              <Label>Cost basis (col e)</Label>
+              <CurrencyInput value={costBasis} onChange={setCostBasis} />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="space-y-1">
+              <Label>Adjustment code (col f)</Label>
+              <Input value={adjustmentCode ?? ""} onChange={(e) => setAdjustmentCode(e.target.value)} placeholder="e.g. W for wash sale" />
+            </div>
+            <div className="space-y-1">
+              <Label>Adjustment amount (col g)</Label>
+              <CurrencyInput value={adjustmentAmount} onChange={setAdjustmentAmount} placeholder="Positive number" />
+            </div>
+            <div className="space-y-1">
+              <Label>Wash sale disallowed</Label>
+              <CurrencyInput value={washSaleDisallowed} onChange={setWashSaleDisallowed} placeholder="1099-B box 1g" />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <Label>Notes (optional)</Label>
+            <Textarea value={notes ?? ""} onChange={(e) => setNotes(e.target.value)} rows={2} />
+          </div>
+          <div className="flex justify-end gap-2 pt-2 border-t">
+            <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>Cancel</Button>
+            <Button type="submit" disabled={submitting}>{submitting ? "Saving…" : existing ? "Save changes" : "Add transaction"}</Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
