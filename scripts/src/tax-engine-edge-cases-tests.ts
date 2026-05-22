@@ -736,10 +736,12 @@ header("State EITC — CA (FTB 3514 approximation)");
   check("CA 0 kids, low earned → $285 (max)", zeroKidsCa.credit, 285, 1);
 }
 
-// Other states (no EITC modeled) → $0.
+// Other states (no EITC modeled) → $0. BP4 added CO/IL/NJ/MA/MN — those are
+// covered in tax-engine-state-eitc-tests.ts, so this list now only includes
+// states that genuinely have no state EITC.
 header("State EITC — other states (unmodeled) → $0");
 {
-  for (const state of ["FL", "TX", "WA", "TN", "PA", "IL", "MA", "NJ"]) {
+  for (const state of ["FL", "TX", "WA", "TN", "PA"]) {
     const r = calculateStateEitc({
       state,
       federalEitcApplied: 4213,

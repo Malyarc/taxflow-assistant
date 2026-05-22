@@ -1196,6 +1196,8 @@ export function calculateStateEitc(params: {
   investmentIncome: number;
   qualifyingChildren: number;
   taxYear: number;
+  /** Filing status — needed for MN MFJ phase-out threshold ($36,880 vs $31,090). */
+  filingStatus?: string;
 }): StateEitcCalculation {
   const { state, federalEitcApplied, federalEitcEligible, agi, earnedIncome, investmentIncome, qualifyingChildren } = params;
   const year = resolveTaxYear(params.taxYear);
@@ -1239,6 +1241,79 @@ export function calculateStateEitc(params: {
     return { state, credit: Math.max(0, credit), approximate: true };
   }
 
+  // BP4 — additional piggyback states (% of federal EITC). All require
+  // federal EITC eligibility; the federal credit AMOUNT (not just eligibility)
+  // is the base. Verified against state DOR sources, May 2026.
+  if (state === "CO") {
+    // HB24-1134 (2024 session) one-time bump: TY2024 = 50%. Default schedule:
+    // TY2025 = 35%, TY2026+ = 25%.  Source: DR 0104CR (rev. 09/30/24) Line 5.
+    if (!federalEitcEligible) {
+      return { state, credit: 0, approximate: false, ineligibilityReason: "Federal EITC ineligible" };
+    }
+    const rate = year === 2024 ? 0.50 : year === 2025 ? 0.35 : 0.25;
+    return { state, credit: federalEitcApplied * rate, approximate: false };
+  }
+  if (state === "IL") {
+    // 20% of federal EITC (Public Act 102-0700 raised from 18% to 20% in TY2023).
+    // Source: Schedule IL-E/EITC (R-12/24) Step 4 Line 7.
+    if (!federalEitcEligible) {
+      return { state, credit: 0, approximate: false, ineligibilityReason: "Federal EITC ineligible" };
+    }
+    return { state, credit: federalEitcApplied * 0.20, approximate: false };
+  }
+  if (state === "NJ") {
+    // 40% of federal EITC (NJ-1040 Line 58, since TY2020).
+    // NOT modeled: NJ's age-18+ and 65+ expansion (federal: 25-64 for childless
+    // filers) — those filers get a fixed minimum credit. CPA workaround: enter
+    // as a manual `credit` adjustment.
+    if (!federalEitcEligible) {
+      return { state, credit: 0, approximate: false, ineligibilityReason: "Federal EITC ineligible (NJ 18+/65+ expansion not modeled — enter as manual credit)" };
+    }
+    return { state, credit: federalEitcApplied * 0.40, approximate: false };
+  }
+  if (state === "MA") {
+    // 40% of federal EITC (Ch. 50 Acts of 2023 bumped 30→40% in TY2023).
+    // Source: mass.gov/info-details/massachusetts-earned-income-tax-credit-eitc.
+    // NOT modeled: part-year MA proration (40% × federal × days-resided/365).
+    if (!federalEitcEligible) {
+      return { state, credit: 0, approximate: false, ineligibilityReason: "Federal EITC ineligible" };
+    }
+    return { state, credit: federalEitcApplied * 0.40, approximate: false };
+  }
+  if (state === "MN") {
+    // Minnesota Working Family Credit (Schedule M1CWFC). INDEPENDENT calc —
+    // not a % of federal EITC. Source: 2024 Schedule M1CWFC (M1CWFC-24.pdf,
+    // MN DOR). Engine uses qualifyingChildren (federal-EITC count) as a
+    // proxy for "qualifying older children" (M1DQC count) — close approximation
+    // but not exact; CPAs with mixed-age dependents may need to override.
+    //
+    // Investment income limit: $11,600 (matches federal EITC TY2024 cap).
+    if (investmentIncome > 11600) {
+      return { state, credit: 0, approximate: true, ineligibilityReason: `MN WFC: investment income $${investmentIncome.toFixed(0)} > $11,600 limit` };
+    }
+    if (earnedIncome <= 0) {
+      return { state, credit: 0, approximate: true, ineligibilityReason: "No earned income" };
+    }
+    // Base: 4% × min(earnedIncome, $9,220) = max base $369 (rounded).
+    const baseCap = 9220;
+    const baseCredit = Math.min(earnedIncome, baseCap) * 0.04;
+    // Per-child add-ons (M1CWFC 2024 — verified from official schedule):
+    const childAdditions = [0, 970, 2210, 2630] as const;
+    const addOn = childAdditions[Math.min(3, Math.max(0, numKids)) as 0 | 1 | 2 | 3];
+    const grossCredit = baseCredit + addOn;
+    // Phase-out base = max(earnedIncome, AGI). Threshold:
+    //   $31,090 except MFJ which is $36,880.
+    const phaseOutBase = Math.max(earnedIncome, agi);
+    const isMfj = params.filingStatus === "married_filing_jointly" || params.filingStatus === "qualifying_widow";
+    const phaseOutThreshold = isMfj ? 36880 : 31090;
+    // Phase-out rate: 12% in the dominant case (older + CTC children); 9% in
+    // the carve-out (older only, no CTC). We use 12% — see CLAUDE.md.
+    const phaseOutRate = 0.12;
+    const excess = Math.max(0, phaseOutBase - phaseOutThreshold);
+    const phaseOutAmount = excess * phaseOutRate;
+    const credit = Math.max(0, grossCredit - phaseOutAmount);
+    return { state, credit, approximate: true };
+  }
   // Other states: not modeled.
   return { state, credit: 0, approximate: false };
 }

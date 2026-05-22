@@ -1331,6 +1331,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     investmentIncome: investmentIncomeForStateEitc,
     qualifyingChildren: client.dependentsUnder17 ?? 0,
     taxYear: calc.taxYear,
+    filingStatus: client.filingStatus,
   });
 
   // State EITC is refundable — adds to the state refund (or reduces the owed).
