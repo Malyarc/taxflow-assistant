@@ -42,9 +42,11 @@ import {
   getGetTaxReturnQueryKey,
   getGetDashboardSummaryQueryKey,
 } from "@workspace/api-client-react";
+import { validateW2, type W2Flag } from "@workspace/validation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { AlertCircle, AlertTriangle, Info } from "lucide-react";
 
 interface ExtractedPayload {
   text?: string;
@@ -65,6 +67,8 @@ interface Props {
   onClose: () => void;
   clientId: number;
   clientTaxYear: number;
+  /** Optional — used to flag W-2 state-code mismatches in the review modal. */
+  clientState?: string;
   doc: DocLike | null;
 }
 
@@ -177,7 +181,7 @@ const FORM_1099_TYPES = ["NEC", "MISC", "INT", "DIV", "B", "R", "G", "K"];
 
 // ─── Modal component ─────────────────────────────────────────────────────────
 
-export function ReviewExtractionModal({ open, onClose, clientId, clientTaxYear, doc }: Props) {
+export function ReviewExtractionModal({ open, onClose, clientId, clientTaxYear, clientState, doc }: Props) {
   const qc = useQueryClient();
   const approve = useApproveExtraction();
   const reject = useRejectExtraction();
@@ -216,6 +220,35 @@ export function ReviewExtractionModal({ open, onClose, clientId, clientTaxYear, 
     setRejectReason("");
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, doc?.id]);
+
+  // ── Live W-2 sanity flags ──
+  // Recompute every render — fast, no async state. For 1099 docs returns [].
+  const liveFlags: W2Flag[] = React.useMemo(() => {
+    if (recordType !== "w2") return [];
+    const toNum = (v: string | undefined): number | null => {
+      if (v == null || v === "") return null;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : null;
+    };
+    return validateW2(
+      {
+        taxYear,
+        employerName: values.employerName,
+        employerEin: values.employerEin,
+        employeeSSN: values.employeeSSN,
+        wagesBox1: toNum(values.wagesBox1),
+        federalTaxWithheldBox2: toNum(values.federalTaxWithheldBox2),
+        socialSecurityWagesBox3: toNum(values.socialSecurityWagesBox3),
+        socialSecurityTaxBox4: toNum(values.socialSecurityTaxBox4),
+        medicareWagesBox5: toNum(values.medicareWagesBox5),
+        medicareTaxBox6: toNum(values.medicareTaxBox6),
+        stateTaxWithheldBox17: toNum(values.stateTaxWithheldBox17),
+        stateWagesBox16: toNum(values.stateWagesBox16),
+        stateCode: values.stateCode,
+      },
+      { clientTaxYear, clientState },
+    );
+  }, [recordType, taxYear, values, clientTaxYear, clientState]);
 
   if (!doc || !recordType) return null;
 
@@ -391,6 +424,7 @@ export function ReviewExtractionModal({ open, onClose, clientId, clientTaxYear, 
                 const aiString = aiValue == null ? "" : String(aiValue);
                 const currentValue = values[f.key] ?? "";
                 const edited = currentValue !== aiString && (currentValue !== "" || aiString !== "");
+                const fieldFlags = liveFlags.filter((flag) => flag.field === f.key);
                 return (
                   <FieldRow
                     key={f.key}
@@ -402,6 +436,7 @@ export function ReviewExtractionModal({ open, onClose, clientId, clientTaxYear, 
                     edited={edited}
                     originalAiValue={aiString}
                     inputRef={(el) => { inputRefs.current[f.key] = el; }}
+                    flags={fieldFlags}
                   />
                 );
               })}
@@ -469,14 +504,21 @@ interface FieldRowProps {
   edited: boolean;
   originalAiValue: string;
   inputRef: (el: HTMLInputElement | HTMLTextAreaElement | null) => void;
+  flags?: W2Flag[];
 }
 
-function FieldRow({ field, value, onChange, onFocus, onBlur, edited, originalAiValue, inputRef }: FieldRowProps) {
+function FieldRow({ field, value, onChange, onFocus, onBlur, edited, originalAiValue, inputRef, flags }: FieldRowProps) {
+  // Pick the most-severe flag (error > warning > info) to choose the highlight color.
+  const flagList = flags ?? [];
+  const hasError = flagList.some((f) => f.severity === "error");
+  const hasWarning = flagList.some((f) => f.severity === "warning");
   return (
     <div
       className={cn(
         "space-y-1 rounded-md transition-colors px-2 -mx-2 py-1",
-        edited && "bg-amber-50 border-l-2 border-amber-500 pl-3",
+        edited && !hasError && !hasWarning && "bg-amber-50 border-l-2 border-amber-500 pl-3",
+        hasError && "bg-red-50 border-l-2 border-red-500 pl-3",
+        hasWarning && !hasError && "bg-amber-50 border-l-2 border-amber-500 pl-3",
       )}
     >
       <div className="flex items-baseline justify-between gap-2">
@@ -513,6 +555,30 @@ function FieldRow({ field, value, onChange, onFocus, onBlur, edited, originalAiV
           onFocus={onFocus}
           onBlur={onBlur}
         />
+      )}
+      {flagList.length > 0 && (
+        <ul className="space-y-1 mt-1">
+          {flagList.map((flag, idx) => (
+            <li
+              key={idx}
+              className={cn(
+                "flex gap-1.5 items-start text-[11px] leading-snug",
+                flag.severity === "error" && "text-red-700",
+                flag.severity === "warning" && "text-amber-800",
+                flag.severity === "info" && "text-blue-700",
+              )}
+            >
+              {flag.severity === "error" ? (
+                <AlertCircle className="size-3 shrink-0 mt-0.5" />
+              ) : flag.severity === "warning" ? (
+                <AlertTriangle className="size-3 shrink-0 mt-0.5" />
+              ) : (
+                <Info className="size-3 shrink-0 mt-0.5" />
+              )}
+              <span>{flag.message}</span>
+            </li>
+          ))}
+        </ul>
       )}
     </div>
   );

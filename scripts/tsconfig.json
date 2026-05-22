@@ -22,6 +22,7 @@
     "src/tax-engine-exports-tests.ts",
     "src/tax-engine-50state-tests.ts",
     "src/tax-engine-edge-cases-tests.ts",
-    "src/tax-engine-ai-overlay-tests.ts"
+    "src/tax-engine-ai-overlay-tests.ts",
+    "src/tax-engine-w2-validation-tests.ts"
   ]
 }

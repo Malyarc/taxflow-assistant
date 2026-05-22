@@ -79,7 +79,7 @@ function maskSSN(ssn: string | null | undefined): string {
 
 // ─── Documents Tab ───────────────────────────────────────────────────────────
 
-function DocumentsTab({ clientId, clientTaxYear }: { clientId: number; clientTaxYear: number }) {
+function DocumentsTab({ clientId, clientTaxYear, clientState }: { clientId: number; clientTaxYear: number; clientState?: string }) {
   const { data: docs, isLoading } = useListDocuments(clientId, {
     query: {
       queryKey: getListDocumentsQueryKey(clientId),
@@ -271,6 +271,7 @@ function DocumentsTab({ clientId, clientTaxYear }: { clientId: number; clientTax
         onClose={() => setReviewDocId(null)}
         clientId={clientId}
         clientTaxYear={clientTaxYear}
+        clientState={clientState}
         doc={reviewDoc}
       />
     </div>
@@ -2135,7 +2136,7 @@ export default function ClientDetail() {
         </TabsList>
 
         <TabsContent value="documents" className="mt-6">
-          <DocumentsTab clientId={clientId} clientTaxYear={client.taxYear ?? 2024} />
+          <DocumentsTab clientId={clientId} clientTaxYear={client.taxYear ?? 2024} clientState={client.state ?? undefined} />
         </TabsContent>
         <TabsContent value="w2data" className="mt-6">
           <W2DataTab clientId={clientId} />
