@@ -2141,12 +2141,13 @@ export default function ClientDetail() {
       </div>
 
       <Tabs defaultValue="documents">
-        <TabsList className="grid grid-cols-8 w-full max-w-5xl">
+        <TabsList className="grid grid-cols-9 w-full max-w-6xl">
           <TabsTrigger value="documents">Documents</TabsTrigger>
           <TabsTrigger value="w2data">W-2 Data</TabsTrigger>
           <TabsTrigger value="form1099">1099 Forms</TabsTrigger>
           <TabsTrigger value="schedD">Schedule D</TabsTrigger>
           <TabsTrigger value="rentals">Rentals</TabsTrigger>
+          <TabsTrigger value="k1">K-1s</TabsTrigger>
           <TabsTrigger value="calculator">Tax Calculator</TabsTrigger>
           <TabsTrigger value="compare">Year Compare</TabsTrigger>
           <TabsTrigger value="adjustments">Adjustments</TabsTrigger>
@@ -2166,6 +2167,9 @@ export default function ClientDetail() {
         </TabsContent>
         <TabsContent value="rentals" className="mt-6">
           <RentalPropertiesTab clientId={clientId} taxYear={client.taxYear ?? 2024} />
+        </TabsContent>
+        <TabsContent value="k1" className="mt-6">
+          <ScheduleK1Tab clientId={clientId} taxYear={client.taxYear ?? 2024} />
         </TabsContent>
         <TabsContent value="calculator" className="mt-6">
           <TaxCalculatorTab clientId={clientId} taxYear={client.taxYear ?? 2024} />
@@ -2676,6 +2680,369 @@ function RentalPropertyForm({
           <div className="flex justify-end gap-2 pt-2 border-t">
             <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>Cancel</Button>
             <Button type="submit" disabled={submitting}>{submitting ? "Saving…" : existing ? "Save changes" : "Add property"}</Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Schedule K-1 Tab (BP1) ─────────────────────────────────────────────────
+
+interface ScheduleK1Row {
+  id: number;
+  clientId: number;
+  taxYear: number;
+  entityName: string;
+  entityEin: string | null;
+  entityType: "partnership" | "s_corp";
+  activityType: "active" | "passive";
+  box1OrdinaryIncome: number;
+  box2RentalRealEstate: number;
+  box3OtherRentalIncome: number;
+  interestIncome: number;
+  ordinaryDividends: number;
+  qualifiedDividends: number;
+  royalties: number;
+  netShortTermCapitalGain: number;
+  netLongTermCapitalGain: number;
+  selfEmploymentEarnings: number;
+  section199aQbi: number;
+  section199aW2Wages: number;
+  section199aUbia: number;
+  basisAtYearStart: number | null;
+  basisAtYearEnd: number | null;
+  atRiskAmount: number | null;
+  notes: string | null;
+}
+
+function ScheduleK1Tab({ clientId, taxYear }: { clientId: number; taxYear: number }) {
+  const qc = useQueryClient();
+  const { data: rows, isLoading } = useQuery<ScheduleK1Row[]>({
+    queryKey: ["schedule-k1", clientId],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${clientId}/k1s`);
+      return res.json();
+    },
+  });
+
+  const k1sForYear = (rows ?? []).filter((r) => r.taxYear === taxYear);
+  const [editing, setEditing] = useState<ScheduleK1Row | null>(null);
+  const [showForm, setShowForm] = useState(false);
+
+  function invalidate() {
+    qc.invalidateQueries({ queryKey: ["schedule-k1", clientId] });
+    qc.invalidateQueries({ queryKey: getGetTaxReturnQueryKey(clientId) });
+  }
+
+  async function handleDelete(id: number) {
+    if (!confirm("Delete this K-1? Tax return will recalculate.")) return;
+    await fetch(`/api/clients/${clientId}/k1s/${id}`, { method: "DELETE" });
+    invalidate();
+    toast({ title: "K-1 deleted" });
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-base font-semibold">Schedule K-1 — Pass-through entities</h3>
+          <p className="text-xs text-muted-foreground">
+            Per-K-1 tracking for partnership (Form 1065) and S-corp (Form 1120-S) entities.
+            Active ordinary income flows to Schedule E Part II; passive losses bucket under §469
+            (fully suspended on net loss — no $25k allowance, that's rental-RE only).
+            §199A QBI from Box 20 Z / Box 17 V flows to the QBI deduction calc.
+          </p>
+        </div>
+        <Button onClick={() => { setEditing(null); setShowForm(true); }} size="sm">Add K-1</Button>
+      </div>
+
+      {isLoading ? (
+        <Skeleton className="h-24 w-full" />
+      ) : k1sForYear.length === 0 ? (
+        <Card><CardContent className="py-8 text-center text-muted-foreground text-sm">No K-1s for TY{taxYear}. Click "Add K-1" to enter one.</CardContent></Card>
+      ) : (
+        <div className="rounded-lg border overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/40 border-b">
+              <tr>
+                <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">Entity</th>
+                <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">Type</th>
+                <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">§469</th>
+                <th className="text-right px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">Box 1 ordinary</th>
+                <th className="text-right px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">Box 14A SE</th>
+                <th className="text-right px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">§199A QBI</th>
+                <th className="px-3 py-2"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {k1sForYear.map((k) => (
+                <tr key={k.id} className="hover:bg-muted/20">
+                  <td className="px-3 py-2">
+                    <div className="font-medium">{k.entityName}</div>
+                    {k.entityEin && <div className="text-xs text-muted-foreground font-mono">{k.entityEin}</div>}
+                  </td>
+                  <td className="px-3 py-2 text-muted-foreground">{k.entityType === "s_corp" ? "1120-S" : "1065"}</td>
+                  <td className="px-3 py-2 text-muted-foreground capitalize">{k.activityType}</td>
+                  <td className="px-3 py-2 text-right font-mono">{fmt(k.box1OrdinaryIncome)}</td>
+                  <td className="px-3 py-2 text-right font-mono">{k.entityType === "partnership" ? fmt(k.selfEmploymentEarnings) : "—"}</td>
+                  <td className="px-3 py-2 text-right font-mono">{fmt(k.section199aQbi)}</td>
+                  <td className="px-3 py-2 text-right space-x-1">
+                    <Button variant="ghost" size="sm" onClick={() => { setEditing(k); setShowForm(true); }}>Edit</Button>
+                    <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => handleDelete(k.id)}>Delete</Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {showForm && (
+        <ScheduleK1Form
+          clientId={clientId}
+          taxYear={taxYear}
+          existing={editing}
+          onClose={() => { setShowForm(false); setEditing(null); }}
+          onSaved={() => { invalidate(); setShowForm(false); setEditing(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ScheduleK1Form({
+  clientId, taxYear, existing, onClose, onSaved,
+}: {
+  clientId: number;
+  taxYear: number;
+  existing: ScheduleK1Row | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const isEdit = existing != null;
+  const [entityName, setEntityName] = useState(existing?.entityName ?? "");
+  const [entityEin, setEntityEin] = useState(existing?.entityEin ?? "");
+  const [entityType, setEntityType] = useState<"partnership" | "s_corp">(existing?.entityType ?? "partnership");
+  const [activityType, setActivityType] = useState<"active" | "passive">(existing?.activityType ?? "active");
+  const [box1, setBox1] = useState(existing?.box1OrdinaryIncome != null ? String(existing.box1OrdinaryIncome) : "");
+  const [box2, setBox2] = useState(existing?.box2RentalRealEstate != null ? String(existing.box2RentalRealEstate) : "");
+  const [box3, setBox3] = useState(existing?.box3OtherRentalIncome != null ? String(existing.box3OtherRentalIncome) : "");
+  const [interestIncome, setInterestIncome] = useState(existing?.interestIncome != null ? String(existing.interestIncome) : "");
+  const [ordinaryDividends, setOrdinaryDividends] = useState(existing?.ordinaryDividends != null ? String(existing.ordinaryDividends) : "");
+  const [qualifiedDividends, setQualifiedDividends] = useState(existing?.qualifiedDividends != null ? String(existing.qualifiedDividends) : "");
+  const [royalties, setRoyalties] = useState(existing?.royalties != null ? String(existing.royalties) : "");
+  const [stcg, setStcg] = useState(existing?.netShortTermCapitalGain != null ? String(existing.netShortTermCapitalGain) : "");
+  const [ltcg, setLtcg] = useState(existing?.netLongTermCapitalGain != null ? String(existing.netLongTermCapitalGain) : "");
+  const [seEarnings, setSeEarnings] = useState(existing?.selfEmploymentEarnings != null ? String(existing.selfEmploymentEarnings) : "");
+  const [qbi, setQbi] = useState(existing?.section199aQbi != null ? String(existing.section199aQbi) : "");
+  const [w2Wages, setW2Wages] = useState(existing?.section199aW2Wages != null ? String(existing.section199aW2Wages) : "");
+  const [ubia, setUbia] = useState(existing?.section199aUbia != null ? String(existing.section199aUbia) : "");
+  const [basisStart, setBasisStart] = useState(existing?.basisAtYearStart != null ? String(existing.basisAtYearStart) : "");
+  const [basisEnd, setBasisEnd] = useState(existing?.basisAtYearEnd != null ? String(existing.basisAtYearEnd) : "");
+  const [atRisk, setAtRisk] = useState(existing?.atRiskAmount != null ? String(existing.atRiskAmount) : "");
+  const [notes, setNotes] = useState(existing?.notes ?? "");
+  const [submitting, setSubmitting] = useState(false);
+
+  // Radix Select formReady gate (per CLAUDE.md frontend conventions): wait
+  // until existing data has been loaded into local state before mounting
+  // controlled selects in edit mode.
+  const formReady = !isEdit || (existing != null && entityName === existing.entityName);
+
+  function asNum(v: string) { return v === "" ? 0 : Number(v); }
+  function asNumOrNull(v: string) { return v === "" ? null : Number(v); }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!entityName.trim()) {
+      toast({ title: "Entity name is required", variant: "destructive" });
+      return;
+    }
+    setSubmitting(true);
+    const body = {
+      taxYear,
+      entityName: entityName.trim(),
+      entityEin: entityEin.trim() === "" ? null : entityEin.trim(),
+      entityType,
+      activityType,
+      box1OrdinaryIncome: asNum(box1),
+      box2RentalRealEstate: asNum(box2),
+      box3OtherRentalIncome: asNum(box3),
+      interestIncome: asNum(interestIncome),
+      ordinaryDividends: asNum(ordinaryDividends),
+      qualifiedDividends: asNum(qualifiedDividends),
+      royalties: asNum(royalties),
+      netShortTermCapitalGain: asNum(stcg),
+      netLongTermCapitalGain: asNum(ltcg),
+      selfEmploymentEarnings: entityType === "partnership" ? asNum(seEarnings) : 0,
+      section199aQbi: asNum(qbi),
+      section199aW2Wages: asNum(w2Wages),
+      section199aUbia: asNum(ubia),
+      basisAtYearStart: asNumOrNull(basisStart),
+      basisAtYearEnd: asNumOrNull(basisEnd),
+      atRiskAmount: asNumOrNull(atRisk),
+      notes: notes.trim() === "" ? null : notes.trim(),
+    };
+    try {
+      if (existing) {
+        await fetch(`/api/clients/${clientId}/k1s/${existing.id}`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+        });
+        toast({ title: "K-1 updated" });
+      } else {
+        await fetch(`/api/clients/${clientId}/k1s`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+        });
+        toast({ title: "K-1 added" });
+      }
+      onSaved();
+    } catch (err) {
+      toast({ title: "Save failed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={true} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{existing ? "Edit K-1" : "Add K-1"}</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Entity */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1 col-span-2">
+              <Label>Entity name *</Label>
+              <Input value={entityName} onChange={(e) => setEntityName(e.target.value)} placeholder="Acme LLC" />
+            </div>
+            <div className="space-y-1">
+              <Label>EIN (XX-XXXXXXX)</Label>
+              <Input value={entityEin} onChange={(e) => setEntityEin(e.target.value)} placeholder="12-3456789" />
+            </div>
+            {formReady && (
+              <div className="space-y-1">
+                <Label>Entity type</Label>
+                <Select value={entityType} onValueChange={(v) => setEntityType(v as "partnership" | "s_corp")}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="partnership">Partnership (Form 1065)</SelectItem>
+                    <SelectItem value="s_corp">S-Corp (Form 1120-S)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {formReady && (
+              <div className="space-y-1">
+                <Label>§469 activity</Label>
+                <Select value={activityType} onValueChange={(v) => setActivityType(v as "active" | "passive")}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="active">Active (material participation)</SelectItem>
+                    <SelectItem value="passive">Passive</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+
+          {/* Income boxes */}
+          <div className="border-t pt-3">
+            <div className="text-xs font-semibold text-muted-foreground uppercase mb-2">Income boxes</div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>Box 1 — Ordinary business income (loss)</Label>
+                <CurrencyInput value={box1} onChange={setBox1} />
+              </div>
+              <div className="space-y-1">
+                <Label>Box 2 — Net rental real estate (passive)</Label>
+                <CurrencyInput value={box2} onChange={setBox2} />
+              </div>
+              <div className="space-y-1">
+                <Label>Box 3 — Other net rental income</Label>
+                <CurrencyInput value={box3} onChange={setBox3} />
+              </div>
+              <div className="space-y-1">
+                <Label>Interest income (Box 5 / Box 4)</Label>
+                <CurrencyInput value={interestIncome} onChange={setInterestIncome} />
+              </div>
+              <div className="space-y-1">
+                <Label>Ordinary dividends</Label>
+                <CurrencyInput value={ordinaryDividends} onChange={setOrdinaryDividends} />
+              </div>
+              <div className="space-y-1">
+                <Label>Qualified dividends</Label>
+                <CurrencyInput value={qualifiedDividends} onChange={setQualifiedDividends} />
+              </div>
+              <div className="space-y-1">
+                <Label>Royalties</Label>
+                <CurrencyInput value={royalties} onChange={setRoyalties} />
+              </div>
+              <div className="space-y-1">
+                <Label>Short-term capital gain (loss)</Label>
+                <CurrencyInput value={stcg} onChange={setStcg} />
+              </div>
+              <div className="space-y-1">
+                <Label>Long-term capital gain (loss)</Label>
+                <CurrencyInput value={ltcg} onChange={setLtcg} />
+              </div>
+            </div>
+          </div>
+
+          {/* SE & §199A */}
+          <div className="border-t pt-3">
+            <div className="text-xs font-semibold text-muted-foreground uppercase mb-2">Self-employment + §199A QBI</div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>Box 14A — SE earnings (partnership only)</Label>
+                <CurrencyInput value={seEarnings} onChange={setSeEarnings} />
+              </div>
+              <div className="space-y-1 col-span-2 mt-2">
+                <p className="text-xs text-muted-foreground italic">§199A QBI: 1065 Box 20 code Z / 1120-S Box 17 code V. The engine applies the simplified 20% deduction; the W-2-wage / UBIA limit and SSTB phase-out are not modeled (only bind above $191,950 single / $383,900 MFJ).</p>
+              </div>
+              <div className="space-y-1">
+                <Label>§199A QBI amount</Label>
+                <CurrencyInput value={qbi} onChange={setQbi} />
+              </div>
+              <div className="space-y-1">
+                <Label>§199A W-2 wages of entity (informational)</Label>
+                <CurrencyInput value={w2Wages} onChange={setW2Wages} />
+              </div>
+              <div className="space-y-1">
+                <Label>§199A UBIA (informational)</Label>
+                <CurrencyInput value={ubia} onChange={setUbia} />
+              </div>
+            </div>
+          </div>
+
+          {/* Basis & at-risk */}
+          <div className="border-t pt-3">
+            <div className="text-xs font-semibold text-muted-foreground uppercase mb-2">Basis & at-risk (stored — not enforced)</div>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label>Basis at year start</Label>
+                <CurrencyInput value={basisStart} onChange={setBasisStart} />
+              </div>
+              <div className="space-y-1">
+                <Label>Basis at year end</Label>
+                <CurrencyInput value={basisEnd} onChange={setBasisEnd} />
+              </div>
+              <div className="space-y-1">
+                <Label>Amount at risk (§465)</Label>
+                <CurrencyInput value={atRisk} onChange={setAtRisk} />
+              </div>
+            </div>
+          </div>
+
+          {/* Notes */}
+          <div className="space-y-1">
+            <Label>Notes (optional)</Label>
+            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="e.g. partner percentage, distribution detail, basis worksheet ref" />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2 border-t">
+            <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>Cancel</Button>
+            <Button type="submit" disabled={submitting}>{submitting ? "Saving…" : existing ? "Save changes" : "Add K-1"}</Button>
           </div>
         </form>
       </DialogContent>
