@@ -63,8 +63,19 @@ Required before charging real money. **Don't build these speculatively** — sta
 
 Each item is 2–5 days; all are well-documented IRS rules.
 
-- K-1 detail (S-corp + partnership, passive-activity flags, basis tracking)
-- AMT preferences detail (state-tax addback, ISO bargain element, depreciation difference)
+**Promoted to immediate priority (decision 2026-05-21 evening):** The four items below are being pulled forward from Phase E to a "Phase B+" batch — they're the highest-frequency remaining engine gaps. Total estimated effort: ~2 weeks to get from ~80% to ~90% of common-return coverage.
+
+### Phase B+ — next session's work
+
+| # | Item | Effort | Why now |
+|---|---|---|---|
+| BP1 | **K-1 detail** (S-corp + partnership, per-K-1 ordinary income + QBI flow-through + passive/active flag + basis tracking) | 3-5 days | Biggest single gap by frequency — anyone with an S-corp or partnership has a K-1 |
+| BP2 | **NYC local income tax** (5 brackets, separate from NY state) | 2-3 days | Concentrated population; CPAs with NYC clients need this every return |
+| BP3 | **AMT preferences detail** — ISO bargain element + state-tax addback (Form 6251 lines 2e + 2g/2h) | 2-3 days | The two AMT preferences that matter most for actual AMT-bound filers |
+| BP4 | **State EITC expansion** to CO + IL + MN + NJ + MA (~1 day each, ~5 days total) | 5 days | Pattern-match the existing CA / NY work; covers 5 more states |
+
+### Phase E — still reactive (do when a customer asks)
+
 - NOL carryforward + 80% taxable income limit (post-TCJA)
 - AMT credit carryforward
 - Charitable carryforward (5-year)
@@ -74,9 +85,11 @@ Each item is 2–5 days; all are well-documented IRS rules.
 - 1099-R early-withdrawal 10% penalty + exception codes
 - 1099-G (unemployment + state-refund taxability per state)
 - Part-year residency in multi-state framework
-- Local income taxes (NYC, MD counties, OH cities, IN counties)
-- State EITC expansion (CO, IL, MA, MN, NJ, etc. — CA + NY done)
+- Other local income taxes (MD counties, OH cities, IN counties — NYC promoted above)
 - State CTCs (varies widely by state)
+- State AMTs (CA has its own, e.g.)
+- Auto wash-sale detection across accounts (broker-reported is honored today)
+- §1091(d) holding-period tack-on after wash sale
 
 Tier D3 — entity returns — **out of scope for Option A**: Form 1041 (trust/estate), 1065 (partnership), 1120/1120-S (corporate / S-corp).
 
