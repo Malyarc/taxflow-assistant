@@ -244,6 +244,98 @@ async function testForeignTaxCredit() {
       await delClient(cid);
     }
   }
+
+  // 3c. Single, over simplified limit, NO Form 1116 input → approximate (= paid)
+  // Hand-calc: $5,000 foreign tax paid; no foreign_source_taxable_income provided.
+  // Path 3 (approximate): credit = paid = $5,000.
+  console.log("── 3c. Single $5k FTC, no Form 1116 input → approximate $5,000 ──");
+  {
+    const cid = await makeClient({ firstName: "FTCApprox" });
+    try {
+      await api(`/clients/${cid}/w2data`, { method: "POST", body: JSON.stringify({ taxYear: 2024, wagesBox1: 200000, federalTaxWithheldBox2: 30000, stateCode: "FL" }) });
+      await api(`/clients/${cid}/adjustments`, { method: "POST", body: JSON.stringify({ adjustmentType: "foreign_tax_paid", amount: 5000, description: "1099-DIV Box 7", isApplied: true }) });
+      await settle();
+      const r = await getReturn(cid);
+      check("FTC approximated to paid ($5,000)", Number(r.foreignTaxCredit), 5000, 1);
+    } finally {
+      await delClient(cid);
+    }
+  }
+
+  // 3d. Single, over simplified limit, WITH Form 1116 input — limit DOESN'T bind
+  // Hand-calc TY2024 single:
+  //   Wages $200,000; std ded $14,600; taxable = $185,400
+  //   Federal tax (single 2024):
+  //     10% × $11,600          = $1,160.00
+  //     12% × ($47,150-$11,600) = $4,266.00
+  //     22% × ($100,525-$47,150) = $11,742.50
+  //     24% × ($185,400-$100,525) = $20,370.00
+  //     Total = $37,538.50
+  //   Foreign source taxable = $30,000; total taxable = $185,400
+  //   Form 1116 limit = 30000/185400 × 37538.50 = 0.16181 × 37538.50 ≈ $6,074
+  //   Paid $5,000 < limit $6,074 → credit = $5,000 (limit doesn't bind)
+  console.log("── 3d. Single $5k FTC with Form 1116, limit doesn't bind → $5,000 ──");
+  {
+    const cid = await makeClient({ firstName: "FTC1116a" });
+    try {
+      await api(`/clients/${cid}/w2data`, { method: "POST", body: JSON.stringify({ taxYear: 2024, wagesBox1: 200000, federalTaxWithheldBox2: 30000, stateCode: "FL" }) });
+      await api(`/clients/${cid}/adjustments`, { method: "POST", body: JSON.stringify({ adjustmentType: "foreign_tax_paid", amount: 5000, description: "1099-DIV Box 7", isApplied: true }) });
+      await api(`/clients/${cid}/adjustments`, { method: "POST", body: JSON.stringify({ adjustmentType: "foreign_source_taxable_income", amount: 30000, description: "Foreign mutual fund dividends (Form 1116 L17)", isApplied: true }) });
+      await settle();
+      const r = await getReturn(cid);
+      check("FTC under limit → full $5,000", Number(r.foreignTaxCredit), 5000, 1);
+    } finally {
+      await delClient(cid);
+    }
+  }
+
+  // 3e. Single, over simplified, Form 1116 limit DOES bind
+  // Same wages but paid = $10,000, foreign source = $20,000:
+  //   Form 1116 limit = 20000/185400 × 37538.50 = 0.10787 × 37538.50 ≈ $4,049.13
+  //   Paid $10,000 > limit $4,049 → credit = $4,049 (limit binds; $5,951 lost)
+  console.log("── 3e. Single $10k FTC with Form 1116, limit binds → ~$4,049 ──");
+  {
+    const cid = await makeClient({ firstName: "FTC1116b" });
+    try {
+      await api(`/clients/${cid}/w2data`, { method: "POST", body: JSON.stringify({ taxYear: 2024, wagesBox1: 200000, federalTaxWithheldBox2: 30000, stateCode: "FL" }) });
+      await api(`/clients/${cid}/adjustments`, { method: "POST", body: JSON.stringify({ adjustmentType: "foreign_tax_paid", amount: 10000, description: "Foreign tax", isApplied: true }) });
+      await api(`/clients/${cid}/adjustments`, { method: "POST", body: JSON.stringify({ adjustmentType: "foreign_source_taxable_income", amount: 20000, description: "Foreign source taxable", isApplied: true }) });
+      await settle();
+      const r = await getReturn(cid);
+      // Engine's federal tax on $185,400 should match hand-calc to within $1 (rounding within brackets).
+      // Limit = 20000/185400 × federalTaxBeforeCredits
+      // With our exact $37,538.50: limit = 0.10787 × 37538.50 = $4,049.13
+      check("FTC Form 1116 limit binds (~$4,049)", Number(r.foreignTaxCredit), 4049, 3);
+    } finally {
+      await delClient(cid);
+    }
+  }
+
+  // 3f. MFJ, Form 1116 limit binds at a different fraction
+  // TY2024 MFJ: wages $300,000; std ded $29,200; taxable = $270,800
+  // Federal tax (MFJ 2024):
+  //   10% × $23,200        = $2,320.00
+  //   12% × ($94,300-$23,200) = $8,532.00
+  //   22% × ($201,050-$94,300) = $23,485.00
+  //   24% × ($270,800-$201,050) = $16,740.00
+  //   Total = $51,077.00
+  // foreign tax paid: $8,000; foreign source = $40,000
+  // Limit = 40000/270800 × 51077 = 0.14771 × 51077 ≈ $7,544.20
+  // Paid $8k > limit $7,544 → credit = $7,544
+  console.log("── 3f. MFJ $8k FTC with Form 1116, limit binds → ~$7,544 ──");
+  {
+    const cid = await makeClient({ firstName: "FTC1116mfj", filingStatus: "married_filing_jointly" });
+    try {
+      await api(`/clients/${cid}/w2data`, { method: "POST", body: JSON.stringify({ taxYear: 2024, wagesBox1: 300000, federalTaxWithheldBox2: 50000, stateCode: "FL" }) });
+      await api(`/clients/${cid}/adjustments`, { method: "POST", body: JSON.stringify({ adjustmentType: "foreign_tax_paid", amount: 8000, description: "Foreign tax", isApplied: true }) });
+      await api(`/clients/${cid}/adjustments`, { method: "POST", body: JSON.stringify({ adjustmentType: "foreign_source_taxable_income", amount: 40000, description: "Foreign source taxable", isApplied: true }) });
+      await settle();
+      const r = await getReturn(cid);
+      check("FTC Form 1116 MFJ limit binds (~$7,544)", Number(r.foreignTaxCredit), 7544, 5);
+    } finally {
+      await delClient(cid);
+    }
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════════════

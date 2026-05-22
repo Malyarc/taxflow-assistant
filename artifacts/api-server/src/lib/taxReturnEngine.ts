@@ -528,6 +528,14 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const educatorExpensesAdj = sumByType("educator_expenses");
   const studentLoanInterestAdj = sumByType("student_loan_interest");
   const foreignTaxPaidAdj = sumByType("foreign_tax_paid");
+  /**
+   * Foreign-source taxable income (Form 1116 Line 17 input). When supplied
+   * along with foreign_tax_paid > the simplified limit ($300 single / $600 MFJ),
+   * the engine applies the real Form 1116 limit:
+   *   credit = min(paid, foreignSourceTaxableIncome / totalTaxableIncome × preCreditUsTax)
+   * If absent, the engine falls back to the approximate (credit ≈ paid).
+   */
+  const foreignSourceTaxableIncomeAdj = sumByType("foreign_source_taxable_income");
   const residentialCleanEnergyAdj = sumByType("residential_clean_energy");
   const energyEfficientHomeAdj = sumByType("energy_efficient_home");
   const energyEfficientHeatpumpAdj = sumByType("energy_efficient_heatpump");
@@ -856,6 +864,14 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const foreignTaxCredit = calculateForeignTaxCredit({
     foreignTaxPaid: foreignTaxPaidAdj,
     filingStatus: client.filingStatus,
+    // Form 1116 limit inputs — only meaningful when foreignTaxPaid exceeds the
+    // simplified $300/$600 limit. Otherwise the calculator ignores them.
+    // totalTaxableIncome is Form 1040 Line 15 (taxable income).
+    // preCreditUsTax is the federal income tax before any credits
+    // (= 1040 Line 16 + Line 17 = regular tax + AMT).
+    foreignSourceTaxableIncome: foreignSourceTaxableIncomeAdj > 0 ? foreignSourceTaxableIncomeAdj : undefined,
+    totalTaxableIncome: taxableAfterQbi,
+    preCreditUsTax: incomeTaxOnly,
   });
   const foreignTaxApplied = Math.min(foreignTaxCredit.credit, availableForNonRefundable);
   availableForNonRefundable = Math.max(0, availableForNonRefundable - foreignTaxApplied);
