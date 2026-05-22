@@ -22,6 +22,8 @@ tags:
     description: CPA manual adjustments
   - name: dashboard
     description: Dashboard summary data
+  - name: rentalProperties
+    description: Schedule E rental real estate (per-property tracking)
 
 paths:
   /healthz:
@@ -605,6 +607,99 @@ paths:
           schema:
             type: integer
         - name: adjustmentId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  # ── Rental properties (Schedule E) ────────────────────────────────────────
+  /clients/{clientId}/rental-properties:
+    get:
+      operationId: listRentalProperties
+      tags: [rentalProperties]
+      summary: List all rental properties for a client
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of rental properties
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RentalProperty"
+    post:
+      operationId: createRentalProperty
+      tags: [rentalProperties]
+      summary: Create a rental property record
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateRentalPropertyBody"
+      responses:
+        "201":
+          description: Created rental property
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RentalProperty"
+
+  /clients/{clientId}/rental-properties/{propertyId}:
+    patch:
+      operationId: updateRentalProperty
+      tags: [rentalProperties]
+      summary: Update a rental property
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: propertyId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRentalPropertyBody"
+      responses:
+        "200":
+          description: Updated rental property
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RentalProperty"
+    delete:
+      operationId: deleteRentalProperty
+      tags: [rentalProperties]
+      summary: Delete a rental property
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: propertyId
           in: path
           required: true
           schema:
@@ -1487,6 +1582,106 @@ components:
           type: ["string", "null"]
         isApplied:
           type: boolean
+
+    # ── Rental properties (Schedule E) ────────────────────────────────────────
+    RentalProperty:
+      type: object
+      required: [id, clientId, taxYear, address, propertyType, isActiveParticipant, rentalIncome, totalExpenses, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+        clientId:
+          type: integer
+        taxYear:
+          type: integer
+        address:
+          type: string
+        propertyType:
+          type: string
+          enum: [residential, commercial]
+        basis:
+          type: ["number", "null"]
+        placedInServiceYear:
+          type: ["integer", "null"]
+        placedInServiceMonth:
+          type: ["integer", "null"]
+        fairRentalDays:
+          type: ["integer", "null"]
+        personalUseDays:
+          type: ["integer", "null"]
+        isActiveParticipant:
+          type: boolean
+        rentalIncome:
+          type: number
+        totalExpenses:
+          type: number
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateRentalPropertyBody:
+      type: object
+      required: [taxYear, address]
+      properties:
+        taxYear:
+          type: integer
+        address:
+          type: string
+        propertyType:
+          type: string
+          enum: [residential, commercial]
+        basis:
+          type: ["number", "null"]
+        placedInServiceYear:
+          type: ["integer", "null"]
+        placedInServiceMonth:
+          type: ["integer", "null"]
+        fairRentalDays:
+          type: ["integer", "null"]
+        personalUseDays:
+          type: ["integer", "null"]
+        isActiveParticipant:
+          type: boolean
+        rentalIncome:
+          type: number
+        totalExpenses:
+          type: number
+        notes:
+          type: ["string", "null"]
+
+    UpdateRentalPropertyBody:
+      type: object
+      properties:
+        taxYear:
+          type: integer
+        address:
+          type: string
+        propertyType:
+          type: string
+          enum: [residential, commercial]
+        basis:
+          type: ["number", "null"]
+        placedInServiceYear:
+          type: ["integer", "null"]
+        placedInServiceMonth:
+          type: ["integer", "null"]
+        fairRentalDays:
+          type: ["integer", "null"]
+        personalUseDays:
+          type: ["integer", "null"]
+        isActiveParticipant:
+          type: boolean
+        rentalIncome:
+          type: number
+        totalExpenses:
+          type: number
+        notes:
+          type: ["string", "null"]
 
     # ── Dashboard ─────────────────────────────────────────────────────────────
     DashboardSummary:

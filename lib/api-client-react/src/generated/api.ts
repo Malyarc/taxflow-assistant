@@ -24,16 +24,19 @@ import type {
   CreateAdjustmentBody,
   CreateClientBody,
   CreateForm1099DataBody,
+  CreateRentalPropertyBody,
   CreateW2DataBody,
   DashboardSummary,
   Form1099Data,
   HealthStatus,
   RejectExtractionBody,
+  RentalProperty,
   TaxDocument,
   TaxReturn,
   UpdateAdjustmentBody,
   UpdateClientBody,
   UpdateForm1099DataBody,
+  UpdateRentalPropertyBody,
   UpdateTaxReturnBody,
   UpdateW2DataBody,
   UploadDocumentBody,
@@ -2392,6 +2395,386 @@ export const useDeleteAdjustment = <
   TContext
 > => {
   return useMutation(getDeleteAdjustmentMutationOptions(options));
+};
+
+/**
+ * @summary List all rental properties for a client
+ */
+export const getListRentalPropertiesUrl = (clientId: number) => {
+  return `/api/clients/${clientId}/rental-properties`;
+};
+
+export const listRentalProperties = async (
+  clientId: number,
+  options?: RequestInit,
+): Promise<RentalProperty[]> => {
+  return customFetch<RentalProperty[]>(getListRentalPropertiesUrl(clientId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListRentalPropertiesQueryKey = (clientId: number) => {
+  return [`/api/clients/${clientId}/rental-properties`] as const;
+};
+
+export const getListRentalPropertiesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listRentalProperties>>,
+  TError = ErrorType<unknown>,
+>(
+  clientId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listRentalProperties>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListRentalPropertiesQueryKey(clientId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listRentalProperties>>
+  > = ({ signal }) =>
+    listRentalProperties(clientId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!clientId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listRentalProperties>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListRentalPropertiesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listRentalProperties>>
+>;
+export type ListRentalPropertiesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List all rental properties for a client
+ */
+
+export function useListRentalProperties<
+  TData = Awaited<ReturnType<typeof listRentalProperties>>,
+  TError = ErrorType<unknown>,
+>(
+  clientId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listRentalProperties>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListRentalPropertiesQueryOptions(clientId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Create a rental property record
+ */
+export const getCreateRentalPropertyUrl = (clientId: number) => {
+  return `/api/clients/${clientId}/rental-properties`;
+};
+
+export const createRentalProperty = async (
+  clientId: number,
+  createRentalPropertyBody: CreateRentalPropertyBody,
+  options?: RequestInit,
+): Promise<RentalProperty> => {
+  return customFetch<RentalProperty>(getCreateRentalPropertyUrl(clientId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createRentalPropertyBody),
+  });
+};
+
+export const getCreateRentalPropertyMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createRentalProperty>>,
+    TError,
+    { clientId: number; data: BodyType<CreateRentalPropertyBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createRentalProperty>>,
+  TError,
+  { clientId: number; data: BodyType<CreateRentalPropertyBody> },
+  TContext
+> => {
+  const mutationKey = ["createRentalProperty"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createRentalProperty>>,
+    { clientId: number; data: BodyType<CreateRentalPropertyBody> }
+  > = (props) => {
+    const { clientId, data } = props ?? {};
+
+    return createRentalProperty(clientId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateRentalPropertyMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createRentalProperty>>
+>;
+export type CreateRentalPropertyMutationBody =
+  BodyType<CreateRentalPropertyBody>;
+export type CreateRentalPropertyMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Create a rental property record
+ */
+export const useCreateRentalProperty = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createRentalProperty>>,
+    TError,
+    { clientId: number; data: BodyType<CreateRentalPropertyBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createRentalProperty>>,
+  TError,
+  { clientId: number; data: BodyType<CreateRentalPropertyBody> },
+  TContext
+> => {
+  return useMutation(getCreateRentalPropertyMutationOptions(options));
+};
+
+/**
+ * @summary Update a rental property
+ */
+export const getUpdateRentalPropertyUrl = (
+  clientId: number,
+  propertyId: number,
+) => {
+  return `/api/clients/${clientId}/rental-properties/${propertyId}`;
+};
+
+export const updateRentalProperty = async (
+  clientId: number,
+  propertyId: number,
+  updateRentalPropertyBody: UpdateRentalPropertyBody,
+  options?: RequestInit,
+): Promise<RentalProperty> => {
+  return customFetch<RentalProperty>(
+    getUpdateRentalPropertyUrl(clientId, propertyId),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(updateRentalPropertyBody),
+    },
+  );
+};
+
+export const getUpdateRentalPropertyMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateRentalProperty>>,
+    TError,
+    {
+      clientId: number;
+      propertyId: number;
+      data: BodyType<UpdateRentalPropertyBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateRentalProperty>>,
+  TError,
+  {
+    clientId: number;
+    propertyId: number;
+    data: BodyType<UpdateRentalPropertyBody>;
+  },
+  TContext
+> => {
+  const mutationKey = ["updateRentalProperty"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateRentalProperty>>,
+    {
+      clientId: number;
+      propertyId: number;
+      data: BodyType<UpdateRentalPropertyBody>;
+    }
+  > = (props) => {
+    const { clientId, propertyId, data } = props ?? {};
+
+    return updateRentalProperty(clientId, propertyId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateRentalPropertyMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateRentalProperty>>
+>;
+export type UpdateRentalPropertyMutationBody =
+  BodyType<UpdateRentalPropertyBody>;
+export type UpdateRentalPropertyMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Update a rental property
+ */
+export const useUpdateRentalProperty = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateRentalProperty>>,
+    TError,
+    {
+      clientId: number;
+      propertyId: number;
+      data: BodyType<UpdateRentalPropertyBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateRentalProperty>>,
+  TError,
+  {
+    clientId: number;
+    propertyId: number;
+    data: BodyType<UpdateRentalPropertyBody>;
+  },
+  TContext
+> => {
+  return useMutation(getUpdateRentalPropertyMutationOptions(options));
+};
+
+/**
+ * @summary Delete a rental property
+ */
+export const getDeleteRentalPropertyUrl = (
+  clientId: number,
+  propertyId: number,
+) => {
+  return `/api/clients/${clientId}/rental-properties/${propertyId}`;
+};
+
+export const deleteRentalProperty = async (
+  clientId: number,
+  propertyId: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteRentalPropertyUrl(clientId, propertyId), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteRentalPropertyMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteRentalProperty>>,
+    TError,
+    { clientId: number; propertyId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteRentalProperty>>,
+  TError,
+  { clientId: number; propertyId: number },
+  TContext
+> => {
+  const mutationKey = ["deleteRentalProperty"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteRentalProperty>>,
+    { clientId: number; propertyId: number }
+  > = (props) => {
+    const { clientId, propertyId } = props ?? {};
+
+    return deleteRentalProperty(clientId, propertyId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteRentalPropertyMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteRentalProperty>>
+>;
+
+export type DeleteRentalPropertyMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Delete a rental property
+ */
+export const useDeleteRentalProperty = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteRentalProperty>>,
+    TError,
+    { clientId: number; propertyId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteRentalProperty>>,
+  TError,
+  { clientId: number; propertyId: number },
+  TContext
+> => {
+  return useMutation(getDeleteRentalPropertyMutationOptions(options));
 };
 
 /**

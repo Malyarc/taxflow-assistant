@@ -20,6 +20,7 @@ import {
   form1099DataTable,
   adjustmentsTable,
   taxReturnsTable,
+  rentalPropertiesTable,
 } from "@workspace/db";
 import {
   computeTaxReturnPure,
@@ -30,6 +31,7 @@ import {
   type W2Fact,
   type Form1099Fact,
   type AdjustmentFact,
+  type RentalPropertyFact,
   type TaxReturnInputs,
 } from "./taxReturnEngine";
 import { logger } from "./logger";
@@ -43,6 +45,7 @@ export type {
   W2Fact,
   Form1099Fact,
   AdjustmentFact,
+  RentalPropertyFact,
   TaxReturnInputs,
 };
 
@@ -94,6 +97,19 @@ export async function computeTaxReturn(
     .from(adjustmentsTable)
     .where(eq(adjustmentsTable.clientId, clientId));
 
+  // Per-property rental real estate (Schedule E). When present for the
+  // tax year, the engine uses them instead of the aggregate
+  // schedule_e_rental_* adjustments.
+  const rentalProperties = await db
+    .select()
+    .from(rentalPropertiesTable)
+    .where(
+      and(
+        eq(rentalPropertiesTable.clientId, clientId),
+        eq(rentalPropertiesTable.taxYear, taxYear),
+      ),
+    );
+
   // Auto-load capital-loss + §469 PAL carryforwards from the prior tax year.
   // We synthesize "virtual" adjustment rows IFF the user has NOT manually
   // entered a corresponding carryforward adjustment for the current year.
@@ -112,6 +128,7 @@ export async function computeTaxReturn(
     w2s: w2Records as W2Fact[],
     form1099s: form1099Records as Form1099Fact[],
     adjustments: [...adjustments, ...synthesizedAdjustments] as AdjustmentFact[],
+    rentalProperties: rentalProperties as RentalPropertyFact[],
     taxYear,
     overrides,
     existingItemizedFallback: existing?.itemizedDeductions,

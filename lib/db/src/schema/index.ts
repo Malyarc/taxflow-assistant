@@ -7,3 +7,4 @@ export * from "./adjustments";
 export * from "./conversations";
 export * from "./messages";
 export * from "./audit-log";
+export * from "./rental-properties";

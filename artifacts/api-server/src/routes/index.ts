@@ -8,6 +8,7 @@ import taxReturnsRouter from "./tax-returns";
 import adjustmentsRouter from "./adjustments";
 import dashboardRouter from "./dashboard";
 import auditLogRouter from "./audit-log";
+import rentalPropertiesRouter from "./rental-properties";
 
 const router: IRouter = Router();
 
@@ -20,5 +21,6 @@ router.use(taxReturnsRouter);
 router.use(adjustmentsRouter);
 router.use(dashboardRouter);
 router.use(auditLogRouter);
+router.use(rentalPropertiesRouter);
 
 export default router;

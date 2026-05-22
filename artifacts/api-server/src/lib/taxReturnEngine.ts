@@ -44,6 +44,7 @@ import {
   calculateStateEitc,
   getStateRetirementExemption,
   calculatePassiveActivityLossAllowance,
+  calculateMacrsDepreciation,
   getFederalStandardDeduction,
   type MultiStateTaxResult,
   type StateEitcCalculation,
@@ -154,6 +155,27 @@ export interface RecalcOverrides {
 }
 
 /**
+ * Per-property rental real estate (Schedule E) fact.
+ *
+ * When the engine receives any rentalProperties for the tax year, it uses
+ * them for Schedule E aggregation (sum of per-property income, expenses,
+ * and computed MACRS depreciation) and ignores the legacy aggregate
+ * `schedule_e_rental_*` adjustments. If the array is empty/absent the
+ * legacy adjustment-based path runs unchanged.
+ */
+export interface RentalPropertyFact {
+  taxYear: number;
+  address?: string | null;
+  propertyType?: "residential" | "commercial" | string | null;
+  basis?: Numish;
+  placedInServiceYear?: number | null;
+  placedInServiceMonth?: number | null;
+  isActiveParticipant?: boolean | null;
+  rentalIncome?: Numish;
+  totalExpenses?: Numish;
+}
+
+/**
  * Complete inputs for the pure engine. The adapter (DB-backed) constructs
  * these by loading the relevant rows; Haven (or tests) build them by hand.
  */
@@ -162,6 +184,8 @@ export interface TaxReturnInputs {
   w2s: W2Fact[];
   form1099s: Form1099Fact[];
   adjustments: AdjustmentFact[];
+  /** Optional per-property Schedule E rental real estate (overrides aggregate adjustments). */
+  rentalProperties?: RentalPropertyFact[];
   /** The resolved tax year. Engine does NOT re-resolve from client.taxYear. */
   taxYear: number;
   overrides?: RecalcOverrides;
@@ -460,6 +484,7 @@ export interface ComputedTaxReturn {
  */
 export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn {
   const { client, w2s, form1099s, adjustments, taxYear, overrides = {} } = inputs;
+  const rentalProperties = inputs.rentalProperties ?? [];
 
   const additionalIncome = overrides.additionalIncome ?? 0;
   const useItemizedDeductionsOverride = overrides.useItemizedDeductions;
@@ -548,9 +573,36 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const ltcgCarryforward = sumByType("capital_loss_carryforward_long");
 
   // Phase 2e: Schedule E rental real estate
-  const scheduleERentalIncomeAdj = sumByType("schedule_e_rental_income");
-  const scheduleERentalExpensesAdj = sumByType("schedule_e_rental_expenses");
-  const scheduleEMacrsDepreciationAdj = sumByType("schedule_e_macrs_depreciation");
+  // ── Schedule E rental real estate ──
+  // When per-property rows exist for this tax year, use them as the source of
+  // truth (sum income, expenses, and computed MACRS). Otherwise fall back to
+  // the legacy aggregate adjustment types.
+  const propertiesForYear = rentalProperties.filter((p) => p.taxYear === taxYear);
+  let scheduleERentalIncomeAdj: number;
+  let scheduleERentalExpensesAdj: number;
+  let scheduleEMacrsDepreciationAdj: number;
+  if (propertiesForYear.length > 0) {
+    scheduleERentalIncomeAdj = propertiesForYear.reduce((s, p) => s + toNum(p.rentalIncome), 0);
+    scheduleERentalExpensesAdj = propertiesForYear.reduce((s, p) => s + toNum(p.totalExpenses), 0);
+    scheduleEMacrsDepreciationAdj = propertiesForYear.reduce((s, p) => {
+      const basis = toNum(p.basis);
+      const placedYear = p.placedInServiceYear ?? 0;
+      const placedMonth = p.placedInServiceMonth ?? 0;
+      if (basis <= 0 || placedYear <= 0 || placedMonth < 1 || placedMonth > 12) return s;
+      const dep = calculateMacrsDepreciation({
+        basis,
+        propertyType: p.propertyType === "commercial" ? "commercial" : "residential",
+        monthPlacedInService: placedMonth,
+        yearPlacedInService: placedYear,
+        taxYear,
+      });
+      return s + dep.currentYearDepreciation;
+    }, 0);
+  } else {
+    scheduleERentalIncomeAdj = sumByType("schedule_e_rental_income");
+    scheduleERentalExpensesAdj = sumByType("schedule_e_rental_expenses");
+    scheduleEMacrsDepreciationAdj = sumByType("schedule_e_macrs_depreciation");
+  }
   const scheduleEPassiveLossCarryforwardAdj = sumByType("schedule_e_passive_loss_carryforward");
 
   // ── Step 1: Schedule C — net SE income before SE tax ─────────────────

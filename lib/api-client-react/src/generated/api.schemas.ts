@@ -973,6 +973,97 @@ export interface UpdateAdjustmentBody {
   isApplied?: boolean;
 }
 
+export type RentalPropertyPropertyType =
+  (typeof RentalPropertyPropertyType)[keyof typeof RentalPropertyPropertyType];
+
+export const RentalPropertyPropertyType = {
+  residential: "residential",
+  commercial: "commercial",
+} as const;
+
+export interface RentalProperty {
+  id: number;
+  clientId: number;
+  taxYear: number;
+  address: string;
+  propertyType: RentalPropertyPropertyType;
+  /** @nullable */
+  basis?: number | null;
+  /** @nullable */
+  placedInServiceYear?: number | null;
+  /** @nullable */
+  placedInServiceMonth?: number | null;
+  /** @nullable */
+  fairRentalDays?: number | null;
+  /** @nullable */
+  personalUseDays?: number | null;
+  isActiveParticipant: boolean;
+  rentalIncome: number;
+  totalExpenses: number;
+  /** @nullable */
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CreateRentalPropertyBodyPropertyType =
+  (typeof CreateRentalPropertyBodyPropertyType)[keyof typeof CreateRentalPropertyBodyPropertyType];
+
+export const CreateRentalPropertyBodyPropertyType = {
+  residential: "residential",
+  commercial: "commercial",
+} as const;
+
+export interface CreateRentalPropertyBody {
+  taxYear: number;
+  address: string;
+  propertyType?: CreateRentalPropertyBodyPropertyType;
+  /** @nullable */
+  basis?: number | null;
+  /** @nullable */
+  placedInServiceYear?: number | null;
+  /** @nullable */
+  placedInServiceMonth?: number | null;
+  /** @nullable */
+  fairRentalDays?: number | null;
+  /** @nullable */
+  personalUseDays?: number | null;
+  isActiveParticipant?: boolean;
+  rentalIncome?: number;
+  totalExpenses?: number;
+  /** @nullable */
+  notes?: string | null;
+}
+
+export type UpdateRentalPropertyBodyPropertyType =
+  (typeof UpdateRentalPropertyBodyPropertyType)[keyof typeof UpdateRentalPropertyBodyPropertyType];
+
+export const UpdateRentalPropertyBodyPropertyType = {
+  residential: "residential",
+  commercial: "commercial",
+} as const;
+
+export interface UpdateRentalPropertyBody {
+  taxYear?: number;
+  address?: string;
+  propertyType?: UpdateRentalPropertyBodyPropertyType;
+  /** @nullable */
+  basis?: number | null;
+  /** @nullable */
+  placedInServiceYear?: number | null;
+  /** @nullable */
+  placedInServiceMonth?: number | null;
+  /** @nullable */
+  fairRentalDays?: number | null;
+  /** @nullable */
+  personalUseDays?: number | null;
+  isActiveParticipant?: boolean;
+  rentalIncome?: number;
+  totalExpenses?: number;
+  /** @nullable */
+  notes?: string | null;
+}
+
 export interface DashboardSummary {
   totalClients: number;
   pendingReturns: number;

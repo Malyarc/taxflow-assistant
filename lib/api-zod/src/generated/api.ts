@@ -1260,6 +1260,107 @@ export const DeleteAdjustmentParams = zod.object({
 });
 
 /**
+ * @summary List all rental properties for a client
+ */
+export const ListRentalPropertiesParams = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const ListRentalPropertiesResponseItem = zod.object({
+  id: zod.number(),
+  clientId: zod.number(),
+  taxYear: zod.number(),
+  address: zod.string(),
+  propertyType: zod.enum(["residential", "commercial"]),
+  basis: zod.number().nullish(),
+  placedInServiceYear: zod.number().nullish(),
+  placedInServiceMonth: zod.number().nullish(),
+  fairRentalDays: zod.number().nullish(),
+  personalUseDays: zod.number().nullish(),
+  isActiveParticipant: zod.boolean(),
+  rentalIncome: zod.number(),
+  totalExpenses: zod.number(),
+  notes: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+export const ListRentalPropertiesResponse = zod.array(
+  ListRentalPropertiesResponseItem,
+);
+
+/**
+ * @summary Create a rental property record
+ */
+export const CreateRentalPropertyParams = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const CreateRentalPropertyBody = zod.object({
+  taxYear: zod.number(),
+  address: zod.string(),
+  propertyType: zod.enum(["residential", "commercial"]).optional(),
+  basis: zod.number().nullish(),
+  placedInServiceYear: zod.number().nullish(),
+  placedInServiceMonth: zod.number().nullish(),
+  fairRentalDays: zod.number().nullish(),
+  personalUseDays: zod.number().nullish(),
+  isActiveParticipant: zod.boolean().optional(),
+  rentalIncome: zod.number().optional(),
+  totalExpenses: zod.number().optional(),
+  notes: zod.string().nullish(),
+});
+
+/**
+ * @summary Update a rental property
+ */
+export const UpdateRentalPropertyParams = zod.object({
+  clientId: zod.coerce.number(),
+  propertyId: zod.coerce.number(),
+});
+
+export const UpdateRentalPropertyBody = zod.object({
+  taxYear: zod.number().optional(),
+  address: zod.string().optional(),
+  propertyType: zod.enum(["residential", "commercial"]).optional(),
+  basis: zod.number().nullish(),
+  placedInServiceYear: zod.number().nullish(),
+  placedInServiceMonth: zod.number().nullish(),
+  fairRentalDays: zod.number().nullish(),
+  personalUseDays: zod.number().nullish(),
+  isActiveParticipant: zod.boolean().optional(),
+  rentalIncome: zod.number().optional(),
+  totalExpenses: zod.number().optional(),
+  notes: zod.string().nullish(),
+});
+
+export const UpdateRentalPropertyResponse = zod.object({
+  id: zod.number(),
+  clientId: zod.number(),
+  taxYear: zod.number(),
+  address: zod.string(),
+  propertyType: zod.enum(["residential", "commercial"]),
+  basis: zod.number().nullish(),
+  placedInServiceYear: zod.number().nullish(),
+  placedInServiceMonth: zod.number().nullish(),
+  fairRentalDays: zod.number().nullish(),
+  personalUseDays: zod.number().nullish(),
+  isActiveParticipant: zod.boolean(),
+  rentalIncome: zod.number(),
+  totalExpenses: zod.number(),
+  notes: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Delete a rental property
+ */
+export const DeleteRentalPropertyParams = zod.object({
+  clientId: zod.coerce.number(),
+  propertyId: zod.coerce.number(),
+});
+
+/**
  * @summary Get dashboard summary stats
  */
 export const GetDashboardSummaryResponse = zod.object({
