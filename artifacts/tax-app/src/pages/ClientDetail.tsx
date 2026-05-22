@@ -1937,7 +1937,9 @@ function AdjustmentsTab({ clientId }: { clientId: number }) {
     self_employment_income: "Self-Employment Income",
     investment_income: "Investment Income (NIIT)",
     qbi_income: "Qualified Business Income (QBI)",
-    amt_preferences: "AMT Preferences",
+    amt_preferences: "AMT Preferences (catch-all — line 2 misc)",
+    amt_iso_bargain_element: "AMT — ISO Bargain Element (Form 6251 line 2k)",
+    amt_state_tax_addback_override: "AMT — SALT Addback Override (Form 6251 line 2g; replaces auto)",
     // Schedule A line items (itemized deductions)
     medical_expenses: "Medical/Dental Expenses (Sched A)",
     state_income_tax: "State Income Tax (Sched A SALT)",
@@ -1972,6 +1974,7 @@ function AdjustmentsTab({ clientId }: { clientId: number }) {
     schedule_e_rental_expenses: "Schedule E Rental Expenses (excl. depreciation)",
     schedule_e_macrs_depreciation: "Schedule E MACRS Depreciation",
     schedule_e_passive_loss_carryforward: "Schedule E Passive Loss Carryforward (prior year suspended)",
+    k1_passive_loss_carryforward: "K-1 Passive Loss Carryforward (prior year suspended; non-rental-RE passive)",
     other: "Other",
   };
 

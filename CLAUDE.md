@@ -65,7 +65,7 @@ Future-you will be tempted to "simplify" these. Don't.
 - **Hand-calc every expected value** against IRS published rules before asserting it. The user has been burned by tests passing while the underlying calc was wrong (e.g. the AGI/Line-9 bug shipped despite unit tests passing).
 - **Unit tests alone aren't enough.** Standalone suites verify the calculator; integration suites hit a live API at `localhost:8080` and exercise the full pipeline. Run both.
 - **Adding a new test file** also requires adding it to `scripts/tsconfig.json`'s `exclude` array — the workspace typecheck fails otherwise.
-- **Test files (current set, 1,329 assertions across 22 suites):**
+- **Test files (current set, 1,345 assertions across 23 suites):**
   | File | Needs API |
   |---|---|
   | `tax-engine-tests.ts` | no |
@@ -79,6 +79,7 @@ Future-you will be tempted to "simplify" these. Don't.
   | `tax-engine-w2-validation-tests.ts` | no (W-2 box-arithmetic flag rules) |
   | `tax-engine-k1-tests.ts` | no (K-1 partnership + S-corp pass-through) |
   | `tax-engine-nyc-tests.ts` | no (NYC personal income tax) |
+  | `tax-engine-amt-prefs-tests.ts` | no (Form 6251 SALT addback + ISO bargain) |
   | `tax-engine-integration-tests.ts` | yes |
   | `tax-engine-deep-integration-tests.ts` | yes |
   | `tax-engine-new-features-tests.ts` | yes |
@@ -153,7 +154,7 @@ Several Phase 2/3 limitations have been resolved (multi-state foundation, MACRS,
 - Part-year residency in multi-state framework (resident + non-resident work; part-year doesn't)
 - Local income taxes for non-NYC jurisdictions (MD counties, OH cities, IN counties); NYC PIT shipped — NYC school tax credit + UBT + MCTMT still not modeled
 - Most state-specific credits (state EITC for CA + NY are wired; others not)
-- AMT preferences detail (state-tax addback, ISO bargain element, etc.)
+- AMT preferences modeled: line 2g state-tax addback (auto from itemized SALT, override available), line 2k ISO bargain element. Still not modeled: line 2i MACRS-vs-ADS depreciation difference, line 2e state-refund recapture, AMT NOL.
 - K-1 §199A wage/UBIA limits + SSTB phase-out (engine applies simplified 20% only); K-1 basis / at-risk fields stored but not enforced; K-1 guaranteed payments (Box 4) not modeled
 - Other carryforwards: NOL, AMT credit, charitable (capital loss + §469 PAL + K-1 passive loss carryforward ARE supported)
 - Foreign income exclusion (§911 FEIE), treaty positions

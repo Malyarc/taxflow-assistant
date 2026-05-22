@@ -674,7 +674,21 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const seIncomeFromAdj = sumByType("self_employment_income");
   const investmentIncomeFromAdj = sumByType("investment_income");
   const qbiIncome = sumByType("qbi_income");
-  const amtPreferences = sumByType("amt_preferences");
+  // BP3 — AMT preference detail. The legacy `amt_preferences` catch-all
+  // continues to work (any preference the engine doesn't model explicitly).
+  // BP3 adds two explicit components:
+  //   amt_iso_bargain_element   — Form 6251 line 2k. FMV at exercise minus
+  //                               strike, for ISOs HELD past calendar year-end
+  //                               (disqualifying-disposition same-year sales
+  //                               are ordinary income, not an AMT preference).
+  //   amt_state_tax_addback_override — Form 6251 line 2g override. Auto-derived
+  //                               from the itemized SALT deduction we already
+  //                               compute (state income/property/sales tax,
+  //                               capped at $10k post-TCJA); this override
+  //                               replaces the auto value for unusual cases.
+  const amtPreferencesLegacy = sumByType("amt_preferences");
+  const amtIsoBargainElement = sumByType("amt_iso_bargain_element");
+  const amtStateTaxAddbackOverride = sumByType("amt_state_tax_addback_override");
 
   // Phase 1: Schedule A inputs
   const medicalExpensesAdj = sumByType("medical_expenses");
@@ -1073,9 +1087,23 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   });
   const regularFederalTax = capGains.totalFederalTax;
 
+  // BP3 — auto-derive Form 6251 line 2g SALT addback when itemizing.
+  // SALT deducted on Schedule A reduced regular-tax base; it is disallowed
+  // for AMT (Form 6251 line 2g). The auto value uses our computed
+  // saltDeductible (state income/property/sales tax, $10k cap post-TCJA).
+  // The `amt_state_tax_addback_override` adjustment, when > 0, replaces the
+  // auto value (rare cases — different AMT SALT figure than Schedule A).
+  // When taking the standard deduction, no SALT was deducted → addback = 0.
+  const autoSaltAddback = useItemizedDeductions ? scheduleA.saltDeductible : 0;
+  const saltAddbackForAmt = amtStateTaxAddbackOverride > 0
+    ? amtStateTaxAddbackOverride
+    : autoSaltAddback;
+  // Total Form 6251 AMTI adjustment = legacy catch-all + ISO bargain + SALT addback
+  const totalAmtPreferences = amtPreferencesLegacy + amtIsoBargainElement + saltAddbackForAmt;
+
   const amt = calculateAmt({
     taxableIncome: taxableAfterQbi,
-    amtPreferences,
+    amtPreferences: totalAmtPreferences,
     filingStatus: client.filingStatus,
     regularTax: regularFederalTax,
     taxYear,
