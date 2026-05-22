@@ -26,6 +26,8 @@ export interface BoundingBox {
   xmin: number;
   ymax: number;
   xmax: number;
+  /** Optional 1-indexed PDF page number. Defaults to 1 if absent. */
+  page?: number;
 }
 
 export type FieldBoxes = Partial<Record<keyof ExtractedW2Data, BoundingBox>>;
@@ -73,11 +75,11 @@ Return ONLY a valid JSON object with two top-level keys: "data" and "boxes".
 
 "boxes" contains a bounding box for each field that was found, in normalized image coordinates (0-1000):
 {
-  "wagesBox1": {"ymin": 230, "xmin": 120, "ymax": 280, "xmax": 800},
+  "wagesBox1": {"ymin": 230, "xmin": 120, "ymax": 280, "xmax": 800, "page": 1},
   "federalTaxWithheldBox2": {...},
   ...
 }
-Use 0 as the top-left of the image and 1000 as the bottom-right. Only include boxes for fields you actually found a value for. If a field is null in "data", omit it from "boxes".
+Use 0 as the top-left of the image and 1000 as the bottom-right. Include "page" (1-indexed) when the document is multi-page. Only include boxes for fields you actually found a value for. If a field is null in "data", omit it from "boxes".
 
 Final response format:
 {
@@ -133,8 +135,12 @@ function normalizeBoxes(parsed: unknown): FieldBoxes {
       const xmin = Number(v.xmin ?? v.x_min ?? v.left);
       const ymax = Number(v.ymax ?? v.y_max ?? v.bottom);
       const xmax = Number(v.xmax ?? v.x_max ?? v.right);
+      // Optional page (1-indexed). Defaults handled downstream (UI assumes page 1).
+      const pageRaw = Number(v.page ?? v.pageNumber ?? v.page_number);
       if ([ymin, xmin, ymax, xmax].every(Number.isFinite)) {
-        out[field as keyof ExtractedW2Data] = { ymin, xmin, ymax, xmax };
+        const box: BoundingBox = { ymin, xmin, ymax, xmax };
+        if (Number.isFinite(pageRaw) && pageRaw > 0) box.page = Math.floor(pageRaw);
+        out[field as keyof ExtractedW2Data] = box;
       }
     }
   }
@@ -268,9 +274,10 @@ Per-form fields (only include the relevant ones based on formType):
   g: { "unemploymentCompensation", "stateLocalRefund" }
   k: { "grossPaymentAmount" }
 
-"boxes" contains optional bounding boxes (0-1000 normalized) for each field that was found:
+"boxes" contains optional bounding boxes (0-1000 normalized) for each field that was found.
+For multi-page PDFs (e.g. 1099-R can be multi-page), include "page" (1-indexed):
 {
-  "nonemployeeCompensation": {"ymin": 230, "xmin": 120, "ymax": 280, "xmax": 800},
+  "nonemployeeCompensation": {"ymin": 230, "xmin": 120, "ymax": 280, "xmax": 800, "page": 1},
   ...
 }
 

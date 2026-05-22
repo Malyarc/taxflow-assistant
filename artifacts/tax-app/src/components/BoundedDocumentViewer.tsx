@@ -8,13 +8,16 @@
  * right, the corresponding box highlights on the left. Click a box on the left
  * to focus its input on the right via the `onBoxClick` callback.
  *
- * For PDFs we render the first page to a canvas using pdfjs-dist. Multi-page
- * documents only show page 1 for now — fine for W-2 / 1099 forms which are
- * single-page.
+ * For PDFs we render one page at a time to a canvas using pdfjs-dist, with
+ * prev/next page controls. Boxes carry an optional `page` field (1-indexed);
+ * absent = page 1. Boxes are only drawn when on the currently-visible page.
+ *
+ * Images are always treated as single-page (page 1).
  */
 import * as React from "react";
 import { GlobalWorkerOptions, getDocument } from "pdfjs-dist";
 import pdfWorkerSrc from "pdfjs-dist/build/pdf.worker.mjs?url";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 GlobalWorkerOptions.workerSrc = pdfWorkerSrc;
@@ -24,6 +27,8 @@ export interface BoundingBox {
   xmin: number;
   ymax: number;
   xmax: number;
+  /** 1-indexed PDF page number. Defaults to 1 if absent. */
+  page?: number;
 }
 
 export type FieldBoxes = Record<string, BoundingBox>;
@@ -40,6 +45,20 @@ interface Props {
   /** Optional click handler — fires with the field name when a box is clicked. */
   onBoxClick?: (field: string) => void;
   className?: string;
+}
+
+/** Boxes assumed to be on page 1 if no `page` field is set (single-page convention). */
+function boxPage(b: BoundingBox): number {
+  return typeof b.page === "number" && b.page > 0 ? Math.floor(b.page) : 1;
+}
+
+/** Filter the box record to those on a specific page. */
+function boxesForPage(all: FieldBoxes, pageNum: number): FieldBoxes {
+  const out: FieldBoxes = {};
+  for (const [field, b] of Object.entries(all)) {
+    if (boxPage(b) === pageNum) out[field] = b;
+  }
+  return out;
 }
 
 export function BoundedDocumentViewer({
@@ -60,8 +79,15 @@ export function BoundedDocumentViewer({
     );
   }
   if (isImage) {
+    // Images are always page 1.
     return (
-      <ImageViewer src={src} boxes={boxes} highlightField={highlightField} onBoxClick={onBoxClick} className={className} />
+      <ImageViewer
+        src={src}
+        boxes={boxesForPage(boxes, 1)}
+        highlightField={highlightField}
+        onBoxClick={onBoxClick}
+        className={className}
+      />
     );
   }
   // Plain text / other — no overlay possible, just iframe the content.
@@ -80,7 +106,6 @@ function ImageViewer({ src, boxes, highlightField, onBoxClick, className }: Omit
     setSize({ w: el.clientWidth, h: el.clientHeight });
   }
 
-  // Re-measure on window resize so boxes stay aligned when the modal width changes.
   React.useEffect(() => {
     if (!imgRef.current) return;
     const obs = new ResizeObserver(() => {
@@ -106,28 +131,57 @@ function ImageViewer({ src, boxes, highlightField, onBoxClick, className }: Omit
   );
 }
 
-// ─── PDF rendering ───────────────────────────────────────────────────────────
+// ─── PDF rendering with pagination ───────────────────────────────────────────
 
 function PdfViewer({ src, boxes, highlightField, onBoxClick, className }: Omit<Props, "fileName">) {
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const wrapperRef = React.useRef<HTMLDivElement>(null);
   const [size, setSize] = React.useState<{ w: number; h: number } | null>(null);
+  const [numPages, setNumPages] = React.useState<number>(0);
+  const [pageNum, setPageNum] = React.useState<number>(1);
   const [error, setError] = React.useState<string | null>(null);
+  const pdfRef = React.useRef<Awaited<ReturnType<typeof getDocument>["promise"]> | null>(null);
 
+  // Pre-compute how many boxes live on each page so we can show indicators
+  // in the page picker for pages with extracted fields.
+  const boxCountByPage = React.useMemo(() => {
+    const counts: Record<number, number> = {};
+    for (const b of Object.values(boxes)) {
+      const p = boxPage(b);
+      counts[p] = (counts[p] ?? 0) + 1;
+    }
+    return counts;
+  }, [boxes]);
+
+  // Reset to page 1 whenever the document src changes.
+  React.useEffect(() => {
+    setPageNum(1);
+    setNumPages(0);
+    pdfRef.current = null;
+  }, [src]);
+
+  // Load the PDF once per src; then render whenever pageNum changes.
   React.useEffect(() => {
     let cancelled = false;
-    async function render() {
+    async function loadAndRender() {
       try {
-        const loadingTask = getDocument({ url: src });
-        const pdf = await loadingTask.promise;
-        if (cancelled) return;
-        const page = await pdf.getPage(1);
+        // Load the PDF once per src.
+        if (!pdfRef.current) {
+          const loadingTask = getDocument({ url: src });
+          pdfRef.current = await loadingTask.promise;
+          if (cancelled) return;
+          setNumPages(pdfRef.current.numPages);
+        }
+        const pdf = pdfRef.current;
+        if (!pdf) return;
+        // Clamp page number in case caller (or page boxes) pointed past the end.
+        const effectivePage = Math.min(Math.max(1, pageNum), pdf.numPages);
+        const page = await pdf.getPage(effectivePage);
         const canvas = canvasRef.current;
         const wrapper = wrapperRef.current;
         if (!canvas || !wrapper) return;
         const wrapperWidth = wrapper.clientWidth || 600;
         const baseViewport = page.getViewport({ scale: 1 });
-        // Fit to wrapper width, then upscale for HiDPI so the canvas looks sharp.
         const scale = wrapperWidth / baseViewport.width;
         const dpr = window.devicePixelRatio || 1;
         const viewport = page.getViewport({ scale: scale * dpr });
@@ -144,11 +198,11 @@ function PdfViewer({ src, boxes, highlightField, onBoxClick, className }: Omit<P
         setError(e instanceof Error ? e.message : "Failed to render PDF");
       }
     }
-    render();
+    loadAndRender();
     return () => {
       cancelled = true;
     };
-  }, [src]);
+  }, [src, pageNum]);
 
   if (error) {
     return (
@@ -158,18 +212,75 @@ function PdfViewer({ src, boxes, highlightField, onBoxClick, className }: Omit<P
     );
   }
 
+  const visibleBoxes = boxesForPage(boxes, pageNum);
+  const isMultiPage = numPages > 1;
+
   return (
-    <div ref={wrapperRef} className={cn("relative inline-block w-full", className)}>
-      <canvas ref={canvasRef} className="select-none" />
-      {size && (
-        <BoxOverlay
-          boxes={boxes}
-          highlightField={highlightField}
-          onBoxClick={onBoxClick}
-          containerWidth={size.w}
-          containerHeight={size.h}
-        />
+    <div className={cn("flex flex-col gap-2", className)}>
+      {/* Page navigation — only shown for multi-page PDFs */}
+      {isMultiPage && (
+        <div className="flex items-center justify-between text-xs">
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setPageNum((p) => Math.max(1, p - 1))}
+              disabled={pageNum <= 1}
+              className="inline-flex items-center justify-center size-7 rounded border border-input hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
+              aria-label="Previous page"
+            >
+              <ChevronLeft className="size-4" />
+            </button>
+            <span className="px-2 py-1 tabular-nums">
+              Page {pageNum} of {numPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => setPageNum((p) => Math.min(numPages, p + 1))}
+              disabled={pageNum >= numPages}
+              className="inline-flex items-center justify-center size-7 rounded border border-input hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
+              aria-label="Next page"
+            >
+              <ChevronRight className="size-4" />
+            </button>
+          </div>
+          {/* Show which pages have AI-extracted fields */}
+          {Object.keys(boxCountByPage).length > 0 && (
+            <div className="flex items-center gap-1.5 text-muted-foreground">
+              <span>Extracted fields on:</span>
+              {Object.entries(boxCountByPage)
+                .sort(([a], [b]) => Number(a) - Number(b))
+                .map(([p, count]) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setPageNum(Number(p))}
+                    className={cn(
+                      "rounded px-1.5 py-0.5 text-[10px] tabular-nums",
+                      Number(p) === pageNum
+                        ? "bg-amber-200 text-amber-900 font-semibold"
+                        : "bg-amber-100 text-amber-800 hover:bg-amber-200",
+                    )}
+                  >
+                    p{p}·{count}
+                  </button>
+                ))}
+            </div>
+          )}
+        </div>
       )}
+
+      <div ref={wrapperRef} className="relative inline-block w-full">
+        <canvas ref={canvasRef} className="select-none" />
+        {size && (
+          <BoxOverlay
+            boxes={visibleBoxes}
+            highlightField={highlightField}
+            onBoxClick={onBoxClick}
+            containerWidth={size.w}
+            containerHeight={size.h}
+          />
+        )}
+      </div>
     </div>
   );
 }
@@ -188,7 +299,6 @@ function BoxOverlay({ boxes, highlightField, onBoxClick, containerWidth, contain
   return (
     <div className="absolute inset-0 pointer-events-none">
       {Object.entries(boxes).map(([field, box]) => {
-        // Boxes are 0–1000 normalized; map to container pixels.
         const left = (box.xmin / 1000) * containerWidth;
         const top = (box.ymin / 1000) * containerHeight;
         const width = ((box.xmax - box.xmin) / 1000) * containerWidth;
