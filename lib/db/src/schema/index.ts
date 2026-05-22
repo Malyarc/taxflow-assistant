@@ -9,3 +9,4 @@ export * from "./messages";
 export * from "./audit-log";
 export * from "./rental-properties";
 export * from "./capital-transactions";
+export * from "./schedule-k1-data";

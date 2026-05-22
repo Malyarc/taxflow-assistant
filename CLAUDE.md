@@ -65,7 +65,7 @@ Future-you will be tempted to "simplify" these. Don't.
 - **Hand-calc every expected value** against IRS published rules before asserting it. The user has been burned by tests passing while the underlying calc was wrong (e.g. the AGI/Line-9 bug shipped despite unit tests passing).
 - **Unit tests alone aren't enough.** Standalone suites verify the calculator; integration suites hit a live API at `localhost:8080` and exercise the full pipeline. Run both.
 - **Adding a new test file** also requires adding it to `scripts/tsconfig.json`'s `exclude` array — the workspace typecheck fails otherwise.
-- **Test files (current set, 1,221 assertions across 19 suites):**
+- **Test files (current set, 1,314 assertions across 21 suites):**
   | File | Needs API |
   |---|---|
   | `tax-engine-tests.ts` | no |
@@ -77,6 +77,7 @@ Future-you will be tempted to "simplify" these. Don't.
   | `tax-engine-50state-tests.ts` | no |
   | `tax-engine-edge-cases-tests.ts` | no (boundary/cliff/phase-out edges) |
   | `tax-engine-w2-validation-tests.ts` | no (W-2 box-arithmetic flag rules) |
+  | `tax-engine-k1-tests.ts` | no (K-1 partnership + S-corp pass-through) |
   | `tax-engine-integration-tests.ts` | yes |
   | `tax-engine-deep-integration-tests.ts` | yes |
   | `tax-engine-new-features-tests.ts` | yes |
@@ -87,6 +88,7 @@ Future-you will be tempted to "simplify" these. Don't.
   | `tax-engine-ai-overlay-tests.ts` | yes (upload → review → approve gate) |
   | `tax-engine-rental-properties-tests.ts` | yes (per-property MACRS + PAL) |
   | `tax-engine-capital-transactions-tests.ts` | yes (Form 8949 + wash sale) |
+  | `tax-engine-k1-integration-tests.ts` | yes (K-1 CRUD + recalc pipeline) |
 - **Scenarios are CPA-style end-to-end cases.** Each one has a `Hand-calc:` comment block — keep that convention. When a scenario fails, double-check your hand-calc before mutating the assertion; the calculator is usually right.
 - **Run all suites after any pipeline or schema change.** The Phase 1 work flushed out one regression (scenario 8 — needed to add EITC to expected refund).
 
@@ -148,11 +150,11 @@ Several Phase 2/3 limitations have been resolved (multi-state foundation, MACRS,
 - Schedule D per-transaction detail (1099-B is summed; no wash-sale, no per-lot)
 - Per-property rental tracking (Schedule E is aggregate adjustments, not per-property)
 - Part-year residency in multi-state framework (resident + non-resident work; part-year doesn't)
-- Local income taxes (NYC, MD counties, OH cities, IN counties)
+- Local income taxes (MD counties, OH cities, IN counties — NYC done in BP2)
 - Most state-specific credits (state EITC for CA + NY are wired; others not)
 - AMT preferences detail (state-tax addback, ISO bargain element, etc.)
-- K-1 detail (partnership / S-corp pass-through specifics)
-- Other carryforwards: NOL, AMT credit, charitable (capital loss + §469 PAL carryforward ARE supported)
+- K-1 §199A wage/UBIA limits + SSTB phase-out (engine applies simplified 20% only); K-1 basis / at-risk fields stored but not enforced; K-1 guaranteed payments (Box 4) not modeled
+- Other carryforwards: NOL, AMT credit, charitable (capital loss + §469 PAL + K-1 passive loss carryforward ARE supported)
 - Foreign income exclusion (§911 FEIE), treaty positions
 - Trust/estate (1041), partnership/corporate (1065/1120/1120-S)
 - E-filing — Option A means CPAs e-file through *their* software, not ours

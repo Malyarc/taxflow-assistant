@@ -10,6 +10,7 @@ import dashboardRouter from "./dashboard";
 import auditLogRouter from "./audit-log";
 import rentalPropertiesRouter from "./rental-properties";
 import capitalTransactionsRouter from "./capital-transactions";
+import scheduleK1Router from "./schedule-k1";
 
 const router: IRouter = Router();
 
@@ -24,5 +25,6 @@ router.use(dashboardRouter);
 router.use(auditLogRouter);
 router.use(rentalPropertiesRouter);
 router.use(capitalTransactionsRouter);
+router.use(scheduleK1Router);
 
 export default router;

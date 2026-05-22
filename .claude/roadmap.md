@@ -67,12 +67,12 @@ Each item is 2–5 days; all are well-documented IRS rules.
 
 ### Phase B+ — next session's work
 
-| # | Item | Effort | Why now |
+| # | Item | Effort | Status |
 |---|---|---|---|
-| BP1 | **K-1 detail** (S-corp + partnership, per-K-1 ordinary income + QBI flow-through + passive/active flag + basis tracking) | 3-5 days | Biggest single gap by frequency — anyone with an S-corp or partnership has a K-1 |
-| BP2 | **NYC local income tax** (5 brackets, separate from NY state) | 2-3 days | Concentrated population; CPAs with NYC clients need this every return |
-| BP3 | **AMT preferences detail** — ISO bargain element + state-tax addback (Form 6251 lines 2e + 2g/2h) | 2-3 days | The two AMT preferences that matter most for actual AMT-bound filers |
-| BP4 | **State EITC expansion** to CO + IL + MN + NJ + MA (~1 day each, ~5 days total) | 5 days | Pattern-match the existing CA / NY work; covers 5 more states |
+| BP1 | **K-1 detail** (S-corp + partnership, per-K-1 ordinary income + QBI flow-through + passive/active flag + basis tracking) | 3-5 days | ✅ Backend done; new `schedule_k1_data` table + CRUD route; engine wires Box 1/2/3 income, interest/div/cap-gain, SE earnings → Sch SE, §199A QBI, §469 K-1 passive bucket (no $25k allowance, fully suspended), `k1_passive_loss_carryforward` adjustment + auto-load from prior year. 70 pure + 23 integration = 93 hand-calced assertions. **Frontend tab still TODO.** |
+| BP2 | **NYC local income tax** (5 brackets, separate from NY state) | 2-3 days | ❌ Open |
+| BP3 | **AMT preferences detail** — ISO bargain element + state-tax addback (Form 6251 lines 2e + 2g/2h) | 2-3 days | ❌ Open |
+| BP4 | **State EITC expansion** to CO + IL + MN + NJ + MA (~1 day each, ~5 days total) | 5 days | ❌ Open |
 
 ### Phase E — still reactive (do when a customer asks)
 

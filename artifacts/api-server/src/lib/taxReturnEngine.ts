@@ -203,6 +203,48 @@ export interface RentalPropertyFact {
 }
 
 /**
+ * Per-K-1 (partnership 1065 / S-corp 1120-S) pass-through fact.
+ *
+ * When the engine receives any K-1 rows for the tax year, it sums per-K-1
+ * income across the boxes and flows them into the appropriate schedules:
+ *   - Active K-1 Box 1 / Box 3 ordinary → Sch E Part II → 1040 Line 8
+ *   - Passive K-1 Box 1 / Box 3 + ALL Box 2 (RE) → K-1 passive bucket
+ *     (no $25k allowance — net loss fully suspended → carryforward)
+ *   - Box 5 / 6a / 6b / 7 → Sch B / Sch E Part I
+ *   - Box 8 / 9a → Sch D (cross-nets with other 8949 transactions)
+ *   - Box 14A (1065 only) → Schedule SE
+ *   - §199A (Box 20 Z on 1065 / Box 17 V on 1120-S) → §199A calc
+ *
+ * Known simplifications (per CLAUDE.md):
+ *   - §199A W-2-wage + UBIA limits not enforced
+ *   - SSTB phase-out not modeled
+ *   - Basis / at-risk limits stored but not enforced
+ */
+export interface ScheduleK1Fact {
+  taxYear: number;
+  entityName?: string | null;
+  entityEin?: string | null;
+  entityType?: "partnership" | "s_corp" | string | null;
+  activityType?: "active" | "passive" | string | null;
+  box1OrdinaryIncome?: Numish;
+  box2RentalRealEstate?: Numish;
+  box3OtherRentalIncome?: Numish;
+  interestIncome?: Numish;
+  ordinaryDividends?: Numish;
+  qualifiedDividends?: Numish;
+  royalties?: Numish;
+  netShortTermCapitalGain?: Numish;
+  netLongTermCapitalGain?: Numish;
+  selfEmploymentEarnings?: Numish;
+  section199aQbi?: Numish;
+  section199aW2Wages?: Numish;
+  section199aUbia?: Numish;
+  basisAtYearStart?: Numish;
+  basisAtYearEnd?: Numish;
+  atRiskAmount?: Numish;
+}
+
+/**
  * Complete inputs for the pure engine. The adapter (DB-backed) constructs
  * these by loading the relevant rows; Haven (or tests) build them by hand.
  */
@@ -215,6 +257,8 @@ export interface TaxReturnInputs {
   rentalProperties?: RentalPropertyFact[];
   /** Optional Schedule D / Form 8949 per-transaction rows (overrides 1099-B aggregates). */
   capitalTransactions?: CapitalTransactionFact[];
+  /** Optional Schedule K-1 rows (partnership + S-corp pass-through). */
+  scheduleK1?: ScheduleK1Fact[];
   /** The resolved tax year. Engine does NOT re-resolve from client.taxYear. */
   taxYear: number;
   overrides?: RecalcOverrides;
@@ -405,6 +449,33 @@ export function summarize1099s(records: Form1099Fact[]): Form1099Summary {
   };
 }
 
+/**
+ * Schedule K-1 aggregate summary — totals across all K-1 rows for the year.
+ *
+ * Reported for UI/diagnostics. K-1 amounts have already been folded into
+ * AGI / Schedule D / Schedule SE / §199A by the time the engine returns.
+ *
+ * `k1PassiveLossSuspended` — net K-1 passive loss carrying forward to
+ * next year (driven by IRS Pub 925 §469 framework; persists via the
+ * `k1_passive_loss_carryforward` adjustment type).
+ */
+export interface ScheduleK1Summary {
+  k1Count: number;
+  partnershipCount: number;
+  sCorpCount: number;
+  totalActiveOrdinaryIncome: number;
+  totalPassiveBucketNetApplied: number;
+  k1PassiveLossSuspended: number;
+  totalInterestIncome: number;
+  totalOrdinaryDividends: number;
+  totalQualifiedDividends: number;
+  totalRoyalties: number;
+  totalShortTermCapitalGain: number;
+  totalLongTermCapitalGain: number;
+  totalSelfEmploymentEarnings: number;
+  totalQbiContribution: number;
+}
+
 // ── ComputedTaxReturn ───────────────────────────────────────────────────────
 
 export interface ComputedTaxReturn {
@@ -481,6 +552,8 @@ export interface ComputedTaxReturn {
   passiveActivityLoss: PassiveActivityLossResult | null;
   /** Schedule E passive loss suspended to next year */
   scheduleEPassiveLossSuspended: number;
+  /** Schedule K-1 (partnership + S-corp) aggregate summary */
+  scheduleK1: ScheduleK1Summary;
   /** Detailed breakdowns for transparency */
   detail: {
     se: SeTaxCalculation;
@@ -672,15 +745,80 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   }
   const scheduleEPassiveLossCarryforwardAdj = sumByType("schedule_e_passive_loss_carryforward");
 
+  // ── Phase B+: Schedule K-1 (partnership 1065 + S-corp 1120-S) ──
+  // Pass-through entities. Per-K-1 box income is summed for the year and
+  // flows to the appropriate schedules:
+  //   - Active K-1 Box 1 / Box 3 ordinary → Sch E Part II → 1040 Line 8
+  //   - Passive K-1 Box 1 / Box 3 + ALL Box 2 (RE) → K-1 passive bucket
+  //     (NO $25k allowance — that is rental-RE active-participation only).
+  //     Net K-1 passive loss is fully suspended → carries forward as the
+  //     `k1_passive_loss_carryforward` adjustment.
+  //   - Box 5/6a/6b/7 → Sch B / Sch E Part I
+  //   - Box 8 / 9a → cross-nets with other 8949 capital gains/losses
+  //   - Box 14A (1065 only) → Schedule SE
+  //   - §199A QBI (Box 20 Z / Box 17 V) → §199A calc
+  // Known limits (also in CLAUDE.md): no W-2-wage / UBIA cap, no SSTB
+  // phase-out, no basis or at-risk enforcement (CPA judgment).
+  const k1sForYear = (inputs.scheduleK1 ?? []).filter((k) => k.taxYear === taxYear);
+  const k1IsActive = (k: ScheduleK1Fact) => (k.activityType ?? "active") !== "passive";
+  const k1IsPassive = (k: ScheduleK1Fact) => (k.activityType ?? "active") === "passive";
+  const sumK1Where = (
+    pred: (k: ScheduleK1Fact) => boolean,
+    pick: (k: ScheduleK1Fact) => Numish,
+  ) => k1sForYear.filter(pred).reduce((s, k) => s + toNum(pick(k)), 0);
+
+  const k1ActiveOrdinary =
+    sumK1Where(k1IsActive, (k) => k.box1OrdinaryIncome) +
+    sumK1Where(k1IsActive, (k) => k.box3OtherRentalIncome);
+  // K-1 passive bucket (current year, BEFORE prior-year carryforward):
+  // passive Box 1, ALL Box 2 (rental real estate held through a pass-through
+  // entity is always passive at the K-1 holder level — the $25k allowance
+  // only applies to direct rental ownership), passive Box 3.
+  const k1PassiveCurrentYear =
+    sumK1Where(k1IsPassive, (k) => k.box1OrdinaryIncome) +
+    sumK1Where(() => true, (k) => k.box2RentalRealEstate) +
+    sumK1Where(k1IsPassive, (k) => k.box3OtherRentalIncome);
+  const k1InterestIncome = sumK1Where(() => true, (k) => k.interestIncome);
+  const k1OrdinaryDividends = sumK1Where(() => true, (k) => k.ordinaryDividends);
+  const k1QualifiedDividends = sumK1Where(() => true, (k) => k.qualifiedDividends);
+  const k1Royalties = sumK1Where(() => true, (k) => k.royalties);
+  const k1Stcg = sumK1Where(() => true, (k) => k.netShortTermCapitalGain);
+  const k1Ltcg = sumK1Where(() => true, (k) => k.netLongTermCapitalGain);
+  // Partnership Box 14A only — S-corp K-1 income isn't subject to SE tax
+  // (shareholders take W-2 wages for services; their distributive share is
+  // investment-type income, not SE earnings).
+  const k1SelfEmploymentEarnings = sumK1Where(
+    (k) => (k.entityType ?? "partnership") === "partnership",
+    (k) => k.selfEmploymentEarnings,
+  );
+  const k1QbiContribution = sumK1Where(() => true, (k) => k.section199aQbi);
+
+  // K-1 passive bucket netting: subtract prior-year suspended K-1 passive
+  // loss (carryforward adjustment), then if net is income flow to AGI;
+  // if net is loss, fully suspend (no allowance bucket for non-rental-RE
+  // passive activity at the individual level).
+  const k1PassiveLossCarryforwardAdj = sumByType("k1_passive_loss_carryforward");
+  const k1PassiveAfterCarry = k1PassiveCurrentYear - k1PassiveLossCarryforwardAdj;
+  const k1PassiveAppliedToAgi = k1PassiveAfterCarry > 0 ? k1PassiveAfterCarry : 0;
+  const k1PassiveLossSuspended = k1PassiveAfterCarry < 0 ? -k1PassiveAfterCarry : 0;
+
   // ── Step 1: Schedule C — net SE income before SE tax ─────────────────
+  // Schedule C net SE income flows BOTH to AGI (as ordinary income) and to
+  // Schedule SE. K-1 partnership Box 14A SE earnings flow ONLY to Schedule
+  // SE: the underlying income is already in AGI via K-1 Box 1 →
+  // Schedule E Part II (k1ActiveOrdinary). Adding K-1 SE to netSeIncome
+  // would double-count, so we keep a separate SE-tax base.
   const grossSeIncome = seIncomeFromAdj + form1099Summary.seIncome;
   const scheduleCExpenses = Math.min(
     Math.max(0, scheduleCExpensesInput),
     Math.max(0, grossSeIncome),
   );
   const netSeIncome = Math.max(0, grossSeIncome - scheduleCExpenses);
+  // SE-tax base = Schedule C net + K-1 partnership Box 14A SE earnings
+  // (K-1 SE loss nets against positive amounts; floor at 0).
+  const seTaxBase = Math.max(0, netSeIncome + k1SelfEmploymentEarnings);
 
-  const se = calculateSelfEmploymentTax(netSeIncome, taxYear);
+  const se = calculateSelfEmploymentTax(seTaxBase, taxYear);
 
   // ── Step 2: Total income (Form 1040 Line 9) ─────────────────────────
   //
@@ -693,10 +831,12 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   //   5. If net total is negative → up to $3,000 ($1,500 MFS) against ordinary
   //      income; excess carries to next year preserving short/long character.
 
-  const qualifiedDividends = form1099Summary.qualifiedDividends; // always >= 0
-  // Subtract prior-year carryforwards (entered as positive numbers → applied as losses)
-  let netSTCG = form1099Summary.shortTermCapitalGains - stcgCarryforward;
-  let netLTCG = form1099Summary.longTermCapitalGains - ltcgCarryforward;
+  // K-1 qualified dividends (Box 6b / Box 5b) join the qual-div total.
+  const qualifiedDividends = form1099Summary.qualifiedDividends + k1QualifiedDividends;
+  // K-1 net ST/LT capital gain (Box 8 / 9a) joins the cap-gain netting
+  // alongside 1099-B-derived gains. Subtract prior-year loss carryforwards.
+  let netSTCG = form1099Summary.shortTermCapitalGains + k1Stcg - stcgCarryforward;
+  let netLTCG = form1099Summary.longTermCapitalGains + k1Ltcg - ltcgCarryforward;
 
   // Cross-netting per Schedule D Lines 7, 15, 16
   if (netSTCG > 0 && netLTCG < 0) {
@@ -767,6 +907,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
 
   // Provisional AGI (before applying rental net) — used as MAGI for §469
   // phase-out and as initial AGI before any rental adjustment.
+  // K-1 income flows here: active ordinary (Sch E Part II), passive-bucket
+  // net applied (after carryforward netting), interest, ord div, royalties.
+  // (K-1 qualified dividends and K-1 cap gains already folded above.)
   const ordinaryAdditionalIncomeBeforeRental =
     additionalIncome +
     additionalIncomeAdjustments +
@@ -781,7 +924,12 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     ltcgPreferential +
     qualifiedDividends +
     stcgInOrdinary -
-    capitalLossDeducted;
+    capitalLossDeducted +
+    k1ActiveOrdinary +
+    k1PassiveAppliedToAgi +
+    k1InterestIncome +
+    k1OrdinaryDividends +
+    k1Royalties;
   const provisionalAgiForPal = Math.max(0, totalWages + ordinaryAdditionalIncomeBeforeRental);
 
   let rentalNetAppliedToAgi = 0;
@@ -895,8 +1043,11 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     taxYear,
   });
 
+  // K-1 §199A QBI (Box 20 Z on 1065 / Box 17 V on 1120-S) joins the QBI base.
+  // Wage/UBIA limit not enforced (only binds above the income threshold) —
+  // see CLAUDE.md known limitations.
   const qbi = calculateQbi({
-    qbiIncome,
+    qbiIncome: qbiIncome + k1QbiContribution,
     taxableIncomeBeforeQbi: calc.taxableIncome,
   });
   const taxableAfterQbi = Math.max(0, calc.taxableIncome - qbi.finalDeduction);
@@ -1204,6 +1355,22 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     scheduleERentalAppliedToAgi: rentalNetAppliedToAgi,
     passiveActivityLoss: passiveLossAllowance,
     scheduleEPassiveLossSuspended: passiveLossAllowance?.suspendedToNextYear ?? 0,
+    scheduleK1: {
+      k1Count: k1sForYear.length,
+      partnershipCount: k1sForYear.filter((k) => (k.entityType ?? "partnership") === "partnership").length,
+      sCorpCount: k1sForYear.filter((k) => k.entityType === "s_corp").length,
+      totalActiveOrdinaryIncome: k1ActiveOrdinary,
+      totalPassiveBucketNetApplied: k1PassiveAppliedToAgi,
+      k1PassiveLossSuspended,
+      totalInterestIncome: k1InterestIncome,
+      totalOrdinaryDividends: k1OrdinaryDividends,
+      totalQualifiedDividends: k1QualifiedDividends,
+      totalRoyalties: k1Royalties,
+      totalShortTermCapitalGain: k1Stcg,
+      totalLongTermCapitalGain: k1Ltcg,
+      totalSelfEmploymentEarnings: k1SelfEmploymentEarnings,
+      totalQbiContribution: k1QbiContribution,
+    },
     detail: { se, niit, qbi, amt, capitalGains: capGains },
     w2Count: w2Records.length,
     form1099Count: form1099Records.length,

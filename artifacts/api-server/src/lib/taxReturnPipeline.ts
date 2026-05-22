@@ -22,6 +22,7 @@ import {
   taxReturnsTable,
   rentalPropertiesTable,
   capitalTransactionsTable,
+  scheduleK1DataTable,
 } from "@workspace/db";
 import {
   computeTaxReturnPure,
@@ -34,6 +35,7 @@ import {
   type AdjustmentFact,
   type RentalPropertyFact,
   type CapitalTransactionFact,
+  type ScheduleK1Fact,
   type TaxReturnInputs,
 } from "./taxReturnEngine";
 import { logger } from "./logger";
@@ -49,6 +51,7 @@ export type {
   AdjustmentFact,
   RentalPropertyFact,
   CapitalTransactionFact,
+  ScheduleK1Fact,
   TaxReturnInputs,
 };
 
@@ -125,6 +128,17 @@ export async function computeTaxReturn(
       ),
     );
 
+  // Schedule K-1 rows for the year (partnership 1065 + S-corp 1120-S).
+  const scheduleK1 = await db
+    .select()
+    .from(scheduleK1DataTable)
+    .where(
+      and(
+        eq(scheduleK1DataTable.clientId, clientId),
+        eq(scheduleK1DataTable.taxYear, taxYear),
+      ),
+    );
+
   // Auto-load capital-loss + §469 PAL carryforwards from the prior tax year.
   // We synthesize "virtual" adjustment rows IFF the user has NOT manually
   // entered a corresponding carryforward adjustment for the current year.
@@ -145,6 +159,7 @@ export async function computeTaxReturn(
     adjustments: [...adjustments, ...synthesizedAdjustments] as AdjustmentFact[],
     rentalProperties: rentalProperties as RentalPropertyFact[],
     capitalTransactions: capitalTransactions as CapitalTransactionFact[],
+    scheduleK1: scheduleK1 as ScheduleK1Fact[],
     taxYear,
     overrides,
     existingItemizedFallback: existing?.itemizedDeductions,
@@ -214,6 +229,15 @@ async function synthesizePriorYearCarryforwards(
     synthetic.push({
       adjustmentType: "schedule_e_passive_loss_carryforward",
       amount: palCarry,
+      isApplied: true,
+    });
+  }
+
+  const k1Carry = Number(priorReturn.k1PassiveLossSuspended ?? 0);
+  if (k1Carry > 0 && !hasManualOverride("k1_passive_loss_carryforward")) {
+    synthetic.push({
+      adjustmentType: "k1_passive_loss_carryforward",
+      amount: k1Carry,
       isApplied: true,
     });
   }
@@ -308,6 +332,8 @@ export async function recalculateAndUpsertTaxReturn(
     scheduleERentalAppliedToAgi: String(result.scheduleERentalAppliedToAgi),
     scheduleEPalAllowance: result.passiveActivityLoss?.allowanceAfterPhaseOut != null ? String(result.passiveActivityLoss.allowanceAfterPhaseOut) : null,
     scheduleEPassiveLossSuspended: String(result.scheduleEPassiveLossSuspended),
+    // Phase B+: K-1 passive bucket carryforward
+    k1PassiveLossSuspended: String(result.scheduleK1.k1PassiveLossSuspended),
   };
 
   if (existing) {

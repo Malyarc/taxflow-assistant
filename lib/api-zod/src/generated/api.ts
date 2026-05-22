@@ -1466,6 +1466,145 @@ export const DeleteCapitalTransactionParams = zod.object({
 });
 
 /**
+ * @summary List all K-1s for a client
+ */
+export const ListScheduleK1sParams = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const ListScheduleK1sResponseItem = zod.object({
+  id: zod.number(),
+  clientId: zod.number(),
+  taxYear: zod.number(),
+  entityName: zod.string(),
+  entityEin: zod.string().nullish(),
+  entityType: zod.enum(["partnership", "s_corp"]),
+  activityType: zod.enum(["active", "passive"]),
+  box1OrdinaryIncome: zod.number(),
+  box2RentalRealEstate: zod.number(),
+  box3OtherRentalIncome: zod.number(),
+  interestIncome: zod.number(),
+  ordinaryDividends: zod.number(),
+  qualifiedDividends: zod.number(),
+  royalties: zod.number(),
+  netShortTermCapitalGain: zod.number(),
+  netLongTermCapitalGain: zod.number(),
+  selfEmploymentEarnings: zod.number(),
+  section199aQbi: zod.number(),
+  section199aW2Wages: zod.number(),
+  section199aUbia: zod.number(),
+  basisAtYearStart: zod.number().nullish(),
+  basisAtYearEnd: zod.number().nullish(),
+  atRiskAmount: zod.number().nullish(),
+  notes: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+export const ListScheduleK1sResponse = zod.array(ListScheduleK1sResponseItem);
+
+/**
+ * @summary Create a K-1 record
+ */
+export const CreateScheduleK1Params = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const CreateScheduleK1Body = zod.object({
+  taxYear: zod.number(),
+  entityName: zod.string(),
+  entityEin: zod.string().nullish(),
+  entityType: zod.enum(["partnership", "s_corp"]).optional(),
+  activityType: zod.enum(["active", "passive"]).optional(),
+  box1OrdinaryIncome: zod.number().optional(),
+  box2RentalRealEstate: zod.number().optional(),
+  box3OtherRentalIncome: zod.number().optional(),
+  interestIncome: zod.number().optional(),
+  ordinaryDividends: zod.number().optional(),
+  qualifiedDividends: zod.number().optional(),
+  royalties: zod.number().optional(),
+  netShortTermCapitalGain: zod.number().optional(),
+  netLongTermCapitalGain: zod.number().optional(),
+  selfEmploymentEarnings: zod.number().optional(),
+  section199aQbi: zod.number().optional(),
+  section199aW2Wages: zod.number().optional(),
+  section199aUbia: zod.number().optional(),
+  basisAtYearStart: zod.number().nullish(),
+  basisAtYearEnd: zod.number().nullish(),
+  atRiskAmount: zod.number().nullish(),
+  notes: zod.string().nullish(),
+});
+
+/**
+ * @summary Update a K-1
+ */
+export const UpdateScheduleK1Params = zod.object({
+  clientId: zod.coerce.number(),
+  k1Id: zod.coerce.number(),
+});
+
+export const UpdateScheduleK1Body = zod.object({
+  taxYear: zod.number().optional(),
+  entityName: zod.string().optional(),
+  entityEin: zod.string().nullish(),
+  entityType: zod.enum(["partnership", "s_corp"]).optional(),
+  activityType: zod.enum(["active", "passive"]).optional(),
+  box1OrdinaryIncome: zod.number().optional(),
+  box2RentalRealEstate: zod.number().optional(),
+  box3OtherRentalIncome: zod.number().optional(),
+  interestIncome: zod.number().optional(),
+  ordinaryDividends: zod.number().optional(),
+  qualifiedDividends: zod.number().optional(),
+  royalties: zod.number().optional(),
+  netShortTermCapitalGain: zod.number().optional(),
+  netLongTermCapitalGain: zod.number().optional(),
+  selfEmploymentEarnings: zod.number().optional(),
+  section199aQbi: zod.number().optional(),
+  section199aW2Wages: zod.number().optional(),
+  section199aUbia: zod.number().optional(),
+  basisAtYearStart: zod.number().nullish(),
+  basisAtYearEnd: zod.number().nullish(),
+  atRiskAmount: zod.number().nullish(),
+  notes: zod.string().nullish(),
+});
+
+export const UpdateScheduleK1Response = zod.object({
+  id: zod.number(),
+  clientId: zod.number(),
+  taxYear: zod.number(),
+  entityName: zod.string(),
+  entityEin: zod.string().nullish(),
+  entityType: zod.enum(["partnership", "s_corp"]),
+  activityType: zod.enum(["active", "passive"]),
+  box1OrdinaryIncome: zod.number(),
+  box2RentalRealEstate: zod.number(),
+  box3OtherRentalIncome: zod.number(),
+  interestIncome: zod.number(),
+  ordinaryDividends: zod.number(),
+  qualifiedDividends: zod.number(),
+  royalties: zod.number(),
+  netShortTermCapitalGain: zod.number(),
+  netLongTermCapitalGain: zod.number(),
+  selfEmploymentEarnings: zod.number(),
+  section199aQbi: zod.number(),
+  section199aW2Wages: zod.number(),
+  section199aUbia: zod.number(),
+  basisAtYearStart: zod.number().nullish(),
+  basisAtYearEnd: zod.number().nullish(),
+  atRiskAmount: zod.number().nullish(),
+  notes: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Delete a K-1
+ */
+export const DeleteScheduleK1Params = zod.object({
+  clientId: zod.coerce.number(),
+  k1Id: zod.coerce.number(),
+});
+
+/**
  * @summary Get dashboard summary stats
  */
 export const GetDashboardSummaryResponse = zod.object({

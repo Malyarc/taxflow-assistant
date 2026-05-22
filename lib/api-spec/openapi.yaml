@@ -26,6 +26,8 @@ tags:
     description: Schedule E rental real estate (per-property tracking)
   - name: capitalTransactions
     description: Schedule D / Form 8949 per-transaction capital gains/losses
+  - name: scheduleK1
+    description: Schedule K-1 from partnerships (1065) and S-corps (1120-S)
 
 paths:
   /healthz:
@@ -795,6 +797,99 @@ paths:
           schema:
             type: integer
         - name: transactionId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  # ── Schedule K-1 (partnership + S-corp pass-through) ────────────────────
+  /clients/{clientId}/k1s:
+    get:
+      operationId: listScheduleK1s
+      tags: [scheduleK1]
+      summary: List all K-1s for a client
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of K-1s
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScheduleK1"
+    post:
+      operationId: createScheduleK1
+      tags: [scheduleK1]
+      summary: Create a K-1 record
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateScheduleK1Body"
+      responses:
+        "201":
+          description: Created K-1
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleK1"
+
+  /clients/{clientId}/k1s/{k1Id}:
+    patch:
+      operationId: updateScheduleK1
+      tags: [scheduleK1]
+      summary: Update a K-1
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: k1Id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateScheduleK1Body"
+      responses:
+        "200":
+          description: Updated K-1
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleK1"
+    delete:
+      operationId: deleteScheduleK1
+      tags: [scheduleK1]
+      summary: Delete a K-1
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: k1Id
           in: path
           required: true
           schema:
@@ -1881,6 +1976,190 @@ components:
           type: boolean
         received1099B:
           type: boolean
+        notes:
+          type: ["string", "null"]
+
+    # ── Schedule K-1 (partnership + S-corp) ──────────────────────────────────
+    ScheduleK1:
+      type: object
+      required:
+        - id
+        - clientId
+        - taxYear
+        - entityName
+        - entityType
+        - activityType
+        - box1OrdinaryIncome
+        - box2RentalRealEstate
+        - box3OtherRentalIncome
+        - interestIncome
+        - ordinaryDividends
+        - qualifiedDividends
+        - royalties
+        - netShortTermCapitalGain
+        - netLongTermCapitalGain
+        - selfEmploymentEarnings
+        - section199aQbi
+        - section199aW2Wages
+        - section199aUbia
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: integer
+        clientId:
+          type: integer
+        taxYear:
+          type: integer
+        entityName:
+          type: string
+        entityEin:
+          type: ["string", "null"]
+        entityType:
+          type: string
+          enum: [partnership, s_corp]
+        activityType:
+          type: string
+          enum: [active, passive]
+        box1OrdinaryIncome:
+          type: number
+        box2RentalRealEstate:
+          type: number
+        box3OtherRentalIncome:
+          type: number
+        interestIncome:
+          type: number
+        ordinaryDividends:
+          type: number
+        qualifiedDividends:
+          type: number
+        royalties:
+          type: number
+        netShortTermCapitalGain:
+          type: number
+        netLongTermCapitalGain:
+          type: number
+        selfEmploymentEarnings:
+          type: number
+        section199aQbi:
+          type: number
+        section199aW2Wages:
+          type: number
+        section199aUbia:
+          type: number
+        basisAtYearStart:
+          type: ["number", "null"]
+        basisAtYearEnd:
+          type: ["number", "null"]
+        atRiskAmount:
+          type: ["number", "null"]
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateScheduleK1Body:
+      type: object
+      required: [taxYear, entityName]
+      properties:
+        taxYear:
+          type: integer
+        entityName:
+          type: string
+        entityEin:
+          type: ["string", "null"]
+        entityType:
+          type: string
+          enum: [partnership, s_corp]
+        activityType:
+          type: string
+          enum: [active, passive]
+        box1OrdinaryIncome:
+          type: number
+        box2RentalRealEstate:
+          type: number
+        box3OtherRentalIncome:
+          type: number
+        interestIncome:
+          type: number
+        ordinaryDividends:
+          type: number
+        qualifiedDividends:
+          type: number
+        royalties:
+          type: number
+        netShortTermCapitalGain:
+          type: number
+        netLongTermCapitalGain:
+          type: number
+        selfEmploymentEarnings:
+          type: number
+        section199aQbi:
+          type: number
+        section199aW2Wages:
+          type: number
+        section199aUbia:
+          type: number
+        basisAtYearStart:
+          type: ["number", "null"]
+        basisAtYearEnd:
+          type: ["number", "null"]
+        atRiskAmount:
+          type: ["number", "null"]
+        notes:
+          type: ["string", "null"]
+
+    UpdateScheduleK1Body:
+      type: object
+      properties:
+        taxYear:
+          type: integer
+        entityName:
+          type: string
+        entityEin:
+          type: ["string", "null"]
+        entityType:
+          type: string
+          enum: [partnership, s_corp]
+        activityType:
+          type: string
+          enum: [active, passive]
+        box1OrdinaryIncome:
+          type: number
+        box2RentalRealEstate:
+          type: number
+        box3OtherRentalIncome:
+          type: number
+        interestIncome:
+          type: number
+        ordinaryDividends:
+          type: number
+        qualifiedDividends:
+          type: number
+        royalties:
+          type: number
+        netShortTermCapitalGain:
+          type: number
+        netLongTermCapitalGain:
+          type: number
+        selfEmploymentEarnings:
+          type: number
+        section199aQbi:
+          type: number
+        section199aW2Wages:
+          type: number
+        section199aUbia:
+          type: number
+        basisAtYearStart:
+          type: ["number", "null"]
+        basisAtYearEnd:
+          type: ["number", "null"]
+        atRiskAmount:
+          type: ["number", "null"]
         notes:
           type: ["string", "null"]
 

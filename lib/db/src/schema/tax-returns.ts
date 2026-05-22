@@ -74,6 +74,9 @@ export const taxReturnsTable = pgTable(
     scheduleEPalAllowance: numeric("schedule_e_pal_allowance", { precision: 12, scale: 2 }),
     /** §469 passive loss suspended to next year */
     scheduleEPassiveLossSuspended: numeric("schedule_e_passive_loss_suspended", { precision: 12, scale: 2 }),
+    // Phase B+: Schedule K-1 passive bucket carryforward
+    /** §469 K-1 passive activity loss suspended to next year (no $25k allowance — non-rental-RE passive). */
+    k1PassiveLossSuspended: numeric("k1_passive_loss_suspended", { precision: 12, scale: 2 }),
     notes: text("notes"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),

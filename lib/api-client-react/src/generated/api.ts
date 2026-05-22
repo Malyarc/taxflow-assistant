@@ -27,12 +27,14 @@ import type {
   CreateClientBody,
   CreateForm1099DataBody,
   CreateRentalPropertyBody,
+  CreateScheduleK1Body,
   CreateW2DataBody,
   DashboardSummary,
   Form1099Data,
   HealthStatus,
   RejectExtractionBody,
   RentalProperty,
+  ScheduleK1,
   TaxDocument,
   TaxReturn,
   UpdateAdjustmentBody,
@@ -40,6 +42,7 @@ import type {
   UpdateClientBody,
   UpdateForm1099DataBody,
   UpdateRentalPropertyBody,
+  UpdateScheduleK1Body,
   UpdateTaxReturnBody,
   UpdateW2DataBody,
   UploadDocumentBody,
@@ -3175,6 +3178,354 @@ export const useDeleteCapitalTransaction = <
   TContext
 > => {
   return useMutation(getDeleteCapitalTransactionMutationOptions(options));
+};
+
+/**
+ * @summary List all K-1s for a client
+ */
+export const getListScheduleK1sUrl = (clientId: number) => {
+  return `/api/clients/${clientId}/k1s`;
+};
+
+export const listScheduleK1s = async (
+  clientId: number,
+  options?: RequestInit,
+): Promise<ScheduleK1[]> => {
+  return customFetch<ScheduleK1[]>(getListScheduleK1sUrl(clientId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListScheduleK1sQueryKey = (clientId: number) => {
+  return [`/api/clients/${clientId}/k1s`] as const;
+};
+
+export const getListScheduleK1sQueryOptions = <
+  TData = Awaited<ReturnType<typeof listScheduleK1s>>,
+  TError = ErrorType<unknown>,
+>(
+  clientId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listScheduleK1s>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListScheduleK1sQueryKey(clientId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listScheduleK1s>>> = ({
+    signal,
+  }) => listScheduleK1s(clientId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!clientId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listScheduleK1s>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListScheduleK1sQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listScheduleK1s>>
+>;
+export type ListScheduleK1sQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List all K-1s for a client
+ */
+
+export function useListScheduleK1s<
+  TData = Awaited<ReturnType<typeof listScheduleK1s>>,
+  TError = ErrorType<unknown>,
+>(
+  clientId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listScheduleK1s>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListScheduleK1sQueryOptions(clientId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Create a K-1 record
+ */
+export const getCreateScheduleK1Url = (clientId: number) => {
+  return `/api/clients/${clientId}/k1s`;
+};
+
+export const createScheduleK1 = async (
+  clientId: number,
+  createScheduleK1Body: CreateScheduleK1Body,
+  options?: RequestInit,
+): Promise<ScheduleK1> => {
+  return customFetch<ScheduleK1>(getCreateScheduleK1Url(clientId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createScheduleK1Body),
+  });
+};
+
+export const getCreateScheduleK1MutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createScheduleK1>>,
+    TError,
+    { clientId: number; data: BodyType<CreateScheduleK1Body> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createScheduleK1>>,
+  TError,
+  { clientId: number; data: BodyType<CreateScheduleK1Body> },
+  TContext
+> => {
+  const mutationKey = ["createScheduleK1"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createScheduleK1>>,
+    { clientId: number; data: BodyType<CreateScheduleK1Body> }
+  > = (props) => {
+    const { clientId, data } = props ?? {};
+
+    return createScheduleK1(clientId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateScheduleK1MutationResult = NonNullable<
+  Awaited<ReturnType<typeof createScheduleK1>>
+>;
+export type CreateScheduleK1MutationBody = BodyType<CreateScheduleK1Body>;
+export type CreateScheduleK1MutationError = ErrorType<unknown>;
+
+/**
+ * @summary Create a K-1 record
+ */
+export const useCreateScheduleK1 = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createScheduleK1>>,
+    TError,
+    { clientId: number; data: BodyType<CreateScheduleK1Body> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createScheduleK1>>,
+  TError,
+  { clientId: number; data: BodyType<CreateScheduleK1Body> },
+  TContext
+> => {
+  return useMutation(getCreateScheduleK1MutationOptions(options));
+};
+
+/**
+ * @summary Update a K-1
+ */
+export const getUpdateScheduleK1Url = (clientId: number, k1Id: number) => {
+  return `/api/clients/${clientId}/k1s/${k1Id}`;
+};
+
+export const updateScheduleK1 = async (
+  clientId: number,
+  k1Id: number,
+  updateScheduleK1Body: UpdateScheduleK1Body,
+  options?: RequestInit,
+): Promise<ScheduleK1> => {
+  return customFetch<ScheduleK1>(getUpdateScheduleK1Url(clientId, k1Id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateScheduleK1Body),
+  });
+};
+
+export const getUpdateScheduleK1MutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateScheduleK1>>,
+    TError,
+    { clientId: number; k1Id: number; data: BodyType<UpdateScheduleK1Body> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateScheduleK1>>,
+  TError,
+  { clientId: number; k1Id: number; data: BodyType<UpdateScheduleK1Body> },
+  TContext
+> => {
+  const mutationKey = ["updateScheduleK1"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateScheduleK1>>,
+    { clientId: number; k1Id: number; data: BodyType<UpdateScheduleK1Body> }
+  > = (props) => {
+    const { clientId, k1Id, data } = props ?? {};
+
+    return updateScheduleK1(clientId, k1Id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateScheduleK1MutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateScheduleK1>>
+>;
+export type UpdateScheduleK1MutationBody = BodyType<UpdateScheduleK1Body>;
+export type UpdateScheduleK1MutationError = ErrorType<unknown>;
+
+/**
+ * @summary Update a K-1
+ */
+export const useUpdateScheduleK1 = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateScheduleK1>>,
+    TError,
+    { clientId: number; k1Id: number; data: BodyType<UpdateScheduleK1Body> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateScheduleK1>>,
+  TError,
+  { clientId: number; k1Id: number; data: BodyType<UpdateScheduleK1Body> },
+  TContext
+> => {
+  return useMutation(getUpdateScheduleK1MutationOptions(options));
+};
+
+/**
+ * @summary Delete a K-1
+ */
+export const getDeleteScheduleK1Url = (clientId: number, k1Id: number) => {
+  return `/api/clients/${clientId}/k1s/${k1Id}`;
+};
+
+export const deleteScheduleK1 = async (
+  clientId: number,
+  k1Id: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteScheduleK1Url(clientId, k1Id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteScheduleK1MutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteScheduleK1>>,
+    TError,
+    { clientId: number; k1Id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteScheduleK1>>,
+  TError,
+  { clientId: number; k1Id: number },
+  TContext
+> => {
+  const mutationKey = ["deleteScheduleK1"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteScheduleK1>>,
+    { clientId: number; k1Id: number }
+  > = (props) => {
+    const { clientId, k1Id } = props ?? {};
+
+    return deleteScheduleK1(clientId, k1Id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteScheduleK1MutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteScheduleK1>>
+>;
+
+export type DeleteScheduleK1MutationError = ErrorType<unknown>;
+
+/**
+ * @summary Delete a K-1
+ */
+export const useDeleteScheduleK1 = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteScheduleK1>>,
+    TError,
+    { clientId: number; k1Id: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteScheduleK1>>,
+  TError,
+  { clientId: number; k1Id: number },
+  TContext
+> => {
+  return useMutation(getDeleteScheduleK1MutationOptions(options));
 };
 
 /**

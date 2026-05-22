@@ -1164,6 +1164,148 @@ export interface UpdateCapitalTransactionBody {
   notes?: string | null;
 }
 
+export type ScheduleK1EntityType =
+  (typeof ScheduleK1EntityType)[keyof typeof ScheduleK1EntityType];
+
+export const ScheduleK1EntityType = {
+  partnership: "partnership",
+  s_corp: "s_corp",
+} as const;
+
+export type ScheduleK1ActivityType =
+  (typeof ScheduleK1ActivityType)[keyof typeof ScheduleK1ActivityType];
+
+export const ScheduleK1ActivityType = {
+  active: "active",
+  passive: "passive",
+} as const;
+
+export interface ScheduleK1 {
+  id: number;
+  clientId: number;
+  taxYear: number;
+  entityName: string;
+  /** @nullable */
+  entityEin?: string | null;
+  entityType: ScheduleK1EntityType;
+  activityType: ScheduleK1ActivityType;
+  box1OrdinaryIncome: number;
+  box2RentalRealEstate: number;
+  box3OtherRentalIncome: number;
+  interestIncome: number;
+  ordinaryDividends: number;
+  qualifiedDividends: number;
+  royalties: number;
+  netShortTermCapitalGain: number;
+  netLongTermCapitalGain: number;
+  selfEmploymentEarnings: number;
+  section199aQbi: number;
+  section199aW2Wages: number;
+  section199aUbia: number;
+  /** @nullable */
+  basisAtYearStart?: number | null;
+  /** @nullable */
+  basisAtYearEnd?: number | null;
+  /** @nullable */
+  atRiskAmount?: number | null;
+  /** @nullable */
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CreateScheduleK1BodyEntityType =
+  (typeof CreateScheduleK1BodyEntityType)[keyof typeof CreateScheduleK1BodyEntityType];
+
+export const CreateScheduleK1BodyEntityType = {
+  partnership: "partnership",
+  s_corp: "s_corp",
+} as const;
+
+export type CreateScheduleK1BodyActivityType =
+  (typeof CreateScheduleK1BodyActivityType)[keyof typeof CreateScheduleK1BodyActivityType];
+
+export const CreateScheduleK1BodyActivityType = {
+  active: "active",
+  passive: "passive",
+} as const;
+
+export interface CreateScheduleK1Body {
+  taxYear: number;
+  entityName: string;
+  /** @nullable */
+  entityEin?: string | null;
+  entityType?: CreateScheduleK1BodyEntityType;
+  activityType?: CreateScheduleK1BodyActivityType;
+  box1OrdinaryIncome?: number;
+  box2RentalRealEstate?: number;
+  box3OtherRentalIncome?: number;
+  interestIncome?: number;
+  ordinaryDividends?: number;
+  qualifiedDividends?: number;
+  royalties?: number;
+  netShortTermCapitalGain?: number;
+  netLongTermCapitalGain?: number;
+  selfEmploymentEarnings?: number;
+  section199aQbi?: number;
+  section199aW2Wages?: number;
+  section199aUbia?: number;
+  /** @nullable */
+  basisAtYearStart?: number | null;
+  /** @nullable */
+  basisAtYearEnd?: number | null;
+  /** @nullable */
+  atRiskAmount?: number | null;
+  /** @nullable */
+  notes?: string | null;
+}
+
+export type UpdateScheduleK1BodyEntityType =
+  (typeof UpdateScheduleK1BodyEntityType)[keyof typeof UpdateScheduleK1BodyEntityType];
+
+export const UpdateScheduleK1BodyEntityType = {
+  partnership: "partnership",
+  s_corp: "s_corp",
+} as const;
+
+export type UpdateScheduleK1BodyActivityType =
+  (typeof UpdateScheduleK1BodyActivityType)[keyof typeof UpdateScheduleK1BodyActivityType];
+
+export const UpdateScheduleK1BodyActivityType = {
+  active: "active",
+  passive: "passive",
+} as const;
+
+export interface UpdateScheduleK1Body {
+  taxYear?: number;
+  entityName?: string;
+  /** @nullable */
+  entityEin?: string | null;
+  entityType?: UpdateScheduleK1BodyEntityType;
+  activityType?: UpdateScheduleK1BodyActivityType;
+  box1OrdinaryIncome?: number;
+  box2RentalRealEstate?: number;
+  box3OtherRentalIncome?: number;
+  interestIncome?: number;
+  ordinaryDividends?: number;
+  qualifiedDividends?: number;
+  royalties?: number;
+  netShortTermCapitalGain?: number;
+  netLongTermCapitalGain?: number;
+  selfEmploymentEarnings?: number;
+  section199aQbi?: number;
+  section199aW2Wages?: number;
+  section199aUbia?: number;
+  /** @nullable */
+  basisAtYearStart?: number | null;
+  /** @nullable */
+  basisAtYearEnd?: number | null;
+  /** @nullable */
+  atRiskAmount?: number | null;
+  /** @nullable */
+  notes?: string | null;
+}
+
 export interface DashboardSummary {
   totalClients: number;
   pendingReturns: number;
