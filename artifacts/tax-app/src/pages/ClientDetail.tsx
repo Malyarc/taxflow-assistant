@@ -2141,10 +2141,11 @@ export default function ClientDetail() {
       </div>
 
       <Tabs defaultValue="documents">
-        <TabsList className="grid grid-cols-6 w-full max-w-3xl">
+        <TabsList className="grid grid-cols-7 w-full max-w-4xl">
           <TabsTrigger value="documents">Documents</TabsTrigger>
           <TabsTrigger value="w2data">W-2 Data</TabsTrigger>
           <TabsTrigger value="form1099">1099 Forms</TabsTrigger>
+          <TabsTrigger value="rentals">Rentals</TabsTrigger>
           <TabsTrigger value="calculator">Tax Calculator</TabsTrigger>
           <TabsTrigger value="compare">Year Compare</TabsTrigger>
           <TabsTrigger value="adjustments">Adjustments</TabsTrigger>
@@ -2159,6 +2160,9 @@ export default function ClientDetail() {
         <TabsContent value="form1099" className="mt-6">
           <Form1099Tab clientId={clientId} taxYear={client.taxYear ?? 2024} />
         </TabsContent>
+        <TabsContent value="rentals" className="mt-6">
+          <RentalPropertiesTab clientId={clientId} taxYear={client.taxYear ?? 2024} />
+        </TabsContent>
         <TabsContent value="calculator" className="mt-6">
           <TaxCalculatorTab clientId={clientId} taxYear={client.taxYear ?? 2024} />
         </TabsContent>
@@ -2170,5 +2174,241 @@ export default function ClientDetail() {
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+// ─── Rental Properties Tab (B6) ──────────────────────────────────────────────
+
+interface RentalPropertyRow {
+  id: number;
+  clientId: number;
+  taxYear: number;
+  address: string;
+  propertyType: "residential" | "commercial";
+  basis: number | null;
+  placedInServiceYear: number | null;
+  placedInServiceMonth: number | null;
+  isActiveParticipant: boolean;
+  rentalIncome: number;
+  totalExpenses: number;
+  notes: string | null;
+}
+
+function RentalPropertiesTab({ clientId, taxYear }: { clientId: number; taxYear: number }) {
+  const qc = useQueryClient();
+  const { data: rows, isLoading } = useQuery<RentalPropertyRow[]>({
+    queryKey: ["rental-properties", clientId],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${clientId}/rental-properties`);
+      return res.json();
+    },
+  });
+
+  const propsForYear = (rows ?? []).filter((r) => r.taxYear === taxYear);
+
+  const [editing, setEditing] = useState<RentalPropertyRow | null>(null);
+  const [showForm, setShowForm] = useState(false);
+
+  function invalidate() {
+    qc.invalidateQueries({ queryKey: ["rental-properties", clientId] });
+    qc.invalidateQueries({ queryKey: getGetTaxReturnQueryKey(clientId) });
+  }
+
+  async function handleDelete(id: number) {
+    if (!confirm("Delete this rental property? Tax return will recalculate.")) return;
+    await fetch(`/api/clients/${clientId}/rental-properties/${id}`, { method: "DELETE" });
+    invalidate();
+    toast({ title: "Property deleted" });
+  }
+
+  // Aggregate totals for the year (informational)
+  const totalIncome = propsForYear.reduce((s, p) => s + Number(p.rentalIncome), 0);
+  const totalExpenses = propsForYear.reduce((s, p) => s + Number(p.totalExpenses), 0);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-base font-semibold">Schedule E — Rental Properties</h3>
+          <p className="text-xs text-muted-foreground">
+            Per-property tracking with computed MACRS depreciation. When properties are added here, the engine ignores the legacy aggregate `schedule_e_rental_*` adjustments.
+          </p>
+        </div>
+        <Button onClick={() => { setEditing(null); setShowForm(true); }} size="sm">Add property</Button>
+      </div>
+
+      {isLoading ? (
+        <Skeleton className="h-24 w-full" />
+      ) : propsForYear.length === 0 ? (
+        <Card><CardContent className="py-8 text-center text-muted-foreground text-sm">No rental properties for TY{taxYear}. Click "Add property" to enter one — or use the legacy aggregate adjustments under the Adjustments tab.</CardContent></Card>
+      ) : (
+        <div className="rounded-lg border overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/40 border-b">
+              <tr>
+                <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">Address</th>
+                <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">Type</th>
+                <th className="text-right px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">Basis</th>
+                <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">In service</th>
+                <th className="text-right px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">Income</th>
+                <th className="text-right px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">Expenses</th>
+                <th className="px-3 py-2"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {propsForYear.map((p) => (
+                <tr key={p.id} className="hover:bg-muted/20">
+                  <td className="px-3 py-2 font-medium">{p.address}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{p.propertyType}</td>
+                  <td className="px-3 py-2 text-right font-mono">{fmt(p.basis)}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{p.placedInServiceYear && p.placedInServiceMonth ? `${p.placedInServiceYear}-${String(p.placedInServiceMonth).padStart(2, "0")}` : "—"}</td>
+                  <td className="px-3 py-2 text-right font-mono">{fmt(p.rentalIncome)}</td>
+                  <td className="px-3 py-2 text-right font-mono">{fmt(p.totalExpenses)}</td>
+                  <td className="px-3 py-2 text-right space-x-1">
+                    <Button variant="ghost" size="sm" onClick={() => { setEditing(p); setShowForm(true); }}>Edit</Button>
+                    <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => handleDelete(p.id)}>Delete</Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot className="bg-muted/20 border-t">
+              <tr>
+                <td colSpan={4} className="px-3 py-2 text-right font-semibold">Totals (before MACRS depreciation):</td>
+                <td className="px-3 py-2 text-right font-mono font-semibold">{fmt(totalIncome)}</td>
+                <td className="px-3 py-2 text-right font-mono font-semibold">{fmt(totalExpenses)}</td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+
+      {showForm && (
+        <RentalPropertyForm
+          clientId={clientId}
+          taxYear={taxYear}
+          existing={editing}
+          onClose={() => { setShowForm(false); setEditing(null); }}
+          onSaved={() => { invalidate(); setShowForm(false); setEditing(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function RentalPropertyForm({
+  clientId, taxYear, existing, onClose, onSaved,
+}: {
+  clientId: number;
+  taxYear: number;
+  existing: RentalPropertyRow | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [address, setAddress] = useState(existing?.address ?? "");
+  const [propertyType, setPropertyType] = useState<"residential" | "commercial">(existing?.propertyType ?? "residential");
+  const [basis, setBasis] = useState(existing?.basis != null ? String(existing.basis) : "");
+  const [placedYear, setPlacedYear] = useState(existing?.placedInServiceYear != null ? String(existing.placedInServiceYear) : "");
+  const [placedMonth, setPlacedMonth] = useState(existing?.placedInServiceMonth != null ? String(existing.placedInServiceMonth) : "");
+  const [rentalIncome, setRentalIncome] = useState(existing?.rentalIncome != null ? String(existing.rentalIncome) : "");
+  const [totalExpenses, setTotalExpenses] = useState(existing?.totalExpenses != null ? String(existing.totalExpenses) : "");
+  const [notes, setNotes] = useState(existing?.notes ?? "");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!address.trim()) {
+      toast({ title: "Address is required", variant: "destructive" });
+      return;
+    }
+    setSubmitting(true);
+    const body = {
+      taxYear,
+      address: address.trim(),
+      propertyType,
+      basis: basis === "" ? null : Number(basis),
+      placedInServiceYear: placedYear === "" ? null : Number(placedYear),
+      placedInServiceMonth: placedMonth === "" ? null : Number(placedMonth),
+      rentalIncome: rentalIncome === "" ? 0 : Number(rentalIncome),
+      totalExpenses: totalExpenses === "" ? 0 : Number(totalExpenses),
+      isActiveParticipant: existing?.isActiveParticipant ?? true,
+      notes: notes.trim() === "" ? null : notes.trim(),
+    };
+    try {
+      if (existing) {
+        await fetch(`/api/clients/${clientId}/rental-properties/${existing.id}`, {
+          method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+        });
+        toast({ title: "Property updated" });
+      } else {
+        await fetch(`/api/clients/${clientId}/rental-properties`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+        });
+        toast({ title: "Property added" });
+      }
+      onSaved();
+    } catch (err) {
+      toast({ title: "Save failed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={true} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader><DialogTitle>{existing ? "Edit rental property" : "Add rental property"}</DialogTitle></DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div className="space-y-1">
+            <Label>Address</Label>
+            <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="123 Main St, City, ST" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label>Property type</Label>
+              <Select value={propertyType} onValueChange={(v) => setPropertyType(v as "residential" | "commercial")}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="residential">Residential (27.5-yr MACRS)</SelectItem>
+                  <SelectItem value="commercial">Commercial (39-yr MACRS)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label>Depreciable basis</Label>
+              <CurrencyInput value={basis} onChange={setBasis} placeholder="Cost − land value" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label>Placed-in-service year</Label>
+              <Input type="number" value={placedYear} onChange={(e) => setPlacedYear(e.target.value)} placeholder="2020" />
+            </div>
+            <div className="space-y-1">
+              <Label>Placed-in-service month (1-12)</Label>
+              <Input type="number" min={1} max={12} value={placedMonth} onChange={(e) => setPlacedMonth(e.target.value)} placeholder="1 = January" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label>Rental income (this year)</Label>
+              <CurrencyInput value={rentalIncome} onChange={setRentalIncome} />
+            </div>
+            <div className="space-y-1">
+              <Label>Total expenses (excluding depreciation)</Label>
+              <CurrencyInput value={totalExpenses} onChange={setTotalExpenses} />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <Label>Notes (optional)</Label>
+            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} placeholder="e.g. tenant info, repairs context" />
+          </div>
+          <div className="flex justify-end gap-2 pt-2 border-t">
+            <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>Cancel</Button>
+            <Button type="submit" disabled={submitting}>{submitting ? "Saving…" : existing ? "Save changes" : "Add property"}</Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
