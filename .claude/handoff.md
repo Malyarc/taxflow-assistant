@@ -1,141 +1,122 @@
-# Handoff Note — 2026-05-21 (afternoon)
+# Handoff Note — 2026-05-21 (evening)
 
 Session continuation point for the next Claude (or human) working on TaxFlow Assistant.
 
 ## Headline
 
-**Phase 4 AI-overlay MVP shipped.** CPA workflow is end-to-end: upload W-2 / 1099 → AI extracts → CPA reviews in a split-pane modal with bounding-box overlays + inline edit → approves → row writes to w2_data / form_1099_data with an audit-log entry whose `source` says "AI extraction from {fileName}" → existing `.gen` export endpoint produces UltraTax-importable output. The first product-level deliverable of Option A.
+**Phase A + Phase B complete.** All 8 items shipped (A3, B4-B10) with hand-calced tests; **1,221 assertions / 0 failures across 19 suites** (was 1,122 / 16 at start of this turn).
 
-**Test count: 1,122 assertions / 0 failures across 16 suites (was 1,092 across 15 at start of this turn).**
+The product surface now covers:
+- AI-extraction review/approve UX (Phase A2) with bounding-box overlays
+- **Multi-page PDF support** in the review modal (B9)
+- **Real IRS Form 1040 PDF overlay** via pdf-lib + bundled IRS templates (A3)
+- **Per-property rental** + per-property MACRS (B6) — new Rentals tab
+- **Schedule D per-transaction** + wash-sale via Form 8949 column g (B4) — new Schedule D tab
+- **CA 540NR non-resident** bracket formula (B5)
+- **HI / NJ / NY** retirement-income exemptions (B8)
+- **Form 1116 FTC limit** with foreign_source_taxable_income (B7)
+- **Live W-2 box-arithmetic flags** in the review modal (B10) — severity-colored chips
+- **CPA-firm auth model** is now the only Phase D blocker; everything else in Phases A-B is product-complete
 
-## What landed this session (afternoon turn)
+## Commits this session (all pushed to `origin/main`)
 
-One commit on `main` (already pushed to origin):
+| Commit | Phase | What |
+|---|---|---|
+| `72faa21` | B10 | W-2 box-arithmetic verify flags — shared `@workspace/validation` package, live flag chips in modal |
+| `0ca50c8` | B7  | Form 1116 engine integration — foreign_source_taxable_income adjustment + Form 1116 limit calc |
+| `d82cc9d` | B8  | HI / NJ / NY partial retirement-income state exemptions |
+| `3c5b5dc` | B5  | CA 540NR non-resident bracket formula (resident-equivalent × CA-source/total) |
+| `edbcea2` | B9  | Multi-page PDF support in BoundedDocumentViewer (page nav + extracted-fields indicators) |
+| `2ac58e1` | A3  | IRS Form 1040 PDF overlay via pdf-lib (bundled TY2024 templates, 50+ field-path map) |
+| `edfa29a` | B6  | Per-property rental + per-property MACRS (engine + backend) |
+| `780f47e` | B6  | Per-property rental UI tab |
+| `6eb27c8` | B4  | Schedule D per-transaction + wash sale (Form 8949, schema + engine + UI) |
 
-| Commit | What |
-|---|---|
-| `c026154` | Phase 4 MVP: AI overlay review UX (upload → extract → CPA review → approve) |
+## New schema additions
 
-**Key behavior change:** the previous "extract → auto-insert w2_data / form_1099_data" flow is gone. Extraction now leaves the document in `pending_review`. The CPA must explicitly approve before any income row is written, and that write goes through `writeAudit({ source: "AI extraction from ..." })`. CPA firms get an explicit trail of who signed off on what.
+Three new tables on top of the existing `audit_log`-extended schema:
 
-### Schema additions
-- `tax_documents.linked_record_id` (int, nullable)
-- `tax_documents.linked_record_type` (text: "w2" | "form1099", nullable)
-- `tax_documents.rejection_reason` (text, nullable)
-- New status values: `pending_review`, `approved`, `rejected` (existing `extracted` is preserved as a legacy alias — the UI treats it as a synonym of `approved`)
+```
+tax_documents.linked_record_id, linked_record_type, rejection_reason  (added in prior session)
+rental_properties                                                      (B6)
+capital_transactions                                                   (B4)
+```
 
-### New endpoints
-- `POST /api/clients/:clientId/documents/:documentId/approve` — body is the (possibly CPA-edited) extracted values; inserts the w2/1099 row + audit log + links the document
-- `POST /api/clients/:clientId/documents/:documentId/reject` — optional reason; no DB write to income tables
-
-### Frontend
-- `BoundedDocumentViewer` (`artifacts/tax-app/src/components/BoundedDocumentViewer.tsx`) — pdfjs-dist for PDFs + `<img>` for images, with absolutely-positioned box overlays driven by AI-returned 0–1000 normalized coords. Focus an input → its box highlights. Click a box → its input focuses.
-- `ReviewExtractionModal` (`artifacts/tax-app/src/components/ReviewExtractionModal.tsx`) — wide split-pane Dialog. Right pane is a CPA-editable form pre-filled from `extractedText.data`; edited fields get a yellow left-border + "AI: $X" tooltip showing the original AI value.
-- `DocumentsTab` (`pages/ClientDetail.tsx`) — new status pills, "Review extraction" CTA on `pending_review` rows.
-
-### New tests
-- `scripts/src/tax-engine-ai-overlay-tests.ts` (30 assertions, needs API). Covers: gate keeps extraction out of income tables, approve as-is creates audited row, approve with edit uses CPA value (not extraction), reject leaves no row, 1099-INT approval, can't re-approve, can't reject after approve, 1099 without formType returns 400.
+Plus a new workspace package:
+```
+lib/validation/  →  @workspace/validation  (shared W-2 validator, server + frontend)
+```
 
 ## Current state
 
-**Live deploy:** Deployed to EC2 (commit `17a03c2` on `origin/main`). Verified end-to-end against `http://ec2-18-188-192-154.us-east-2.compute.amazonaws.com`: upload → pending_review → approve → w2_data row + audit-log entry with source="AI extraction from ...". Schema push applied (tax_documents.linked_record_id, linked_record_type, rejection_reason).
+**Live deploy**: All commits pushed to `origin/main`. **NOT yet deployed to EC2** — both `rental_properties` and `capital_transactions` are new schemas, so `db push` is required on the box.
 
-**Two EC2 gotchas surfaced during deploy** (now documented in CLAUDE.md):
-1. **Project lives at `~/taxflow-pro` on the box**, not `taxflow-assistant` as previous handoff said.
-2. **The instance has 908 MiB RAM and Vite OOMs (exit 137) on `tax-app` build.** Build the frontend locally and rsync `dist/public/` over. The api-server build is fine on the box.
-3. **No `~/.env` exists.** Env vars (DATABASE_URL → Neon, AI_API_KEY) are baked into the pm2 process. Source them with `export DATABASE_URL=$(pm2 env 0 | awk -F": " '/^DATABASE_URL:/ {print $2; exit}')` before `db run push`.
+Standard EC2 cycle (see CLAUDE.md for full details — note: `~/taxflow-pro`, no `~/.env`, source via `pm2 env 0`):
 
-**Tests: 1,122 / 0 across 16 suites**
+```bash
+ssh -i ~/Downloads/taxflow-key.pem ubuntu@ec2-18-188-192-154.us-east-2.compute.amazonaws.com '
+  cd ~/taxflow-pro &&
+  git checkout -- pnpm-lock.yaml &&
+  git pull origin main &&
+  pnpm install &&
+  export DATABASE_URL=$(pm2 env 0 | awk -F": " "/^DATABASE_URL:/ {print \$2; exit}") &&
+  export AI_API_KEY=$(pm2 env 0 | awk -F": " "/^AI_API_KEY:/ {print \$2; exit}") &&
+  pnpm --filter @workspace/db run push &&
+  pnpm --filter @workspace/api-server run build &&
+  pm2 restart taxflow &&
+  curl -s http://localhost:8080/api/healthz
+'
+```
 
-| Suite | Count | Needs API |
-|---|---:|---|
-| `tax-engine-tests.ts` | 193 | no |
-| `tax-engine-deep-tests.ts` | 37 | no |
-| `tax-engine-phase1-unit-tests.ts` | 44 | no |
-| `tax-engine-phase15-unit-tests.ts` | 90 | no |
-| `tax-engine-pure-tests.ts` | 27 | no |
-| `tax-engine-phase2-unit-tests.ts` | 104 | no |
-| `tax-engine-50state-tests.ts` | 187 | no |
-| `tax-engine-edge-cases-tests.ts` | 128 | no |
-| `tax-engine-integration-tests.ts` | 22 | yes |
-| `tax-engine-deep-integration-tests.ts` | 26 | yes |
-| `tax-engine-new-features-tests.ts` | 28 | yes |
-| `tax-engine-phase1-integration-tests.ts` | 55 | yes |
-| `tax-engine-phase15-integration-tests.ts` | 33 | yes |
-| `tax-engine-exports-tests.ts` | 25 | yes |
-| `tax-engine-scenarios.ts` | 93 | yes |
-| `tax-engine-ai-overlay-tests.ts` | 30 | yes (NEW) |
+Then build the frontend locally + rsync (EC2 OOMs on Vite — see CLAUDE.md):
 
-## What this means for Option A
+```bash
+pnpm --filter @workspace/tax-app run build
+rsync -e "ssh -i ~/Downloads/taxflow-key.pem" -avz --delete \
+  artifacts/tax-app/dist/public/ \
+  ubuntu@ec2-18-188-192-154.us-east-2.compute.amazonaws.com:~/taxflow-pro/artifacts/tax-app/dist/public/
+```
 
-The product loop now exists end-to-end:
-1. CPA logs in (auth not built yet — local dev only)
-2. Creates a client
-3. Uploads W-2 / 1099 PDF or image
-4. AI extracts (Gemini via OpenAI-compat); document moves to `pending_review`
-5. CPA opens "Review extraction" → sees source doc with box overlays on the left, editable form on the right; edits anything that looks wrong
-6. Clicks Approve → w2/1099 row written with audit-log entry, tax return recalculated
-7. Goes to Tax Calculator tab → clicks "Download UltraTax (.gen)" → imports into UltraTax CS
-
-This is the smallest viable demo for a CPA design partner. The remaining gaps before pitching are auth + multi-tenancy and validating the `.gen` file against a real UltraTax install.
+**Tests: 1,221 / 0 across 19 suites** — see CLAUDE.md for the full table.
 
 ## What I did NOT do this session
 
-- **AI extraction confidence scores per field** — Gemini doesn't emit them, would need a separate scoring pass
-- **Multi-page PDF support in the overlay** — page 1 only for now (W-2 / 1099 are typically single-page)
-- **Schedule K-1 extraction** — backend doesn't extract K-1 yet; modal will gracefully render empty if you upload one
-- **CPA-firm multi-tenancy auth** — still a multi-week project, deferred
-- **UltraTax `.gen` validation against a real install** — needs a design partner
-- **EC2 deploy** — code pushed, not yet deployed (no schema-affecting changes since last EC2 deploy *except* this one)
+- **EC2 deploy** — code shipped to origin, deploy is pending (~10 min)
+- **CPA-firm multi-tenancy auth** (Phase D15) — single biggest remaining blocker for a paid design partner
+- **Schedules 1 / 2 / 3 PDF overlay** — templates are bundled at `artifacts/api-server/src/assets/irs-forms-2024/` but only Form 1040 itself is overlaid. Schedule 1/2/3 derived totals are summarized into the 1040 lines; per-line schedule pages aren't yet generated. ~1 day to add.
+- **Auto wash-sale detection** in B4 — broker-reported via 1099-B Box 1g (code W) is honored, but cross-account / spousal / IRA detection (Rev Rul 2008-5) is deferred. CPAs enter the broker amount.
+- **Holding-period tack-on** per §1091(d) — disallowed loss adds to replacement basis; we don't track the holding-period inheritance.
+- **NJ Worksheet D Part I/II** — Line 28a pension exclusion is modeled; the "unused exclusion against other income" path (Line 28b) is not.
+- **NY government-pension distinction** — all retirement income goes to NY Line 29 ($20k cap); the unlimited Line 26 path (NY state, federal, military pensions) is not split.
+- **HI Schedule J exclusion ratio** — full exemption applied to all 1099-R retirement income (the conservative-for-the-taxpayer interpretation).
+- **Phase D** items (CPA-firm auth, S3 storage, SOC 2, Stripe billing) — these are calendar-time projects.
 
 ## Where to pick up next session — ranked by value
 
 ### Tier 1 (Option-A specific, ship-blocking for a design-partner demo)
-1. **Deploy to EC2** — ~10 min, includes `pnpm --filter @workspace/db run push` for the tax_documents column adds
-2. **Validate UltraTax `.gen` export with a real CPA design partner.** The export is built but never tested against an actual UltraTax CS install. Highest-confidence way to de-risk Option A
-3. **CPA-firm multi-tenancy auth model** — organizations + users + role-based access + per-client visibility. This is the gate to a paid design partner
 
-### Tier 2 (UX polish on the AI overlay)
-4. **PDF multi-page support in BoundedDocumentViewer** — render a pager / thumbnail strip, route boxes to the correct page
-5. **Real document upload + secure S3 storage**, remove the demo banner — file content currently sits in `tax_documents.file_content` as base64
-6. **Side-by-side diff view in the review modal** — when AI extracted a value AND the CPA edited it, show both side-by-side rather than just a tooltip
-7. **Confidence-score-style highlight** — even without real confidences from the model, we could flag values that don't match the W-2 box-arithmetic invariants (Box 3 + Box 7 ≈ Box 1, etc.) and visually mark them in the review modal as "verify"
+1. **Deploy to EC2** — ~15 min, two schema pushes + frontend rsync
+2. **CPA-firm multi-tenancy auth (D15)** — 2-3 weeks. The single biggest blocker for a paid design partner. Without it, all firm data shares one URL.
+3. **Validate UltraTax `.gen` with a real CPA design partner (C12)** — needs a partner + license
+4. **AI extraction accuracy benchmark (C13)** — labeled sample of 100 1099s/W-2s
 
-### Tier 3 (engine accuracy improvements, parked from prior session)
-8. **CA 540NR non-resident bracket calc**
-9. **Schedule D per-transaction detail** + wash-sale tracking
-10. **Per-property rental table** + per-property MACRS
-11. **HI / NJ / NY partial retirement-income state exemptions**
-12. **Real IRS Form 1040 PDF layout** via pdf-lib coordinate fills
-13. **Form 1116 engine integration** — add `foreign_source_taxable_income` adjustment type
+### Tier 2 (engine polish + UX)
 
-### Tier 4 (compliance / infra)
-14. **DB-level append-only enforcement** on `audit_log` (revoke UPDATE/DELETE for app role)
-15. **Soft-delete clients** so audit_log persists past client deletion
-16. **Audit-log UI** — `GET /api/clients/:id/audit-log` endpoint exists but no frontend view
+5. **Schedules 1 / 2 / 3 PDF overlay** — templates already bundled, just need the field maps + line-by-line population. ~1 day
+6. **Side-by-side AI vs CPA diff view (C14)** in review modal — ~1 day
+7. **NY government-pension Line 26 distinction** — new client-level flag or per-1099-R field
+8. **HI Schedule J exclusion ratio** for mixed-contributory plans
+9. **NJ Worksheet D Part I/II** "unused exclusion vs other income"
 
-## Codebase reminders (still load-bearing)
-
-- AGI must include LTCG + QDIV + STCG per Form 1040 Line 9
-- `<CurrencyInput>` for money fields, never `<Input type="number">`
-- Radix `<Select>` needs `formReady` gate before mount in edit mode
-- Adding a new test file requires adding it to `scripts/tsconfig.json`'s `exclude` array
-- When api-server typecheck stalls after schema change: delete `lib/db/dist/` + `lib/db/tsconfig.tsbuildinfo`, then `pnpm --filter @workspace/db exec tsc -b --force`
-- Status `extracted` on `tax_documents` is legacy — pre-MVP rows that already auto-wrote. The UI displays it the same as `approved`. New uploads never land in `extracted`
-
-## Open background processes
-
-- API server on `:8080`
-- Frontend preview on `:3010`
-- Docker `haven-postgres` container
+### Tier 3 (Phase E — engine completeness, reactive)
+See roadmap.md for the full list.
 
 ## How to start the next Claude session
 
-Just say: **"Read .claude/handoff.md and CLAUDE.md. What should we work on next?"**
+Just say: **"Read .claude/handoff.md, .claude/roadmap.md, and CLAUDE.md. What should we work on next?"**
 
 Or pick a specific direction:
-- **"Deploy to EC2."** (~10 min, includes db push for the tax_documents column adds)
-- **"Build the CPA-firm multi-tenancy auth model — organizations, users, roles, per-client RLS."**
-- **"Validate the .gen export against a sample UltraTax import file [path]."**
-- **"Add a side-by-side diff view in the ReviewExtractionModal."**
-- **"Add PDF multi-page support in BoundedDocumentViewer."**
+- **"Deploy to EC2."** (~15 min with two schema pushes)
+- **"Start CPA-firm multi-tenancy auth (Phase D15)."**
+- **"Add Schedules 1/2/3 to the IRS Form 1040 PDF overlay."**
+- **"Find me a CPA design partner outreach pitch from the Tier 2 roadmap."**

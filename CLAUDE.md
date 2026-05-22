@@ -65,7 +65,7 @@ Future-you will be tempted to "simplify" these. Don't.
 - **Hand-calc every expected value** against IRS published rules before asserting it. The user has been burned by tests passing while the underlying calc was wrong (e.g. the AGI/Line-9 bug shipped despite unit tests passing).
 - **Unit tests alone aren't enough.** Standalone suites verify the calculator; integration suites hit a live API at `localhost:8080` and exercise the full pipeline. Run both.
 - **Adding a new test file** also requires adding it to `scripts/tsconfig.json`'s `exclude` array — the workspace typecheck fails otherwise.
-- **Test files (current set, 1,122 assertions):**
+- **Test files (current set, 1,221 assertions across 19 suites):**
   | File | Needs API |
   |---|---|
   | `tax-engine-tests.ts` | no |
@@ -76,14 +76,17 @@ Future-you will be tempted to "simplify" these. Don't.
   | `tax-engine-pure-tests.ts` | no (proves engine is Haven-portable) |
   | `tax-engine-50state-tests.ts` | no |
   | `tax-engine-edge-cases-tests.ts` | no (boundary/cliff/phase-out edges) |
+  | `tax-engine-w2-validation-tests.ts` | no (W-2 box-arithmetic flag rules) |
   | `tax-engine-integration-tests.ts` | yes |
   | `tax-engine-deep-integration-tests.ts` | yes |
   | `tax-engine-new-features-tests.ts` | yes |
   | `tax-engine-scenarios.ts` | yes |
   | `tax-engine-phase1-integration-tests.ts` | yes |
-  | `tax-engine-phase15-integration-tests.ts` | yes |
-  | `tax-engine-exports-tests.ts` | yes (PDF/CSV/JSON/UltraTax-GEN endpoints) |
+  | `tax-engine-phase15-integration-tests.ts` | yes (incl. Form 1116 cases) |
+  | `tax-engine-exports-tests.ts` | yes (PDF/CSV/JSON/UltraTax-GEN/IRS-1040 PDF) |
   | `tax-engine-ai-overlay-tests.ts` | yes (upload → review → approve gate) |
+  | `tax-engine-rental-properties-tests.ts` | yes (per-property MACRS + PAL) |
+  | `tax-engine-capital-transactions-tests.ts` | yes (Form 8949 + wash sale) |
 - **Scenarios are CPA-style end-to-end cases.** Each one has a `Hand-calc:` comment block — keep that convention. When a scenario fails, double-check your hand-calc before mutating the assertion; the calculator is usually right.
 - **Run all suites after any pipeline or schema change.** The Phase 1 work flushed out one regression (scenario 8 — needed to add EITC to expected refund).
 

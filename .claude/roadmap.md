@@ -8,27 +8,27 @@ This document is the long-arc plan. Live state of the project — what just land
 
 ---
 
-## Phase A — Ship what's done + lay product foundation
+## Phase A — Ship what's done + lay product foundation ✅ **COMPLETE**
 
 | # | Item | Status | Notes |
 |---|---|---|---|
 | A1 | **Push to GitHub + deploy to EC2** | ✅ Done | Deployed at commit `17a03c2`. Schema push applied. |
-| A2 | **AI overlay UX MVP** — upload PDF → AI extract → CPA reviews + approves diff → write to client record (audit-logged) → re-generate `.gen` | ✅ Done | Commit `c026154`. End-to-end CPA workflow live; first product-level Option A deliverable. |
-| A3 | **Real IRS Form 1040 PDF layout** — overlay text on the IRS template via `pdf-lib` coordinate fills | ❌ Open | 2–3 days. CPAs + clients want the actual IRS form, not the current summary. |
+| A2 | **AI overlay UX MVP** — upload PDF → AI extract → CPA reviews + approves diff → write to client record (audit-logged) → re-generate `.gen` | ✅ Done | Commit `c026154`. End-to-end CPA workflow live. |
+| A3 | **Real IRS Form 1040 PDF layout** — overlay text on the IRS template via `pdf-lib` coordinate fills | ✅ Done | Commit `2ac58e1`. Form 1040 + Schedules 1/2/3 templates bundled at `artifacts/api-server/src/assets/irs-forms-2024/`; 50+ field-path mapping; flatten() for cross-viewer rendering. New "IRS Form 1040 (PDF)" button on Tax Calculator. |
 
 ---
 
-## Phase B — High-leverage engine accuracy + product polish
+## Phase B — High-leverage engine accuracy + product polish ✅ **COMPLETE**
 
-| # | Item | Status | Effort |
+| # | Item | Status | Notes |
 |---|---|---|---|
-| B4 | **Schedule D per-transaction detail + wash-sale tracking** | ❌ Open | 3–5 days. Highest-frequency D1 engine gap; active investors are a big CPA client segment. |
-| B5 | **CA 540NR non-resident bracket calc** (CA-source / total × CA tax) | ❌ Open | 2–3 days. Currently uses resident brackets → overstates NR CA tax. |
-| B6 | **Per-property rental table + per-property MACRS** | ❌ Open | 1–2 days. Real CPAs want per-property tracking, not aggregate Schedule E. |
-| B7 | **Form 1116 engine integration** — add `foreign_source_taxable_income` adjustment type + wire the FTC calculator's Form 1116 path | ❌ Open | 1 day. Calculator path already in (commit `ff5c88a`); just needs the input plumbing. |
-| B8 | **HI / NJ / NY partial retirement-income state exemptions** | ❌ Open | 2 days. Matches the PA / IL / MS work already done. |
-| B9 | **PDF multi-page support in BoundedDocumentViewer** + thumbnail strip; route boxes to the correct page | ❌ Open | 1–2 days. AI overlay is single-page-only today. |
-| B10 | **W-2 box-arithmetic verify flags** — flag values that violate Box 3 + 7 ≈ Box 1 (etc.) in the review modal | ❌ Open | 1 day. Free quality signal in lieu of real AI confidences. |
+| B4 | **Schedule D per-transaction detail + wash-sale tracking** | ✅ Done | Commit `6eb27c8`. New `capital_transactions` schema, Form 8949 box A-F categorization, broker-reported wash-sale via adjustment code "W" + column g. 12 hand-calced integration tests against Pub 550 + Form 8949 instructions. New "Schedule D" tab. |
+| B5 | **CA 540NR non-resident bracket calc** (CA-source / total × CA tax) | ✅ Done | Commit `3c5b5dc`. FTB Form 540NR Schedule CA Part III formula in multi-state pipeline. 5 hand-calced test cases (single + MFJ, 1%/30%/100% allocation). |
+| B6 | **Per-property rental table + per-property MACRS** | ✅ Done | Commits `edfa29a` + `780f47e`. New `rental_properties` schema, per-property MACRS (residential 27.5y / commercial 39y, mid-month convention), engine sums + applies §469 PAL. New "Rentals" tab with CRUD UI. 15 tests hand-calced against Pub 946. |
+| B7 | **Form 1116 engine integration** | ✅ Done | Commit `0ca50c8`. New `foreign_source_taxable_income` adjustment type; pipeline now passes taxableAfterQbi + incomeTaxOnly to the FTC calculator. 4 new hand-calced cases (binding + non-binding limit, single + MFJ). |
+| B8 | **HI / NJ / NY partial retirement-income state exemptions** | ✅ Done | Commit `d82cc9d`. HI full exemption, NJ capped + phased-out by NJ gross income (age 62+), NY $20k/$40k per filer (age 59½+). 22 new unit tests. |
+| B9 | **PDF multi-page support in BoundedDocumentViewer** + indicators for pages with extracted fields | ✅ Done | Commit `edbcea2`. pdf-lib loads PDF once per src, renders one page at a time, prev/next nav + page picker showing which pages have extracted fields. Boxes filter to current page. |
+| B10 | **W-2 box-arithmetic verify flags** | ✅ Done | Commit `72faa21`. Shared `@workspace/validation` package between server + frontend. New box-arithmetic checks (Box 3 = Box 5 below cap, Box 4 ≈ 6.2% × Box 3, Box 16 ≈ Box 1). Live severity-colored flag chips in review modal. 37 new unit tests. |
 
 ---
 
