@@ -41,6 +41,8 @@ export const clientsTable = pgTable("clients", {
   rentalActiveParticipant: boolean("rental_active_participant").notNull().default(true),
   /** §469 real estate professional flag (750+ hours, >50% time → no PAL limit) */
   rentalRealEstateProfessional: boolean("rental_real_estate_professional").notNull().default(false),
+  /** Local income tax jurisdiction (CPA's domicile + 183-day determination). Currently supported: "NYC". Null = no local income tax. */
+  localityCode: text("locality_code"),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),

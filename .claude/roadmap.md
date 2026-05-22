@@ -70,7 +70,7 @@ Each item is 2–5 days; all are well-documented IRS rules.
 | # | Item | Effort | Status |
 |---|---|---|---|
 | BP1 | **K-1 detail** (S-corp + partnership, per-K-1 ordinary income + QBI flow-through + passive/active flag + basis tracking) | 3-5 days | ✅ Backend done; new `schedule_k1_data` table + CRUD route; engine wires Box 1/2/3 income, interest/div/cap-gain, SE earnings → Sch SE, §199A QBI, §469 K-1 passive bucket (no $25k allowance, fully suspended), `k1_passive_loss_carryforward` adjustment + auto-load from prior year. 70 pure + 23 integration = 93 hand-calced assertions. **Frontend tab still TODO.** |
-| BP2 | **NYC local income tax** (5 brackets, separate from NY state) | 2-3 days | ❌ Open |
+| BP2 | **NYC local income tax** (4 brackets per status, separate from NY state) | 2-3 days | ✅ Done. NYC PIT brackets per filing status (single/MFJ/HoH/MFS, verified against NY DTF IT-201-I 2024 page 40), `localityCode` field on client, NYC household credit (line 48) low-FAGI offset, `localTaxLiability` + `localTaxJurisdiction` persist on tax_returns. 15 hand-calced assertions. Frontend: locality dropdown on ClientForm (shown only when state=NY); "Local Tax (NYC)" line on tax-return display. **Not modeled (known limits):** NYC school tax credit (line 69/69b), NYC UBT, MCTMT. |
 | BP3 | **AMT preferences detail** — ISO bargain element + state-tax addback (Form 6251 lines 2e + 2g/2h) | 2-3 days | ❌ Open |
 | BP4 | **State EITC expansion** to CO + IL + MN + NJ + MA (~1 day each, ~5 days total) | 5 days | ❌ Open |
 

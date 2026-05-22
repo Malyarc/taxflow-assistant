@@ -20,6 +20,18 @@ export const ClientFilingStatus = {
   qualifying_widow: "qualifying_widow",
 } as const;
 
+/**
+ * Local income tax jurisdiction (currently "NYC"). Null = no local PIT.
+ * @nullable
+ */
+export type ClientLocalityCode =
+  | (typeof ClientLocalityCode)[keyof typeof ClientLocalityCode]
+  | null;
+
+export const ClientLocalityCode = {
+  NYC: "NYC",
+} as const;
+
 export interface Client {
   id: number;
   firstName: string;
@@ -70,6 +82,11 @@ export interface Client {
   rentalActiveParticipant?: boolean;
   /** §469 real estate professional (750+ hours, >50% of time) — no PAL limit. */
   rentalRealEstateProfessional?: boolean;
+  /**
+   * Local income tax jurisdiction (currently "NYC"). Null = no local PIT.
+   * @nullable
+   */
+  localityCode?: ClientLocalityCode;
   /** @nullable */
   notes?: string | null;
   createdAt: string;
@@ -85,6 +102,17 @@ export const CreateClientBodyFilingStatus = {
   married_filing_separately: "married_filing_separately",
   head_of_household: "head_of_household",
   qualifying_widow: "qualifying_widow",
+} as const;
+
+/**
+ * @nullable
+ */
+export type CreateClientBodyLocalityCode =
+  | (typeof CreateClientBodyLocalityCode)[keyof typeof CreateClientBodyLocalityCode]
+  | null;
+
+export const CreateClientBodyLocalityCode = {
+  NYC: "NYC",
 } as const;
 
 export interface CreateClientBody {
@@ -119,6 +147,8 @@ export interface CreateClientBody {
   rentalActiveParticipant?: boolean;
   rentalRealEstateProfessional?: boolean;
   /** @nullable */
+  localityCode?: CreateClientBodyLocalityCode;
+  /** @nullable */
   notes?: string | null;
 }
 
@@ -131,6 +161,17 @@ export const UpdateClientBodyFilingStatus = {
   married_filing_separately: "married_filing_separately",
   head_of_household: "head_of_household",
   qualifying_widow: "qualifying_widow",
+} as const;
+
+/**
+ * @nullable
+ */
+export type UpdateClientBodyLocalityCode =
+  | (typeof UpdateClientBodyLocalityCode)[keyof typeof UpdateClientBodyLocalityCode]
+  | null;
+
+export const UpdateClientBodyLocalityCode = {
+  NYC: "NYC",
 } as const;
 
 export interface UpdateClientBody {
@@ -164,6 +205,8 @@ export interface UpdateClientBody {
   acaHouseholdSize?: number | null;
   rentalActiveParticipant?: boolean;
   rentalRealEstateProfessional?: boolean;
+  /** @nullable */
+  localityCode?: UpdateClientBodyLocalityCode;
   /** @nullable */
   notes?: string | null;
 }
@@ -768,6 +811,10 @@ export interface TaxReturn {
   dependentCareCredit?: number | null;
   /** @nullable */
   scheduleCExpenses?: number | null;
+  /** @nullable */
+  localTaxLiability?: number | null;
+  /** @nullable */
+  localTaxJurisdiction?: string | null;
   /** @nullable */
   notes?: string | null;
   createdAt: string;

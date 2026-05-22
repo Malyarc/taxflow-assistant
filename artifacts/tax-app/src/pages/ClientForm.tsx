@@ -11,7 +11,9 @@ import {
 } from "@workspace/api-client-react";
 import type {
   CreateClientBodyFilingStatus,
+  CreateClientBodyLocalityCode,
   UpdateClientBodyFilingStatus,
+  UpdateClientBodyLocalityCode,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -57,6 +59,8 @@ interface FormState {
   // Phase 2e — Schedule E rental flags
   rentalActiveParticipant: boolean;
   rentalRealEstateProfessional: boolean;
+  // BP2 — local income tax jurisdiction
+  localityCode: string; // "" = none; "NYC" = New York City
   notes: string;
 }
 
@@ -83,6 +87,7 @@ const defaultForm: FormState = {
   acaHouseholdSize: "",
   rentalActiveParticipant: true,  // IRS default — most rental owners qualify
   rentalRealEstateProfessional: false,
+  localityCode: "",
   notes: "",
 };
 
@@ -139,6 +144,7 @@ export default function ClientForm({ editId }: Props) {
         acaHouseholdSize: e.acaHouseholdSize ?? "",
         rentalActiveParticipant: e.rentalActiveParticipant ?? true,
         rentalRealEstateProfessional: e.rentalRealEstateProfessional ?? false,
+        localityCode: (existing as { localityCode?: string | null }).localityCode ?? "",
         notes: existing.notes || "",
       });
     }
@@ -175,10 +181,11 @@ export default function ClientForm({ editId }: Props) {
       acaHouseholdSize: form.acaHouseholdSize === "" ? null : Number(form.acaHouseholdSize),
       rentalActiveParticipant: Boolean(form.rentalActiveParticipant),
       rentalRealEstateProfessional: Boolean(form.rentalRealEstateProfessional),
+      localityCode: form.localityCode === "" ? null : form.localityCode,
     };
     if (isEdit) {
       updateClient.mutate(
-        { id: editId, data: { ...payload, filingStatus: payload.filingStatus as UpdateClientBodyFilingStatus } },
+        { id: editId, data: { ...payload, filingStatus: payload.filingStatus as UpdateClientBodyFilingStatus, localityCode: payload.localityCode as UpdateClientBodyLocalityCode } },
         {
           onSuccess: (client) => {
             // Set the cache to the response data immediately so navigation doesn't show stale data
@@ -197,7 +204,7 @@ export default function ClientForm({ editId }: Props) {
       );
     } else {
       createClient.mutate(
-        { data: { ...payload, filingStatus: payload.filingStatus as CreateClientBodyFilingStatus } },
+        { data: { ...payload, filingStatus: payload.filingStatus as CreateClientBodyFilingStatus, localityCode: payload.localityCode as CreateClientBodyLocalityCode } },
         {
           onSuccess: (client) => {
             qc.setQueryData(getGetClientQueryKey(client.id), client);
@@ -293,6 +300,22 @@ export default function ClientForm({ editId }: Props) {
                 </Select>
               </div>
             </div>
+
+            {form.state === "NY" && (
+              <div className="space-y-2">
+                <Label>Local income tax jurisdiction</Label>
+                <Select value={form.localityCode || "none"} onValueChange={(v) => set("localityCode", v === "none" ? "" : v)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    <SelectItem value="NYC">New York City (NYC PIT)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">NYC residents (per domicile + 183-day test) owe additional NYC personal income tax on top of NY state tax. Not modeled: NYC UBT, MCTMT.</p>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label>Tax Year</Label>

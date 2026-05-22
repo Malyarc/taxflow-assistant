@@ -507,6 +507,8 @@ export interface MultiStateTaxResult {
   residentCreditApplied: number;
   /** Resident state's tax BEFORE applying the credit (informational) */
   residentStateTaxBeforeCredit: number;
+  /** Local-jurisdiction income tax (e.g. NYC). Null when no local jurisdiction. */
+  localTax: NycLocalTaxCalculation | null;
 }
 
 export function calculateMultiStateTax(params: {
@@ -516,6 +518,10 @@ export function calculateMultiStateTax(params: {
   taxYear: number;
   /** Per-state W-2 wage allocation (one entry per W-2 stateCode). Unallocated wages stay with resident state. */
   perStateWages: PerStateWageAllocation[];
+  /** Optional local jurisdiction (currently "NYC"). When set, the local PIT is computed and returned in `localTax`. */
+  localityCode?: string | null;
+  /** Dependent count (item H + 1 + 1-if-spouse) for NYC household credit (line 48). */
+  localDependentCount?: number;
   options?: {
     federalIncomeTaxPaid?: number;
     retirementIncomeForExemption?: number;
@@ -595,12 +601,180 @@ export function calculateMultiStateTax(params: {
   const residentCreditApplied = Math.min(totalNrTax, residentCreditCap);
   const residentStateTax = Math.max(0, residentTaxFull - residentCreditApplied);
 
+  // ── Local jurisdiction (NYC) ────────────────────────────────────────────
+  // Only computed when resident state is NY AND localityCode is "NYC". The
+  // CPA's domicile + 183-day determination is captured upstream in
+  // `client.localityCode`. Tax base = NYS line 38 ≈ NYS taxable income =
+  // federalAgi − NY std ded − NY retirement exemption (mirrors the deduction
+  // chain in calculateStateTax for NY).
+  let localTax: NycLocalTaxCalculation | null = null;
+  if ((params.localityCode ?? "").toUpperCase() === "NYC" && resident === "NY") {
+    const year = resolveTaxYear(params.taxYear);
+    const nyInfo = STATE_TAX_DATA_BY_YEAR[year]?.["NY"];
+    const nyStdDed = nyInfo?.standardDeduction
+      ? pickStateStdDeduction(nyInfo.standardDeduction, params.filingStatus as StateFilingStatus)
+      : 0;
+    const nyRetirementExempt = getStateRetirementExemption({
+      stateCode: "NY",
+      retirementIncome: params.options?.retirementIncomeForExemption ?? 0,
+      filingStatus: params.filingStatus,
+      taxpayerAge: params.options?.taxpayerAge,
+      njGrossIncomeApprox: params.federalAgi,
+    }).exemption;
+    const nysTaxable = Math.max(0, params.federalAgi - nyStdDed - nyRetirementExempt);
+    localTax = calculateNycLocalTax({
+      nysTaxableIncome: nysTaxable,
+      federalAgi: params.federalAgi,
+      filingStatus: params.filingStatus,
+      dependentCount: params.localDependentCount ?? 1,
+      taxYear: params.taxYear,
+    });
+  }
+
   return {
     residentStateTax,
     nonresidentStateTaxes,
     totalStateTax: residentStateTax + totalNrTax,
     residentCreditApplied,
     residentStateTaxBeforeCredit: residentTaxFull,
+    localTax,
+  };
+}
+
+// ── NYC Personal Income Tax (Form IT-201 NYC schedule) ───────────────────
+// Per NY DTF Form IT-201-I 2024 (page 40): NYC PIT brackets are unchanged
+// since tax year 2017. Tax base = NYS taxable income (IT-201 line 47, which
+// equals NYS line 38 unless the taxpayer made Charitable Gifts Trust Fund
+// contributions and itemized — minor edge we don't model).
+//
+// Brackets are progressive (marginal). MFJ thresholds are 1.8× single, NOT
+// 2× — verified against IT-201-I page 40.
+//
+// IT-201 line 48 NYC household credit: small offset for very low-FAGI
+// residents. Phased to zero above $22,500 FAGI. Three lookup tables by
+// filing status. We implement the dominant cases; very edge cases (8+
+// dependents) fall through to the highest bucket.
+//
+// NOT modeled (documented known limit):
+//   - NYC school tax credit rate-reduction (IT-201 line 69b — small)
+//   - NYC school tax credit flat amount (line 69 — $63 single / $125 MFJ
+//     for FAGI ≤ $250k); CPAs can add as adjustment if needed
+//   - NYC Unincorporated Business Tax (UBT) — separate tax, not a PIT addback
+//   - MCTMT (Metropolitan Commuter Mobility Tax) — separate SE-tax-like
+const NYC_BRACKETS_2024: Record<string, Array<{ upTo: number; rate: number }>> = {
+  single: [
+    { upTo: 12000, rate: 0.03078 },
+    { upTo: 25000, rate: 0.03762 },
+    { upTo: 50000, rate: 0.03819 },
+    { upTo: Infinity, rate: 0.03876 },
+  ],
+  married_filing_separately: [
+    { upTo: 12000, rate: 0.03078 },
+    { upTo: 25000, rate: 0.03762 },
+    { upTo: 50000, rate: 0.03819 },
+    { upTo: Infinity, rate: 0.03876 },
+  ],
+  married_filing_jointly: [
+    { upTo: 21600, rate: 0.03078 },
+    { upTo: 45000, rate: 0.03762 },
+    { upTo: 90000, rate: 0.03819 },
+    { upTo: Infinity, rate: 0.03876 },
+  ],
+  qualifying_widow: [
+    { upTo: 21600, rate: 0.03078 },
+    { upTo: 45000, rate: 0.03762 },
+    { upTo: 90000, rate: 0.03819 },
+    { upTo: Infinity, rate: 0.03876 },
+  ],
+  head_of_household: [
+    { upTo: 14400, rate: 0.03078 },
+    { upTo: 30000, rate: 0.03762 },
+    { upTo: 60000, rate: 0.03819 },
+    { upTo: Infinity, rate: 0.03876 },
+  ],
+};
+
+export interface NycLocalTaxCalculation {
+  jurisdiction: "NYC";
+  nysTaxableIncome: number;       // line 47 (= line 38 unless trust-fund itemized)
+  baselineTax: number;             // brackets-only tax (line 47 NYC tax)
+  householdCredit: number;         // line 48 reduction
+  netLocalTax: number;             // max(0, baseline - household credit)
+}
+
+/**
+ * Compute NYC personal income tax. Caller must ensure the client is a NYC
+ * resident (CPA's domicile + 183-day determination → `localityCode === "NYC"`)
+ * and that resident state is NY.
+ *
+ * @param nysTaxableIncome — Form IT-201 line 47 base (≈ NYS taxable income).
+ * @param federalAgi — used for household credit phase-out (line 48 lookup).
+ * @param filingStatus — "single" | "married_filing_jointly" |
+ *                       "married_filing_separately" | "head_of_household" |
+ *                       "qualifying_widow"
+ * @param dependentCount — additional persons for household credit (item H +
+ *                         self + spouse). Tables 5/6 use this multiplier.
+ * @param taxYear — currently only 2024 brackets are seeded; 2025 falls back
+ *                  to 2024 (NYC PIT has been static since TY2017).
+ */
+export function calculateNycLocalTax(params: {
+  nysTaxableIncome: number;
+  federalAgi: number;
+  filingStatus: string;
+  dependentCount: number;
+  taxYear: number;
+}): NycLocalTaxCalculation {
+  const fs = params.filingStatus as keyof typeof NYC_BRACKETS_2024;
+  const brackets = NYC_BRACKETS_2024[fs] ?? NYC_BRACKETS_2024.single;
+  const taxable = Math.max(0, params.nysTaxableIncome);
+  const baseline = applyBrackets(taxable, brackets);
+
+  // NYC household credit (IT-201 line 48). Tables 4/5/6 by filing status.
+  // We implement the dominant low-income bands. Very high dependent counts
+  // (8+) round to the row-7 amount + the per-additional adder; this matches
+  // the IT-201 instruction text "for each additional dependent over 7 add $X".
+  const fagi = params.federalAgi;
+  let householdCredit = 0;
+  const isMfj = fs === "married_filing_jointly" || fs === "qualifying_widow" || fs === "head_of_household";
+  const isMfs = fs === "married_filing_separately";
+  // dependentCount expected to include filer (+spouse if applicable). Caller
+  // must compose this from item H + 1 (+ 1).
+  const N = Math.max(1, params.dependentCount);
+  if (!isMfs && !isMfj) {
+    // Table 4 — Single
+    if (fagi <= 10000) householdCredit = 15;
+    else if (fagi <= 12500) householdCredit = 10;
+  } else if (isMfj) {
+    // Table 5 — MFJ / Qual Surv Spouse / HoH
+    // Band base amount; addl per dependent beyond 1.
+    const baseTable: Array<{ ceiling: number; perPerson: number }> = [
+      { ceiling: 15000, perPerson: 30 },
+      { ceiling: 17500, perPerson: 25 },
+      { ceiling: 20000, perPerson: 15 },
+      { ceiling: 22500, perPerson: 10 },
+    ];
+    const band = baseTable.find((b) => fagi <= b.ceiling);
+    if (band) householdCredit = band.perPerson * N;
+  } else if (isMfs) {
+    // Table 6 — MFS uses COMBINED FAGI of both spouses. We approximate using
+    // the filer's own FAGI (the engine doesn't model spouse-side FAGI for MFS).
+    const baseTable: Array<{ ceiling: number; perPerson: number }> = [
+      { ceiling: 15000, perPerson: 15 },
+      { ceiling: 17500, perPerson: 13 },
+      { ceiling: 20000, perPerson: 8 },
+      { ceiling: 22500, perPerson: 5 },
+    ];
+    const band = baseTable.find((b) => fagi <= b.ceiling);
+    if (band) householdCredit = band.perPerson * N;
+  }
+
+  const netLocalTax = Math.max(0, baseline - householdCredit);
+  return {
+    jurisdiction: "NYC",
+    nysTaxableIncome: taxable,
+    baselineTax: baseline,
+    householdCredit,
+    netLocalTax,
   };
 }
 

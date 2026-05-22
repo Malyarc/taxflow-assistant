@@ -998,6 +998,10 @@ components:
         rentalRealEstateProfessional:
           type: boolean
           description: §469 real estate professional (750+ hours, >50% of time) — no PAL limit.
+        localityCode:
+          type: ["string", "null"]
+          description: Local income tax jurisdiction (currently "NYC"). Null = no local PIT.
+          enum: ["NYC", null]
         notes:
           type: ["string", "null"]
         createdAt:
@@ -1056,6 +1060,9 @@ components:
           type: boolean
         rentalRealEstateProfessional:
           type: boolean
+        localityCode:
+          type: ["string", "null"]
+          enum: ["NYC", null]
         notes:
           type: ["string", "null"]
 
@@ -1107,6 +1114,9 @@ components:
           type: boolean
         rentalRealEstateProfessional:
           type: boolean
+        localityCode:
+          type: ["string", "null"]
+          enum: ["NYC", null]
         notes:
           type: ["string", "null"]
 
@@ -1665,6 +1675,11 @@ components:
         # Schedule C
         scheduleCExpenses:
           type: ["number", "null"]
+        # Local PIT (NYC, etc.)
+        localTaxLiability:
+          type: ["number", "null"]
+        localTaxJurisdiction:
+          type: ["string", "null"]
         notes:
           type: ["string", "null"]
         createdAt:

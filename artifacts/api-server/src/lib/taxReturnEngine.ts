@@ -104,6 +104,8 @@ export interface ClientFacts {
   acaHouseholdSize?: number | null;
   rentalActiveParticipant?: boolean | null;
   rentalRealEstateProfessional?: boolean | null;
+  /** Local income tax jurisdiction code (currently "NYC"). Null = no local PIT. */
+  localityCode?: string | null;
 }
 
 export interface W2Fact {
@@ -554,6 +556,10 @@ export interface ComputedTaxReturn {
   scheduleEPassiveLossSuspended: number;
   /** Schedule K-1 (partnership + S-corp) aggregate summary */
   scheduleK1: ScheduleK1Summary;
+  /** Local-jurisdiction income tax (NYC for now). Zero when no local jurisdiction applies. */
+  localTaxLiability: number;
+  /** The local jurisdiction this tax was computed for ("NYC", etc.). Null when none. */
+  localTaxJurisdiction: string | null;
   /** Detailed breakdowns for transparency */
   detail: {
     se: SeTaxCalculation;
@@ -1098,12 +1104,22 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   }
   const perStateWagesArr = [...perStateWages.entries()].map(([code, wages]) => ({ stateCode: code, wages }));
 
+  // NYC household credit (line 48) lookup uses item H + 1 (+ 1 if MFJ).
+  // We approximate item H count from dependentsUnder17 + otherDependents.
+  const localDependentCount =
+    1 +
+    (client.filingStatus === "married_filing_jointly" || client.filingStatus === "qualifying_widow" ? 1 : 0) +
+    (client.dependentsUnder17 ?? 0) +
+    (client.otherDependents ?? 0);
+
   const multiState = calculateMultiStateTax({
     residentState: stateCode ?? "CA",
     federalAgi: calc.adjustedGrossIncome,
     filingStatus: client.filingStatus,
     taxYear,
     perStateWages: perStateWagesArr,
+    localityCode: client.localityCode ?? null,
+    localDependentCount,
     options: {
       federalIncomeTaxPaid: federalIncomeTaxForOr,
       retirementIncomeForExemption: form1099Summary.retirementIncome,
@@ -1113,7 +1129,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
       njGrossIncomeApprox: calc.adjustedGrossIncome,
     },
   });
+  // State + local: state tax is reported separately; local (NYC) is its own line.
   const stateTaxLiability = multiState.totalStateTax;
+  const localTaxLiability = multiState.localTax?.netLocalTax ?? 0;
 
   const totalFederalLiability =
     regularFederalTax + amt.amtTax + niit.niitTax + se.seTaxTotal;
@@ -1355,6 +1373,8 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     scheduleERentalAppliedToAgi: rentalNetAppliedToAgi,
     passiveActivityLoss: passiveLossAllowance,
     scheduleEPassiveLossSuspended: passiveLossAllowance?.suspendedToNextYear ?? 0,
+    localTaxLiability,
+    localTaxJurisdiction: multiState.localTax ? multiState.localTax.jurisdiction : null,
     scheduleK1: {
       k1Count: k1sForYear.length,
       partnershipCount: k1sForYear.filter((k) => (k.entityType ?? "partnership") === "partnership").length,

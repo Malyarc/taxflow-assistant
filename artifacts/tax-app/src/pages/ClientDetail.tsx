@@ -895,6 +895,7 @@ function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: nu
                   ["Federal Withheld", taxReturn.federalTaxWithheld],
                   ["Federal Refund/Owed", taxReturn.federalRefundOrOwed],
                   ["State Tax", taxReturn.stateTaxLiability],
+                  ...((Number((taxReturn as any).localTaxLiability) || 0) > 0 ? [[`Local Tax (${(taxReturn as any).localTaxJurisdiction ?? ""})`, (taxReturn as any).localTaxLiability]] as Array<[string, unknown]> : []),
                   ["State Withheld", taxReturn.stateTaxWithheld],
                   ["State Refund/Owed", taxReturn.stateRefundOrOwed],
                 ].map(([label, val]) => (

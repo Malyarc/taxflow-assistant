@@ -27,6 +27,7 @@
     "src/tax-engine-rental-properties-tests.ts",
     "src/tax-engine-capital-transactions-tests.ts",
     "src/tax-engine-k1-tests.ts",
-    "src/tax-engine-k1-integration-tests.ts"
+    "src/tax-engine-k1-integration-tests.ts",
+    "src/tax-engine-nyc-tests.ts"
   ]
 }

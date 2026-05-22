@@ -89,6 +89,12 @@ export const ListClientsResponseItem = zod.object({
     .describe(
       "§469 real estate professional (750+ hours, >50% of time) — no PAL limit.",
     ),
+  localityCode: zod
+    .union([zod.literal("NYC"), zod.literal(null)])
+    .nullish()
+    .describe(
+      'Local income tax jurisdiction (currently \"NYC\"). Null = no local PIT.',
+    ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -127,6 +133,7 @@ export const CreateClientBody = zod.object({
   acaHouseholdSize: zod.number().nullish(),
   rentalActiveParticipant: zod.boolean().optional(),
   rentalRealEstateProfessional: zod.boolean().optional(),
+  localityCode: zod.union([zod.literal("NYC"), zod.literal(null)]).nullish(),
   notes: zod.string().nullish(),
 });
 
@@ -209,6 +216,12 @@ export const GetClientResponse = zod.object({
     .describe(
       "§469 real estate professional (750+ hours, >50% of time) — no PAL limit.",
     ),
+  localityCode: zod
+    .union([zod.literal("NYC"), zod.literal(null)])
+    .nullish()
+    .describe(
+      'Local income tax jurisdiction (currently \"NYC\"). Null = no local PIT.',
+    ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -252,6 +265,7 @@ export const UpdateClientBody = zod.object({
   acaHouseholdSize: zod.number().nullish(),
   rentalActiveParticipant: zod.boolean().optional(),
   rentalRealEstateProfessional: zod.boolean().optional(),
+  localityCode: zod.union([zod.literal("NYC"), zod.literal(null)]).nullish(),
   notes: zod.string().nullish(),
 });
 
@@ -326,6 +340,12 @@ export const UpdateClientResponse = zod.object({
     .optional()
     .describe(
       "§469 real estate professional (750+ hours, >50% of time) — no PAL limit.",
+    ),
+  localityCode: zod
+    .union([zod.literal("NYC"), zod.literal(null)])
+    .nullish()
+    .describe(
+      'Local income tax jurisdiction (currently \"NYC\"). Null = no local PIT.',
     ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
@@ -905,6 +925,8 @@ export const GetTaxReturnResponse = zod.object({
   saversCredit: zod.number().nullish(),
   dependentCareCredit: zod.number().nullish(),
   scheduleCExpenses: zod.number().nullish(),
+  localTaxLiability: zod.number().nullish(),
+  localTaxJurisdiction: zod.string().nullish(),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -961,6 +983,8 @@ export const CalculateTaxReturnResponse = zod.object({
   saversCredit: zod.number().nullish(),
   dependentCareCredit: zod.number().nullish(),
   scheduleCExpenses: zod.number().nullish(),
+  localTaxLiability: zod.number().nullish(),
+  localTaxJurisdiction: zod.string().nullish(),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -1025,6 +1049,8 @@ export const UpdateTaxReturnResponse = zod.object({
   saversCredit: zod.number().nullish(),
   dependentCareCredit: zod.number().nullish(),
   scheduleCExpenses: zod.number().nullish(),
+  localTaxLiability: zod.number().nullish(),
+  localTaxJurisdiction: zod.string().nullish(),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -1691,6 +1717,12 @@ export const GetRecentClientsResponseItem = zod.object({
     .optional()
     .describe(
       "§469 real estate professional (750+ hours, >50% of time) — no PAL limit.",
+    ),
+  localityCode: zod
+    .union([zod.literal("NYC"), zod.literal(null)])
+    .nullish()
+    .describe(
+      'Local income tax jurisdiction (currently \"NYC\"). Null = no local PIT.',
     ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
