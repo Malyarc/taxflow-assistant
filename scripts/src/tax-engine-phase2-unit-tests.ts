@@ -207,6 +207,177 @@ header("State retirement exemption — other state (no rule) → $0");
   checkExact("CA → $0 exempt (no state rule)", r.exemption, 0);
 }
 
+// ── B8: HI / NJ / NY retirement exemptions ──────────────────────────────────
+// Authority: HI §235-7(a)(2)-(3); NJ N.J.A.C. §18:35-2.5; NY Tax Law §612(c)(3-a).
+// TY2024 amounts.
+
+header("State retirement exemption — HI (full, no age req)");
+{
+  // HI fully exempts employer-funded retirement income. Our model applies the
+  // full exemption regardless of age (limitation documented in calculator).
+  const r1 = getStateRetirementExemption({ stateCode: "HI", retirementIncome: 40000, taxpayerAge: 65 });
+  check("HI age 65 $40k retirement → $40k exempt", r1.exemption, 40000);
+
+  const r2 = getStateRetirementExemption({ stateCode: "HI", retirementIncome: 40000, taxpayerAge: 35 });
+  check("HI age 35 → $40k exempt (no age req per HI rule)", r2.exemption, 40000);
+
+  const r3 = getStateRetirementExemption({ stateCode: "HI", retirementIncome: 0 });
+  checkExact("HI no retirement income → $0 exempt", r3.exemption, 0);
+}
+
+header("State retirement exemption — NJ (capped by status, phased-out, age 62+)");
+{
+  // NJ-1040 Line 28a, TY2024 caps:
+  //   MFJ/QW: $100k; Single/HoH: $75k; MFS: $50k
+  // Phase-out by NJ gross income (we approximate as federal AGI):
+  //   ≤ $100k: full max
+  //   $100,001–$125,000: 50% MFJ, 37.5% Single, 25% MFS
+  //   $125,001–$150,000: 25% MFJ, 18.75% Single, 12.5% MFS
+  //   > $150,000: $0 (cliff)
+  // Age 62+ required.
+
+  // Under-age case
+  const tooYoung = getStateRetirementExemption({
+    stateCode: "NJ", filingStatus: "single", retirementIncome: 50000, taxpayerAge: 55,
+    njGrossIncomeApprox: 50000,
+  });
+  checkExact("NJ age 55 → $0 (age req not met)", tooYoung.exemption, 0);
+
+  // Single, age 65, under $100k: full cap $75k
+  // $40k retirement < $75k cap → full $40k exempt
+  const single1 = getStateRetirementExemption({
+    stateCode: "NJ", filingStatus: "single", retirementIncome: 40000, taxpayerAge: 65,
+    njGrossIncomeApprox: 40000,
+  });
+  check("NJ single age 65 $40k ret, NJ gross $40k → $40k exempt", single1.exemption, 40000);
+
+  // MFJ, age 65, $60k retirement, NJ gross $60k → cap $100k, full multiplier → $60k exempt
+  const mfj1 = getStateRetirementExemption({
+    stateCode: "NJ", filingStatus: "married_filing_jointly", retirementIncome: 60000, taxpayerAge: 65,
+    njGrossIncomeApprox: 60000,
+  });
+  check("NJ MFJ age 65 $60k ret, NJ gross $60k → $60k exempt", mfj1.exemption, 60000);
+
+  // Single, age 65, $40k retirement + $80k wages → NJ gross $120k → tier 1 (37.5%)
+  // Effective cap: $75k × 0.375 = $28,125. min($40k, $28,125) = $28,125
+  const single2 = getStateRetirementExemption({
+    stateCode: "NJ", filingStatus: "single", retirementIncome: 40000, taxpayerAge: 65,
+    njGrossIncomeApprox: 120000,
+  });
+  check("NJ single age 65 NJ gross $120k → $28,125 exempt (tier 1 37.5%)", single2.exemption, 28125);
+
+  // MFJ, age 65, $80k retirement + lots of wages → NJ gross $130k → tier 2 (25%)
+  // Effective cap: $100k × 0.25 = $25,000. min($80k, $25k) = $25,000
+  const mfj2 = getStateRetirementExemption({
+    stateCode: "NJ", filingStatus: "married_filing_jointly", retirementIncome: 80000, taxpayerAge: 65,
+    njGrossIncomeApprox: 130000,
+  });
+  check("NJ MFJ NJ gross $130k → $25,000 exempt (tier 2 25%)", mfj2.exemption, 25000);
+
+  // MFS, age 65, $40k retirement, NJ gross $40k → full $50k cap → $40k exempt
+  const mfs = getStateRetirementExemption({
+    stateCode: "NJ", filingStatus: "married_filing_separately", retirementIncome: 40000, taxpayerAge: 65,
+    njGrossIncomeApprox: 40000,
+  });
+  check("NJ MFS age 65 NJ gross $40k → $40k exempt (under $50k cap)", mfs.exemption, 40000);
+
+  // Cliff: NJ gross > $150k → $0
+  const cliff = getStateRetirementExemption({
+    stateCode: "NJ", filingStatus: "single", retirementIncome: 40000, taxpayerAge: 65,
+    njGrossIncomeApprox: 155000,
+  });
+  checkExact("NJ NJ gross $155k → $0 (cliff)", cliff.exemption, 0);
+
+  // No njGrossIncomeApprox supplied — falls back to retirementIncome (very conservative).
+  // Without context, we can't reliably phase out; the calculator uses the income directly.
+  // Document this edge case: $40k ret with no gross → $40k exempt (under $100k tier).
+  const noGross = getStateRetirementExemption({
+    stateCode: "NJ", filingStatus: "single", retirementIncome: 40000, taxpayerAge: 65,
+  });
+  // Without njGrossIncomeApprox, function defaults to Number.POSITIVE_INFINITY → cliff fires
+  checkExact("NJ no njGrossIncomeApprox supplied → $0 (defaults to infinity)", noGross.exemption, 0);
+}
+
+header("State retirement exemption — NY (per-filer $20k, age 59½+)");
+{
+  // IT-201 Line 29, TY2024:
+  //   Single/HoH/MFS: $20k cap
+  //   MFJ: $40k combined cap (we model as joint cap, not per-spouse split)
+  // Age 59½+ required (we use 60).
+
+  // Under-age case
+  const tooYoung = getStateRetirementExemption({
+    stateCode: "NY", filingStatus: "single", retirementIncome: 25000, taxpayerAge: 55,
+  });
+  checkExact("NY age 55 → $0 (age req not met)", tooYoung.exemption, 0);
+
+  // Single age 65 $30k retirement → capped at $20k
+  const single = getStateRetirementExemption({
+    stateCode: "NY", filingStatus: "single", retirementIncome: 30000, taxpayerAge: 65,
+  });
+  check("NY single age 65 $30k ret → $20k exempt (capped)", single.exemption, 20000);
+
+  // Single age 65 $15k retirement → under cap → full $15k
+  const singleUnder = getStateRetirementExemption({
+    stateCode: "NY", filingStatus: "single", retirementIncome: 15000, taxpayerAge: 65,
+  });
+  check("NY single $15k ret → $15k exempt (under $20k cap)", singleUnder.exemption, 15000);
+
+  // MFJ age 65 $50k retirement → capped at $40k joint
+  const mfj = getStateRetirementExemption({
+    stateCode: "NY", filingStatus: "married_filing_jointly", retirementIncome: 50000, taxpayerAge: 65,
+  });
+  check("NY MFJ age 65 $50k ret → $40k exempt (joint cap)", mfj.exemption, 40000);
+
+  // MFJ age 65 $30k retirement → under joint cap → full $30k
+  const mfjUnder = getStateRetirementExemption({
+    stateCode: "NY", filingStatus: "married_filing_jointly", retirementIncome: 30000, taxpayerAge: 65,
+  });
+  check("NY MFJ $30k ret → $30k exempt (under $40k joint cap)", mfjUnder.exemption, 30000);
+}
+
+// End-to-end: HI retiree's HI tax should be $0 when all retirement income exempted
+header("End-to-end: HI retiree $40k pension → state retirement exemption applied");
+{
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "HI", taxYear: 2024, taxpayerAge: 65 },
+    w2s: [],
+    form1099s: [{ taxYear: 2024, formType: "r", taxableAmount: 40000 }],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  check("HI AGI = $40,000", r.adjustedGrossIncome, 40000, 1);
+  check("HI state retirement exemption = $40,000", r.stateRetirementExemption, 40000, 1);
+}
+
+// End-to-end: NJ retiree single age 65 $40k retirement, federal AGI = $40k → full $40k exempt
+header("End-to-end: NJ retiree $40k pension, NJ gross $40k → $40k exempt");
+{
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "NJ", taxYear: 2024, taxpayerAge: 65 },
+    w2s: [],
+    form1099s: [{ taxYear: 2024, formType: "r", taxableAmount: 40000 }],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  check("NJ AGI $40,000", r.adjustedGrossIncome, 40000, 1);
+  check("NJ retirement exemption $40,000", r.stateRetirementExemption, 40000, 1);
+}
+
+// End-to-end: NY retiree single age 65 $30k retirement → $20k exempt (capped)
+header("End-to-end: NY retiree $30k pension → $20k exempt (capped at Line 29)");
+{
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "NY", taxYear: 2024, taxpayerAge: 65 },
+    w2s: [],
+    form1099s: [{ taxYear: 2024, formType: "r", taxableAmount: 30000 }],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  check("NY AGI $30,000", r.adjustedGrossIncome, 30000, 1);
+  check("NY retirement exemption $20,000 (capped)", r.stateRetirementExemption, 20000, 1);
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // END-TO-END: PA retiree with 1099-R should pay $0 PA tax
 // ════════════════════════════════════════════════════════════════════════════

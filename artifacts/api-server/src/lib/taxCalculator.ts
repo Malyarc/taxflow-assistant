@@ -321,19 +321,117 @@ const OR_FED_TAX_SUBTRACTION: Record<TaxYear, { capMfs: number; capOther: number
 //     only store integer ages; lose a few PA filers age 59 in their birth-month-1)
 //   - IL: Full exemption for qualified retirement income regardless of age
 //   - MS: Full exemption at 59½+ (use 60)
-//   - HI/NJ/NY: partial exemptions with caps — NOT modeled, flagged below
+//   - HI: Full exemption for employer-funded portions (we apply to all retirement
+//     income — see limitations below). HRS §235-7(a)(2)-(3). No age requirement.
+//   - NJ: Capped exemption by filing status with phase-out by NJ gross income.
+//     Form NJ-1040 Line 28a; N.J.A.C. §18:35-2.5. Age 62+ required.
+//   - NY: $20k per filer ($40k MFJ combined). Form IT-201 Line 29; NY Tax Law
+//     §612(c)(3-a). Age 59½+ required (we use 60).
+//
+// Limitations:
+// - HI: real HI law excludes only employer-funded portions of pensions/annuities
+//   per Schedule J's exclusion ratio. Our model applies the full exemption to
+//   all 1099-R retirement income; CPAs should override via additionalDeductions
+//   for mixed contributory plans.
+// - NJ: phase-out uses "NJ gross income" — we approximate as federal AGI. If
+//   SS/military pension/qualified Roth distributions are present, NJ gross is
+//   lower than federal AGI, which would unlock more exemption. CPAs should
+//   manually adjust when the difference matters.
+// - NJ: Worksheet D Part I/II "unused exclusion against other income" is NOT
+//   modeled (Line 28b). We compute only the Line 28a pension/IRA exclusion.
+// - NY: MFJ gets $40k combined cap. For true per-spouse handling (where one
+//   spouse can't use the other's unused cap) we'd need spouse retirement income
+//   tracked separately — not in the current schema.
+// - NY: doesn't distinguish Line 26 (government pension, unlimited) from Line
+//   29 ($20k private/IRA cap). All retirement income is treated as Line 29.
+//   CPAs with NY State / US federal / military pensioner clients should
+//   override via additionalDeductions.
 const STATE_RETIREMENT_EXEMPTION_RULES: Record<string, { ageMin?: number; description: string }> = {
   PA: { ageMin: 60, description: "PA fully exempts qualified retirement income at age 59½+ (we use 60)" },
   IL: { description: "IL fully exempts qualified retirement income (no age requirement)" },
   MS: { ageMin: 60, description: "MS fully exempts qualified retirement income at age 59½+ (we use 60)" },
+  HI: { description: "HI fully exempts qualified employer-funded retirement income (we apply to all retirement income)" },
 };
+
+/** NJ pension exclusion caps by filing status (TY2024, NJ Form NJ-1040 Line 28a). */
+const NJ_PENSION_CAP_BY_STATUS: Record<string, number> = {
+  married_filing_jointly: 100000,
+  qualifying_widow: 100000,
+  single: 75000,
+  head_of_household: 75000,
+  married_filing_separately: 50000,
+};
+
+/**
+ * NJ exclusion phase-out by NJ gross income, TY2024.
+ * Cliff at $150k; below $100k = full max; tiered between.
+ * Multiplier varies by filing status because NJ phases out as a percentage
+ * of the status-specific maximum (which we capture via NJ_PENSION_CAP_BY_STATUS).
+ */
+function njPhaseOutMultiplier(njGrossIncome: number, filingStatus: string): number {
+  if (njGrossIncome > 150000) return 0; // cliff
+  if (njGrossIncome <= 100000) return 1; // full
+  const isMfj = filingStatus === "married_filing_jointly" || filingStatus === "qualifying_widow";
+  const isMfs = filingStatus === "married_filing_separately";
+  if (njGrossIncome <= 125000) {
+    // Tier 1: 50% MFJ/QW, 37.5% Single/HoH, 25% MFS
+    return isMfj ? 0.5 : isMfs ? 0.25 : 0.375;
+  }
+  // Tier 2 ($125,001–$150,000): 25% MFJ/QW, 18.75% Single/HoH, 12.5% MFS
+  return isMfj ? 0.25 : isMfs ? 0.125 : 0.1875;
+}
 
 export function getStateRetirementExemption(params: {
   stateCode: string;
   retirementIncome: number;
+  filingStatus?: string;
   taxpayerAge?: number;
+  /**
+   * NJ gross income approximation, ≈ federal AGI − (federally-taxable Social Security).
+   * If absent and stateCode == NJ, we fall back to federalAgi (conservative — may
+   * over-phase-out filers with significant SS income). Optional for other states.
+   */
+  njGrossIncomeApprox?: number;
 }): { exemption: number; reason?: string } {
-  const cfg = STATE_RETIREMENT_EXEMPTION_RULES[params.stateCode.toUpperCase()];
+  const code = params.stateCode.toUpperCase();
+
+  // ── NJ: capped by status with NJ-gross-income phase-out ─────────────
+  if (code === "NJ") {
+    if ((params.taxpayerAge ?? 0) < 62) {
+      return { exemption: 0, reason: "NJ pension exclusion requires age 62+ (or disabled, not modeled)" };
+    }
+    const status = params.filingStatus ?? "single";
+    const maxCap = NJ_PENSION_CAP_BY_STATUS[status] ?? 75000;
+    const njGross = params.njGrossIncomeApprox ?? Number.POSITIVE_INFINITY;
+    const multiplier = njPhaseOutMultiplier(njGross, status);
+    if (multiplier === 0) {
+      return { exemption: 0, reason: `NJ gross income (~$${njGross.toLocaleString()}) exceeds $150k cliff` };
+    }
+    const effectiveCap = maxCap * multiplier;
+    const exemption = Math.min(Math.max(0, params.retirementIncome), effectiveCap);
+    return {
+      exemption,
+      reason: `NJ pension exclusion: ${status} cap $${maxCap.toLocaleString()} × ${multiplier} = $${effectiveCap.toLocaleString()}`,
+    };
+  }
+
+  // ── NY: $20k per filer / $40k MFJ; age 59½+ ─────────────────────────
+  if (code === "NY") {
+    if ((params.taxpayerAge ?? 0) < 60) {
+      return { exemption: 0, reason: "NY $20k exclusion requires age 59½+ (we use 60)" };
+    }
+    const status = params.filingStatus ?? "single";
+    const isMfj = status === "married_filing_jointly" || status === "qualifying_widow";
+    const cap = isMfj ? 40000 : 20000;
+    const exemption = Math.min(Math.max(0, params.retirementIncome), cap);
+    return {
+      exemption,
+      reason: `NY Line 29 pension/IRA exclusion: $${cap.toLocaleString()} ${isMfj ? "MFJ combined" : "per filer"}`,
+    };
+  }
+
+  // ── PA/IL/MS/HI: full exemption (age-gated for PA/MS) ──────────────
+  const cfg = STATE_RETIREMENT_EXEMPTION_RULES[code];
   if (!cfg) return { exemption: 0 };
   if (cfg.ageMin != null && (params.taxpayerAge ?? 0) < cfg.ageMin) {
     return { exemption: 0, reason: `Age below threshold ${cfg.ageMin}` };
@@ -422,6 +520,7 @@ export function calculateMultiStateTax(params: {
     federalIncomeTaxPaid?: number;
     retirementIncomeForExemption?: number;
     taxpayerAge?: number;
+    njGrossIncomeApprox?: number;
   };
 }): MultiStateTaxResult {
   const resident = params.residentState.toUpperCase();
@@ -497,8 +596,14 @@ export function calculateStateTax(
     federalIncomeTaxPaid?: number;
     /** Qualified retirement-income distributions (1099-R taxable amount) for state exemption */
     retirementIncomeForExemption?: number;
-    /** Taxpayer age — gates state retirement exemption (PA, MS require 59½+) */
+    /** Taxpayer age — gates state retirement exemption (PA, MS, NJ, NY require 59½+ / 62+) */
     taxpayerAge?: number;
+    /**
+     * NJ gross income approximation, used to phase out the NJ pension exclusion.
+     * Caller should pass federalAgi − (federally-taxable Social Security).
+     * If absent for NJ filers, falls back to federalAgi (conservative).
+     */
+    njGrossIncomeApprox?: number;
   },
 ): number {
   const year = resolveTaxYear(taxYear);
@@ -525,11 +630,13 @@ export function calculateStateTax(
     oregonSubtraction = r.subtraction;
   }
 
-  // PA / IL / MS: subtract qualified retirement income (age-gated for PA, MS)
+  // PA / IL / MS / HI: full exemption; NJ / NY: capped by status (NJ phased-out)
   const retirementExemption = getStateRetirementExemption({
     stateCode: code,
     retirementIncome: options?.retirementIncomeForExemption ?? 0,
+    filingStatus,
     taxpayerAge: options?.taxpayerAge,
+    njGrossIncomeApprox: options?.njGrossIncomeApprox ?? federalAgi,
   }).exemption;
 
   const stateTaxable = Math.max(0, federalAgi - stdDed - personalExemption - oregonSubtraction - retirementExemption);

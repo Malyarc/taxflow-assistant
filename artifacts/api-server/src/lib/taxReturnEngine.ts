@@ -838,6 +838,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
       federalIncomeTaxPaid: federalIncomeTaxForOr,
       retirementIncomeForExemption: form1099Summary.retirementIncome,
       taxpayerAge: client.taxpayerAge ?? undefined,
+      // NJ pension-exclusion phase-out tests against NJ gross income; we use
+      // federal AGI as the approximation (SS not modeled as separate stream).
+      njGrossIncomeApprox: calc.adjustedGrossIncome,
     },
   });
   const stateTaxLiability = multiState.totalStateTax;
@@ -1021,10 +1024,16 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const effectiveRate = calc.totalIncome > 0 ? totalTaxBurden / calc.totalIncome : 0;
 
   // ── Compute state retirement exemption (for transparency in result) ──
+  // Pass filing status + NJ-gross approximation so NJ/NY rules apply correctly.
+  // NJ gross income ≈ federal AGI minus Social Security; we don't model SS as a
+  // separate stream yet, so the approximation is federal AGI (conservative — may
+  // over-phase-out NJ filers with significant SS income).
   const stateRetirementExemptionInfo = getStateRetirementExemption({
     stateCode: stateUpper,
     retirementIncome: form1099Summary.retirementIncome,
+    filingStatus: client.filingStatus,
     taxpayerAge: client.taxpayerAge ?? undefined,
+    njGrossIncomeApprox: calc.adjustedGrossIncome,
   });
 
   return {
