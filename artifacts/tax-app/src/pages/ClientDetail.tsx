@@ -945,7 +945,7 @@ function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: nu
             <Button
               variant="outline"
               size="sm"
-              title="Form 1040-style summary PDF with all schedules"
+              title="Custom one-page tax-return summary (TaxFlow layout) for client email or print"
               onClick={() => {
                 const link = document.createElement("a");
                 link.href = `/api/clients/${clientId}/tax-return/pdf?taxYear=${taxYear}`;
@@ -955,7 +955,22 @@ function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: nu
                 document.body.removeChild(link);
               }}
             >
-              Download PDF
+              Download PDF (summary)
+            </Button>
+            <Button
+              variant="default"
+              size="sm"
+              title="Official IRS Form 1040 with values filled in via pdf-lib (TY2024 template)"
+              onClick={() => {
+                const link = document.createElement("a");
+                link.href = `/api/clients/${clientId}/tax-return/form-1040?taxYear=${taxYear}`;
+                link.download = "";
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+              }}
+            >
+              IRS Form 1040 (PDF)
             </Button>
             <Button
               variant="outline"

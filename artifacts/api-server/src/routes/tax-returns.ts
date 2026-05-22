@@ -10,6 +10,7 @@ import {
 } from "@workspace/api-zod";
 import { recalculateAndUpsertTaxReturn, computeTaxReturn } from "../lib/taxReturnPipeline";
 import { buildTaxReturnPdf } from "../lib/pdfExport";
+import { buildIrsForm1040Pdf } from "../lib/irsForm1040Pdf";
 import {
   buildTaxReturnCsvExport,
   buildTaxReturnJsonExport,
@@ -127,6 +128,36 @@ router.get("/clients/:clientId/tax-return/pdf", async (req, res): Promise<void> 
   res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
   res.setHeader("Content-Length", pdf.length.toString());
   res.send(pdf);
+});
+
+// Real IRS Form 1040 PDF — fills the official IRS fillable template via pdf-lib.
+// CPAs use this for client-facing review; the engine values land on the actual
+// IRS form layout instead of our custom summary.
+router.get("/clients/:clientId/tax-return/form-1040", async (req, res): Promise<void> => {
+  const params = GetTaxReturnParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const yearRaw = req.query.taxYear;
+  const overrideYear = typeof yearRaw === "string" && Number.isFinite(Number(yearRaw))
+    ? Number(yearRaw)
+    : undefined;
+  const computed = await computeTaxReturn(params.data.clientId, overrideYear ? { taxYear: overrideYear } : {});
+  if (!computed) {
+    res.status(404).json({ error: "Client not found" });
+    return;
+  }
+  try {
+    const pdf = await buildIrsForm1040Pdf({ client: computed.client, ret: computed.result });
+    const fileName = `irs-form-1040-${computed.client.firstName}-${computed.client.lastName}-${computed.result.taxYear}.pdf`.replace(/\s+/g, "_");
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+    res.setHeader("Content-Length", pdf.length.toString());
+    res.send(pdf);
+  } catch (err) {
+    res.status(500).json({ error: err instanceof Error ? err.message : "Failed to build Form 1040 PDF" });
+  }
 });
 
 // CSV export — UltraTax CS / Lacerte / ProConnect / Drake friendly

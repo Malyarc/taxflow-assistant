@@ -120,12 +120,20 @@ async function main() {
     check("UltraTax: TAX_YEAR=2024", gen.body.includes("TAX_YEAR=2024"));
     check("UltraTax: 1040-L9=75000.00", gen.body.includes("1040-L9=75000.00"));
 
-    // ── PDF ──
+    // ── PDF — custom summary (pdfkit) ──
     const pdf = await rawBytes(`/clients/${cid}/tax-return/pdf`);
     check("PDF: 200 OK", pdf.status === 200);
     check("PDF: content-type is application/pdf", pdf.contentType.includes("application/pdf"));
     check("PDF: starts with %PDF magic bytes", pdf.head.startsWith("%PDF"));
     check("PDF: size > 1KB (real content)", pdf.size > 1000);
+
+    // ── PDF — IRS Form 1040 overlay (pdf-lib + bundled IRS template) ──
+    const f1040 = await rawBytes(`/clients/${cid}/tax-return/form-1040`);
+    check("IRS 1040: 200 OK", f1040.status === 200);
+    check("IRS 1040: content-type is application/pdf", f1040.contentType.includes("application/pdf"));
+    check("IRS 1040: starts with %PDF magic bytes", f1040.head.startsWith("%PDF"));
+    // Template is ~163KB; with overlay text it should be in the ~150-300KB range.
+    check("IRS 1040: size in expected range (140K-300K)", f1040.size > 140000 && f1040.size < 300000);
   } finally {
     await delClient(cid);
   }
