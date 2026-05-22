@@ -540,6 +540,112 @@ header("Multi-state — Two non-resident states + resident");
   else FAIL.push(`✗ Resident credit should be > 0 when CA gets NR tax credit`);
 }
 
+// ── B5: CA 540NR non-resident bracket formula ──────────────────────────────
+// CA 540NR Schedule CA Part III:
+//   NR tax = Tax(total income as if CA resident) × (CA-source / total)
+// This is HIGHER than applying CA brackets directly to CA-source wages
+// because CA is progressive — the resident-equivalent rate already reflects
+// the higher total-income marginal rate.
+
+header("CA 540NR — TX resident, $30k CA + $70k TX (30% CA-source)");
+{
+  // Hand-calc TY2024 single:
+  //   CA std ded = $5,540. Taxable as resident = $100,000 - $5,540 = $94,460.
+  //   Bracket calc on $94,460:
+  //     1.0% × $10,756               = $107.56
+  //     2.0% × ($25,499-$10,756)     = $294.86
+  //     4.0% × ($40,245-$25,499)     = $589.84
+  //     6.0% × ($55,866-$40,245)     = $937.26
+  //     8.0% × ($70,606-$55,866)     = $1,179.20
+  //     9.3% × ($94,460-$70,606)     = $2,218.42
+  //   Total tax as resident          = $5,327.14
+  //   NR tax = $5,327.14 × (30,000 / 100,000) = $1,598.14
+  // Old by-brackets-on-NR-wages would have given ~$382 (much lower).
+  const r = calculateMultiStateTax({
+    residentState: "TX",
+    federalAgi: 100000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "CA", wages: 30000 }, { stateCode: "TX", wages: 70000 }],
+  });
+  const caEntry = r.nonresidentStateTaxes.find((s) => s.state === "CA");
+  check("CA 540NR tax (30% allocation) ≈ $1,598", caEntry?.tax ?? -1, 1598.14, 3);
+}
+
+header("CA 540NR — TX resident, 100% CA wages → same as direct brackets");
+{
+  // Edge case: when CA-source = total income, factor = 1.0, so
+  // NR tax = full CA resident tax. Confirms backward compatibility with
+  // the 100%-NR test case at line ~501.
+  const r = calculateMultiStateTax({
+    residentState: "TX",
+    federalAgi: 100000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "CA", wages: 100000 }],
+  });
+  const caTax = calculateStateTax(100000, "CA", "single", 2024);
+  const caEntry = r.nonresidentStateTaxes.find((s) => s.state === "CA");
+  check("CA 100% NR tax = full CA tax on $100k (factor=1.0)", caEntry?.tax ?? -1, caTax, 1);
+}
+
+header("CA 540NR — MFJ TX resident, $30k CA + $70k TX");
+{
+  // Hand-calc TY2024 MFJ:
+  //   CA MFJ std ded = $11,080. Taxable as resident = $100,000 - $11,080 = $88,920.
+  //   Bracket calc on $88,920:
+  //     1% × $21,512               = $215.12
+  //     2% × ($50,998-$21,512)     = $589.72
+  //     4% × ($80,490-$50,998)     = $1,179.68
+  //     6% × ($88,920-$80,490)     = $505.80
+  //   Total tax as resident        = $2,490.32
+  //   NR tax = $2,490.32 × 0.3 = $747.10
+  const r = calculateMultiStateTax({
+    residentState: "TX",
+    federalAgi: 100000,
+    filingStatus: "married_filing_jointly",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "CA", wages: 30000 }, { stateCode: "TX", wages: 70000 }],
+  });
+  const caEntry = r.nonresidentStateTaxes.find((s) => s.state === "CA");
+  check("CA 540NR MFJ tax (30% × $2,490) ≈ $747", caEntry?.tax ?? -1, 747.10, 2);
+}
+
+header("CA 540NR — CA as resident state doesn't use 540NR formula");
+{
+  // CA resident with NY wages — NY uses simple NR formula (not CA 540NR).
+  // Just confirms the 540NR branch only fires when CA is the NR state.
+  const r = calculateMultiStateTax({
+    residentState: "CA",
+    federalAgi: 100000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "CA", wages: 50000 }, { stateCode: "NY", wages: 50000 }],
+  });
+  const nyTax = calculateStateTax(50000, "NY", "single", 2024);
+  const nyEntry = r.nonresidentStateTaxes.find((s) => s.state === "NY");
+  check("NY uses simple bracket-on-wages (no 540NR for non-CA)", nyEntry?.tax ?? -1, nyTax, 1);
+}
+
+header("CA 540NR — Very low CA-source share (1%) still uses CA bracket on full income");
+{
+  // Hand-calc: TX resident, single, total AGI $100k, only $1,000 CA-source.
+  //   CA resident-equivalent tax on $100k single = $5,327.14 (see test above)
+  //   NR tax = $5,327.14 × ($1,000 / $100,000) = $53.27
+  // This is dramatically higher than calculateStateTax($1k, CA, ...) which would
+  // be $0 (under CA's effective threshold after std ded) — confirms 540NR
+  // formula prevents the "shop in low-bracket NR state" loophole.
+  const r = calculateMultiStateTax({
+    residentState: "TX",
+    federalAgi: 100000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "CA", wages: 1000 }, { stateCode: "TX", wages: 99000 }],
+  });
+  const caEntry = r.nonresidentStateTaxes.find((s) => s.state === "CA");
+  check("CA NR @ 1% allocation ≈ $53.27 (resident-equivalent × fraction)", caEntry?.tax ?? -1, 53.27, 2);
+}
+
 header("End-to-end multi-state — NJ resident, PA wages (reciprocity)");
 {
   // NJ resident, $80k W-2 with PA stateCode.

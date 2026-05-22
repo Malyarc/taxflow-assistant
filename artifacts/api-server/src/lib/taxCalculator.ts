@@ -547,11 +547,28 @@ export function calculateMultiStateTax(params: {
       nonresidentStateTaxes.push({ state: nrState, tax: 0, wages: nrWages, reciprocityApplied: true });
       continue;
     }
-    // NR state taxes its source wages. We use NR state's bracket on those wages
-    // (simplified — real NR returns often have additional adjustments).
-    const nrTax = calculateStateTax(nrWages, nrState, params.filingStatus, params.taxYear, {
-      // NR state does NOT apply resident-state retirement exemption or OR fed subtraction
-    });
+
+    // ── CA 540NR formula (FTB Form 540NR Schedule CA, Part III) ─────────────
+    // NR tax = Tax(total income as if CA resident) × (CA-source income / total income).
+    // This produces a higher NR tax than applying CA brackets directly to NR wages
+    // because CA is progressive: the resident-equivalent calculation uses the higher
+    // marginal rate corresponding to total income, and we then allocate proportionally.
+    let nrTax: number;
+    if (nrState === "CA" && params.federalAgi > 0) {
+      const taxAsIfResident = calculateStateTax(
+        params.federalAgi,
+        "CA",
+        params.filingStatus,
+        params.taxYear,
+        {},
+      );
+      const sourceFraction = Math.min(1, Math.max(0, nrWages / params.federalAgi));
+      nrTax = taxAsIfResident * sourceFraction;
+    } else {
+      // Other NR states: simplified — apply NR state's brackets directly to NR wages.
+      // Real NR returns often have additional adjustments we don't model.
+      nrTax = calculateStateTax(nrWages, nrState, params.filingStatus, params.taxYear, {});
+    }
     nonresidentStateTaxes.push({ state: nrState, tax: nrTax, wages: nrWages, reciprocityApplied: false });
     totalNrTax += nrTax;
     totalNrWages += nrWages;
