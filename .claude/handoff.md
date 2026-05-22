@@ -1,147 +1,158 @@
-# Handoff Note — 2026-05-21 (end of long session)
+# Handoff Note — 2026-05-22 (end of Phase B+ session)
 
 Session continuation point for the next Claude (or human) working on TaxFlow Assistant.
 
 ## Headline
 
-**Phase A + Phase B complete and deployed.** Next priority: **Phase B+ — pull four high-frequency engine items from Phase E to immediate priority** (K-1 detail, NYC local income tax, AMT preferences, state EITC ×5 states). The new session has explicit instructions for this work in the pasteable prompt below.
+**Phase B+ complete and deployed.** All four high-frequency engine items shipped:
+K-1 detail (BP1), NYC PIT (BP2), AMT preferences (BP3), state EITC ×5 (BP4).
 
-**Current state: 1,221 assertions / 0 failures across 19 suites.** Live at http://ec2-18-188-192-154.us-east-2.compute.amazonaws.com.
+**Current state: 1,366 assertions / 0 failures across 24 suites.** Live at
+http://ec2-18-188-192-154.us-east-2.compute.amazonaws.com. Smoke-tested in production:
+NYC + K-1 flow returns the engine-correct numbers end-to-end.
 
-## What's done
-
-### This session (Phase A + B — all 9 commits pushed + deployed):
+## What's done this session
 
 | Commit | Phase | Title |
 |---|---|---|
-| `72faa21` | B10 | W-2 box-arithmetic verify flags + shared `@workspace/validation` package |
-| `0ca50c8` | B7  | Form 1116 engine integration — `foreign_source_taxable_income` |
-| `d82cc9d` | B8  | HI / NJ / NY partial retirement-income exemptions |
-| `3c5b5dc` | B5  | CA 540NR non-resident bracket formula |
-| `edbcea2` | B9  | Multi-page PDF in BoundedDocumentViewer |
-| `2ac58e1` | A3  | IRS Form 1040 PDF overlay via pdf-lib + bundled templates |
-| `edfa29a` + `780f47e` | B6 | Per-property rental + per-property MACRS (engine + UI) |
-| `6eb27c8` | B4  | Schedule D / Form 8949 per-transaction + wash sale |
-| `274ee0f` | docs | roadmap + handoff + CLAUDE.md updates |
+| `85fae6d` | BP1 backend | Schedule K-1 — partnership + S-corp pass-through |
+| `4761baa` | BP1 frontend | K-1s tab with per-K-1 CRUD UI |
+| `31ecea8` | BP2 | NYC personal income tax — 4 brackets per filing status |
+| `5908925` | BP3 | AMT preferences — SALT addback + ISO bargain element |
+| `cdb90b2` | BP4 | State EITC expansion — CO + IL + NJ + MA piggyback + MN WFC |
 
-### Earlier sessions:
+### Verified facts (sourced May 2026)
 
-- AI-overlay review/approve UX (Phase A2)
-- Audit log + per-mutation writes (Phase A2 / Tier B)
-- State EITC for CA + NY, VT personal exemption, Form 1116 calculator path (Tier D)
-- Multi-state framework + reciprocity, MACRS, capital-loss + §469 PAL carryforwards (Phase 2)
-- Phase 1.5 — student loan / educator / ACA PTC / residential energy / FTC
-- Engine + adapter split, 50-state bracket data, edge-case suite
+Critical research-driven corrections this session:
 
-### Schema (current state of the DB):
+1. **NYC MFJ thresholds are NOT 2× single** — they're 1.8× ($21.6k / $45k / $90k vs. single's $12k / $25k / $50k). Verified against NY DTF Form IT-201-I 2024 page 40.
+
+2. **CO state EITC for TY2024 = 50%, not 25%.** HB24-1134 was a mid-2024 one-time bump (DR 0104CR rev. 09/30/24 Line 5). TY2025 = 35%, TY2026+ baseline = 25%. The user's "25%" was the pre-2024 rate.
+
+3. **NYC PIT brackets unchanged since TY2017.** The "FY2025 NYS budget shift" the user mentioned in the handoff was about the NYS top rates, not NYC.
+
+4. **MN Working Family Credit uses Schedule M1CWFC** (consolidated with the MN CTC starting TY2023), NOT the older M1WFC. Independent calc: 4% × min(earned, $9,220) + per-child add-ons, 12% phase-out above $31,090 ($36,880 MFJ), $11,600 investment-income limit.
+
+5. **K-1 engine fix while in BP1:** SE-tax base separated from Schedule C net so partnership Box 14A SE earnings don't double-count into AGI (Box 1 already flows there via Schedule E Part II).
+
+### Schema additions
 
 ```
-clients, w2_data, form_1099_data, tax_documents, tax_returns,
-adjustments, audit_log, rental_properties, capital_transactions,
-conversations, messages
+schedule_k1_data           NEW TABLE   (BP1)
+clients.locality_code      NEW COLUMN  (BP2)
+tax_returns.k1_passive_loss_suspended   NEW COLUMN  (BP1 — for prior-year carryforward auto-load)
+tax_returns.local_tax_liability         NEW COLUMN  (BP2)
+tax_returns.local_tax_jurisdiction      NEW COLUMN  (BP2)
 ```
 
-Workspace packages:
-```
-@workspace/api-spec, @workspace/api-zod, @workspace/api-client-react,
-@workspace/db, @workspace/integrations-openai-ai-server,
-@workspace/integrations-openai-ai-react, @workspace/validation
-```
+New adjustment types introduced (no schema change — existing `adjustments` table):
 
-## Next session: Phase B+ — engine expansion
+- `k1_passive_loss_carryforward` — auto-loaded from prior year's tax_returns.k1_passive_loss_suspended
+- `amt_iso_bargain_element` — Form 6251 line 2k
+- `amt_state_tax_addback_override` — Form 6251 line 2g override (auto-derived from itemized SALT when not set)
 
-The strategic decision (logged in roadmap.md and explained to the user in the previous turn): pull four high-frequency items forward from Phase E because they cover the largest remaining slice of common returns. Holding Phase D (CPA-firm auth) for now, even though it's the gate to a paid design partner — engine coverage is the more concrete blocker for the design partner to *see value* on day one.
+### Test count tracker
 
-### Items to ship, in this order
+- Session start: 1,221 assertions / 19 suites
+- After BP1: 1,314 / 21 (added k1-tests + k1-integration-tests)
+- After BP2: 1,329 / 22 (added nyc-tests)
+- After BP3: 1,345 / 23 (added amt-prefs-tests)
+- After BP4: 1,366 / 24 (added state-eitc-tests)
 
-| # | Item | Effort | Coverage gain |
-|---|---|---|---|
-| BP1 | K-1 detail (S-corp + partnership) | 3-5 days | Anyone with pass-through entities |
-| BP2 | NYC local income tax (Form IT-201, NYC residents only) | 2-3 days | NYC residents (~3M filers) |
-| BP3 | AMT preferences detail (ISO bargain + state-tax addback) | 2-3 days | AMT-bound filers (high earners, ISO exercisers) |
-| BP4 | State EITC expansion: CO, IL, MN, NJ, MA | ~5 days total | Low-income filers in 5 more states |
+All standalone + integration suites at 0 failures after each commit.
 
-### Hand-calc references (mandatory per CLAUDE.md):
+(`tax-engine-ai-overlay-tests` was not run in this session — needs a real
+`AI_API_KEY`. Failure on dummy key is environmental, not a regression.)
 
-**BP1 — K-1**:
-- Form 1065 K-1 (partnership): boxes 1 (ordinary biz income), 2 (rental real estate income), 14 (SE earnings), 17 (AMT items), 20 (other info incl. §199A code Z)
-- Form 1120-S K-1 (S-corp): boxes 1 (ordinary biz income), 2 (rental), 16 (foreign), 17 (§199A items)
-- §199A flow: K-1 box (Z for 1065 / V for 1120-S) carries QBI, W-2 wages, UBIA — flows to Form 8995-A
-- §469 passive activity: K-1 box code "B" indicates passive
-- Schedule E Part II for income/loss flow
-- IRS Pub 541 (partnerships), Pub 550, Form 8995 instructions
-- Worked examples needed: 1 S-corp K-1 (active), 1 partnership K-1 (passive), 1 with §199A flow
+## Known limitations introduced or documented
 
-**BP2 — NYC local tax**:
-- NYC Form IT-201 (NYC residents file as part of NY IT-201, plus NYC schedule)
-- 2024 NYC brackets (verify against NYC DOF before locking — these are approximate):
-  - Single: 3.078% to $12k, 3.762% to $25k, 3.819% to $50k, 3.876% above
-  - MFJ: similar tiers with doubled thresholds
-- NYC-resident determination: domicile + 183-day test
-- NYC unincorporated business tax (UBT) is SEPARATE — handles only NYC personal income tax here
-- MCTMT (Metropolitan Commuter Mobility Tax) is separate too — for self-employed > $50k net SE income in MCTD
-- Reference: NYC Administrative Code §11-1701, NY IT-201 instructions Section 4
+### K-1 (BP1)
+- §199A wage/UBIA limit + SSTB phase-out: stored but not applied (simplified 20%)
+- Basis / at-risk limits: stored, not enforced
+- K-1 guaranteed payments (Box 4 on 1065): not modeled
+- Form 8582 cross-bucketing: K-1 passive bucket separate from rental-RE bucket (slight simplification — IRS pools them with caveats)
 
-**BP3 — AMT preferences**:
-- Form 6251 line 2e: state and local tax refund addback (we don't currently apply this — but for the federal AMT calc we should also ADD BACK the state/local tax deduction that lowered ordinary taxable income → line 2g)
-- Form 6251 line 2i: depreciation difference (we have MACRS; the AMT depreciation uses ADS / longer life → difference adds back)
-- Form 6251 line 2k: ISO bargain element on exercise (FMV at exercise − strike, when ISO held past calendar year-end)
-- New adjustment types needed: `amt_iso_bargain_element`, `amt_state_tax_addback_override` (the addback should auto-compute from itemized SALT, but allow override)
-- IRS Pub 535, Form 6251 instructions
+### NYC (BP2)
+- NYC school tax credit (line 69 flat + 69b rate-reduction): not modeled
+- NYC UBT: separate tax, out of scope
+- MCTMT (Metropolitan Commuter Mobility Tax): separate tax, out of scope
+- NYC household credit (line 48) IS modeled (small low-FAGI offset)
 
-**BP4 — State EITC expansion**:
-| State | TY2024 rule | Source |
-|---|---|---|
-| CO | 25% of federal EITC | Form 104CR Part III |
-| IL | 20% of federal EITC | Schedule IL-EIC |
-| MN | Working Family Credit — independent calc, NOT % of federal | Form M-1 Schedule M1WFC |
-| NJ | 40% of federal EITC | NJ-1040 Line 58 |
-| MA | 40% of federal EITC | Form 1 Schedule EITC |
+### AMT (BP3)
+- Form 6251 line 2g (SALT addback) and line 2k (ISO bargain): modeled
+- Line 2i (MACRS-vs-ADS depreciation difference): not modeled
+- Line 2e (state-refund recapture): not modeled
+- AMT NOL: not modeled
+- AMT credit carryforward: not modeled
 
-⚠️ MN is the tricky one — Working Family Credit is its own calculation based on earned income + dependents, not a multiplier of federal EITC. Schedule M1WFC has its own phase-out. Hand-calc this carefully.
-
-### Quality bar (same as Phase A + B):
-
-- Hand-calc every test expected value from IRS / state publication before asserting
-- Each item gets:
-  - Schema (if new tables needed)
-  - OpenAPI + codegen
-  - Engine integration with documented limitations
-  - Backend CRUD route + audit log writes
-  - Frontend tab or section
-  - Hand-calced integration tests
-- All 19 existing suites must stay at 0 failures
-- Commit + push per logical unit
-- Update roadmap.md status as each lands
-- Update CLAUDE.md test list when adding new test files
-- Update this handoff at session end
-
-### Deferred (do not build in next session):
-
-- NOL carryforward, AMT credit carryforward, charitable carryforward
-- Other local income taxes (MD counties, OH cities, IN counties)
-- §911 FEIE, §1091(d) holding-period tack-on
-- HSA Form 8889 detail, 1099-R penalty exception codes, 1099-G state-refund taxability
-- Part-year residency
-- Entity returns (1041 / 1065 / 1120) — out of scope per Phase 4 Option A
+### State EITC (BP4)
+- NJ age 18+/65+ expansion to childless filers: not auto-applied (CPA workaround = manual credit adjustment)
+- MA part-year proration: not modeled
+- MN "qualifying older children" approximated as federal-EITC qualifying-children count
+- MN phase-out uses the 12% rate (skips the 9% carve-out for older-children-only filers)
 
 ## EC2 deploy
 
-The standard cycle is documented in CLAUDE.md ("EC2 deploy" section). Key facts:
+Deployed this session via the standard cycle from CLAUDE.md:
 
-- Project lives at `~/taxflow-pro` (NOT `taxflow-assistant`)
-- SSH: `ssh -i ~/Downloads/taxflow-key.pem ubuntu@ec2-18-188-192-154.us-east-2.compute.amazonaws.com`
-- No `~/.env` on box; pull env vars from `pm2 env 0`
-- Frontend OOMs on EC2 (908 MiB box) — build locally + rsync `artifacts/tax-app/dist/public/`
+```
+# Local
+pnpm --filter @workspace/tax-app run build
+rsync ... ec2:~/taxflow-pro/artifacts/tax-app/dist/public/
 
-Schema pushes for Phase B+ items: **BP1 K-1 likely adds a `schedule_k1_data` table** → `db push` needed.
+# EC2
+git pull && pnpm install
+export DATABASE_URL=$(pm2 env 0 | awk -F": " '/^DATABASE_URL:/ {print $2; exit}')
+export AI_API_KEY=$(pm2 env 0 | awk -F": " '/^AI_API_KEY:/ {print $2; exit}')
+pnpm --filter @workspace/db run push     # 3 new columns + 1 new table
+pnpm --filter @workspace/api-server run build
+pm2 restart taxflow
+curl http://localhost:8080/api/healthz   # {"status":"ok"}
+```
 
-## Test count tracker
+Live smoke test confirmed: NYC + K-1 flow produces the engine-correct numbers in production.
 
-- Session start: 1,122 / 16 suites
-- After A3 + B4-B10: 1,221 / 19 suites
-- Target after BP1-BP4: ~1,300+ / ~21 suites
+## Next session — recommended priorities (read order matters)
+
+1. **`.claude/handoff.md`** — this file
+2. **`.claude/roadmap.md`** — Phase E options
+3. **`CLAUDE.md`** — invariants
+
+### Top candidates for next session (pick one based on user goal)
+
+**Option A — Phase C (design-partner validation):**
+- C11: Find a CPA design partner (calendar)
+- C12: Validate UltraTax `.gen` against a real UltraTax CS install
+- C13: AI extraction accuracy benchmark (100 labeled real 1099s/W-2s)
+- This is the path to actual customer feedback and a paid pilot.
+
+**Option B — Phase D (compliance / multi-tenancy, when paid partner committed):**
+- D15: CPA-firm multi-tenancy auth (orgs + users + RBAC) — 2-3 weeks
+- D16: Soft-delete clients + append-only audit log (DB-level revoke UPDATE/DELETE)
+- D17: Real document storage in S3 + encryption at rest
+
+**Option C — More Phase E engine items (do when a customer asks):**
+- NOL carryforward + 80% taxable income limit (post-TCJA)
+- AMT credit carryforward
+- Charitable carryforward (5-year)
+- §179 expense + bonus depreciation
+- HSA Form 8889 detail
+- Other local income taxes (MD counties, OH cities, IN counties)
+- Part-year residency in multi-state framework
+- Foreign income exclusion (§911 FEIE)
+
+**Option D — Polish:**
+- BP1 limitations: §199A wage/UBIA limit (for high-earner K-1 cases) — needed before serving filers above $191,950 single / $383,900 MFJ
+- BP2 limitations: NYC school tax credit (flat $63/$125 + 69b rate-reduction) — applies to almost all NYC residents below $250k AGI
+- BP3 limitations: Form 6251 line 2i (MACRS-vs-ADS depreciation difference) — needed for rental owners with significant depreciation
+- BP4 limitations: NJ 18+/65+ EITC expansion auto-apply
+
+### What I'd NOT do speculatively
+
+- Build any of Phase D before a paid design partner is committed (risk of building the wrong access model)
+- SOC 2 prep (D19) before a paying customer requires it
+- Per-vendor Lacerte / ProConnect / Drake adapters — `.gen` covers them universally
 
 ## How to start the next Claude session
 
-Use the pasteable prompt below.
+Pasteable prompt below.
