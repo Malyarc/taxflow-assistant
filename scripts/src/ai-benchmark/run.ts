@@ -36,14 +36,18 @@ interface Args {
   seed: number;
   forceMock: boolean;
   out: string;
+  /** Min ms between LIVE requests. 0 = no pacing. Default 6500 (~9 RPM,
+   *  safely under Gemini Flash's free-tier 10 RPM limit). */
+  paceMs: number;
 }
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { seed: 12345, forceMock: false, out: DEFAULT_OUT };
+  const args: Args = { seed: 12345, forceMock: false, out: DEFAULT_OUT, paceMs: 6500 };
   for (const a of argv) {
     if (a === "--mock") args.forceMock = true;
     else if (a.startsWith("--seed=")) args.seed = Number(a.slice("--seed=".length)) || args.seed;
     else if (a.startsWith("--out=")) args.out = resolve(a.slice("--out=".length));
+    else if (a.startsWith("--pace-ms=")) args.paceMs = Math.max(0, Number(a.slice("--pace-ms=".length)) || 0);
   }
   return args;
 }
@@ -57,6 +61,7 @@ async function main(): Promise<void> {
   console.log(`  mode    : ${mode}${mode === "LIVE" ? ` (model ${aiModel})` : ""}`);
   console.log(`  seed    : ${args.seed}`);
   console.log(`  out     : ${args.out}`);
+  if (mode === "LIVE") console.log(`  pace    : ${args.paceMs}ms between requests (~${Math.round(60_000 / Math.max(args.paceMs, 1))} RPM ceiling)`);
   if (mode === "MOCK" && aiEnabled && !args.forceMock) {
     console.log("  NOTE   : AI_API_KEY is set; pass --mock to force MOCK mode.");
   }
@@ -75,15 +80,24 @@ async function main(): Promise<void> {
   // Step 2: render + extract each doc
   const allResults: FieldResult[] = [];
   let okCount = 0, errCount = 0;
+  let lastReqEnd = 0;
   for (let i = 0; i < corpus.length; i++) {
     const entry = corpus[i];
     process.stdout.write(`  [${String(i + 1).padStart(3, " ")}/${corpus.length}] ${entry.id.padEnd(16)} `);
     try {
+      // LIVE pacing: hold each request to ~paceMs after the previous one
+      // STARTED. Combined with the extractor's per-call 429-retry-backoff,
+      // this lets a 100-doc run complete on the Gemini free tier (10 RPM).
+      if (mode === "LIVE" && args.paceMs > 0 && lastReqEnd > 0) {
+        const wait = args.paceMs - (Date.now() - lastReqEnd);
+        if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+      }
       const pdf = mode === "LIVE"
         ? await renderForm(entry.kind, entry.truth as W2Fields | F1099Fields)
         : null;
       const base64 = pdf ? pdf.toString("base64") : null;
       const ext = await runExtraction(entry.id, entry.kind, entry.truth as W2Fields | F1099Fields, base64, { forceMock: args.forceMock });
+      lastReqEnd = Date.now();
       const docResults = scoreDocument(entry, ext);
       allResults.push(...docResults);
       if (ext.error) {

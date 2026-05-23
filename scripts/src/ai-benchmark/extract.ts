@@ -126,6 +126,19 @@ function normalizeData(parsed: Record<string, unknown>): Record<string, unknown>
 
 // ── Live extraction ─────────────────────────────────────────────────────────
 
+function isRateLimitError(err: unknown): boolean {
+  if (!err) return false;
+  const e = err as { status?: number; code?: string | number; message?: string };
+  if (e.status === 429) return true;
+  if (e.code === 429 || e.code === "429") return true;
+  const msg = (e.message ?? String(err)).toLowerCase();
+  return msg.includes("429") || msg.includes("rate limit") || msg.includes("quota") || msg.includes("resource_exhausted");
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((r) => setTimeout(r, ms));
+}
+
 async function liveExtract(
   kind: FormKind,
   base64Pdf: string,
@@ -135,22 +148,38 @@ async function liveExtract(
     ? "Extract W-2 data from this image."
     : "Identify the 1099 type and extract relevant fields.";
 
-  const response = await openai.chat.completions.create({
-    model: aiModel,
-    max_completion_tokens: 4096,
-    messages: [
-      { role: "system", content: prompt },
-      {
-        role: "user",
-        content: [
-          { type: "image_url", image_url: { url: `data:application/pdf;base64,${base64Pdf}` } },
-          { type: "text", text: userText },
+  // Retry on 429 with exponential backoff. Gemini free tier is 10 RPM, so
+  // even with the runner's pacing we will occasionally bump the limit; this
+  // ensures the run completes rather than logging 80% errors.
+  const maxRetries = 6;
+  let attempt = 0;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    try {
+      const response = await openai.chat.completions.create({
+        model: aiModel,
+        max_completion_tokens: 4096,
+        messages: [
+          { role: "system", content: prompt },
+          {
+            role: "user",
+            content: [
+              { type: "image_url", image_url: { url: `data:application/pdf;base64,${base64Pdf}` } },
+              { type: "text", text: userText },
+            ],
+          },
         ],
-      },
-    ],
-  });
-
-  return normalizeData(extractJsonObject(response.choices[0]?.message?.content ?? "{}"));
+      });
+      return normalizeData(extractJsonObject(response.choices[0]?.message?.content ?? "{}"));
+    } catch (err) {
+      attempt++;
+      if (!isRateLimitError(err) || attempt > maxRetries) throw err;
+      // Backoff schedule: 8s, 16s, 32s, 60s, 60s, 60s (caps so a single doc
+      // doesn't stall the run > ~4min)
+      const backoffMs = Math.min(60_000, 4_000 * Math.pow(2, attempt));
+      await sleep(backoffMs);
+    }
+  }
 }
 
 // ── Mock extraction ─────────────────────────────────────────────────────────

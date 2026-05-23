@@ -38,7 +38,16 @@ pnpm --filter @workspace/scripts exec tsx src/ai-benchmark/run.ts --seed=99999
 
 # Custom output dir
 pnpm --filter @workspace/scripts exec tsx src/ai-benchmark/run.ts --out=/tmp/bench
+
+# Override per-request pacing (default 6500ms ≈ 9 RPM, safe for Gemini Flash free tier)
+pnpm --filter @workspace/scripts exec tsx src/ai-benchmark/run.ts --pace-ms=2000
 ```
+
+**Rate limits.** The Gemini Flash free tier is 10 RPM. The runner defaults to
+6.5s between requests (≈9 RPM ceiling) and the extractor retries any HTTP 429
+with exponential backoff (8s → 60s, six attempts). A 100-doc LIVE run therefore
+takes ~11 minutes on the free tier. Override `--pace-ms=N` if you have a paid
+quota.
 
 Outputs to `docs/ai-benchmark/` by default:
 
