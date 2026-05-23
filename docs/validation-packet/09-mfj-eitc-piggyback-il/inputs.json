@@ -1,0 +1,33 @@
+{
+  "client": {
+    "firstName": "Morgan & Sky",
+    "lastName": "Family",
+    "filingStatus": "married_filing_jointly",
+    "state": "IL",
+    "taxYear": 2024,
+    "dependentsUnder17": 2
+  },
+  "slug": "mfj-eitc-piggyback-il",
+  "number": 9,
+  "title": "MFJ, low-income with 2 qualifying children, IL state EITC",
+  "description": "Low-AGI joint filer with 2 qualifying children, lives in Illinois. Exercises federal EITC + IL state EITC at 20% piggyback (PA 102-0700, since TY2023). Also exercises refundable Additional CTC.",
+  "expectations": [
+    "Federal EITC > 0 (within MFJ-with-2-kids window)",
+    "IL state EITC = 20% × federal EITC",
+    "ACTC (refundable CTC) may be non-zero"
+  ],
+  "w2s": [
+    {
+      "taxYear": 2024,
+      "wagesBox1": 28000,
+      "federalTaxWithheldBox2": 800,
+      "stateCode": "IL",
+      "socialSecurityWagesBox3": 28000,
+      "socialSecurityTaxBox4": 1736,
+      "medicareWagesBox5": 28000,
+      "medicareTaxBox6": 406,
+      "stateWagesBox16": 28000,
+      "stateTaxWithheldBox17": 1100
+    }
+  ]
+}

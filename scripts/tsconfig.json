@@ -30,6 +30,7 @@
     "src/tax-engine-k1-integration-tests.ts",
     "src/tax-engine-nyc-tests.ts",
     "src/tax-engine-amt-prefs-tests.ts",
-    "src/tax-engine-state-eitc-tests.ts"
+    "src/tax-engine-state-eitc-tests.ts",
+    "src/build-validation-packet.ts"
   ]
 }

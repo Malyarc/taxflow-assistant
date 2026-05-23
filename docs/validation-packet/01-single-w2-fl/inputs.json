@@ -1,0 +1,32 @@
+{
+  "client": {
+    "firstName": "Alex",
+    "lastName": "Baseline",
+    "filingStatus": "single",
+    "state": "FL",
+    "taxYear": 2024
+  },
+  "slug": "single-w2-fl",
+  "number": 1,
+  "title": "Single, W-2 only, FL (no state income tax)",
+  "description": "Baseline simplest return. Single filer, one W-2, lives in Florida. Exercises: federal regular tax brackets, std deduction, federal withholding → refund or balance due. Zero state tax. No credits.",
+  "expectations": [
+    "AGI = $55,000",
+    "Std ded (single 2024) = $14,600 → taxable = $40,400",
+    "Federal tax ≈ $4,616 (single 2024 brackets)",
+    "Federal withheld = $6,200 → refund ≈ $1,584",
+    "State tax = $0 (FL)"
+  ],
+  "w2s": [
+    {
+      "taxYear": 2024,
+      "wagesBox1": 55000,
+      "federalTaxWithheldBox2": 6200,
+      "stateCode": "FL",
+      "socialSecurityWagesBox3": 55000,
+      "socialSecurityTaxBox4": 3410,
+      "medicareWagesBox5": 55000,
+      "medicareTaxBox6": 797.5
+    }
+  ]
+}

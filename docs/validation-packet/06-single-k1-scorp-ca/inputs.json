@@ -1,0 +1,41 @@
+{
+  "client": {
+    "firstName": "Riley",
+    "lastName": "Shareholder",
+    "filingStatus": "single",
+    "state": "CA",
+    "taxYear": 2024
+  },
+  "slug": "single-k1-scorp-ca",
+  "number": 6,
+  "title": "Single, S-corp K-1 + W-2, CA",
+  "description": "S-corp shareholder taking salary (W-2) plus K-1 distributive share. Exercises K-1 Box 1 (active ordinary income), §199A QBI on the K-1 portion, no SE tax on the K-1 (S-corp passthrough), CA state tax.",
+  "expectations": [
+    "AGI = W-2 wages + K-1 Box 1 ordinary income (no SE on K-1 for S-corp)",
+    "QBI deduction applies to the K-1 portion (simplified 20%)",
+    "CA state tax > 0"
+  ],
+  "w2s": [
+    {
+      "taxYear": 2024,
+      "wagesBox1": 80000,
+      "federalTaxWithheldBox2": 9500,
+      "stateCode": "CA",
+      "socialSecurityWagesBox3": 80000,
+      "socialSecurityTaxBox4": 4960,
+      "medicareWagesBox5": 80000,
+      "medicareTaxBox6": 1160,
+      "stateWagesBox16": 80000,
+      "stateTaxWithheldBox17": 3700
+    }
+  ],
+  "k1s": [
+    {
+      "taxYear": 2024,
+      "entityName": "Riverside Consulting Inc",
+      "entityType": "s_corp",
+      "activityType": "active",
+      "box1OrdinaryIncome": 45000
+    }
+  ]
+}

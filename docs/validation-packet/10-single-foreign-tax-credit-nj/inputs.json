@@ -1,0 +1,57 @@
+{
+  "client": {
+    "firstName": "Quinn",
+    "lastName": "Expat",
+    "filingStatus": "single",
+    "state": "NJ",
+    "taxYear": 2024
+  },
+  "slug": "single-foreign-tax-credit-nj",
+  "number": 10,
+  "title": "Single, W-2 + foreign dividends + Form 1116 FTC, NJ",
+  "description": "US filer with significant foreign-source dividend income and foreign tax withheld at source. Exercises Form 1116 FTC limitation (binding when foreign tax > US tax share) and NJ state tax on AGI.",
+  "expectations": [
+    "Foreign tax credit reduces federal liability (capped at FTC limitation)",
+    "1099-DIV interest+dividend income flows into AGI",
+    "NJ state tax > 0 (graduated NJ brackets)"
+  ],
+  "w2s": [
+    {
+      "taxYear": 2024,
+      "wagesBox1": 110000,
+      "federalTaxWithheldBox2": 14000,
+      "stateCode": "NJ",
+      "socialSecurityWagesBox3": 110000,
+      "socialSecurityTaxBox4": 6820,
+      "medicareWagesBox5": 110000,
+      "medicareTaxBox6": 1595,
+      "stateWagesBox16": 110000,
+      "stateTaxWithheldBox17": 5800
+    }
+  ],
+  "form1099s": [
+    {
+      "taxYear": 2024,
+      "formType": "div",
+      "payerName": "International Index Fund LLC",
+      "ordinaryDividends": 9000,
+      "qualifiedDividends": 7000,
+      "federalTaxWithheld": 0,
+      "stateCode": "NJ"
+    }
+  ],
+  "adjustments": [
+    {
+      "adjustmentType": "foreign_tax_paid",
+      "amount": 1500,
+      "description": "Foreign tax withheld on 1099-DIV",
+      "isApplied": true
+    },
+    {
+      "adjustmentType": "foreign_source_taxable_income",
+      "amount": 9000,
+      "description": "Foreign-source portion of dividends",
+      "isApplied": true
+    }
+  ]
+}

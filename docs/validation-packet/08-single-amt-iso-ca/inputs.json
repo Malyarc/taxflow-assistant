@@ -1,0 +1,52 @@
+{
+  "client": {
+    "firstName": "Drew",
+    "lastName": "Stockoptionhaver",
+    "filingStatus": "single",
+    "state": "CA",
+    "taxYear": 2024
+  },
+  "slug": "single-amt-iso-ca",
+  "number": 8,
+  "title": "Single, W-2 + ISO bargain element (AMT preference), CA",
+  "description": "Tech worker exercising ISOs held past year-end. Exercises the AMT preference for the ISO bargain element (Form 6251 Line 2k) on top of the auto-derived SALT addback (Line 2g). AMT may or may not bind depending on regular-tax burden.",
+  "expectations": [
+    "AMTI > taxable income (ISO bargain element + SALT addback)",
+    "AMT = max(0, tentative AMT − regular tax)",
+    "AMT line populated on the summary if it binds"
+  ],
+  "w2s": [
+    {
+      "taxYear": 2024,
+      "wagesBox1": 220000,
+      "federalTaxWithheldBox2": 48000,
+      "stateCode": "CA",
+      "socialSecurityWagesBox3": 168600,
+      "socialSecurityTaxBox4": 10453.2,
+      "medicareWagesBox5": 220000,
+      "medicareTaxBox6": 3190,
+      "stateWagesBox16": 220000,
+      "stateTaxWithheldBox17": 15000
+    }
+  ],
+  "adjustments": [
+    {
+      "adjustmentType": "state_income_tax",
+      "amount": 22000,
+      "description": "CA withholding + Q1 estimate",
+      "isApplied": true
+    },
+    {
+      "adjustmentType": "mortgage_interest",
+      "amount": 18000,
+      "description": "Primary residence",
+      "isApplied": true
+    },
+    {
+      "adjustmentType": "amt_iso_bargain_element",
+      "amount": 80000,
+      "description": "ISO exercise held past 12/31",
+      "isApplied": true
+    }
+  ]
+}

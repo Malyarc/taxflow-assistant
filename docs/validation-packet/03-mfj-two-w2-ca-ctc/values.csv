@@ -1,0 +1,23 @@
+# TaxFlow Assistant — Tax Return Summary (CSV)
+# Client: Jordan & Robin Couple
+# Email: validation-mfj-two-w2-ca-ctc-1779570372896@taxflow.example
+# Filing Status: MFJ
+# State: CA
+# Tax Year: 2024
+# Generated: 2026-05-23T21:06:13.296Z
+# Reference Code = compact IRS form/line reference (e.g. 1040-L9 = Form 1040 Line 9).
+# This file is for CPA review, not automated import into commercial tax software.
+
+IRS Line,Field Name,Description,Reference Code,Value
+1040 Line 9,totalIncome,Total Income,1040-L9,145000.00
+1040 Line 11,adjustedGrossIncome,Adjusted Gross Income (AGI),1040-L11,145000.00
+1040 Line 12,standardDeduction,Standard Deduction,1040-L12,29200.00
+1040 Line 13,qbiDeduction,QBI Deduction (§199A),1040-L13,0.00
+1040 Line 15,taxableIncome,Taxable Income,1040-L15,115800.00
+1040 Line 24,federalTaxLiability,Total Federal Tax Liability,1040-L24,15582.00
+1040 Line 25a,federalTaxWithheld,Federal Income Tax Withheld (W-2),1040-L25a,16200.00
+1040 Line 34 (refund) / 37 (owed),federalRefundOrOwed,Federal Refund (+) or Balance Due (−),1040-L34,2618.00
+State Return,stateTaxLiability,State Tax Liability,STATE-RETURN,5634.08
+State Return,stateTaxWithheld,State Tax Withheld,STATE-WH,6500.00
+State Return,stateRefundOrOwed,State Refund or Owed,STATE-REFUND,865.92
+1040 Line 19,childTaxCredit_appliedCredit,Child Tax Credit (Form 8812),1040-L19,2000.00

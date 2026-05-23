@@ -1,0 +1,24 @@
+# TaxFlow Assistant — Tax Return Summary (CSV)
+# Client: Quinn Expat
+# Email: validation-single-foreign-tax-credit-nj-1779570372896@taxflow.example
+# Filing Status: Single
+# State: NJ
+# Tax Year: 2024
+# Generated: 2026-05-23T21:06:14.449Z
+# Reference Code = compact IRS form/line reference (e.g. 1040-L9 = Form 1040 Line 9).
+# This file is for CPA review, not automated import into commercial tax software.
+
+IRS Line,Field Name,Description,Reference Code,Value
+1040 Line 9,totalIncome,Total Income,1040-L9,119000.00
+1040 Line 11,adjustedGrossIncome,Adjusted Gross Income (AGI),1040-L11,119000.00
+1040 Line 12,standardDeduction,Standard Deduction,1040-L12,14600.00
+1040 Line 13,qbiDeduction,QBI Deduction (§199A),1040-L13,0.00
+1040 Line 15,taxableIncome,Taxable Income,1040-L15,104400.00
+1040 Line 24,federalTaxLiability,Total Federal Tax Liability,1040-L24,17531.00
+1040 Line 25a,federalTaxWithheld,Federal Income Tax Withheld (W-2),1040-L25a,14000.00
+1040 Line 34 (refund) / 37 (owed),federalRefundOrOwed,Federal Refund (+) or Balance Due (−),1040-L34,-2031.00
+State Return,stateTaxLiability,State Tax Liability,STATE-RETURN,5454.05
+State Return,stateTaxWithheld,State Tax Withheld,STATE-WH,5800.00
+State Return,stateRefundOrOwed,State Refund or Owed,STATE-REFUND,345.95
+QDCG Worksheet,capitalGainsTax,Capital Gains Tax (LTCG/QDIV),QDCG-WS,1050.00
+Form 1116 Line 33,foreignTaxCredit,Foreign Tax Credit,1116-L33,1500.00

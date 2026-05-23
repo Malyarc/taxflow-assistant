@@ -1,0 +1,26 @@
+# TaxFlow Assistant — Tax Return Summary (CSV)
+# Client: Drew Stockoptionhaver
+# Email: validation-single-amt-iso-ca-1779570372896@taxflow.example
+# Filing Status: Single
+# State: CA
+# Tax Year: 2024
+# Generated: 2026-05-23T21:06:14.087Z
+# Reference Code = compact IRS form/line reference (e.g. 1040-L9 = Form 1040 Line 9).
+# This file is for CPA review, not automated import into commercial tax software.
+
+IRS Line,Field Name,Description,Reference Code,Value
+1040 Line 9,totalIncome,Total Income,1040-L9,220000.00
+1040 Line 11,adjustedGrossIncome,Adjusted Gross Income (AGI),1040-L11,220000.00
+1040 Line 12,standardDeduction,Standard Deduction,1040-L12,28000.00
+Sched A Line 17 → 1040 Line 12,itemizedDeductions,Itemized Deductions Total (Schedule A),SCH-A-L17,28000.00
+1040 Line 13,qbiDeduction,QBI Deduction (§199A),1040-L13,0.00
+1040 Line 15,taxableIncome,Taxable Income,1040-L15,192000.00
+1040 Line 24,federalTaxLiability,Total Federal Tax Liability,1040-L24,51038.00
+1040 Line 25a,federalTaxWithheld,Federal Income Tax Withheld (W-2),1040-L25a,48000.00
+1040 Line 34 (refund) / 37 (owed),federalRefundOrOwed,Federal Refund (+) or Balance Due (−),1040-L34,-3038.00
+State Return,stateTaxLiability,State Tax Liability,STATE-RETURN,16487.14
+State Return,stateTaxWithheld,State Tax Withheld,STATE-WH,15000.00
+State Return,stateRefundOrOwed,State Refund or Owed,STATE-REFUND,-1487.14
+Form 6251 Line 11,amtTax,Alternative Minimum Tax (AMT),6251-L11,11911.50
+Sched A Line 7,saltDeductible,SALT capped (Schedule A),SCH-A-L7,10000.00
+Sched A Line 8a,mortgageDeductible,Home Mortgage Interest (Schedule A),SCH-A-L8a,18000.00

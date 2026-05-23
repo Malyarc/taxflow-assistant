@@ -1,0 +1,34 @@
+{
+  "client": {
+    "firstName": "Mia",
+    "lastName": "Manhattan",
+    "filingStatus": "single",
+    "state": "NY",
+    "localityCode": "NYC",
+    "taxYear": 2024
+  },
+  "slug": "single-w2-nyc",
+  "number": 2,
+  "title": "Single, W-2 only, NYC resident",
+  "description": "Same baseline as #1, but lives in NYC. Exercises NY state tax + NYC local income tax (BP2). CPA can verify the NYC PIT brackets independently.",
+  "expectations": [
+    "AGI = $75,000",
+    "NY state tax > 0 (NY brackets, std ded $8,000)",
+    "NYC local tax > 0 (single 2024 NYC brackets)",
+    "Local tax shown separately from state tax in the summary"
+  ],
+  "w2s": [
+    {
+      "taxYear": 2024,
+      "wagesBox1": 75000,
+      "federalTaxWithheldBox2": 9500,
+      "stateCode": "NY",
+      "socialSecurityWagesBox3": 75000,
+      "socialSecurityTaxBox4": 4650,
+      "medicareWagesBox5": 75000,
+      "medicareTaxBox6": 1087.5,
+      "stateWagesBox16": 75000,
+      "stateTaxWithheldBox17": 4200
+    }
+  ]
+}

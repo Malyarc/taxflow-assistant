@@ -1,0 +1,65 @@
+{
+  "client": {
+    "firstName": "Casey",
+    "lastName": "Investor",
+    "filingStatus": "married_filing_jointly",
+    "state": "NY",
+    "taxYear": 2024
+  },
+  "slug": "mfj-capital-transactions-ny",
+  "number": 7,
+  "title": "MFJ, W-2 + capital transactions (Form 8949), NY",
+  "description": "Couple with W-2 income and a mix of short-term and long-term capital transactions including one wash-sale-disallowed loss. Exercises Schedule D netting, QDCG worksheet (LTCG at preferential 15% rate), NIIT threshold.",
+  "expectations": [
+    "Net ST cap gain taxed as ordinary income",
+    "Net LT cap gain taxed at 0% / 15% / 20% per QDCG worksheet",
+    "Wash sale loss adjustment increases the disallowed loss",
+    "NY state tax applies to total AGI (incl. cap gains)"
+  ],
+  "w2s": [
+    {
+      "taxYear": 2024,
+      "wagesBox1": 130000,
+      "federalTaxWithheldBox2": 17000,
+      "stateCode": "NY",
+      "socialSecurityWagesBox3": 130000,
+      "socialSecurityTaxBox4": 8060,
+      "medicareWagesBox5": 130000,
+      "medicareTaxBox6": 1885,
+      "stateWagesBox16": 130000,
+      "stateTaxWithheldBox17": 8200
+    }
+  ],
+  "capitalTransactions": [
+    {
+      "taxYear": 2024,
+      "description": "AAPL 100 sh — long-term gain",
+      "proceeds": 18000,
+      "costBasis": 12000,
+      "formBox": "D",
+      "acquisitionDate": "2021-03-15",
+      "saleDate": "2024-08-04"
+    },
+    {
+      "taxYear": 2024,
+      "description": "TSLA 50 sh — short-term gain",
+      "proceeds": 12500,
+      "costBasis": 9000,
+      "formBox": "A",
+      "acquisitionDate": "2024-02-12",
+      "saleDate": "2024-11-01"
+    },
+    {
+      "taxYear": 2024,
+      "description": "GME 100 sh — wash sale partial",
+      "proceeds": 4000,
+      "costBasis": 5000,
+      "formBox": "A",
+      "acquisitionDate": "2024-04-01",
+      "saleDate": "2024-09-15",
+      "adjustmentCode": "W",
+      "adjustmentAmount": 300,
+      "washSaleDisallowed": 300
+    }
+  ]
+}

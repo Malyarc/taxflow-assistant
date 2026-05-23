@@ -1,0 +1,46 @@
+{
+  "client": {
+    "firstName": "Pat",
+    "lastName": "Landlord",
+    "filingStatus": "married_filing_jointly",
+    "state": "NY",
+    "taxYear": 2024
+  },
+  "slug": "mfj-rental-passive-loss-ny",
+  "number": 5,
+  "title": "MFJ, W-2 + Sch E rental (per-property MACRS + PAL), NY",
+  "description": "Couple with one W-2 income and one residential rental property purchased in 2020. Exercises per-property MACRS (27.5 yr SL, mid-month), passive- activity-loss §469 with the $25k active-participant allowance, and NY state tax.",
+  "expectations": [
+    "Per-property MACRS depreciation auto-computed (residential 27.5 yr SL)",
+    "Net rental gain/loss = rental income − total expenses − depreciation",
+    "If loss: up to $25,000 allowable as PAL (AGI < $100k phase-out start MFJ)",
+    "AGI reflects net rental on Sch E Line 26"
+  ],
+  "w2s": [
+    {
+      "taxYear": 2024,
+      "wagesBox1": 95000,
+      "federalTaxWithheldBox2": 10500,
+      "stateCode": "NY",
+      "socialSecurityWagesBox3": 95000,
+      "socialSecurityTaxBox4": 5890,
+      "medicareWagesBox5": 95000,
+      "medicareTaxBox6": 1377.5,
+      "stateWagesBox16": 95000,
+      "stateTaxWithheldBox17": 5800
+    }
+  ],
+  "rentals": [
+    {
+      "taxYear": 2024,
+      "address": "742 Evergreen Ter, Albany NY",
+      "propertyType": "residential",
+      "basis": 275000,
+      "placedInServiceYear": 2020,
+      "placedInServiceMonth": 6,
+      "rentalIncome": 24000,
+      "totalExpenses": 11000,
+      "isActiveParticipant": true
+    }
+  ]
+}

@@ -1,0 +1,38 @@
+{
+  "client": {
+    "firstName": "Sam",
+    "lastName": "Solopreneur",
+    "filingStatus": "single",
+    "state": "TX",
+    "taxYear": 2024
+  },
+  "slug": "single-sch-c-qbi-tx",
+  "number": 4,
+  "title": "Single, Sch C self-employment + 1099-NEC, TX",
+  "description": "Sole-proprietor consultant. One 1099-NEC for $80k gross with $15k Sch C expenses → $65k net SE income. Exercises Sch SE, QBI §199A 20% deduction, deductible-half-of-SE adjustment. No state tax (TX).",
+  "expectations": [
+    "Net SE income (Sch C) = $65,000",
+    "SE tax ≈ $9,184 (15.3% × 92.35% × $65,000)",
+    "Half SE adjustment ≈ $4,592 reduces AGI",
+    "QBI deduction = 20% × min(QBI, taxable) → meaningful reduction",
+    "Total tax includes SE + income tax"
+  ],
+  "form1099s": [
+    {
+      "taxYear": 2024,
+      "formType": "nec",
+      "payerName": "Acme Client LLC",
+      "nonemployeeCompensation": 80000,
+      "federalTaxWithheld": 0,
+      "stateCode": "TX"
+    }
+  ],
+  "adjustments": [
+    {
+      "adjustmentType": "schedule_c_expenses",
+      "amount": 15000,
+      "description": "Business expenses",
+      "isApplied": true
+    }
+  ]
+}

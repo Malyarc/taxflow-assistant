@@ -1,0 +1,46 @@
+{
+  "client": {
+    "firstName": "Jordan & Robin",
+    "lastName": "Couple",
+    "filingStatus": "married_filing_jointly",
+    "state": "CA",
+    "taxYear": 2024,
+    "dependentsUnder17": 1
+  },
+  "slug": "mfj-two-w2-ca-ctc",
+  "number": 3,
+  "title": "MFJ, two W-2s, CA, 1 child under 17 (CTC)",
+  "description": "Dual-earner married household with one qualifying child. Exercises CTC (non-refundable + refundable ACTC ordering), CA state tax, joint brackets.",
+  "expectations": [
+    "AGI = $145,000 (combined wages)",
+    "Std ded (MFJ 2024) = $29,200 → taxable = $115,800",
+    "CTC = $2,000 (well below MFJ phase-out start $400,000)",
+    "CA state tax > 0 (graduated CA brackets)"
+  ],
+  "w2s": [
+    {
+      "taxYear": 2024,
+      "wagesBox1": 85000,
+      "federalTaxWithheldBox2": 9800,
+      "stateCode": "CA",
+      "socialSecurityWagesBox3": 85000,
+      "socialSecurityTaxBox4": 5270,
+      "medicareWagesBox5": 85000,
+      "medicareTaxBox6": 1232.5,
+      "stateWagesBox16": 85000,
+      "stateTaxWithheldBox17": 3900
+    },
+    {
+      "taxYear": 2024,
+      "wagesBox1": 60000,
+      "federalTaxWithheldBox2": 6400,
+      "stateCode": "CA",
+      "socialSecurityWagesBox3": 60000,
+      "socialSecurityTaxBox4": 3720,
+      "medicareWagesBox5": 60000,
+      "medicareTaxBox6": 870,
+      "stateWagesBox16": 60000,
+      "stateTaxWithheldBox17": 2600
+    }
+  ]
+}
