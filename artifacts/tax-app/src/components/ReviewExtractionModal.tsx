@@ -46,7 +46,7 @@ import { validateW2, type W2Flag } from "@workspace/validation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { AlertCircle, AlertTriangle, Info } from "lucide-react";
+import { AlertCircle, AlertTriangle, ArrowRight, Check, CircleSlash, Info, Pencil, Plus } from "lucide-react";
 
 interface ExtractedPayload {
   text?: string;
@@ -512,6 +512,20 @@ function FieldRow({ field, value, onChange, onFocus, onBlur, edited, originalAiV
   const flagList = flags ?? [];
   const hasError = flagList.some((f) => f.severity === "error");
   const hasWarning = flagList.some((f) => f.severity === "warning");
+
+  // C14 diff state — what is the relationship between the AI value and the
+  // CPA's current value? Drives an always-on small "AI: X → Y" diff indicator
+  // so the CPA sees at a glance which fields they kept, changed, added, or
+  // cleared (rather than having to hover a tooltip).
+  const hasAi = originalAiValue !== "";
+  const hasCpa = value !== "";
+  let diffState: "kept" | "changed" | "added" | "cleared" | "absent";
+  if (!hasAi && !hasCpa) diffState = "absent";
+  else if (hasAi && !hasCpa) diffState = "cleared";
+  else if (!hasAi && hasCpa) diffState = "added";
+  else if (!edited) diffState = "kept";
+  else diffState = "changed";
+
   return (
     <div
       className={cn(
@@ -523,14 +537,7 @@ function FieldRow({ field, value, onChange, onFocus, onBlur, edited, originalAiV
     >
       <div className="flex items-baseline justify-between gap-2">
         <Label className="text-xs">{field.label}</Label>
-        {edited && originalAiValue !== "" && (
-          <span className="text-[10px] text-muted-foreground" title="Original AI value">
-            AI: {field.type === "money" ? `$${Number(originalAiValue).toLocaleString()}` : originalAiValue}
-          </span>
-        )}
-        {edited && originalAiValue === "" && (
-          <span className="text-[10px] text-muted-foreground">added by CPA</span>
-        )}
+        <DiffIndicator state={diffState} field={field} aiValue={originalAiValue} cpaValue={value} />
       </div>
       {field.type === "money" ? (
         <CurrencyInput
@@ -581,5 +588,84 @@ function FieldRow({ field, value, onChange, onFocus, onBlur, edited, originalAiV
         </ul>
       )}
     </div>
+  );
+}
+
+// ─── Diff indicator (C14) ────────────────────────────────────────────────────
+// Renders the small "what did the AI say vs what does the CPA have" badge on
+// the right side of each field label. Always visible (when there is anything
+// to say) — the CPA sees a ✓ on AI-correct fields, a "$X → $Y" diff on
+// edited ones, and explicit markers when they added or cleared a value.
+
+function fmtFieldValue(v: string, type: FieldDef["type"]): string {
+  if (v === "") return "";
+  if (type === "money") {
+    const n = Number(v);
+    if (!Number.isFinite(n)) return v;
+    return `$${n.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  }
+  return v;
+}
+
+interface DiffIndicatorProps {
+  state: "kept" | "changed" | "added" | "cleared" | "absent";
+  field: FieldDef;
+  aiValue: string;
+  cpaValue: string;
+}
+
+function DiffIndicator({ state, field, aiValue, cpaValue }: DiffIndicatorProps): React.ReactElement | null {
+  if (state === "absent") return null;
+  const aiFmt = fmtFieldValue(aiValue, field.type);
+  const cpaFmt = fmtFieldValue(cpaValue, field.type);
+
+  if (state === "kept") {
+    return (
+      <span
+        className="inline-flex items-center gap-1 text-[10px] text-emerald-700/80"
+        title="CPA kept the AI-extracted value"
+      >
+        <Check className="size-3 shrink-0" />
+        <span>AI: {aiFmt}</span>
+      </span>
+    );
+  }
+
+  if (state === "changed") {
+    return (
+      <span
+        className="inline-flex items-center gap-1 text-[10px] text-amber-700"
+        title={`AI extracted "${aiFmt}"; CPA changed to "${cpaFmt}"`}
+      >
+        <Pencil className="size-3 shrink-0" />
+        <span className="line-through text-muted-foreground">{aiFmt}</span>
+        <ArrowRight className="size-3 shrink-0" />
+        <span className="font-medium">{cpaFmt}</span>
+      </span>
+    );
+  }
+
+  if (state === "added") {
+    return (
+      <span
+        className="inline-flex items-center gap-1 text-[10px] text-sky-700"
+        title="AI did not extract this field; CPA filled it in"
+      >
+        <Plus className="size-3 shrink-0" />
+        <span>added by CPA</span>
+      </span>
+    );
+  }
+
+  // cleared: AI had a value, CPA blanked it
+  return (
+    <span
+      className="inline-flex items-center gap-1 text-[10px] text-amber-700"
+      title={`AI extracted "${aiFmt}"; CPA cleared the value`}
+    >
+      <CircleSlash className="size-3 shrink-0" />
+      <span className="line-through text-muted-foreground">{aiFmt}</span>
+      <span>cleared</span>
+    </span>
   );
 }

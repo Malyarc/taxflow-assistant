@@ -2,13 +2,11 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "frontend",
+      "name": "tax-app-dev",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@workspace/tax-app", "run", "dev"],
-      "port": 3010,
-      "env": {
-        "PORT": "3010"
-      }
+      "runtimeArgs": ["--dir", "/Users/johntang/Documents/taxflow-assistant", "--filter", "@workspace/tax-app", "run", "dev"],
+      "port": 3000,
+      "autoPort": true
     }
   ]
 }
