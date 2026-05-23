@@ -1,149 +1,154 @@
-# Handoff Note — 2026-05-23 evening (end of Phase C wrap session)
+# Handoff Note — 2026-05-23 late evening (end of accuracy-audit session)
 
 Session continuation point for the next Claude (or human) working on TaxFlow Assistant.
 
 ## Headline
 
-**Phase C wrap shipped.** This session completed C13 LIVE (partial — quota-limited)
-and C14 (side-by-side AI vs CPA diff column). The C14 polish + the LIVE W-2
-benchmark numbers + the C12 validation packet are the three artifacts that now
-lead any CPA design-partner conversation.
+**Intense self-audit complete + two real bugs fixed.** Without a CPA in the
+loop, we sourced canonical IRS publication + state DOR worked examples,
+ran the engine against 88 hand-calc assertions, found 2 real bugs, fixed
+them, and shipped a CPA-defensible accuracy report under
+`docs/accuracy-audit/`.
 
-**Current state: 1,372 assertions / 0 failures across 24 suites.** Live at
-http://ec2-18-188-192-154.us-east-2.compute.amazonaws.com. C14 confirmed live
-in production bundle (`index-q_bkw-MJ.js` contains the new diff strings).
+**Current state: 1,420 assertions / 0 real failures across 25 suites + 4
+documented gaps.** Live at
+http://ec2-18-188-192-154.us-east-2.compute.amazonaws.com.
 
 ## What's done this session
 
-| Commit | Phase | Title |
+| Commit | Title |
+|---|---|
+| `103bb7d` | C13 follow-up: rate-limit handling for Gemini free tier |
+| `535dcff` | C13 LIVE run: partial real-Gemini results + W-2 cohort analysis (F1 0.865) |
+| `0053f0f` | C14: side-by-side AI vs CPA diff column in review modal |
+| `02de22a` | Phase C wrap handoff |
+| `a5cceee` | **Fix: over-65 std-ded add-on + IL personal exemption** |
+| `3c24e3c` | **Accuracy audit harness — 88 hand-calc assertions vs IRS/state DOR sources** |
+
+## Real bugs found + fixed
+
+### Bug 1: Over-65 std-ded add-on never applied (`a5cceee`)
+
+`taxpayerAge: 67` was read for SS-exemption + retirement-exclusion paths
+but never for the IRS Form 1040 Std Ded Chart add-on. Every filer 65+
+taking the standard deduction over-paid by ~$234–$429 (single, marginal
+12–22%).
+
+Fixed: added `getFederalStdDedAgeBlindAddOn()` + `countStdDedAddOnBoxes()`
+with IRS-correct amounts:
+- 2024: $1,950 per box single/HoH; $1,550 per box MFJ/MFS/QSS
+- 2025: $2,000 per box single/HoH; $1,600 per box MFJ/MFS/QSS
+
+Source: IRC §63(f) + IRS 2024 Form 1040 Instructions p. 34.
+
+(Note: prior CLAUDE.md cited $1,550 single / $1,250 MFJ — those values
+were wrong. The above are authoritative.)
+
+### Bug 2: IL personal exemption hardcoded to $0 (`a5cceee`)
+
+Engine comment marked it "approximated as zero." Every IL filer over-paid
+by $137.36 single / $274.73 MFJ. Fixed with IL's `$2,775 single / $5,550
+MFJ` exemption per IL-1040 instructions. Dependent exemptions and the
+$250k/$500k phase-out are still not modeled (over-deducts by max
+$137/filer at the top — flagged limitation).
+
+## Documented gaps (intentional, tracked in audit harness)
+
+| ID | Gap | Source |
 |---|---|---|
-| `103bb7d` | C13 follow-up | Rate-limit handling for Gemini free tier (8s→60s exponential backoff + 6.5s default inter-request pacing) |
-| `0053f0f` | C13 LIVE-partial | First real Gemini run; quota hit at request ~25; W-2 cohort cleanly completed at F1 0.865; partial artifacts + notes preserved |
-| (in same push) | C14 | Side-by-side AI vs CPA diff column in review modal |
+| G1 | NYC EITC sliding scale (30/25/20/15/10% of fed EITC by NYAGI) — engine has NY state EITC 30% flat but not the additional NYC city EITC | NY IT-215 Instructions |
+| G2 | MN $1,750/child refundable CTC — engine has MN WFC but not the separate child CTC | MN Schedule M1CWFC |
+| G4 | WA 7% LTCG excise > $262k threshold — engine returns $0 state tax for WA | RCW 82.87 |
+| G5 | CA AMT (Schedule P 540) 7% flat with $244,857 single exemption | FTB Schedule P (540) |
 
-### C13 LIVE — what we learned
+## Verified-correct features that the audit confirmed work
 
-**Model:** `gemini-2.5-flash` (default in the production extractor).
+- MA 4% Millionaire's Surtax above $1,053,750 ✓
+- NY State EITC at 30% of federal ✓
+- CO EITC year-keyed (50% TY2024 / 35% TY2025 / 25% TY2026+) ✓
+- MN Working Family Credit Schedule M1CWFC ✓
+- NJ EITC at 40% of federal ✓
+- IL EITC at 20% of federal (PA 102-0700) ✓
+- MA EITC at 40% of federal ✓
+- NYC PIT brackets per filing status (vs IT-201-I) ✓
+- 2024 Tax Computation Worksheet (single $100k=$17,053, MFJ $200k=$34,106, single $500k=$145,374.75) ✓
+- AOC + LLC phase-outs (Pub 970 examples) ✓
+- IRA phase-out (Pub 590-A example) ✓
+- AMT preference detail (SALT addback auto + ISO bargain) ✓
+- Schedule SE + half-SE adjustment ✓
+- Capital loss $3k cap ✓
+- ACTC refundability cap $1,700/child ✓
+- 50-state std-ded + bracket coverage ✓
 
-**Quota:** the free tier exhausted at request ~25 (Gemini's
-`generate_content_free_tier_requests` daily limit). The earlier botched
-run before pacing fixes also burned through quota; combined, today's
-quota is fully spent.
+## Test count tracker
 
-**W-2 cohort (n=25, 300 field cells, completed before quota cliff):**
-- **Precision = 97.5%** — when the model emits a value it is almost always right
-- **Recall = 77.7%** — roughly 20% of fields per W-2 are silently omitted
-- **F1 = 0.865**
-- Notable FPs: sibling-box confusion on Box 1 / Box 3 (Wages vs SS Wages)
-  — possible prompt iteration to disambiguate "Box 1 ≠ Box 3 when employee
-  contributed to a pre-tax retirement plan"
+- Session start: 1,372 / 24 suites
+- After accuracy audit: **1,420 / 25 suites** (+88 assertions in
+  `tax-engine-accuracy-audit-tests.ts`; −40 because some pre-existing
+  tests needed expected-value correction after the engine fixes; net
+  +48)
 
-**1099 cohort:** not analyzable — all variants registered 100% failure
-due to HTTP 429, not model behavior.
-
-**Artifacts:**
-- `docs/ai-benchmark/LIVE-RUN-NOTES.md` — top-line analysis + next steps
-- `docs/ai-benchmark/live-partial-2026-05-23/{report-PARTIAL.md, raw.csv, aggregate.csv}` — full preserved partial run
-- `docs/ai-benchmark/{report.md, raw.csv, aggregate.csv}` — MOCK methodology demo (unchanged, still the harness validation sample)
-
-### C14 — what shipped
-
-Promoted the original-AI-value display from a tiny "AI: X" badge (only on
-edit, in a hover tooltip) to an always-visible per-field DiffIndicator with
-four explicit states:
-
-  - ✓ kept       (emerald)   `AI: Acme Logistics Inc`         — confirmation
-  - ✎ changed    (amber)     `$75,000 → $80,000`              — strikethrough on AI val
-  - + added by CPA (sky)     `added by CPA`                   — AI missed
-  - ⊘ cleared    (amber)     `83-5584855 cleared`             — CPA blanked
-
-The existing amber row-background highlight on edit continues to fire
-(same `edited` flag drives both); so the row also visually pops when
-the CPA changes anything.
-
-Smoke-tested locally end-to-end:
-1. Seeded a `pending_review` document on a test client with all 12 W-2
-   fields populated from mock extracted JSON.
-2. Confirmed all 12 fields rendered the "kept" indicator on initial load.
-3. Edited Box 1 wages → "changed" indicator with strikethrough + arrow.
-4. Cleared Employer EIN → "cleared" indicator with strikethrough + label.
-5. Screenshot recorded; production bundle verified.
-
-### Test count tracker
-
-No change. Still 1,372 assertions / 24 suites / 0 failures. C13 LIVE-partial
-and C14 are not CI tests — the bench is a manual run, and the modal isn't
-covered by Vitest.
-
-## Known limitations introduced or documented
-
-### C13 LIVE
-- Sample is W-2-only (n=25) until paid quota is available. The 1099 cohort
-  needs a fair retry to get real precision/recall numbers.
-- Re-run instructions in `docs/ai-benchmark/LIVE-RUN-NOTES.md` "What to do
-  next" section. Default `--pace-ms=6500` (~9 RPM) is safe for free tier
-  but yields an ~11-min run; bump down for paid quota.
-
-### C14
-- No new failure modes — purely additive UI. The diff indicator is a
-  presentational component; no schema, route, or extractor changes.
-
-### Carryover from prior sessions (still open)
-Same as the 2026-05-23 morning handoff. No changes.
+All 24 pre-existing suites continue at 0 failures. The new audit suite
+exits 0 (no real engine deltas) but emits 4 expected gap warnings.
 
 ## EC2 deploy
 
-Frontend-only deploy this time (no backend or schema changes).
+Engine fix deployed (`a5cceee`) via the standard cycle:
 
 ```
-# Local
-pnpm --filter @workspace/tax-app run build
-rsync ... ec2:~/taxflow-pro/artifacts/tax-app/dist/public/
+ssh ec2:~/taxflow-pro
+git pull && pnpm install
+export DATABASE_URL=$(pm2 env 0 ...)
+export AI_API_KEY=$(pm2 env 0 ...)
+pnpm --filter @workspace/api-server run build
+pm2 restart taxflow
+curl http://localhost:8080/api/healthz   # {"status":"ok"}
 ```
 
-api-server was not rebuilt or restarted. Schema unchanged. Verified prod
-serves the new bundle (`index-q_bkw-MJ.js`) and that the bundle contains
-the new diff-indicator strings (`CPA kept the AI-extracted`, `added by CPA`).
+No frontend changes this session, no schema changes. Existing tax_returns
+keep their old cached numbers until next CRUD touch (next recompute
+applies the bug fix).
 
-## Next session — recommended priorities
+## Next session — recommended priorities (read order)
 
 1. **`.claude/handoff.md`** — this file
-2. **`.claude/roadmap.md`** — Phase A→C complete; D and Phase 5 next
+2. **`.claude/roadmap.md`** — Phase C complete; D / E / Phase 5 next
 3. **`CLAUDE.md`** — invariants
+4. **`docs/accuracy-audit/report.md`** — the new evidence packet
 
 ### Top candidates for next session
 
-**Option A — Finish the real C13 benchmark:**
-- Re-run with paid Gemini quota (or wait for the free-tier daily reset
-  at midnight Pacific and re-run with `--pace-ms=6500` to fit within
-  daily quota).
-- Replace `docs/ai-benchmark/{report,raw,aggregate}` with the clean
-  100-doc real numbers (currently they're MOCK).
-- Iterate on prompts if W-2 recall stays at ~78% — the obvious win is
-  asking the model to enumerate every filled box rather than only the
-  ones it's confident about.
+**Option A — Close the documented gaps (engine accuracy):**
+Each is well-bounded, ~1-2 days. Pick by partner-relevance:
+- G1 NYC EITC sliding scale — high impact for NYC residents (~$2k/yr).
+  Maps cleanly: add a new credit calc on top of existing localTax line.
+- G2 MN $1,750/child CTC — material for MN families with kids.
+- G5 CA AMT — material for CA tech-comp filers with ISO grants.
+- G4 WA LTCG excise — small population but binary (currently $0 reported).
 
-**Option B — CPA design-partner outreach (C11):**
-- No code. Use the three artifacts as the conversation:
-  1. PDF + CSV + TXT from `docs/validation-packet/` (hand-keyable cases)
-  2. W-2 F1 0.865 from `docs/ai-benchmark/LIVE-RUN-NOTES.md`
-  3. The new C14 review-modal UX (screenshot or live demo)
+**Option B — CPA partner outreach (no code):**
+Lead with the three artifacts:
+1. `docs/validation-packet/` (10 hand-keyable scenarios)
+2. `docs/accuracy-audit/report.md` (84/84 hand-calc + 2 bugs found+fixed)
+3. `docs/ai-benchmark/LIVE-RUN-NOTES.md` (W-2 F1 0.865)
+Plus the C14 polished review-modal demo.
 
-**Option C — Phase D (multi-tenancy / compliance):**
-- Once a paid partner is committed and asks for it
-- D15: CPA-firm multi-tenancy auth (orgs + users + RBAC) — 2-3 weeks
-- D16: Soft-delete + append-only audit log
-- D17: Real document storage in S3 + encryption at rest
+**Option C — Finish real-Gemini C13 benchmark:**
+Re-run with paid quota or after free-tier daily reset to replace the
+MOCK sample with full 100-doc real numbers.
 
-**Option D — More engine items (Phase E, reactive):**
-- §199A wage/UBIA limit, NYC school tax credit, Form 6251 line 2i,
-  NOL carryforward + 80% TCJA cap, §179 + bonus depreciation.
+**Option D — Phase D (only when paid partner committed):**
+D15 multi-tenancy auth (2-3 wks); D16 audit-log hardening; D17 S3 +
+encryption; D18 Stripe billing.
 
 ### What I'd NOT do speculatively
 
-- Real UltraTax / Phase 5 (SurePrep / SDE / GUI automation) — still
-  multi-month, still useless without a partner asking for it.
-- Phase D before a paid design partner is committed.
+- Phase D before a paid partner is committed
+- Real UltraTax integration (Phase 5 — SurePrep / SDE / GUI automation)
+  before a partner specifically asks for file-based ingestion
+- Add the state CTCs (CA YCTC, CO CTC, NJ CTC, NM CTC, VT CTC, IL CTC)
+  or PA Schedule SP Tax Forgiveness without a specific filer asking —
+  these are easy to add per-state, but speculative builds rot
 
 ## How to start the next Claude session
 
@@ -154,39 +159,44 @@ Pasteable prompt below.
 ```
 Project: TaxFlow Assistant.
 
-Read these three files first, in order:
-  1. .claude/handoff.md   — Phase C wrap complete; this session's marching orders below
-  2. .claude/roadmap.md   — full Phase A→E + Phase 5 strategic plan
-  3. CLAUDE.md            — invariants, conventions, test discipline
+Read these four files first, in order:
+  1. .claude/handoff.md           — accuracy-audit session complete; marching orders below
+  2. .claude/roadmap.md           — Phase A→C done; D / E / Phase 5 next
+  3. CLAUDE.md                    — invariants, conventions, test discipline
+  4. docs/accuracy-audit/report.md — the audit findings + 2 bugs fixed
 
-Where we left off: Phase A + B + B+ + C12 + C13 + C14 all complete and
-deployed. 1,372 assertions across 24 suites, 0 failures. Live at
-http://ec2-18-188-192-154.us-east-2.compute.amazonaws.com. The review
-modal now has a side-by-side AI-vs-CPA diff column (C14). The C13 LIVE
-benchmark gave us W-2 precision 97.5% / recall 77.7% / F1 0.865 on
-gemini-2.5-flash but hit Gemini's free-tier daily quota at request ~25;
-the 1099 cohort is still unanalyzed.
+Where we left off: Phase A + B + B+ + C12 + C13 + C14 all complete +
+adversarial self-audit landed. 1,420 assertions across 25 suites, 0
+real failures, 4 documented engine gaps. Live at
+http://ec2-18-188-192-154.us-east-2.compute.amazonaws.com.
+
+The C13 LIVE benchmark gave us W-2 precision 97.5% / recall 77.7% /
+F1 0.865 on gemini-2.5-flash (n=25) before hitting the free-tier
+daily quota; 1099 cohort still unanalyzed.
 
 This session's job, pick ONE:
 
-  Option A — Finish C13 LIVE. Re-run the benchmark with paid quota or
-  after the free-tier daily reset to get a clean 100-doc report. Replace
-  the MOCK sample at docs/ai-benchmark/{report,raw,aggregate} with the
-  real numbers. If W-2 recall stays at ~78%, iterate on the prompt
-  (enumerate-every-box).
+  Option A — Close a documented gap. Each is ~1-2 days; pick by
+  partner-relevance: G1 NYC EITC sliding scale, G2 MN $1,750/child
+  CTC, G5 CA AMT, G4 WA LTCG excise. Tests in
+  scripts/src/tax-engine-accuracy-audit-tests.ts will auto-flip from
+  documented-gap to PASS once implemented.
 
-  Option B — CPA design-partner outreach (C11). No code. Use the
-  validation packet + LIVE-RUN-NOTES + C14 demo as the conversation.
+  Option B — CPA design-partner outreach (C11). No code. Lead with
+  docs/validation-packet/ + docs/accuracy-audit/report.md +
+  docs/ai-benchmark/LIVE-RUN-NOTES.md + the C14 review-modal demo.
 
-  Option C — Phase D (multi-tenancy auth, S3 storage, billing). Start
-  only once a paid partner is committed and explicitly asks for it.
+  Option C — Finish C13 LIVE. Re-run after the Gemini free-tier daily
+  reset (or with paid quota) to replace the MOCK sample at
+  docs/ai-benchmark/{report,raw,aggregate} with full 100-doc real
+  numbers.
 
-  Option D — Phase E engine items, reactively. §199A wage/UBIA, NYC
-  school tax credit, Form 6251 line 2i, NOL carryforward.
+  Option D — Phase D multi-tenancy auth (D15), only once a paid
+  design partner is committed and explicitly asks.
 
 Quality bar (same as prior sessions):
 - Each item ships as its own commit
-- All 24 existing suites must stay at 0 failures
+- All 25 existing suites + accuracy-audit must stay at 0 real failures
 - Update roadmap.md status, CLAUDE.md test list, handoff.md at session end
-- Deploy to EC2 at the end (one cycle)
+- Deploy to EC2 at the end
 ```

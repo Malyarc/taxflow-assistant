@@ -119,11 +119,20 @@ unblocks the first design partner.
 
 ## Recommended sequencing (next 3 sessions)
 
-(As of 2026-05-23 — Phases A, B, B+, C12, C13, C14 all complete.)
+(As of 2026-05-23 — Phases A, B, B+, C12, C13, C14 + adversarial
+accuracy audit all complete. Two real bugs fixed (over-65 std ded
+add-on, IL personal exemption). Four state-specific gaps documented.)
 
-1. **Session 1 (now next):** C11 partner outreach (calendar time, not code). The C12 validation packet + C13 LIVE-RUN-NOTES + C14 polished review-modal demo are the artifacts to lead with. Also: re-run C13 against a paid Gemini quota (or after the free-tier daily reset) so the headline numbers in `docs/ai-benchmark/` are a full 100-doc real run rather than a 25-W-2 partial.
-2. **Session 2:** Begin Phase D15 (CPA-firm multi-tenancy auth) once a paid design partner is committed. Don't start speculatively.
-3. **Session 3:** Continue Phase D depending on what the partner asks for first (D16 audit-log hardening, D17 S3 + encryption, or D18 Stripe billing).
+1. **Session 1 (now next):** Either C11 partner outreach (no code) leading
+   with `docs/accuracy-audit/report.md` + `docs/validation-packet/` +
+   `docs/ai-benchmark/LIVE-RUN-NOTES.md` + C14 modal demo, OR close one
+   of the four documented engine gaps (G1 NYC EITC, G2 MN child CTC,
+   G4 WA LTCG excise, G5 CA AMT). Picking-by-partner-relevance.
+2. **Session 2:** Begin Phase D15 (CPA-firm multi-tenancy auth) once a
+   paid design partner is committed. Don't start speculatively.
+3. **Session 3:** Continue Phase D depending on what the partner asks
+   for first (D16 audit-log hardening, D17 S3 + encryption, or
+   D18 Stripe billing).
 
 Hold Phase D until a paid design partner is committed. Phase E and Phase 5 are reactive.
 
