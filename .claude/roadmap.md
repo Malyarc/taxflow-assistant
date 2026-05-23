@@ -121,17 +121,24 @@ unblocks the first design partner.
 
 (As of 2026-05-23 night — Phases A, B, B+, C12, C13, C14 + adversarial
 accuracy audit + DEEP audit + security & code-quality batch all
-complete. 9 real bugs fixed across all three tracks. 10 federal-engine
-gaps + 4 state-engine gaps documented.)
+complete. 9 real bugs fixed across all three tracks. 8 federal-engine
+gaps (down from 10 after closing K1 + K2 on 2026-05-23 PM) + 4
+state-engine gaps documented.)
 
 1. **Session 1 (now next):** Either C11 partner outreach (no code) OR
-   close one K-list gap. Priorities (by impact):
-   - **K1 SE tax W-2+SE combined** — common case, ~$10k+ over-pay per filer
-   - **K10 SS taxability** — high prevalence among retirees
-   - **K3 AMT × LTCG** — niche but large $ impact
-   - **K2 Form 8959 Add'l Medicare** — simple, 1 day
-   - **K6 §121 home-sale exclusion** — common
-   - **K5 SEHI** — common for SE filers
+   close one K-list gap. **K1 + K2 closed 2026-05-23 PM** (Sch SE Line 9
+   for non-MFJ + Form 8959 Additional Medicare end-to-end, deployed).
+   Remaining priorities (by impact):
+   - **K10 SS taxability** — high prevalence among retirees; needs new SS
+     benefits input field + Pub 915 worksheet (~3 days)
+   - **K3 AMT × LTCG** — niche but large $ impact (~2-3 days)
+   - **K6 §121 home-sale exclusion** — common (~2 days)
+   - **K5 SEHI** — common for SE filers (~1-2 days)
+   - **K1 MFJ sub-gap** — needs per-spouse W-2/SE attribution; data-model
+     change required (~3-5 days)
+   - **K2 sub-feature** — Form 8959 Part V withholding-reconciliation
+     line if surfacing on the 1040; today the engine computes the
+     liability, not the reconciled withholding (~half day)
    - **State gaps**: G1 NYC EITC sliding scale, G2 MN $1,750/child CTC
 2. **Session 2:** Begin Phase D15 (CPA-firm multi-tenancy auth) once a
    paid design partner is committed.
