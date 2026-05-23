@@ -384,9 +384,9 @@ header("End-to-end: NY retiree $30k pension → $20k exempt (capped at Line 29)"
 header("End-to-end: PA retiree with 1099-R retirement income");
 {
   // PA filer age 70, no wages, $40k 1099-R distribution.
-  // Federal: AGI = $40k. Std ded single 2024 = $14,600 (extra std ded for 65+ = $1,950)
-  // For now, we don't model extra std ded for 65+, so use base $14,600.
-  // Taxable = $25,400. Tax = $1,160 + ($25,400 - $11,600) × 0.12 = $2,816.
+  // Federal: AGI = $40k. Std ded single 2024 = $14,600 + $1,950 over-65 add-on = $16,550.
+  // Taxable = $40,000 − $16,550 = $23,450.
+  // Tax = $1,160 + ($23,450 − $11,600) × 0.12 = $1,160 + $1,422 = $2,582.
   // State (PA): retirement income exempt → $0 PA tax.
   const r = computeTaxReturnPure({
     client: { filingStatus: "single", state: "PA", taxYear: 2024, taxpayerAge: 70 },
@@ -396,7 +396,7 @@ header("End-to-end: PA retiree with 1099-R retirement income");
     taxYear: 2024,
   });
   check("AGI $40,000", r.adjustedGrossIncome, 40000, 1);
-  check("Federal tax ~$2,816", r.federalTaxLiability, 2816, 2);
+  check("Federal tax ~$2,582 (with over-65 std ded add-on $1,950)", r.federalTaxLiability, 2582, 2);
   check("PA state tax = $0 (retirement exempt)", r.stateTaxLiability, 0, 0.01);
   check("State retirement exemption = $40,000", r.stateRetirementExemption, 40000, 1);
 }

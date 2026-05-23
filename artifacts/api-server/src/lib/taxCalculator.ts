@@ -144,6 +144,60 @@ const FEDERAL_STANDARD_DEDUCTIONS: Record<TaxYear, Record<string, number>> = {
   },
 };
 
+// Age-65 / blind additional standard deduction. Per IRC §63(f) + annual
+// Rev. Procs. (2023-34 for 2024, 2024-40 for 2025). Single + HoH get a
+// higher per-box amount than MFJ / MFS / QSS. A taxpayer can claim TWO
+// boxes if both age-65 AND blind on Dec 31. For MFJ, each spouse's box is
+// counted (so a 67-year-old blind taxpayer with a 67-year-old spouse =
+// 4 boxes = +$6,200 in 2024).
+//
+// Source: IRS 2024 Form 1040 Instructions "Standard Deduction Chart for
+// People Who Were Born Before January 2, 1960, or Were Blind" (p. 34).
+// 2025 amounts: Rev. Proc. 2024-40 §3.16.
+const STD_DEDUCTION_AGE_BLIND_ADDON: Record<TaxYear, { perBox_single_hoh: number; perBox_mfj_mfs_qss: number }> = {
+  2024: { perBox_single_hoh: 1950, perBox_mfj_mfs_qss: 1550 },
+  2025: { perBox_single_hoh: 2000, perBox_mfj_mfs_qss: 1600 },
+};
+
+/**
+ * Number of "boxes" checked on the age-65/blind add-on. A taxpayer is born
+ * before Jan 2, 1960 (i.e. 65+ on Dec 31, 2024) → 1 box. Blind → 1 box.
+ * For MFJ, the spouse's boxes count too.
+ */
+export function countStdDedAddOnBoxes(params: {
+  taxpayerAge?: number | null;
+  spouseAge?: number | null;
+  taxpayerBlind?: boolean | null;
+  spouseBlind?: boolean | null;
+  filingStatus: string;
+}): number {
+  let boxes = 0;
+  if ((params.taxpayerAge ?? 0) >= 65) boxes++;
+  if (params.taxpayerBlind) boxes++;
+  if (params.filingStatus === "married_filing_jointly" || params.filingStatus === "qualifying_widow") {
+    if ((params.spouseAge ?? 0) >= 65) boxes++;
+    if (params.spouseBlind) boxes++;
+  }
+  return boxes;
+}
+
+export function getFederalStdDedAgeBlindAddOn(params: {
+  taxpayerAge?: number | null;
+  spouseAge?: number | null;
+  taxpayerBlind?: boolean | null;
+  spouseBlind?: boolean | null;
+  filingStatus: string;
+  taxYear: number;
+}): number {
+  const boxes = countStdDedAddOnBoxes(params);
+  if (boxes === 0) return 0;
+  const year = resolveTaxYear(params.taxYear);
+  const cfg = STD_DEDUCTION_AGE_BLIND_ADDON[year];
+  const isSingleOrHoh = params.filingStatus === "single" || params.filingStatus === "head_of_household";
+  const perBox = isSingleOrHoh ? cfg.perBox_single_hoh : cfg.perBox_mfj_mfs_qss;
+  return boxes * perBox;
+}
+
 export function resolveTaxYear(input: number | undefined | null): TaxYear {
   if (input == null) return LATEST_YEAR;
   if ((SUPPORTED_TAX_YEARS as readonly number[]).includes(input)) {
@@ -861,6 +915,11 @@ export function runTaxCalculation(params: {
   itemizedDeductions: number;
   adjustments: number;
   taxYear: number;
+  /** Age-65 / blind data for std-ded add-on. Optional — when omitted, no add-on. */
+  taxpayerAge?: number | null;
+  spouseAge?: number | null;
+  taxpayerBlind?: boolean | null;
+  spouseBlind?: boolean | null;
 }): TaxCalculationResult {
   const {
     totalWages,
@@ -876,7 +935,16 @@ export function runTaxCalculation(params: {
   const year = resolveTaxYear(taxYear);
   const totalIncome = totalWages + additionalIncome;
   const adjustedGrossIncome = Math.max(0, totalIncome - adjustments);
-  const fedStdDeduction = getFederalStandardDeduction(filingStatus, year);
+  const baseFedStdDeduction = getFederalStandardDeduction(filingStatus, year);
+  // Age-65 / blind add-on per IRS Form 1040 Standard Deduction Chart.
+  const stdDedAddOn = getFederalStdDedAgeBlindAddOn({
+    taxpayerAge: params.taxpayerAge,
+    spouseAge: params.spouseAge,
+    taxpayerBlind: params.taxpayerBlind,
+    spouseBlind: params.spouseBlind,
+    filingStatus, taxYear: year,
+  });
+  const fedStdDeduction = baseFedStdDeduction + stdDedAddOn;
   const fedDeduction = useItemizedDeductions
     ? Math.max(itemizedDeductions, fedStdDeduction)
     : fedStdDeduction;

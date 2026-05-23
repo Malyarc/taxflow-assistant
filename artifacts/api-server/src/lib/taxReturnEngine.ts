@@ -1061,6 +1061,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     itemizedDeductions: itemizedTotal,
     adjustments: aboveTheLineAdjustments,
     taxYear,
+    // Age-65 / blind add-on inputs (IRS Form 1040 Std Ded Chart).
+    taxpayerAge: client.taxpayerAge,
+    spouseAge: client.spouseAge,
   });
 
   // K-1 §199A QBI (Box 20 Z on 1065 / Box 17 V on 1120-S) joins the QBI base.

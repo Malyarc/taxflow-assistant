@@ -149,7 +149,7 @@ const FLAT_STATES_2024: Array<[string, number, number]> = [
   ["CO", 0.044, 14600],
   ["GA", 0.0539, 12000],
   ["ID", 0.058, 14600],
-  ["IL", 0.0495, 0],
+  ["IL", 0.0495, 2775], // IL personal exemption $2,775/filer (2024) — modeled as deduction
   ["IN", 0.0305, 0],
   ["KY", 0.04, 3160],
   ["MI", 0.0425, 0],

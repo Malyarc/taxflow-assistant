@@ -164,7 +164,14 @@ const STATE_TAX_DATA_2024: Record<string, StateTaxInfo> = {
     name: "Illinois", hasIncomeTax: true,
     brackets: { single: flat(0.0495), married_filing_jointly: flat(0.0495) },
     standardDeduction: { single: 0, married_filing_jointly: 0 },
-    notes: "IL has no standard deduction; uses a personal exemption ($2,775 each in 2024) which we approximate as zero.",
+    // Personal exemption per IL-1040 (2024 PDF): $2,775 per person. We apply
+    // single = $2,775; MFJ = $5,550 (×2). Dependent exemptions ($2,775 each)
+    // not modeled. IL phases the exemption out above ~$250k single / $500k
+    // MFJ AGI — not modeled (engine over-deducts for those filers by at
+    // most $137/filer at the top, immaterial vs the ~$2.8k bug we fixed
+    // here for the typical sub-$250k filer).
+    personalExemption: { single: 2775, married_filing_jointly: 5550, head_of_household: 2775, married_filing_separately: 2775, qualifying_widow: 5550 },
+    notes: "IL flat 4.95% with $2,775 personal exemption (single) / $5,550 (MFJ). Dependent exemptions + phase-out for AGI > $250k not yet modeled.",
   },
   IN: {
     name: "Indiana", hasIncomeTax: true,
