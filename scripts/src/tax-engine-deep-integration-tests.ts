@@ -306,6 +306,23 @@ async function run() {
     check("NIIT combines 1099 + adjustment investment income", Number(ret.niitTax), 1520, 5);
   });
 
+  // ── Test 13: Adjustment-type API coverage for engine-only types ──
+  // Regression for: BP1 (k1_passive_loss_carryforward) + BP3 (amt_iso_bargain_element,
+  // amt_state_tax_addback_override) were added to the engine but missed in the
+  // OpenAPI enum + Zod validator, so the API rejected them with 400 even though
+  // the pure-engine tests passed. Caught during C12b validation-packet build.
+  console.log("\n── 13. API accepts BP1/BP3 engine-only adjustment types (regression) ──");
+  for (const adjType of ["amt_iso_bargain_element", "amt_state_tax_addback_override", "k1_passive_loss_carryforward"]) {
+    await withTempClient({}, async (cid) => {
+      const res = await fetch(`http://localhost:8080/api/clients/${cid}/adjustments`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ adjustmentType: adjType, amount: 1000, description: "regression smoke", isApplied: true }),
+      });
+      checkExact(`API accepts adjustmentType=${adjType}`, res.status, 201);
+    });
+  }
+
   console.log("\n══════════════════════════════════════════════════════════════════");
   console.log(`  DEEP INTEGRATION RESULTS: ${PASS.length} passed, ${FAIL.length} failed`);
   console.log("══════════════════════════════════════════════════════════════════");

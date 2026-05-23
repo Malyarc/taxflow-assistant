@@ -899,6 +899,9 @@ export const AdjustmentAdjustmentType = {
   schedule_e_rental_expenses: "schedule_e_rental_expenses",
   schedule_e_macrs_depreciation: "schedule_e_macrs_depreciation",
   schedule_e_passive_loss_carryforward: "schedule_e_passive_loss_carryforward",
+  amt_iso_bargain_element: "amt_iso_bargain_element",
+  amt_state_tax_addback_override: "amt_state_tax_addback_override",
+  k1_passive_loss_carryforward: "k1_passive_loss_carryforward",
 } as const;
 
 export interface Adjustment {
@@ -956,6 +959,9 @@ export const CreateAdjustmentBodyAdjustmentType = {
   schedule_e_rental_expenses: "schedule_e_rental_expenses",
   schedule_e_macrs_depreciation: "schedule_e_macrs_depreciation",
   schedule_e_passive_loss_carryforward: "schedule_e_passive_loss_carryforward",
+  amt_iso_bargain_element: "amt_iso_bargain_element",
+  amt_state_tax_addback_override: "amt_state_tax_addback_override",
+  k1_passive_loss_carryforward: "k1_passive_loss_carryforward",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -1009,6 +1015,9 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   schedule_e_rental_expenses: "schedule_e_rental_expenses",
   schedule_e_macrs_depreciation: "schedule_e_macrs_depreciation",
   schedule_e_passive_loss_carryforward: "schedule_e_passive_loss_carryforward",
+  amt_iso_bargain_element: "amt_iso_bargain_element",
+  amt_state_tax_addback_override: "amt_state_tax_addback_override",
+  k1_passive_loss_carryforward: "k1_passive_loss_carryforward",
 } as const;
 
 export interface UpdateAdjustmentBody {
