@@ -121,6 +121,12 @@ export interface W2Fact {
   taxYear?: number | null;
   wagesBox1?: Numish;
   federalTaxWithheldBox2?: Numish;
+  /** W-2 Box 3 — Social Security wages. Used for Sch SE Part I Line 9 (SS
+   *  wage base shared across W-2 + SE). Falls back to Box 1 when absent. */
+  socialSecurityWagesBox3?: Numish;
+  /** W-2 Box 5 — Medicare wages (no cap). Used for Form 8959 Additional
+   *  Medicare tax. Falls back to Box 1 when absent. */
+  medicareWagesBox5?: Numish;
   stateTaxWithheldBox17?: Numish;
   stateCode?: string | null;
 }
@@ -613,6 +619,17 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const totalWages = w2Records.reduce((s, r) => s + toNum(r.wagesBox1), 0);
   const w2FederalWithheld = w2Records.reduce((s, r) => s + toNum(r.federalTaxWithheldBox2), 0);
   const w2StateWithheld = w2Records.reduce((s, r) => s + toNum(r.stateTaxWithheldBox17), 0);
+  // Box 3 (SS wages) and Box 5 (Medicare wages) — fall back to Box 1 when
+  // the more-precise box is missing. Box 3 feeds Sch SE Part I Line 9 (SS
+  // wage base shared with SE). Box 5 feeds Form 8959 Additional Medicare.
+  const w2SocialSecurityWages = w2Records.reduce(
+    (s, r) => s + (r.socialSecurityWagesBox3 != null ? toNum(r.socialSecurityWagesBox3) : toNum(r.wagesBox1)),
+    0,
+  );
+  const w2MedicareWages = w2Records.reduce(
+    (s, r) => s + (r.medicareWagesBox5 != null ? toNum(r.medicareWagesBox5) : toNum(r.wagesBox1)),
+    0,
+  );
 
   // ── 1099 aggregation (filter to tax year) + summary ──
   const form1099Records = form1099s.filter((r) => (r.taxYear ?? taxYear) === taxYear);
@@ -847,7 +864,23 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // (K-1 SE loss nets against positive amounts; floor at 0).
   const seTaxBase = Math.max(0, netSeIncome + k1SelfEmploymentEarnings);
 
-  const se = calculateSelfEmploymentTax(seTaxBase, taxYear);
+  // Sch SE Part I Line 9: for single/HoH/MFS/QSS filers, W-2 SS wages
+  // already paid into the SS system reduce the SS wage base available
+  // for SE income. Without this, combined W-2 + SE filers over-pay the
+  // SS portion (deep-audit gap K1, closed in this commit).
+  //
+  // For MFJ we cannot apply this safely: the engine sums W-2 wages
+  // household-wide but the IRS Sch SE rule is per-spouse — each spouse
+  // files their own Sch SE and subtracts only their own W-2 SS wages.
+  // Without per-spouse W-2/SE attribution, the conservative behavior is
+  // to leave the SS base un-reduced for MFJ (mirrors the old engine
+  // behavior — correct for the common case where the SE earner is the
+  // lower-W-2 spouse, slightly over-charges only the case where the
+  // single SE+W-2 earner is over the SS cap). Tracked as MFJ sub-gap.
+  const seW2SsWages = client.filingStatus === "married_filing_jointly"
+    ? 0
+    : w2SocialSecurityWages;
+  const se = calculateSelfEmploymentTax(seTaxBase, taxYear, seW2SsWages);
 
   // ── Step 2: Total income (Form 1040 Line 9) ─────────────────────────
   //

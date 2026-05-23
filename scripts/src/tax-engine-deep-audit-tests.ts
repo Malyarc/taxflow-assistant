@@ -733,25 +733,98 @@ for (const s of invariantScenarios) {
 // ════════════════════════════════════════════════════════════════════════════
 section("K. DOCUMENTED GAPS (features intentionally not modeled)");
 
-// K1. SE tax with both W-2 + SE income — Sch SE Part I Line 9.
-// Engine should reduce SS wage base by W-2 SS wages before applying to SE.
-// Currently does NOT — overcharges combined filers.
-header("K1. SE tax: W-2 + SE combined (Sch SE Line 9) — GAP");
+// K1. SE tax with both W-2 + SE income — Sch SE Part I Line 9.  CLOSED 2026-05-23.
+// Engine now reduces the SS wage base by W-2 SS wages (Box 3, fallback to
+// Box 1) before applying 12.4% on SE net earnings. Below are the canonical
+// hand-calc cases. Known sub-gap: MFJ engine uses household-aggregated W-2
+// SS wages rather than per-spouse, so mixed-spouse cases (SE earner is the
+// non-W-2 spouse) are approximate. We avoid asserting those.
+header("K1. SE tax: W-2 + SE combined (Sch SE Line 9) — CLOSED");
 {
-  // $100k W-2 + $200k Sch C. Correct SE tax = ($68,600 × 12.4%) + ($184,700 × 2.9%) = $8,506.40 + $5,356.30 = $13,862.70.
-  // Engine returns: ($168,600 × 12.4%) + ($184,700 × 2.9%) = $20,906.40 + $5,356.30 = $26,262.70.
-  const r = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+  // K1a — original deep-audit case: single $100k W-2 + $200k Sch C, FL.
+  //   ssBase TY2024 = $168,600. W-2 SS = $100,000 → available = $68,600.
+  //   Net SE = $200,000 × 0.9235 = $184,700.
+  //   SS portion = min(184700, 68600) × 12.4% = 68600 × 0.124 = $8,506.40.
+  //   Medicare portion = 184700 × 2.9% = $5,356.30.
+  //   Total SE tax = $13,862.70.
+  const a = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
     w2s: [{ taxYear: 2024, wagesBox1: 100000, stateCode: "FL" }],
     form1099s: [{ taxYear: 2024, formType: "nec", payerName: "X", nonemployeeCompensation: 200000 }] });
-  if (Math.abs(r.selfEmploymentTax - 13862.70) > 100) {
-    FAIL.push({
-      category: "K1-expected", label: "SE tax over-charged for W-2 + SE combined (Sch SE Line 9 not modeled)",
-      expected: 13862.70, actual: r.selfEmploymentTax,
-      source: "Sch SE Part I Line 9 — W-2 SS wages subtract from SS wage base",
-    });
-  } else {
-    PASS.push("✓ [K1-expected] SE tax correct for W-2+SE combined");
-  }
+  check("K1a", "Single $100k W-2 + $200k Sch C → SE tax $13,862.70",
+    a.selfEmploymentTax, 13862.70, 0.10, "Sch SE Part I Line 9");
+
+  // K1b — W-2 alone fully consumes SS base. Single $200k W-2 + $50k Sch C, FL.
+  //   ssBase = $168,600. W-2 SS = $200,000 → available = $0.
+  //   Net SE = $50,000 × 0.9235 = $46,175.
+  //   SS portion = min(46175, 0) × 12.4% = $0.
+  //   Medicare portion = 46175 × 2.9% = $1,339.075.
+  //   Total = $1,339.08.
+  const b = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 200000, stateCode: "FL" }],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "X", nonemployeeCompensation: 50000 }] });
+  check("K1b", "Single $200k W-2 (>SS base) + $50k Sch C → Medicare only $1,339.08",
+    b.selfEmploymentTax, 1339.08, 0.10, "Sch SE Part I Line 9 — W-2 SS wages already cap SS portion");
+
+  // K1c — combined under SS base, no functional change vs. pre-fix engine.
+  //   Single $50k W-2 + $50k Sch C, FL. Net SE = 46175.
+  //   ssBase available = 168600 - 50000 = 118600. min(46175, 118600) = 46175.
+  //   SS portion = 46175 × 0.124 = $5,725.70. Medicare = $1,339.075.
+  //   Total = $7,064.78. (Pre-fix engine would compute the same number here.)
+  const c = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, stateCode: "FL" }],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "X", nonemployeeCompensation: 50000 }] });
+  check("K1c", "Single $50k W-2 + $50k Sch C (combined < SS base) → $7,064.78",
+    c.selfEmploymentTax, 7064.78, 0.10, "Sch SE Part I Line 9 — slack remains for SE");
+
+  // K1d — pure-SE filer (no W-2). Regression case — must match pre-fix engine.
+  //   Single $0 W-2 + $200k Sch C, FL.
+  //   Net SE = 184700. SS base available = 168600. SS portion = 168600 × 0.124 = $20,906.40.
+  //   Medicare = $5,356.30. Total = $26,262.70.
+  const d = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "X", nonemployeeCompensation: 200000 }] });
+  check("K1d", "Single $0 W-2 + $200k Sch C (pure SE, no fix effect) → $26,262.70",
+    d.selfEmploymentTax, 26262.70, 0.10, "Sch SE — pure SE filer unchanged by Line 9");
+
+  // K1e — explicit Box 3 takes precedence over Box 1. Single. W-2 has Box 1 = $80k
+  // (after 401(k) and pre-tax health) but Box 3 = $100k (full SS wages).
+  // Box 3 should be used → SS base available = 168600 - 100000 = 68600.
+  // Same SE math as K1a. Total = $13,862.70.
+  const e = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 80000, socialSecurityWagesBox3: 100000, stateCode: "FL" }],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "X", nonemployeeCompensation: 200000 }] });
+  check("K1e", "Single 401k filer Box1=$80k Box3=$100k + $200k SE → $13,862.70",
+    e.selfEmploymentTax, 13862.70, 0.10, "Sch SE Part I Line 9 — Box 3 preferred over Box 1");
+
+  // K1f — TY2025 SS wage base $176,100. Single $100k W-2 + $200k Sch C.
+  //   Available = 176100 - 100000 = 76100. Net SE = 184700.
+  //   SS portion = min(184700, 76100) × 0.124 = 76100 × 0.124 = $9,436.40.
+  //   Medicare = 184700 × 0.029 = $5,356.30. Total = $14,792.70.
+  const f = run({ client: { filingStatus: "single", state: "FL", taxYear: 2025 },
+    w2s: [{ taxYear: 2025, wagesBox1: 100000, stateCode: "FL" }],
+    form1099s: [{ taxYear: 2025, formType: "nec", payerName: "X", nonemployeeCompensation: 200000 }] });
+  check("K1f", "TY2025 single $100k W-2 + $200k SE → $14,792.70 (SS base $176,100)",
+    f.selfEmploymentTax, 14792.70, 0.10, "Sch SE Part I Line 9 — TY2025 SS wage base");
+
+  // K1g — half-SE deduction tracks corrected SE tax. K1a setup → half = $6,931.35.
+  check("K1g", "K1a half-SE deduction = SE/2 = $6,931.35",
+    a.detail.se.deductibleHalf, 6931.35, 0.10, "Half-SE above-the-line deduction reflects corrected SS portion");
+
+  // K1h — MFJ regression case: engine intentionally does NOT apply Line 9 to
+  // MFJ (per-spouse data not modeled). Behavior must remain unchanged from
+  // pre-fix: full SE tax computed on the SS base regardless of household
+  // W-2 SS wages. MFJ $110k+$75k W-2 + $8k Sch C, CA.
+  //   Net SE = 8000 × 0.9235 = 7388.
+  //   SS portion = min(7388, 168600) × 0.124 = $916.11.
+  //   Medicare = 7388 × 0.029 = $214.25.
+  //   Total = $1,130.36.
+  const h = run({ client: { filingStatus: "married_filing_jointly", state: "CA", taxYear: 2024, dependentsUnder17: 0 },
+    w2s: [
+      { taxYear: 2024, wagesBox1: 110000, stateCode: "CA" },
+      { taxYear: 2024, wagesBox1: 75000, stateCode: "CA" },
+    ],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "X", nonemployeeCompensation: 8000 }] });
+  check("K1h", "MFJ $185k household W-2 + $8k SE → SE $1,130.36 (Line 9 intentionally not applied to MFJ)",
+    h.selfEmploymentTax, 1130.36, 0.10, "Sch SE Part I Line 9 — MFJ requires per-spouse data; sub-gap tracked");
 }
 
 // K2. Additional Medicare 0.9% (Form 8959) on W-2 wages > $200k single. NOT modeled.

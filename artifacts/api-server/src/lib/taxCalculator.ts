@@ -2456,15 +2456,34 @@ export interface SeTaxCalculation {
   seTaxTotal: number;
   /** Half of SE tax — above-the-line deduction. */
   deductibleHalf: number;
+  /** SS wage base remaining for SE after W-2 SS wages (Sch SE Part I Line 9). */
+  ssBaseAvailableForSe: number;
 }
 
+/**
+ * Schedule SE Part I.
+ *
+ * Line 9 — a filer with both W-2 SS wages and SE income shares the single
+ * annual SS wage base across both income streams. The SS wage base
+ * available for SE is reduced by W-2 SS wages (Box 3) already subjected
+ * to FICA. Only Medicare (2.9%) applies on the excess. Without this
+ * adjustment, a $100k W-2 + $200k Sch C filer over-pays SS portion by
+ * ~$12.4k (deep-audit gap K1).
+ *
+ * @param w2SocialSecurityWages — sum of W-2 Box 3 across all W-2s for
+ *   the year. Default 0 (pure-SE filer, no W-2 wages).
+ */
 export function calculateSelfEmploymentTax(
   seIncome: number,
   taxYear: number,
+  w2SocialSecurityWages = 0,
 ): SeTaxCalculation {
   const year = resolveTaxYear(taxYear);
+  const ssBase = SS_WAGE_BASE[year];
+  const w2Ss = Math.max(0, w2SocialSecurityWages);
+  const ssBaseAvailableForSe = Math.max(0, ssBase - w2Ss);
   if (seIncome <= 0) {
-    return { seIncomeReported: seIncome, netSeEarnings: 0, socialSecurityPortion: 0, medicarePortion: 0, seTaxTotal: 0, deductibleHalf: 0 };
+    return { seIncomeReported: seIncome, netSeEarnings: 0, socialSecurityPortion: 0, medicarePortion: 0, seTaxTotal: 0, deductibleHalf: 0, ssBaseAvailableForSe };
   }
   // Form Schedule SE: net SE earnings = gross × 92.35%
   const netSeEarnings = seIncome * SE_NET_EARNINGS_FACTOR;
@@ -2472,12 +2491,11 @@ export function calculateSelfEmploymentTax(
   // (See "Note: If line 4c is less than $400 ... you don't owe self-employment tax.")
   // This is a true cliff — at $399.99 you owe nothing, at $400.00 the full 15.3% kicks in.
   if (netSeEarnings < 400) {
-    return { seIncomeReported: seIncome, netSeEarnings, socialSecurityPortion: 0, medicarePortion: 0, seTaxTotal: 0, deductibleHalf: 0 };
+    return { seIncomeReported: seIncome, netSeEarnings, socialSecurityPortion: 0, medicarePortion: 0, seTaxTotal: 0, deductibleHalf: 0, ssBaseAvailableForSe };
   }
-  // Below the SS wage base threshold: charged 12.4% SS + 2.9% Medicare on full net earnings.
-  // Above: only Medicare applies on the excess.
-  const ssBase = SS_WAGE_BASE[year];
-  const ssPortion = Math.min(netSeEarnings, ssBase) * SS_RATE;
+  // Sch SE Part I Line 10: SS portion = smaller of (net SE earnings, available SS base) × 12.4%.
+  // Line 11: Medicare portion = net SE earnings × 2.9% (no Medicare cap).
+  const ssPortion = Math.min(netSeEarnings, ssBaseAvailableForSe) * SS_RATE;
   const medicarePortion = netSeEarnings * MEDICARE_RATE;
   const seTaxTotal = ssPortion + medicarePortion;
   return {
@@ -2487,6 +2505,7 @@ export function calculateSelfEmploymentTax(
     medicarePortion,
     seTaxTotal,
     deductibleHalf: seTaxTotal / 2,
+    ssBaseAvailableForSe,
   };
 }
 

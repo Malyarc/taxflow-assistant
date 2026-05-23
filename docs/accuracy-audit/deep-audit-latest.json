@@ -1,17 +1,10 @@
 {
-  "generatedAt": "2026-05-23T23:01:28.500Z",
-  "pass": 108,
+  "generatedAt": "2026-05-23T23:19:13.426Z",
+  "pass": 116,
   "realFailures": 0,
-  "documentedGaps": 10,
+  "documentedGaps": 9,
   "failures": [],
   "gaps": [
-    {
-      "category": "K1-expected",
-      "label": "SE tax over-charged for W-2 + SE combined (Sch SE Line 9 not modeled)",
-      "expected": 13862.7,
-      "actual": 26262.7,
-      "source": "Sch SE Part I Line 9 — W-2 SS wages subtract from SS wage base"
-    },
     {
       "category": "K2-expected",
       "label": "Form 8959 Additional Medicare 0.9% on wages > $200k not modeled",
