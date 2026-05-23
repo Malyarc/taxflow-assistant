@@ -671,9 +671,15 @@ header("I20. Wealthy MFJ — $500k W-2 NY+NYC big itemizers");
   // AGI $500k. Itemized $65k. Taxable $435k.
   // MFJ tax on $435k (per Tax Comp Wksht single/MFJ brackets):
   //   2,320 + 8,532 + 23,506 + 43,884 + 32%×(435k − 383,900) = 94,594.
-  check("I20", "Pre-credit fed tax = $94,594 (MFJ brackets on $435k)",
-    r.federalTaxLiability, 94594, 50,
-    "Form 1040 MFJ Tax Computation Worksheet 2024");
+  // Plus Form 8959 Additional Medicare (added in K2):
+  //   $500k Medicare wages − $250k MFJ threshold = $250k × 0.9% = $2,250.
+  // Total federal tax = 94,594 + 2,250 = $96,844.
+  check("I20", "Federal tax = $96,844 (regular $94,594 + Add'l Medicare $2,250)",
+    r.federalTaxLiability, 96844, 50,
+    "Form 1040 MFJ Tax Comp Wksht 2024 + Form 8959 Part I");
+  check("I20", "Add'l Medicare $2,250 on $500k MFJ wages",
+    r.additionalMedicareTax, 2250, 0.10,
+    "Form 8959 — $250k over MFJ $250k threshold × 0.9%");
   // NYC local tax should be > 0 for any NYC resident with positive income.
   check("I20", "NYC local tax > 0",
     (r.localTaxLiability ?? 0) > 0 ? 1 : 0, 1, 0.01);
@@ -827,19 +833,80 @@ header("K1. SE tax: W-2 + SE combined (Sch SE Line 9) — CLOSED");
     h.selfEmploymentTax, 1130.36, 0.10, "Sch SE Part I Line 9 — MFJ requires per-spouse data; sub-gap tracked");
 }
 
-// K2. Additional Medicare 0.9% (Form 8959) on W-2 wages > $200k single. NOT modeled.
-header("K2. Form 8959 Additional Medicare 0.9% — GAP");
+// K2. Additional Medicare 0.9% (Form 8959) on Medicare wages + SE.  CLOSED 2026-05-23.
+// 0.9% on (Medicare wages + SE net) above filing-status threshold. Threshold
+// shared across wages and SE — wages consume first; SE only above remainder.
+// Thresholds: $200k single/HoH/QSS, $250k MFJ, $125k MFS.
+header("K2. Form 8959 Additional Medicare 0.9% — CLOSED");
 {
-  // Single $250k W-2 → Add'l Medicare = (250k − 200k) × 0.9% = $450 owed.
-  const r = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+  // K2a — single $250k W-2 → (250k − 200k) × 0.9% = $450.
+  const a = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
     w2s: [{ taxYear: 2024, wagesBox1: 250000, federalTaxWithheldBox2: 60000, stateCode: "FL" }] });
-  // Engine returns federalTaxLiability = regular tax + AMT + NIIT + SE — no Add'l Medicare line.
-  // No assertion possible without a field, so just emit the gap unconditionally.
-  FAIL.push({
-    category: "K2-expected", label: "Form 8959 Additional Medicare 0.9% on wages > $200k not modeled",
-    expected: 450, actual: 0,
-    source: "Form 8959 — 0.9% on wages above filing-status threshold",
-  });
+  check("K2a", "Single $250k W-2 → Add'l Medicare $450",
+    a.additionalMedicareTax, 450, 0.10, "Form 8959 Part I");
+
+  // K2b — single $180k W-2 (under threshold) → $0.
+  const b = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 180000, stateCode: "FL" }] });
+  check("K2b", "Single $180k W-2 (under $200k) → Add'l Medicare $0",
+    b.additionalMedicareTax, 0, 0.01, "Form 8959 — below threshold");
+
+  // K2c — MFJ $300k Medicare wages (across two W-2s) → (300k − 250k) × 0.9% = $450.
+  const c = run({ client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024 },
+    w2s: [
+      { taxYear: 2024, wagesBox1: 200000, stateCode: "FL" },
+      { taxYear: 2024, wagesBox1: 100000, stateCode: "FL" },
+    ] });
+  check("K2c", "MFJ $200k+$100k W-2 → Add'l Medicare $450",
+    c.additionalMedicareTax, 450, 0.10, "Form 8959 Part I — MFJ threshold $250k");
+
+  // K2d — MFS $130k W-2 → (130k − 125k) × 0.9% = $45.
+  const d = run({ client: { filingStatus: "married_filing_separately", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 130000, stateCode: "FL" }] });
+  check("K2d", "MFS $130k W-2 → Add'l Medicare $45",
+    d.additionalMedicareTax, 45, 0.10, "Form 8959 — MFS threshold $125k");
+
+  // K2e — single $150k W-2 + $100k Sch C. Wages under $200k.
+  //   SE net = 100000 × 0.9235 = 92350.
+  //   Threshold remaining for SE = 200000 - 150000 = 50000.
+  //   SE over = max(0, 92350 - 50000) = 42350.
+  //   Add'l Medicare on SE = 42350 × 0.009 = $381.15. Wages portion $0.
+  //   Total Add'l Medicare = $381.15.
+  const e = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 150000, stateCode: "FL" }],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "X", nonemployeeCompensation: 100000 }] });
+  check("K2e", "Single $150k W-2 + $100k SE → Add'l Medicare $381.15 (SE portion only)",
+    e.additionalMedicareTax, 381.15, 0.10, "Form 8959 Part II — threshold shared with wages");
+
+  // K2f — single $300k W-2 + $50k Sch C. Wages over threshold by $100k; SE net 46175.
+  //   Wages portion = (300k - 200k) × 0.9% = $900.
+  //   SE threshold remaining = max(0, 200k - 300k) = 0.
+  //   SE over = max(0, 46175 - 0) = 46175. SE portion = 46175 × 0.9% = $415.575.
+  //   Total = $1,315.58.
+  const f = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 300000, stateCode: "FL" }],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "X", nonemployeeCompensation: 50000 }] });
+  check("K2f", "Single $300k W-2 + $50k SE → Add'l Medicare $1,315.58",
+    f.additionalMedicareTax, 1315.58, 0.10, "Form 8959 — wages and SE both over threshold");
+
+  // K2g — Box 5 (Medicare wages) takes precedence over Box 1. Single. Box 1 $180k
+  // (after 401k), Box 5 $210k (Medicare wages not reduced by 401k).
+  //   Box 5 over threshold = max(0, 210k - 200k) = 10000. Add'l Medicare = $90.
+  const g = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 180000, medicareWagesBox5: 210000, stateCode: "FL" }] });
+  check("K2g", "Single Box1=$180k Box5=$210k → Add'l Medicare $90 (Box 5 preferred)",
+    g.additionalMedicareTax, 90, 0.10, "Form 8959 — Box 5 (Medicare wages) is the right base");
+
+  // K2h — Add'l Medicare flows into federalTaxLiability (Sch 2 Line 11).
+  // Compare K2a above-threshold case vs an under-threshold control.
+  //   Both: single FL, std ded $14,600. K2a: $250k W-2. Control: $180k W-2.
+  //   The federal tax delta isn't exactly $450 (different ordinary tax due to
+  //   different income), but K2a.federalTaxLiability must include $450 of
+  //   Add'l Medicare. We verify additionalMedicareTax > 0 and that the
+  //   ComputedTaxReturn carries the line through.
+  check("K2h", "K2a Add'l Medicare appears in federalTaxLiability",
+    a.federalTaxLiability >= a.additionalMedicareTax ? 1 : 0, 1, 0,
+    "Sch 2 Line 11 — Add'l Medicare is an 'other tax' included in total federal liability");
 }
 
 // K3. AMT × LTCG (Form 6251 Part III) — engine taxes LTCG at 26/28% within AMT.

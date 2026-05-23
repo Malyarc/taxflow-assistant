@@ -25,6 +25,7 @@ import {
   calculateChildTaxCredit,
   calculateSelfEmploymentTax,
   calculateNiit,
+  calculateAdditionalMedicareTax,
   calculateQbi,
   calculateAmt,
   calculateFederalTaxWithCapitalGains,
@@ -52,6 +53,7 @@ import {
   type CtcCalculation,
   type SeTaxCalculation,
   type NiitCalculation,
+  type AdditionalMedicareTaxCalculation,
   type QbiCalculation,
   type AmtCalculation,
   type CapitalGainsCalculation,
@@ -522,6 +524,9 @@ export interface ComputedTaxReturn {
   selfEmploymentTax: number;
   /** Net Investment Income Tax (3.8% IRC §1411) */
   niitTax: number;
+  /** Additional Medicare Tax (0.9% Form 8959, IRC §3101(b)(2)/§1401(b)(2))
+   *  on Medicare wages + SE net above filing-status threshold */
+  additionalMedicareTax: number;
   /** AMT delta — additional tax beyond regular tax. Often $0. */
   amtTax: number;
   /** Refundable portion of CTC (Additional Child Tax Credit) */
@@ -579,6 +584,7 @@ export interface ComputedTaxReturn {
   detail: {
     se: SeTaxCalculation;
     niit: NiitCalculation;
+    additionalMedicare: AdditionalMedicareTaxCalculation;
     qbi: QbiCalculation;
     amt: AmtCalculation;
     capitalGains: CapitalGainsCalculation;
@@ -1206,8 +1212,18 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const stateTaxLiability = multiState.totalStateTax;
   const localTaxLiability = multiState.localTax?.netLocalTax ?? 0;
 
+  // Form 8959 Additional Medicare Tax — 0.9% on Medicare wages + SE net
+  // above filing-status threshold ($200k single/HoH/QSS, $250k MFJ,
+  // $125k MFS). Reported on Sch 2 Line 11 — not offset by non-refundable
+  // credits. Closes deep-audit gap K2.
+  const additionalMedicare = calculateAdditionalMedicareTax({
+    medicareWages: w2MedicareWages,
+    seNetEarnings: se.netSeEarnings,
+    filingStatus: client.filingStatus,
+  });
+
   const totalFederalLiability =
-    regularFederalTax + amt.amtTax + niit.niitTax + se.seTaxTotal;
+    regularFederalTax + amt.amtTax + niit.niitTax + se.seTaxTotal + additionalMedicare.additionalMedicareTax;
 
   // ── Step 7: Non-refundable credits in IRS Sched 3 order ──
   const incomeTaxOnly = regularFederalTax + amt.amtTax;
@@ -1419,6 +1435,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     childTaxCredit: ctc,
     selfEmploymentTax: se.seTaxTotal,
     niitTax: niit.niitTax,
+    additionalMedicareTax: additionalMedicare.additionalMedicareTax,
     amtTax: amt.amtTax,
     additionalChildTaxCredit: ctc.refundableActc,
     capitalGainsTax: capGains.preferentialRateTax,
@@ -1465,7 +1482,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
       totalSelfEmploymentEarnings: k1SelfEmploymentEarnings,
       totalQbiContribution: k1QbiContribution,
     },
-    detail: { se, niit, qbi, amt, capitalGains: capGains },
+    detail: { se, niit, additionalMedicare, qbi, amt, capitalGains: capGains },
     w2Count: w2Records.length,
     form1099Count: form1099Records.length,
   };

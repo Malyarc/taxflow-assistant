@@ -780,6 +780,8 @@ export interface TaxReturn {
   /** @nullable */
   niitTax?: number | null;
   /** @nullable */
+  additionalMedicareTax?: number | null;
+  /** @nullable */
   additionalChildTaxCredit?: number | null;
   /** @nullable */
   capitalGainsTax?: number | null;

@@ -1639,6 +1639,8 @@ components:
           type: ["number", "null"]
         niitTax:
           type: ["number", "null"]
+        additionalMedicareTax:
+          type: ["number", "null"]
         additionalChildTaxCredit:
           type: ["number", "null"]
         capitalGainsTax:

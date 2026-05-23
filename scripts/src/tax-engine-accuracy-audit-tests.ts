@@ -968,16 +968,22 @@ header("F2. Tax Comp Wksht MFJ $200k taxable → $34,106");
 }
 
 // F3. Single taxable $500,000: formula = $500,000 × 0.35 − $29,625.25 = $145,374.75.
-header("F3. Tax Comp Wksht single $500k taxable → $145,374.75");
+// Plus Form 8959 Additional Medicare on wages > $200k:
+//   ($514,600 − $200,000) × 0.9% = $2,831.40.
+// Total federal tax = $148,206.15.
+header("F3. Tax Comp Wksht single $500k taxable + Form 8959 → $148,206.15");
 {
   // Wages = 514,600.
   const r = run({
     client: { filingStatus: "single", state: "FL", taxYear: 2024 },
     w2s: [{ taxYear: 2024, wagesBox1: 514600, stateCode: "FL" }],
   });
-  check("F3", "Single taxable $500k → fed regular tax $145,374.75",
-    r.federalTaxLiability, 145374.75, 1,
-    "IRS 2024 Form 1040 Instructions, Tax Computation Worksheet p. 76 Sec. A");
+  check("F3", "Single $500k taxable: regular tax + Add'l Medicare = $148,206.15",
+    r.federalTaxLiability, 148206.15, 1,
+    "IRS 2024 Form 1040 Tax Comp Wksht p. 76 Sec. A + Form 8959 Part I");
+  check("F3", "Add'l Medicare $2,831.40 on $514,600 wages",
+    r.additionalMedicareTax, 2831.40, 0.10,
+    "Form 8959 — ($514,600 − $200,000) × 0.9%");
 }
 
 // F4. Pub 970 Ch. 2 — AOC phase-out worked example.

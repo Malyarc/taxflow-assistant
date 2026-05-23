@@ -26,6 +26,7 @@ export const taxReturnsTable = pgTable(
     qbiDeduction: numeric("qbi_deduction", { precision: 12, scale: 2 }),
     amtTax: numeric("amt_tax", { precision: 12, scale: 2 }),
     niitTax: numeric("niit_tax", { precision: 12, scale: 2 }),
+    additionalMedicareTax: numeric("additional_medicare_tax", { precision: 12, scale: 2 }),
     additionalChildTaxCredit: numeric("additional_child_tax_credit", { precision: 12, scale: 2 }),
     capitalGainsTax: numeric("capital_gains_tax", { precision: 12, scale: 2 }),
     preferentialIncome: numeric("preferential_income", { precision: 12, scale: 2 }),

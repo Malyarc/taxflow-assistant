@@ -193,9 +193,12 @@ async function main() {
       //   $120k × 15% = $18,000
       // Total fed tax = $70,264.75 + $18,000 = $88,264.75
       assert(ctx, "Total income $420k", Number(r.totalIncome), 420000);
-      // federalTaxLiability includes ordinary + cap gains + NIIT + SE + AMT
-      // = $70,264.75 (ordinary) + $18,000 (cap gains) + $4,560 (NIIT) = $92,824.75
-      assert(ctx, "Total federal liability (ord + cap gains + NIIT)", Number(r.federalTaxLiability), 92824.75, 5);
+      // federalTaxLiability includes ordinary + cap gains + NIIT + SE + AMT + Add'l Medicare
+      // = $70,264.75 (ordinary) + $18,000 (cap gains) + $4,560 (NIIT)
+      //   + Add'l Medicare ($300k Box 5 - $200k threshold) × 0.9% = $900
+      // = $93,724.75
+      assert(ctx, "Total federal liability (ord + cap gains + NIIT + Add'l Medicare)", Number(r.federalTaxLiability), 93724.75, 5);
+      assert(ctx, "Add'l Medicare $900 on $300k single wages", Number(r.additionalMedicareTax), 900, 0.10);
       assert(ctx, "Capital gains tax = 15% × $120k", Number(r.capitalGainsTax), 18000, 1);
       // NIIT: AGI $420k, excess over $200k = $220k. Investment income = $100k LTCG + $20k full divs = $120k
       // NIIT = min($120k, $220k) × 3.8% = $4,560
@@ -410,12 +413,17 @@ async function main() {
       //   form1099Summary.totalInvestmentIncome = interest + ordinaryDivs(non-qualified portion=$0) + qualifiedDivs($50k) + LTCG($40k) + STCG(0) = $90k
       //   NIIT = min($90k, $117,880) × 3.8% = $3,420
       // Total federal liability = $59,268.34 + $4,238.83 + $3,420 = $66,927.17
-      // Apply CTC $4,000: refund/owed = withheld $50k - $66,927.17 + $4,000 = -$12,927.17 (owes)
+      // Plus Form 8959 Add'l Medicare (MFJ threshold $250k):
+      //   Wages $250k = threshold → wages portion $0
+      //   SE net $27,705, threshold remaining $0 → SE over $27,705 × 0.9% = $249.35
+      // Total federal liability = $66,927.17 + $249.35 = $67,176.52
+      // Apply CTC $4,000: refund/owed = withheld $50k - $67,176.52 + $4,000 = -$13,176.52 (owes)
       assert(ctx, "Total income $370k", Number(r.totalIncome), 370000);
-      assert(ctx, "SE tax ~$4,239", Number(r.selfEmploymentTax), 4238.83, 2);
+      assert(ctx, "SE tax ~$4,239 (MFJ — Line 9 not applied)", Number(r.selfEmploymentTax), 4238.83, 2);
       assert(ctx, "Capital gains tax 15% × $90k = $13,500", Number(r.capitalGainsTax), 13500, 5);
       assert(ctx, "NIIT 3.8% × $90k investment", Number(r.niitTax), 3420, 5);
-      assert(ctx, "Total federal liability ~$66,927", Number(r.federalTaxLiability), 66927.17, 10);
+      assert(ctx, "Add'l Medicare $249.35 on SE (MFJ wages = threshold)", Number(r.additionalMedicareTax), 249.35, 1);
+      assert(ctx, "Total federal liability ~$67,177", Number(r.federalTaxLiability), 67176.52, 10);
     } finally { await delClient(cid); }
   });
 

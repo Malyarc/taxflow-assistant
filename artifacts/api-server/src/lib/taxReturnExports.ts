@@ -68,6 +68,7 @@ const IRS_LINE_REFERENCE_CODES: Record<string, string> = {
   stateRefundOrOwed: "STATE-REFUND",
   selfEmploymentTax: "SCH-SE-L12",
   niitTax: "8960-L17",
+  additionalMedicareTax: "8959-L18",
   amtTax: "6251-L11",
   childTaxCredit_appliedCredit: "1040-L19",
   additionalChildTaxCredit: "8812-L27",
@@ -149,6 +150,7 @@ function buildExportRows(ret: ComputedTaxReturn): ExportRow[] {
   // Federal components
   if (ret.selfEmploymentTax > 0) add("selfEmploymentTax", "Sched SE Line 12", "Self-Employment Tax", ret.selfEmploymentTax);
   if (ret.niitTax > 0) add("niitTax", "Form 8960 Line 17", "Net Investment Income Tax (NIIT)", ret.niitTax);
+  if (ret.additionalMedicareTax > 0) add("additionalMedicareTax", "Form 8959 Line 18 → Sched 2 Line 11", "Additional Medicare Tax (0.9%)", ret.additionalMedicareTax);
   if (ret.amtTax > 0) add("amtTax", "Form 6251 Line 11", "Alternative Minimum Tax (AMT)", ret.amtTax);
   if (ret.capitalGainsTax > 0) add("capitalGainsTax", "QDCG Worksheet", "Capital Gains Tax (LTCG/QDIV)", ret.capitalGainsTax);
 

@@ -1,17 +1,10 @@
 {
-  "generatedAt": "2026-05-23T23:19:13.426Z",
-  "pass": 116,
+  "generatedAt": "2026-05-23T23:28:03.348Z",
+  "pass": 125,
   "realFailures": 0,
-  "documentedGaps": 9,
+  "documentedGaps": 8,
   "failures": [],
   "gaps": [
-    {
-      "category": "K2-expected",
-      "label": "Form 8959 Additional Medicare 0.9% on wages > $200k not modeled",
-      "expected": 450,
-      "actual": 0,
-      "source": "Form 8959 — 0.9% on wages above filing-status threshold"
-    },
     {
       "category": "K3-expected",
       "label": "AMT does not apply LTCG preferential rates (Form 6251 Part III)",

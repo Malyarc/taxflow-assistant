@@ -230,12 +230,13 @@ export async function buildIrsForm1040Pdf(options: BuildIrsForm1040Options): Pro
 
   // ── Page 2 — tax + credits + payments ──
   // Line 16 is gross federal tax (income tax only, before credits).
-  // engine breaks out: regularFederalTax + amtTax + niit + se
+  // engine breaks out: regularFederalTax + amtTax + niit + se + addlMedicare
   // For 1040 Line 16 we want regularFederalTax (the bracket-based income tax).
   const regularFederalTax = (ret.federalTaxLiability ?? 0)
     - (ret.amtTax ?? 0)
     - (ret.niitTax ?? 0)
-    - (ret.selfEmploymentTax ?? 0);
+    - (ret.selfEmploymentTax ?? 0)
+    - (ret.additionalMedicareTax ?? 0);
   safeSet(form, F1040_2024_FIELDS.line16, fmt(Math.max(0, regularFederalTax)));
   // Line 17 (Schedule 2 line 3) = AMT + excess APTC. We approximate to AMT only.
   safeSet(form, F1040_2024_FIELDS.line17, fmt(ret.amtTax ?? 0));
@@ -245,8 +246,10 @@ export async function buildIrsForm1040Pdf(options: BuildIrsForm1040Options): Pro
   // `nonRefundablePortion`; refundable ACTC lands separately on Line 28.
   safeSet(form, F1040_2024_FIELDS.line19, fmt(ret.childTaxCredit?.nonRefundablePortion ?? 0));
 
-  // Line 23: other taxes (SE + NIIT) — Schedule 2 line 21
-  safeSet(form, F1040_2024_FIELDS.line23, fmt((ret.selfEmploymentTax ?? 0) + (ret.niitTax ?? 0)));
+  // Line 23: other taxes (SE + NIIT + Add'l Medicare) — Schedule 2 line 21.
+  // Add'l Medicare flows from Form 8959 Line 18 → Sch 2 Line 11 → Line 21.
+  safeSet(form, F1040_2024_FIELDS.line23, fmt(
+    (ret.selfEmploymentTax ?? 0) + (ret.niitTax ?? 0) + (ret.additionalMedicareTax ?? 0)));
   safeSet(form, F1040_2024_FIELDS.line24, fmt(ret.federalTaxLiability ?? 0));
 
   // Payments

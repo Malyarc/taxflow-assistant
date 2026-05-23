@@ -294,6 +294,7 @@ export async function recalculateAndUpsertTaxReturn(
     qbiDeduction: result.qbiDeduction != null ? String(result.qbiDeduction) : null,
     amtTax: result.amtTax != null ? String(result.amtTax) : null,
     niitTax: result.niitTax != null ? String(result.niitTax) : null,
+    additionalMedicareTax: result.additionalMedicareTax != null ? String(result.additionalMedicareTax) : null,
     additionalChildTaxCredit: result.additionalChildTaxCredit != null ? String(result.additionalChildTaxCredit) : null,
     capitalGainsTax: result.capitalGainsTax != null ? String(result.capitalGainsTax) : null,
     preferentialIncome: result.preferentialIncome != null ? String(result.preferentialIncome) : null,

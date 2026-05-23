@@ -2551,6 +2551,71 @@ export function calculateNiit(params: {
   };
 }
 
+// ── Additional Medicare Tax (Form 8959, IRC §3101(b)(2) + §1401(b)(2)) ─────
+// 0.9% on Medicare wages (Box 5) + SE net earnings above filing-status
+// threshold. The threshold is shared across wages and SE: wages consume the
+// threshold first; SE only above the remaining portion (Form 8959 Lines 4-8).
+// Thresholds match NIIT (not inflation-adjusted): $200k single/HoH/QSS,
+// $250k MFJ, $125k MFS. Add'l Medicare is reported on Sch 2 Line 11.
+// Not offset by non-refundable credits (it is an "other tax" per Sch 2 Part II).
+const ADDITIONAL_MEDICARE_RATE = 0.009;
+
+function additionalMedicareThreshold(filingStatus: string): number {
+  switch (filingStatus) {
+    case "married_filing_jointly":
+    case "qualifying_widow":
+      return 250000;
+    case "married_filing_separately":
+      return 125000;
+    default:
+      return 200000;
+  }
+}
+
+export interface AdditionalMedicareTaxCalculation {
+  medicareWages: number;
+  seNetEarnings: number;
+  threshold: number;
+  /** Form 8959 Line 3 — wages over threshold (Line 1 − Line 2). */
+  wagesOverThreshold: number;
+  /** Form 8959 Line 7 — threshold remaining for SE after wages. */
+  seThresholdRemaining: number;
+  /** Form 8959 Line 8 input — SE net over remaining threshold. */
+  seOverThreshold: number;
+  /** Form 8959 Line 7 (wage part) × 0.9%. */
+  additionalMedicareOnWages: number;
+  /** Form 8959 Line 13 (SE part) × 0.9%. */
+  additionalMedicareOnSe: number;
+  /** Form 8959 Line 18 — total Additional Medicare Tax. */
+  additionalMedicareTax: number;
+}
+
+export function calculateAdditionalMedicareTax(params: {
+  medicareWages: number;
+  seNetEarnings: number;
+  filingStatus: string;
+}): AdditionalMedicareTaxCalculation {
+  const threshold = additionalMedicareThreshold(params.filingStatus);
+  const medicareWages = Math.max(0, params.medicareWages);
+  const seNetEarnings = Math.max(0, params.seNetEarnings);
+  const wagesOverThreshold = Math.max(0, medicareWages - threshold);
+  const seThresholdRemaining = Math.max(0, threshold - medicareWages);
+  const seOverThreshold = Math.max(0, seNetEarnings - seThresholdRemaining);
+  const additionalMedicareOnWages = wagesOverThreshold * ADDITIONAL_MEDICARE_RATE;
+  const additionalMedicareOnSe = seOverThreshold * ADDITIONAL_MEDICARE_RATE;
+  return {
+    medicareWages,
+    seNetEarnings,
+    threshold,
+    wagesOverThreshold,
+    seThresholdRemaining,
+    seOverThreshold,
+    additionalMedicareOnWages,
+    additionalMedicareOnSe,
+    additionalMedicareTax: additionalMedicareOnWages + additionalMedicareOnSe,
+  };
+}
+
 // ── QBI Deduction (Section 199A) ───────────────────────────────────────────
 // Simplified: 20% of QBI, capped at 20% of (taxable income before QBI − net capital gains).
 // The full §199A has W-2-wages limits + SSTB phase-outs above income thresholds — we

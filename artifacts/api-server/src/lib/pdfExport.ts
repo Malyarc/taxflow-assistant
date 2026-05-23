@@ -130,10 +130,11 @@ export function buildTaxReturnPdf(client: Client, ret: ComputedTaxReturn): Promi
     }
 
     const fedRows: Array<[string, string]> = [
-      ["Federal income tax (regular, 1040 L16)", fmt(ret.federalTaxLiability - (ret.amtTax ?? 0) - (ret.niitTax ?? 0) - (ret.selfEmploymentTax ?? 0))],
+      ["Federal income tax (regular, 1040 L16)", fmt(ret.federalTaxLiability - (ret.amtTax ?? 0) - (ret.niitTax ?? 0) - (ret.selfEmploymentTax ?? 0) - (ret.additionalMedicareTax ?? 0))],
     ];
     if (ret.selfEmploymentTax > 0) fedRows.push(["Self-employment tax (Sched SE)", fmt(ret.selfEmploymentTax)]);
     if (ret.niitTax > 0) fedRows.push(["Net investment income tax (Form 8960)", fmt(ret.niitTax)]);
+    if (ret.additionalMedicareTax > 0) fedRows.push(["Additional Medicare tax (Form 8959)", fmt(ret.additionalMedicareTax)]);
     if (ret.amtTax > 0) fedRows.push(["Alternative minimum tax (Form 6251)", fmt(ret.amtTax)]);
     fedRows.push(["Total federal tax liability (1040 L24)", fmt(ret.federalTaxLiability)]);
     // Credits
