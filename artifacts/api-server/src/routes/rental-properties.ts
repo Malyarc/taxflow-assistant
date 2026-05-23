@@ -68,7 +68,7 @@ router.post("/clients/:clientId/rental-properties", async (req, res): Promise<vo
   await writeAudit({
     clientId: params.data.clientId,
     action: "create",
-    entityType: "adjustment", // closest existing entity type (rental treated as Schedule E adjustments)
+    entityType: "rental_property",
     entityId: record.id,
     after: record,
     source: "rental property created",
@@ -118,7 +118,7 @@ router.patch("/clients/:clientId/rental-properties/:propertyId", async (req, res
   await writeAudit({
     clientId: params.data.clientId,
     action: "update",
-    entityType: "adjustment",
+    entityType: "rental_property",
     entityId: record.id,
     before,
     after: record,
@@ -149,7 +149,7 @@ router.delete("/clients/:clientId/rental-properties/:propertyId", async (req, re
   await writeAudit({
     clientId: params.data.clientId,
     action: "delete",
-    entityType: "adjustment",
+    entityType: "rental_property",
     entityId: record.id,
     before: record,
   });

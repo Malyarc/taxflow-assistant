@@ -32,7 +32,12 @@ export type AuditEntityType =
   | "form1099"
   | "adjustment"
   | "tax_return"
-  | "tax_document";
+  | "tax_document"
+  // Added 2026-05-23: these used to log under "adjustment", colliding
+  // with adjustments-table rows of the same id. Now distinct.
+  | "capital_transaction"
+  | "rental_property"
+  | "schedule_k1";
 
 export interface AuditWriteParams {
   clientId: number;

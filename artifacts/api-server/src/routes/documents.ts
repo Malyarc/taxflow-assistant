@@ -20,8 +20,23 @@ import {
   isVisualMimeType,
 } from "../lib/documentExtractor";
 import { logger } from "../lib/logger";
+import { setSecureDownloadHeaders } from "../lib/httpSecurity";
 import { recalculateAfterMutation } from "../lib/taxReturnPipeline";
 import { writeAudit } from "../lib/auditLog";
+
+/**
+ * Hard cap on uploaded file size to defeat unauthenticated cost-DoS via the
+ * AI extraction path. ~6MB base64 ≈ 4.5MB raw — enough for any realistic
+ * scanned W-2/1099 PDF; refuses obvious abuse. The Express body limit is
+ * 20MB; this is the per-document tighter cap.
+ */
+const MAX_UPLOAD_BASE64_BYTES = 8_000_000;
+
+/**
+ * Hard cap on pending_review docs per client to defeat queue blow-up via
+ * unauthenticated burst uploads.
+ */
+const MAX_PENDING_PER_CLIENT = 50;
 
 const router: IRouter = Router();
 
@@ -47,6 +62,25 @@ router.post("/clients/:clientId/documents", async (req, res): Promise<void> => {
   const parsed = UploadDocumentBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  // Defeat cost-DoS via large uploads (per-file cap, smaller than the
+  // global Express 20MB body limit).
+  if ((parsed.data.fileContent ?? "").length > MAX_UPLOAD_BASE64_BYTES) {
+    res.status(413).json({ error: `File too large (max ${Math.floor(MAX_UPLOAD_BASE64_BYTES / 1_000_000)}MB after base64 encoding)` });
+    return;
+  }
+
+  // Defeat queue blow-up via burst uploads — refuse if this client already
+  // has many unreviewed docs sitting in the queue.
+  const pending = await db.select().from(taxDocumentsTable)
+    .where(and(
+      eq(taxDocumentsTable.clientId, params.data.clientId),
+      eq(taxDocumentsTable.status, "pending_review"),
+    ));
+  if (pending.length >= MAX_PENDING_PER_CLIENT) {
+    res.status(429).json({ error: `Too many pending documents (max ${MAX_PENDING_PER_CLIENT}); review or delete existing ones first` });
     return;
   }
 
@@ -120,7 +154,12 @@ router.post("/clients/:clientId/documents", async (req, res): Promise<void> => {
     }
   })();
 
-  res.status(201).json(doc);
+  // Strip fileContent (potentially large base64 blob) from the response —
+  // the frontend never reads it (next refetch hits a separate /content
+  // endpoint). This both halves the bytes-on-wire and shrinks the log /
+  // cache surface for PII-carrying uploads.
+  const { fileContent: _omitContent, ...docMeta } = doc;
+  res.status(201).json(docMeta);
 });
 
 /**
@@ -148,8 +187,12 @@ router.get("/clients/:clientId/documents/:documentId/content", async (req, res):
   }
   const mimeType = detectMimeType(doc.fileName);
   const buffer = Buffer.from(doc.fileContent, "base64");
-  res.setHeader("Content-Type", mimeType);
-  res.setHeader("Content-Disposition", `inline; filename="${doc.fileName}"`);
+  setSecureDownloadHeaders(res, {
+    fileName: doc.fileName,
+    contentType: mimeType,
+    disposition: "inline",
+    length: buffer.length,
+  });
   res.setHeader("Cache-Control", "private, max-age=300");
   res.send(buffer);
 });

@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { desc, sql, eq, gt } from "drizzle-orm";
+import { desc, sql, inArray } from "drizzle-orm";
 import { db, clientsTable, taxReturnsTable, taxDocumentsTable } from "@workspace/db";
 
 const router: IRouter = Router();
@@ -9,10 +9,16 @@ router.get("/dashboard/summary", async (_req, res): Promise<void> => {
     .select({ count: sql<number>`count(*)` })
     .from(clientsTable);
 
+  // "Processed" = anything that has reached an end state for the CPA workflow.
+  // Pre-2026-05-23 this used eq(status, "extracted") which was the LEGACY status
+  // before the review-gate landed; the current pipeline emits
+  //   processing → pending_review → approved | rejected | failed
+  // so the legacy filter permanently returned 0. Treat both as processed for
+  // backward compatibility with any historical rows.
   const [docCount] = await db
     .select({ count: sql<number>`count(*)` })
     .from(taxDocumentsTable)
-    .where(eq(taxDocumentsTable.status, "extracted"));
+    .where(inArray(taxDocumentsTable.status, ["approved", "extracted", "pending_review", "rejected"]));
 
   const taxReturns = await db.select().from(taxReturnsTable);
   const completedReturns = taxReturns.filter((r) => r.federalRefundOrOwed != null);

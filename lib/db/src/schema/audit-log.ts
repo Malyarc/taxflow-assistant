@@ -27,10 +27,17 @@ import { clientsTable } from "./clients";
  */
 export const auditLogTable = pgTable("audit_log", {
   id: serial("id").primaryKey(),
-  /** Client this audit entry pertains to. Cascades on client delete. */
+  /**
+   * Client this audit entry pertains to. Set to NULL when the client is
+   * deleted (NOT cascaded — that would wipe the forensic trail). Audit
+   * rows persist past client deletion; the snapshot in `beforeJson`
+   * carries the historical client identity.
+   *
+   * Pre-2026-05-23 this used `onDelete: "cascade"` which destroyed
+   * evidence on client delete — that integrity bug is fixed here.
+   */
   clientId: integer("client_id")
-    .notNull()
-    .references(() => clientsTable.id, { onDelete: "cascade" }),
+    .references(() => clientsTable.id, { onDelete: "set null" }),
   /** Authenticated user id at time of mutation. Nullable until auth lands. */
   actorUserId: integer("actor_user_id"),
   /** "create" | "update" | "delete" */
@@ -50,7 +57,14 @@ export const auditLogTable = pgTable("audit_log", {
 
 export const insertAuditLogSchema = createInsertSchema(auditLogTable, {
   action: z.enum(["create", "update", "delete"]),
-  entityType: z.enum(["client", "w2", "form1099", "adjustment", "tax_return", "tax_document"]),
+  entityType: z.enum([
+    "client", "w2", "form1099", "adjustment", "tax_return", "tax_document",
+    // Added 2026-05-23: prior to this commit, capital_transaction, rental_property,
+    // and schedule_k1 mutations were logged under entityType="adjustment", which
+    // collided with adjustments-table rows of the same id and corrupted the audit
+    // identity invariant (entityType, entityId) → unique row.
+    "capital_transaction", "rental_property", "schedule_k1",
+  ]),
 });
 export type AuditLogRow = typeof auditLogTable.$inferSelect;
 export type NewAuditLogRow = typeof auditLogTable.$inferInsert;

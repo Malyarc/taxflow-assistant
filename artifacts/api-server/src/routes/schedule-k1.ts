@@ -86,7 +86,7 @@ router.post("/clients/:clientId/k1s", async (req, res): Promise<void> => {
   await writeAudit({
     clientId: params.data.clientId,
     action: "create",
-    entityType: "adjustment",
+    entityType: "schedule_k1",
     entityId: record.id,
     after: record,
     source: "schedule K-1 created",
@@ -136,7 +136,7 @@ router.patch("/clients/:clientId/k1s/:k1Id", async (req, res): Promise<void> => 
   await writeAudit({
     clientId: params.data.clientId,
     action: "update",
-    entityType: "adjustment",
+    entityType: "schedule_k1",
     entityId: record.id,
     before,
     after: record,
@@ -167,7 +167,7 @@ router.delete("/clients/:clientId/k1s/:k1Id", async (req, res): Promise<void> =>
   await writeAudit({
     clientId: params.data.clientId,
     action: "delete",
-    entityType: "adjustment",
+    entityType: "schedule_k1",
     entityId: record.id,
     before: record,
   });

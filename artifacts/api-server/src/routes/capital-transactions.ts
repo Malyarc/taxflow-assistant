@@ -67,7 +67,7 @@ router.post("/clients/:clientId/capital-transactions", async (req, res): Promise
   await writeAudit({
     clientId: params.data.clientId,
     action: "create",
-    entityType: "adjustment",
+    entityType: "capital_transaction",
     entityId: record.id,
     after: record,
     source: "capital transaction created",
@@ -117,7 +117,7 @@ router.patch("/clients/:clientId/capital-transactions/:transactionId", async (re
   await writeAudit({
     clientId: params.data.clientId,
     action: "update",
-    entityType: "adjustment",
+    entityType: "capital_transaction",
     entityId: record.id,
     before,
     after: record,
@@ -148,7 +148,7 @@ router.delete("/clients/:clientId/capital-transactions/:transactionId", async (r
   await writeAudit({
     clientId: params.data.clientId,
     action: "delete",
-    entityType: "adjustment",
+    entityType: "capital_transaction",
     entityId: record.id,
     before: record,
   });

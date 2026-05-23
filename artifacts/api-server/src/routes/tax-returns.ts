@@ -16,6 +16,8 @@ import {
   buildTaxReturnJsonExport,
   buildTaxReturnSummaryText,
 } from "../lib/taxReturnExports";
+import { setSecureDownloadHeaders } from "../lib/httpSecurity";
+import { logger } from "../lib/logger";
 import {
   calculateFederalTaxWithBreakdown,
   calculateStateTaxWithBreakdown,
@@ -123,10 +125,11 @@ router.get("/clients/:clientId/tax-return/pdf", async (req, res): Promise<void> 
     return;
   }
   const pdf = await buildTaxReturnPdf(computed.client, computed.result);
-  const fileName = `tax-return-${computed.client.firstName}-${computed.client.lastName}-${computed.result.taxYear}.pdf`.replace(/\s+/g, "_");
-  res.setHeader("Content-Type", "application/pdf");
-  res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
-  res.setHeader("Content-Length", pdf.length.toString());
+  const fileName = `tax-return-${computed.client.firstName}-${computed.client.lastName}-${computed.result.taxYear}.pdf`;
+  setSecureDownloadHeaders(res, {
+    fileName, contentType: "application/pdf", disposition: "attachment",
+    length: pdf.length, fallbackExt: ".pdf",
+  });
   res.send(pdf);
 });
 
@@ -150,13 +153,17 @@ router.get("/clients/:clientId/tax-return/form-1040", async (req, res): Promise<
   }
   try {
     const pdf = await buildIrsForm1040Pdf({ client: computed.client, ret: computed.result });
-    const fileName = `irs-form-1040-${computed.client.firstName}-${computed.client.lastName}-${computed.result.taxYear}.pdf`.replace(/\s+/g, "_");
-    res.setHeader("Content-Type", "application/pdf");
-    res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
-    res.setHeader("Content-Length", pdf.length.toString());
+    const fileName = `irs-form-1040-${computed.client.firstName}-${computed.client.lastName}-${computed.result.taxYear}.pdf`;
+    setSecureDownloadHeaders(res, {
+      fileName, contentType: "application/pdf", disposition: "attachment",
+      length: pdf.length, fallbackExt: ".pdf",
+    });
     res.send(pdf);
   } catch (err) {
-    res.status(500).json({ error: err instanceof Error ? err.message : "Failed to build Form 1040 PDF" });
+    // Log internal detail server-side; return generic message to client to
+    // avoid leaking absolute filesystem paths or pdf-lib internals.
+    logger.error({ err }, "Failed to build IRS Form 1040 PDF");
+    res.status(500).json({ error: "Failed to build Form 1040 PDF" });
   }
 });
 
@@ -177,9 +184,11 @@ router.get("/clients/:clientId/tax-return/csv", async (req, res): Promise<void> 
     return;
   }
   const csv = buildTaxReturnCsvExport(computed.client, computed.result);
-  const fileName = `tax-return-${computed.client.firstName}-${computed.client.lastName}-${computed.result.taxYear}.csv`.replace(/\s+/g, "_");
-  res.setHeader("Content-Type", "text/csv; charset=utf-8");
-  res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+  const fileName = `tax-return-${computed.client.firstName}-${computed.client.lastName}-${computed.result.taxYear}.csv`;
+  setSecureDownloadHeaders(res, {
+    fileName, contentType: "text/csv; charset=utf-8", disposition: "attachment",
+    fallbackExt: ".csv",
+  });
   res.send(csv);
 });
 
@@ -200,9 +209,11 @@ router.get("/clients/:clientId/tax-return/json", async (req, res): Promise<void>
     return;
   }
   const json = buildTaxReturnJsonExport(computed.client, computed.result);
-  const fileName = `tax-return-${computed.client.firstName}-${computed.client.lastName}-${computed.result.taxYear}.json`.replace(/\s+/g, "_");
-  res.setHeader("Content-Type", "application/json; charset=utf-8");
-  res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+  const fileName = `tax-return-${computed.client.firstName}-${computed.client.lastName}-${computed.result.taxYear}.json`;
+  setSecureDownloadHeaders(res, {
+    fileName, contentType: "application/json; charset=utf-8", disposition: "attachment",
+    fallbackExt: ".json",
+  });
   res.send(json);
 });
 
@@ -226,9 +237,11 @@ router.get("/clients/:clientId/tax-return/ultratax", async (req, res): Promise<v
     return;
   }
   const summary = buildTaxReturnSummaryText(computed.client, computed.result);
-  const fileName = `tax-return-${computed.client.firstName}-${computed.client.lastName}-${computed.result.taxYear}.txt`.replace(/\s+/g, "_");
-  res.setHeader("Content-Type", "text/plain; charset=utf-8");
-  res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
+  const fileName = `tax-return-${computed.client.firstName}-${computed.client.lastName}-${computed.result.taxYear}.txt`;
+  setSecureDownloadHeaders(res, {
+    fileName, contentType: "text/plain; charset=utf-8", disposition: "attachment",
+    fallbackExt: ".txt",
+  });
   res.send(summary);
 });
 

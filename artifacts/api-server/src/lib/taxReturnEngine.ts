@@ -70,11 +70,20 @@ import {
 
 // ── Loose numeric coercion ──────────────────────────────────────────────────
 // Drizzle numeric() columns are strings; Haven might pass plain numbers.
-// Both work.
+// Both work. Non-finite results are logged to surface silent-zero bugs
+// (e.g. an AI extraction stored `"$1,200.00"` instead of `1200.00`).
 type Numish = string | number | null | undefined;
 function toNum(val: Numish): number {
   if (val == null) return 0;
-  return Number(val) || 0;
+  const n = Number(val);
+  if (!Number.isFinite(n)) {
+    // Surface this — silent-zero in money math is the worst class of
+    // bug we have. Engine still returns 0 to avoid breaking the pipeline.
+    // eslint-disable-next-line no-console
+    console.warn(`toNum: non-finite value coerced to 0`, { value: String(val).slice(0, 64) });
+    return 0;
+  }
+  return n;
 }
 
 // ── Fact types — exactly the fields the engine reads ────────────────────────

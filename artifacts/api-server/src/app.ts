@@ -1,5 +1,6 @@
 import express, { type Express } from "express";
 import cors from "cors";
+import helmet from "helmet";
 import pinoHttp from "pino-http";
 import path from "node:path";
 import fs from "node:fs";
@@ -7,6 +8,32 @@ import router from "./routes";
 import { logger } from "./lib/logger";
 
 const app: Express = express();
+
+// Don't leak framework version.
+app.disable("x-powered-by");
+
+// Security headers. CSP allows 'unsafe-inline' for Vite-built React (the
+// bundle uses inline style attributes); tighten when we have a nonce
+// strategy. data:/blob: for `img-src` is needed by BoundedDocumentViewer
+// (PDF.js renders pages to blob URLs).
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", "'unsafe-inline'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        imgSrc: ["'self'", "data:", "blob:"],
+        connectSrc: ["'self'"],
+        fontSrc: ["'self'", "data:"],
+        objectSrc: ["'none'"],
+        frameAncestors: ["'self'"],
+      },
+    },
+    crossOriginEmbedderPolicy: false,
+    crossOriginOpenerPolicy: false,
+  }),
+);
 
 app.use(
   pinoHttp({
