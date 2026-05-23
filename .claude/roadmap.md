@@ -38,9 +38,9 @@ Run in parallel with Phase B.
 
 | # | Item | Status | Effort |
 |---|---|---|---|
-| C11 | **Find a CPA design partner** | ❌ Open | Calendar time. Required for C12. |
-| C12 | **Validate UltraTax `.gen` against a real UltraTax CS install** | ❌ Open | 1 week of partner time + 2–3 days fixing whatever they find. The `.gen` export is correct in shape but has never been end-to-end imported. |
-| C13 | **AI extraction accuracy benchmark** — labeled sample of 100 real 1099s / W-2s, measure per-field precision | ❌ Open | ~1 week. Without numbers, CPAs won't trust the AI output. |
+| C11 | **Find a CPA design partner** | ❌ Open | Calendar time. Required for C12 hand-off. |
+| C12 | **UltraTax `.gen` validation** | ✅ Done (2026-05-23) | The audit (`docs/ultratax-audit.md`) found that no documented UltraTax CS file-based import format exists; `.gen` rebranded as a vendor-neutral CPA-review summary; wrong IRS line refs fixed (Sch A mortgage L10→L8a; dropped fictional 1040-L12A); 10-case validation packet of PDF + CSV + TXT now lives in `docs/validation-packet/` for a CPA partner to hand-key into UltraTax and compare. Also caught + fixed a BP3 OpenAPI schema gap (amt_iso_bargain_element + 2 others). |
+| C13 | **AI extraction accuracy benchmark** | ✅ Done (2026-05-23) | Synthetic-corpus generator (25 W-2 + 75 1099 across 8 variants, seeded RNG), pdfkit renderer mimicking IRS box-grid layouts, LIVE + MOCK extractors (LIVE uses the same Gemini prompts as `documentExtractor.ts`), per-field TP/FP/FN/TN scorer, CPA-presentable markdown + CSV reports. Sample MOCK output shipped under `docs/ai-benchmark/`. Real numbers via `pnpm --filter @workspace/scripts exec tsx src/ai-benchmark/run.ts` on a host with `AI_API_KEY`. |
 | C14 | **Side-by-side AI vs CPA diff view** in the review modal — currently the original AI value is in a tooltip; should be a visible "before / after" column | ❌ Open | 1 day. UX polish; not blocking but better demo. |
 
 ---
@@ -95,13 +95,37 @@ Tier D3 — entity returns — **out of scope for Option A**: Form 1041 (trust/e
 
 ---
 
+## Phase 5 — Real UltraTax / CPA-software integration
+
+**Don't build any of these speculatively.** Start *only* when a paid design
+partner has explicitly asked for file-based ingestion as a blocker. The C12
+audit (`docs/ultratax-audit.md`) confirmed UltraTax CS has no public
+file-based import format for completed 1040 returns — every option is a
+multi-month lift. Documented here so future sessions know the option space.
+
+| # | Path | Effort | Notes |
+|---|---|---|---|
+| P5a | **License SurePrep's API** | 2-3 wks post-contract | SurePrep is the Thomson Reuters-owned ingestion partner for UltraTax. Cleanest commercial path; pricing for a pre-revenue tool will likely be the blocker. |
+| P5b | **Reverse-engineer SDE XML schema** | 4-6 wks + ongoing | Inspect SDE local XML files on a partner CPA's workstation; build an emitter against the schema. Risky: undocumented; may require digital signature; may change per UltraTax release. |
+| P5c | **UI-automation helper** (GruntWorx Agent style) | 6-10 wks + high maintenance | Desktop helper driving SDE GUI via AutoIt / pywinauto. Doesn't need Thomson Reuters cooperation but brittle. |
+| P5d | **Per-vendor adapters** (Lacerte / ProConnect / Drake) | wks each | Same audit verdict applies — none of them have public 1040 import formats. Same three paths. |
+
+The pragmatic recommendation is to ship **none of these** until a paying
+customer specifically requires file-based ingestion. PDF + CSV +
+hand-keyed validation (the path the C12 validation packet supports)
+unblocks the first design partner.
+
+---
+
 ## Recommended sequencing (next 3 sessions)
 
-1. **Session 1:** Phase A3 (Real IRS Form 1040 PDF layout) + Phase B9 (PDF multi-page support in the AI overlay). Both visual / demo-able wins; ~3–4 days combined.
-2. **Session 2:** Phase B4 (Schedule D per-transaction). Highest engine-accuracy ROI; ~3–5 days.
-3. **Session 3:** Phase C11–C13 (design partner + UltraTax validation + AI benchmark) — start the partner outreach in parallel with B5–B8 engine work.
+(As of 2026-05-23 — Phases A, B, B+, C12, C13 all complete.)
 
-Hold Phase D until a paid design partner is committed. Phase E is reactive.
+1. **Session 1 (now next):** C11 partner outreach (calendar time, not code). In parallel: C14 (side-by-side AI vs CPA diff view in the review modal — 1 day) for a more polished demo.
+2. **Session 2:** Begin Phase D15 (CPA-firm multi-tenancy auth) once a paid design partner is committed. Don't start speculatively.
+3. **Session 3:** Continue Phase D depending on what the partner asks for first (D16 audit-log hardening, D17 S3 + encryption, or D18 Stripe billing).
+
+Hold Phase D until a paid design partner is committed. Phase E and Phase 5 are reactive.
 
 ---
 
