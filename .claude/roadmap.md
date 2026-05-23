@@ -119,19 +119,24 @@ unblocks the first design partner.
 
 ## Recommended sequencing (next 3 sessions)
 
-(As of 2026-05-23 — Phases A, B, B+, C12, C13, C14 + adversarial
-accuracy audit all complete. Two real bugs fixed (over-65 std ded
-add-on, IL personal exemption). Four state-specific gaps documented.)
+(As of 2026-05-23 night — Phases A, B, B+, C12, C13, C14 + adversarial
+accuracy audit + DEEP audit + security & code-quality batch all
+complete. 9 real bugs fixed across all three tracks. 10 federal-engine
+gaps + 4 state-engine gaps documented.)
 
-1. **Session 1 (now next):** Either C11 partner outreach (no code) leading
-   with `docs/accuracy-audit/report.md` + `docs/validation-packet/` +
-   `docs/ai-benchmark/LIVE-RUN-NOTES.md` + C14 modal demo, OR close one
-   of the four documented engine gaps (G1 NYC EITC, G2 MN child CTC,
-   G4 WA LTCG excise, G5 CA AMT). Picking-by-partner-relevance.
+1. **Session 1 (now next):** Either C11 partner outreach (no code) OR
+   close one K-list gap. Priorities (by impact):
+   - **K1 SE tax W-2+SE combined** — common case, ~$10k+ over-pay per filer
+   - **K10 SS taxability** — high prevalence among retirees
+   - **K3 AMT × LTCG** — niche but large $ impact
+   - **K2 Form 8959 Add'l Medicare** — simple, 1 day
+   - **K6 §121 home-sale exclusion** — common
+   - **K5 SEHI** — common for SE filers
+   - **State gaps**: G1 NYC EITC sliding scale, G2 MN $1,750/child CTC
 2. **Session 2:** Begin Phase D15 (CPA-firm multi-tenancy auth) once a
-   paid design partner is committed. Don't start speculatively.
+   paid design partner is committed.
 3. **Session 3:** Continue Phase D depending on what the partner asks
-   for first (D16 audit-log hardening, D17 S3 + encryption, or
+   for first (D16 audit-log hardening, D17 S3 + encryption,
    D18 Stripe billing).
 
 Hold Phase D until a paid design partner is committed. Phase E and Phase 5 are reactive.
