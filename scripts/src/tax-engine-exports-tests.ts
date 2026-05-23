@@ -95,8 +95,10 @@ async function main() {
     check("CSV: content-type is text/csv", csv.contentType.includes("text/csv"));
     check("CSV: contains 'TaxFlow Assistant'", csv.body.includes("TaxFlow Assistant"));
     check("CSV: has IRS Line column header", csv.body.includes("IRS Line,Field Name"));
+    check("CSV: header advertises Reference Code, not UltraTax Code", csv.body.includes(",Reference Code,") && !csv.body.includes(",UltraTax Code,"));
     check("CSV: has Total Income row", /1040 Line 9,totalIncome,Total Income,1040-L9/.test(csv.body));
     check("CSV: includes educator deduction line", csv.body.includes("Sched 1 Line 11"));
+    check("CSV: discloses CPA review (not automated import)", csv.body.includes("for CPA review, not automated import"));
 
     // ── JSON ──
     const json = await rawText(`/clients/${cid}/tax-return/json`);
@@ -111,14 +113,15 @@ async function main() {
     check("JSON: has fullResult object", parsed.fullResult != null);
     check("JSON: fullResult.totalIncome = 75000", parsed.fullResult?.totalIncome === 75000);
 
-    // ── UltraTax .GEN ──
-    const gen = await rawText(`/clients/${cid}/tax-return/ultratax`);
-    check("UltraTax: 200 OK", gen.status === 200);
-    check("UltraTax: content-type is text/plain", gen.contentType.includes("text/plain"));
-    check("UltraTax: has [META] section", gen.body.includes("[META]"));
-    check("UltraTax: has [1040] section", gen.body.includes("[1040]"));
-    check("UltraTax: TAX_YEAR=2024", gen.body.includes("TAX_YEAR=2024"));
-    check("UltraTax: 1040-L9=75000.00", gen.body.includes("1040-L9=75000.00"));
+    // ── Plain-text summary (legacy URL path /ultratax, vendor-neutral content) ──
+    const summary = await rawText(`/clients/${cid}/tax-return/ultratax`);
+    check("Summary: 200 OK", summary.status === 200);
+    check("Summary: content-type is text/plain", summary.contentType.includes("text/plain"));
+    check("Summary: has [META] section", summary.body.includes("[META]"));
+    check("Summary: has [1040] section", summary.body.includes("[1040]"));
+    check("Summary: TAX_YEAR=2024", summary.body.includes("TAX_YEAR=2024"));
+    check("Summary: 1040-L9=75000.00", summary.body.includes("1040-L9=75000.00"));
+    check("Summary: discloses NOT an UltraTax CS import file", summary.body.includes("NOT an UltraTax CS import file"));
 
     // ── PDF — custom summary (pdfkit) ──
     const pdf = await rawBytes(`/clients/${cid}/tax-return/pdf`);

@@ -991,7 +991,7 @@ function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: nu
             <Button
               variant="outline"
               size="sm"
-              title="UltraTax CS .GEN format (1040 Generic Tax Data) — key=value text file"
+              title="Vendor-neutral key=value text summary, one IRS line per row. For CPA review — not an UltraTax/Lacerte/ProConnect/Drake import file."
               onClick={() => {
                 const link = document.createElement("a");
                 link.href = `/api/clients/${clientId}/tax-return/ultratax?taxYear=${taxYear}`;
@@ -1001,7 +1001,7 @@ function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: nu
                 document.body.removeChild(link);
               }}
             >
-              UltraTax (.gen)
+              Summary (.txt)
             </Button>
             <Button
               variant="outline"

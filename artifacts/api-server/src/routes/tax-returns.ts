@@ -14,7 +14,7 @@ import { buildIrsForm1040Pdf } from "../lib/irsForm1040Pdf";
 import {
   buildTaxReturnCsvExport,
   buildTaxReturnJsonExport,
-  buildUltraTaxGenExport,
+  buildTaxReturnSummaryText,
 } from "../lib/taxReturnExports";
 import {
   calculateFederalTaxWithBreakdown,
@@ -206,7 +206,10 @@ router.get("/clients/:clientId/tax-return/json", async (req, res): Promise<void>
   res.send(json);
 });
 
-// UltraTax CS .GEN-style export (1040 Generic Tax Data key=value format)
+// Plain-text key=value summary (vendor-neutral). The URL path `/ultratax`
+// and the `.gen` extension are kept for backward compatibility with anything
+// that linked to this endpoint historically; the contents are not an UltraTax
+// CS import file. See docs/ultratax-audit.md.
 router.get("/clients/:clientId/tax-return/ultratax", async (req, res): Promise<void> => {
   const params = GetTaxReturnParams.safeParse(req.params);
   if (!params.success) {
@@ -222,11 +225,11 @@ router.get("/clients/:clientId/tax-return/ultratax", async (req, res): Promise<v
     res.status(404).json({ error: "Client not found" });
     return;
   }
-  const gen = buildUltraTaxGenExport(computed.client, computed.result);
-  const fileName = `tax-return-${computed.client.firstName}-${computed.client.lastName}-${computed.result.taxYear}.gen`.replace(/\s+/g, "_");
+  const summary = buildTaxReturnSummaryText(computed.client, computed.result);
+  const fileName = `tax-return-${computed.client.firstName}-${computed.client.lastName}-${computed.result.taxYear}.txt`.replace(/\s+/g, "_");
   res.setHeader("Content-Type", "text/plain; charset=utf-8");
   res.setHeader("Content-Disposition", `attachment; filename="${fileName}"`);
-  res.send(gen);
+  res.send(summary);
 });
 
 // Compute (without saving) the tax return for any specified year. Used by the

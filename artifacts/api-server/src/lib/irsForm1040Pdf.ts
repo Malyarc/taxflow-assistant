@@ -241,8 +241,9 @@ export async function buildIrsForm1040Pdf(options: BuildIrsForm1040Options): Pro
   safeSet(form, F1040_2024_FIELDS.line17, fmt(ret.amtTax ?? 0));
   safeSet(form, F1040_2024_FIELDS.line18, fmt(Math.max(0, regularFederalTax + (ret.amtTax ?? 0))));
 
-  // Line 19: CTC (non-refundable portion)
-  safeSet(form, F1040_2024_FIELDS.line19, fmt(ret.childTaxCredit?.nonRefundableApplied ?? ret.childTaxCredit?.nonRefundablePortion ?? 0));
+  // Line 19: CTC (non-refundable portion). CtcCalculation exposes
+  // `nonRefundablePortion`; refundable ACTC lands separately on Line 28.
+  safeSet(form, F1040_2024_FIELDS.line19, fmt(ret.childTaxCredit?.nonRefundablePortion ?? 0));
 
   // Line 23: other taxes (SE + NIIT) — Schedule 2 line 21
   safeSet(form, F1040_2024_FIELDS.line23, fmt((ret.selfEmploymentTax ?? 0) + (ret.niitTax ?? 0)));

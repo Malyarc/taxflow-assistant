@@ -1,20 +1,28 @@
 /**
- * Export computed tax returns to external formats for CPA software import.
+ * Export computed tax returns to human-reviewable formats for CPA validation.
  *
  * Formats:
  *   - JSON: complete machine-readable tax return data
- *   - CSV: flat file with Form 1040 line numbers and values, designed for
- *     spreadsheet-based CPA tools (UltraTax CS, Lacerte, ProConnect, Drake)
+ *   - CSV:  flat file with Form 1040 / Schedule / Form line references and
+ *           values, intended for spreadsheet review
+ *   - TXT:  vendor-neutral key=value summary, one line per tax field, with
+ *           the IRS line reference as the key (e.g. `1040-L9=75000.00`)
  *
- * UltraTax CS / Lacerte / ProConnect / Drake do not have documented public
- * import APIs. Common interchange formats:
- *   - .GEN files (legacy "1040 generic" import — most universal)
- *   - DataLink (CCH proprietary, Thomson Reuters owns CCH)
- *   - CSV with field-coded columns
+ * NOTE — UltraTax CS interop disclosure (2026-05-23 audit):
  *
- * Our CSV is structured for easy mapping: each row is one Form 1040 line,
- * with both our field name and the IRS line reference, plus a column for
- * the CPA software field code (currently UltraTax format).
+ * The major commercial CPA tools (UltraTax CS, Lacerte, ProConnect, Drake)
+ * do NOT publish a documented file-based import format for completed 1040
+ * returns. UltraTax CS in particular has three ingestion surfaces (third-
+ * party accounting trial-balance import; Source Data Entry XML; CSD backup
+ * files) — none of which accept a "finished 1040" interchange file from an
+ * outside tool. SurePrep / GruntWorx / K1x integrate via private APIs or
+ * desktop UI automation, not file imports.
+ *
+ * So: the TXT/CSV/JSON exports here are for human CPA review (paste-in,
+ * eyeball compare, hand-key into their preferred tool). Anything claiming
+ * "imports directly into UltraTax CS" is misleading. See
+ * `docs/ultratax-audit.md` for the full research writeup and the paths
+ * to a real UltraTax integration (Phase 5).
  */
 
 import type { ComputedTaxReturn } from "./taxReturnPipeline";
@@ -38,28 +46,32 @@ const FILING_STATUS_LABELS: Record<string, string> = {
   qualifying_widow: "QW",
 };
 
-// Map our internal field names → UltraTax CS field codes (approximate; CPAs
-// should validate against current UltraTax version). Sources: legacy "1040
-// generic tax data" import format documentation.
-const ULTRATAX_FIELD_CODES: Record<string, string> = {
+// Map our internal field names → IRS form-and-line reference codes (NOT vendor
+// codes). Format `FORM-L<line>` (e.g. `1040-L9`). Verified against the 2024
+// revisions of Form 1040, Schedules A/C/D/E/SE/1/2/3, and the supporting
+// forms 6251/8812/8863/8880/8960/8962/2441/1116/5695. These are stable IRS
+// references a CPA can resolve in any software.
+const IRS_LINE_REFERENCE_CODES: Record<string, string> = {
   totalIncome: "1040-L9",
   adjustedGrossIncome: "1040-L11",
   standardDeduction: "1040-L12",
-  itemizedDeductions: "1040-L12A",
+  // Form 1040 has no Line 12A; itemized vs. standard both land on Line 12.
+  // We tag itemized totals with the Schedule A reference instead.
+  itemizedDeductions: "SCH-A-L17",
   qbiDeduction: "1040-L13",
   taxableIncome: "1040-L15",
-  federalTaxLiability: "1040-L16",
-  federalTaxWithheld: "1040-L25A",
+  federalTaxLiability: "1040-L24",
+  federalTaxWithheld: "1040-L25a",
   federalRefundOrOwed: "1040-L34",
-  stateTaxLiability: "STATE-TAX",
+  stateTaxLiability: "STATE-RETURN",
   stateTaxWithheld: "STATE-WH",
   stateRefundOrOwed: "STATE-REFUND",
-  selfEmploymentTax: "SE-L12",
+  selfEmploymentTax: "SCH-SE-L12",
   niitTax: "8960-L17",
   amtTax: "6251-L11",
   childTaxCredit_appliedCredit: "1040-L19",
   additionalChildTaxCredit: "8812-L27",
-  capitalGainsTax: "QDCG-L24",
+  capitalGainsTax: "QDCG-WS",
   // Phase 1 line items
   scheduleCExpenses: "SCH-C-L28",
   hsaDeduction: "1040-S1-L13",
@@ -71,13 +83,15 @@ const ULTRATAX_FIELD_CODES: Record<string, string> = {
   dependentCareCredit: "2441-L11",
   medicalDeductible: "SCH-A-L4",
   saltDeductible: "SCH-A-L7",
-  mortgageDeductible: "SCH-A-L10",
+  // Sch A Line 10 is *total* interest (8e+9). Home mortgage interest itself
+  // is reported on Line 8a (with related sub-lines on 8b-8e).
+  mortgageDeductible: "SCH-A-L8a",
   charitableDeductible: "SCH-A-L14",
   // Phase 1.5
   educatorExpensesDeduction: "1040-S1-L11",
   studentLoanInterestDeduction: "1040-S1-L21",
   foreignTaxCredit: "1116-L33",
-  residentialEnergyCredits: "5695-COMBINED",
+  residentialEnergyCredits: "5695-L32",
   premiumTaxCredit: "8962-L26",
   // Phase 2b/2e
   capitalLossDeducted: "SCH-D-L21",
@@ -88,10 +102,10 @@ const ULTRATAX_FIELD_CODES: Record<string, string> = {
 interface ExportRow {
   /** Our internal field name */
   field: string;
-  /** Human-readable Form 1040 / Schedule line reference */
+  /** Human-readable Form 1040 / Schedule line reference (prose) */
   irsLine: string;
-  /** UltraTax CS / Lacerte / ProConnect field code */
-  ultraTaxCode: string;
+  /** Compact IRS line-reference code (e.g. `1040-L9`, `SCH-A-L8a`) */
+  referenceCode: string;
   /** Display label */
   label: string;
   /** Numeric value */
@@ -110,7 +124,7 @@ function buildExportRows(ret: ComputedTaxReturn): ExportRow[] {
     rows.push({
       field,
       irsLine,
-      ultraTaxCode: ULTRATAX_FIELD_CODES[field] ?? "",
+      referenceCode: IRS_LINE_REFERENCE_CODES[field] ?? "",
       label,
       value,
     });
@@ -120,12 +134,12 @@ function buildExportRows(ret: ComputedTaxReturn): ExportRow[] {
   add("totalIncome", "1040 Line 9", "Total Income", ret.totalIncome);
   add("adjustedGrossIncome", "1040 Line 11", "Adjusted Gross Income (AGI)", ret.adjustedGrossIncome);
   add("standardDeduction", "1040 Line 12", "Standard Deduction", ret.standardDeduction);
-  if (ret.itemizedDeductions != null) add("itemizedDeductions", "1040 Line 12 (itemized)", "Itemized Deductions (Schedule A)", ret.itemizedDeductions);
+  if (ret.itemizedDeductions != null) add("itemizedDeductions", "Sched A Line 17 → 1040 Line 12", "Itemized Deductions Total (Schedule A)", ret.itemizedDeductions);
   add("qbiDeduction", "1040 Line 13", "QBI Deduction (§199A)", ret.qbiDeduction);
   add("taxableIncome", "1040 Line 15", "Taxable Income", ret.taxableIncome);
   add("federalTaxLiability", "1040 Line 24", "Total Federal Tax Liability", ret.federalTaxLiability);
-  add("federalTaxWithheld", "1040 Line 25a", "Federal Tax Withheld", ret.federalTaxWithheld);
-  add("federalRefundOrOwed", "1040 Line 34 / 37", "Federal Refund or Owed", ret.federalRefundOrOwed);
+  add("federalTaxWithheld", "1040 Line 25a", "Federal Income Tax Withheld (W-2)", ret.federalTaxWithheld);
+  add("federalRefundOrOwed", "1040 Line 34 (refund) / 37 (owed)", "Federal Refund (+) or Balance Due (−)", ret.federalRefundOrOwed);
 
   // State
   add("stateTaxLiability", "State Return", "State Tax Liability", ret.stateTaxLiability);
@@ -151,7 +165,7 @@ function buildExportRows(ret: ComputedTaxReturn): ExportRow[] {
   // Schedule A
   if (ret.scheduleA.medicalDeductible > 0) add("medicalDeductible", "Sched A Line 4", "Medical (Schedule A)", ret.scheduleA.medicalDeductible);
   if (ret.scheduleA.saltDeductible > 0) add("saltDeductible", "Sched A Line 7", "SALT capped (Schedule A)", ret.scheduleA.saltDeductible);
-  if (ret.scheduleA.mortgageDeductible > 0) add("mortgageDeductible", "Sched A Line 10", "Mortgage Interest (Schedule A)", ret.scheduleA.mortgageDeductible);
+  if (ret.scheduleA.mortgageDeductible > 0) add("mortgageDeductible", "Sched A Line 8a", "Home Mortgage Interest (Schedule A)", ret.scheduleA.mortgageDeductible);
   if (ret.scheduleA.charitableDeductible > 0) add("charitableDeductible", "Sched A Line 14", "Charitable Deduction (Schedule A)", ret.scheduleA.charitableDeductible);
 
   // Phase 1 credits
@@ -201,11 +215,12 @@ export function buildTaxReturnJsonExport(client: Client, ret: ComputedTaxReturn)
   return JSON.stringify(exportObject, null, 2);
 }
 
-// ── CSV export (UltraTax-friendly) ──────────────────────────────────────────
-// CSV format: one row per Form 1040 line, with columns:
-//   IRS Line | Field Name | Description | UltraTax Code | Value
-// Designed for easy CPA review and mapping to UltraTax CS, Lacerte, ProConnect,
-// Drake. The UltraTax Code column maps to "1040 Generic Tax Data" format codes.
+// ── CSV export (CPA-reviewable spreadsheet) ─────────────────────────────────
+// One row per Form 1040 line, with columns:
+//   IRS Line | Field Name | Description | Reference Code | Value
+// The CPA hand-keys these into their preferred CPA software (UltraTax CS,
+// Lacerte, ProConnect, Drake — none of which import a generic text file)
+// and the Reference Code lets them resolve which IRS line each row points at.
 
 function csvEscape(s: string | number): string {
   const str = String(s);
@@ -218,18 +233,19 @@ export function buildTaxReturnCsvExport(client: Client, ret: ComputedTaxReturn):
   const lines: string[] = [];
 
   // Header metadata as comments
-  lines.push(`# TaxFlow Assistant — Tax Return Export`);
+  lines.push(`# TaxFlow Assistant — Tax Return Summary (CSV)`);
   lines.push(`# Client: ${csvEscape(client.firstName + " " + client.lastName)}`);
   lines.push(`# Email: ${csvEscape(client.email)}`);
   lines.push(`# Filing Status: ${FILING_STATUS_LABELS[client.filingStatus] ?? client.filingStatus}`);
   lines.push(`# State: ${client.state}`);
   lines.push(`# Tax Year: ${ret.taxYear}`);
   lines.push(`# Generated: ${new Date().toISOString()}`);
-  lines.push(`# Format: 1040 Generic Tax Data CSV (UltraTax CS / Lacerte / ProConnect / Drake)`);
+  lines.push(`# Reference Code = compact IRS form/line reference (e.g. 1040-L9 = Form 1040 Line 9).`);
+  lines.push(`# This file is for CPA review, not automated import into commercial tax software.`);
   lines.push("");
 
   // Column header
-  lines.push("IRS Line,Field Name,Description,UltraTax Code,Value");
+  lines.push("IRS Line,Field Name,Description,Reference Code,Value");
 
   // Data rows
   for (const r of rows) {
@@ -237,7 +253,7 @@ export function buildTaxReturnCsvExport(client: Client, ret: ComputedTaxReturn):
       csvEscape(r.irsLine),
       csvEscape(r.field),
       csvEscape(r.label),
-      csvEscape(r.ultraTaxCode),
+      csvEscape(r.referenceCode),
       csvEscape(r.value.toFixed(2)),
     ].join(","));
   }
@@ -245,16 +261,19 @@ export function buildTaxReturnCsvExport(client: Client, ret: ComputedTaxReturn):
   return lines.join("\n");
 }
 
-// ── UltraTax-specific .GEN-style export ──────────────────────────────────────
-// The .GEN format (1040 Generic Tax Data) is a simple key=value text format
-// used by various CPA tax preparation tools. Each line is FIELD_CODE=VALUE.
-// This is the most universal CPA software interchange format.
+// ── Plain-text summary (key=value, vendor-neutral) ──────────────────────────
+// One line per tax field, formatted as `<ReferenceCode>=<value>` plus a
+// `[META]` header block. Useful as a quick paste-in summary for CPA notes.
+//
+// This is NOT an UltraTax CS import file. UltraTax CS has no documented public
+// file-based import format for finished 1040 returns (see docs/ultratax-audit.md).
+// We keep the historical filename `.gen` extension for backward compatibility
+// with anything that links to it; the contents are vendor-neutral.
 
-export function buildUltraTaxGenExport(client: Client, ret: ComputedTaxReturn): string {
+export function buildTaxReturnSummaryText(client: Client, ret: ComputedTaxReturn): string {
   const rows = buildExportRows(ret);
   const lines: string[] = [];
 
-  // Header metadata (some .GEN consumers expect specific metadata block)
   lines.push(`[META]`);
   lines.push(`CLIENT_FIRST_NAME=${client.firstName}`);
   lines.push(`CLIENT_LAST_NAME=${client.lastName}`);
@@ -266,13 +285,17 @@ export function buildUltraTaxGenExport(client: Client, ret: ComputedTaxReturn): 
   lines.push(`OTHER_DEPENDENTS=${client.otherDependents ?? 0}`);
   lines.push(`GENERATED_BY=TaxFlow Assistant`);
   lines.push(`GENERATED_AT=${new Date().toISOString()}`);
+  lines.push(`FORMAT=TaxFlow vendor-neutral key=value summary (NOT an UltraTax CS import file)`);
   lines.push("");
   lines.push(`[1040]`);
 
   for (const r of rows) {
-    if (!r.ultraTaxCode) continue;
-    lines.push(`${r.ultraTaxCode}=${r.value.toFixed(2)}`);
+    if (!r.referenceCode) continue;
+    lines.push(`${r.referenceCode}=${r.value.toFixed(2)}`);
   }
 
   return lines.join("\n");
 }
+
+/** @deprecated Misleading name — the output is not an UltraTax CS import. Use {@link buildTaxReturnSummaryText}. */
+export const buildUltraTaxGenExport = buildTaxReturnSummaryText;
