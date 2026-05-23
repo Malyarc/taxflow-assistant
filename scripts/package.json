@@ -8,10 +8,13 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@workspace/validation": "workspace:*"
+    "@workspace/integrations-openai-ai-server": "workspace:*",
+    "@workspace/validation": "workspace:*",
+    "pdfkit": "^0.18.0"
   },
   "devDependencies": {
     "@types/node": "catalog:",
+    "@types/pdfkit": "^0.17.6",
     "tsx": "catalog:"
   }
 }
