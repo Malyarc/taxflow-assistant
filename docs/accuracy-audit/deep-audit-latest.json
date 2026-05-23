@@ -1,0 +1,79 @@
+{
+  "generatedAt": "2026-05-23T23:01:28.500Z",
+  "pass": 108,
+  "realFailures": 0,
+  "documentedGaps": 10,
+  "failures": [],
+  "gaps": [
+    {
+      "category": "K1-expected",
+      "label": "SE tax over-charged for W-2 + SE combined (Sch SE Line 9 not modeled)",
+      "expected": 13862.7,
+      "actual": 26262.7,
+      "source": "Sch SE Part I Line 9 — W-2 SS wages subtract from SS wage base"
+    },
+    {
+      "category": "K2-expected",
+      "label": "Form 8959 Additional Medicare 0.9% on wages > $200k not modeled",
+      "expected": 450,
+      "actual": 0,
+      "source": "Form 8959 — 0.9% on wages above filing-status threshold"
+    },
+    {
+      "category": "K3-expected",
+      "label": "AMT does not apply LTCG preferential rates (Form 6251 Part III)",
+      "expected": 0,
+      "actual": 0,
+      "source": "Form 6251 Part III — AMT preserves 0/15/20% LTCG rates"
+    },
+    {
+      "category": "K4-expected",
+      "label": "NOL carryforward (post-TCJA 80% taxable income limit) not modeled",
+      "expected": 0,
+      "actual": 0,
+      "source": "IRC §172(a)(2) post-TCJA"
+    },
+    {
+      "category": "K5-expected",
+      "label": "Self-employed health insurance deduction not modeled",
+      "expected": 0,
+      "actual": 0,
+      "source": "IRC §162(l); Form 7206"
+    },
+    {
+      "category": "K6-expected",
+      "label": "§121 home-sale exclusion ($250k/$500k) not modeled",
+      "expected": 0,
+      "actual": 0,
+      "source": "IRC §121; Pub 523"
+    },
+    {
+      "category": "K7-expected",
+      "label": "§1202 QSBS 100% exclusion (post-2010 acquisitions) not modeled",
+      "expected": 0,
+      "actual": 0,
+      "source": "IRC §1202"
+    },
+    {
+      "category": "K8-expected",
+      "label": "Kiddie tax (Form 8615) on unearned income > $2,600 not modeled",
+      "expected": 0,
+      "actual": 0,
+      "source": "Form 8615 (2024)"
+    },
+    {
+      "category": "K9-expected",
+      "label": "FEIE §911 ($126,500 TY2024) + stacking rule not modeled",
+      "expected": 0,
+      "actual": 0,
+      "source": "Form 2555 (2024)"
+    },
+    {
+      "category": "K10-expected",
+      "label": "Social Security taxability worksheet (0/50/85%) not modeled (engine has no SS field)",
+      "expected": 0,
+      "actual": 0,
+      "source": "Pub 915"
+    }
+  ]
+}

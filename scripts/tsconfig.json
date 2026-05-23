@@ -33,6 +33,7 @@
     "src/tax-engine-state-eitc-tests.ts",
     "src/build-validation-packet.ts",
     "src/ai-benchmark/run.ts",
-    "src/tax-engine-accuracy-audit-tests.ts"
+    "src/tax-engine-accuracy-audit-tests.ts",
+    "src/tax-engine-deep-audit-tests.ts"
   ]
 }

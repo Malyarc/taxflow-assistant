@@ -65,7 +65,7 @@ Future-you will be tempted to "simplify" these. Don't.
 - **Hand-calc every expected value** against IRS published rules before asserting it. The user has been burned by tests passing while the underlying calc was wrong (e.g. the AGI/Line-9 bug shipped despite unit tests passing).
 - **Unit tests alone aren't enough.** Standalone suites verify the calculator; integration suites hit a live API at `localhost:8080` and exercise the full pipeline. Run both.
 - **Adding a new test file** also requires adding it to `scripts/tsconfig.json`'s `exclude` array — the workspace typecheck fails otherwise.
-- **Test files (current set, 1,420 assertions across 25 suites — added the accuracy-audit suite (84 assertions; 4 documented gaps); AI-overlay 33 included):**
+- **Test files (current set, 1,528 assertions across 26 suites — added the deep-audit suite (108 assertions; 10 documented gaps including SE+W2 combined, Form 8959, AMT×LTCG, NOL, SEHI, §121, §1202, kiddie tax, FEIE, SS taxability); AI-overlay 33 included):**
   | File | Needs API |
   |---|---|
   | `tax-engine-tests.ts` | no |
@@ -93,6 +93,7 @@ Future-you will be tempted to "simplify" these. Don't.
   | `tax-engine-capital-transactions-tests.ts` | yes (Form 8949 + wash sale) |
   | `tax-engine-k1-integration-tests.ts` | yes (K-1 CRUD + recalc pipeline) |
   | `tax-engine-accuracy-audit-tests.ts` | no (88 IRS-cited cliff + canonical hand-calc tests; see `docs/accuracy-audit/`) |
+  | `tax-engine-deep-audit-tests.ts` | no (108 deep-audit: per-calc edge cases, 20 client archetypes, invariants; see `docs/accuracy-audit/deep-audit-2026-05-23.md`) |
 - **Scenarios are CPA-style end-to-end cases.** Each one has a `Hand-calc:` comment block — keep that convention. When a scenario fails, double-check your hand-calc before mutating the assertion; the calculator is usually right.
 - **Run all suites after any pipeline or schema change.** The Phase 1 work flushed out one regression (scenario 8 — needed to add EITC to expected refund).
 
@@ -158,6 +159,7 @@ Several Phase 2/3 limitations have been resolved (multi-state foundation, MACRS,
 - Most state-specific credits (state EITC: CA, NY, CO, IL, NJ, MA piggyback + MN Working Family Credit wired; CT/DC/DE/IN/IA/KS/LA/ME/MD/MI/MT/NE/NM/OH/OK/OR/RI/VT/VA/WA/WI not modeled. State CTC, state AMT, etc. not modeled)
 - **UltraTax CS file-based import** — see `docs/ultratax-audit.md`. No public UltraTax import format exists; our `.gen` file is rebranded as a vendor-neutral CPA-review summary (the URL path + .gen filename are preserved for backward compat). PDF + CSV + the 10-case `docs/validation-packet/` are the design-partner artifacts. Real UltraTax ingestion (SurePrep API / SDE / GUI automation) is Phase 5 — multi-month, do not start speculatively.
 - **State-specific accuracy gaps** (uncovered + documented in 2026-05-23 accuracy audit; see `docs/accuracy-audit/report.md`): NYC EITC sliding scale (engine has NY state EITC at 30% but not the additional NYC sliding-scale credit), MN $1,750/child refundable CTC (engine has MN WFC but not the separate CTC), WA 7% LTCG excise > $262k, CA AMT (Schedule P 540). State CTCs for CA/CO/NJ/IL/NM/VT also not modeled. PA Schedule SP Tax Forgiveness not modeled. IL personal exemption $250k/$500k phase-out not modeled (engine over-deducts by max $137/filer at the top).
+- **Federal-engine gaps surfaced in the 2026-05-23 DEEP audit** (`docs/accuracy-audit/deep-audit-2026-05-23.md`, K-list, all tracked as failing assertions in `tax-engine-deep-audit-tests.ts`): SE tax with combined W-2+SE (Sch SE Line 9 not modeled — combined filers OVER-pay SS portion, often by $10k+); Form 8959 Additional Medicare 0.9% on wages > $200k single (filers UNDER-pay); AMT × LTCG preferential rates inside Form 6251 Part III (high-LTCG + AMT-binding filers OVER-pay AMT); NOL carryforward post-TCJA 80% limit; SEHI deduction (Form 7206); §121 home-sale exclusion; §1202 QSBS; kiddie tax (Form 8615); FEIE §911; SS taxability (engine has no SS benefits input field).
 - AMT preferences modeled: line 2g state-tax addback (auto from itemized SALT, override available), line 2k ISO bargain element. Still not modeled: line 2i MACRS-vs-ADS depreciation difference, line 2e state-refund recapture, AMT NOL.
 - K-1 §199A wage/UBIA limits + SSTB phase-out (engine applies simplified 20% only); K-1 basis / at-risk fields stored but not enforced; K-1 guaranteed payments (Box 4) not modeled
 - Other carryforwards: NOL, AMT credit, charitable (capital loss + §469 PAL + K-1 passive loss carryforward ARE supported)
