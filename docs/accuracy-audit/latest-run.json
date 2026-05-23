@@ -1,0 +1,37 @@
+{
+  "generatedAt": "2026-05-23T22:23:36.249Z",
+  "pass": 84,
+  "realFailures": 0,
+  "documentedGaps": 4,
+  "failures": [],
+  "gaps": [
+    {
+      "category": "G1-expected",
+      "label": "NYC-specific EITC ~$1392 not credited (state EITC $2088 IS modeled at 30%)",
+      "expected": 1392,
+      "actual": 0,
+      "source": "NY IT-215 — NYC EITC sliding scale 30/25/20/15/10% of federal by NYAGI"
+    },
+    {
+      "category": "G2-expected",
+      "label": "MN CTC $3,500 not credited (only WFC $2204 modeled)",
+      "expected": 3500,
+      "actual": 0,
+      "source": "MN Schedule M1CWFC (2024) lines for the $1,750/child refundable CTC, independent of WFC"
+    },
+    {
+      "category": "G4-expected",
+      "label": "WA LTCG excise $51,660 not modeled (state tax stayed at $0)",
+      "expected": 51660,
+      "actual": 0,
+      "source": "WA RCW 82.87 + DOR — 7% LTCG excise > $262k indexed (TY2024)"
+    },
+    {
+      "category": "G5-expected",
+      "label": "CA AMT ~$10,860 on high AMTI not modeled (engine state tax = $14627)",
+      "expected": 10860,
+      "actual": 0,
+      "source": "CA FTB Schedule P (540) — 7% flat AMT after exemption ($244,857 single 2024)"
+    }
+  ]
+}

@@ -32,6 +32,7 @@
     "src/tax-engine-amt-prefs-tests.ts",
     "src/tax-engine-state-eitc-tests.ts",
     "src/build-validation-packet.ts",
-    "src/ai-benchmark/run.ts"
+    "src/ai-benchmark/run.ts",
+    "src/tax-engine-accuracy-audit-tests.ts"
   ]
 }
