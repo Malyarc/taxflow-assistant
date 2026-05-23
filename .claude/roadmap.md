@@ -40,8 +40,8 @@ Run in parallel with Phase B.
 |---|---|---|---|
 | C11 | **Find a CPA design partner** | ❌ Open | Calendar time. Required for C12 hand-off. |
 | C12 | **UltraTax `.gen` validation** | ✅ Done (2026-05-23) | The audit (`docs/ultratax-audit.md`) found that no documented UltraTax CS file-based import format exists; `.gen` rebranded as a vendor-neutral CPA-review summary; wrong IRS line refs fixed (Sch A mortgage L10→L8a; dropped fictional 1040-L12A); 10-case validation packet of PDF + CSV + TXT now lives in `docs/validation-packet/` for a CPA partner to hand-key into UltraTax and compare. Also caught + fixed a BP3 OpenAPI schema gap (amt_iso_bargain_element + 2 others). |
-| C13 | **AI extraction accuracy benchmark** | ✅ Done (2026-05-23) | Synthetic-corpus generator (25 W-2 + 75 1099 across 8 variants, seeded RNG), pdfkit renderer mimicking IRS box-grid layouts, LIVE + MOCK extractors (LIVE uses the same Gemini prompts as `documentExtractor.ts`), per-field TP/FP/FN/TN scorer, CPA-presentable markdown + CSV reports. Sample MOCK output shipped under `docs/ai-benchmark/`. Real numbers via `pnpm --filter @workspace/scripts exec tsx src/ai-benchmark/run.ts` on a host with `AI_API_KEY`. |
-| C14 | **Side-by-side AI vs CPA diff view** in the review modal — currently the original AI value is in a tooltip; should be a visible "before / after" column | ❌ Open | 1 day. UX polish; not blocking but better demo. |
+| C13 | **AI extraction accuracy benchmark** | ✅ Done (2026-05-23); LIVE re-run pending paid quota | Synthetic-corpus generator (25 W-2 + 75 1099 across 8 variants, seeded RNG), pdfkit renderer mimicking IRS box-grid layouts, LIVE + MOCK extractors, per-field scorer, markdown + CSV reports. MOCK sample at `docs/ai-benchmark/`. First real LIVE run on 2026-05-23 hit Gemini Flash free-tier daily quota at request ~25 — W-2 cohort (25 docs) cleanly completed at **precision 97.5% / recall 77.7% / F1 0.865**; preserved under `docs/ai-benchmark/live-partial-2026-05-23/` with analysis in `LIVE-RUN-NOTES.md`. Re-run with paid quota (or after free-tier reset) for a clean 100-doc report. Harness now hardened against 429: 8s→60s exponential backoff per request + 6.5s default inter-request pacing. |
+| C14 | **Side-by-side AI vs CPA diff column** in the review modal | ✅ Done (2026-05-23) | Promoted the AI value from a hover tooltip to an always-visible per-field DiffIndicator with four explicit states: ✓ kept (emerald), ✎ changed (amber, `<ai-strike> → <cpa>`), + added by CPA (sky blue), ⊘ cleared (amber, `<ai-strike> cleared`). CPA sees at a glance which fields the AI got right vs which they overrode. Smoke-tested locally; deployed. |
 
 ---
 
@@ -119,9 +119,9 @@ unblocks the first design partner.
 
 ## Recommended sequencing (next 3 sessions)
 
-(As of 2026-05-23 — Phases A, B, B+, C12, C13 all complete.)
+(As of 2026-05-23 — Phases A, B, B+, C12, C13, C14 all complete.)
 
-1. **Session 1 (now next):** C11 partner outreach (calendar time, not code). In parallel: C14 (side-by-side AI vs CPA diff view in the review modal — 1 day) for a more polished demo.
+1. **Session 1 (now next):** C11 partner outreach (calendar time, not code). The C12 validation packet + C13 LIVE-RUN-NOTES + C14 polished review-modal demo are the artifacts to lead with. Also: re-run C13 against a paid Gemini quota (or after the free-tier daily reset) so the headline numbers in `docs/ai-benchmark/` are a full 100-doc real run rather than a 25-W-2 partial.
 2. **Session 2:** Begin Phase D15 (CPA-firm multi-tenancy auth) once a paid design partner is committed. Don't start speculatively.
 3. **Session 3:** Continue Phase D depending on what the partner asks for first (D16 audit-log hardening, D17 S3 + encryption, or D18 Stripe billing).
 
