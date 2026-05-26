@@ -36,6 +36,7 @@ import type {
   PlanningHitList,
   PlanningMemo,
   PlanningMissingData,
+  PlanningMultiYear,
   PlanningOpportunities,
   RejectExtractionBody,
   RentalProperty,
@@ -2484,6 +2485,97 @@ export function useGetPlanningOpportunities<
     clientId,
     options,
   );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Detects opportunities that fire on multi-year patterns across the client's tax_returns history (persistent NIIT/AMT, std-ded cliff, capital-loss carryforward unused, growing passive-loss suspension). Requires at least 2 years of computed tax_returns rows; returns an empty hits array when only one year is available.
+
+ * @summary Multi-year tax-planning patterns (Phase G4)
+ */
+export const getGetPlanningMultiYearUrl = (clientId: number) => {
+  return `/api/clients/${clientId}/planning-multi-year`;
+};
+
+export const getPlanningMultiYear = async (
+  clientId: number,
+  options?: RequestInit,
+): Promise<PlanningMultiYear> => {
+  return customFetch<PlanningMultiYear>(getGetPlanningMultiYearUrl(clientId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetPlanningMultiYearQueryKey = (clientId: number) => {
+  return [`/api/clients/${clientId}/planning-multi-year`] as const;
+};
+
+export const getGetPlanningMultiYearQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPlanningMultiYear>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPlanningMultiYear>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetPlanningMultiYearQueryKey(clientId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getPlanningMultiYear>>
+  > = ({ signal }) =>
+    getPlanningMultiYear(clientId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!clientId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPlanningMultiYear>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetPlanningMultiYearQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getPlanningMultiYear>>
+>;
+export type GetPlanningMultiYearQueryError = ErrorType<void>;
+
+/**
+ * @summary Multi-year tax-planning patterns (Phase G4)
+ */
+
+export function useGetPlanningMultiYear<
+  TData = Awaited<ReturnType<typeof getPlanningMultiYear>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPlanningMultiYear>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetPlanningMultiYearQueryOptions(clientId, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

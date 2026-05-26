@@ -1,11 +1,12 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
-import { db, adjustmentsTable, clientsTable } from "@workspace/db";
+import { eq, desc } from "drizzle-orm";
+import { db, adjustmentsTable, clientsTable, taxReturnsTable } from "@workspace/db";
 import {
   GetPlanningOpportunitiesParams,
   GetPlanningMemoParams,
   GetPlanningClientEmailParams,
   GetPlanningMissingDataParams,
+  GetPlanningMultiYearParams,
 } from "@workspace/api-zod";
 import { CATALOG_V1, type OpportunityHit } from "@workspace/planning-strategies";
 import {
@@ -14,13 +15,27 @@ import {
   planningScore,
 } from "../lib/planningEngine";
 import {
+  evaluateMultiYearOpportunities,
+  type TaxReturnSnapshot,
+} from "../lib/planningEngineMultiYear";
+import {
   generatePlanningMemo,
   generateClientOutreachEmail,
   inferMissingData,
 } from "../lib/planningMemo";
 import { computeTaxReturn } from "../lib/taxReturnPipeline";
-import type { AdjustmentFact } from "../lib/taxReturnEngine";
+import type { AdjustmentFact, ClientFacts } from "../lib/taxReturnEngine";
 import { logger } from "../lib/logger";
+
+/**
+ * Coerce a drizzle numeric column (string | null) to a plain number. Used by
+ * the multi-year route to build TaxReturnSnapshot[] from tax_returns rows.
+ */
+function num(v: string | number | null | undefined): number {
+  if (v == null) return 0;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
 
 async function loadPlanningContext(clientId: number) {
   const computed = await computeTaxReturn(clientId);
@@ -79,6 +94,68 @@ router.get("/clients/:clientId/planning-opportunities", async (req, res): Promis
   } catch (err) {
     logger.error({ err, clientId: params.data.clientId }, "Planning evaluation failed");
     res.status(500).json({ error: "Planning evaluation failed" });
+  }
+});
+
+router.get("/clients/:clientId/planning-multi-year", async (req, res): Promise<void> => {
+  const params = GetPlanningMultiYearParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  try {
+    const [client] = await db
+      .select()
+      .from(clientsTable)
+      .where(eq(clientsTable.id, params.data.clientId));
+    if (!client) {
+      res.status(404).json({ error: "Client not found" });
+      return;
+    }
+
+    const rows = await db
+      .select()
+      .from(taxReturnsTable)
+      .where(eq(taxReturnsTable.clientId, params.data.clientId))
+      .orderBy(desc(taxReturnsTable.taxYear));
+
+    // Build TaxReturnSnapshot[] in most-recent-first order. Missing
+    // filingStatus (older rows) falls back to client.filingStatus so the
+    // detector can still compute marginal rates.
+    const history: TaxReturnSnapshot[] = rows.map((r) => ({
+      taxYear: r.taxYear,
+      filingStatus: r.filingStatus ?? client.filingStatus,
+      adjustedGrossIncome: num(r.adjustedGrossIncome),
+      taxableIncome: num(r.taxableIncome),
+      itemizedDeductions: num(r.itemizedDeductions),
+      amtTax: num(r.amtTax),
+      niitTax: num(r.niitTax),
+      charitableDeductible: num(r.charitableDeductible),
+      capitalLossCarryforwardShort: num(r.capitalLossCarryforwardShort),
+      capitalLossCarryforwardLong: num(r.capitalLossCarryforwardLong),
+      scheduleEPassiveLossSuspended: num(r.scheduleEPassiveLossSuspended),
+      k1PassiveLossSuspended: num(r.k1PassiveLossSuspended),
+    }));
+
+    const hits = evaluateMultiYearOpportunities({
+      client: client as ClientFacts,
+      history,
+    });
+    const totalEstSavings = hits.reduce((s, h) => s + h.estSavings, 0);
+    const yearsCovered = history.map((h) => h.taxYear);
+
+    res.json({
+      clientId: params.data.clientId,
+      taxYear: yearsCovered[0] ?? client.taxYear ?? new Date().getFullYear() - 1,
+      catalogVersion: CATALOG_V1.version,
+      hits,
+      totalEstSavings,
+      yearsAvailable: history.length,
+      yearsCovered,
+    });
+  } catch (err) {
+    logger.error({ err, clientId: params.data.clientId }, "Planning multi-year failed");
+    res.status(500).json({ error: "Planning multi-year failed" });
   }
 });
 

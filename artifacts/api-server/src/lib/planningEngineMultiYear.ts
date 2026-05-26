@@ -281,7 +281,14 @@ function detectPersistentBunching(history: TaxReturnSnapshot[]): OpportunityHit 
 // ── G4.4 — Capital loss carryforward unused ────────────────────────────────
 
 const G4_4_MIN_CARRYFORWARD = 20000;
-const G4_4_DECLINE_TOLERANCE = 1000; // "not materially declining" — delta within $1k
+/**
+ * "Not materially declining" — delta within $3,500/yr. The threshold is just
+ * above the maximum natural decline from the IRC §1211 $3,000-against-
+ * ordinary deduction ($1,500 MFS). A larger YoY decline indicates the client
+ * is actively absorbing the carryforward against realized gains; in that
+ * case the rule is moot (recommendation already implemented).
+ */
+const G4_4_DECLINE_TOLERANCE = 3500;
 
 function detectCapitalLossCarryforwardUnused(history: TaxReturnSnapshot[]): OpportunityHit | null {
   const current = history[0];

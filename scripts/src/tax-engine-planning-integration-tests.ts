@@ -37,6 +37,11 @@ interface PlanningResponse {
   totalEstSavings: number;
 }
 
+interface PlanningMultiYearResponse extends PlanningResponse {
+  yearsAvailable: number;
+  yearsCovered: number[];
+}
+
 function check(label: string, actual: unknown, expected: unknown): void {
   const eq =
     typeof actual === "number" && typeof expected === "number"
@@ -178,6 +183,89 @@ async function run() {
     const msg = (e as Error).message;
     if (msg.includes("404")) PASS.push("OK unknown client returns 404");
     else FAIL.push(`FAIL unknown client returned wrong error: ${msg}`);
+  }
+
+  // ── 5. G4 multi-year: persistent NIIT pattern fires across 2 years ──────
+  // Hand-calc (Single FL, both years above NIIT threshold):
+  //   TY2024: W-2 $250k + div $15k + int $5k → AGI $270k. Excess over $200k = $70k.
+  //     NII = $15k + $5k = $20k. NIIT base = min($20k, $70k) = $20k.
+  //     NIIT = $20k × 3.8% = $760.
+  //   TY2025: W-2 $260k + div $18k + int $6k → AGI $284k. Excess = $84k. NII = $24k.
+  //     NIIT base = min($24k, $84k) = $24k. NIIT = $24k × 3.8% = $912.
+  //   G4.1 fires: firingYears = 2; avgNiit = ($912 + $760)/2 = $836.
+  //     estSavings = $836 × 0.5 = $418.
+  console.log("\n-- Planning integration: G4.1 persistent NIIT (2 years) --");
+  await withTempClient("g4_niit", "single", "FL", 2025, async (cid) => {
+    // Year 2024 data
+    await api(`/clients/${cid}/w2data`, {
+      method: "POST",
+      body: JSON.stringify({ taxYear: 2024, wagesBox1: 250000, federalTaxWithheldBox2: 50000, stateCode: "FL" }),
+    });
+    await api(`/clients/${cid}/form1099data`, {
+      method: "POST",
+      body: JSON.stringify({ taxYear: 2024, formType: "div", payerName: "Brokerage", ordinaryDividends: 15000 }),
+    });
+    await api(`/clients/${cid}/form1099data`, {
+      method: "POST",
+      body: JSON.stringify({ taxYear: 2024, formType: "int", payerName: "Bank", interestIncome: 5000 }),
+    });
+    // Year 2025 data
+    await api(`/clients/${cid}/w2data`, {
+      method: "POST",
+      body: JSON.stringify({ taxYear: 2025, wagesBox1: 260000, federalTaxWithheldBox2: 55000, stateCode: "FL" }),
+    });
+    await api(`/clients/${cid}/form1099data`, {
+      method: "POST",
+      body: JSON.stringify({ taxYear: 2025, formType: "div", payerName: "Brokerage", ordinaryDividends: 18000 }),
+    });
+    await api(`/clients/${cid}/form1099data`, {
+      method: "POST",
+      body: JSON.stringify({ taxYear: 2025, formType: "int", payerName: "Bank", interestIncome: 6000 }),
+    });
+    // Compute and persist tax_returns rows for both years.
+    await api(`/clients/${cid}/tax-return`, { method: "POST", body: JSON.stringify({ taxYear: 2024 }) });
+    await api(`/clients/${cid}/tax-return`, { method: "POST", body: JSON.stringify({ taxYear: 2025 }) });
+    await new Promise((r) => setTimeout(r, 200));
+
+    const p = await api<PlanningMultiYearResponse>(`/clients/${cid}/planning-multi-year`);
+    check("G4 yearsAvailable = 2", p.yearsAvailable, 2);
+    checkTruthy("G4 yearsCovered includes 2024 and 2025",
+      p.yearsCovered.includes(2024) && p.yearsCovered.includes(2025), true);
+    const hit = p.hits.find((h) => h.strategyId === "G4.1");
+    checkTruthy("G4.1 persistent NIIT hit fires", hit != null, true);
+    if (hit) {
+      check("G4.1 estSavings ~$418", hit.estSavings, 418);
+      check("G4.1 yearsWithNiit = 2", Number(hit.inputs.yearsWithNiit), 2);
+      check("G4.1 avgNiit ~$836", Number(hit.inputs.avgNiit), 836);
+    }
+    check("G4 catalogVersion = v1.1.0", p.catalogVersion, "v1.1.0");
+  });
+
+  // ── 6. G4 multi-year: single-year client returns empty hits ─────────────
+  console.log("\n-- Planning integration: G4 single-year history returns empty hits --");
+  await withTempClient("g4_oneyear", "single", "FL", 2024, async (cid) => {
+    await api(`/clients/${cid}/w2data`, {
+      method: "POST",
+      body: JSON.stringify({ taxYear: 2024, wagesBox1: 50000, federalTaxWithheldBox2: 7000, stateCode: "FL" }),
+    });
+    await api(`/clients/${cid}/tax-return`, { method: "POST", body: JSON.stringify({ taxYear: 2024 }) });
+    await new Promise((r) => setTimeout(r, 100));
+
+    const p = await api<PlanningMultiYearResponse>(`/clients/${cid}/planning-multi-year`);
+    check("G4 single-year: yearsAvailable = 1", p.yearsAvailable, 1);
+    check("G4 single-year: hits empty", p.hits.length, 0);
+    check("G4 single-year: totalEstSavings = 0", p.totalEstSavings, 0);
+  });
+
+  // ── 7. G4 multi-year: unknown client 404 ────────────────────────────────
+  console.log("\n-- Planning integration: G4 unknown client 404 --");
+  try {
+    await api("/clients/999999999/planning-multi-year");
+    FAIL.push("FAIL G4 unknown client should 404 but returned 200");
+  } catch (e) {
+    const msg = (e as Error).message;
+    if (msg.includes("404")) PASS.push("OK G4 unknown client returns 404");
+    else FAIL.push(`FAIL G4 unknown client returned wrong error: ${msg}`);
   }
 
   // ── results ─────────────────────────────────────────────────────────────

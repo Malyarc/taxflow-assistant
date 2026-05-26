@@ -1400,6 +1400,58 @@ export const GetPlanningOpportunitiesResponse = zod.object({
 });
 
 /**
+ * Detects opportunities that fire on multi-year patterns across the client's tax_returns history (persistent NIIT/AMT, std-ded cliff, capital-loss carryforward unused, growing passive-loss suspension). Requires at least 2 years of computed tax_returns rows; returns an empty hits array when only one year is available.
+
+ * @summary Multi-year tax-planning patterns (Phase G4)
+ */
+export const GetPlanningMultiYearParams = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const GetPlanningMultiYearResponse = zod.object({
+  clientId: zod.number(),
+  taxYear: zod
+    .number()
+    .describe("Most-recent tax year present in the client's history."),
+  catalogVersion: zod.string(),
+  hits: zod
+    .array(
+      zod.object({
+        strategyId: zod.string(),
+        name: zod.string(),
+        category: zod.enum([
+          "retirement",
+          "state",
+          "charitable",
+          "timing",
+          "business",
+          "investment",
+          "credits",
+        ]),
+        estSavings: zod.number(),
+        confidence: zod.number(),
+        cpaEffortHours: zod.number(),
+        recurring: zod.boolean(),
+        rationale: zod.string(),
+        action: zod.string(),
+        prerequisiteData: zod.array(zod.string()),
+        citation: zod.string(),
+        inputs: zod.record(zod.string(), zod.unknown()),
+      }),
+    )
+    .describe(
+      "G4 multi-year opportunity hits sorted by estSavings descending. Empty when fewer than 2 years of tax_returns are available.",
+    ),
+  totalEstSavings: zod.number(),
+  yearsAvailable: zod
+    .number()
+    .describe("Count of tax_returns rows present for this client."),
+  yearsCovered: zod
+    .array(zod.number())
+    .describe("The tax years included in the history, most recent first."),
+});
+
+/**
  * @summary List CPA adjustments for a client
  */
 export const ListAdjustmentsParams = zod.object({

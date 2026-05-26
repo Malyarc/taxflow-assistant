@@ -1611,6 +1611,20 @@ export interface PlanningMissingData {
   model: string;
 }
 
+export interface PlanningMultiYear {
+  clientId: number;
+  /** Most-recent tax year present in the client's history. */
+  taxYear: number;
+  catalogVersion: string;
+  /** G4 multi-year opportunity hits sorted by estSavings descending. Empty when fewer than 2 years of tax_returns are available. */
+  hits: OpportunityHit[];
+  totalEstSavings: number;
+  /** Count of tax_returns rows present for this client. */
+  yearsAvailable: number;
+  /** The tax years included in the history, most recent first. */
+  yearsCovered: number[];
+}
+
 export type GetPlanningHitListParams = {
   category?: GetPlanningHitListCategory;
   minAgi?: number;
