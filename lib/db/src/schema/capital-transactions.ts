@@ -26,8 +26,21 @@
  * Wash-sale disallowance (IRC §1091): broker-reported via 1099-B Box 1g
  * and column (f) code "W". `washSaleDisallowed` carries the amount for
  * downstream UI/reporting; the gainLoss already incorporates it via
- * `adjustmentAmount`. Engine does NOT auto-detect wash sales — CPAs
- * enter or import the broker-reported amount.
+ * `adjustmentAmount`.
+ *
+ * E13 — Auto wash-sale detection (in-pipeline): the engine scans the
+ * year's transactions and identifies a loss sale + a same-security
+ * purchase within ±30 days (61-day window per IRC §1091(a)). For each
+ * detected case the engine reverses the loss (increments adjustmentAmount
+ * by |loss|), increases the replacement transaction's costBasis by the
+ * disallowed amount per IRC §1091(d), and sets `washSaleAutoDetected =
+ * true` for the loss row. Broker-reported wash sales (adjustmentCode
+ * already contains "W") are honored as-is and NOT re-processed by
+ * auto-detection. Note: detection uses the dateAcquired of OTHER
+ * dispositions to infer the rebuy — when replacement shares are bought-
+ * and-held in the same year (never sold), the auto-detector cannot see
+ * them; CPAs should enter those wash sales manually via adjustmentCode
+ * = "W" + washSaleDisallowed (documented sub-gap).
  *
  * Source: IRS Form 8949 instructions, Pub 550, Schedule D instructions.
  */
@@ -58,6 +71,10 @@ export const capitalTransactionsTable = pgTable("capital_transactions", {
   adjustmentAmount: numeric("adjustment_amount", { precision: 14, scale: 2 }).notNull().default("0"),
   /** Portion of adjustmentAmount attributable to wash-sale disallowance (informational). */
   washSaleDisallowed: numeric("wash_sale_disallowed", { precision: 14, scale: 2 }).notNull().default("0"),
+  /** E13 — TRUE when the wash sale was identified by the engine (not by the
+   *  1099-B broker). Distinguishes auto-detected from broker-reported for UI
+   *  and audit trail. Set on the LOSS row that was disallowed. */
+  washSaleAutoDetected: boolean("wash_sale_auto_detected").notNull().default(false),
 
   /** Form 8949 box: A/B/C (short-term) or D/E/F (long-term). */
   formBox: text("form_box").notNull().default("A"),

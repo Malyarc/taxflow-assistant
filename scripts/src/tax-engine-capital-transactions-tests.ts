@@ -213,6 +213,37 @@ async function run() {
     checkExact("After DELETE list empty", listed3.length, 0);
   });
 
+  console.log("\n── 9. E13 — Auto wash-sale detection via full HTTP pipeline ──");
+  // Hand-calc:
+  //   S: 100 sh AAPL bought 2024-01-01 ($6,000 basis), sold 2024-06-01 ($5,000) → -$1,000 loss
+  //   T: 100 sh AAPL bought 2024-06-15 ($5,500), sold 2024-08-01 ($6,000) → +$500 gain (raw)
+  //   Engine detects wash sale: disallows $1,000 loss; T basis becomes $6,500.
+  //   Post-detection: net cap gain/loss = (S: $0) + (T: $6,000 - $6,500 = -$500) = -$500 ST loss.
+  //   Persists washSalesDetected = 1 + washSaleLossDisallowed = 1000 on the tax_returns row.
+  await withTempClient({}, async (cid) => {
+    await api(`/clients/${cid}/w2data`, { method: "POST", body: JSON.stringify({ taxYear: 2024, wagesBox1: 100000, federalTaxWithheldBox2: 15000, stateCode: "FL" }) });
+    await api(`/clients/${cid}/capital-transactions`, { method: "POST", body: JSON.stringify({ description: "100 sh AAPL", dateAcquired: "2024-01-01", dateSold: "2024-06-01", proceeds: 5000, costBasis: 6000, adjustmentAmount: 0, formBox: "D", taxYear: 2024 }) });
+    await api(`/clients/${cid}/capital-transactions`, { method: "POST", body: JSON.stringify({ description: "100 sh AAPL", dateAcquired: "2024-06-15", dateSold: "2024-08-01", proceeds: 6000, costBasis: 5500, adjustmentAmount: 0, formBox: "A", taxYear: 2024 }) });
+    await settle();
+    const r = await api<any>(`/clients/${cid}/tax-return`);
+    check("washSalesDetected = 1", Number(r.washSalesDetected), 1, 0);
+    check("washSaleLossDisallowed = $1,000", Number(r.washSaleLossDisallowed), 1000, 0.01);
+  });
+
+  console.log("\n── 10. E13 — Broker-reported wash (W code) NOT re-detected via API ──");
+  // Hand-calc:
+  //   Row has adjustmentCode = "W" + adjustmentAmount $500.
+  //   Engine honors broker; no auto-detection. washSalesDetected = 0.
+  await withTempClient({}, async (cid) => {
+    await api(`/clients/${cid}/w2data`, { method: "POST", body: JSON.stringify({ taxYear: 2024, wagesBox1: 80000, federalTaxWithheldBox2: 10000, stateCode: "FL" }) });
+    await api(`/clients/${cid}/capital-transactions`, { method: "POST", body: JSON.stringify({ description: "TSLA", dateAcquired: "2024-01-01", dateSold: "2024-06-01", proceeds: 4500, costBasis: 5000, adjustmentCode: "W", adjustmentAmount: 500, formBox: "D", taxYear: 2024 }) });
+    await api(`/clients/${cid}/capital-transactions`, { method: "POST", body: JSON.stringify({ description: "TSLA", dateAcquired: "2024-06-15", dateSold: "2024-09-01", proceeds: 5500, costBasis: 4800, adjustmentAmount: 0, formBox: "A", taxYear: 2024 }) });
+    await settle();
+    const r = await api<any>(`/clients/${cid}/tax-return`);
+    check("Broker-reported → washSalesDetected = 0", Number(r.washSalesDetected), 0, 0);
+    check("Broker-reported disallowed = $0 auto-detected", Number(r.washSaleLossDisallowed), 0, 0.01);
+  });
+
   // ── Summary ──
   console.log(`\n${PASS.length} passed`);
   if (FAIL.length) {

@@ -2251,6 +2251,12 @@ function CapitalTransactionsTab({ clientId, taxYear }: { clientId: number; taxYe
       return res.json();
     },
   });
+  // E13 — Wash-sale summary from the engine's most recent compute. Surfaced
+  // as a banner above the table; per-row marker not yet (washSaleAutoDetected
+  // is in-memory only on the engine side, not persisted to capital_transactions).
+  const { data: taxReturn } = useGetTaxReturn(clientId);
+  const washSalesDetected = Number((taxReturn as { washSalesDetected?: number } | undefined)?.washSalesDetected ?? 0);
+  const washSaleLossDisallowed = Number((taxReturn as { washSaleLossDisallowed?: number } | undefined)?.washSaleLossDisallowed ?? 0);
   const txnsForYear = (rows ?? []).filter((r) => r.taxYear === taxYear);
   const [editing, setEditing] = useState<CapitalTxnRow | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -2285,6 +2291,20 @@ function CapitalTransactionsTab({ clientId, taxYear }: { clientId: number; taxYe
         </div>
         <Button onClick={() => { setEditing(null); setShowForm(true); }} size="sm">Add transaction</Button>
       </div>
+
+      {washSalesDetected > 0 && (
+        <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm">
+          <div className="font-semibold text-amber-900">
+            Engine auto-detected {washSalesDetected} wash sale{washSalesDetected === 1 ? "" : "s"} (IRC §1091)
+          </div>
+          <p className="text-xs text-amber-800 mt-1">
+            Total capital loss disallowed: <span className="font-mono">{fmt(washSaleLossDisallowed)}</span>.
+            Disallowed losses were added back via column g (Form 8949 adjustment), and the replacement
+            transactions' cost basis was increased per IRC §1091(d). Broker-reported wash sales
+            (adjustment code &ldquo;W&rdquo; already present) are unchanged.
+          </p>
+        </div>
+      )}
 
       {isLoading ? (
         <Skeleton className="h-24 w-full" />

@@ -403,9 +403,12 @@ export async function recalculateAndUpsertTaxReturn(
     scheduleEPassiveLossSuspended: String(result.scheduleEPassiveLossSuspended),
     // Phase B+: K-1 passive bucket carryforward
     k1PassiveLossSuspended: String(result.scheduleK1.k1PassiveLossSuspended),
-    // Phase B+: Local PIT (NYC, etc.)
+    // Phase B+: Local PIT (NYC, MD/OH/IN per E14)
     localTaxLiability: String(result.localTaxLiability),
     localTaxJurisdiction: result.localTaxJurisdiction,
+    // E13: Auto wash-sale detection summary
+    washSalesDetected: result.washSalesDetected,
+    washSaleLossDisallowed: String(result.washSaleLossDisallowed),
   };
 
   if (existing) {

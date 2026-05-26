@@ -979,6 +979,10 @@ export interface TaxReturn {
   localTaxLiability?: number | null;
   /** @nullable */
   localTaxJurisdiction?: string | null;
+  /** E13 — Number of wash sales auto-detected by the engine (excludes broker-reported via adjustmentCode "W"). */
+  washSalesDetected: number;
+  /** E13 — Total $ of capital loss disallowed by IRC §1091 auto-detection. */
+  washSaleLossDisallowed: number;
   /** @nullable */
   notes?: string | null;
   createdAt: string;
@@ -1353,6 +1357,8 @@ export interface CapitalTransaction {
   adjustmentCode?: string | null;
   adjustmentAmount: number;
   washSaleDisallowed: number;
+  /** E13 — TRUE when the engine auto-detected this as a wash sale (vs. broker-reported via adjustmentCode "W"). Set on the disallowed-loss row. */
+  washSaleAutoDetected: boolean;
   formBox: CapitalTransactionFormBox;
   isCovered: boolean;
   received1099B: boolean;
@@ -1387,6 +1393,8 @@ export interface CreateCapitalTransactionBody {
   adjustmentCode?: string | null;
   adjustmentAmount?: number;
   washSaleDisallowed?: number;
+  /** E13 — TRUE when the engine auto-detected this as a wash sale (vs. broker-reported via adjustmentCode "W"). Set on the disallowed-loss row. */
+  washSaleAutoDetected?: boolean;
   formBox: CreateCapitalTransactionBodyFormBox;
   isCovered?: boolean;
   received1099B?: boolean;
@@ -1419,6 +1427,8 @@ export interface UpdateCapitalTransactionBody {
   adjustmentCode?: string | null;
   adjustmentAmount?: number;
   washSaleDisallowed?: number;
+  /** E13 — TRUE when the engine auto-detected this as a wash sale (vs. broker-reported via adjustmentCode "W"). Set on the disallowed-loss row. */
+  washSaleAutoDetected?: boolean;
   formBox?: UpdateCapitalTransactionBodyFormBox;
   isCovered?: boolean;
   received1099B?: boolean;

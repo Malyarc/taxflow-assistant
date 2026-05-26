@@ -233,6 +233,8 @@ export interface CapitalTransactionFact {
   adjustmentCode?: string | null;
   adjustmentAmount?: Numish;
   washSaleDisallowed?: Numish;
+  /** E13 — TRUE when engine identified the wash sale (vs broker-reported "W"). */
+  washSaleAutoDetected?: boolean | null;
   formBox?: "A" | "B" | "C" | "D" | "E" | "F" | string | null;
 }
 
@@ -751,6 +753,171 @@ export interface ComputedTaxReturn {
   w2Count: number;
   /** Number of 1099 records included */
   form1099Count: number;
+  /**
+   * E13 — Number of wash sales identified by the engine (per IRC §1091).
+   * Excludes broker-reported wash sales (adjustmentCode "W") which are
+   * honored as-is. Set on the loss-row that was disallowed.
+   */
+  washSalesDetected: number;
+  /**
+   * E13 — Total $ of capital loss disallowed by auto wash-sale detection.
+   * Each detected wash sale reverses the loss by incrementing the row's
+   * adjustmentAmount; the replacement transaction's costBasis is increased
+   * by the same amount per IRC §1091(d) (basis adjustment + holding-period
+   * tack-on for the replacement shares).
+   */
+  washSaleLossDisallowed: number;
+}
+
+// ── E13 — Auto wash-sale detection ──────────────────────────────────────────
+//
+// IRC §1091(a): loss on the sale of stock or securities is DISALLOWED when
+// the taxpayer acquires substantially identical stock or securities within
+// 30 days before OR 30 days after the sale (a 61-day window centered on
+// the sale date).
+//
+// IRC §1091(d): the disallowed loss is ADDED to the basis of the replacement
+// shares, and the replacement shares' holding period TACKS ON to include the
+// original shares' holding period.
+//
+// Engine algorithm (operates on the year's CapitalTransactionFact[]):
+//
+//  1. For each LOSS sale S (proceeds + adjustmentAmount − costBasis < 0):
+//     - SKIP if S.adjustmentCode already contains "W" (broker-reported);
+//       we honor those as-is, no double-counting.
+//     - SKIP if S.dateSold is missing (can't compute the 61-day window).
+//
+//  2. Look for a REPLACEMENT purchase by scanning the SAME tax year's
+//     transactions for another row T where:
+//       - same `description` (case-insensitive, trimmed = same security)
+//       - T !== S (skip self)
+//       - T.dateAcquired is non-null and falls within
+//         [S.dateSold − 30 days, S.dateSold + 30 days] inclusive
+//     The candidate with the EARLIEST dateAcquired wins (deterministic).
+//
+//  3. When a replacement is found:
+//       - Disallowed amount = |loss| (full disallowance — partial-wash math
+//         based on share counts not modeled, sub-gap documented).
+//       - S.adjustmentAmount += disallowedAmount  (loss reversed on Form 8949)
+//       - S.washSaleAutoDetected = true
+//       - T.costBasis += disallowedAmount         (§1091(d) basis add)
+//
+//  4. §1091(d) holding-period tack-on: when T's `formBox` would now reflect a
+//     longer holding period due to the original shares' acquisition, the box
+//     could shift from C → F etc. Engine does NOT auto-flip formBox (the CPA
+//     verifies via the Schedule D tab); documented sub-gap.
+//
+// Known sub-gaps:
+//   - Replacement shares bought-and-held within the year (never sold) are
+//     INVISIBLE to the detector (schema models dispositions only). CPAs
+//     enter those wash sales manually via adjustmentCode = "W".
+//   - Partial wash (rebought fewer replacement shares than sold) — engine
+//     fully disallows; should be share-proportional.
+//   - Cross-account wash (broker A sells, broker B buys) — only detected
+//     when both brokers' transactions are entered into capital_transactions.
+//   - Formal §1091(d) holding-period flip from ST to LT on the replacement
+//     row is not auto-applied to formBox.
+
+function txnGainLossRaw(t: CapitalTransactionFact): number {
+  return toNum(t.proceeds) - toNum(t.costBasis) + toNum(t.adjustmentAmount);
+}
+
+function normalizeSecurity(desc: string | null | undefined): string {
+  return (desc ?? "").trim().toLowerCase();
+}
+
+function parseISO(d: string | null | undefined): Date | null {
+  if (!d) return null;
+  // Accept ISO date or full timestamp; reject obviously bad strings.
+  const ms = Date.parse(d);
+  if (Number.isNaN(ms)) return null;
+  return new Date(ms);
+}
+
+const ONE_DAY_MS = 86400000;
+
+export interface WashSaleDetectionResult {
+  /** Transactions post-detection: loss rows have adjustmentAmount + washSaleAutoDetected updated; replacements have costBasis increased. */
+  adjustedTransactions: CapitalTransactionFact[];
+  /** Number of LOSS rows that were disallowed by auto-detection. */
+  washSalesDetected: number;
+  /** Total $ disallowed (sum of |loss| reversed across all detections). */
+  washSaleLossDisallowed: number;
+}
+
+/** E13 — Auto wash-sale detector. See module-level comment above for
+ *  algorithm + scope. Returns a NEW array; does not mutate the inputs. */
+export function detectWashSales(
+  transactions: CapitalTransactionFact[],
+): WashSaleDetectionResult {
+  // Deep-clone the rows so we can mutate without affecting the caller.
+  const rows: CapitalTransactionFact[] = transactions.map((t) => ({ ...t }));
+
+  let detected = 0;
+  let totalDisallowed = 0;
+
+  for (let i = 0; i < rows.length; i++) {
+    const s = rows[i];
+    // Skip non-loss rows.
+    if (txnGainLossRaw(s) >= 0) continue;
+    // Skip broker-reported wash sales (honored as-is).
+    if ((s.adjustmentCode ?? "").toUpperCase().includes("W")) continue;
+    const sSold = parseISO(s.dateSold ?? null);
+    if (!sSold) continue;
+    const sKey = normalizeSecurity(s.description);
+    if (!sKey) continue;
+
+    // Find earliest replacement purchase in the 61-day window.
+    const windowStart = sSold.getTime() - 30 * ONE_DAY_MS;
+    const windowEnd = sSold.getTime() + 30 * ONE_DAY_MS;
+    const sAcq = parseISO(s.dateAcquired ?? null);
+    const sAcqMs = sAcq ? sAcq.getTime() : null;
+    let bestIdx = -1;
+    let bestAcqMs = Infinity;
+    for (let j = 0; j < rows.length; j++) {
+      if (j === i) continue;
+      const t = rows[j];
+      if (normalizeSecurity(t.description) !== sKey) continue;
+      const tAcq = parseISO(t.dateAcquired ?? null);
+      if (!tAcq) continue;
+      const acqMs = tAcq.getTime();
+      if (acqMs < windowStart || acqMs > windowEnd) continue;
+      // Skip same-day-acquired rows — most commonly these are tax-lot splits
+      // of a single economic purchase, not a replacement buy. Trade-off:
+      // misses the rare case of two separate same-day purchases; CPAs handle
+      // those manually via adjustmentCode = "W".
+      if (sAcqMs != null && acqMs === sAcqMs) continue;
+      // Earliest dateAcquired wins (deterministic).
+      if (acqMs < bestAcqMs) {
+        bestAcqMs = acqMs;
+        bestIdx = j;
+      }
+    }
+    if (bestIdx === -1) continue;
+
+    const loss = -txnGainLossRaw(s); // positive disallowed amount
+    // 1) Reverse the loss on Form 8949 via column g (adjustmentAmount).
+    s.adjustmentAmount = toNum(s.adjustmentAmount) + loss;
+    s.washSaleDisallowed = toNum(s.washSaleDisallowed) + loss;
+    // Preserve existing adjustment code(s); add "W" only if not present.
+    const code = (s.adjustmentCode ?? "").toUpperCase();
+    if (!code.includes("W")) {
+      s.adjustmentCode = code.length > 0 ? code + "W" : "W";
+    }
+    s.washSaleAutoDetected = true;
+    // 2) §1091(d) basis adjustment on the replacement transaction.
+    const replacement = rows[bestIdx];
+    replacement.costBasis = toNum(replacement.costBasis) + loss;
+
+    detected += 1;
+    totalDisallowed += loss;
+  }
+
+  return {
+    adjustedTransactions: rows,
+    washSalesDetected: detected,
+    washSaleLossDisallowed: totalDisallowed,
+  };
 }
 
 // ── Pure engine ─────────────────────────────────────────────────────────────
@@ -814,7 +981,15 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // aggregate replaces the 1099-B-derived ST/LT cap-gain totals. 1099-DIV
   // box 2a capital-gain distributions remain additive to LT (they're not
   // Form 8949 transactions).
-  const capTxnsForYear = (inputs.capitalTransactions ?? []).filter((t) => t.taxYear === taxYear);
+  //
+  // E13 — Auto wash-sale detection runs FIRST on the raw rows. The
+  // resulting adjusted rows are then aggregated into ST/LT. Broker-reported
+  // wash sales (adjustmentCode "W") are honored unchanged; auto-detected
+  // ones get their loss reversed via adjustmentAmount, with the disallowed
+  // amount added to the replacement transaction's costBasis (§1091(d)).
+  const rawCapTxnsForYear = (inputs.capitalTransactions ?? []).filter((t) => t.taxYear === taxYear);
+  const washSaleResult = detectWashSales(rawCapTxnsForYear);
+  const capTxnsForYear = washSaleResult.adjustedTransactions;
   let form1099Summary: Form1099Summary;
   if (capTxnsForYear.length > 0) {
     const cgDistributions = form1099Records
@@ -2048,5 +2223,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     detail: { se, niit, additionalMedicare, qbi, amt, capitalGains: capGains },
     w2Count: w2Records.length,
     form1099Count: form1099Records.length,
+    // E13 — Auto wash-sale detection results (0 when no capital_transactions
+    // or no detected matches).
+    washSalesDetected: washSaleResult.washSalesDetected,
+    washSaleLossDisallowed: washSaleResult.washSaleLossDisallowed,
   };
 }

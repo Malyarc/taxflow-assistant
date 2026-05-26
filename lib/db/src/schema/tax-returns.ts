@@ -122,11 +122,15 @@ export const taxReturnsTable = pgTable(
     // Phase B+: Schedule K-1 passive bucket carryforward
     /** §469 K-1 passive activity loss suspended to next year (no $25k allowance — non-rental-RE passive). */
     k1PassiveLossSuspended: numeric("k1_passive_loss_suspended", { precision: 12, scale: 2 }),
-    // Phase B+: Local income tax (NYC for now)
-    /** Net local-jurisdiction income tax (e.g. NYC personal income tax). Null when no local jurisdiction applies. */
+    // Phase B+: Local income tax (NYC + E14 MD/OH/IN)
+    /** Net local-jurisdiction income tax. Null when no local jurisdiction applies. */
     localTaxLiability: numeric("local_tax_liability", { precision: 12, scale: 2 }),
-    /** The local jurisdiction this tax was computed for ("NYC", etc.). */
+    /** The local jurisdiction code this tax was computed for ("NYC", "MD-MONTGOMERY", etc.). */
     localTaxJurisdiction: text("local_tax_jurisdiction"),
+    /** E13 — Number of wash sales auto-detected by the engine this tax year (excludes broker-reported "W"). */
+    washSalesDetected: integer("wash_sales_detected").notNull().default(0),
+    /** E13 — Total $ of capital loss disallowed by auto wash-sale detection (per IRC §1091). */
+    washSaleLossDisallowed: numeric("wash_sale_loss_disallowed", { precision: 14, scale: 2 }).notNull().default("0"),
     notes: text("notes"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),

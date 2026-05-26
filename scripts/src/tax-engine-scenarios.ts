@@ -457,17 +457,22 @@ async function main() {
   // Single, $25k unemployment, $1k state refund
   // ─────────────────────────────────────────────────────────────────────────
   await runScenario("13. Unemployed — $25k unemployment + $1k state refund (1099-G)", async (ctx) => {
+    // FL has no state income tax — refund is incidental but engine still
+    // applies E6 (Pub 525) tax-benefit rule. Default priorYearItemized = null
+    // → engine derives from prior year: FL filer didn't itemize prior year
+    // (no prior tax_returns row at all), so state refund is NOT federal-
+    // taxable. Total income excludes the $1k refund.
     const cid = await makeClient({ firstName: "Pat", lastName: "Unemployed", filingStatus: "single", state: "FL", taxYear: 2024 });
     try {
       await api(`/clients/${cid}/form1099data`, { method: "POST", body: JSON.stringify({ taxYear: 2024, formType: "g", unemploymentCompensation: 25000, stateLocalRefund: 1000, federalTaxWithheld: 2500 }) });
       await settle();
       const r = await getReturn(cid);
-      // Total income $26k. Std $14,600. Taxable $11,400.
-      // Federal: $11,400 × 10% = $1,140
-      assert(ctx, "Total income $26k (unemployment + refund)", Number(r.totalIncome), 26000);
-      assert(ctx, "Federal tax $1,140 (all in 10%)", Number(r.federalTaxLiability), 1140, 1);
-      // Refund = $2,500 withheld - $1,140 = $1,360
-      assert(ctx, "Federal refund $1,360", Number(r.federalRefundOrOwed), 1360, 1);
+      // Total income $25k (unemployment only; refund excluded per E6).
+      // Std $14,600. Taxable $10,400. Federal: $10,400 × 10% = $1,040
+      assert(ctx, "Total income $25k (refund excluded per E6 tax-benefit rule)", Number(r.totalIncome), 25000);
+      assert(ctx, "Federal tax $1,040 (all in 10%)", Number(r.federalTaxLiability), 1040, 1);
+      // Refund = $2,500 withheld - $1,040 = $1,460
+      assert(ctx, "Federal refund $1,460", Number(r.federalRefundOrOwed), 1460, 1);
     } finally { await delClient(cid); }
   });
 

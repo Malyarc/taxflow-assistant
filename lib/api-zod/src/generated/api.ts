@@ -1151,6 +1151,16 @@ export const GetTaxReturnResponse = zod.object({
   scheduleCExpenses: zod.number().nullish(),
   localTaxLiability: zod.number().nullish(),
   localTaxJurisdiction: zod.string().nullish(),
+  washSalesDetected: zod
+    .number()
+    .describe(
+      'E13 — Number of wash sales auto-detected by the engine (excludes broker-reported via adjustmentCode \"W\").',
+    ),
+  washSaleLossDisallowed: zod
+    .number()
+    .describe(
+      "E13 — Total $ of capital loss disallowed by IRC §1091 auto-detection.",
+    ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -1222,6 +1232,16 @@ export const CalculateTaxReturnResponse = zod.object({
   scheduleCExpenses: zod.number().nullish(),
   localTaxLiability: zod.number().nullish(),
   localTaxJurisdiction: zod.string().nullish(),
+  washSalesDetected: zod
+    .number()
+    .describe(
+      'E13 — Number of wash sales auto-detected by the engine (excludes broker-reported via adjustmentCode \"W\").',
+    ),
+  washSaleLossDisallowed: zod
+    .number()
+    .describe(
+      "E13 — Total $ of capital loss disallowed by IRC §1091 auto-detection.",
+    ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -1301,6 +1321,16 @@ export const UpdateTaxReturnResponse = zod.object({
   scheduleCExpenses: zod.number().nullish(),
   localTaxLiability: zod.number().nullish(),
   localTaxJurisdiction: zod.string().nullish(),
+  washSalesDetected: zod
+    .number()
+    .describe(
+      'E13 — Number of wash sales auto-detected by the engine (excludes broker-reported via adjustmentCode \"W\").',
+    ),
+  washSaleLossDisallowed: zod
+    .number()
+    .describe(
+      "E13 — Total $ of capital loss disallowed by IRC §1091 auto-detection.",
+    ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -1913,6 +1943,11 @@ export const ListCapitalTransactionsResponseItem = zod.object({
   adjustmentCode: zod.string().nullish(),
   adjustmentAmount: zod.number(),
   washSaleDisallowed: zod.number(),
+  washSaleAutoDetected: zod
+    .boolean()
+    .describe(
+      'E13 — TRUE when the engine auto-detected this as a wash sale (vs. broker-reported via adjustmentCode \"W\"). Set on the disallowed-loss row.',
+    ),
   formBox: zod.enum(["A", "B", "C", "D", "E", "F"]),
   isCovered: zod.boolean(),
   received1099B: zod.boolean(),
@@ -1941,6 +1976,12 @@ export const CreateCapitalTransactionBody = zod.object({
   adjustmentCode: zod.string().nullish(),
   adjustmentAmount: zod.number().optional(),
   washSaleDisallowed: zod.number().optional(),
+  washSaleAutoDetected: zod
+    .boolean()
+    .optional()
+    .describe(
+      'E13 — TRUE when the engine auto-detected this as a wash sale (vs. broker-reported via adjustmentCode \"W\"). Set on the disallowed-loss row.',
+    ),
   formBox: zod.enum(["A", "B", "C", "D", "E", "F"]),
   isCovered: zod.boolean().optional(),
   received1099B: zod.boolean().optional(),
@@ -1965,6 +2006,12 @@ export const UpdateCapitalTransactionBody = zod.object({
   adjustmentCode: zod.string().nullish(),
   adjustmentAmount: zod.number().optional(),
   washSaleDisallowed: zod.number().optional(),
+  washSaleAutoDetected: zod
+    .boolean()
+    .optional()
+    .describe(
+      'E13 — TRUE when the engine auto-detected this as a wash sale (vs. broker-reported via adjustmentCode \"W\"). Set on the disallowed-loss row.',
+    ),
   formBox: zod.enum(["A", "B", "C", "D", "E", "F"]).optional(),
   isCovered: zod.boolean().optional(),
   received1099B: zod.boolean().optional(),
@@ -1983,6 +2030,11 @@ export const UpdateCapitalTransactionResponse = zod.object({
   adjustmentCode: zod.string().nullish(),
   adjustmentAmount: zod.number(),
   washSaleDisallowed: zod.number(),
+  washSaleAutoDetected: zod
+    .boolean()
+    .describe(
+      'E13 — TRUE when the engine auto-detected this as a wash sale (vs. broker-reported via adjustmentCode \"W\"). Set on the disallowed-loss row.',
+    ),
   formBox: zod.enum(["A", "B", "C", "D", "E", "F"]),
   isCovered: zod.boolean(),
   received1099B: zod.boolean(),

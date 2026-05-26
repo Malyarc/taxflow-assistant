@@ -1914,7 +1914,7 @@ components:
     # ── TaxReturn ────────────────────────────────────────────────────────────
     TaxReturn:
       type: object
-      required: [id, clientId, taxYear, createdAt, updatedAt]
+      required: [id, clientId, taxYear, washSalesDetected, washSaleLossDisallowed, createdAt, updatedAt]
       properties:
         id:
           type: integer
@@ -2018,11 +2018,18 @@ components:
         # Schedule C
         scheduleCExpenses:
           type: ["number", "null"]
-        # Local PIT (NYC, etc.)
+        # Local PIT (NYC + E14 MD/OH/IN)
         localTaxLiability:
           type: ["number", "null"]
         localTaxJurisdiction:
           type: ["string", "null"]
+        # E13 — Auto wash-sale detection summary
+        washSalesDetected:
+          type: integer
+          description: E13 — Number of wash sales auto-detected by the engine (excludes broker-reported via adjustmentCode "W").
+        washSaleLossDisallowed:
+          type: number
+          description: E13 — Total $ of capital loss disallowed by IRC §1091 auto-detection.
         notes:
           type: ["string", "null"]
         createdAt:
@@ -2234,7 +2241,7 @@ components:
     # ── Capital transactions (Schedule D / Form 8949) ─────────────────────────
     CapitalTransaction:
       type: object
-      required: [id, clientId, taxYear, description, proceeds, costBasis, adjustmentAmount, washSaleDisallowed, formBox, isCovered, received1099B, createdAt, updatedAt]
+      required: [id, clientId, taxYear, description, proceeds, costBasis, adjustmentAmount, washSaleDisallowed, washSaleAutoDetected, formBox, isCovered, received1099B, createdAt, updatedAt]
       properties:
         id:
           type: integer
@@ -2258,6 +2265,9 @@ components:
           type: number
         washSaleDisallowed:
           type: number
+        washSaleAutoDetected:
+          type: boolean
+          description: E13 — TRUE when the engine auto-detected this as a wash sale (vs. broker-reported via adjustmentCode "W"). Set on the disallowed-loss row.
         formBox:
           type: string
           enum: [A, B, C, D, E, F]
@@ -2296,6 +2306,9 @@ components:
           type: number
         washSaleDisallowed:
           type: number
+        washSaleAutoDetected:
+          type: boolean
+          description: E13 — TRUE when the engine auto-detected this as a wash sale (vs. broker-reported via adjustmentCode "W"). Set on the disallowed-loss row.
         formBox:
           type: string
           enum: [A, B, C, D, E, F]
@@ -2327,6 +2340,9 @@ components:
           type: number
         washSaleDisallowed:
           type: number
+        washSaleAutoDetected:
+          type: boolean
+          description: E13 — TRUE when the engine auto-detected this as a wash sale (vs. broker-reported via adjustmentCode "W"). Set on the disallowed-loss row.
         formBox:
           type: string
           enum: [A, B, C, D, E, F]

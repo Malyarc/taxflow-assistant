@@ -27,7 +27,9 @@ import {
 } from "../../artifacts/api-server/src/lib/taxCalculator";
 import {
   computeTaxReturnPure,
+  detectWashSales,
   type TaxReturnInputs,
+  type CapitalTransactionFact,
 } from "../../artifacts/api-server/src/lib/taxReturnEngine";
 
 const PASS: string[] = [];
@@ -1631,6 +1633,356 @@ header("E14 int — NYC regression via full pipeline");
     "Regression: full pipeline still routes NY/NYC to NYC bracket path");
   checkTruthy("E14 int", "jurisdiction = NYC",
     computed.localTaxJurisdiction === "NYC", true);
+}
+
+// ============================================================================
+// E13 — Auto wash-sale detection + §1091(d) basis adjustment
+// IRC §1091(a): loss disallowed when same-security purchase within ±30 days.
+// IRC §1091(d): disallowed loss added to replacement basis + holding period
+// tacks on.
+// ============================================================================
+section("E13 — Auto wash-sale detection (IRC §1091)");
+
+// --- E13+1: Single security, $1k loss, replacement within 15 days → wash sale ---
+// Hand-calc:
+//   S: 100 sh AAPL bought 2024-01-01 ($6,000 basis), sold 2024-06-01 ($5,000 proceeds) → -$1,000 loss
+//   T: 100 sh AAPL bought 2024-06-15 ($5,500 basis), sold 2024-08-01 ($6,000 proceeds) → +$500 gain
+//   T.dateAcquired = 2024-06-15 is 14 days after S.dateSold = 2024-06-01 (within ±30)
+//   → Engine reverses S's $1,000 loss via adjustmentAmount; T's basis = $5,500 + $1,000 = $6,500
+//   Post-detection:
+//     S gain/loss = $5,000 - $6,000 + $1,000 = $0
+//     T gain/loss = $6,000 - $6,500 = -$500
+header("E13+1 — Single security wash sale within 15 days");
+{
+  const txns: CapitalTransactionFact[] = [
+    { taxYear: 2024, description: "100 sh AAPL", dateAcquired: "2024-01-01", dateSold: "2024-06-01",
+      proceeds: 5000, costBasis: 6000, adjustmentAmount: 0, formBox: "D" },
+    { taxYear: 2024, description: "100 sh AAPL", dateAcquired: "2024-06-15", dateSold: "2024-08-01",
+      proceeds: 6000, costBasis: 5500, adjustmentAmount: 0, formBox: "A" },
+  ];
+  const r = detectWashSales(txns);
+  check("E13+1", "1 wash sale detected", r.washSalesDetected, 1, 0);
+  check("E13+1", "disallowed = $1,000", r.washSaleLossDisallowed, 1000, 0.01);
+  check("E13+1", "S adjustmentAmount = $1,000",
+    Number(r.adjustedTransactions[0].adjustmentAmount), 1000, 0.01,
+    "Loss added back via column g");
+  checkTruthy("E13+1", "S washSaleAutoDetected = true",
+    r.adjustedTransactions[0].washSaleAutoDetected === true, true);
+  check("E13+1", "T costBasis = $5,500 + $1,000 = $6,500",
+    Number(r.adjustedTransactions[1].costBasis), 6500, 0.01,
+    "§1091(d) basis adjustment on replacement");
+}
+
+// --- E13+2: Replacement OUTSIDE 30-day window → NO wash sale ---
+// Hand-calc:
+//   S sold 2024-06-01, T bought 2024-08-01 (61 days later, day 61 outside window).
+//   → No wash sale; loss intact.
+header("E13+2 — Replacement 61 days after sale → NO wash sale");
+{
+  const txns: CapitalTransactionFact[] = [
+    { taxYear: 2024, description: "100 sh AAPL", dateAcquired: "2024-01-01", dateSold: "2024-06-01",
+      proceeds: 5000, costBasis: 6000, adjustmentAmount: 0, formBox: "D" },
+    { taxYear: 2024, description: "100 sh AAPL", dateAcquired: "2024-08-01", dateSold: "2024-09-01",
+      proceeds: 6000, costBasis: 5500, adjustmentAmount: 0, formBox: "A" },
+  ];
+  const r = detectWashSales(txns);
+  check("E13+2", "0 wash sales", r.washSalesDetected, 0, 0);
+  check("E13+2", "loss preserved",
+    Number(r.adjustedTransactions[0].adjustmentAmount), 0, 0.01);
+}
+
+// --- E13+3: 30-day boundary (exact day +30 = wash sale) ---
+// Hand-calc:
+//   S sold 2024-06-01. T bought 2024-07-01 (exactly +30 days). Within window.
+header("E13+3 — Exactly +30 days → wash sale (inclusive boundary)");
+{
+  const txns: CapitalTransactionFact[] = [
+    { taxYear: 2024, description: "MSFT", dateAcquired: "2024-01-01", dateSold: "2024-06-01",
+      proceeds: 4500, costBasis: 5000, adjustmentAmount: 0, formBox: "D" },
+    { taxYear: 2024, description: "MSFT", dateAcquired: "2024-07-01", dateSold: "2024-09-01",
+      proceeds: 5200, costBasis: 4700, adjustmentAmount: 0, formBox: "A" },
+  ];
+  const r = detectWashSales(txns);
+  check("E13+3", "Day +30 fires", r.washSalesDetected, 1, 0,
+    "61-day window inclusive on both sides");
+  check("E13+3", "disallowed = $500", r.washSaleLossDisallowed, 500, 0.01);
+}
+
+// --- E13+4: 31-day boundary (day +31 = no wash sale) ---
+// Hand-calc:
+//   S sold 2024-06-01. T bought 2024-07-02 (+31 days). Outside window.
+header("E13+4 — Day +31 → NO wash sale");
+{
+  const txns: CapitalTransactionFact[] = [
+    { taxYear: 2024, description: "MSFT", dateAcquired: "2024-01-01", dateSold: "2024-06-01",
+      proceeds: 4500, costBasis: 5000, adjustmentAmount: 0, formBox: "D" },
+    { taxYear: 2024, description: "MSFT", dateAcquired: "2024-07-02", dateSold: "2024-09-01",
+      proceeds: 5200, costBasis: 4700, adjustmentAmount: 0, formBox: "A" },
+  ];
+  const r = detectWashSales(txns);
+  check("E13+4", "Day +31 does NOT fire", r.washSalesDetected, 0, 0);
+}
+
+// --- E13+5: Before-window replacement (T bought 25 days BEFORE S sold) → wash sale ---
+// Hand-calc:
+//   S: 100 sh GOOG acquired 2024-01-01, sold 2024-06-01 for loss ($800)
+//   T: 100 sh GOOG acquired 2024-05-07 (25 days before S.dateSold), sold 2024-09-01
+//   Loss disallowed.
+header("E13+5 — Replacement 25 days BEFORE sale → wash sale (before-window)");
+{
+  const txns: CapitalTransactionFact[] = [
+    { taxYear: 2024, description: "GOOG", dateAcquired: "2024-01-01", dateSold: "2024-06-01",
+      proceeds: 4200, costBasis: 5000, adjustmentAmount: 0, formBox: "D" },
+    { taxYear: 2024, description: "GOOG", dateAcquired: "2024-05-07", dateSold: "2024-09-01",
+      proceeds: 5500, costBasis: 4800, adjustmentAmount: 0, formBox: "A" },
+  ];
+  const r = detectWashSales(txns);
+  check("E13+5", "before-window fires", r.washSalesDetected, 1, 0);
+  check("E13+5", "disallowed = $800", r.washSaleLossDisallowed, 800, 0.01);
+  check("E13+5", "T basis = $4,800 + $800 = $5,600",
+    Number(r.adjustedTransactions[1].costBasis), 5600, 0.01);
+}
+
+// --- E13+6: Same-day-acquired tax-lot split → NOT detected (false-positive guard) ---
+// Hand-calc:
+//   Bought 200 sh on 2024-01-01 (split into 2 rows of 100 each).
+//   Sold first 100 on 2024-06-01 at loss ($500).
+//   Sold second 100 on 2024-12-01 at gain.
+//   Detector sees T.dateAcquired = S.dateAcquired = 2024-01-01 → skip (same lot).
+//   Loss preserved.
+header("E13+6 — Same dateAcquired → skipped (tax-lot split guard)");
+{
+  const txns: CapitalTransactionFact[] = [
+    { taxYear: 2024, description: "META", dateAcquired: "2024-01-01", dateSold: "2024-06-01",
+      proceeds: 4500, costBasis: 5000, adjustmentAmount: 0, formBox: "D" },
+    { taxYear: 2024, description: "META", dateAcquired: "2024-01-01", dateSold: "2024-12-01",
+      proceeds: 5200, costBasis: 5000, adjustmentAmount: 0, formBox: "D" },
+  ];
+  const r = detectWashSales(txns);
+  check("E13+6", "same-day acquired → no detection", r.washSalesDetected, 0, 0,
+    "Defends against false positive from broker tax-lot splits");
+}
+
+// --- E13+7: Broker-reported wash sale (adjustmentCode "W" present) → not re-detected ---
+// Hand-calc:
+//   S already has adjustmentCode = "W" + adjustmentAmount = $500 (broker reported).
+//   T bought 15 days later. Engine should NOT re-detect (no double-counting).
+header("E13+7 — Broker-reported wash sale (\"W\" already set) → not re-detected");
+{
+  const txns: CapitalTransactionFact[] = [
+    { taxYear: 2024, description: "TSLA", dateAcquired: "2024-01-01", dateSold: "2024-06-01",
+      proceeds: 4500, costBasis: 5000, adjustmentCode: "W", adjustmentAmount: 500, formBox: "D" },
+    { taxYear: 2024, description: "TSLA", dateAcquired: "2024-06-15", dateSold: "2024-09-01",
+      proceeds: 5500, costBasis: 4800, adjustmentAmount: 0, formBox: "A" },
+  ];
+  const r = detectWashSales(txns);
+  check("E13+7", "broker-reported → not double-counted", r.washSalesDetected, 0, 0);
+  check("E13+7", "S adjustmentAmount unchanged",
+    Number(r.adjustedTransactions[0].adjustmentAmount), 500, 0.01);
+}
+
+// --- E13+8: Gain (not loss) → no wash sale even with rebuy ---
+// Hand-calc:
+//   S: sold at GAIN. Wash sale rule applies only to LOSSES. No detection.
+header("E13+8 — Sale at GAIN → no wash sale");
+{
+  const txns: CapitalTransactionFact[] = [
+    { taxYear: 2024, description: "NVDA", dateAcquired: "2024-01-01", dateSold: "2024-06-01",
+      proceeds: 6000, costBasis: 5000, adjustmentAmount: 0, formBox: "D" },
+    { taxYear: 2024, description: "NVDA", dateAcquired: "2024-06-15", dateSold: "2024-09-01",
+      proceeds: 6500, costBasis: 6200, adjustmentAmount: 0, formBox: "A" },
+  ];
+  const r = detectWashSales(txns);
+  check("E13+8", "gain sale → no detection", r.washSalesDetected, 0, 0,
+    "§1091 disallows LOSSES only; gains are unaffected");
+}
+
+// --- E13+9: Different security → no cross-security wash sale ---
+// Hand-calc:
+//   S: AAPL loss. T: MSFT buy within 30 days. Different securities — no wash sale.
+header("E13+9 — Different security → not a wash sale");
+{
+  const txns: CapitalTransactionFact[] = [
+    { taxYear: 2024, description: "100 sh AAPL", dateAcquired: "2024-01-01", dateSold: "2024-06-01",
+      proceeds: 4500, costBasis: 5000, adjustmentAmount: 0, formBox: "D" },
+    { taxYear: 2024, description: "100 sh MSFT", dateAcquired: "2024-06-15", dateSold: "2024-09-01",
+      proceeds: 5500, costBasis: 4800, adjustmentAmount: 0, formBox: "A" },
+  ];
+  const r = detectWashSales(txns);
+  check("E13+9", "different securities → no detection", r.washSalesDetected, 0, 0);
+}
+
+// --- E13+10: Multiple loss sales, single replacement within BOTH windows → both disallowed ---
+// Hand-calc:
+//   S1: AAPL sold 2024-06-01 at $1,000 loss
+//   S2: AAPL sold 2024-07-15 at $500 loss
+//   T:  AAPL bought 2024-07-01 — sits in BOTH windows:
+//        +30 from S1.dateSold (2024-06-01 + 30 = 2024-07-01) AND
+//        -14 from S2.dateSold (2024-07-15 - 14 = 2024-07-01).
+//   Both losses detected; T.costBasis bumped twice.
+header("E13+10 — Two loss sales, one replacement within BOTH windows → both detected");
+{
+  const txns: CapitalTransactionFact[] = [
+    { taxYear: 2024, description: "AAPL", dateAcquired: "2024-01-01", dateSold: "2024-06-01",
+      proceeds: 4000, costBasis: 5000, adjustmentAmount: 0, formBox: "D" }, // -$1,000
+    { taxYear: 2024, description: "AAPL", dateAcquired: "2024-02-01", dateSold: "2024-07-15",
+      proceeds: 4500, costBasis: 5000, adjustmentAmount: 0, formBox: "D" }, // -$500
+    { taxYear: 2024, description: "AAPL", dateAcquired: "2024-07-01", dateSold: "2024-10-01",
+      proceeds: 5500, costBasis: 4800, adjustmentAmount: 0, formBox: "A" },
+  ];
+  const r = detectWashSales(txns);
+  check("E13+10", "both loss sales detected", r.washSalesDetected, 2, 0);
+  check("E13+10", "total disallowed = $1,500", r.washSaleLossDisallowed, 1500, 0.01,
+    "Both losses reversed; replacement basis cumulatively increased");
+  // T basis = $4,800 + $1,000 (from S1) + $500 (from S2) = $6,300
+  check("E13+10", "T basis cumulatively bumped to $6,300",
+    Number(r.adjustedTransactions[2].costBasis), 6300, 0.01);
+}
+
+// --- E13+11: Empty input → no detection, no error ---
+header("E13+11 — Empty transactions array → 0 detected");
+{
+  const r = detectWashSales([]);
+  check("E13+11", "empty → 0", r.washSalesDetected, 0, 0);
+  check("E13+11", "empty disallowed", r.washSaleLossDisallowed, 0, 0.01);
+}
+
+// --- E13+12: Missing dateSold → skipped ---
+header("E13+12 — Missing dateSold on loss → skip");
+{
+  const txns: CapitalTransactionFact[] = [
+    { taxYear: 2024, description: "AAPL", dateAcquired: "2024-01-01", dateSold: null,
+      proceeds: 4500, costBasis: 5000, adjustmentAmount: 0, formBox: "D" },
+    { taxYear: 2024, description: "AAPL", dateAcquired: "2024-06-15", dateSold: "2024-09-01",
+      proceeds: 5500, costBasis: 4800, adjustmentAmount: 0, formBox: "A" },
+  ];
+  const r = detectWashSales(txns);
+  check("E13+12", "no dateSold → skip", r.washSalesDetected, 0, 0,
+    "Detector can't compute window without dateSold; safe skip");
+}
+
+// --- E13+13: Case-insensitive security match ---
+// Hand-calc:
+//   "100 sh AAPL" === "100 sh aapl" === "100 SH AAPL" — same security, normalized.
+header("E13+13 — Security description case-insensitive match");
+{
+  const txns: CapitalTransactionFact[] = [
+    { taxYear: 2024, description: "100 sh AAPL", dateAcquired: "2024-01-01", dateSold: "2024-06-01",
+      proceeds: 4500, costBasis: 5000, adjustmentAmount: 0, formBox: "D" },
+    { taxYear: 2024, description: "100 SH aapl", dateAcquired: "2024-06-15", dateSold: "2024-09-01",
+      proceeds: 5500, costBasis: 4800, adjustmentAmount: 0, formBox: "A" },
+  ];
+  const r = detectWashSales(txns);
+  check("E13+13", "case-insensitive match", r.washSalesDetected, 1, 0);
+}
+
+// --- E13+14: Engine integration via computeTaxReturnPure ---
+// Hand-calc:
+//   Same as E13+1 wired through full pipeline.
+//   Before: ST gain = $500 (from T), LT loss = -$1,000 (from S) → net cap loss $500 against ord income
+//   After: S loss zeroed, T basis bumped to $6,500 → T gain = -$500 (ST loss)
+//   STCG = -$500, LTCG = $0 → no LTCG tax; STCG -$500 against ord income (within $3k cap)
+header("E13+14 — Engine integration: wash sale shifts the cap-gain composition");
+{
+  const computed = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "CA", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 100000, federalTaxWithheldBox2: 15000, stateCode: "CA" }],
+    form1099s: [],
+    adjustments: [],
+    capitalTransactions: [
+      { taxYear: 2024, description: "100 sh AAPL", dateAcquired: "2024-01-01", dateSold: "2024-06-01",
+        proceeds: 5000, costBasis: 6000, adjustmentAmount: 0, formBox: "D" },
+      { taxYear: 2024, description: "100 sh AAPL", dateAcquired: "2024-06-15", dateSold: "2024-08-01",
+        proceeds: 6000, costBasis: 5500, adjustmentAmount: 0, formBox: "A" },
+    ],
+    taxYear: 2024,
+  });
+  check("E13+14", "washSalesDetected = 1", computed.washSalesDetected, 1, 0);
+  check("E13+14", "washSaleLossDisallowed = $1,000",
+    computed.washSaleLossDisallowed, 1000, 0.01);
+}
+
+// --- E13+15: Engine integration — broker-reported case unchanged ---
+// Hand-calc:
+//   1 row with adjustmentCode "W" + $500 → broker-reported. Engine does NOT
+//   touch this; washSalesDetected stays 0.
+header("E13+15 — Broker-reported wash sale ignored by auto-detector");
+{
+  const computed = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "CA", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 100000, federalTaxWithheldBox2: 15000, stateCode: "CA" }],
+    form1099s: [],
+    adjustments: [],
+    capitalTransactions: [
+      { taxYear: 2024, description: "TSLA", dateAcquired: "2024-01-01", dateSold: "2024-06-01",
+        proceeds: 4500, costBasis: 5000, adjustmentCode: "W", adjustmentAmount: 500, formBox: "D" },
+      { taxYear: 2024, description: "TSLA", dateAcquired: "2024-06-15", dateSold: "2024-09-01",
+        proceeds: 5500, costBasis: 4800, adjustmentAmount: 0, formBox: "A" },
+    ],
+    taxYear: 2024,
+  });
+  check("E13+15", "broker reported → no auto-detection", computed.washSalesDetected, 0, 0);
+}
+
+// --- E13+16: Engine integration — no cap txns ---
+// Hand-calc:
+//   No capital_transactions at all → washSalesDetected = 0 (clean no-op).
+header("E13+16 — No capital transactions → 0 detected");
+{
+  const computed = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "TX", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 80000, federalTaxWithheldBox2: 10000, stateCode: "TX" }],
+    form1099s: [],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  check("E13+16", "no cap txns → 0", computed.washSalesDetected, 0, 0);
+  check("E13+16", "no disallowed", computed.washSaleLossDisallowed, 0, 0.01);
+}
+
+// --- E13+17: Mixed adjustmentCode "WD" (wash + disallowed) → still skipped ---
+// Hand-calc:
+//   Multi-code "WD" — includes "W" → already broker-reported wash sale.
+header("E13+17 — adjustmentCode \"WD\" includes \"W\" → skipped");
+{
+  const txns: CapitalTransactionFact[] = [
+    { taxYear: 2024, description: "NFLX", dateAcquired: "2024-01-01", dateSold: "2024-06-01",
+      proceeds: 4500, costBasis: 5000, adjustmentCode: "WD", adjustmentAmount: 500, formBox: "D" },
+    { taxYear: 2024, description: "NFLX", dateAcquired: "2024-06-15", dateSold: "2024-09-01",
+      proceeds: 5500, costBasis: 4800, adjustmentAmount: 0, formBox: "A" },
+  ];
+  const r = detectWashSales(txns);
+  check("E13+17", "multi-code containing W → skip", r.washSalesDetected, 0, 0);
+}
+
+// --- E13+18: Detector returns NEW array (input not mutated) ---
+header("E13+18 — Pure detector: input array not mutated");
+{
+  const txns: CapitalTransactionFact[] = [
+    { taxYear: 2024, description: "AMZN", dateAcquired: "2024-01-01", dateSold: "2024-06-01",
+      proceeds: 4500, costBasis: 5000, adjustmentAmount: 0, formBox: "D" },
+    { taxYear: 2024, description: "AMZN", dateAcquired: "2024-06-15", dateSold: "2024-09-01",
+      proceeds: 5500, costBasis: 4800, adjustmentAmount: 0, formBox: "A" },
+  ];
+  const originalS = txns[0].adjustmentAmount;
+  const originalT = txns[1].costBasis;
+  const r = detectWashSales(txns);
+  check("E13+18", "input S unchanged", Number(txns[0].adjustmentAmount), Number(originalS), 0.01,
+    "Detector returns a NEW array; original input not mutated");
+  check("E13+18", "input T unchanged", Number(txns[1].costBasis), Number(originalT), 0.01);
+  // Output was mutated, just verify too.
+  check("E13+18", "output S modified", Number(r.adjustedTransactions[0].adjustmentAmount), 500, 0.01);
+}
+
+// --- E13 boundary: detector with one row only → 0 detected ---
+header("E13± — Single transaction → 0 detected (no replacement candidate)");
+{
+  const txns: CapitalTransactionFact[] = [
+    { taxYear: 2024, description: "AAPL", dateAcquired: "2024-01-01", dateSold: "2024-06-01",
+      proceeds: 4500, costBasis: 5000, adjustmentAmount: 0, formBox: "D" },
+  ];
+  const r = detectWashSales(txns);
+  check("E13±", "1 txn → 0 detected", r.washSalesDetected, 0, 0);
 }
 
 // ============================================================================
