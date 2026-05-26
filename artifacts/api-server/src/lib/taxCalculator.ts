@@ -2509,6 +2509,41 @@ export function calculateSelfEmploymentTax(
   };
 }
 
+// ── Self-Employed Health Insurance Deduction (IRC §162(l), Form 7206) ──────
+// Above-the-line deduction for self-employed filers (Sch C, partner with SE
+// earnings, 2%+ S-corp shareholder, statutory employee) who paid their own
+// health insurance premiums. The deduction is the lesser of:
+//   (a) total premiums paid for the year (medical, dental, vision, long-term care)
+//   (b) net SE earnings (Sch SE) minus the deductible half of SE tax
+//       minus any contributions to SE retirement plans (SEP, Solo 401k)
+//
+// We model (a) and (b) without the retirement-plan reduction — SEP/Solo401(k)
+// contributions are not yet a modeled adjustment; documented as a sub-gap
+// in CLAUDE.md. CPAs whose clients have material SE retirement contributions
+// can reduce the premiums entry to compensate.
+//
+// Eligibility (CPA enforces — engine assumes the adjustment is valid):
+//   - Filer was NOT eligible for employer-subsidized health insurance through
+//     their own or their spouse's employer during the month claimed.
+//
+export interface SehiCalculation {
+  premiumsPaid: number;
+  /** Cap: max(0, net SE earnings − deductible half SE tax). */
+  earnedIncomeCap: number;
+  /** Final deduction: min(premiums, cap). */
+  deduction: number;
+}
+
+export function calculateSehiDeduction(params: {
+  premiumsPaid: number;
+  seNetEarnings: number;
+  halfSeDeduction: number;
+}): SehiCalculation {
+  const premiums = Math.max(0, params.premiumsPaid);
+  const cap = Math.max(0, params.seNetEarnings - params.halfSeDeduction);
+  return { premiumsPaid: premiums, earnedIncomeCap: cap, deduction: Math.min(premiums, cap) };
+}
+
 // ── NIIT (Net Investment Income Tax, IRC §1411) ────────────────────────────
 // 3.8% on the LESSER of (net investment income, MAGI − threshold).
 // Thresholds (not inflation-adjusted): $200k single, $250k MFJ, $125k MFS.

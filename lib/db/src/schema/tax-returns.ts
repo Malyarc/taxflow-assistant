@@ -38,6 +38,7 @@ export const taxReturnsTable = pgTable(
     // Above-the-line deductions
     hsaDeduction: numeric("hsa_deduction", { precision: 12, scale: 2 }),
     iraDeduction: numeric("ira_deduction", { precision: 12, scale: 2 }),
+    sehiDeduction: numeric("sehi_deduction", { precision: 12, scale: 2 }),
     // Credits
     eitc: numeric("eitc", { precision: 12, scale: 2 }),
     aocCredit: numeric("aoc_credit", { precision: 12, scale: 2 }),

@@ -76,6 +76,7 @@ const IRS_LINE_REFERENCE_CODES: Record<string, string> = {
   // Phase 1 line items
   scheduleCExpenses: "SCH-C-L28",
   hsaDeduction: "1040-S1-L13",
+  sehiDeduction: "1040-S1-L17",
   iraDeduction: "1040-S1-L20",
   eitc_appliedCredit: "1040-L27",
   aocCredit: "8863-L8",
@@ -163,6 +164,7 @@ function buildExportRows(ret: ComputedTaxReturn): ExportRow[] {
   if (ret.scheduleCExpenses > 0) add("scheduleCExpenses", "Schedule C Line 28", "Schedule C Business Expenses", ret.scheduleCExpenses);
   if (ret.retirementDeductions.hsaDeductible > 0) add("hsaDeduction", "Sched 1 Line 13", "HSA Deduction", ret.retirementDeductions.hsaDeductible);
   if (ret.retirementDeductions.iraDeductible > 0) add("iraDeduction", "Sched 1 Line 20", "Traditional IRA Deduction", ret.retirementDeductions.iraDeductible);
+  if (ret.sehi.deduction > 0) add("sehiDeduction", "Sched 1 Line 17 (Form 7206)", "Self-Employed Health Insurance Deduction", ret.sehi.deduction);
 
   // Schedule A
   if (ret.scheduleA.medicalDeductible > 0) add("medicalDeductible", "Sched A Line 4", "Medical (Schedule A)", ret.scheduleA.medicalDeductible);

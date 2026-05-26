@@ -92,6 +92,7 @@ export function buildTaxReturnPdf(client: Client, ret: ComputedTaxReturn): Promi
     const atlRows: Array<[string, string]> = [];
     if (ret.retirementDeductions.hsaDeductible > 0) atlRows.push(["HSA deduction (Sched 1 L13)", fmt(ret.retirementDeductions.hsaDeductible)]);
     if (ret.retirementDeductions.iraDeductible > 0) atlRows.push(["Traditional IRA deduction (Sched 1 L20)", fmt(ret.retirementDeductions.iraDeductible)]);
+    if (ret.sehi.deduction > 0) atlRows.push(["SE health insurance (Sched 1 L17, Form 7206)", fmt(ret.sehi.deduction)]);
     if (ret.educatorExpenses.deductible > 0) atlRows.push(["Educator expenses (Sched 1 L11)", fmt(ret.educatorExpenses.deductible)]);
     if (ret.studentLoanInterest.deductible > 0) atlRows.push(["Student loan interest (Sched 1 L21)", fmt(ret.studentLoanInterest.deductible)]);
     if (ret.scheduleCExpenses > 0) atlRows.push(["Schedule C business expenses", fmt(ret.scheduleCExpenses)]);

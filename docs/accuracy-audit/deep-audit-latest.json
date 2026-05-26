@@ -1,8 +1,8 @@
 {
-  "generatedAt": "2026-05-23T23:35:44.548Z",
-  "pass": 125,
+  "generatedAt": "2026-05-26T06:20:57.088Z",
+  "pass": 132,
   "realFailures": 0,
-  "documentedGaps": 8,
+  "documentedGaps": 7,
   "failures": [],
   "gaps": [
     {
@@ -18,13 +18,6 @@
       "expected": 0,
       "actual": 0,
       "source": "IRC §172(a)(2) post-TCJA"
-    },
-    {
-      "category": "K5-expected",
-      "label": "Self-employed health insurance deduction not modeled",
-      "expected": 0,
-      "actual": 0,
-      "source": "IRC §162(l); Form 7206"
     },
     {
       "category": "K6-expected",

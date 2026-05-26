@@ -800,6 +800,8 @@ export interface TaxReturn {
   /** @nullable */
   iraDeduction?: number | null;
   /** @nullable */
+  sehiDeduction?: number | null;
+  /** @nullable */
   eitc?: number | null;
   /** @nullable */
   aocCredit?: number | null;
@@ -904,6 +906,8 @@ export const AdjustmentAdjustmentType = {
   amt_iso_bargain_element: "amt_iso_bargain_element",
   amt_state_tax_addback_override: "amt_state_tax_addback_override",
   k1_passive_loss_carryforward: "k1_passive_loss_carryforward",
+  self_employed_health_insurance_premiums:
+    "self_employed_health_insurance_premiums",
 } as const;
 
 export interface Adjustment {
@@ -964,6 +968,8 @@ export const CreateAdjustmentBodyAdjustmentType = {
   amt_iso_bargain_element: "amt_iso_bargain_element",
   amt_state_tax_addback_override: "amt_state_tax_addback_override",
   k1_passive_loss_carryforward: "k1_passive_loss_carryforward",
+  self_employed_health_insurance_premiums:
+    "self_employed_health_insurance_premiums",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -1020,6 +1026,8 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   amt_iso_bargain_element: "amt_iso_bargain_element",
   amt_state_tax_addback_override: "amt_state_tax_addback_override",
   k1_passive_loss_carryforward: "k1_passive_loss_carryforward",
+  self_employed_health_insurance_premiums:
+    "self_employed_health_insurance_premiums",
 } as const;
 
 export interface UpdateAdjustmentBody {

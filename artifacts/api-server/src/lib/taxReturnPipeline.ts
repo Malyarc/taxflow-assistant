@@ -306,6 +306,7 @@ export async function recalculateAndUpsertTaxReturn(
     // Phase 1: Above-the-line
     hsaDeduction: String(result.retirementDeductions.hsaDeductible),
     iraDeduction: String(result.retirementDeductions.iraDeductible),
+    sehiDeduction: String(result.sehi.deduction),
     // Phase 1: Credits
     eitc: String(result.eitc.appliedCredit),
     aocCredit: String(aocCreditTotal),

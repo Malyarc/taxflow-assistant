@@ -937,14 +937,66 @@ header("K4. NOL carryforward — GAP");
   });
 }
 
-// K5. SEHI deduction (self-employed health insurance). NOT modeled.
-header("K5. SEHI — Form 7206 — GAP");
+// K5. SEHI deduction (self-employed health insurance — Form 7206).  CLOSED 2026-05-24.
+// Above-the-line deduction. Adjustment `self_employed_health_insurance_premiums`
+// holds the gross premiums; engine caps at (net SE earnings − half-SE).
+header("K5. SEHI — Form 7206 — CLOSED");
 {
-  FAIL.push({
-    category: "K5-expected", label: "Self-employed health insurance deduction not modeled",
-    expected: 0, actual: 0,
-    source: "IRC §162(l); Form 7206",
-  });
+  // K5a — single $80k Sch C, $9,600 premiums.
+  //   Net SE = 80000 × 0.9235 = 73880.
+  //   SE tax = 73880 × 0.153 = $11,303.64 → half-SE = $5,651.82.
+  //   Cap = 73880 - 5651.82 = $68,228.18. Premiums $9,600 < cap → SEHI $9,600.
+  //   AGI drop: ($14,600 std → AGI = 80000 - 5651.82 - 9600 = $64,748.18).
+  const a = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "X", nonemployeeCompensation: 80000 }],
+    adjustments: [{ adjustmentType: "self_employed_health_insurance_premiums", amount: 9600, isApplied: true }] });
+  check("K5a", "Single $80k SE + $9,600 premiums → SEHI $9,600 (under cap)",
+    a.sehi.deduction, 9600, 0.01, "Form 7206 line 5");
+  check("K5a", "AGI reflects SEHI subtraction → $64,748.18",
+    a.adjustedGrossIncome, 64748.18, 0.10, "AGI = total income − half-SE − SEHI");
+
+  // K5b — single $10k Sch C, $9,000 premiums (premiums exceed cap).
+  //   Net SE = 9235. Half-SE = 9235 × 0.153 / 2 = 706.48.
+  //   Cap = 9235 - 706.48 = $8,528.52. Premiums $9,000 > cap → SEHI = $8,528.52.
+  const b = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "X", nonemployeeCompensation: 10000 }],
+    adjustments: [{ adjustmentType: "self_employed_health_insurance_premiums", amount: 9000, isApplied: true }] });
+  check("K5b", "Premiums > earnings cap → SEHI capped at $8,528.52",
+    b.sehi.deduction, 8528.52, 0.10, "Form 7206 line 5 — cap binds");
+
+  // K5c — no SE income but premiums entered → SEHI = $0 (the engine treats SE-less
+  // filers as having a $0 cap; not eligible for SEHI per IRC §162(l)).
+  const c = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, stateCode: "FL" }],
+    adjustments: [{ adjustmentType: "self_employed_health_insurance_premiums", amount: 5000, isApplied: true }] });
+  check("K5c", "No SE income → SEHI $0 (cap = 0)",
+    c.sehi.deduction, 0, 0.01, "Form 7206 — earned-income cap forbids deduction without SE");
+
+  // K5d — MFJ $100k Sch C + $7,200 premiums.
+  //   Net SE = 92350. Half-SE = 92350 × 0.153 / 2 = 7064.78.
+  //   Cap = 92350 - 7064.78 = $85,285.22. Premiums under cap → SEHI = $7,200.
+  const d = run({ client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024 },
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "X", nonemployeeCompensation: 100000 }],
+    adjustments: [{ adjustmentType: "self_employed_health_insurance_premiums", amount: 7200, isApplied: true }] });
+  check("K5d", "MFJ $100k SE + $7,200 premiums → SEHI $7,200",
+    d.sehi.deduction, 7200, 0.01, "MFJ SEHI — same per-filer cap");
+
+  // K5e — Schedule C net (not 1099-NEC) — verify SEHI works against Sch C path.
+  //   $40k Sch C net via additional `self_employment_income` adjustment.
+  //   Net SE = 36940. Half-SE = 2826.91. Cap = 34113.09. Premiums $3,000 < cap.
+  const e = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    adjustments: [
+      { adjustmentType: "self_employment_income", amount: 40000, isApplied: true },
+      { adjustmentType: "self_employed_health_insurance_premiums", amount: 3000, isApplied: true },
+    ] });
+  check("K5e", "Sch C $40k + $3k SEHI → deduction $3,000",
+    e.sehi.deduction, 3000, 0.01, "SEHI applies to Sch C path equally");
+
+  // K5f — Default (no adjustment) → sehi.deduction = 0 (regression baseline).
+  const f = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, stateCode: "FL" }] });
+  check("K5f", "No SEHI adjustment → SEHI $0",
+    f.sehi.deduction, 0, 0.01, "Default state — no SEHI applied");
 }
 
 // K6. §121 home-sale exclusion. NOT modeled.

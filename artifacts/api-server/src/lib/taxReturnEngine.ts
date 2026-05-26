@@ -24,6 +24,7 @@ import {
   runTaxCalculation,
   calculateChildTaxCredit,
   calculateSelfEmploymentTax,
+  calculateSehiDeduction,
   calculateNiit,
   calculateAdditionalMedicareTax,
   calculateQbi,
@@ -52,6 +53,7 @@ import {
   type PassiveActivityLossResult,
   type CtcCalculation,
   type SeTaxCalculation,
+  type SehiCalculation,
   type NiitCalculation,
   type AdditionalMedicareTaxCalculation,
   type QbiCalculation,
@@ -551,6 +553,10 @@ export interface ComputedTaxReturn {
   foreignTaxCredit: ForeignTaxCreditCalculation;
   residentialEnergyCredits: ResidentialEnergyCreditsCalculation;
   premiumTaxCredit: PremiumTaxCreditCalculation;
+  /** K5 — Self-Employed Health Insurance deduction (Form 7206), above-the-line.
+   *  Computed from `self_employed_health_insurance_premiums` adjustment, capped
+   *  at (net SE earnings − half-SE). */
+  sehi: SehiCalculation;
   // ── Phase 2 line items ─────────────────────────────────────────────────
   /** Capital loss deducted against ordinary income (Schedule D Line 21, $3k/$1.5k cap) */
   capitalLossDeducted: number;
@@ -736,6 +742,10 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const iraRothAdj = sumByType("ira_contribution_roth"); // not deductible, counts for saver's
   // Schedule C
   const scheduleCExpensesInput = sumByType("schedule_c_expenses");
+  // K5: Self-Employed Health Insurance premiums (Form 7206) — above-the-line.
+  // Capped at (net SE earnings − half-SE) by the engine; the CPA-entered
+  // adjustment represents gross premiums paid for the year.
+  const sehiPremiumsAdj = sumByType("self_employed_health_insurance_premiums");
   // Credits
   const dependentCareExpensesAdj = sumByType("dependent_care_expenses");
   const llcExpensesAdj = sumByType("qualified_education_expenses_llc");
@@ -888,6 +898,16 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     : w2SocialSecurityWages;
   const se = calculateSelfEmploymentTax(seTaxBase, taxYear, seW2SsWages);
 
+  // K5 — SEHI deduction (Form 7206). Cap = net SE − half-SE. Adjustment is
+  // gross premiums; engine applies the cap. Goes above-the-line (subtracts
+  // from AGI alongside half-SE). Eligibility (employer plan availability)
+  // is the CPA's responsibility — engine assumes the adjustment is valid.
+  const sehi = calculateSehiDeduction({
+    premiumsPaid: sehiPremiumsAdj,
+    seNetEarnings: se.netSeEarnings,
+    halfSeDeduction: se.deductibleHalf,
+  });
+
   // ── Step 2: Total income (Form 1040 Line 9) ─────────────────────────
   //
   // Capital gain/loss netting per Schedule D (IRC §1211, §1212):
@@ -1037,14 +1057,14 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     iraContribution: iraTraditionalAdj,
     iraCoveredByWorkplacePlan: client.iraCoveredByWorkplacePlan ?? false,
     age: ageTaxpayer,
-    agi: Math.max(0, totalIncomeProvisional - (deductionAdjustments + otherDeductions + se.deductibleHalf + educatorDeduction + Math.min(hsaContributionAdj, 10000))),
+    agi: Math.max(0, totalIncomeProvisional - (deductionAdjustments + otherDeductions + se.deductibleHalf + sehi.deduction + educatorDeduction + Math.min(hsaContributionAdj, 10000))),
     filingStatus: client.filingStatus,
     taxYear,
   });
   const hsaDeduction = retirementForLimits.hsaDeductible;
 
   const aboveTheLineDeterministic =
-    deductionAdjustments + otherDeductions + se.deductibleHalf + hsaDeduction + educatorDeduction;
+    deductionAdjustments + otherDeductions + se.deductibleHalf + hsaDeduction + educatorDeduction + sehi.deduction;
 
   const magiForSli = Math.max(0, totalIncomeProvisional - aboveTheLineDeterministic);
   const studentLoanInterest = calculateStudentLoanInterest({
@@ -1453,6 +1473,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     foreignTaxCredit,
     residentialEnergyCredits: residentialEnergy,
     premiumTaxCredit,
+    sehi,
     capitalLossDeducted,
     capitalLossCarryforwardShort,
     capitalLossCarryforwardLong,
