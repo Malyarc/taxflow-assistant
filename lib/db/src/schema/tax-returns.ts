@@ -39,6 +39,9 @@ export const taxReturnsTable = pgTable(
     hsaDeduction: numeric("hsa_deduction", { precision: 12, scale: 2 }),
     iraDeduction: numeric("ira_deduction", { precision: 12, scale: 2 }),
     sehiDeduction: numeric("sehi_deduction", { precision: 12, scale: 2 }),
+    homeSaleGrossGain: numeric("home_sale_gross_gain", { precision: 14, scale: 2 }),
+    homeSaleSection121Exclusion: numeric("home_sale_section_121_exclusion", { precision: 14, scale: 2 }),
+    homeSaleTaxableGain: numeric("home_sale_taxable_gain", { precision: 14, scale: 2 }),
     // Credits
     eitc: numeric("eitc", { precision: 12, scale: 2 }),
     aocCredit: numeric("aoc_credit", { precision: 12, scale: 2 }),

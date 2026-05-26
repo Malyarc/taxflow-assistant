@@ -802,6 +802,12 @@ export interface TaxReturn {
   /** @nullable */
   sehiDeduction?: number | null;
   /** @nullable */
+  homeSaleGrossGain?: number | null;
+  /** @nullable */
+  homeSaleSection121Exclusion?: number | null;
+  /** @nullable */
+  homeSaleTaxableGain?: number | null;
+  /** @nullable */
   eitc?: number | null;
   /** @nullable */
   aocCredit?: number | null;
@@ -908,6 +914,8 @@ export const AdjustmentAdjustmentType = {
   k1_passive_loss_carryforward: "k1_passive_loss_carryforward",
   self_employed_health_insurance_premiums:
     "self_employed_health_insurance_premiums",
+  home_sale_gross_gain_primary_residence:
+    "home_sale_gross_gain_primary_residence",
 } as const;
 
 export interface Adjustment {
@@ -970,6 +978,8 @@ export const CreateAdjustmentBodyAdjustmentType = {
   k1_passive_loss_carryforward: "k1_passive_loss_carryforward",
   self_employed_health_insurance_premiums:
     "self_employed_health_insurance_premiums",
+  home_sale_gross_gain_primary_residence:
+    "home_sale_gross_gain_primary_residence",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -1028,6 +1038,8 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   k1_passive_loss_carryforward: "k1_passive_loss_carryforward",
   self_employed_health_insurance_premiums:
     "self_employed_health_insurance_premiums",
+  home_sale_gross_gain_primary_residence:
+    "home_sale_gross_gain_primary_residence",
 } as const;
 
 export interface UpdateAdjustmentBody {

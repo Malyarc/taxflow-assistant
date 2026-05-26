@@ -110,10 +110,15 @@ export function buildTaxReturnPdf(client: Client, ret: ComputedTaxReturn): Promi
     }
 
     // Schedule D (Capital Gains/Losses)
-    if (ret.netCapitalGainLoss !== 0 || ret.capitalLossDeducted > 0) {
+    if (ret.netCapitalGainLoss !== 0 || ret.capitalLossDeducted > 0 || ret.homeSaleGrossGain > 0) {
       const sdRows: Array<[string, string]> = [
         ["Net capital gain/loss (Sched D L16)", fmt(ret.netCapitalGainLoss)],
       ];
+      if (ret.homeSaleGrossGain > 0) {
+        sdRows.push(["Home sale gross gain (primary residence)", fmt(ret.homeSaleGrossGain)]);
+        sdRows.push(["§121 exclusion applied", `(${fmt(ret.homeSaleSection121Exclusion)})`]);
+        sdRows.push(["Taxable home-sale gain (added to LTCG)", fmt(ret.homeSaleTaxableGain)]);
+      }
       if (ret.capitalLossDeducted > 0) sdRows.push(["Capital loss deducted (Sched D L21)", `(${fmt(ret.capitalLossDeducted)})`]);
       if (ret.capitalLossCarryforwardShort > 0) sdRows.push(["Short-term carryforward to next year", fmt(ret.capitalLossCarryforwardShort)]);
       if (ret.capitalLossCarryforwardLong > 0) sdRows.push(["Long-term carryforward to next year", fmt(ret.capitalLossCarryforwardLong)]);

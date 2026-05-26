@@ -1953,6 +1953,7 @@ function AdjustmentsTab({ clientId }: { clientId: number }) {
     ira_contribution_traditional: "Traditional IRA Contribution",
     ira_contribution_roth: "Roth IRA Contribution",
     self_employed_health_insurance_premiums: "Self-Employed Health Insurance Premiums (Form 7206, Sched 1 L17)",
+    home_sale_gross_gain_primary_residence: "Home Sale — Primary Residence Gross Gain (§121 exclusion auto-applied)",
     // Schedule C
     schedule_c_expenses: "Schedule C Business Expenses",
     // Credit-driving expenses

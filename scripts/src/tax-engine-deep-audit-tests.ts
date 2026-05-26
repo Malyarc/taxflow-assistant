@@ -999,14 +999,69 @@ header("K5. SEHI — Form 7206 — CLOSED");
     f.sehi.deduction, 0, 0.01, "Default state — no SEHI applied");
 }
 
-// K6. §121 home-sale exclusion. NOT modeled.
-header("K6. §121 home-sale exclusion — GAP");
+// K6. §121 home-sale exclusion.  CLOSED 2026-05-24.
+// Adjustment `home_sale_gross_gain_primary_residence` holds the gross gain;
+// engine applies $250k single/HoH/MFS / $500k MFJ/QSS cap; remainder → LTCG.
+header("K6. §121 home-sale exclusion — CLOSED");
 {
-  FAIL.push({
-    category: "K6-expected", label: "§121 home-sale exclusion ($250k/$500k) not modeled",
-    expected: 0, actual: 0,
-    source: "IRC §121; Pub 523",
-  });
+  // K6a — Single $300k gross gain. Cap $250k. Excluded $250k. Taxable $50k → LTCG.
+  const a = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    adjustments: [{ adjustmentType: "home_sale_gross_gain_primary_residence", amount: 300000, isApplied: true }] });
+  check("K6a", "Single $300k gain → $250k excluded, $50k LTCG",
+    a.homeSaleSection121Exclusion, 250000, 0.01, "§121 single $250k cap");
+  check("K6a", "Single $50k taxable home-sale gain",
+    a.homeSaleTaxableGain, 50000, 0.01);
+  check("K6a", "Net cap gain/loss reflects +$50k LTCG from home sale",
+    a.netCapitalGainLoss, 50000, 0.01, "Sch D LTCG includes home-sale remainder");
+
+  // K6b — MFJ $400k gross gain. Cap $500k. Full exclusion. $0 taxable.
+  const b = run({ client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024 },
+    adjustments: [{ adjustmentType: "home_sale_gross_gain_primary_residence", amount: 400000, isApplied: true }] });
+  check("K6b", "MFJ $400k gain → fully excluded under $500k cap",
+    b.homeSaleSection121Exclusion, 400000, 0.01);
+  check("K6b", "MFJ $0 taxable home-sale gain",
+    b.homeSaleTaxableGain, 0, 0.01);
+
+  // K6c — MFJ $700k gross gain. Cap $500k. Excluded $500k. Taxable $200k → LTCG.
+  const c = run({ client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024 },
+    adjustments: [{ adjustmentType: "home_sale_gross_gain_primary_residence", amount: 700000, isApplied: true }] });
+  check("K6c", "MFJ $700k gain → $500k excluded, $200k LTCG",
+    c.homeSaleSection121Exclusion, 500000, 0.01);
+  check("K6c", "MFJ $200k taxable home-sale gain",
+    c.homeSaleTaxableGain, 200000, 0.01);
+  check("K6c", "MFJ net LTCG = $200k from home sale",
+    c.netCapitalGainLoss, 200000, 0.01);
+
+  // K6d — MFS gets $250k cap (each spouse).
+  const d = run({ client: { filingStatus: "married_filing_separately", state: "FL", taxYear: 2024 },
+    adjustments: [{ adjustmentType: "home_sale_gross_gain_primary_residence", amount: 300000, isApplied: true }] });
+  check("K6d", "MFS $300k gain → $250k excluded (not halved like SALT)",
+    d.homeSaleSection121Exclusion, 250000, 0.01, "§121 MFS gets the full $250k per spouse");
+
+  // K6e — QSS gets $500k cap (2-year window — CPA verifies; engine assumes within window).
+  const e = run({ client: { filingStatus: "qualifying_widow", state: "FL", taxYear: 2024 },
+    adjustments: [{ adjustmentType: "home_sale_gross_gain_primary_residence", amount: 450000, isApplied: true }] });
+  check("K6e", "QSS $450k gain → fully excluded under $500k cap",
+    e.homeSaleSection121Exclusion, 450000, 0.01);
+
+  // K6f — Single home-sale taxable remainder interacts with regular LTCG.
+  // $300k home gain (50k taxable) + $20k 1099-B LTCG = $70k total LTCG.
+  // At single $80k W-2 + std ded $14,600 → taxable $65,400 + $70k LTCG.
+  // Cap-gains tax depends on LTCG bracket — verify both ratchet through.
+  const f = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 80000, stateCode: "FL" }],
+    form1099s: [{ taxYear: 2024, formType: "b", payerName: "X", longTermGainLoss: 20000 }],
+    adjustments: [{ adjustmentType: "home_sale_gross_gain_primary_residence", amount: 300000, isApplied: true }] });
+  check("K6f", "Home-sale remainder + 1099-B LTCG combine: net LTCG $70k",
+    f.netCapitalGainLoss, 70000, 0.01, "Sch D — home-sale LTCG remainder merges with 1099-B LTCG");
+
+  // K6g — Default (no home-sale adjustment) — homeSaleGrossGain = 0.
+  const g = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, stateCode: "FL" }] });
+  check("K6g", "No home-sale adjustment → grossGain = 0",
+    g.homeSaleGrossGain, 0, 0.01);
+  check("K6g", "No home-sale adjustment → exclusion = 0",
+    g.homeSaleSection121Exclusion, 0, 0.01);
 }
 
 // K7. §1202 QSBS. NOT modeled.

@@ -557,6 +557,13 @@ export interface ComputedTaxReturn {
    *  Computed from `self_employed_health_insurance_premiums` adjustment, capped
    *  at (net SE earnings − half-SE). */
   sehi: SehiCalculation;
+  /** K6 — §121 home-sale gross gain on primary residence (from
+   *  `home_sale_gross_gain_primary_residence` adjustment). */
+  homeSaleGrossGain: number;
+  /** K6 — §121 excluded amount ($250k single/HoH/MFS / $500k MFJ/QSS). */
+  homeSaleSection121Exclusion: number;
+  /** K6 — §121 taxable remainder added to LTCG. */
+  homeSaleTaxableGain: number;
   // ── Phase 2 line items ─────────────────────────────────────────────────
   /** Capital loss deducted against ordinary income (Schedule D Line 21, $3k/$1.5k cap) */
   capitalLossDeducted: number;
@@ -746,6 +753,15 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // Capped at (net SE earnings − half-SE) by the engine; the CPA-entered
   // adjustment represents gross premiums paid for the year.
   const sehiPremiumsAdj = sumByType("self_employed_health_insurance_premiums");
+  // K6: §121 home-sale exclusion — gross long-term capital gain on the sale
+  // of a primary residence (sale price − adjusted basis − selling expenses).
+  // Engine applies the $250k single/HoH/MFS / $500k MFJ-or-QSS cap; any
+  // taxable remainder is added to LTCG. CPA is responsible for verifying
+  // the 2-of-5 ownership-and-use test (Pub 523). QSS receives $500k under
+  // the 2-year-post-spouse-death rule — engine doesn't enforce that timing
+  // (sub-gap; CPA can split the gain into a separate LTCG entry if QSS no
+  // longer qualifies).
+  const homeSaleGrossGainAdj = sumByType("home_sale_gross_gain_primary_residence");
   // Credits
   const dependentCareExpensesAdj = sumByType("dependent_care_expenses");
   const llcExpensesAdj = sumByType("qualified_education_expenses_llc");
@@ -921,10 +937,20 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
 
   // K-1 qualified dividends (Box 6b / Box 5b) join the qual-div total.
   const qualifiedDividends = form1099Summary.qualifiedDividends + k1QualifiedDividends;
+  // K6 — §121 home-sale exclusion. Gross LT gain from `home_sale_gross_gain_primary_residence`
+  // adjustment; engine applies the $250k / $500k cap by filing status; remainder
+  // flows to LTCG. CPA confirms the 2-of-5 ownership-and-use test (Pub 523).
+  const homeSaleGrossGain = Math.max(0, homeSaleGrossGainAdj);
+  const section121Cap = (client.filingStatus === "married_filing_jointly" ||
+                         client.filingStatus === "qualifying_widow") ? 500000 : 250000;
+  const homeSaleSection121Exclusion = Math.min(homeSaleGrossGain, section121Cap);
+  const homeSaleTaxableGain = Math.max(0, homeSaleGrossGain - section121Cap);
+
   // K-1 net ST/LT capital gain (Box 8 / 9a) joins the cap-gain netting
   // alongside 1099-B-derived gains. Subtract prior-year loss carryforwards.
+  // Home-sale taxable remainder is long-term (primary-residence ownership > 2y per §121).
   let netSTCG = form1099Summary.shortTermCapitalGains + k1Stcg - stcgCarryforward;
-  let netLTCG = form1099Summary.longTermCapitalGains + k1Ltcg - ltcgCarryforward;
+  let netLTCG = form1099Summary.longTermCapitalGains + k1Ltcg - ltcgCarryforward + homeSaleTaxableGain;
 
   // Cross-netting per Schedule D Lines 7, 15, 16
   if (netSTCG > 0 && netLTCG < 0) {
@@ -1474,6 +1500,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     residentialEnergyCredits: residentialEnergy,
     premiumTaxCredit,
     sehi,
+    homeSaleGrossGain,
+    homeSaleSection121Exclusion,
+    homeSaleTaxableGain,
     capitalLossDeducted,
     capitalLossCarryforwardShort,
     capitalLossCarryforwardLong,

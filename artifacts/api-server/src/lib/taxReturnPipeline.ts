@@ -307,6 +307,9 @@ export async function recalculateAndUpsertTaxReturn(
     hsaDeduction: String(result.retirementDeductions.hsaDeductible),
     iraDeduction: String(result.retirementDeductions.iraDeductible),
     sehiDeduction: String(result.sehi.deduction),
+    homeSaleGrossGain: String(result.homeSaleGrossGain),
+    homeSaleSection121Exclusion: String(result.homeSaleSection121Exclusion),
+    homeSaleTaxableGain: String(result.homeSaleTaxableGain),
     // Phase 1: Credits
     eitc: String(result.eitc.appliedCredit),
     aocCredit: String(aocCreditTotal),

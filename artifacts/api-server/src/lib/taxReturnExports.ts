@@ -77,6 +77,9 @@ const IRS_LINE_REFERENCE_CODES: Record<string, string> = {
   scheduleCExpenses: "SCH-C-L28",
   hsaDeduction: "1040-S1-L13",
   sehiDeduction: "1040-S1-L17",
+  homeSaleGrossGain: "SCH-D-HOME-GROSS",
+  homeSaleSection121Exclusion: "SCH-D-S121-EXCL",
+  homeSaleTaxableGain: "SCH-D-HOME-TAXABLE",
   iraDeduction: "1040-S1-L20",
   eitc_appliedCredit: "1040-L27",
   aocCredit: "8863-L8",
@@ -165,6 +168,11 @@ function buildExportRows(ret: ComputedTaxReturn): ExportRow[] {
   if (ret.retirementDeductions.hsaDeductible > 0) add("hsaDeduction", "Sched 1 Line 13", "HSA Deduction", ret.retirementDeductions.hsaDeductible);
   if (ret.retirementDeductions.iraDeductible > 0) add("iraDeduction", "Sched 1 Line 20", "Traditional IRA Deduction", ret.retirementDeductions.iraDeductible);
   if (ret.sehi.deduction > 0) add("sehiDeduction", "Sched 1 Line 17 (Form 7206)", "Self-Employed Health Insurance Deduction", ret.sehi.deduction);
+  if (ret.homeSaleGrossGain > 0) {
+    add("homeSaleGrossGain", "Pub 523 / Sched D Home-Sale", "Primary Residence Sale — Gross Gain", ret.homeSaleGrossGain);
+    add("homeSaleSection121Exclusion", "IRC §121", "§121 Home-Sale Exclusion Applied", ret.homeSaleSection121Exclusion);
+    add("homeSaleTaxableGain", "Sched D Long-Term", "Home-Sale Taxable Gain (in LTCG)", ret.homeSaleTaxableGain);
+  }
 
   // Schedule A
   if (ret.scheduleA.medicalDeductible > 0) add("medicalDeductible", "Sched A Line 4", "Medical (Schedule A)", ret.scheduleA.medicalDeductible);

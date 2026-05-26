@@ -1,8 +1,8 @@
 {
-  "generatedAt": "2026-05-26T06:20:57.088Z",
-  "pass": 132,
+  "generatedAt": "2026-05-26T06:24:22.834Z",
+  "pass": 145,
   "realFailures": 0,
-  "documentedGaps": 7,
+  "documentedGaps": 6,
   "failures": [],
   "gaps": [
     {
@@ -18,13 +18,6 @@
       "expected": 0,
       "actual": 0,
       "source": "IRC §172(a)(2) post-TCJA"
-    },
-    {
-      "category": "K6-expected",
-      "label": "§121 home-sale exclusion ($250k/$500k) not modeled",
-      "expected": 0,
-      "actual": 0,
-      "source": "IRC §121; Pub 523"
     },
     {
       "category": "K7-expected",
