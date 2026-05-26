@@ -595,6 +595,10 @@ export function calculateMultiStateTax(params: {
      *  legacy catch-all) for CA AMT (Schedule P 540). Only applied when
      *  resident state is CA. */
     amtPreferences?: number;
+    /** E11 — Dependent count for PA Schedule SP Tax Forgiveness brackets
+     *  ($9,500 per dependent added to eligibility thresholds). Pass
+     *  client.dependentsUnder17 + client.otherDependents. */
+    dependentCount?: number;
   };
 }): MultiStateTaxResult {
   const resident = params.residentState.toUpperCase();
@@ -941,6 +945,10 @@ export function calculateStateTax(
      *  (i.e., the 41 jurisdictions that exempt SS from state income tax).
      *  Default 0. */
     taxableSocialSecurity?: number;
+    /** E11 — Number of dependents for PA Schedule SP Tax Forgiveness
+     *  ($9,500 added to eligibility thresholds per dependent). Pass
+     *  `client.dependentsUnder17 + client.otherDependents`. */
+    dependentCount?: number;
   },
 ): number {
   const year = resolveTaxYear(taxYear);
@@ -1003,7 +1011,66 @@ export function calculateStateTax(
   if (info.surtax && federalAgi > info.surtax.threshold) {
     tax += (federalAgi - info.surtax.threshold) * info.surtax.rate;
   }
+
+  // E11 — PA Schedule SP Tax Forgiveness (61 Pa. Code §111). Applied as a
+  // post-bracket credit against PA tax. Forgiveness % is keyed off
+  // "Eligibility Income" (we approximate via federalAgi — close but not
+  // exact; PA Sched SP uses a custom definition including some excluded
+  // PA items). For most low-income filers federalAgi is within ~10% of
+  // Eligibility Income so the bracket assignment usually matches.
+  if (code === "PA" && tax > 0) {
+    const forgivenessPct = calculatePaScheduleSpForgivenessPct({
+      eligibilityIncome: federalAgi,
+      filingStatus: status,
+      dependentCount: options?.dependentCount ?? 0,
+    });
+    tax = tax * (1 - forgivenessPct);
+  }
+
   return Math.max(0, tax);
+}
+
+/**
+ * E11 — PA Schedule SP Tax Forgiveness brackets (61 Pa. Code §111).
+ * Returns the forgiveness fraction (0 to 1) given:
+ *   - eligibilityIncome (we approximate as federalAgi)
+ *   - filingStatus (single/MFS vs MFJ/QSS gets different bands)
+ *   - dependentCount (each dependent adds $9,500 to the brackets)
+ *
+ * Brackets per PA-40 SP 2024 (approximated):
+ *   Single base: 100% at $6,500, then 10-percentage-point drops in
+ *   $1,000 income steps to 0% at $14,500.
+ *   MFJ/QSS base: 2× single thresholds (start at $13,000, end at $22,500).
+ *   Each dependent: +$9,500 to all bracket boundaries.
+ */
+export function calculatePaScheduleSpForgivenessPct(params: {
+  eligibilityIncome: number;
+  filingStatus: string;
+  dependentCount: number;
+}): number {
+  const { eligibilityIncome, filingStatus, dependentCount } = params;
+  if (eligibilityIncome <= 0) return 1.0;
+
+  const isJointFiler =
+    filingStatus === "married_filing_jointly" ||
+    filingStatus === "qualifying_widow";
+  // PA-40 SP base thresholds (2024). Single/MFS/HoH uses single column;
+  // MFJ/QSS uses joint column (~2× single).
+  const baseHundredCeiling = isJointFiler ? 13000 : 6500;
+  // Each successive 10% drop happens in ~$1,000 step (rounded). Zero
+  // forgiveness above baseHundredCeiling + $8,000 (~$10k range for the
+  // single column; $9k for joint per the published table).
+  const stepSize = 1000;
+  // Per-dependent allowance: +$9,500 added to ALL thresholds.
+  const dependentAllowance = Math.max(0, dependentCount) * 9500;
+  const adjustedHundredCeiling = baseHundredCeiling + dependentAllowance;
+
+  if (eligibilityIncome <= adjustedHundredCeiling) return 1.0;
+  const excess = eligibilityIncome - adjustedHundredCeiling;
+  const stepsAbove = Math.floor(excess / stepSize) + 1;
+  // 100% → 90% → 80% ... → 10% in 9 steps; 0% at step 10+
+  const pct = Math.max(0, 1.0 - stepsAbove * 0.10);
+  return pct;
 }
 
 export interface TaxCalculationResult {

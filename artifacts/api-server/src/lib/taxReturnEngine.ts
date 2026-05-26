@@ -1590,6 +1590,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
       // Only applied when resident state is CA. SALT addback + ISO bargain
       // + legacy catch-all.
       amtPreferences: totalAmtPreferences,
+      // E11 — Dependent count for PA Schedule SP Tax Forgiveness bracket
+      // adjustment ($9,500 per dependent). Only applied when resident is PA.
+      dependentCount: (client.dependentsUnder17 ?? 0) + (client.otherDependents ?? 0),
     },
   });
   // State + local: state tax is reported separately; local (NYC) is its own line.
