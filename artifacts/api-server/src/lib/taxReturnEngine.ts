@@ -1637,6 +1637,8 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     perStateWages: perStateWagesArr,
     localityCode: client.localityCode ?? null,
     localDependentCount,
+    // E14 — Total W-2 wages for OH municipal income tax base.
+    totalWages,
     options: {
       federalIncomeTaxPaid: federalIncomeTaxForOr,
       retirementIncomeForExemption: form1099Summary.retirementIncome,

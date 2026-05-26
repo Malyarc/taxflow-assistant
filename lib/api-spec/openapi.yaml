@@ -1234,8 +1234,24 @@ components:
           description: §469 real estate professional (750+ hours, >50% of time) — no PAL limit.
         localityCode:
           type: ["string", "null"]
-          description: Local income tax jurisdiction (currently "NYC"). Null = no local PIT.
-          enum: ["NYC", null]
+          description: |
+            Local income tax jurisdiction code. Modeled values:
+              "NYC" (state=NY, bracketed via IT-201);
+              MD counties (state=MD): "MD-MONTGOMERY", "MD-HOWARD",
+              "MD-PRINCE_GEORGES", "MD-BALTIMORE_CITY", "MD-BALTIMORE_CO",
+              "MD-ANNE_ARUNDEL", "MD-HARFORD", "MD-CARROLL", "MD-FREDERICK",
+              "MD-CHARLES", "MD-WASHINGTON", "MD-CECIL", "MD-CALVERT",
+              "MD-ST_MARYS", "MD-WICOMICO", "MD-WORCESTER", "MD-DORCHESTER",
+              "MD-ALLEGANY", "MD-CAROLINE", "MD-GARRETT", "MD-KENT",
+              "MD-QUEEN_ANNES", "MD-SOMERSET", "MD-TALBOT";
+              OH cities (state=OH): "OH-CINCINNATI", "OH-CLEVELAND",
+              "OH-COLUMBUS", "OH-TOLEDO", "OH-AKRON", "OH-DAYTON",
+              "OH-YOUNGSTOWN", "OH-CANTON", "OH-PARMA", "OH-LAKEWOOD";
+              IN counties (state=IN): "IN-MARION", "IN-LAKE", "IN-ALLEN",
+              "IN-HAMILTON", "IN-ST_JOSEPH", "IN-ELKHART", "IN-VANDERBURGH",
+              "IN-PORTER", "IN-MONROE", "IN-TIPPECANOE".
+            Null = no local PIT. Engine silently skips when state doesn't
+            match the locality's parent state.
         socialSecurityBenefits:
           type: ["number", "null"]
           description: Total Social Security benefits received (Box 5 SSA-1099 + RRB-1099). Drives Pub 915 0/50/85% taxability calc.
@@ -1311,7 +1327,7 @@ components:
           type: boolean
         localityCode:
           type: ["string", "null"]
-          enum: ["NYC", null]
+          description: Local income tax jurisdiction code (see Client.localityCode for the full set). Null = no local PIT.
         socialSecurityBenefits:
           type: ["number", "null"]
           description: Total SS benefits (SSA-1099 Box 5 + RRB-1099). Drives Pub 915 0/50/85% taxability.
@@ -1380,7 +1396,7 @@ components:
           type: boolean
         localityCode:
           type: ["string", "null"]
-          enum: ["NYC", null]
+          description: Local income tax jurisdiction code (see Client.localityCode for the full set). Null = no local PIT.
         socialSecurityBenefits:
           type: ["number", "null"]
           description: Total SS benefits (SSA-1099 Box 5 + RRB-1099). Drives Pub 915 0/50/85% taxability.

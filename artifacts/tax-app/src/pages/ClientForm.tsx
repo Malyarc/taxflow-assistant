@@ -11,9 +11,7 @@ import {
 } from "@workspace/api-client-react";
 import type {
   CreateClientBodyFilingStatus,
-  CreateClientBodyLocalityCode,
   UpdateClientBodyFilingStatus,
-  UpdateClientBodyLocalityCode,
 } from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -25,6 +23,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { toast } from "@/hooks/use-toast";
+import { LOCALITY_OPTIONS } from "@/lib/localityLabels";
 
 const US_STATES = [
   "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA",
@@ -32,6 +31,7 @@ const US_STATES = [
   "NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT",
   "VA","WA","WV","WI","WY","DC",
 ];
+
 
 interface FormState {
   firstName: string;
@@ -59,8 +59,9 @@ interface FormState {
   // Phase 2e — Schedule E rental flags
   rentalActiveParticipant: boolean;
   rentalRealEstateProfessional: boolean;
-  // BP2 — local income tax jurisdiction
-  localityCode: string; // "" = none; "NYC" = New York City
+  // BP2/E14 — local income tax jurisdiction code. "" = none.
+  // Supported set: see LOCALITY_OPTIONS / engine LOCAL_TAX_DATA.
+  localityCode: string;
   // K10 — Social Security benefits + MFS-lived-apart flag (Pub 915)
   socialSecurityBenefits: string;
   mfsLivedApartAllYear: boolean;
@@ -170,7 +171,17 @@ export default function ClientForm({ editId }: Props) {
     // Radix Select can fire onValueChange with "" before SelectItems mount;
     // ignore that to prevent it from wiping a saved state value during initial render.
     if (k === "state" && v === "") return;
-    setForm((f) => ({ ...f, [k]: v }));
+    setForm((f) => {
+      const next = { ...f, [k]: v };
+      // E14 — When state changes, clear localityCode if it's no longer valid
+      // for the new state (prevents phantom local tax from stale code).
+      if (k === "state" && typeof v === "string" && next.localityCode) {
+        const options = LOCALITY_OPTIONS[v] ?? [];
+        const stillValid = options.some((o) => o.code === next.localityCode);
+        if (!stillValid) next.localityCode = "";
+      }
+      return next;
+    });
   }
 
   function handleSubmit(e: React.FormEvent) {
@@ -205,7 +216,7 @@ export default function ClientForm({ editId }: Props) {
     };
     if (isEdit) {
       updateClient.mutate(
-        { id: editId, data: { ...payload, filingStatus: payload.filingStatus as UpdateClientBodyFilingStatus, localityCode: payload.localityCode as UpdateClientBodyLocalityCode } },
+        { id: editId, data: { ...payload, filingStatus: payload.filingStatus as UpdateClientBodyFilingStatus } },
         {
           onSuccess: (client) => {
             // Set the cache to the response data immediately so navigation doesn't show stale data
@@ -224,7 +235,7 @@ export default function ClientForm({ editId }: Props) {
       );
     } else {
       createClient.mutate(
-        { data: { ...payload, filingStatus: payload.filingStatus as CreateClientBodyFilingStatus, localityCode: payload.localityCode as CreateClientBodyLocalityCode } },
+        { data: { ...payload, filingStatus: payload.filingStatus as CreateClientBodyFilingStatus } },
         {
           onSuccess: (client) => {
             qc.setQueryData(getGetClientQueryKey(client.id), client);
@@ -321,7 +332,7 @@ export default function ClientForm({ editId }: Props) {
               </div>
             </div>
 
-            {form.state === "NY" && (
+            {(LOCALITY_OPTIONS[form.state] ?? []).length > 0 && (
               <div className="space-y-2">
                 <Label>Local income tax jurisdiction</Label>
                 <Select value={form.localityCode || "none"} onValueChange={(v) => set("localityCode", v === "none" ? "" : v)}>
@@ -330,10 +341,17 @@ export default function ClientForm({ editId }: Props) {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">None</SelectItem>
-                    <SelectItem value="NYC">New York City (NYC PIT)</SelectItem>
+                    {(LOCALITY_OPTIONS[form.state] ?? []).map((o) => (
+                      <SelectItem key={o.code} value={o.code}>{o.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">NYC residents (per domicile + 183-day test) owe additional NYC personal income tax on top of NY state tax. Not modeled: NYC UBT, MCTMT.</p>
+                <p className="text-xs text-muted-foreground">
+                  {form.state === "NY" && "NYC residents owe NYC personal income tax on top of NY state tax (IT-201 brackets, household credit, EITC, school credit, MCTMT). NYC UBT not modeled."}
+                  {form.state === "MD" && "All MD residents pay a county income tax (flat rate 2.25%–3.20%) computed on MD-taxable income. Verify the current-year rate against the Maryland Comptroller's published table before filing."}
+                  {form.state === "OH" && "OH municipal income tax — rate × wages earned in the city of residence. Cross-city employment credit not modeled (sub-gap)."}
+                  {form.state === "IN" && "IN county income tax (CAGIT/COIT) on Indiana-taxable income. Rates change annually — verify against Departmental Notice #1."}
+                </p>
               </div>
             )}
 

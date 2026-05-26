@@ -62,6 +62,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { CurrencyInput } from "@/components/ui/currency-input";
 import { toast } from "@/hooks/use-toast";
 import { ReviewExtractionModal } from "@/components/ReviewExtractionModal";
+import { localityLabel } from "@/lib/localityLabels";
 
 const FILING_STATUS_LABELS: Record<string, string> = {
   single: "Single",
@@ -907,7 +908,7 @@ function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: nu
                   ["Federal Withheld", taxReturn.federalTaxWithheld],
                   ["Federal Refund/Owed", taxReturn.federalRefundOrOwed],
                   ["State Tax", taxReturn.stateTaxLiability],
-                  ...((Number((taxReturn as any).localTaxLiability) || 0) > 0 ? [[`Local Tax (${(taxReturn as any).localTaxJurisdiction ?? ""})`, (taxReturn as any).localTaxLiability]] as Array<[string, unknown]> : []),
+                  ...((Number((taxReturn as any).localTaxLiability) || 0) > 0 ? [[`Local Tax (${localityLabel((taxReturn as any).localTaxJurisdiction)})`, (taxReturn as any).localTaxLiability]] as Array<[string, unknown]> : []),
                   ["State Withheld", taxReturn.stateTaxWithheld],
                   ["State Refund/Owed", taxReturn.stateRefundOrOwed],
                 ].map(([label, val]) => (

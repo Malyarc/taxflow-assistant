@@ -11,7 +11,10 @@
  *
  * Limitations (read before treating output as authoritative):
  *   - Federal: no AMT, no QBI, no EITC, no CTC math (use Adjustments tab for credits).
- *   - State: no state credits, exemptions, or local taxes (NYC, MD counties, OH cities).
+ *   - State: most state credits / exemptions still simplified. Local income
+ *     taxes modeled: NYC (full IT-201 with brackets, household credit, EITC,
+ *     school credit, MCTMT) + flat-rate MD counties / OH cities / IN counties.
+ *     PA local Earned Income Tax (EIT) and KY occupational tax NOT modeled.
  *   - Calculator is for estimation; actual filings need professional software.
  */
 
@@ -551,6 +554,166 @@ export interface PerStateWageAllocation {
   wages: number;
 }
 
+// ── E14 — Local income tax catalog (non-NYC) ──────────────────────────────
+// NYC has its own bracketed tax computed by calculateNycLocalTax (household
+// credit, EITC piggyback, school credit, MCTMT). All other modeled localities
+// are flat-rate × base:
+//
+//   - MD counties (24)   — Comptroller of Maryland 2024 rates. Base ≈
+//     Maryland-taxable-income (federalAgi − MD std ded). Maryland law sources
+//     the county tax to MD-AGI minus exemptions/deductions; engine
+//     approximates with federalAgi − MD std ded (MD personal exemption not
+//     modeled, sub-gap).
+//
+//   - OH cities (~10)    — Ohio municipal income tax. Base = wages earned
+//     (W-2 Box 5 / Box 1 for the city of residence-or-employment). Engine
+//     approximates with total W-2 wages where stateCode is OH (resident-city
+//     model — most common case). Cross-city employment credit not modeled.
+//
+//   - IN counties (~10)  — Indiana CAGIT/COIT. Base ≈ Indiana-AGI
+//     (federalAgi − IN std ded; IN has $0 std ded in our data + $1,000
+//     personal exemption per filer not modeled, sub-gap). 2024 rates per
+//     IN Departmental Notice #1.
+//
+// Engine applies the locality tax ONLY when:
+//   1) client.localityCode is one of the keys below, AND
+//   2) client.state matches the locality's parent state (e.g., MD-MONTGOMERY
+//      only fires when state === "MD"). Mismatch silently skips so that
+//      stale localityCode values (e.g., after state change) don't produce
+//      a phantom local tax.
+//
+// CPAs must verify the rate against the published current-year tax-rate
+// table before filing. Rates change annually for many jurisdictions; the
+// engine's table is a starting point, not authoritative.
+
+export type LocalityTaxBase = "state_taxable" | "federal_agi" | "wages_only";
+
+export interface LocalityInfo {
+  /** Display label for UI (e.g., "Montgomery County, MD"). */
+  jurisdictionLabel: string;
+  /** Parent state 2-letter code (e.g., "MD"). Required match against client.state. */
+  state: string;
+  /** Flat tax rate (decimal). e.g., 0.0320 for 3.20%. */
+  rate: number;
+  /** Which income amount the rate applies to. */
+  base: LocalityTaxBase;
+}
+
+export const LOCAL_TAX_DATA: Record<string, LocalityInfo> = {
+  // ── Maryland counties — Comptroller of Maryland 2024 rates ───────────────
+  // Source: Maryland Tax Tables for County Income Tax (Comptroller 2024).
+  "MD-ALLEGANY":      { jurisdictionLabel: "Allegany County, MD",       state: "MD", rate: 0.0303, base: "state_taxable" },
+  "MD-ANNE_ARUNDEL":  { jurisdictionLabel: "Anne Arundel County, MD",   state: "MD", rate: 0.0281, base: "state_taxable" },
+  "MD-BALTIMORE_CITY":{ jurisdictionLabel: "Baltimore City, MD",        state: "MD", rate: 0.0320, base: "state_taxable" },
+  "MD-BALTIMORE_CO":  { jurisdictionLabel: "Baltimore County, MD",      state: "MD", rate: 0.0320, base: "state_taxable" },
+  "MD-CALVERT":       { jurisdictionLabel: "Calvert County, MD",        state: "MD", rate: 0.0300, base: "state_taxable" },
+  "MD-CAROLINE":      { jurisdictionLabel: "Caroline County, MD",       state: "MD", rate: 0.0320, base: "state_taxable" },
+  "MD-CARROLL":       { jurisdictionLabel: "Carroll County, MD",        state: "MD", rate: 0.0303, base: "state_taxable" },
+  "MD-CECIL":         { jurisdictionLabel: "Cecil County, MD",          state: "MD", rate: 0.0280, base: "state_taxable" },
+  "MD-CHARLES":       { jurisdictionLabel: "Charles County, MD",        state: "MD", rate: 0.0303, base: "state_taxable" },
+  "MD-DORCHESTER":    { jurisdictionLabel: "Dorchester County, MD",     state: "MD", rate: 0.0320, base: "state_taxable" },
+  "MD-FREDERICK":     { jurisdictionLabel: "Frederick County, MD",      state: "MD", rate: 0.0275, base: "state_taxable" },
+  "MD-GARRETT":       { jurisdictionLabel: "Garrett County, MD",        state: "MD", rate: 0.0265, base: "state_taxable" },
+  "MD-HARFORD":       { jurisdictionLabel: "Harford County, MD",        state: "MD", rate: 0.0306, base: "state_taxable" },
+  "MD-HOWARD":        { jurisdictionLabel: "Howard County, MD",         state: "MD", rate: 0.0320, base: "state_taxable" },
+  "MD-KENT":          { jurisdictionLabel: "Kent County, MD",           state: "MD", rate: 0.0320, base: "state_taxable" },
+  "MD-MONTGOMERY":    { jurisdictionLabel: "Montgomery County, MD",     state: "MD", rate: 0.0320, base: "state_taxable" },
+  "MD-PRINCE_GEORGES":{ jurisdictionLabel: "Prince George's County, MD",state: "MD", rate: 0.0320, base: "state_taxable" },
+  "MD-QUEEN_ANNES":   { jurisdictionLabel: "Queen Anne's County, MD",   state: "MD", rate: 0.0320, base: "state_taxable" },
+  "MD-ST_MARYS":      { jurisdictionLabel: "St. Mary's County, MD",     state: "MD", rate: 0.0310, base: "state_taxable" },
+  "MD-SOMERSET":      { jurisdictionLabel: "Somerset County, MD",       state: "MD", rate: 0.0320, base: "state_taxable" },
+  "MD-TALBOT":        { jurisdictionLabel: "Talbot County, MD",         state: "MD", rate: 0.0240, base: "state_taxable" },
+  "MD-WASHINGTON":    { jurisdictionLabel: "Washington County, MD",     state: "MD", rate: 0.0295, base: "state_taxable" },
+  "MD-WICOMICO":      { jurisdictionLabel: "Wicomico County, MD",       state: "MD", rate: 0.0320, base: "state_taxable" },
+  "MD-WORCESTER":     { jurisdictionLabel: "Worcester County, MD",      state: "MD", rate: 0.0225, base: "state_taxable" },
+
+  // ── Ohio municipal income tax (RITA / CCA / self-administered) ───────────
+  // Source: Ohio Department of Taxation; RITA member listing; CCA roster.
+  // Base = wages earned in city. Engine uses total OH-resident wages as
+  // approximation (cross-city employment credit not modeled — sub-gap).
+  "OH-AKRON":         { jurisdictionLabel: "Akron, OH",                 state: "OH", rate: 0.0250, base: "wages_only" },
+  "OH-CANTON":        { jurisdictionLabel: "Canton, OH",                state: "OH", rate: 0.0250, base: "wages_only" },
+  "OH-CINCINNATI":    { jurisdictionLabel: "Cincinnati, OH",            state: "OH", rate: 0.0180, base: "wages_only" }, // 2020 ballot reduction from 2.10%
+  "OH-CLEVELAND":     { jurisdictionLabel: "Cleveland, OH",             state: "OH", rate: 0.0250, base: "wages_only" },
+  "OH-COLUMBUS":      { jurisdictionLabel: "Columbus, OH",              state: "OH", rate: 0.0250, base: "wages_only" },
+  "OH-DAYTON":        { jurisdictionLabel: "Dayton, OH",                state: "OH", rate: 0.0250, base: "wages_only" },
+  "OH-LAKEWOOD":      { jurisdictionLabel: "Lakewood, OH",              state: "OH", rate: 0.0150, base: "wages_only" },
+  "OH-PARMA":         { jurisdictionLabel: "Parma, OH",                 state: "OH", rate: 0.0250, base: "wages_only" },
+  "OH-TOLEDO":        { jurisdictionLabel: "Toledo, OH",                state: "OH", rate: 0.0250, base: "wages_only" },
+  "OH-YOUNGSTOWN":    { jurisdictionLabel: "Youngstown, OH",            state: "OH", rate: 0.0275, base: "wages_only" },
+
+  // ── Indiana counties — CAGIT/COIT 2024 rates ─────────────────────────────
+  // Source: IN Department of Revenue Departmental Notice #1 (2024).
+  "IN-ALLEN":         { jurisdictionLabel: "Allen County, IN",          state: "IN", rate: 0.0148, base: "state_taxable" },
+  "IN-ELKHART":       { jurisdictionLabel: "Elkhart County, IN",        state: "IN", rate: 0.0200, base: "state_taxable" },
+  "IN-HAMILTON":      { jurisdictionLabel: "Hamilton County, IN",       state: "IN", rate: 0.0110, base: "state_taxable" },
+  "IN-LAKE":          { jurisdictionLabel: "Lake County, IN",           state: "IN", rate: 0.0150, base: "state_taxable" },
+  "IN-MARION":        { jurisdictionLabel: "Marion County, IN",         state: "IN", rate: 0.0202, base: "state_taxable" },
+  "IN-MONROE":        { jurisdictionLabel: "Monroe County, IN",         state: "IN", rate: 0.02035, base: "state_taxable" },
+  "IN-PORTER":        { jurisdictionLabel: "Porter County, IN",         state: "IN", rate: 0.0050, base: "state_taxable" },
+  "IN-ST_JOSEPH":     { jurisdictionLabel: "St. Joseph County, IN",     state: "IN", rate: 0.0175, base: "state_taxable" },
+  "IN-TIPPECANOE":    { jurisdictionLabel: "Tippecanoe County, IN",     state: "IN", rate: 0.0128, base: "state_taxable" },
+  "IN-VANDERBURGH":   { jurisdictionLabel: "Vanderburgh County, IN",    state: "IN", rate: 0.0120, base: "state_taxable" },
+};
+
+/** E14 — Convenience: list of locality codes available for a given state. */
+export function localityCodesForState(stateCode: string): Array<{ code: string; label: string }> {
+  const stUpper = stateCode.toUpperCase();
+  if (stUpper === "NY") return [{ code: "NYC", label: "New York City (NYC PIT)" }];
+  return Object.entries(LOCAL_TAX_DATA)
+    .filter(([, info]) => info.state === stUpper)
+    .map(([code, info]) => ({ code, label: info.jurisdictionLabel }));
+}
+
+/** E14 — Flat-rate locality dispatch. Returns null when localityCode isn't
+ *  in LOCAL_TAX_DATA (caller handles NYC + null). Uses zero-value NYC fields
+ *  so callers see a uniform shape. */
+export function calculateFlatRateLocalTax(params: {
+  localityCode: string;
+  residentState: string;
+  federalAgi: number;
+  totalWages: number;
+  filingStatus: string;
+  taxYear: number;
+}): NycLocalTaxCalculation | null {
+  const info = LOCAL_TAX_DATA[params.localityCode];
+  if (!info) return null;
+  // Enforce state match — a stale localityCode after a state change
+  // silently skips rather than producing a phantom local tax.
+  if (info.state !== params.residentState.toUpperCase()) return null;
+
+  // Compute the base per locality rule.
+  let base = 0;
+  if (info.base === "federal_agi") {
+    base = Math.max(0, params.federalAgi);
+  } else if (info.base === "wages_only") {
+    base = Math.max(0, params.totalWages);
+  } else {
+    // state_taxable: federalAgi − resident-state std ded.
+    const year = resolveTaxYear(params.taxYear);
+    const stInfo = STATE_TAX_DATA_BY_YEAR[year]?.[info.state];
+    const stdDed = stInfo?.standardDeduction
+      ? pickStateStdDeduction(stInfo.standardDeduction, params.filingStatus as StateFilingStatus)
+      : 0;
+    base = Math.max(0, params.federalAgi - stdDed);
+  }
+
+  const tax = base * info.rate;
+  return {
+    jurisdiction: params.localityCode,
+    nysTaxableIncome: 0,
+    baselineTax: tax,
+    householdCredit: 0,
+    nycEitc: 0,
+    nycEitcRate: 0,
+    nycSchoolTaxCredit: 0,
+    nycMctmt: 0,
+    netLocalTax: tax,
+    flatRate: info.rate,
+    taxBase: base,
+  };
+}
+
 export interface MultiStateTaxResult {
   /** Resident state's tax liability (after credit for NR tax paid) */
   residentStateTax: number;
@@ -573,10 +736,15 @@ export function calculateMultiStateTax(params: {
   taxYear: number;
   /** Per-state W-2 wage allocation (one entry per W-2 stateCode). Unallocated wages stay with resident state. */
   perStateWages: PerStateWageAllocation[];
-  /** Optional local jurisdiction (currently "NYC"). When set, the local PIT is computed and returned in `localTax`. */
+  /** Optional local jurisdiction. NYC + flat-rate localities in LOCAL_TAX_DATA
+   *  (MD counties, OH cities, IN counties). When set, the local tax is
+   *  computed and returned in `localTax`. */
   localityCode?: string | null;
   /** Dependent count (item H + 1 + 1-if-spouse) for NYC household credit (line 48). */
   localDependentCount?: number;
+  /** E14 — Total W-2 wages (Box 1). Used for OH municipal income tax base
+   *  (`wages_only` localities). Default 0 → OH local tax is 0. */
+  totalWages?: number;
   options?: {
     federalIncomeTaxPaid?: number;
     retirementIncomeForExemption?: number;
@@ -714,14 +882,19 @@ export function calculateMultiStateTax(params: {
     residentStateTax += caAmtDelta;
   }
 
-  // ── Local jurisdiction (NYC) ────────────────────────────────────────────
-  // Only computed when resident state is NY AND localityCode is "NYC". The
+  // ── Local jurisdiction (NYC + E14 flat-rate localities) ─────────────────
+  // NYC: computed when resident state is NY AND localityCode is "NYC". The
   // CPA's domicile + 183-day determination is captured upstream in
   // `client.localityCode`. Tax base = NYS line 38 ≈ NYS taxable income =
   // federalAgi − NY std ded − NY retirement exemption (mirrors the deduction
   // chain in calculateStateTax for NY).
+  //
+  // E14 — Flat-rate localities (MD counties / OH cities / IN counties):
+  // computed when resident state matches the locality's parent state.
+  // Falls through if there's a state mismatch (stale localityCode).
   let localTax: NycLocalTaxCalculation | null = null;
-  if ((params.localityCode ?? "").toUpperCase() === "NYC" && resident === "NY") {
+  const localityUpper = (params.localityCode ?? "").toUpperCase();
+  if (localityUpper === "NYC" && resident === "NY") {
     const year = resolveTaxYear(params.taxYear);
     const nyInfo = STATE_TAX_DATA_BY_YEAR[year]?.["NY"];
     const nyStdDed = nyInfo?.standardDeduction
@@ -743,6 +916,17 @@ export function calculateMultiStateTax(params: {
       taxYear: params.taxYear,
       federalEitcApplied: params.options?.federalEitcApplied ?? 0,
       netSeEarnings: params.options?.netSeEarnings ?? 0,
+    });
+  } else if (params.localityCode && LOCAL_TAX_DATA[params.localityCode]) {
+    // E14 — Flat-rate locality dispatch (MD counties, OH cities, IN counties).
+    // Returns null when state doesn't match (stale localityCode protection).
+    localTax = calculateFlatRateLocalTax({
+      localityCode: params.localityCode,
+      residentState: resident,
+      federalAgi: params.federalAgi,
+      totalWages: params.totalWages ?? 0,
+      filingStatus: params.filingStatus,
+      taxYear: params.taxYear,
     });
   }
 
@@ -809,11 +993,16 @@ const NYC_BRACKETS_2024: Record<string, Array<{ upTo: number; rate: number }>> =
   ],
 };
 
+/** Shape returned for any modeled local jurisdiction. NYC-specific fields are
+ *  populated when jurisdiction === "NYC"; flat-rate jurisdictions (MD counties,
+ *  OH cities, IN counties) populate only `jurisdiction`, `baselineTax`,
+ *  `netLocalTax`, and the `flatRate` / `taxBase` informational fields. */
 export interface NycLocalTaxCalculation {
-  jurisdiction: "NYC";
-  nysTaxableIncome: number;       // line 47 (= line 38 unless trust-fund itemized)
-  baselineTax: number;             // brackets-only tax (line 47 NYC tax)
-  householdCredit: number;         // line 48 reduction
+  /** Locality code: "NYC", "MD-MONTGOMERY", "OH-CINCINNATI", "IN-MARION", etc. */
+  jurisdiction: string;
+  nysTaxableIncome: number;       // line 47 (= line 38 unless trust-fund itemized); flat-rate localities set 0
+  baselineTax: number;             // brackets-only tax (NYC) OR rate × base (flat-rate)
+  householdCredit: number;         // NYC IT-201 line 48 reduction; flat-rate sets 0
   /** G1 — NYC EITC sliding scale (NY IT-215 Line 26). Refundable; in
    *  excess of NYC tax flows to the federal refund. Engine clamps to
    *  netLocalTax >= 0 for now (refundable excess sub-gap documented). */
@@ -827,7 +1016,11 @@ export interface NycLocalTaxCalculation {
    *  $50k. Applied only when client is in MCTD (currently we trigger on
    *  localityCode === "NYC"; surrounding counties not modeled). */
   nycMctmt: number;
-  netLocalTax: number;             // max(0, baseline - household credit - NYC EITC - school credit) + mctmt
+  netLocalTax: number;             // max(0, baseline - household credit - NYC EITC) + mctmt (NYC); base × rate (flat-rate)
+  /** E14 — Flat rate applied (decimal, e.g. 0.0320). 0 for NYC (uses brackets). */
+  flatRate?: number;
+  /** E14 — Income base the flat rate was applied to (federalAgi / state taxable / wages). 0 for NYC. */
+  taxBase?: number;
 }
 
 /**

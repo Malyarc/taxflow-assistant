@@ -43,18 +43,6 @@ export const ClientFilingStatus = {
   qualifying_widow: "qualifying_widow",
 } as const;
 
-/**
- * Local income tax jurisdiction (currently "NYC"). Null = no local PIT.
- * @nullable
- */
-export type ClientLocalityCode =
-  | (typeof ClientLocalityCode)[keyof typeof ClientLocalityCode]
-  | null;
-
-export const ClientLocalityCode = {
-  NYC: "NYC",
-} as const;
-
 export interface Client {
   id: number;
   firstName: string;
@@ -106,10 +94,27 @@ export interface Client {
   /** §469 real estate professional (750+ hours, >50% of time) — no PAL limit. */
   rentalRealEstateProfessional?: boolean;
   /**
-   * Local income tax jurisdiction (currently "NYC"). Null = no local PIT.
+   * Local income tax jurisdiction code. Modeled values:
+  "NYC" (state=NY, bracketed via IT-201);
+  MD counties (state=MD): "MD-MONTGOMERY", "MD-HOWARD",
+  "MD-PRINCE_GEORGES", "MD-BALTIMORE_CITY", "MD-BALTIMORE_CO",
+  "MD-ANNE_ARUNDEL", "MD-HARFORD", "MD-CARROLL", "MD-FREDERICK",
+  "MD-CHARLES", "MD-WASHINGTON", "MD-CECIL", "MD-CALVERT",
+  "MD-ST_MARYS", "MD-WICOMICO", "MD-WORCESTER", "MD-DORCHESTER",
+  "MD-ALLEGANY", "MD-CAROLINE", "MD-GARRETT", "MD-KENT",
+  "MD-QUEEN_ANNES", "MD-SOMERSET", "MD-TALBOT";
+  OH cities (state=OH): "OH-CINCINNATI", "OH-CLEVELAND",
+  "OH-COLUMBUS", "OH-TOLEDO", "OH-AKRON", "OH-DAYTON",
+  "OH-YOUNGSTOWN", "OH-CANTON", "OH-PARMA", "OH-LAKEWOOD";
+  IN counties (state=IN): "IN-MARION", "IN-LAKE", "IN-ALLEN",
+  "IN-HAMILTON", "IN-ST_JOSEPH", "IN-ELKHART", "IN-VANDERBURGH",
+  "IN-PORTER", "IN-MONROE", "IN-TIPPECANOE".
+Null = no local PIT. Engine silently skips when state doesn't
+match the locality's parent state.
+
    * @nullable
    */
-  localityCode?: ClientLocalityCode;
+  localityCode?: string | null;
   /**
    * Total Social Security benefits received (Box 5 SSA-1099 + RRB-1099). Drives Pub 915 0/50/85% taxability calc.
    * @nullable
@@ -146,17 +151,6 @@ export const CreateClientBodyFilingStatus = {
   qualifying_widow: "qualifying_widow",
 } as const;
 
-/**
- * @nullable
- */
-export type CreateClientBodyLocalityCode =
-  | (typeof CreateClientBodyLocalityCode)[keyof typeof CreateClientBodyLocalityCode]
-  | null;
-
-export const CreateClientBodyLocalityCode = {
-  NYC: "NYC",
-} as const;
-
 export interface CreateClientBody {
   firstName: string;
   lastName: string;
@@ -188,8 +182,11 @@ export interface CreateClientBody {
   acaHouseholdSize?: number | null;
   rentalActiveParticipant?: boolean;
   rentalRealEstateProfessional?: boolean;
-  /** @nullable */
-  localityCode?: CreateClientBodyLocalityCode;
+  /**
+   * Local income tax jurisdiction code (see Client.localityCode for the full set). Null = no local PIT.
+   * @nullable
+   */
+  localityCode?: string | null;
   /**
    * Total SS benefits (SSA-1099 Box 5 + RRB-1099). Drives Pub 915 0/50/85% taxability.
    * @nullable
@@ -224,17 +221,6 @@ export const UpdateClientBodyFilingStatus = {
   qualifying_widow: "qualifying_widow",
 } as const;
 
-/**
- * @nullable
- */
-export type UpdateClientBodyLocalityCode =
-  | (typeof UpdateClientBodyLocalityCode)[keyof typeof UpdateClientBodyLocalityCode]
-  | null;
-
-export const UpdateClientBodyLocalityCode = {
-  NYC: "NYC",
-} as const;
-
 export interface UpdateClientBody {
   firstName?: string;
   lastName?: string;
@@ -266,8 +252,11 @@ export interface UpdateClientBody {
   acaHouseholdSize?: number | null;
   rentalActiveParticipant?: boolean;
   rentalRealEstateProfessional?: boolean;
-  /** @nullable */
-  localityCode?: UpdateClientBodyLocalityCode;
+  /**
+   * Local income tax jurisdiction code (see Client.localityCode for the full set). Null = no local PIT.
+   * @nullable
+   */
+  localityCode?: string | null;
   /**
    * Total SS benefits (SSA-1099 Box 5 + RRB-1099). Drives Pub 915 0/50/85% taxability.
    * @nullable

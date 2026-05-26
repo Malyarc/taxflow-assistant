@@ -103,10 +103,10 @@ export const ListClientsResponseItem = zod.object({
       "§469 real estate professional (750+ hours, >50% of time) — no PAL limit.",
     ),
   localityCode: zod
-    .union([zod.literal("NYC"), zod.literal(null)])
+    .string()
     .nullish()
     .describe(
-      'Local income tax jurisdiction (currently \"NYC\"). Null = no local PIT.',
+      'Local income tax jurisdiction code. Modeled values:\n  \"NYC\" (state=NY, bracketed via IT-201);\n  MD counties (state=MD): \"MD-MONTGOMERY\", \"MD-HOWARD\",\n  \"MD-PRINCE_GEORGES\", \"MD-BALTIMORE_CITY\", \"MD-BALTIMORE_CO\",\n  \"MD-ANNE_ARUNDEL\", \"MD-HARFORD\", \"MD-CARROLL\", \"MD-FREDERICK\",\n  \"MD-CHARLES\", \"MD-WASHINGTON\", \"MD-CECIL\", \"MD-CALVERT\",\n  \"MD-ST_MARYS\", \"MD-WICOMICO\", \"MD-WORCESTER\", \"MD-DORCHESTER\",\n  \"MD-ALLEGANY\", \"MD-CAROLINE\", \"MD-GARRETT\", \"MD-KENT\",\n  \"MD-QUEEN_ANNES\", \"MD-SOMERSET\", \"MD-TALBOT\";\n  OH cities (state=OH): \"OH-CINCINNATI\", \"OH-CLEVELAND\",\n  \"OH-COLUMBUS\", \"OH-TOLEDO\", \"OH-AKRON\", \"OH-DAYTON\",\n  \"OH-YOUNGSTOWN\", \"OH-CANTON\", \"OH-PARMA\", \"OH-LAKEWOOD\";\n  IN counties (state=IN): \"IN-MARION\", \"IN-LAKE\", \"IN-ALLEN\",\n  \"IN-HAMILTON\", \"IN-ST_JOSEPH\", \"IN-ELKHART\", \"IN-VANDERBURGH\",\n  \"IN-PORTER\", \"IN-MONROE\", \"IN-TIPPECANOE\".\nNull = no local PIT. Engine silently skips when state doesn\'t\nmatch the locality\'s parent state.\n',
     ),
   socialSecurityBenefits: zod
     .number()
@@ -176,7 +176,12 @@ export const CreateClientBody = zod.object({
   acaHouseholdSize: zod.number().nullish(),
   rentalActiveParticipant: zod.boolean().optional(),
   rentalRealEstateProfessional: zod.boolean().optional(),
-  localityCode: zod.union([zod.literal("NYC"), zod.literal(null)]).nullish(),
+  localityCode: zod
+    .string()
+    .nullish()
+    .describe(
+      "Local income tax jurisdiction code (see Client.localityCode for the full set). Null = no local PIT.",
+    ),
   socialSecurityBenefits: zod
     .number()
     .nullish()
@@ -290,10 +295,10 @@ export const GetClientResponse = zod.object({
       "§469 real estate professional (750+ hours, >50% of time) — no PAL limit.",
     ),
   localityCode: zod
-    .union([zod.literal("NYC"), zod.literal(null)])
+    .string()
     .nullish()
     .describe(
-      'Local income tax jurisdiction (currently \"NYC\"). Null = no local PIT.',
+      'Local income tax jurisdiction code. Modeled values:\n  \"NYC\" (state=NY, bracketed via IT-201);\n  MD counties (state=MD): \"MD-MONTGOMERY\", \"MD-HOWARD\",\n  \"MD-PRINCE_GEORGES\", \"MD-BALTIMORE_CITY\", \"MD-BALTIMORE_CO\",\n  \"MD-ANNE_ARUNDEL\", \"MD-HARFORD\", \"MD-CARROLL\", \"MD-FREDERICK\",\n  \"MD-CHARLES\", \"MD-WASHINGTON\", \"MD-CECIL\", \"MD-CALVERT\",\n  \"MD-ST_MARYS\", \"MD-WICOMICO\", \"MD-WORCESTER\", \"MD-DORCHESTER\",\n  \"MD-ALLEGANY\", \"MD-CAROLINE\", \"MD-GARRETT\", \"MD-KENT\",\n  \"MD-QUEEN_ANNES\", \"MD-SOMERSET\", \"MD-TALBOT\";\n  OH cities (state=OH): \"OH-CINCINNATI\", \"OH-CLEVELAND\",\n  \"OH-COLUMBUS\", \"OH-TOLEDO\", \"OH-AKRON\", \"OH-DAYTON\",\n  \"OH-YOUNGSTOWN\", \"OH-CANTON\", \"OH-PARMA\", \"OH-LAKEWOOD\";\n  IN counties (state=IN): \"IN-MARION\", \"IN-LAKE\", \"IN-ALLEN\",\n  \"IN-HAMILTON\", \"IN-ST_JOSEPH\", \"IN-ELKHART\", \"IN-VANDERBURGH\",\n  \"IN-PORTER\", \"IN-MONROE\", \"IN-TIPPECANOE\".\nNull = no local PIT. Engine silently skips when state doesn\'t\nmatch the locality\'s parent state.\n',
     ),
   socialSecurityBenefits: zod
     .number()
@@ -368,7 +373,12 @@ export const UpdateClientBody = zod.object({
   acaHouseholdSize: zod.number().nullish(),
   rentalActiveParticipant: zod.boolean().optional(),
   rentalRealEstateProfessional: zod.boolean().optional(),
-  localityCode: zod.union([zod.literal("NYC"), zod.literal(null)]).nullish(),
+  localityCode: zod
+    .string()
+    .nullish()
+    .describe(
+      "Local income tax jurisdiction code (see Client.localityCode for the full set). Null = no local PIT.",
+    ),
   socialSecurityBenefits: zod
     .number()
     .nullish()
@@ -475,10 +485,10 @@ export const UpdateClientResponse = zod.object({
       "§469 real estate professional (750+ hours, >50% of time) — no PAL limit.",
     ),
   localityCode: zod
-    .union([zod.literal("NYC"), zod.literal(null)])
+    .string()
     .nullish()
     .describe(
-      'Local income tax jurisdiction (currently \"NYC\"). Null = no local PIT.',
+      'Local income tax jurisdiction code. Modeled values:\n  \"NYC\" (state=NY, bracketed via IT-201);\n  MD counties (state=MD): \"MD-MONTGOMERY\", \"MD-HOWARD\",\n  \"MD-PRINCE_GEORGES\", \"MD-BALTIMORE_CITY\", \"MD-BALTIMORE_CO\",\n  \"MD-ANNE_ARUNDEL\", \"MD-HARFORD\", \"MD-CARROLL\", \"MD-FREDERICK\",\n  \"MD-CHARLES\", \"MD-WASHINGTON\", \"MD-CECIL\", \"MD-CALVERT\",\n  \"MD-ST_MARYS\", \"MD-WICOMICO\", \"MD-WORCESTER\", \"MD-DORCHESTER\",\n  \"MD-ALLEGANY\", \"MD-CAROLINE\", \"MD-GARRETT\", \"MD-KENT\",\n  \"MD-QUEEN_ANNES\", \"MD-SOMERSET\", \"MD-TALBOT\";\n  OH cities (state=OH): \"OH-CINCINNATI\", \"OH-CLEVELAND\",\n  \"OH-COLUMBUS\", \"OH-TOLEDO\", \"OH-AKRON\", \"OH-DAYTON\",\n  \"OH-YOUNGSTOWN\", \"OH-CANTON\", \"OH-PARMA\", \"OH-LAKEWOOD\";\n  IN counties (state=IN): \"IN-MARION\", \"IN-LAKE\", \"IN-ALLEN\",\n  \"IN-HAMILTON\", \"IN-ST_JOSEPH\", \"IN-ELKHART\", \"IN-VANDERBURGH\",\n  \"IN-PORTER\", \"IN-MONROE\", \"IN-TIPPECANOE\".\nNull = no local PIT. Engine silently skips when state doesn\'t\nmatch the locality\'s parent state.\n',
     ),
   socialSecurityBenefits: zod
     .number()
@@ -2217,10 +2227,10 @@ export const GetRecentClientsResponseItem = zod.object({
       "§469 real estate professional (750+ hours, >50% of time) — no PAL limit.",
     ),
   localityCode: zod
-    .union([zod.literal("NYC"), zod.literal(null)])
+    .string()
     .nullish()
     .describe(
-      'Local income tax jurisdiction (currently \"NYC\"). Null = no local PIT.',
+      'Local income tax jurisdiction code. Modeled values:\n  \"NYC\" (state=NY, bracketed via IT-201);\n  MD counties (state=MD): \"MD-MONTGOMERY\", \"MD-HOWARD\",\n  \"MD-PRINCE_GEORGES\", \"MD-BALTIMORE_CITY\", \"MD-BALTIMORE_CO\",\n  \"MD-ANNE_ARUNDEL\", \"MD-HARFORD\", \"MD-CARROLL\", \"MD-FREDERICK\",\n  \"MD-CHARLES\", \"MD-WASHINGTON\", \"MD-CECIL\", \"MD-CALVERT\",\n  \"MD-ST_MARYS\", \"MD-WICOMICO\", \"MD-WORCESTER\", \"MD-DORCHESTER\",\n  \"MD-ALLEGANY\", \"MD-CAROLINE\", \"MD-GARRETT\", \"MD-KENT\",\n  \"MD-QUEEN_ANNES\", \"MD-SOMERSET\", \"MD-TALBOT\";\n  OH cities (state=OH): \"OH-CINCINNATI\", \"OH-CLEVELAND\",\n  \"OH-COLUMBUS\", \"OH-TOLEDO\", \"OH-AKRON\", \"OH-DAYTON\",\n  \"OH-YOUNGSTOWN\", \"OH-CANTON\", \"OH-PARMA\", \"OH-LAKEWOOD\";\n  IN counties (state=IN): \"IN-MARION\", \"IN-LAKE\", \"IN-ALLEN\",\n  \"IN-HAMILTON\", \"IN-ST_JOSEPH\", \"IN-ELKHART\", \"IN-VANDERBURGH\",\n  \"IN-PORTER\", \"IN-MONROE\", \"IN-TIPPECANOE\".\nNull = no local PIT. Engine silently skips when state doesn\'t\nmatch the locality\'s parent state.\n',
     ),
   socialSecurityBenefits: zod
     .number()

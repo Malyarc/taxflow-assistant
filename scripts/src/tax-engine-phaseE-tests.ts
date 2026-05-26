@@ -21,6 +21,9 @@ import {
   calculatePaScheduleSpForgivenessPct,
   calculateStateCtc,
   calculateNycLocalTax,
+  calculateMultiStateTax,
+  calculateFlatRateLocalTax,
+  LOCAL_TAX_DATA,
 } from "../../artifacts/api-server/src/lib/taxCalculator";
 import {
   computeTaxReturnPure,
@@ -1221,6 +1224,413 @@ header("E8-2 — SE earnings below $50k exemption, no MCTMT");
     netSeEarnings: 45000,
   });
   check("E8-2", "MCTMT = $0", out.nycMctmt, 0, 1);
+}
+
+// ============================================================================
+// E14 — Other local income taxes (MD counties / OH cities / IN counties)
+// All flat-rate × base. Base = state-taxable income (federalAgi − state std
+// ded) for MD/IN; total W-2 wages for OH cities.
+// Source: Comptroller of Maryland 2024 county tax rate table; OH Dept of
+// Taxation municipal rate listing (RITA/CCA-administered); IN Departmental
+// Notice #1 (2024 county AGI tax rates).
+// ============================================================================
+section("E14 — Other local income taxes (MD/OH/IN)");
+
+// --- E14+1: MD-MONTGOMERY at $100k single — 3.20% × ($100k - $2,700 MD std ded) ---
+// Hand-calc:
+//   State taxable = $100,000 - $2,700 = $97,300
+//   Local tax = $97,300 × 0.0320 = $3,113.60
+header("E14+1 — MD-MONTGOMERY single $100k → $3,113.60");
+{
+  const r = calculateMultiStateTax({
+    residentState: "MD",
+    federalAgi: 100000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "MD", wages: 100000 }],
+    localityCode: "MD-MONTGOMERY",
+    totalWages: 100000,
+  });
+  check("E14+1", "MD-MONTGOMERY single $100k", r.localTax?.netLocalTax ?? 0, 3113.60, 1,
+    "3.20% × (100,000 - 2,700 MD std ded)");
+  check("E14+1", "flatRate echoed", r.localTax?.flatRate ?? 0, 0.0320, 0.0001);
+  check("E14+1", "taxBase echoed", r.localTax?.taxBase ?? 0, 97300, 1);
+}
+
+// --- E14+2: MD-HOWARD MFJ at $200k — 3.20% × ($200k - $5,450 MFJ std ded) ---
+// Hand-calc:
+//   State taxable = $200,000 - $5,450 = $194,550
+//   Local tax = $194,550 × 0.0320 = $6,225.60
+header("E14+2 — MD-HOWARD MFJ $200k → $6,225.60");
+{
+  const r = calculateMultiStateTax({
+    residentState: "MD",
+    federalAgi: 200000,
+    filingStatus: "married_filing_jointly",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "MD", wages: 200000 }],
+    localityCode: "MD-HOWARD",
+    totalWages: 200000,
+  });
+  check("E14+2", "MD-HOWARD MFJ $200k", r.localTax?.netLocalTax ?? 0, 6225.60, 1);
+}
+
+// --- E14+3: MD-WORCESTER single $80k — 2.25% (lowest MD county rate) ---
+// Hand-calc:
+//   State taxable = $80,000 - $2,700 = $77,300
+//   Local tax = $77,300 × 0.0225 = $1,739.25
+header("E14+3 — MD-WORCESTER single $80k → $1,739.25 (lowest MD rate)");
+{
+  const r = calculateMultiStateTax({
+    residentState: "MD",
+    federalAgi: 80000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "MD", wages: 80000 }],
+    localityCode: "MD-WORCESTER",
+    totalWages: 80000,
+  });
+  check("E14+3", "MD-WORCESTER single $80k @ 2.25%", r.localTax?.netLocalTax ?? 0, 1739.25, 1);
+}
+
+// --- E14+4: MD-BALTIMORE_CITY MFJ at $1M — high AGI, top rate 3.20% ---
+// Hand-calc:
+//   State taxable = $1,000,000 - $5,450 = $994,550
+//   Local tax = $994,550 × 0.0320 = $31,825.60
+header("E14+4 — MD-BALTIMORE_CITY MFJ $1M → $31,825.60");
+{
+  const r = calculateMultiStateTax({
+    residentState: "MD",
+    federalAgi: 1000000,
+    filingStatus: "married_filing_jointly",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "MD", wages: 1000000 }],
+    localityCode: "MD-BALTIMORE_CITY",
+    totalWages: 1000000,
+  });
+  check("E14+4", "MD-BALTIMORE_CITY MFJ $1M", r.localTax?.netLocalTax ?? 0, 31825.60, 1);
+}
+
+// --- E14+5: OH-CINCINNATI single $80k wages — 1.80% (2020 ballot reduction) ---
+// Hand-calc:
+//   Wages base = $80,000
+//   Local tax = $80,000 × 0.0180 = $1,440.00
+header("E14+5 — OH-CINCINNATI single $80k wages → $1,440.00 (1.80%)");
+{
+  const r = calculateMultiStateTax({
+    residentState: "OH",
+    federalAgi: 80000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "OH", wages: 80000 }],
+    localityCode: "OH-CINCINNATI",
+    totalWages: 80000,
+  });
+  check("E14+5", "OH-CINCINNATI single $80k @ 1.80%", r.localTax?.netLocalTax ?? 0, 1440.00, 1,
+    "Cincinnati municipal tax — 2.10% pre-2020, reduced to 1.80% by 2020 ballot");
+}
+
+// --- E14+6: OH-CLEVELAND MFJ at $100k wages — 2.50% ---
+// Hand-calc:
+//   Wages = $100,000
+//   Local tax = $100,000 × 0.0250 = $2,500.00
+header("E14+6 — OH-CLEVELAND MFJ $100k → $2,500.00");
+{
+  const r = calculateMultiStateTax({
+    residentState: "OH",
+    federalAgi: 100000,
+    filingStatus: "married_filing_jointly",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "OH", wages: 100000 }],
+    localityCode: "OH-CLEVELAND",
+    totalWages: 100000,
+  });
+  check("E14+6", "OH-CLEVELAND MFJ $100k @ 2.50%", r.localTax?.netLocalTax ?? 0, 2500.00, 1);
+}
+
+// --- E14+7: OH-YOUNGSTOWN single $60k wages — 2.75% (highest OH city rate) ---
+// Hand-calc:
+//   Tax = $60,000 × 0.0275 = $1,650
+header("E14+7 — OH-YOUNGSTOWN single $60k → $1,650");
+{
+  const r = calculateMultiStateTax({
+    residentState: "OH",
+    federalAgi: 60000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "OH", wages: 60000 }],
+    localityCode: "OH-YOUNGSTOWN",
+    totalWages: 60000,
+  });
+  check("E14+7", "OH-YOUNGSTOWN single $60k @ 2.75%", r.localTax?.netLocalTax ?? 0, 1650.00, 1);
+}
+
+// --- E14+8: IN-MARION single $80k — 2.02% (Indianapolis) ---
+// Hand-calc:
+//   IN std ded (single) = $0
+//   State taxable = $80,000 - $0 = $80,000
+//   Local tax = $80,000 × 0.0202 = $1,616.00
+header("E14+8 — IN-MARION (Indianapolis) single $80k → $1,616.00");
+{
+  const r = calculateMultiStateTax({
+    residentState: "IN",
+    federalAgi: 80000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "IN", wages: 80000 }],
+    localityCode: "IN-MARION",
+    totalWages: 80000,
+  });
+  check("E14+8", "IN-MARION single $80k @ 2.02%", r.localTax?.netLocalTax ?? 0, 1616.00, 1);
+}
+
+// --- E14+9: IN-LAKE MFJ at $120k — 1.50% ---
+// Hand-calc:
+//   Local tax = $120,000 × 0.0150 = $1,800.00
+header("E14+9 — IN-LAKE MFJ $120k → $1,800");
+{
+  const r = calculateMultiStateTax({
+    residentState: "IN",
+    federalAgi: 120000,
+    filingStatus: "married_filing_jointly",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "IN", wages: 120000 }],
+    localityCode: "IN-LAKE",
+    totalWages: 120000,
+  });
+  check("E14+9", "IN-LAKE MFJ $120k @ 1.50%", r.localTax?.netLocalTax ?? 0, 1800.00, 1);
+}
+
+// --- E14+10: IN-PORTER single $90k — 0.50% (lowest IN rate) ---
+// Hand-calc:
+//   Tax = $90,000 × 0.0050 = $450.00
+header("E14+10 — IN-PORTER single $90k → $450 (lowest IN rate)");
+{
+  const r = calculateMultiStateTax({
+    residentState: "IN",
+    federalAgi: 90000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "IN", wages: 90000 }],
+    localityCode: "IN-PORTER",
+    totalWages: 90000,
+  });
+  check("E14+10", "IN-PORTER single $90k @ 0.50%", r.localTax?.netLocalTax ?? 0, 450.00, 1);
+}
+
+// --- E14+11: IN-HAMILTON $500k — high AGI confirms percentage rate ---
+// Hand-calc:
+//   Tax = $500,000 × 0.0110 = $5,500.00
+header("E14+11 — IN-HAMILTON single $500k → $5,500 (1.10%)");
+{
+  const r = calculateMultiStateTax({
+    residentState: "IN",
+    federalAgi: 500000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "IN", wages: 500000 }],
+    localityCode: "IN-HAMILTON",
+    totalWages: 500000,
+  });
+  check("E14+11", "IN-HAMILTON single $500k @ 1.10%", r.localTax?.netLocalTax ?? 0, 5500.00, 1);
+}
+
+// --- E14-1: localityCode set but resident state doesn't match → null (silent skip) ---
+// Hand-calc:
+//   Client in NY but localityCode = "MD-MONTGOMERY" — engine doesn't double-tax.
+//   localTax = null.
+header("E14-1 — State/locality mismatch (NY resident with MD localityCode) → null");
+{
+  const r = calculateMultiStateTax({
+    residentState: "NY",
+    federalAgi: 100000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "NY", wages: 100000 }],
+    localityCode: "MD-MONTGOMERY",
+    totalWages: 100000,
+  });
+  checkTruthy("E14-1", "stale locality silently skipped", r.localTax === null, true,
+    "Defends against state-change leaving stale localityCode");
+}
+
+// --- E14-2: localityCode null → null (no local tax) ---
+header("E14-2 — No localityCode → no local tax");
+{
+  const r = calculateMultiStateTax({
+    residentState: "MD",
+    federalAgi: 100000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "MD", wages: 100000 }],
+    localityCode: null,
+    totalWages: 100000,
+  });
+  checkTruthy("E14-2", "null localityCode → null localTax", r.localTax === null, true);
+}
+
+// --- E14-3: Unknown locality code → null (fall-through) ---
+header("E14-3 — Unknown locality code → null");
+{
+  const r = calculateMultiStateTax({
+    residentState: "MD",
+    federalAgi: 100000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "MD", wages: 100000 }],
+    localityCode: "MD-DOES_NOT_EXIST",
+    totalWages: 100000,
+  });
+  checkTruthy("E14-3", "unknown code → null", r.localTax === null, true);
+}
+
+// --- E14 boundary: federalAgi below MD std ded — base clamps to 0 ---
+// Hand-calc:
+//   federalAgi $2,000, MD std ded $2,700 → state_taxable = max(0, -700) = 0
+//   Local tax = $0
+header("E14 boundary — AGI below MD std ded → $0 local tax");
+{
+  const r = calculateMultiStateTax({
+    residentState: "MD",
+    federalAgi: 2000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "MD", wages: 2000 }],
+    localityCode: "MD-MONTGOMERY",
+    totalWages: 2000,
+  });
+  check("E14±", "AGI < std ded → base clamps to 0", r.localTax?.netLocalTax ?? 0, 0, 0.01,
+    "Math.max(0, federalAgi − stdDed) guards against negative base");
+}
+
+// --- E14 boundary 2: OH city with zero wages → $0 ---
+header("E14± — OH city with zero wages → $0");
+{
+  const r = calculateMultiStateTax({
+    residentState: "OH",
+    federalAgi: 50000, // SE / 1099 only, no W-2
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [],
+    localityCode: "OH-CLEVELAND",
+    totalWages: 0,
+  });
+  check("E14±2", "OH city, no wages → $0", r.localTax?.netLocalTax ?? 0, 0, 0.01,
+    "Cleveland tax base = wages_only; no W-2 → no local tax");
+}
+
+// --- E14 NYC regression: NYC still computes correctly after generalization ---
+// Hand-calc:
+//   $100k single TY2024 NY → NYS taxable ≈ $100k - $8,000 NY std ded = $92,000
+//   NYC PIT: brackets are baseline ~$3,500 (per IT-201 page 40)
+//   Sanity: NYC tax > $3,000 (regression — should NOT have changed).
+header("E14 NYC regression — NYC PIT still computes via brackets after generalization");
+{
+  const r = calculateMultiStateTax({
+    residentState: "NY",
+    federalAgi: 100000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "NY", wages: 100000 }],
+    localityCode: "NYC",
+    totalWages: 100000,
+  });
+  checkTruthy("E14 NYC-reg", "NYC PIT > $3,000",
+    (r.localTax?.netLocalTax ?? 0) > 3000, true,
+    "Regression: NYC bracket path still wired");
+  checkTruthy("E14 NYC-reg", "NYC jurisdiction code preserved",
+    r.localTax?.jurisdiction === "NYC", true);
+}
+
+// --- E14 catalog sanity: 24 MD + 10 OH + 10 IN = 44 flat-rate localities ---
+header("E14 catalog — 44 flat-rate localities registered");
+{
+  const allCodes = Object.keys(LOCAL_TAX_DATA);
+  const mdCount = allCodes.filter((c) => c.startsWith("MD-")).length;
+  const ohCount = allCodes.filter((c) => c.startsWith("OH-")).length;
+  const inCount = allCodes.filter((c) => c.startsWith("IN-")).length;
+  check("E14 cat", "MD county count", mdCount, 24, 0, "All 24 MD jurisdictions");
+  check("E14 cat", "OH city count", ohCount, 10, 0, "10 major OH cities");
+  check("E14 cat", "IN county count", inCount, 10, 0, "10 IN counties");
+}
+
+// --- E14 direct calculateFlatRateLocalTax call (unit test) ---
+header("E14 unit — calculateFlatRateLocalTax direct call");
+{
+  const r = calculateFlatRateLocalTax({
+    localityCode: "OH-AKRON",
+    residentState: "OH",
+    federalAgi: 90000,
+    totalWages: 75000, // 1099 + W-2 mix; Akron taxes wages only
+    filingStatus: "single",
+    taxYear: 2024,
+  });
+  check("E14 unit", "OH-AKRON 2.50% × $75k wages", r?.netLocalTax ?? -1, 1875, 1,
+    "OH cities tax wages_only; 1099 income excluded from base");
+  checkTruthy("E14 unit", "jurisdiction set", r?.jurisdiction === "OH-AKRON", true);
+}
+
+// --- E14 integration: full computeTaxReturnPure with MD client + locality ---
+// Hand-calc:
+//   W-2 $100k MD single TY2024.
+//   localityCode = "MD-MONTGOMERY"
+//   Expect localTaxLiability ≈ $3,113.60 + localTaxJurisdiction = "MD-MONTGOMERY"
+header("E14 integration — computeTaxReturnPure MD client + MD-MONTGOMERY");
+{
+  const computed = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "MD", taxYear: 2024, localityCode: "MD-MONTGOMERY" },
+    w2s: [{ taxYear: 2024, wagesBox1: 100000, federalTaxWithheldBox2: 15000, stateCode: "MD" }],
+    form1099s: [],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  check("E14 int", "localTaxLiability ≈ $3,113.60",
+    computed.localTaxLiability, 3113.60, 1,
+    "MD-MONTGOMERY 3.20% × ($100k - $2,700 MD std ded)");
+  checkTruthy("E14 int", "localTaxJurisdiction set",
+    computed.localTaxJurisdiction === "MD-MONTGOMERY", true);
+}
+
+// --- E14 integration 2: OH client + OH-CINCINNATI w/ 1099 + W-2 mix ---
+// Hand-calc:
+//   W-2 = $60,000 OH wages
+//   1099-INT = $5,000 interest (not in wage base for OH cities)
+//   localityCode = "OH-CINCINNATI"
+//   Local tax = $60,000 × 0.0180 = $1,080.00 (excludes the $5k interest)
+header("E14 int — OH client + OH-CINCINNATI, 1099 excluded from wage base");
+{
+  const computed = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "OH", taxYear: 2024, localityCode: "OH-CINCINNATI" },
+    w2s: [{ taxYear: 2024, wagesBox1: 60000, federalTaxWithheldBox2: 10000, stateCode: "OH" }],
+    form1099s: [
+      { taxYear: 2024, formType: "int", interestIncomeBox1: 5000 },
+    ],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  check("E14 int", "OH-CINCINNATI on wages only — $1,080",
+    computed.localTaxLiability, 1080.00, 1,
+    "Cincinnati 1.80% × $60k W-2; $5k interest excluded from wage base");
+}
+
+// --- E14 integration 3: NYC regression via full pipeline ---
+// Hand-calc:
+//   $200k single TY2024 NY + NYC. Engine wires NYC PIT (with household credit,
+//   school credit, MCTMT) — sanity check the integration didn't regress.
+header("E14 int — NYC regression via full pipeline");
+{
+  const computed = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "NY", taxYear: 2024, localityCode: "NYC" },
+    w2s: [{ taxYear: 2024, wagesBox1: 200000, federalTaxWithheldBox2: 35000, stateCode: "NY" }],
+    form1099s: [],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  checkTruthy("E14 int", "NYC PIT applied",
+    computed.localTaxLiability > 5000, true,
+    "Regression: full pipeline still routes NY/NYC to NYC bracket path");
+  checkTruthy("E14 int", "jurisdiction = NYC",
+    computed.localTaxJurisdiction === "NYC", true);
 }
 
 // ============================================================================
