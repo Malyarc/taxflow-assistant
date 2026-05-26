@@ -1383,6 +1383,150 @@ header("G1.7±7 — taxableBeforeQbi exactly at threshold: does NOT fire");
 }
 
 // ============================================================================
+// G1.9 — Tax-loss harvesting
+// IRS: IRC §1211, §1212; Pub 550.
+// Trigger: capitalLossDeducted < cap ($3k / $1.5k MFS)
+//          AND (LTCG > 0 OR STCG > 0 OR net capital gain/loss ≠ 0)
+// estSavings = cap × federal marginal rate.
+// ============================================================================
+section("G1.9 Tax-loss harvesting");
+
+// --- G1.9+1 — Single $80k W-2 + $10k LTCG: marginal 22% → savings $660 ---
+// Hand-calc:
+//   AGI = $80k + $10k = $90k. Taxable = $90k − $14,600 = $75,400. Single
+//   2024: 22% bracket $47,150-$100,525 → marginal 0.22.
+//   No loss this year → capitalLossDeducted = 0 < $3,000 cap.
+//   1099-B LTCG > 0 → trigger met.
+//   estSavings = $3,000 × 0.22 = $660.
+header("G1.9+1 — Single $80k + $10k LTCG @ 22%: savings $660");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 80000, stateCode: "FL" }],
+    form1099s: [{ taxYear: 2024, formType: "b", payerName: "Brokerage",
+      longTermGainLoss: 10000 }],
+  });
+  const hit = findHit(hits, "G1.9");
+  checkTruthy("G1.9+1", "TLH hit fires", hit != null, true);
+  if (hit) {
+    check("G1.9+1", "estSavings = $660", hit.estSavings, 660, 1,
+      "$3,000 × 0.22 marginal");
+    check("G1.9+1", "capitalLossDeducted = 0",
+      Number(hit.inputs.capitalLossDeducted), 0, 1);
+  }
+}
+
+// --- G1.9+2 — MFJ $150k W-2 + $20k STCG: marginal 22% → savings $660 ---
+// Hand-calc:
+//   AGI = $150k + $20k = $170k. Taxable = $170k − $29,200 = $140,800. MFJ
+//   2024: 22% bracket $94,300-$201,050 → marginal 0.22.
+//   capitalLossDeducted = 0 < $3,000 ✓. STCG > 0 → trigger ✓.
+//   estSavings = $3,000 × 0.22 = $660.
+header("G1.9+2 — MFJ $150k + $20k STCG: savings $660");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 150000, stateCode: "FL" }],
+    form1099s: [{ taxYear: 2024, formType: "b", payerName: "Brokerage",
+      shortTermGainLoss: 20000 }],
+  });
+  const hit = findHit(hits, "G1.9");
+  checkTruthy("G1.9+2", "TLH hit fires (MFJ STCG)", hit != null, true);
+  if (hit) {
+    check("G1.9+2", "estSavings = $660", hit.estSavings, 660, 1);
+  }
+}
+
+// --- G1.9+3 — Single $300k W-2 + $50k LTCG: marginal 35% → savings $1,050 ---
+// Hand-calc:
+//   AGI = $350k. Taxable = $350k − $14,600 = $335,400.
+//   Single 2024 35% bracket $243,725-$609,350 → marginal 0.35.
+//   estSavings = $3,000 × 0.35 = $1,050.
+header("G1.9+3 — Single high earner @ 35%: savings $1,050");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 300000, stateCode: "FL" }],
+    form1099s: [{ taxYear: 2024, formType: "b", payerName: "Brokerage",
+      longTermGainLoss: 50000 }],
+  });
+  const hit = findHit(hits, "G1.9");
+  checkTruthy("G1.9+3", "TLH hit fires (35% marginal)", hit != null, true);
+  if (hit) {
+    check("G1.9+3", "estSavings = $1,050", hit.estSavings, 1050, 2);
+  }
+}
+
+// --- G1.9-4 — Already maxed loss ($3k deducted from carryforward) ---
+// Capital_loss_carryforward_short = $5,000 → engine deducts $3,000 → cap hit.
+// Trigger requires capitalLossDeducted < $3,000 → no fire.
+header("G1.9-4 — Already maxed at $3,000 loss deduction suppresses");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 80000, stateCode: "FL" }],
+    adjustments: [
+      { adjustmentType: "capital_loss_carryforward_short", amount: 5000, isApplied: true },
+    ],
+  });
+  checkTruthy("G1.9-4", "no TLH hit when already at $3k cap",
+    findHit(hits, "G1.9") == null, true);
+}
+
+// --- G1.9-5 — No capital market activity (W-2 only) ---
+header("G1.9-5 — No capital activity suppresses (negative)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 80000, stateCode: "FL" }],
+  });
+  checkTruthy("G1.9-5", "no TLH hit for pure W-2 client",
+    findHit(hits, "G1.9") == null, true);
+}
+
+// --- G1.9±6 — Boundary: MFS cap is $1,500 ---
+// MFS, $80k W-2, no current-year gains, $3,000 LT carryforward → net loss
+// $3k → engine deducts MFS cap $1,500. Trigger requires
+// capitalLossDeducted < $1,500 MFS cap → $1,500 is NOT < $1,500 → no fire.
+// (NB: omitting LTCG / STCG is intentional — gains would absorb the
+// carryforward before the cap could bind.)
+header("G1.9±6 — MFS already at $1,500 cap suppresses");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "married_filing_separately", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 80000, stateCode: "FL" }],
+    adjustments: [
+      { adjustmentType: "capital_loss_carryforward_short", amount: 3000, isApplied: true },
+    ],
+  });
+  checkTruthy("G1.9±6", "no TLH hit when MFS at $1,500 cap",
+    findHit(hits, "G1.9") == null, true);
+}
+
+// --- G1.9±7 — Single below cap with $1k carryforward already in use ---
+// $1k carryforward → engine deducts $1k. capitalLossDeducted = $1,000 < $3k cap.
+// Still has 1099-B activity → fires. estSavings = $3k × marginal.
+header("G1.9±7 — Single with $1k loss deducted (below cap): fires");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 80000, stateCode: "FL" }],
+    form1099s: [{ taxYear: 2024, formType: "b", payerName: "Brokerage",
+      longTermGainLoss: 0 }],
+    adjustments: [
+      { adjustmentType: "capital_loss_carryforward_short", amount: 1000, isApplied: true },
+    ],
+  });
+  const hit = findHit(hits, "G1.9");
+  checkTruthy("G1.9±7", "TLH fires below cap with partial loss",
+    hit != null, true);
+  if (hit) {
+    check("G1.9±7", "capitalLossDeducted = $1,000",
+      Number(hit.inputs.capitalLossDeducted), 1000, 1);
+  }
+}
+
+// ============================================================================
 // RESULTS
 // ============================================================================
 

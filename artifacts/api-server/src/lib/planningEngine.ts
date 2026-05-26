@@ -687,6 +687,67 @@ function detectQbiPhaseIn(args: {
   };
 }
 
+// ── G1.9 — Tax-loss harvesting ────────────────────────────────────────────
+
+const G1_9_MAX_OFFSET = 3000;
+const G1_9_MAX_OFFSET_MFS = 1500;
+
+function detectTaxLossHarvesting(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+}): OpportunityHit | null {
+  const { client, computed } = args;
+  const maxOffset = client.filingStatus === "married_filing_separately"
+    ? G1_9_MAX_OFFSET_MFS
+    : G1_9_MAX_OFFSET;
+  if (computed.capitalLossDeducted >= maxOffset) return null;
+
+  // Has capital-market activity: either gains (something to offset) or
+  // losses (some history of trading). We don't fire for pure-W-2 clients
+  // who'd have to open a brokerage from scratch to even harvest losses.
+  const ltcg = computed.form1099Summary?.longTermCapitalGains ?? 0;
+  const stcg = computed.form1099Summary?.shortTermCapitalGains ?? 0;
+  const netCap = computed.netCapitalGainLoss ?? 0;
+  if (ltcg <= 0 && stcg <= 0 && netCap === 0) return null;
+
+  const fedRate = federalMarginalRate(computed);
+  // Phase G plan: flat $3k × ordinary marginal rate. The "rest" of harvested
+  // losses beyond the $3k cap carries forward indefinitely (upside not
+  // captured in the headline number — surfaced in the rationale).
+  const estSavings = maxOffset * fedRate;
+  if (estSavings <= 0) return null;
+
+  const strategy = strategyById("G1.9");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars = { estSavings: Math.round(estSavings) };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings: Math.round(estSavings),
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Current capital-loss deduction ${fmt(Math.round(computed.capitalLossDeducted))} is below ` +
+      `the ${fmt(maxOffset)} annual cap. Harvesting unrealized losses to reach the cap saves ` +
+      `~${fmt(Math.round(estSavings))} of federal tax (plus carryforward upside on losses ` +
+      `beyond the cap).`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      capitalLossDeducted: Math.round(computed.capitalLossDeducted),
+      maxOffset,
+      longTermCapitalGains: Math.round(ltcg),
+      shortTermCapitalGains: Math.round(stcg),
+      netCapitalGainLoss: Math.round(netCap),
+      federalMarginalRate: fedRate,
+    },
+  };
+}
+
 // ── Top-level evaluator ────────────────────────────────────────────────────
 
 export interface PlanningInputs {
@@ -720,6 +781,8 @@ export function evaluatePlanningOpportunities(args: PlanningInputs): Opportunity
   if (niit) hits.push(niit);
   const qbi = detectQbiPhaseIn({ computed: args.computed });
   if (qbi) hits.push(qbi);
+  const tlh = detectTaxLossHarvesting({ client: args.client, computed: args.computed });
+  if (tlh) hits.push(tlh);
   hits.sort((a, b) => b.estSavings - a.estSavings);
   return hits;
 }
