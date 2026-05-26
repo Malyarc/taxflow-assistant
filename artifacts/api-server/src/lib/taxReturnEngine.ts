@@ -673,6 +673,12 @@ export interface ComputedTaxReturn {
    * Added to total federal liability on Sched 2 Line 8.
    */
   earlyWithdrawalPenalty: number;
+  /**
+   * E4 — IRC §4973(g) 6% excise on HSA contributions above the §223
+   * annual limit. Total = employee `hsa_contribution` + employer
+   * `hsa_employer_contribution` adjustments. Reported on Form 5329 Part VII.
+   */
+  hsaExcessExcise: number;
   /** K7 — §1202 QSBS gross gain on sale of qualifying stock. */
   qsbsGrossGain: number;
   /** K7 — §1202 excluded amount (capped at max($10M, 10×basis)). */
@@ -881,6 +887,11 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const charitableCarryforwardCashAdj = sumByType("charitable_carryforward_cash");
   // Above-the-line
   const hsaContributionAdj = sumByType("hsa_contribution");
+  // E4 — HSA employer contribution (W-2 Box 12 code W). Counts against
+  // the §223 annual limit but is NOT deductible on Schedule 1. Engine
+  // reduces the deductible cap for the employee's contribution by this
+  // amount and flags any total > limit as excess subject to 6% excise.
+  const hsaEmployerContributionAdj = sumByType("hsa_employer_contribution");
   const iraTraditionalAdj = sumByType("ira_contribution_traditional");
   const iraRothAdj = sumByType("ira_contribution_roth"); // not deductible, counts for saver's
   // Schedule C
@@ -1335,6 +1346,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
 
   const retirementForLimits = calculateRetirementDeductions({
     hsaContribution: hsaContributionAdj,
+    hsaEmployerContribution: hsaEmployerContributionAdj,
     hsaIsFamilyCoverage: client.hsaIsFamilyCoverage ?? false,
     iraContribution: iraTraditionalAdj,
     iraCoveredByWorkplacePlan: client.iraCoveredByWorkplacePlan ?? false,
@@ -1362,6 +1374,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
 
   const retirement = calculateRetirementDeductions({
     hsaContribution: hsaContributionAdj,
+    hsaEmployerContribution: hsaEmployerContributionAdj,
     hsaIsFamilyCoverage: client.hsaIsFamilyCoverage ?? false,
     iraContribution: iraTraditionalAdj,
     iraCoveredByWorkplacePlan: client.iraCoveredByWorkplacePlan ?? false,
@@ -1613,7 +1626,10 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     regularFederalTax + amt.amtTax + niit.niitTax + se.seTaxTotal + additionalMedicare.additionalMedicareTax +
     // E5 — IRC §72(t) early-withdrawal additional tax (Sched 2 Line 8).
     // Not offset by non-refundable credits per §72(t) statute.
-    form1099Summary.earlyWithdrawalPenalty;
+    form1099Summary.earlyWithdrawalPenalty +
+    // E4 — IRC §4973(g) 6% excise on HSA contributions over the annual cap.
+    // Reported on Form 5329 Part VII. Not offset by non-refundable credits.
+    retirement.hsaExcessExcise;
 
   // ── Step 7: Non-refundable credits in IRS Sched 3 order ──
   const incomeTaxOnly = regularFederalTax + amt.amtTax;
@@ -1912,6 +1928,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     amtCreditCarryforwardRemaining,
     charitableCarryforwardCashRemaining: scheduleA.charitableCarryforwardCashRemaining,
     earlyWithdrawalPenalty: form1099Summary.earlyWithdrawalPenalty,
+    hsaExcessExcise: retirement.hsaExcessExcise,
     qsbsGrossGain,
     qsbsSection1202Exclusion,
     qsbsTaxableGain,

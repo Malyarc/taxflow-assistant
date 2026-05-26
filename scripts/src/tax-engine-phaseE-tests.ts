@@ -809,6 +809,122 @@ header("E11 integration — PA $80k single (0% SP) → tax $2,456");
 }
 
 // ============================================================================
+// E4 — HSA Form 8889 detail (IRC §223 + §4973(g))
+// Adds employer contribution handling (reduces deductible cap) +
+// excess contribution detection (6% excise per IRC §4973(g)).
+// ============================================================================
+section("E4 — HSA Form 8889 — employer contributions + excess excise");
+
+// --- E4+1: Self-only $3,000 employee + $1,000 employer = $4,000 total, all within cap ---
+// Hand-calc: TY2024 self-only cap $4,150. Total = $4,000 < $4,150.
+//   deductibleCapForEmployee = $4,150 - $1,000 = $3,150
+//   employeeDeductible = min($3,000, $3,150) = $3,000
+//   excess = max(0, $4,000 - $4,150) = $0; excise = $0
+header("E4+1 — Self-only $3,000 emp + $1,000 employer, no excess");
+{
+  const r = calculateRetirementDeductions({
+    hsaContribution: 3000,
+    hsaEmployerContribution: 1000,
+    hsaIsFamilyCoverage: false,
+    iraContribution: 0,
+    iraCoveredByWorkplacePlan: false,
+    age: 40,
+    agi: 60000,
+    filingStatus: "single",
+    taxYear: 2024,
+  });
+  check("E4+1", "hsaDeductible = $3,000", r.hsaDeductible, 3000, 1);
+  check("E4+1", "hsaEmployerContribution = $1,000", r.hsaEmployerContribution, 1000, 1);
+  check("E4+1", "hsaExcessExcise = $0", r.hsaExcessExcise, 0, 1);
+  check("E4+1", "hsaTotalContribution = $4,000", r.hsaTotalContribution, 4000, 1);
+}
+
+// --- E4+2: Employer contribution caps the employee deductible amount ---
+// Hand-calc: TY2024 self-only cap $4,150. Employee contributed $5,000, employer $2,000.
+//   deductibleCapForEmployee = $4,150 - $2,000 = $2,150
+//   employeeDeductible = min($5,000, $2,150) = $2,150
+//   total = $5,000 + $2,000 = $7,000; excess = $7,000 - $4,150 = $2,850; excise = $171
+header("E4+2 — $5,000 employee + $2,000 employer = excess $2,850, excise $171");
+{
+  const r = calculateRetirementDeductions({
+    hsaContribution: 5000,
+    hsaEmployerContribution: 2000,
+    hsaIsFamilyCoverage: false,
+    iraContribution: 0,
+    iraCoveredByWorkplacePlan: false,
+    age: 40,
+    agi: 60000,
+    filingStatus: "single",
+    taxYear: 2024,
+  });
+  check("E4+2", "hsaDeductible = $2,150 (capped by employer share)", r.hsaDeductible, 2150, 1);
+  check("E4+2", "hsaTotalContribution = $7,000", r.hsaTotalContribution, 7000, 1);
+  check("E4+2", "excess = $2,850 → excise 6% = $171", r.hsaExcessExcise, 171, 1,
+    "IRC §4973(g) 6% × ($7,000 - $4,150)");
+}
+
+// --- E4+3: Family coverage, age 55+ catch-up ---
+// Hand-calc: TY2024 family cap $8,300 + $1,000 catch-up = $9,300
+//   $7,000 employee + $1,000 employer = $8,000 total
+//   employeeDeductible = min($7,000, $9,300 - $1,000) = min($7,000, $8,300) = $7,000
+//   excess = 0; excise = 0
+header("E4+3 — Family coverage, age 55+, $7k emp + $1k employer all deductible");
+{
+  const r = calculateRetirementDeductions({
+    hsaContribution: 7000,
+    hsaEmployerContribution: 1000,
+    hsaIsFamilyCoverage: true,
+    iraContribution: 0,
+    iraCoveredByWorkplacePlan: false,
+    age: 55,
+    agi: 80000,
+    filingStatus: "married_filing_jointly",
+    taxYear: 2024,
+  });
+  check("E4+3", "hsaLimit = $9,300 (family + 55+ catch-up)", r.hsaLimit, 9300, 1);
+  check("E4+3", "hsaDeductible = $7,000 (within deductible cap)", r.hsaDeductible, 7000, 1);
+  check("E4+3", "hsaExcessExcise = $0", r.hsaExcessExcise, 0, 1);
+}
+
+// --- E4-1: No employer contribution → existing behavior unchanged ---
+// Hand-calc: Self-only $3,000 employee, no employer.
+//   deductibleCapForEmployee = $4,150; deductible = $3,000; no excess.
+header("E4-1 — No employer contribution, behaves as before");
+{
+  const r = calculateRetirementDeductions({
+    hsaContribution: 3000,
+    hsaEmployerContribution: 0,
+    hsaIsFamilyCoverage: false,
+    iraContribution: 0,
+    iraCoveredByWorkplacePlan: false,
+    age: 40,
+    agi: 60000,
+    filingStatus: "single",
+    taxYear: 2024,
+  });
+  check("E4-1", "deductible = $3,000", r.hsaDeductible, 3000, 1);
+  check("E4-1", "excise = $0", r.hsaExcessExcise, 0, 1);
+}
+
+// --- E4 integration: HSA excess excise flows to totalFederalLiability ---
+// Hand-calc: client over-contributed $2,850 → excise $171
+// Goes into ComputedTaxReturn.hsaExcessExcise + adds to totalFederalLiability
+header("E4 integration — Excise flows into ComputedTaxReturn + federal tax");
+{
+  const computed = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "TX", taxYear: 2024, taxpayerAge: 40 },
+    w2s: [{ taxYear: 2024, wagesBox1: 80000, federalTaxWithheldBox2: 12000, stateCode: "TX" }],
+    form1099s: [],
+    adjustments: [
+      { adjustmentType: "hsa_contribution", amount: 5000, isApplied: true },
+      { adjustmentType: "hsa_employer_contribution", amount: 2000, isApplied: true },
+    ],
+    taxYear: 2024,
+  });
+  check("E4-int", "ComputedTaxReturn.hsaExcessExcise = $171", computed.hsaExcessExcise, 171, 1);
+}
+
+// ============================================================================
 // Report
 // ============================================================================
 console.log("\n========== RESULTS ==========");

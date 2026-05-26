@@ -1800,6 +1800,13 @@ export interface RetirementDeductionsCalculation {
   hsaContribution: number;
   hsaLimit: number;
   hsaDeductible: number;
+  /** E4 — Employer contribution (cafeteria-plan, excluded from W-2 Box 1).
+   *  Counts against the §223 annual cap but is NOT itself deductible. */
+  hsaEmployerContribution: number;
+  /** E4 — Total HSA contribution (employee + employer). Used to detect §223 excess. */
+  hsaTotalContribution: number;
+  /** E4 — IRC §4973(g) 6% excise on excess contributions (total > limit). Federal additional tax. */
+  hsaExcessExcise: number;
   iraContribution: number;
   iraLimit: number;
   iraDeductible: number;
@@ -1809,6 +1816,10 @@ export interface RetirementDeductionsCalculation {
 export function calculateRetirementDeductions(params: {
   hsaContribution: number;
   hsaIsFamilyCoverage: boolean;
+  /** E4 — HSA employer (Form W-2 Box 12 code W) contribution. Counts toward
+   *  the §223 annual cap; not deductible on Schedule 1. Reduces the
+   *  deductible cap for employee contribution. */
+  hsaEmployerContribution?: number;
   iraContribution: number;
   iraCoveredByWorkplacePlan: boolean;
   age: number; // 55+ HSA catch-up; 50+ IRA catch-up
@@ -1823,7 +1834,18 @@ export function calculateRetirementDeductions(params: {
   const hsaLimit =
     (params.hsaIsFamilyCoverage ? hsaCfg.family : hsaCfg.selfOnly) +
     (params.age >= 55 ? hsaCfg.catchUp : 0);
-  const hsaDeductible = Math.min(Math.max(0, params.hsaContribution), hsaLimit);
+  // E4 — Employer contribution (W-2 Box 12 code W) reduces the cap for the
+  // employee's deductible contribution. Per IRC §223(b)(1) and Form 8889,
+  // total contributions cannot exceed the annual limit; employer's piece
+  // takes priority since it's already excluded from W-2 Box 1.
+  const hsaEmployerContribution = Math.max(0, params.hsaEmployerContribution ?? 0);
+  const deductibleCapForEmployee = Math.max(0, hsaLimit - hsaEmployerContribution);
+  const hsaDeductible = Math.min(Math.max(0, params.hsaContribution), deductibleCapForEmployee);
+  // E4 — IRC §4973(g) 6% excise on contributions above the annual cap.
+  // Total = employee + employer; excess = max(0, total - limit).
+  const hsaTotalContribution = Math.max(0, params.hsaContribution) + hsaEmployerContribution;
+  const hsaExcess = Math.max(0, hsaTotalContribution - hsaLimit);
+  const hsaExcessExcise = hsaExcess * 0.06;
 
   const iraLimit = iraCfg.base + (params.age >= 50 ? iraCfg.catchUp : 0);
   const iraContributionCapped = Math.min(Math.max(0, params.iraContribution), iraLimit);
@@ -1842,6 +1864,9 @@ export function calculateRetirementDeductions(params: {
     hsaContribution: params.hsaContribution,
     hsaLimit,
     hsaDeductible,
+    hsaEmployerContribution,
+    hsaTotalContribution,
+    hsaExcessExcise,
     iraContribution: params.iraContribution,
     iraLimit,
     iraDeductible,
