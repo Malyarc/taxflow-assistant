@@ -1,5 +1,5 @@
 {
-  "version": "v1.0.0",
+  "version": "v1.1.0",
   "reviewedAt": "2026-05-26",
   "strategies": [
     {
@@ -193,6 +193,106 @@
         "Foreign-source taxable income for the actual Form 1116 limit"
       ],
       "action": "Claim foreign taxes paid as a Foreign Tax Credit on Form 1116 instead of (or in addition to) an itemized deduction. Estimated additional savings ~{{estSavings}}.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G4.1",
+      "name": "Persistent NIIT exposure — structural advice",
+      "category": "timing",
+      "ircSection": "IRC §1411",
+      "irsPub": "Form 8960",
+      "trigger": "niitTax > 0 in current year AND niitTax > 0 in >= 1 prior year",
+      "formula": "estSavings = avg(niitTax across years) * 0.5 (structural changes — entity restructure, loss harvesting, deferred-comp shifting — typically recover ~50% of recurring NIIT)",
+      "confidence": 0.70,
+      "cpaEffortHours": 2.0,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Investment income breakdown by source (dividends, interest, capital gains, rental)",
+        "Whether client has flexibility on entity structure (S-corp election, real-estate professional status)",
+        "Whether client can systematically harvest losses against capital gains each year"
+      ],
+      "action": "NIIT has applied for {{years}} consecutive years averaging ~{{avgNiit}}/year. Consider structural changes — entity restructure, systematic loss harvesting, deferred-comp timing, or moving income-producing assets into qualified retirement accounts. Estimated annual recoverable benefit ~{{estSavings}}.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G4.2",
+      "name": "Persistent AMT exposure — preference review",
+      "category": "timing",
+      "ircSection": "IRC §55-§59",
+      "irsPub": "Form 6251",
+      "trigger": "amtTax > 0 in current year AND amtTax > 0 in >= 1 prior year",
+      "formula": "estSavings = avg(amtTax across years) * 0.4 (AMT preferences — ISO timing, depreciation method, state-tax bunching — typically recover ~40% of recurring AMT)",
+      "confidence": 0.65,
+      "cpaEffortHours": 2.5,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Source of AMT preferences (ISO bargain, depreciation, state tax addback)",
+        "Whether client has flexibility on ISO exercise timing in future years",
+        "Whether client itemizes (state-tax bunching could shift AMT preference)"
+      ],
+      "action": "AMT has applied for {{years}} consecutive years averaging ~{{avgAmt}}/year. Schedule a Form 6251 review — most recurring AMT comes from ISO timing, depreciation method choice, or state-tax addback. Restructuring preferences across years can recover ~{{estSavings}}/year.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G4.3",
+      "name": "Permanent bunching strategy — persistent std-ded cliff",
+      "category": "charitable",
+      "ircSection": "IRC §170; §63",
+      "irsPub": "Pub 17; Sch A general",
+      "trigger": "itemizedTotal within +/- 15% of stdDed in current AND >= 1 prior year (persistent cliff) AND charitableCash > 0 in current year",
+      "formula": "estSavings = stdDed * 0.25 * marginalRate (single cycle benefit; pattern persistence raises confidence vs G1.3)",
+      "confidence": 0.90,
+      "cpaEffortHours": 1.5,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Whether client has flexibility to prepay 2 years of charitable cash in December",
+        "Whether client has flexibility on property-tax timing (acceleration)",
+        "Whether client wants to open a DAF account (vs direct charity prepayments)"
+      ],
+      "action": "Itemized deductions have hovered within +/- 15% of the standard-deduction threshold for {{years}} consecutive years. This is a permanent pattern — commit to a 2-year alternating bunching strategy (or open a DAF) to capture ~{{estSavings}}/year on average.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G4.4",
+      "name": "Capital loss carryforward unused — plan gain realization",
+      "category": "investment",
+      "ircSection": "IRC §1211; §1212",
+      "irsPub": "Pub 550 Schedule D",
+      "trigger": "(capitalLossCarryforwardShort + capitalLossCarryforwardLong) > $20,000 in current year AND has not declined materially YoY (delta <= $1k OR grew)",
+      "formula": "estSavings = min(currentCarryforward, $20,000) * marginalRate (potential to offset up to $20k of realized capital gains using the carryforward)",
+      "confidence": 0.65,
+      "cpaEffortHours": 1.5,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Whether client has appreciated positions that could be realized",
+        "Whether client's investment strategy is consistent with realizing gains (rebalancing, gifting basis-stepped, sale)",
+        "Whether the carryforward is short-term or long-term (preferential rate matters)"
+      ],
+      "action": "Capital loss carryforward of ~{{carryforward}} has remained unused for {{years}} years. Plan to realize gains (rebalancing or specific-lot sales) to absorb up to $20k of the carryforward — estimated annual benefit ~{{estSavings}}.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G4.5",
+      "name": "Passive activity loss suspension growing — exit or activate",
+      "category": "business",
+      "ircSection": "IRC §469",
+      "irsPub": "Pub 925",
+      "trigger": "(scheduleEPassiveLossSuspended + k1PassiveLossSuspended) > $5,000 in current year AND has GROWN year-over-year (more suspended this year than last)",
+      "formula": "estSavings = (currentSuspended - priorSuspended) * marginalRate * 0.5 (potential to release the year-over-year delta through disposition or qualifying as real-estate-professional)",
+      "confidence": 0.60,
+      "cpaEffortHours": 2.5,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Whether client has any passive INCOME activities to apply against the loss",
+        "Whether client would qualify for real-estate-professional status (750 hours, > 50% of personal services)",
+        "Whether client is willing to dispose of one passive activity to release that activity's suspended PAL"
+      ],
+      "action": "Passive losses suspended under §469 have grown by ~{{growth}} year-over-year (to ~{{currentSuspended}}). The suspended balance compounds annually without an exit. Consider: (a) full disposition of one activity to fully deduct THAT activity's suspended PAL, (b) qualifying as real-estate professional, or (c) adding a passive-income activity. Estimated annual benefit ~{{estSavings}}.",
       "formulaRev": 1
     }
   ]
