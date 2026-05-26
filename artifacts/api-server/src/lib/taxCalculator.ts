@@ -960,7 +960,17 @@ export function calculateStateTax(
     ? Math.max(0, options?.taxableSocialSecurity ?? 0)
     : 0;
   // VT (and any future state) — per-filer personal exemption deducted from taxable.
-  const personalExemption = info.personalExemption ? pickStateStdDeduction(info.personalExemption, status) : 0;
+  // IL-1040 Line 10b cliff: when federalAgi exceeds the personalExemptionAgiCliff
+  // threshold (single/HoH/MFS/QSS $250k, MFJ $500k for IL TY2024), the exemption
+  // is reduced to $0 entirely. Other states with personal exemptions but no
+  // cliff (VT) leave personalExemptionAgiCliff undefined.
+  let personalExemption = info.personalExemption ? pickStateStdDeduction(info.personalExemption, status) : 0;
+  if (info.personalExemptionAgiCliff && personalExemption > 0) {
+    const cliff = pickStateStdDeduction(info.personalExemptionAgiCliff, status);
+    if (cliff > 0 && federalAgi > cliff) {
+      personalExemption = 0;
+    }
+  }
 
   // OR-specific: subtract federal tax liability before applying state brackets
   let oregonSubtraction = 0;

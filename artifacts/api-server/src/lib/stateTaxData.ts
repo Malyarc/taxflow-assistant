@@ -58,6 +58,15 @@ export interface StateTaxInfo {
   standardDeduction?: StateStandardDeduction;
   /** Per-filer personal exemption (e.g. VT $4,850/filer). Subtracts from state taxable income. */
   personalExemption?: StateStandardDeduction;
+  /**
+   * AGI cliff above which the personal exemption is reduced to $0 (per state
+   * statute — e.g. IL-1040 Line 10b: AGI > $250k single / $500k MFJ → exemption = $0).
+   * Each filing-status entry is the federal AGI threshold; > threshold means
+   * exemption is entirely lost. This is a CLIFF, not a gradual phase-out.
+   * For states with gradual phase-out (CT pension exemption, etc.), use a
+   * dedicated handler — this field only encodes the cliff pattern.
+   */
+  personalExemptionAgiCliff?: StateStandardDeduction;
   /** Surtax on income above a threshold, e.g. MA "millionaire's tax". Applied on AGI. */
   surtax?: { threshold: number; rate: number };
   notes?: string;
@@ -176,14 +185,17 @@ const STATE_TAX_DATA_2024: Record<string, StateTaxInfo> = {
     name: "Illinois", hasIncomeTax: true,
     brackets: { single: flat(0.0495), married_filing_jointly: flat(0.0495) },
     standardDeduction: { single: 0, married_filing_jointly: 0 },
-    // Personal exemption per IL-1040 (2024 PDF): $2,775 per person. We apply
-    // single = $2,775; MFJ = $5,550 (×2). Dependent exemptions ($2,775 each)
-    // not modeled. IL phases the exemption out above ~$250k single / $500k
-    // MFJ AGI — not modeled (engine over-deducts for those filers by at
-    // most $137/filer at the top, immaterial vs the ~$2.8k bug we fixed
-    // here for the typical sub-$250k filer).
+    // Personal exemption per IL-1040 2024 Line 10b: $2,775 per person.
+    // We apply single = $2,775; MFJ = $5,550 (×2). Dependent exemptions
+    // ($2,775 each) NOT modeled — CPA can enter manually as a deduction
+    // override. AGI CLIFF: IL-1040 2024 Line 10b instructions state the
+    // exemption is reduced to $0 (cliff, not gradual phase-out) when:
+    //   - Federal AGI > $250,000 (single, HoH, MFS, QSS)
+    //   - Federal AGI > $500,000 (MFJ)
+    // Engine applies this cliff via personalExemptionAgiCliff below.
     personalExemption: { single: 2775, married_filing_jointly: 5550, head_of_household: 2775, married_filing_separately: 2775, qualifying_widow: 5550 },
-    notes: "IL flat 4.95% with $2,775 personal exemption (single) / $5,550 (MFJ). Dependent exemptions + phase-out for AGI > $250k not yet modeled.",
+    personalExemptionAgiCliff: { single: 250000, married_filing_jointly: 500000, head_of_household: 250000, married_filing_separately: 250000, qualifying_widow: 250000 },
+    notes: "IL flat 4.95% with $2,775 personal exemption (single) / $5,550 (MFJ); exemption cliffs to $0 at AGI > $250k single / $500k MFJ per IL-1040 Line 10b. Dependent exemptions ($2,775 each) NOT modeled.",
   },
   IN: {
     name: "Indiana", hasIncomeTax: true,
