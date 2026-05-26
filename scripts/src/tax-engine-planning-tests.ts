@@ -1123,6 +1123,266 @@ header("G1.5±6 — Single $250k + $60k ISO: small AMT ~$1,508");
 }
 
 // ============================================================================
+// G1.6 — NIIT cliff avoidance
+// IRS: IRC §1411; Form 8960.
+// Trigger: AGI in [threshold − $10k, threshold + $10k]
+//          (where threshold = 200k single/HoH, 250k MFJ/QSS, 125k MFS)
+//          AND netInvestmentIncome > 0 AND currently paying NIIT.
+// estSavings = niitTax.
+// ============================================================================
+section("G1.6 NIIT cliff avoidance");
+
+// --- G1.6+1 — Single $205k AGI: NIIT $190 ---
+// Hand-calc:
+//   W-2 $195k + interest $10k → AGI $205k. Threshold single $200k.
+//   AGI in [$190k, $210k] band ✓. NII = $10k > 0 ✓.
+//   NIIT taxable = min(NII $10k, AGI − threshold = $5k) = $5k.
+//   niitTax = $5k × 3.8% = $190.
+header("G1.6+1 — Single AGI $205k → NIIT $190, savings $190");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 195000, stateCode: "FL" }],
+    form1099s: [{ taxYear: 2024, formType: "int", payerName: "Bank", interestIncome: 10000 }],
+  });
+  const hit = findHit(hits, "G1.6");
+  checkTruthy("G1.6+1", "NIIT hit fires", hit != null, true);
+  if (hit) {
+    check("G1.6+1", "estSavings = $190", hit.estSavings, 190, 1,
+      "Form 8960: min(NII $10k, AGI excess $5k) × 3.8%");
+    check("G1.6+1", "AGI = $205,000",
+      Number(hit.inputs.agi), 205000, 1);
+    check("G1.6+1", "threshold = $200,000",
+      Number(hit.inputs.threshold), 200000, 1);
+  }
+}
+
+// --- G1.6+2 — MFJ AGI $260k (exactly at upper boundary): NIIT $380 ---
+// Hand-calc:
+//   W-2 $245k + $15k interest. AGI $260k = threshold $250k + $10k. ✓
+//   NIIT = min($15k, $10k) × 3.8% = $380.
+header("G1.6+2 — MFJ AGI $260k (upper edge): NIIT $380");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 245000, stateCode: "FL" }],
+    form1099s: [{ taxYear: 2024, formType: "int", payerName: "Bank", interestIncome: 15000 }],
+  });
+  const hit = findHit(hits, "G1.6");
+  checkTruthy("G1.6+2", "NIIT hit fires at upper-edge AGI", hit != null, true);
+  if (hit) {
+    check("G1.6+2", "estSavings = $380", hit.estSavings, 380, 1);
+  }
+}
+
+// --- G1.6+3 — HoH AGI $209k: NIIT $190 ---
+// Hand-calc:
+//   W-2 $204k + $5k qualified dividends. AGI = $209k. Threshold HoH $200k.
+//   In band. NII = $5k (dividends). NIIT = min($5k, $9k) × 3.8% = $190.
+header("G1.6+3 — HoH AGI $209k → NIIT $190");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "head_of_household", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 204000, stateCode: "FL" }],
+    form1099s: [{ taxYear: 2024, formType: "div", payerName: "Fund",
+      ordinaryDividends: 5000, qualifiedDividends: 5000 }],
+  });
+  const hit = findHit(hits, "G1.6");
+  checkTruthy("G1.6+3", "NIIT hit fires for HoH", hit != null, true);
+  if (hit) {
+    check("G1.6+3", "estSavings = $190", hit.estSavings, 190, 1);
+  }
+}
+
+// --- G1.6-4 — AGI well above band ---
+// Single $220k W-2 alone → AGI = $220k. Threshold $200k + $10k = $210k.
+// $220k > $210k → outside band → no fire.
+header("G1.6-4 — AGI $220k outside upper band suppresses");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 220000, stateCode: "FL" }],
+    form1099s: [{ taxYear: 2024, formType: "int", payerName: "Bank", interestIncome: 5000 }],
+  });
+  checkTruthy("G1.6-4", "no NIIT cliff hit outside band",
+    findHit(hits, "G1.6") == null, true);
+}
+
+// --- G1.6-5 — AGI in band but no investment income ---
+// W-2 only. niitTax = 0. No fire.
+header("G1.6-5 — AGI in band, no NII suppresses");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 205000, stateCode: "FL" }],
+  });
+  checkTruthy("G1.6-5", "no NIIT cliff hit without investment income",
+    findHit(hits, "G1.6") == null, true);
+}
+
+// --- G1.6±6 — AGI just over upper bound ($211k single) → no fire ---
+header("G1.6±6 — AGI $211k just over $210k upper bound suppresses");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 210000, stateCode: "FL" }],
+    form1099s: [{ taxYear: 2024, formType: "int", payerName: "Bank", interestIncome: 1000 }],
+  });
+  checkTruthy("G1.6±6", "no NIIT cliff hit at $211k (just out of band)",
+    findHit(hits, "G1.6") == null, true);
+}
+
+// ============================================================================
+// G1.7 — §199A QBI wage / UBIA phase-in band (K-1)
+// IRS: IRC §199A(b)(2); Rev. Proc. 2023-34 / 2024-40.
+// Trigger: K-1 active income > 0 AND §199A QBI > 0
+//          AND taxableBeforeQbi in (threshold, top] band per filing status.
+// estSavings = 0.5 × QBI × 0.20 × federalMarginalRate (lost-QBI proxy).
+// ============================================================================
+section("G1.7 §199A QBI phase-in band");
+
+// --- G1.7+1 — Single K-1 active $250k + §199A QBI $200k, TY2024 ---
+// Hand-calc:
+//   AGI = K-1 active $250k. Engine QBI = 20% × $200k = $40k.
+//   taxableBeforeQbi = $250k − $14,600 = $235,400.
+//   $235,400 > §199A threshold $191,950 ✓ and ≤ top $241,950 ✓ → in band.
+//   taxable = $235,400 − $40k = $195,400. Single 32% bracket
+//     ($191,950-$243,725) → marginal 0.32.
+//   estSavings = 0.5 × $200k × 0.20 × 0.32 = $6,400.
+header("G1.7+1 — Single K-1 $200k QBI in band: savings $6,400 @ 32%");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    scheduleK1: [{
+      taxYear: 2024, entityName: "S-Corp", entityType: "s_corp",
+      activityType: "active", box1OrdinaryIncome: 250000,
+      section199aQbi: 200000,
+    }],
+  });
+  const hit = findHit(hits, "G1.7");
+  checkTruthy("G1.7+1", "§199A hit fires", hit != null, true);
+  if (hit) {
+    check("G1.7+1", "estSavings = $6,400", hit.estSavings, 6400, 5);
+    check("G1.7+1", "taxableBeforeQbi = $235,400",
+      Number(hit.inputs.taxableBeforeQbi), 235400, 2);
+    check("G1.7+1", "marginal = 0.32",
+      Number(hit.inputs.federalMarginalRate), 0.32, 0.001);
+  }
+}
+
+// --- G1.7+2 — MFJ W-2 $200k + K-1 active $300k + §199A QBI $300k ---
+// Hand-calc:
+//   AGI = $200k W-2 + $300k K-1 active = $500k.
+//   Engine QBI = 20% × $300k = $60k.
+//   taxableBeforeQbi = $500k − $29,200 = $470,800.
+//   $470,800 > MFJ threshold $383,900 ✓ and ≤ top $483,900 ✓ → in band.
+//   taxable = $470,800 − $60k = $410,800. MFJ 32% bracket $487,450-? Wait,
+//   MFJ 2024 brackets: 24% to $383,900, 32% to $487,450. $410,800 in 32%.
+//   marginal = 0.32.
+//   estSavings = 0.5 × $300k × 0.20 × 0.32 = $9,600.
+header("G1.7+2 — MFJ K-1 $300k QBI in band: savings $9,600 @ 32%");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 200000, stateCode: "FL" }],
+    scheduleK1: [{
+      taxYear: 2024, entityName: "MFJ S-Corp", entityType: "s_corp",
+      activityType: "active", box1OrdinaryIncome: 300000,
+      section199aQbi: 300000,
+    }],
+  });
+  const hit = findHit(hits, "G1.7");
+  checkTruthy("G1.7+2", "§199A hit fires (MFJ)", hit != null, true);
+  if (hit) {
+    check("G1.7+2", "estSavings = $9,600", hit.estSavings, 9600, 5);
+  }
+}
+
+// --- G1.7+3 — Single W-2 $50k + K-1 active $200k + §199A QBI $80k ---
+// Hand-calc:
+//   AGI = $250k. Engine QBI = $16k. taxableBeforeQbi = $235,400.
+//   In band ✓. taxable = $219,400. Single 32% bracket. marginal 0.32.
+//   estSavings = 0.5 × $80k × 0.20 × 0.32 = $2,560.
+header("G1.7+3 — Single mixed K-1 + W-2, QBI $80k: savings $2,560 @ 32%");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, stateCode: "FL" }],
+    scheduleK1: [{
+      taxYear: 2024, entityName: "S-Corp", entityType: "s_corp",
+      activityType: "active", box1OrdinaryIncome: 200000,
+      section199aQbi: 80000,
+    }],
+  });
+  const hit = findHit(hits, "G1.7");
+  checkTruthy("G1.7+3", "§199A hit fires (mixed)", hit != null, true);
+  if (hit) {
+    check("G1.7+3", "estSavings = $2,560", hit.estSavings, 2560, 5);
+  }
+}
+
+// --- G1.7-4 — Taxable below threshold (single $100k) ---
+header("G1.7-4 — below §199A threshold suppresses (negative)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, stateCode: "FL" }],
+    scheduleK1: [{
+      taxYear: 2024, entityName: "S-Corp", entityType: "s_corp",
+      activityType: "active", box1OrdinaryIncome: 50000,
+      section199aQbi: 50000,
+    }],
+  });
+  checkTruthy("G1.7-4", "no §199A hit below threshold",
+    findHit(hits, "G1.7") == null, true);
+}
+
+// --- G1.7-5 — Above phase-in top (MFJ $700k W-2 + K-1 + QBI) ---
+header("G1.7-5 — above phase-in top suppresses (negative)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 500000, stateCode: "FL" }],
+    scheduleK1: [{
+      taxYear: 2024, entityName: "S-Corp", entityType: "s_corp",
+      activityType: "active", box1OrdinaryIncome: 200000,
+      section199aQbi: 200000,
+    }],
+  });
+  checkTruthy("G1.7-5", "no §199A hit above phase-in top",
+    findHit(hits, "G1.7") == null, true);
+}
+
+// --- G1.7-6 — No K-1 active income — must NOT fire ---
+header("G1.7-6 — No K-1 client suppresses (negative)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 230000, stateCode: "FL" }],
+  });
+  checkTruthy("G1.7-6", "no §199A hit without K-1",
+    findHit(hits, "G1.7") == null, true);
+}
+
+// --- G1.7±7 — taxableBeforeQbi exactly at threshold $191,950 — must NOT fire ---
+// Single, K-1 active = $206,550, QBI $50k. Engine QBI = $10k.
+// taxableBeforeQbi = $206,550 − $14,600 = $191,950 exact.
+// Strict > threshold → does NOT fire.
+header("G1.7±7 — taxableBeforeQbi exactly at threshold: does NOT fire");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    scheduleK1: [{
+      taxYear: 2024, entityName: "S-Corp", entityType: "s_corp",
+      activityType: "active", box1OrdinaryIncome: 206550,
+      section199aQbi: 50000,
+    }],
+  });
+  checkTruthy("G1.7±7", "no §199A hit at threshold exactly",
+    findHit(hits, "G1.7") == null, true);
+}
+
+// ============================================================================
 // RESULTS
 // ============================================================================
 

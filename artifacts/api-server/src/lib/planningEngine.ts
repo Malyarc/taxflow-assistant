@@ -534,6 +534,159 @@ function detectAmtIsoTiming(args: {
   };
 }
 
+// ── G1.6 — NIIT cliff avoidance ────────────────────────────────────────────
+
+const NIIT_THRESHOLDS: Record<string, number> = {
+  single: 200000,
+  head_of_household: 200000,
+  married_filing_jointly: 250000,
+  qualifying_widow: 250000,
+  married_filing_separately: 125000,
+};
+
+const G1_6_BAND = 10000;
+
+function detectNiitCliff(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+}): OpportunityHit | null {
+  const { client, computed } = args;
+  const threshold = NIIT_THRESHOLDS[client.filingStatus] ?? NIIT_THRESHOLDS.single;
+  const agi = computed.adjustedGrossIncome;
+  // Symmetric band per spec. "Below threshold" case still fires (as an early
+  // warning) but estSavings is zero so it won't rank into the top hits.
+  if (agi < threshold - G1_6_BAND) return null;
+  if (agi > threshold + G1_6_BAND) return null;
+
+  const nii = computed.detail.niit?.investmentIncome ?? 0;
+  if (nii <= 0) return null;
+
+  const niitTax = computed.niitTax;
+  // Round up; estSavings = current NIIT (the upper bound recoverable by
+  // dropping AGI below the threshold).
+  if (niitTax <= 0) return null;
+
+  const strategy = strategyById("G1.6");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars = {
+    estSavings: Math.round(niitTax),
+    threshold: threshold,
+    deferAmount: Math.round(agi - threshold),
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings: Math.round(niitTax),
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `AGI ${fmt(Math.round(agi))} sits ${fmt(Math.round(agi - threshold))} above the ${fmt(threshold)} ` +
+      `NIIT threshold with ${fmt(Math.round(nii))} of investment income. Dropping AGI below the ` +
+      `threshold removes the 3.8% NIIT entirely.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      agi: Math.round(agi),
+      threshold,
+      excess: Math.round(agi - threshold),
+      netInvestmentIncome: Math.round(nii),
+      niitTax: Math.round(niitTax),
+    },
+  };
+}
+
+// ── G1.7 — §199A wage / UBIA limit (K-1) ──────────────────────────────────
+
+/**
+ * §199A taxable-income thresholds (Rev. Proc. 2023-34 TY2024 + 2024-40 TY2025).
+ * Below threshold: no wage/UBIA limit. Within phase-in band: limit phases in.
+ * Above phase-in top: wage/UBIA limit binds fully.
+ *
+ * For TY2024:
+ *   Single / MFS / HoH: threshold $191,950, top $241,950
+ *   MFJ / QSS:           threshold $383,900, top $483,900
+ *
+ * For TY2025:
+ *   Single / MFS / HoH: threshold $197,300, top $247,300
+ *   MFJ / QSS:           threshold $394,600, top $494,600
+ */
+const QBI_THRESHOLDS: Record<number, Record<string, { threshold: number; top: number }>> = {
+  2024: {
+    single: { threshold: 191950, top: 241950 },
+    married_filing_separately: { threshold: 191950, top: 241950 },
+    head_of_household: { threshold: 191950, top: 241950 },
+    married_filing_jointly: { threshold: 383900, top: 483900 },
+    qualifying_widow: { threshold: 383900, top: 483900 },
+  },
+  2025: {
+    single: { threshold: 197300, top: 247300 },
+    married_filing_separately: { threshold: 197300, top: 247300 },
+    head_of_household: { threshold: 197300, top: 247300 },
+    married_filing_jointly: { threshold: 394600, top: 494600 },
+    qualifying_widow: { threshold: 394600, top: 494600 },
+  },
+};
+
+function detectQbiPhaseIn(args: {
+  computed: ComputedTaxReturn;
+}): OpportunityHit | null {
+  const { computed } = args;
+  const k1Active = computed.scheduleK1?.totalActiveOrdinaryIncome ?? 0;
+  const qbi = computed.detail.qbi?.qbiAmount ?? 0;
+  // Only fires for K-1 / pass-through clients with QBI income.
+  if (k1Active <= 0 || qbi <= 0) return null;
+
+  const cfg = QBI_THRESHOLDS[computed.taxYear];
+  if (!cfg) return null;
+  const tier = cfg[computed.filingStatus] ?? cfg.single;
+  const taxableBeforeQbi = computed.taxableIncome + computed.qbiDeduction;
+  if (taxableBeforeQbi <= tier.threshold) return null;
+  if (taxableBeforeQbi > tier.top) return null;
+
+  const fedRate = federalMarginalRate(computed);
+  // Phase G plan proxy: 50% of QBI income is at risk of wage/UBIA-limit
+  // erosion when in the phase-in band. The engine doesn't model the limit
+  // (it applies the simplified flat 20%); proper Form 8995-A might reduce
+  // the QBI deduction. Recoverable estSavings = lost_qbi × 0.20 × marginalRate.
+  const lostQbi = qbi * 0.5;
+  const estSavings = lostQbi * 0.20 * fedRate;
+  if (estSavings <= 0) return null;
+
+  const strategy = strategyById("G1.7");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars = { estSavings: Math.round(estSavings) };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings: Math.round(estSavings),
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Taxable-before-QBI ${fmt(Math.round(taxableBeforeQbi))} is in the §199A phase-in band ` +
+      `(${fmt(tier.threshold)}-${fmt(tier.top)}). Engine applies simplified 20% × QBI; proper ` +
+      `Form 8995-A wage/UBIA structuring could recover up to ~${fmt(Math.round(estSavings))} of ` +
+      `federal tax.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      taxableBeforeQbi: Math.round(taxableBeforeQbi),
+      qbiAmount: Math.round(qbi),
+      lostQbi: Math.round(lostQbi),
+      threshold: tier.threshold,
+      phaseInTop: tier.top,
+      federalMarginalRate: fedRate,
+    },
+  };
+}
+
 // ── Top-level evaluator ────────────────────────────────────────────────────
 
 export interface PlanningInputs {
@@ -563,6 +716,10 @@ export function evaluatePlanningOpportunities(args: PlanningInputs): Opportunity
   if (roth) hits.push(roth);
   const amtIso = detectAmtIsoTiming({ computed: args.computed, adjustments: args.adjustments });
   if (amtIso) hits.push(amtIso);
+  const niit = detectNiitCliff({ client: args.client, computed: args.computed });
+  if (niit) hits.push(niit);
+  const qbi = detectQbiPhaseIn({ computed: args.computed });
+  if (qbi) hits.push(qbi);
   hits.sort((a, b) => b.estSavings - a.estSavings);
   return hits;
 }
