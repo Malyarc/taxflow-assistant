@@ -806,28 +806,38 @@ header("D2. Single $300k W-2, NY+NYC, Sch D + AMT ISO");
   check("D2", "Net cap gain = $17,000 (ST −3k + LT +20k, wash neutralized)",
     r.netCapitalGainLoss, 17000, 1, "Form 8949 + Sch D");
   check("D2", "Itemized = $28,000 (mortgage + SALT cap)", r.itemizedDeductions ?? 0, 28000, 50);
-  // AMT: taxable 289,000 (LTCG 20k taxed at LTCG rates downstream, but AMTI doesn't get LTCG preferential adjustment by default)
-  // Actually AMT uses AMTI which is essentially taxable + preferences.
-  // SALT addback (line 2g) = 10,000 (we itemized SALT 10k).
-  // ISO bargain (line 2k) = 50,000.
-  // AMTI = 289,000 + 10,000 + 50,000 = 349,000.
-  // Exemption single 2024 = 85,700 (no phase-out: 349k < 609,350).
+  // Schedule D cross-netting: STCG −3k + LTCG +20k → ST loss offsets LT, leaving
+  // netSTCG = 0 and netLTCG = $17,000. The $17k is the LTCG portion of AMTI/AMT base.
+  //
+  // AMTI: taxable 289,000 + SALT addback (line 2g) 10,000 + ISO (line 2k) 50,000 = 349,000.
+  // Exemption single 2024 = 85,700 (no phase-out at 349k < 609,350).
   // AMT base = 349,000 − 85,700 = 263,300.
-  // AMT (26%/28% breakpoint 232,600): 232,600 × 0.26 + (263,300 − 232,600) × 0.28
-  //   = 60,476 + 8,596 = 69,072.
-  // Regular tax (ordinary portion = 289,000 − 20,000 LTCG = 269,000):
-  //   single 2024: 1,160 + 4,266 + 11,742.50 + 21,942 + 16,568 + (269,000 − 243,725) × 0.35
-  //   = 55,678.50 + 8,846.25 = 64,524.75. Plus LTCG: 20,000 × 0.15 = 3,000 (since
-  //   AGI > 47,025 and < 518,900).
-  //   Regular = 64,524.75 + 3,000 = 67,524.75.
-  // AMT engine doesn't bifurcate LTCG into AMT-preferential treatment separately;
-  // it computes AMT on AMTI as a whole using AMT-rate-table. So the exact value
-  // depends on the engine's handling of LTCG-within-AMTI. Just assert AMT is
-  // non-zero and bounded, plus AMTI matches our preference math.
+  //
+  // POST-K3 (Form 6251 Part III LTCG preferential rates):
+  //   Path 1 (full 26/28%): 232,600 × 0.26 + (263,300 − 232,600) × 0.28
+  //     = 60,476 + 8,596 = 69,072.
+  //   Path 2 (LTCG @ 15% preserved): ordinary = 263,300 − 17,000 LTCG = 246,300.
+  //     AMT on ordinary: 232,600 × 0.26 + (246,300 − 232,600) × 0.28
+  //       = 60,476 + 3,836 = 64,312.
+  //     LTCG $17k stacked above $246,300 (< $518,900 15% top) → 17,000 × 15% = 2,550.
+  //     Path 2 total = 66,862.
+  //   Tentative AMT = MIN(69,072, 66,862) = 66,862.
+  //
+  // Regular tax (ordinary $272k + LTCG $17k):
+  //   ordinary single 2024 brackets to $272,000:
+  //     1,160 + 4,266 + 11,742.50 + 21,942 + 16,568 + (272,000 − 243,725) × 0.35
+  //     = 55,678.50 + 9,896.25 = 65,574.75.
+  //   LTCG: 17,000 × 15% = 2,550.
+  //   Regular = 68,124.75.
+  //
+  // AMT delta = MAX(0, 66,862 − 68,124.75) = MAX(0, −1,262.75) = $0.
+  // ⇒ K3 closure removed the AMT bind here (pre-K3 was ~$1,547 over-charge).
   check("D2", "AMTI = $349,000 (taxable $289k + SALT $10k + ISO $50k)",
     r.detail.amt.amti, 349000, 100, "Form 6251 AMTI composition");
-  check("D2", "AMT > $0 (binds with ISO bargain present)", r.amtTax > 0 ? 1 : 0, 1, 0.01,
-    "Form 6251 — AMT binds when AMTI − exemption exceeds reg tax base");
+  check("D2", "AMT = $0 (K3 — Form 6251 Part III preferred rates drop tentative AMT below regular tax)",
+    r.amtTax, 0, 0.01, "Form 6251 Part III — LTCG at 15% inside AMT");
+  check("D2", "AMT path 2 (preferred) = $66,862 — lower than path 1 ($69,072)",
+    r.detail.amt.amtWithPreferentialRates, 66862, 50, "Form 6251 Part III line 59");
 }
 
 // D3. Sch C entrepreneur with HSA + IRA + dependents. Trigger Saver's Credit + IRA phase-out logic.

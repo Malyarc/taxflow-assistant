@@ -1201,6 +1201,10 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const amt = calculateAmt({
     taxableIncome: taxableAfterQbi,
     amtPreferences: totalAmtPreferences,
+    // K3 — Form 6251 Part III: preserve LTCG/QDIV preferential rates inside AMT.
+    // Closed 2026-05-24; previously the engine over-charged AMT on
+    // high-LTCG + AMT-binding filers by taxing LTCG at 26/28%.
+    ltcgPlusQdiv: preferentialIncome,
     filingStatus: client.filingStatus,
     regularTax: regularFederalTax,
     taxYear,

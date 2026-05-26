@@ -1,17 +1,10 @@
 {
-  "generatedAt": "2026-05-26T06:24:22.834Z",
-  "pass": 145,
+  "generatedAt": "2026-05-26T06:31:19.216Z",
+  "pass": 154,
   "realFailures": 0,
-  "documentedGaps": 6,
+  "documentedGaps": 5,
   "failures": [],
   "gaps": [
-    {
-      "category": "K3-expected",
-      "label": "AMT does not apply LTCG preferential rates (Form 6251 Part III)",
-      "expected": 0,
-      "actual": 0,
-      "source": "Form 6251 Part III — AMT preserves 0/15/20% LTCG rates"
-    },
     {
       "category": "K4-expected",
       "label": "NOL carryforward (post-TCJA 80% taxable income limit) not modeled",

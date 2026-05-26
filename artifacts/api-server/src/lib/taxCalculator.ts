@@ -2392,6 +2392,48 @@ export interface CapitalGainsCalculation {
  * LTCG and qualified dividends fill brackets ABOVE ordinary income on the
  * preferential schedule.
  */
+/**
+ * Compute LTCG + qualified-dividend tax using the preferential 0/15/20%
+ * brackets, stacked above an "ordinary-income" stacking base. Reused both
+ * by regular-tax computation (calculateFederalTaxWithCapitalGains) and by
+ * AMT Form 6251 Part III (K3 — closed 2026-05-24) where the AMT base's
+ * LTCG/QDIV portion is preserved at preferential rates instead of being
+ * taxed at the 26/28% AMT rates.
+ *
+ * @param stackBase   The income that already fills brackets — LTCG sits above this.
+ *                    For regular tax: ordinaryTaxableIncome + STCG.
+ *                    For AMT: amtBase − ltcgInAmtBase (the "ordinary AMT" portion).
+ * @param ltcgQdiv    Total preferential-rate amount (LTCG + qualified dividends).
+ */
+function calculateLtcgQdivStackedTax(
+  stackBase: number,
+  ltcgQdiv: number,
+  filingStatus: string,
+  taxYear: number,
+): number {
+  const year = resolveTaxYear(taxYear);
+  const status = filingStatus in LTCG_BRACKETS[year] ? filingStatus : "single";
+  const ltcgIncluded = Math.max(0, ltcgQdiv);
+  if (ltcgIncluded <= 0) return 0;
+  const stack = Math.max(0, stackBase);
+  const brackets = LTCG_BRACKETS[year][status];
+  let tax = 0;
+  let prevCap = 0;
+  let remaining = ltcgIncluded;
+  for (const bracket of brackets) {
+    if (remaining <= 0) break;
+    const lower = Math.max(stack, prevCap);
+    const upper = Math.min(stack + ltcgIncluded, bracket.upTo);
+    const slice = Math.max(0, upper - lower);
+    if (slice > 0) {
+      tax += slice * bracket.rate;
+      remaining -= slice;
+    }
+    prevCap = bracket.upTo;
+  }
+  return tax;
+}
+
 export function calculateFederalTaxWithCapitalGains(params: {
   ordinaryTaxableIncome: number;
   longTermGains: number;
@@ -2408,25 +2450,8 @@ export function calculateFederalTaxWithCapitalGains(params: {
   // Ordinary tax on the ordinary-income portion (incl. STCG)
   const ordinaryTax = calculateFederalTax(ordinaryWithStcg, status, year);
 
-  // Preferential tax: LTCG/qualified dividends "stack" on top of ordinary income.
-  // For each LTCG bracket, the portion of LTCG that falls in [max(ordinaryWithStcg, prevCap), bracketCap]
-  // is taxed at that bracket's rate.
-  const ltcgBrackets = LTCG_BRACKETS[year][status];
-  let prefTax = 0;
-  let prevCap = 0;
-  let ltcgRemaining = ltcgIncluded;
-  for (const bracket of ltcgBrackets) {
-    if (ltcgRemaining <= 0) break;
-    // The taxable portion within this bracket is the slice above max(ordinaryWithStcg, prevCap)
-    const lower = Math.max(ordinaryWithStcg, prevCap);
-    const upper = Math.min(ordinaryWithStcg + ltcgIncluded, bracket.upTo);
-    const slice = Math.max(0, upper - lower);
-    if (slice > 0) {
-      prefTax += slice * bracket.rate;
-      ltcgRemaining -= slice;
-    }
-    prevCap = bracket.upTo;
-  }
+  // Preferential tax: LTCG/QDIV stack on top of ordinary income at 0/15/20%.
+  const prefTax = calculateLtcgQdivStackedTax(ordinaryWithStcg, ltcgIncluded, status, year);
 
   return {
     ordinaryTaxableIncome: params.ordinaryTaxableIncome,
@@ -2710,6 +2735,16 @@ export interface AmtCalculation {
   amtBeforeRegular: number;
   regularTax: number;
   amtTax: number;
+  /** K3 — Form 6251 Part III: AMT computed at 26/28% on full AMT base
+   *  (the "no-preferential" path). */
+  amtAtFullRateOnAmtBase: number;
+  /** K3 — Form 6251 Part III: AMT with LTCG/QDIV preserved at 0/15/20%
+   *  preferential rates (the "with-preferential" path). Equals
+   *  `amtBeforeRegular` when LTCG/QDIV are present and preferred yields
+   *  the lower tentative AMT. */
+  amtWithPreferentialRates: number;
+  /** K3 — portion of LTCG+QDIV included in the AMT base. */
+  ltcgQdivInAmtBase: number;
 }
 
 export function calculateAmt(params: {
@@ -2718,6 +2753,9 @@ export function calculateAmt(params: {
   filingStatus: string;
   regularTax: number;
   taxYear: number;
+  /** K3 — LTCG + QDIV portion of taxable income (Form 6251 Part III).
+   *  When > 0, AMT is computed both ways and the lower is used. */
+  ltcgPlusQdiv?: number;
 }): AmtCalculation {
   const year = resolveTaxYear(params.taxYear);
   const data = AMT_DATA[year];
@@ -2730,12 +2768,42 @@ export function calculateAmt(params: {
   const phaseOut = amti > phaseStart ? (amti - phaseStart) * 0.25 : 0;
   const exemption = Math.max(0, baseExemption - phaseOut);
   const amtBase = Math.max(0, amti - exemption);
-  const amtBeforeRegular =
+
+  // Path 1 — AMT at full 26/28% on the entire AMT base (original behavior).
+  const amtAtFullRateOnAmtBase =
     amtBase <= data.rateBreakpoint
       ? amtBase * 0.26
       : data.rateBreakpoint * 0.26 + (amtBase - data.rateBreakpoint) * 0.28;
+
+  // Path 2 — Form 6251 Part III: preserve LTCG/QDIV at 0/15/20% preferential rates.
+  // Splits the AMT base into ordinary portion (taxed at 26/28%) and LTCG/QDIV
+  // portion (taxed at preferential rates, stacked above the ordinary portion).
+  // The lower of the two paths is the tentative minimum tax (Line 61).
+  const ltcgPlusQdiv = Math.max(0, params.ltcgPlusQdiv ?? 0);
+  const ltcgQdivInAmtBase = Math.min(ltcgPlusQdiv, amtBase);
+  let amtWithPreferentialRates = amtAtFullRateOnAmtBase;
+  if (ltcgQdivInAmtBase > 0) {
+    const ordinaryPortion = Math.max(0, amtBase - ltcgQdivInAmtBase);
+    const amtOnOrdinary =
+      ordinaryPortion <= data.rateBreakpoint
+        ? ordinaryPortion * 0.26
+        : data.rateBreakpoint * 0.26 + (ordinaryPortion - data.rateBreakpoint) * 0.28;
+    const ltcgTax = calculateLtcgQdivStackedTax(ordinaryPortion, ltcgQdivInAmtBase, fs, year);
+    amtWithPreferentialRates = amtOnOrdinary + ltcgTax;
+  }
+
+  const amtBeforeRegular = Math.min(amtAtFullRateOnAmtBase, amtWithPreferentialRates);
   const amtTax = Math.max(0, amtBeforeRegular - regularTax);
-  return { amti, exemption, amtBeforeRegular, regularTax, amtTax };
+  return {
+    amti,
+    exemption,
+    amtBeforeRegular,
+    regularTax,
+    amtTax,
+    amtAtFullRateOnAmtBase,
+    amtWithPreferentialRates,
+    ltcgQdivInAmtBase,
+  };
 }
 
 // ── Child Tax Credit (federal) ─────────────────────────────────────────────

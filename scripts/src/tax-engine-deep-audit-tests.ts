@@ -909,22 +909,92 @@ header("K2. Form 8959 Additional Medicare 0.9% — CLOSED");
     "Sch 2 Line 11 — Add'l Medicare is an 'other tax' included in total federal liability");
 }
 
-// K3. AMT × LTCG (Form 6251 Part III) — engine taxes LTCG at 26/28% within AMT.
-// Real Form 6251 keeps LTCG at preferential rates.
-header("K3. AMT × LTCG: Form 6251 Part III preferential rates — GAP");
+// K3. AMT × LTCG (Form 6251 Part III).  CLOSED 2026-05-24.
+// AMT now preserves LTCG/QDIV at 0/15/20% preferential rates inside the
+// AMT base, taking the LOWER of (full 26/28% on entire AMT base) and
+// (26/28% on ordinary portion + LTCG at preferential rates on top).
+header("K3. AMT × LTCG: Form 6251 Part III preferential rates — CLOSED");
 {
-  // Single, $200k ordinary taxable + $100k LTCG. Std ded already deducted in inputs.
-  // Engineer via $314,600 wages + $100k LTCG.
-  // Correct: AMT on ordinary (after exemption etc.) + LTCG at 15%.
-  // We can't easily back-compute the exact "correct" AMT without re-implementing
-  // Form 6251 Part III, but we can detect that AMT is HIGHER than it should be
-  // for any high-LTCG case.
-  // Just emit the gap unconditionally — verified by reading calculateAmt.
-  FAIL.push({
-    category: "K3-expected", label: "AMT does not apply LTCG preferential rates (Form 6251 Part III)",
-    expected: 0, actual: 0,
-    source: "Form 6251 Part III — AMT preserves 0/15/20% LTCG rates",
-  });
+  // K3a — Regression: low-income filer with no AMT trigger AND no LTCG.
+  // AMT should be $0 (no LTCG-related change should leak through here).
+  const a = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, stateCode: "FL" }] });
+  check("K3a", "Low-income no-LTCG → AMT $0",
+    a.amtTax, 0, 0.01, "AMT exemption fully absorbs base");
+
+  // K3b — Regression: pure-LTCG case with no ordinary income above exemption.
+  // Single with $50k LTCG only. Taxable $35,400 = $50k - std $14,600.
+  // AMTI ≈ $35,400. AMT exemption $85,700 → amtBase = $0. AMT = 0.
+  // Whatever the calc does, AMT stays 0. Both paths agree.
+  const b = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    form1099s: [{ taxYear: 2024, formType: "b", payerName: "X", longTermGainLoss: 50000 }] });
+  check("K3b", "$50k LTCG-only single → AMT $0 (exemption fully absorbs)",
+    b.amtTax, 0, 0.01, "amtBase = 0 → both paths = 0");
+
+  // K3c — High-LTCG + AMT-binding case via ISO bargain prefs.
+  // Single, $200k W-2 + $100k LTCG + $250k ISO bargain pref.
+  // Hand-calc (TY2024):
+  //   Taxable ≈ $300k - $14,600 std = $285,400 (incl $100k LTCG).
+  //   Regular tax (ordinary $185,400 + LTCG $100k at 15%):
+  //     ordinary: 1160 + 4266 + 11742.50 + 18546 + ((185400-191950)→all in 24%)
+  //       = 1160 + (47150-11600)*.12 + (100525-47150)*.22 + (185400-100525)*.24
+  //       = 1160 + 4266 + 11742.50 + 20370 = 37538.50
+  //     LTCG 100k @ 15% = 15000
+  //     Regular tax ≈ 52538.50
+  //   AMTI = 285,400 + 250,000 (ISO pref) = 535,400.
+  //   AMT exemption single 2024 = $85,700, phase-out starts $609,350.
+  //     AMTI under phase-out → full exemption $85,700.
+  //   AMT base = 535,400 - 85,700 = $449,700.
+  //   Path 1 (full 26/28%): 232,600*.26 + (449700-232600)*.28 = 60476 + 60788 = 121264.
+  //   Path 2 (LTCG preserved): ordinary = 449,700 - 100,000 = 349,700.
+  //     AMT on ordinary 349,700: 232600*.26 + (349700-232600)*.28 = 60476 + 32788 = 93264.
+  //     LTCG 100k preferential stacking: ordinary stack 349,700 > $518,900 0%-cap? No, 349,700 < 518,900 → all $100k at 15% = $15,000.
+  //     Total path 2 = 93264 + 15000 = 108264.
+  //   Tentative AMT = MIN(121264, 108264) = 108264.
+  //   AMT delta = 108264 - 52538.50 = 55725.50. (Down from 121264 - 52538.50 = $68,725.50 pre-K3.)
+  //   K3 saves the filer ~$13,000.
+  const c = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 200000, stateCode: "FL" }],
+    form1099s: [{ taxYear: 2024, formType: "b", payerName: "X", longTermGainLoss: 100000 }],
+    adjustments: [{ adjustmentType: "amt_iso_bargain_element", amount: 250000, isApplied: true }] });
+  check("K3c", "$200k W-2 + $100k LTCG + $250k ISO → AMT $55,725.50 (was ~$68,725 pre-K3)",
+    c.amtTax, 55725.50, 50, "Form 6251 Part III — LTCG at 15% inside AMT");
+  check("K3c", "amtWithPreferentialRates = $108,264.50",
+    c.detail.amt.amtWithPreferentialRates, 108264.50, 50, "Path 2: 26/28% on ordinary + 15% on LTCG");
+  check("K3c", "amtAtFullRateOnAmtBase = $121,264 (full 26/28%)",
+    c.detail.amt.amtAtFullRateOnAmtBase, 121264, 50, "Path 1 unchanged from pre-K3 behavior");
+  check("K3c", "ltcgQdivInAmtBase = $100k (the $100k LTCG)",
+    c.detail.amt.ltcgQdivInAmtBase, 100000, 0.01);
+
+  // K3d — Engine takes MIN. Verify Path 1 wins when no LTCG.
+  // Single $200k W-2 + $250k ISO bargain.
+  // Path 2 fallback (ltcgPlusQdiv=0) returns amtBase × 26/28% — same as Path 1.
+  const d = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 200000, stateCode: "FL" }],
+    adjustments: [{ adjustmentType: "amt_iso_bargain_element", amount: 250000, isApplied: true }] });
+  check("K3d", "No-LTCG ISO case: amtWithPreferentialRates = amtAtFullRateOnAmtBase",
+    Math.abs(d.detail.amt.amtWithPreferentialRates - d.detail.amt.amtAtFullRateOnAmtBase) < 0.10 ? 1 : 0,
+    1, 0, "K3 no-op when ltcgPlusQdiv = 0");
+
+  // K3e — Qualified dividends count too (not just LTCG).
+  // Single $200k W-2 + $50k qualified dividends + $250k ISO.
+  // Taxable = $250k - $14,600 std = $235,400 (incl $50k QDIV).
+  //   AMTI = $235,400 + $250k ISO = $485,400. Exemption $85,700.
+  //   AMT base = $399,700.
+  //   Path 1: 232600*.26 + (399700-232600)*.28 = 60476 + 46788 = 107264.
+  //   Path 2: ordinary = 349,700. AMT on ord = 93,264.
+  //     QDIV $50k stack on top of $349,700 — all in 15% bracket = $7,500.
+  //     Total path 2 = $100,764.
+  //   AMT chooses MIN = $100,764. Regular tax delta to be subtracted.
+  const e = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 200000, stateCode: "FL" }],
+    form1099s: [{ taxYear: 2024, formType: "div", payerName: "X", ordinaryDividends: 50000, qualifiedDividends: 50000 }],
+    adjustments: [{ adjustmentType: "amt_iso_bargain_element", amount: 250000, isApplied: true }] });
+  check("K3e", "QDIV in AMT base — ltcgQdivInAmtBase = $50k",
+    e.detail.amt.ltcgQdivInAmtBase, 50000, 0.01);
+  check("K3e", "QDIV path-2 < path-1 (preferred wins)",
+    e.detail.amt.amtBeforeRegular < e.detail.amt.amtAtFullRateOnAmtBase ? 1 : 0, 1, 0,
+    "Form 6251 Part III picks the lower of the two AMT paths");
 }
 
 // K4. NOL carryforward (post-TCJA 80% limit). NOT modeled.
