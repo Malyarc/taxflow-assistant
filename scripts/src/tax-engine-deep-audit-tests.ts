@@ -815,10 +815,11 @@ header("K1. SE tax: W-2 + SE combined (Sch SE Line 9) — CLOSED");
   check("K1g", "K1a half-SE deduction = SE/2 = $6,931.35",
     a.detail.se.deductibleHalf, 6931.35, 0.10, "Half-SE above-the-line deduction reflects corrected SS portion");
 
-  // K1h — MFJ regression case: engine intentionally does NOT apply Line 9 to
-  // MFJ (per-spouse data not modeled). Behavior must remain unchanged from
-  // pre-fix: full SE tax computed on the SS base regardless of household
-  // W-2 SS wages. MFJ $110k+$75k W-2 + $8k Sch C, CA.
+  // K1h — MFJ WITHOUT explicit spouse attribution: engine falls back to
+  // pre-K1-MFJ behavior (no Line 9 applied, full SE tax computed without
+  // subtracting W-2 SS from the cap). Documents the "graceful default"
+  // when the CPA hasn't tagged records by spouse.
+  // MFJ $110k+$75k W-2 + $8k Sch C, CA.
   //   Net SE = 8000 × 0.9235 = 7388.
   //   SS portion = min(7388, 168600) × 0.124 = $916.11.
   //   Medicare = 7388 × 0.029 = $214.25.
@@ -829,8 +830,44 @@ header("K1. SE tax: W-2 + SE combined (Sch SE Line 9) — CLOSED");
       { taxYear: 2024, wagesBox1: 75000, stateCode: "CA" },
     ],
     form1099s: [{ taxYear: 2024, formType: "nec", payerName: "X", nonemployeeCompensation: 8000 }] });
-  check("K1h", "MFJ $185k household W-2 + $8k SE → SE $1,130.36 (Line 9 intentionally not applied to MFJ)",
-    h.selfEmploymentTax, 1130.36, 0.10, "Sch SE Part I Line 9 — MFJ requires per-spouse data; sub-gap tracked");
+  check("K1h", "MFJ no per-spouse attribution → SE $1,130.36 (graceful default; pre-K1-MFJ)",
+    h.selfEmploymentTax, 1130.36, 0.10, "Engine degrades to pre-K1-MFJ when no explicit spouse tag");
+
+  // K1i — MFJ with explicit per-spouse attribution: SE belongs to spouse who
+  // earns less W-2. $110k taxpayer W-2 + $75k spouse W-2 + $8k SE spouse.
+  // Spouse side: W-2 SS $75k < $168.6k. ss base avail = 93,600.
+  //   Net SE = 7388. SS portion = min(7388, 93600) × 0.124 = $916.11.
+  //   Medicare = $214.25. Total = $1,130.36.
+  const i = run({ client: { filingStatus: "married_filing_jointly", state: "CA", taxYear: 2024, dependentsUnder17: 0 },
+    w2s: [
+      { taxYear: 2024, wagesBox1: 110000, stateCode: "CA", spouse: "taxpayer" },
+      { taxYear: 2024, wagesBox1: 75000, stateCode: "CA", spouse: "spouse" },
+    ],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "X", nonemployeeCompensation: 8000, spouse: "spouse" } as any] });
+  check("K1i", "MFJ SE attributed to lower-W-2 spouse: SS base avail $93.6k → SE tax $1,130.36",
+    i.selfEmploymentTax, 1130.36, 0.10, "K1 MFJ sub-gap: per-spouse SE attribution");
+
+  // K1j — MFJ both spouses with SE income (each gets own Sch SE).
+  // Taxpayer: $80k W-2 + $50k Sch C. Net SE = 46175.
+  //   ss base avail = 168600 - 80000 = 88600.
+  //   SS portion = min(46175, 88600) × 0.124 = 46175 × 0.124 = $5,725.70.
+  //   Medicare = $1,339.075. Total = $7,064.78.
+  // Spouse: $40k W-2 + $30k Sch C. Net SE = 27705.
+  //   ss base avail = 168600 - 40000 = 128600.
+  //   SS portion = min(27705, 128600) × 0.124 = $3,435.42.
+  //   Medicare = $803.45. Total = $4,238.87.
+  // Sum SE tax = $11,303.65.
+  const j = run({ client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024 },
+    w2s: [
+      { taxYear: 2024, wagesBox1: 80000, stateCode: "FL", spouse: "taxpayer" },
+      { taxYear: 2024, wagesBox1: 40000, stateCode: "FL", spouse: "spouse" },
+    ],
+    form1099s: [
+      { taxYear: 2024, formType: "nec", payerName: "T", nonemployeeCompensation: 50000, spouse: "taxpayer" } as any,
+      { taxYear: 2024, formType: "nec", payerName: "S", nonemployeeCompensation: 30000, spouse: "spouse" } as any,
+    ] });
+  check("K1j", "MFJ both spouses W-2 + SE → SE tax = $7,064.78 + $4,238.87 = $11,303.65",
+    j.selfEmploymentTax, 11303.65, 0.50, "K1 MFJ — per-spouse Sch SE summed");
 }
 
 // K2. Additional Medicare 0.9% (Form 8959) on Medicare wages + SE.  CLOSED 2026-05-23.

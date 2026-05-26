@@ -745,6 +745,12 @@ export const ListW2DataResponseItem = zod.object({
   stateTaxWithheldBox17: zod.number().nullish(),
   stateWagesBox16: zod.number().nullish(),
   stateCode: zod.string().nullish(),
+  spouse: zod
+    .enum(["taxpayer", "spouse"])
+    .optional()
+    .describe(
+      'K1 MFJ — which spouse this W-2 belongs to (drives per-spouse Sch SE Line 9 SS wage base). Default \"taxpayer\".',
+    ),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -772,6 +778,12 @@ export const CreateW2DataBody = zod.object({
   stateTaxWithheldBox17: zod.number().nullish(),
   stateWagesBox16: zod.number().nullish(),
   stateCode: zod.string().nullish(),
+  spouse: zod
+    .enum(["taxpayer", "spouse"])
+    .optional()
+    .describe(
+      'K1 MFJ — which spouse this W-2 belongs to (drives per-spouse Sch SE Line 9 SS wage base). Default \"taxpayer\".',
+    ),
 });
 
 /**
@@ -795,6 +807,12 @@ export const UpdateW2DataBody = zod.object({
   stateTaxWithheldBox17: zod.number().nullish(),
   stateWagesBox16: zod.number().nullish(),
   stateCode: zod.string().nullish(),
+  spouse: zod
+    .enum(["taxpayer", "spouse"])
+    .optional()
+    .describe(
+      'K1 MFJ — which spouse this W-2 belongs to (drives per-spouse Sch SE Line 9 SS wage base). Default \"taxpayer\".',
+    ),
 });
 
 export const UpdateW2DataResponse = zod.object({
@@ -814,6 +832,12 @@ export const UpdateW2DataResponse = zod.object({
   stateTaxWithheldBox17: zod.number().nullish(),
   stateWagesBox16: zod.number().nullish(),
   stateCode: zod.string().nullish(),
+  spouse: zod
+    .enum(["taxpayer", "spouse"])
+    .optional()
+    .describe(
+      'K1 MFJ — which spouse this W-2 belongs to (drives per-spouse Sch SE Line 9 SS wage base). Default \"taxpayer\".',
+    ),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -870,6 +894,12 @@ export const ListForm1099DataResponseItem = zod.object({
   unemploymentCompensation: zod.number().nullish(),
   stateLocalRefund: zod.number().nullish(),
   grossPaymentAmount: zod.number().nullish(),
+  spouse: zod
+    .enum(["taxpayer", "spouse"])
+    .optional()
+    .describe(
+      'K1 MFJ — which spouse this 1099 belongs to (drives per-spouse SE attribution for 1099-NEC). Default \"taxpayer\".',
+    ),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });
@@ -910,6 +940,7 @@ export const CreateForm1099DataBody = zod.object({
   unemploymentCompensation: zod.number().nullish(),
   stateLocalRefund: zod.number().nullish(),
   grossPaymentAmount: zod.number().nullish(),
+  spouse: zod.enum(["taxpayer", "spouse"]).optional(),
 });
 
 /**
@@ -950,6 +981,7 @@ export const UpdateForm1099DataBody = zod.object({
   unemploymentCompensation: zod.number().nullish(),
   stateLocalRefund: zod.number().nullish(),
   grossPaymentAmount: zod.number().nullish(),
+  spouse: zod.enum(["taxpayer", "spouse"]).optional(),
 });
 
 export const UpdateForm1099DataResponse = zod.object({
@@ -989,6 +1021,12 @@ export const UpdateForm1099DataResponse = zod.object({
   unemploymentCompensation: zod.number().nullish(),
   stateLocalRefund: zod.number().nullish(),
   grossPaymentAmount: zod.number().nullish(),
+  spouse: zod
+    .enum(["taxpayer", "spouse"])
+    .optional()
+    .describe(
+      'K1 MFJ — which spouse this 1099 belongs to (drives per-spouse SE attribution for 1099-NEC). Default \"taxpayer\".',
+    ),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });

@@ -71,6 +71,11 @@ export const form1099DataTable = pgTable("form_1099_data", {
   /** Per-field bounding boxes from AI extraction (0–1000 normalized image coords) */
   fieldBoxes: jsonb("field_boxes"),
 
+  /** K1 MFJ sub-gap — which spouse this 1099 belongs to ("taxpayer" or "spouse").
+   *  Used only for MFJ per-spouse SE attribution (1099-NEC primarily). Default
+   *  "taxpayer". Ignored for non-MFJ filing statuses. */
+  spouse: text("spouse").notNull().default("taxpayer"),
+
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

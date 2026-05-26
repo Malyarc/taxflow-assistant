@@ -147,12 +147,18 @@ export interface W2Fact {
   medicareWagesBox5?: Numish;
   stateTaxWithheldBox17?: Numish;
   stateCode?: string | null;
+  /** K1 MFJ sub-gap — which spouse this W-2 belongs to. Default "taxpayer".
+   *  Drives per-spouse Sch SE Line 9 SS wage base computation for MFJ. */
+  spouse?: "taxpayer" | "spouse" | string | null;
 }
 
 export interface Form1099Fact {
   taxYear?: number | null;
   formType: string; // "nec" | "misc" | "int" | "div" | "b" | "r" | "g" | "k"
   payerName?: string | null;
+  /** K1 MFJ sub-gap — which spouse this 1099 belongs to. Default "taxpayer".
+   *  Drives per-spouse SE attribution (1099-NEC primarily) for MFJ. */
+  spouse?: "taxpayer" | "spouse" | string | null;
   // form-specific fields, all coerced via toNum
   nonemployeeCompensation?: Numish;
   interestIncome?: Numish;
@@ -689,6 +695,16 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     (s, r) => s + (r.medicareWagesBox5 != null ? toNum(r.medicareWagesBox5) : toNum(r.wagesBox1)),
     0,
   );
+  // K1 MFJ sub-gap — per-spouse W-2 SS wages for proper Sch SE Part I Line 9.
+  // Each spouse files their own Sch SE; each subtracts only their own W-2
+  // SS wages from the $168,600 SS wage base. Treats missing spouse field
+  // as "taxpayer" (the conservative default).
+  const w2SsByTaxpayer = w2Records
+    .filter((r) => (r.spouse ?? "taxpayer") === "taxpayer")
+    .reduce((s, r) => s + (r.socialSecurityWagesBox3 != null ? toNum(r.socialSecurityWagesBox3) : toNum(r.wagesBox1)), 0);
+  const w2SsBySpouse = w2Records
+    .filter((r) => r.spouse === "spouse")
+    .reduce((s, r) => s + (r.socialSecurityWagesBox3 != null ? toNum(r.socialSecurityWagesBox3) : toNum(r.wagesBox1)), 0);
 
   // ── 1099 aggregation (filter to tax year) + summary ──
   const form1099Records = form1099s.filter((r) => (r.taxYear ?? taxYear) === taxYear);
@@ -955,23 +971,73 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // (K-1 SE loss nets against positive amounts; floor at 0).
   const seTaxBase = Math.max(0, netSeIncome + k1SelfEmploymentEarnings);
 
-  // Sch SE Part I Line 9: for single/HoH/MFS/QSS filers, W-2 SS wages
-  // already paid into the SS system reduce the SS wage base available
-  // for SE income. Without this, combined W-2 + SE filers over-pay the
-  // SS portion (deep-audit gap K1, closed in this commit).
+  // Sch SE Part I Line 9: each spouse files their own Sch SE; each subtracts
+  // only their own W-2 SS wages from the SS wage base. For single/HoH/MFS/QSS
+  // there is one filer — straightforward path. For MFJ we group SE income
+  // and W-2 SS wages by spouse and call calculateSelfEmploymentTax once per
+  // spouse, then sum.
   //
-  // For MFJ we cannot apply this safely: the engine sums W-2 wages
-  // household-wide but the IRS Sch SE rule is per-spouse — each spouse
-  // files their own Sch SE and subtracts only their own W-2 SS wages.
-  // Without per-spouse W-2/SE attribution, the conservative behavior is
-  // to leave the SS base un-reduced for MFJ (mirrors the old engine
-  // behavior — correct for the common case where the SE earner is the
-  // lower-W-2 spouse, slightly over-charges only the case where the
-  // single SE+W-2 earner is over the SS cap). Tracked as MFJ sub-gap.
-  const seW2SsWages = client.filingStatus === "married_filing_jointly"
-    ? 0
-    : w2SocialSecurityWages;
-  const se = calculateSelfEmploymentTax(seTaxBase, taxYear, seW2SsWages);
+  // Per-spouse SE income (1099-NEC by spouse field; Sch C adjustments default
+  // to taxpayer, since `self_employment_income` adjustments don't carry a
+  // spouse field today — sub-sub-gap documented in CLAUDE.md).
+  let se: ReturnType<typeof calculateSelfEmploymentTax>;
+  const isMfjForSe = client.filingStatus === "married_filing_jointly" ||
+                     client.filingStatus === "qualifying_widow";
+  // Per-spouse attribution only kicks in when the CPA has explicitly tagged
+  // at least one record with spouse="spouse". Without any explicit
+  // attribution, fall back to the pre-K1-MFJ behavior (no Line 9 applied)
+  // — correct for the common case where the SE earner is the lower-W-2
+  // spouse. This prevents the engine from over-consuming the SS cap on
+  // implicit-default "all-taxpayer" attribution.
+  const hasExplicitSpouseAttribution =
+    w2Records.some((r) => r.spouse === "spouse") ||
+    form1099Records.some((r) => r.spouse === "spouse");
+  if (isMfjForSe && hasExplicitSpouseAttribution) {
+    // K1 MFJ sub-gap closure (2026-05-26).
+    const necRecordsForYear = form1099Records.filter((r) =>
+      r.formType === "nec" && (r.taxYear ?? taxYear) === taxYear);
+    const necSeIncomeTaxpayer = necRecordsForYear
+      .filter((r) => (r.spouse ?? "taxpayer") === "taxpayer")
+      .reduce((s, r) => s + toNum(r.nonemployeeCompensation), 0);
+    const necSeIncomeSpouse = necRecordsForYear
+      .filter((r) => r.spouse === "spouse")
+      .reduce((s, r) => s + toNum(r.nonemployeeCompensation), 0);
+    // self_employment_income adjustments + K-1 partnership Box 14A default to
+    // taxpayer attribution. Schedule C expenses split is the same — apportion
+    // to taxpayer's gross.
+    const grossSeTaxpayer = seIncomeFromAdj + necSeIncomeTaxpayer;
+    const grossSeSpouse = necSeIncomeSpouse;
+    const taxpayerScheduleCExpenses = Math.min(
+      Math.max(0, scheduleCExpensesInput),
+      Math.max(0, grossSeTaxpayer),
+    );
+    const taxpayerNetSe = Math.max(0, grossSeTaxpayer - taxpayerScheduleCExpenses);
+    const spouseNetSe = Math.max(0, grossSeSpouse);
+    const seTaxBaseTaxpayer = Math.max(0, taxpayerNetSe + k1SelfEmploymentEarnings);
+    const seTaxBaseSpouse = Math.max(0, spouseNetSe);
+
+    const seTaxpayer = calculateSelfEmploymentTax(seTaxBaseTaxpayer, taxYear, w2SsByTaxpayer);
+    const seSpouse = calculateSelfEmploymentTax(seTaxBaseSpouse, taxYear, w2SsBySpouse);
+    // Combine the two Sch SE results into a single SeTaxCalculation.
+    se = {
+      seIncomeReported: seTaxpayer.seIncomeReported + seSpouse.seIncomeReported,
+      netSeEarnings: seTaxpayer.netSeEarnings + seSpouse.netSeEarnings,
+      socialSecurityPortion: seTaxpayer.socialSecurityPortion + seSpouse.socialSecurityPortion,
+      medicarePortion: seTaxpayer.medicarePortion + seSpouse.medicarePortion,
+      seTaxTotal: seTaxpayer.seTaxTotal + seSpouse.seTaxTotal,
+      deductibleHalf: seTaxpayer.deductibleHalf + seSpouse.deductibleHalf,
+      ssBaseAvailableForSe: seTaxpayer.ssBaseAvailableForSe + seSpouse.ssBaseAvailableForSe,
+    };
+  } else if (isMfjForSe) {
+    // MFJ without explicit spouse attribution — pre-K1-MFJ behavior:
+    // pass 0 to calculateSelfEmploymentTax (no Line 9 applied). The CPA
+    // can opt in to per-spouse Sch SE by tagging at least one W-2 or
+    // 1099-NEC with spouse="spouse".
+    se = calculateSelfEmploymentTax(seTaxBase, taxYear, 0);
+  } else {
+    // Single, HoH, MFS, QSS — single filer; original Sch SE Line 9 path.
+    se = calculateSelfEmploymentTax(seTaxBase, taxYear, w2SocialSecurityWages);
+  }
 
   // K5 — SEHI deduction (Form 7206). Cap = net SE − half-SE. Adjustment is
   // gross premiums; engine applies the cap. Goes above-the-line (subtracts

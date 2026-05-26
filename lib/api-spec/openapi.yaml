@@ -1358,6 +1358,10 @@ components:
           type: ["number", "null"]
         stateCode:
           type: ["string", "null"]
+        spouse:
+          type: string
+          enum: [taxpayer, spouse]
+          description: K1 MFJ — which spouse this W-2 belongs to (drives per-spouse Sch SE Line 9 SS wage base). Default "taxpayer".
         createdAt:
           type: string
           format: date-time
@@ -1397,6 +1401,10 @@ components:
           type: ["number", "null"]
         stateCode:
           type: ["string", "null"]
+        spouse:
+          type: string
+          enum: [taxpayer, spouse]
+          description: K1 MFJ — which spouse this W-2 belongs to (drives per-spouse Sch SE Line 9 SS wage base). Default "taxpayer".
 
     UpdateW2DataBody:
       type: object
@@ -1425,6 +1433,10 @@ components:
           type: ["number", "null"]
         stateCode:
           type: ["string", "null"]
+        spouse:
+          type: string
+          enum: [taxpayer, spouse]
+          description: K1 MFJ — which spouse this W-2 belongs to (drives per-spouse Sch SE Line 9 SS wage base). Default "taxpayer".
 
     # ── Form 1099 Data ───────────────────────────────────────────────────────
     Form1099Data:
@@ -1504,6 +1516,10 @@ components:
           type: ["number", "null"]
         grossPaymentAmount:
           type: ["number", "null"]
+        spouse:
+          type: string
+          enum: [taxpayer, spouse]
+          description: K1 MFJ — which spouse this 1099 belongs to (drives per-spouse SE attribution for 1099-NEC). Default "taxpayer".
         createdAt:
           type: string
           format: date-time
@@ -1570,6 +1586,9 @@ components:
           type: ["number", "null"]
         grossPaymentAmount:
           type: ["number", "null"]
+        spouse:
+          type: string
+          enum: [taxpayer, spouse]
 
     UpdateForm1099DataBody:
       type: object
@@ -1629,6 +1648,9 @@ components:
           type: ["number", "null"]
         grossPaymentAmount:
           type: ["number", "null"]
+        spouse:
+          type: string
+          enum: [taxpayer, spouse]
 
     # ── TaxReturn ────────────────────────────────────────────────────────────
     TaxReturn:

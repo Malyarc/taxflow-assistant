@@ -19,6 +19,10 @@ export const w2DataTable = pgTable("w2_data", {
   stateTaxWithheldBox17: numeric("state_tax_withheld_box17", { precision: 12, scale: 2 }),
   stateWagesBox16: numeric("state_wages_box16", { precision: 12, scale: 2 }),
   stateCode: text("state_code"),
+  /** K1 MFJ sub-gap — which spouse this W-2 belongs to ("taxpayer" or "spouse").
+   *  Used only for MFJ per-spouse Sch SE Line 9 SS wage base computation.
+   *  Default "taxpayer". Ignored for non-MFJ filing statuses. */
+  spouse: text("spouse").notNull().default("taxpayer"),
   /** Per-field bounding boxes in 0-1000 normalized image coordinates (set when AI extracted from image/PDF) */
   fieldBoxes: jsonb("field_boxes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

@@ -467,6 +467,16 @@ export interface RejectExtractionBody {
   reason?: string | null;
 }
 
+/**
+ * K1 MFJ — which spouse this W-2 belongs to (drives per-spouse Sch SE Line 9 SS wage base). Default "taxpayer".
+ */
+export type W2DataSpouse = (typeof W2DataSpouse)[keyof typeof W2DataSpouse];
+
+export const W2DataSpouse = {
+  taxpayer: "taxpayer",
+  spouse: "spouse",
+} as const;
+
 export interface W2Data {
   id: number;
   clientId: number;
@@ -497,9 +507,22 @@ export interface W2Data {
   stateWagesBox16?: number | null;
   /** @nullable */
   stateCode?: string | null;
+  /** K1 MFJ — which spouse this W-2 belongs to (drives per-spouse Sch SE Line 9 SS wage base). Default "taxpayer". */
+  spouse?: W2DataSpouse;
   createdAt: string;
   updatedAt: string;
 }
+
+/**
+ * K1 MFJ — which spouse this W-2 belongs to (drives per-spouse Sch SE Line 9 SS wage base). Default "taxpayer".
+ */
+export type CreateW2DataBodySpouse =
+  (typeof CreateW2DataBodySpouse)[keyof typeof CreateW2DataBodySpouse];
+
+export const CreateW2DataBodySpouse = {
+  taxpayer: "taxpayer",
+  spouse: "spouse",
+} as const;
 
 export interface CreateW2DataBody {
   /** @nullable */
@@ -529,7 +552,20 @@ export interface CreateW2DataBody {
   stateWagesBox16?: number | null;
   /** @nullable */
   stateCode?: string | null;
+  /** K1 MFJ — which spouse this W-2 belongs to (drives per-spouse Sch SE Line 9 SS wage base). Default "taxpayer". */
+  spouse?: CreateW2DataBodySpouse;
 }
+
+/**
+ * K1 MFJ — which spouse this W-2 belongs to (drives per-spouse Sch SE Line 9 SS wage base). Default "taxpayer".
+ */
+export type UpdateW2DataBodySpouse =
+  (typeof UpdateW2DataBodySpouse)[keyof typeof UpdateW2DataBodySpouse];
+
+export const UpdateW2DataBodySpouse = {
+  taxpayer: "taxpayer",
+  spouse: "spouse",
+} as const;
 
 export interface UpdateW2DataBody {
   /** @nullable */
@@ -556,6 +592,8 @@ export interface UpdateW2DataBody {
   stateWagesBox16?: number | null;
   /** @nullable */
   stateCode?: string | null;
+  /** K1 MFJ — which spouse this W-2 belongs to (drives per-spouse Sch SE Line 9 SS wage base). Default "taxpayer". */
+  spouse?: UpdateW2DataBodySpouse;
 }
 
 export type Form1099DataFormType =
@@ -570,6 +608,17 @@ export const Form1099DataFormType = {
   r: "r",
   g: "g",
   k: "k",
+} as const;
+
+/**
+ * K1 MFJ — which spouse this 1099 belongs to (drives per-spouse SE attribution for 1099-NEC). Default "taxpayer".
+ */
+export type Form1099DataSpouse =
+  (typeof Form1099DataSpouse)[keyof typeof Form1099DataSpouse];
+
+export const Form1099DataSpouse = {
+  taxpayer: "taxpayer",
+  spouse: "spouse",
 } as const;
 
 export interface Form1099Data {
@@ -641,6 +690,8 @@ export interface Form1099Data {
   stateLocalRefund?: number | null;
   /** @nullable */
   grossPaymentAmount?: number | null;
+  /** K1 MFJ — which spouse this 1099 belongs to (drives per-spouse SE attribution for 1099-NEC). Default "taxpayer". */
+  spouse?: Form1099DataSpouse;
   createdAt: string;
   updatedAt: string;
 }
@@ -657,6 +708,14 @@ export const CreateForm1099DataBodyFormType = {
   r: "r",
   g: "g",
   k: "k",
+} as const;
+
+export type CreateForm1099DataBodySpouse =
+  (typeof CreateForm1099DataBodySpouse)[keyof typeof CreateForm1099DataBodySpouse];
+
+export const CreateForm1099DataBodySpouse = {
+  taxpayer: "taxpayer",
+  spouse: "spouse",
 } as const;
 
 export interface CreateForm1099DataBody {
@@ -712,6 +771,7 @@ export interface CreateForm1099DataBody {
   stateLocalRefund?: number | null;
   /** @nullable */
   grossPaymentAmount?: number | null;
+  spouse?: CreateForm1099DataBodySpouse;
 }
 
 export type UpdateForm1099DataBodyFormType =
@@ -726,6 +786,14 @@ export const UpdateForm1099DataBodyFormType = {
   r: "r",
   g: "g",
   k: "k",
+} as const;
+
+export type UpdateForm1099DataBodySpouse =
+  (typeof UpdateForm1099DataBodySpouse)[keyof typeof UpdateForm1099DataBodySpouse];
+
+export const UpdateForm1099DataBodySpouse = {
+  taxpayer: "taxpayer",
+  spouse: "spouse",
 } as const;
 
 export interface UpdateForm1099DataBody {
@@ -781,6 +849,7 @@ export interface UpdateForm1099DataBody {
   stateLocalRefund?: number | null;
   /** @nullable */
   grossPaymentAmount?: number | null;
+  spouse?: UpdateForm1099DataBodySpouse;
 }
 
 export interface TaxReturn {
