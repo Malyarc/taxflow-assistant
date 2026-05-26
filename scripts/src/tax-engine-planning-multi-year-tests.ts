@@ -54,6 +54,9 @@ function snapshot(overrides: Partial<TaxReturnSnapshot> & { taxYear: number; fil
     itemizedDeductions: 0,
     amtTax: 0,
     niitTax: 0,
+    medicalDeductible: 0,
+    saltDeductible: 0,
+    mortgageDeductible: 0,
     charitableDeductible: 0,
     capitalLossCarryforwardShort: 0,
     capitalLossCarryforwardLong: 0,
@@ -282,10 +285,10 @@ section("G4.3 Permanent bunching strategy");
 // --- G4.3+1: MFJ TY2024 + 2025 at cliff with charity ---
 // Hand-calc:
 //   Current year (TY2025): MFJ std ded = $30,000. Band ±15% = $25,500 to $34,500.
-//     Itemized = $30,500 (in band).
+//     Sched A line items: salt $10k (cap), mortgage $12.5k, charity $8k = $30.5k (in band).
 //   Prior year (TY2024): MFJ std ded = $29,200. Band ±15% = $24,820 to $33,580.
-//     Itemized = $28,800 (in band).
-//   Charity in current = $8,000 (> 0).
+//     Sched A line items: salt $10k, mortgage $11.3k, charity $7.5k = $28.8k (in band).
+//   Charity in current = $8,000 (> 0 — bunching lever exists).
 //   Marginal rate from TY2025 taxableIncome = $150,000:
 //     MFJ 2025 brackets (Rev. Proc. 2024-40): 10% to $23,850 | 12% to $96,950 |
 //                                              22% to $206,700 | 24% to $394,600.
@@ -299,12 +302,12 @@ header("G4.3+1 — MFJ 2 years at cliff with charity, est $1,650");
       snapshot({
         taxYear: 2025, filingStatus: "married_filing_jointly",
         taxableIncome: 150000, adjustedGrossIncome: 180000,
-        itemizedDeductions: 30500, charitableDeductible: 8000,
+        saltDeductible: 10000, mortgageDeductible: 12500, charitableDeductible: 8000,
       }),
       snapshot({
         taxYear: 2024, filingStatus: "married_filing_jointly",
         taxableIncome: 145000, adjustedGrossIncome: 175000,
-        itemizedDeductions: 28800, charitableDeductible: 7500,
+        saltDeductible: 10000, mortgageDeductible: 11300, charitableDeductible: 7500,
       }),
     ],
   });
@@ -321,8 +324,10 @@ header("G4.3+1 — MFJ 2 years at cliff with charity, est $1,650");
 
 // --- G4.3+2: Single TY2024 + 2025 at cliff ---
 // Hand-calc:
-//   Current (TY2025): Single std ded = $15,000. Band $12,750-$17,250. Itemized = $14,800 (in band).
-//   Prior (TY2024): Single std ded = $14,600. Band $12,410-$16,790. Itemized = $14,200 (in band).
+//   Current (TY2025): Single std ded = $15,000. Band $12,750-$17,250.
+//     Sched A items: salt $5k, mortgage $6.8k, charity $3k = $14.8k (in band).
+//   Prior (TY2024): Single std ded = $14,600. Band $12,410-$16,790.
+//     Sched A items: salt $5k, mortgage $6.7k, charity $2.5k = $14.2k (in band).
 //   Charity in current = $3,000.
 //   Marginal: Single 2025 brackets: 10% to $11,925 | 12% to $48,475 | 22% to $103,350.
 //     taxableIncome = $80,000 → 22% marginal.
@@ -334,11 +339,13 @@ header("G4.3+2 — Single 2 years at cliff TY2024+2025, est $825");
     history: [
       snapshot({
         taxYear: 2025, filingStatus: "single",
-        taxableIncome: 80000, itemizedDeductions: 14800, charitableDeductible: 3000,
+        taxableIncome: 80000,
+        saltDeductible: 5000, mortgageDeductible: 6800, charitableDeductible: 3000,
       }),
       snapshot({
         taxYear: 2024, filingStatus: "single",
-        taxableIncome: 75000, itemizedDeductions: 14200, charitableDeductible: 2500,
+        taxableIncome: 75000,
+        saltDeductible: 5000, mortgageDeductible: 6700, charitableDeductible: 2500,
       }),
     ],
   });
@@ -349,7 +356,9 @@ header("G4.3+2 — Single 2 years at cliff TY2024+2025, est $825");
 
 // --- G4.3+3: 3 years all at cliff — uses current year's std ded ---
 // Hand-calc:
-//   3 years at cliff. Current (TY2025): MFJ std ded = $30,000, itemized $30,000 (right on).
+//   3 years at cliff. Current (TY2025): MFJ std ded = $30,000.
+//     Sched A items: salt $10k, mortgage $8k, charity $12k = $30k (right on).
+//   Prior years all near cliff (sum within +/-15% of their year's std ded).
 //   Marginal: MFJ 2025 taxableIncome $300,000 → 24% bracket (between $206,700 and $394,600).
 //   estSavings = $30,000 × 0.25 × 0.24 = $1,800.
 header("G4.3+3 — MFJ 3 years at cliff, 24% marginal, est $1,800");
@@ -359,15 +368,18 @@ header("G4.3+3 — MFJ 3 years at cliff, 24% marginal, est $1,800");
     history: [
       snapshot({
         taxYear: 2025, filingStatus: "married_filing_jointly",
-        taxableIncome: 300000, itemizedDeductions: 30000, charitableDeductible: 12000,
+        taxableIncome: 300000,
+        saltDeductible: 10000, mortgageDeductible: 8000, charitableDeductible: 12000,
       }),
       snapshot({
         taxYear: 2024, filingStatus: "married_filing_jointly",
-        taxableIncome: 290000, itemizedDeductions: 29500, charitableDeductible: 11000,
+        taxableIncome: 290000,
+        saltDeductible: 10000, mortgageDeductible: 8500, charitableDeductible: 11000,
       }),
       snapshot({
         taxYear: 2023, filingStatus: "married_filing_jointly",
-        taxableIncome: 270000, itemizedDeductions: 30200, charitableDeductible: 10000,
+        taxableIncome: 270000,
+        saltDeductible: 10000, mortgageDeductible: 10200, charitableDeductible: 10000,
       }),
     ],
   });
@@ -380,7 +392,7 @@ header("G4.3+3 — MFJ 3 years at cliff, 24% marginal, est $1,800");
 }
 
 // --- G4.3-1: Itemized far below std ded (took std ded comfortably) — no fire ---
-// MFJ std ded TY2024 = $29,200. Itemized = $10,000 is well below 85% band ($24,820).
+// MFJ std ded TY2024 = $29,200. Sched A items sum = $10k, well below 85% band ($24,820).
 header("G4.3-1 — Itemized far below std-ded band, no fire");
 {
   const hits = evaluateMultiYearOpportunities({
@@ -388,11 +400,13 @@ header("G4.3-1 — Itemized far below std-ded band, no fire");
     history: [
       snapshot({
         taxYear: 2025, filingStatus: "married_filing_jointly",
-        taxableIncome: 150000, itemizedDeductions: 10000, charitableDeductible: 5000,
+        taxableIncome: 150000,
+        saltDeductible: 5000, charitableDeductible: 5000, // sum $10k
       }),
       snapshot({
         taxYear: 2024, filingStatus: "married_filing_jointly",
-        taxableIncome: 145000, itemizedDeductions: 9000, charitableDeductible: 4500,
+        taxableIncome: 145000,
+        saltDeductible: 4500, charitableDeductible: 4500, // sum $9k
       }),
     ],
   });
@@ -408,11 +422,13 @@ header("G4.3-2 — At cliff but no charitable, no fire");
     history: [
       snapshot({
         taxYear: 2025, filingStatus: "married_filing_jointly",
-        taxableIncome: 150000, itemizedDeductions: 30500, charitableDeductible: 0,
+        taxableIncome: 150000,
+        saltDeductible: 10000, mortgageDeductible: 20500, charitableDeductible: 0, // sum $30.5k
       }),
       snapshot({
         taxYear: 2024, filingStatus: "married_filing_jointly",
-        taxableIncome: 145000, itemizedDeductions: 28800, charitableDeductible: 0,
+        taxableIncome: 145000,
+        saltDeductible: 10000, mortgageDeductible: 18800, charitableDeductible: 0, // sum $28.8k
       }),
     ],
   });
@@ -428,11 +444,13 @@ header("G4.3 boundary — current at cliff, prior far above; no fire");
     history: [
       snapshot({
         taxYear: 2025, filingStatus: "married_filing_jointly",
-        taxableIncome: 150000, itemizedDeductions: 30500, charitableDeductible: 8000,
+        taxableIncome: 150000,
+        saltDeductible: 10000, mortgageDeductible: 12500, charitableDeductible: 8000, // sum $30.5k
       }),
       snapshot({
         taxYear: 2024, filingStatus: "married_filing_jointly",
-        taxableIncome: 145000, itemizedDeductions: 50000, charitableDeductible: 7500, // far above $33,580
+        taxableIncome: 145000,
+        saltDeductible: 10000, mortgageDeductible: 30000, charitableDeductible: 10000, // sum $50k — far above $33,580
       }),
     ],
   });

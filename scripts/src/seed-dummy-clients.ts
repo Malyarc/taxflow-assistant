@@ -828,6 +828,65 @@ ARCHETYPES.push({
   adjustments: [{ adjustmentType: "amt_iso_bargain_element", amount: 80000 }],
 });
 
+// ── Phase G4 demo archetypes (3) ──────────────────────────────────────────
+// Specifically constructed so each fires one G4 multi-year detector when
+// the seed extension generates 2024 + 2025 snapshots. Picked to round out
+// the demo story; the regular archetypes above already exercise G4.1/G4.2.
+
+// G4.3 — Persistent itemized std-ded cliff with charity (MFJ TY2024).
+// MFJ stdDed 2024 = $29,200; 2025 = $30,000. Itemized $28k both years
+// (within +/- 15% band) with $8k cash charity → bunching opportunity.
+ARCHETYPES.push({
+  slug: "g4-bunching-mfj",
+  notes: "MFJ near std-ded cliff 2 years running (G4.3 demo)",
+  filingStatus: "married_filing_jointly", state: "NY", taxYear: 2024,
+  w2s: [
+    { wagesBox1: 160000, federalTaxWithheldBox2: 20000, stateCode: "NY" },
+  ],
+  adjustments: [
+    { adjustmentType: "state_income_tax", amount: 9000 },
+    { adjustmentType: "state_property_tax", amount: 8000 },
+    { adjustmentType: "mortgage_interest", amount: 11000 },
+    { adjustmentType: "charitable_cash", amount: 8000 },
+  ],
+});
+
+// G4.4 — Stuck capital loss carryforward (single TY2024).
+// Single FL with $50k LTCL in 2024 from 1099-B; engine deducts $3k against
+// ordinary, carries forward $47k. 2025 (no new activity) deducts another
+// $3k, cf ends $44k. Delta $3k is within the $3,500 tolerance → G4.4 fires.
+ARCHETYPES.push({
+  slug: "g4-cap-loss-cf",
+  notes: "Stuck $50k LTCL carryforward 2 years (G4.4 demo)",
+  filingStatus: "single", state: "FL", taxYear: 2024,
+  w2s: [
+    { wagesBox1: 95000, federalTaxWithheldBox2: 12000, stateCode: "FL" },
+  ],
+  form1099s: [
+    { formType: "b", payerName: "Brokerage", longTermGainLoss: -50000 },
+  ],
+});
+
+// G4.5 — Passive activity loss suspension growing (MFJ TY2024).
+// MFJ AGI $250k (well above $150k PAL phase-out — $25k allowance fully
+// phases out by AGI $150k). Sched E shows ~$50k of rental losses both
+// years (engine suspends all of them under §469). Year-over-year growth
+// from the seed extension's 1.05× scaling keeps suspension growing →
+// G4.5 fires.
+ARCHETYPES.push({
+  slug: "g4-pal-growth-mfj",
+  notes: "MFJ rental investor PAL growing YoY (G4.5 demo)",
+  filingStatus: "married_filing_jointly", state: "CA", taxYear: 2024,
+  rentalActiveParticipant: true,
+  w2s: [
+    { wagesBox1: 250000, federalTaxWithheldBox2: 40000, stateCode: "CA" },
+  ],
+  adjustments: [
+    { adjustmentType: "schedule_e_rental_income", amount: 10000 },
+    { adjustmentType: "schedule_e_rental_expenses", amount: 60000 },
+  ],
+});
+
 // ── Runner ────────────────────────────────────────────────────────────────
 
 async function existingClientIdByEmail(email: string): Promise<number | null> {
@@ -905,6 +964,111 @@ async function reset() {
   console.log(`Deleted ${deleted} prior-seed clients.`);
 }
 
+// ── Phase G4 — multi-year extension ───────────────────────────────────────
+
+/**
+ * Multiplier applied to the archetype's W-2 / 1099 / K-1 amounts when
+ * generating the *current* year (one year forward from the archetype's
+ * recorded taxYear). 1.05 = 5% year-over-year growth — a realistic
+ * compensation bump that keeps the prior-year (archetype's original) data
+ * unchanged and adds a slightly larger current-year snapshot.
+ */
+const G4_CURRENT_YEAR_MULTIPLIER = 1.05;
+
+/**
+ * Multi-year ingestion for Phase G4 detectors. The archetype's original
+ * data is kept as the *prior* year (typically TY2024); this pass adds a
+ * *current* year (TY2025) at +5% W-2/1099/K-1 amounts and persists
+ * tax_returns rows for BOTH years so the multi-year detector has history.
+ *
+ * Why forward (TY2024 → TY2025) and not backward (TY2024 → TY2023)?
+ * The federal tax engine is verified for TY2024 + TY2025 only (SEP +
+ * QBI limit tables; std-ded constants). Going backward into TY2023 would
+ * fall back to a year the engine doesn't carry first-class constants for.
+ *
+ * Idempotent: skips W-2/1099/K-1 ingestion if any already exist for the
+ * current (forward) year. Always re-issues POST /tax-return for both
+ * years so snapshots stay current after any adjustment / engine change.
+ */
+async function extendMultiYearForArchetype(
+  clientId: number,
+  a: Archetype,
+): Promise<{ currentYearAdded: boolean; computed: number[] }> {
+  const priorYear = a.taxYear; // archetype's original year, e.g. 2024
+  const currentYear = priorYear + 1; // forward, e.g. 2025
+
+  // Idempotency: detect existing current-year data.
+  const existingW2 = await api<Array<{ taxYear: number }>>(`/clients/${clientId}/w2data`);
+  const existing1099 = await api<Array<{ taxYear: number }>>(`/clients/${clientId}/form1099data`);
+  const existingK1 = await api<Array<{ taxYear: number }>>(`/clients/${clientId}/k1s`);
+  const hasCurrentYear =
+    existingW2.some((r) => r.taxYear === currentYear) ||
+    existing1099.some((r) => r.taxYear === currentYear) ||
+    existingK1.some((r) => r.taxYear === currentYear);
+
+  let currentYearAdded = false;
+  if (!hasCurrentYear) {
+    const scaleNum = (n?: number) =>
+      n != null ? Math.round(n * G4_CURRENT_YEAR_MULTIPLIER) : undefined;
+    for (const w2 of a.w2s ?? []) {
+      const scaled = {
+        ...w2,
+        wagesBox1: Math.round(w2.wagesBox1 * G4_CURRENT_YEAR_MULTIPLIER),
+        federalTaxWithheldBox2: scaleNum(w2.federalTaxWithheldBox2),
+        socialSecurityWagesBox3: scaleNum(w2.socialSecurityWagesBox3),
+        medicareWagesBox5: scaleNum(w2.medicareWagesBox5),
+      };
+      await api(`/clients/${clientId}/w2data`, {
+        method: "POST",
+        body: JSON.stringify({ taxYear: currentYear, ...scaled }),
+      });
+    }
+    for (const f of a.form1099s ?? []) {
+      const scaled: Form1099 = {
+        ...f,
+        nonemployeeCompensation: scaleNum(f.nonemployeeCompensation),
+        interestIncome: scaleNum(f.interestIncome),
+        ordinaryDividends: scaleNum(f.ordinaryDividends),
+        qualifiedDividends: scaleNum(f.qualifiedDividends),
+        shortTermGainLoss: scaleNum(f.shortTermGainLoss),
+        longTermGainLoss: scaleNum(f.longTermGainLoss),
+        taxableAmount: scaleNum(f.taxableAmount),
+      };
+      await api(`/clients/${clientId}/form1099data`, {
+        method: "POST",
+        body: JSON.stringify({ taxYear: currentYear, ...scaled }),
+      });
+    }
+    for (const k1 of a.k1s ?? []) {
+      const scaled: K1 = {
+        ...k1,
+        box1OrdinaryIncome: scaleNum(k1.box1OrdinaryIncome),
+        section199aQbi: scaleNum(k1.section199aQbi),
+      };
+      await api(`/clients/${clientId}/k1s`, {
+        method: "POST",
+        body: JSON.stringify({ taxYear: currentYear, ...scaled }),
+      });
+    }
+    currentYearAdded = true;
+  }
+
+  // Persist tax_returns rows for both years.
+  const computed: number[] = [];
+  for (const year of [priorYear, currentYear]) {
+    try {
+      await api(`/clients/${clientId}/tax-return`, {
+        method: "POST",
+        body: JSON.stringify({ taxYear: year }),
+      });
+      computed.push(year);
+    } catch (e) {
+      console.error(`  warn: tax-return compute for clientId=${clientId} year=${year} failed: ${(e as Error).message}`);
+    }
+  }
+  return { currentYearAdded, computed };
+}
+
 async function main() {
   if (process.argv.includes("--reset")) {
     await reset();
@@ -912,18 +1076,40 @@ async function main() {
   console.log(`Seeding ${ARCHETYPES.length} archetypes...`);
   let created = 0;
   let skipped = 0;
+  const seededIds: Array<{ a: Archetype; clientId: number }> = [];
   for (let i = 0; i < ARCHETYPES.length; i++) {
     const a = ARCHETYPES[i];
     try {
       const r = await seedOne(a);
       if (r.created) created++;
       else skipped++;
+      seededIds.push({ a, clientId: r.clientId });
       if ((i + 1) % 10 === 0) console.log(`  ... ${i + 1}/${ARCHETYPES.length}`);
     } catch (e) {
       console.error(`FAILED ${a.slug}: ${(e as Error).message}`);
     }
   }
   console.log(`Done: ${created} created, ${skipped} already existed.`);
+
+  if (!process.argv.includes("--no-multi-year")) {
+    console.log(`\nExtending to multi-year (Phase G4)...`);
+    let currentYearAddedCount = 0;
+    let computedCount = 0;
+    for (let i = 0; i < seededIds.length; i++) {
+      const { a, clientId } = seededIds[i];
+      try {
+        const r = await extendMultiYearForArchetype(clientId, a);
+        if (r.currentYearAdded) currentYearAddedCount++;
+        computedCount += r.computed.length;
+        if ((i + 1) % 10 === 0) console.log(`  ... ${i + 1}/${seededIds.length}`);
+      } catch (e) {
+        console.error(`FAILED multi-year ${a.slug}: ${(e as Error).message}`);
+      }
+    }
+    console.log(
+      `Multi-year done: ${currentYearAddedCount} current-year (TY+1) rows added, ${computedCount} tax_returns snapshots computed.`,
+    );
+  }
 }
 
 main().catch((e) => {

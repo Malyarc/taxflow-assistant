@@ -49,11 +49,22 @@ export interface TaxReturnSnapshot {
   filingStatus: string;
   adjustedGrossIncome: number;
   taxableIncome: number;
-  /** Sched A line-item total. Zero when the filer took the standard deduction. */
+  /**
+   * Sched A *chosen* itemized total. Engine stores this only when the filer
+   * itemized (else null/0 — meaning std ded won). G4.3 doesn't rely on this
+   * column directly; it sums the per-line Sched A components below so it can
+   * still see the "would-be" itemized total when std ded was taken.
+   */
   itemizedDeductions: number;
   amtTax: number;
   niitTax: number;
-  /** Sched A cash charity total (used by G4.3 — only fire bunching when charity > 0). */
+  /** Sched A medical-and-dental deductible (Line 4). */
+  medicalDeductible: number;
+  /** Sched A SALT deductible after $10k cap (Line 5e). */
+  saltDeductible: number;
+  /** Sched A mortgage-interest deductible (Line 10). */
+  mortgageDeductible: number;
+  /** Sched A charitable contributions (Line 14). */
   charitableDeductible: number;
   capitalLossCarryforwardShort: number;
   capitalLossCarryforwardLong: number;
@@ -219,15 +230,27 @@ function detectPersistentAmt(history: TaxReturnSnapshot[]): OpportunityHit | nul
 
 const G4_3_BAND = 0.15; // +/- 15% of std ded
 
+/**
+ * "Would-be itemized" total = sum of Sched A line items. Use this rather than
+ * `itemizedDeductions` (which is the *chosen* total — null/0 when std ded
+ * wins). The cliff-detection rule fires precisely when the filer took the
+ * std ded but their Sched A total was within +/- 15% of it; that's the
+ * pattern bunching can recover.
+ */
+function wouldBeItemizedTotal(s: TaxReturnSnapshot): number {
+  return s.medicalDeductible + s.saltDeductible + s.mortgageDeductible + s.charitableDeductible;
+}
+
 function isNearStdDedCliff(s: TaxReturnSnapshot): boolean {
+  const candidate = wouldBeItemizedTotal(s);
   // Only meaningful when there's some Sched A activity — pure-std-ded filers
-  // who have NEVER itemized aren't "near the cliff".
-  if (s.itemizedDeductions <= 0) return false;
+  // with zero line items aren't "near the cliff".
+  if (candidate <= 0) return false;
   const stdDed = getFederalStandardDeduction(s.filingStatus, s.taxYear);
   if (stdDed <= 0) return false;
   const low = stdDed * (1 - G4_3_BAND);
   const high = stdDed * (1 + G4_3_BAND);
-  return s.itemizedDeductions >= low && s.itemizedDeductions <= high;
+  return candidate >= low && candidate <= high;
 }
 
 function detectPersistentBunching(history: TaxReturnSnapshot[]): OpportunityHit | null {
@@ -272,7 +295,7 @@ function detectPersistentBunching(history: TaxReturnSnapshot[]): OpportunityHit 
     inputs: {
       yearsAtCliff: years,
       yearsCovered: yearList,
-      currentItemized: Math.round(current.itemizedDeductions),
+      currentItemized: Math.round(wouldBeItemizedTotal(current)),
       currentStdDed: stdDedCurrent,
       currentCharitable: Math.round(current.charitableDeductible),
       federalMarginalRate: fedRate,
