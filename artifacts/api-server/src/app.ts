@@ -23,6 +23,14 @@ app.disable("x-powered-by");
 // bundle uses inline style attributes); tighten when we have a nonce
 // strategy. data:/blob: for `img-src` is needed by BoundedDocumentViewer
 // (PDF.js renders pages to blob URLs).
+//
+// HSTS is DISABLED until we have real TLS termination in front of this
+// server. Helmet's default HSTS header forces browsers to use HTTPS for
+// this domain for a year, which strands users when the deployment is
+// HTTP-only (browsers cache the header → forced HTTPS → connection
+// refused). Re-enable (`hsts: { maxAge: ..., includeSubDomains: true,
+// preload: true }`) once a TLS terminator (ALB / CloudFront / nginx +
+// certbot) is in place and port 443 actually responds.
 app.use(
   helmet({
     contentSecurityPolicy: {
@@ -37,6 +45,7 @@ app.use(
         frameAncestors: ["'self'"],
       },
     },
+    hsts: false,
     crossOriginEmbedderPolicy: false,
     crossOriginOpenerPolicy: false,
   }),
