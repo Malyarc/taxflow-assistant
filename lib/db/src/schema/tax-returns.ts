@@ -131,6 +131,14 @@ export const taxReturnsTable = pgTable(
     washSalesDetected: integer("wash_sales_detected").notNull().default(0),
     /** E13 — Total $ of capital loss disallowed by auto wash-sale detection (per IRC §1091). */
     washSaleLossDisallowed: numeric("wash_sale_loss_disallowed", { precision: 14, scale: 2 }).notNull().default("0"),
+    /** E12 — Tax computed for the prior resident state (formerState) on its pro-rated AGI. 0 when full-year. */
+    formerStateTax: numeric("former_state_tax", { precision: 14, scale: 2 }).notNull().default("0"),
+    /** E12 — Two-letter code of the prior resident state (formerState). Null when full-year. */
+    formerStateCode: text("former_state_code"),
+    /** E12 — Days resident in formerState (Jan 1 to changeDate). 0 when full-year. */
+    daysFormerStateResident: integer("days_former_state_resident").notNull().default(0),
+    /** E12 — Days resident in currentState (changeDate to Dec 31). 0 when full-year. */
+    daysCurrentStateResident: integer("days_current_state_resident").notNull().default(0),
     notes: text("notes"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),

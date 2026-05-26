@@ -1986,6 +1986,303 @@ header("E13± — Single transaction → 0 detected (no replacement candidate)")
 }
 
 // ============================================================================
+// E12 — Part-year residency in multi-state framework
+// Filer moves between states mid-year. Engine pro-rates AGI by days and
+// computes resident-state tax for each period independently.
+// Hand-calc references: NY IT-203-I; CA 540NR Schedule CA Part III;
+// IL Schedule NR; CO 104PN.
+// ============================================================================
+section("E12 — Part-year residency in multi-state framework");
+
+// --- E12+1: CA → TX mid-year (Apr 1) on $120k single TY2024 (leap year) ---
+// Hand-calc:
+//   Apr 1, 2024 → daysFormer = 91 (Jan=31 + Feb=29 + Mar=31), daysCurrent = 275
+//   daysInYear = 366 (leap)
+//   formerAgi = $120,000 × 91/366 = $29,836.07
+//   currentAgi = $120,000 × 275/366 = $90,163.93
+//   formerStateTax = CA tax on $29,836 (oracle via direct calculateStateTax)
+//   currentStateTax = TX tax on $90,164 = $0 (TX has no PIT)
+header("E12+1 — CA → TX on Apr 1 — pro-rated CA tax only, TX=0");
+{
+  const r = calculateMultiStateTax({
+    residentState: "TX",
+    federalAgi: 120000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "TX", wages: 120000 }],
+    partYearResidency: {
+      formerState: "CA",
+      residencyChangeDate: "2024-04-01",
+    },
+  });
+  checkTruthy("E12+1", "partYearResidency populated",
+    r.partYearResidency !== null, true);
+  check("E12+1", "daysFormer = 91", r.partYearResidency?.daysFormer ?? 0, 91, 0);
+  check("E12+1", "daysCurrent = 275", r.partYearResidency?.daysCurrent ?? 0, 275, 0);
+  check("E12+1", "daysInYear = 366 (leap)", r.partYearResidency?.daysInYear ?? 0, 366, 0);
+  check("E12+1", "formerAgi ≈ $29,836",
+    r.partYearResidency?.formerStateAgi ?? 0, 29836.07, 1,
+    "$120k × 91/366");
+  check("E12+1", "currentAgi ≈ $90,164",
+    r.partYearResidency?.currentStateAgi ?? 0, 90163.93, 1,
+    "$120k × 275/366");
+  const expectedCaTax = calculateStateTax(29836.07, "CA", "single", 2024);
+  check("E12+1", "formerStateTax = CA tax on $29,836",
+    r.partYearResidency?.formerStateTax ?? 0, expectedCaTax, 1);
+  check("E12+1", "currentStateTax (TX) = $0",
+    r.partYearResidency?.currentStateTax ?? 0, 0, 0.01,
+    "TX has no income tax");
+  check("E12+1", "residentStateTax echoes currentStateTax",
+    r.residentStateTax, 0, 0.01);
+  check("E12+1", "totalStateTax includes former",
+    r.totalStateTax, expectedCaTax, 1);
+}
+
+// --- E12+2: NY → FL on Apr 1 MFJ $200k TY2024 ---
+// Hand-calc:
+//   91 days NY, 275 days FL.
+//   formerAgi = $200,000 × 91/366 = $49,726.78
+//   formerStateTax = NY MFJ tax on $49,727 (via calculateStateTax oracle)
+//   currentStateTax (FL) = $0
+header("E12+2 — NY → FL on Apr 1 MFJ $200k → pro-rated NY tax only");
+{
+  const r = calculateMultiStateTax({
+    residentState: "FL",
+    federalAgi: 200000,
+    filingStatus: "married_filing_jointly",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "FL", wages: 200000 }],
+    partYearResidency: {
+      formerState: "NY",
+      residencyChangeDate: "2024-04-01",
+    },
+  });
+  const formerAgi = 200000 * 91 / 366;
+  const expectedNyTax = calculateStateTax(formerAgi, "NY", "married_filing_jointly", 2024);
+  check("E12+2", "formerAgi ≈ NY share",
+    r.partYearResidency?.formerStateAgi ?? 0, formerAgi, 1);
+  check("E12+2", "formerStateTax = NY tax on share",
+    r.partYearResidency?.formerStateTax ?? 0, expectedNyTax, 1);
+  check("E12+2", "currentStateTax (FL) = $0",
+    r.partYearResidency?.currentStateTax ?? 0, 0, 0.01);
+  check("E12+2", "totalStateTax = NY tax only",
+    r.totalStateTax, expectedNyTax, 1);
+}
+
+// --- E12+3: IL → CO mid-year (Jul 1) on $80k single — both tax states ---
+// Hand-calc (TY2024 leap):
+//   Jul 1, 2024 → daysFormer = 182 (Jan + Feb + Mar + Apr + May + Jun = 31+29+31+30+31+30)
+//   daysCurrent = 366 - 182 = 184
+//   formerAgi = $80,000 × 182/366 = $39,781.42
+//   currentAgi = $80,000 × 184/366 = $40,218.58
+//   Both states modeled — formerStateTax + currentStateTax (oracle).
+header("E12+3 — IL → CO on Jul 1 single $80k — both have state tax");
+{
+  const r = calculateMultiStateTax({
+    residentState: "CO",
+    federalAgi: 80000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "CO", wages: 80000 }],
+    partYearResidency: {
+      formerState: "IL",
+      residencyChangeDate: "2024-07-01",
+    },
+  });
+  check("E12+3", "daysFormer = 182", r.partYearResidency?.daysFormer ?? 0, 182, 0);
+  check("E12+3", "daysCurrent = 184", r.partYearResidency?.daysCurrent ?? 0, 184, 0);
+  const formerAgi = 80000 * 182 / 366;
+  const currentAgi = 80000 * 184 / 366;
+  const expectedIlTax = calculateStateTax(formerAgi, "IL", "single", 2024);
+  const expectedCoTax = calculateStateTax(currentAgi, "CO", "single", 2024);
+  check("E12+3", "formerStateTax matches IL calc",
+    r.partYearResidency?.formerStateTax ?? 0, expectedIlTax, 1);
+  check("E12+3", "currentStateTax matches CO calc",
+    r.partYearResidency?.currentStateTax ?? 0, expectedCoTax, 1);
+  check("E12+3", "totalStateTax = sum of both",
+    r.totalStateTax, expectedIlTax + expectedCoTax, 1);
+}
+
+// --- E12+4: TY2025 — non-leap year (365 days) ---
+// Hand-calc:
+//   Apr 1, 2025 → daysFormer = 90 (Jan=31 + Feb=28 + Mar=31, not 91 — non-leap)
+//   daysCurrent = 365 - 90 = 275
+header("E12+4 — TY2025 non-leap (365 days): Apr 1 → daysFormer=90");
+{
+  const r = calculateMultiStateTax({
+    residentState: "TX",
+    federalAgi: 120000,
+    filingStatus: "single",
+    taxYear: 2025,
+    perStateWages: [{ stateCode: "TX", wages: 120000 }],
+    partYearResidency: {
+      formerState: "CA",
+      residencyChangeDate: "2025-04-01",
+    },
+  });
+  check("E12+4", "non-leap daysInYear = 365",
+    r.partYearResidency?.daysInYear ?? 0, 365, 0);
+  check("E12+4", "non-leap Apr 1: daysFormer = 90",
+    r.partYearResidency?.daysFormer ?? 0, 90, 0);
+  check("E12+4", "non-leap daysCurrent = 275",
+    r.partYearResidency?.daysCurrent ?? 0, 275, 0);
+}
+
+// --- E12 boundary: change date Jan 1 → 0 days former → all current ---
+header("E12± — Jan 1 change date → 0 days former, all in current");
+{
+  const r = calculateMultiStateTax({
+    residentState: "TX",
+    federalAgi: 120000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "TX", wages: 120000 }],
+    partYearResidency: {
+      formerState: "CA",
+      residencyChangeDate: "2024-01-01",
+    },
+  });
+  check("E12±", "daysFormer = 0", r.partYearResidency?.daysFormer ?? 0, 0, 0);
+  check("E12±", "daysCurrent = 366", r.partYearResidency?.daysCurrent ?? 0, 366, 0);
+  check("E12±", "formerStateTax = 0",
+    r.partYearResidency?.formerStateTax ?? 0, 0, 0.01);
+  check("E12±", "totalStateTax = 0 (TX, no income tax)",
+    r.totalStateTax, 0, 0.01);
+}
+
+// --- E12 boundary 2: change date Dec 31 → 365 days former, 1 day current ---
+header("E12±2 — Dec 31 change date → 365 days former, 1 day current");
+{
+  const r = calculateMultiStateTax({
+    residentState: "TX",
+    federalAgi: 120000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "TX", wages: 120000 }],
+    partYearResidency: {
+      formerState: "CA",
+      residencyChangeDate: "2024-12-31",
+    },
+  });
+  check("E12±2", "daysFormer = 365", r.partYearResidency?.daysFormer ?? 0, 365, 0);
+  check("E12±2", "daysCurrent = 1", r.partYearResidency?.daysCurrent ?? 0, 1, 0);
+  const expectedCaTax = calculateStateTax(120000 * 365 / 366, "CA", "single", 2024);
+  check("E12±2", "formerStateTax ≈ full-year CA",
+    r.partYearResidency?.formerStateTax ?? 0, expectedCaTax, 1);
+}
+
+// --- E12 negative: no partYearResidency → behaves as full-year current ---
+header("E12-1 — No partYearResidency → behaves as full-year resident");
+{
+  const r = calculateMultiStateTax({
+    residentState: "CA",
+    federalAgi: 100000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "CA", wages: 100000 }],
+  });
+  checkTruthy("E12-1", "partYearResidency null", r.partYearResidency === null, true);
+  const expectedFullCa = calculateStateTax(100000, "CA", "single", 2024);
+  check("E12-1", "residentStateTax = full-year CA",
+    r.residentStateTax, expectedFullCa, 1);
+}
+
+// --- E12 negative 2: Locality SKIPPED for part-year filer ---
+header("E12-2 — Locality (NYC) SKIPPED for part-year");
+{
+  const r = calculateMultiStateTax({
+    residentState: "FL",
+    federalAgi: 200000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "FL", wages: 200000 }],
+    localityCode: "NYC",
+    partYearResidency: {
+      formerState: "NY",
+      residencyChangeDate: "2024-04-01",
+    },
+  });
+  checkTruthy("E12-2", "localTax null for part-year + locality",
+    r.localTax === null, true,
+    "Sub-gap: pro-rated NYC PIT not modeled");
+}
+
+// --- E12 integration via computeTaxReturnPure ---
+header("E12 int — computeTaxReturnPure CA → TX Apr 1");
+{
+  const computed = computeTaxReturnPure({
+    client: {
+      filingStatus: "single",
+      state: "TX",
+      taxYear: 2024,
+      residencyChangedInYear: true,
+      formerState: "CA",
+      residencyChangeDate: "2024-04-01",
+    },
+    w2s: [{ taxYear: 2024, wagesBox1: 120000, federalTaxWithheldBox2: 20000, stateCode: "TX" }],
+    form1099s: [],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  checkTruthy("E12 int", "formerStateCode = CA",
+    computed.formerStateCode === "CA", true);
+  check("E12 int", "daysFormerStateResident = 91",
+    computed.daysFormerStateResident, 91, 0);
+  check("E12 int", "daysCurrentStateResident = 275",
+    computed.daysCurrentStateResident, 275, 0);
+  checkTruthy("E12 int", "formerStateTax > 0", computed.formerStateTax > 0, true);
+  check("E12 int", "stateTaxLiability = formerStateTax (TX has no PIT)",
+    computed.stateTaxLiability, computed.formerStateTax, 1);
+}
+
+// --- E12 integration 2: residencyChangedInYear = false → full-year behavior ---
+header("E12 int — residencyChangedInYear=false → full-year behavior");
+{
+  const computed = computeTaxReturnPure({
+    client: {
+      filingStatus: "single",
+      state: "CA",
+      taxYear: 2024,
+      residencyChangedInYear: false,
+      formerState: "TX",
+      residencyChangeDate: "2024-04-01",
+    },
+    w2s: [{ taxYear: 2024, wagesBox1: 100000, federalTaxWithheldBox2: 15000, stateCode: "CA" }],
+    form1099s: [],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  check("E12 int", "formerStateTax = 0 when flag false",
+    computed.formerStateTax, 0, 0.01);
+  checkTruthy("E12 int", "formerStateCode null when flag false",
+    computed.formerStateCode === null, true);
+  check("E12 int", "daysFormerStateResident = 0",
+    computed.daysFormerStateResident, 0, 0);
+}
+
+// --- E12 integration 3: same former + current state → treated as full-year ---
+header("E12 int — formerState == currentState → full-year (no part-year)");
+{
+  const computed = computeTaxReturnPure({
+    client: {
+      filingStatus: "single",
+      state: "CA",
+      taxYear: 2024,
+      residencyChangedInYear: true,
+      formerState: "CA",
+      residencyChangeDate: "2024-04-01",
+    },
+    w2s: [{ taxYear: 2024, wagesBox1: 100000, federalTaxWithheldBox2: 15000, stateCode: "CA" }],
+    form1099s: [],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  check("E12 int", "same-state → formerStateTax = 0",
+    computed.formerStateTax, 0, 0.01,
+    "Engine guards against same-state pseudo-move");
+}
+
+// ============================================================================
 // Report
 // ============================================================================
 console.log("\n========== RESULTS ==========");

@@ -66,6 +66,18 @@ export const clientsTable = pgTable("clients", {
    *  true/false overrides — used when migrating in mid-stream and prior
    *  return wasn't computed in TaxFlow. Defaults NULL (auto-derive). */
   priorYearItemized: boolean("prior_year_itemized"),
+  /** E12 — Part-year residency. TRUE when filer moved between states during
+   *  the tax year. When TRUE, formerState + residencyChangeDate must also
+   *  be set; engine pro-rates AGI by days and computes resident-state tax
+   *  for each period independently. */
+  residencyChangedInYear: boolean("residency_changed_in_year").notNull().default(false),
+  /** E12 — Two-letter code of the state the filer was resident in BEFORE
+   *  the move. (clients.state = current resident state after the move.) */
+  formerState: text("former_state"),
+  /** E12 — ISO date (YYYY-MM-DD) of residency change. Filer was former-
+   *  state resident from Jan 1 to this date (exclusive); current-state
+   *  resident from this date (inclusive) to Dec 31. */
+  residencyChangeDate: text("residency_change_date"),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),

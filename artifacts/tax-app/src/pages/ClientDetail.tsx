@@ -908,6 +908,7 @@ function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: nu
                   ["Federal Withheld", taxReturn.federalTaxWithheld],
                   ["Federal Refund/Owed", taxReturn.federalRefundOrOwed],
                   ["State Tax", taxReturn.stateTaxLiability],
+                  ...((Number((taxReturn as any).formerStateTax) || 0) > 0 ? [[`  └─ Part-year: ${(taxReturn as any).formerStateCode ?? ""} (${(taxReturn as any).daysFormerStateResident ?? 0}d resident)`, (taxReturn as any).formerStateTax]] as Array<[string, unknown]> : []),
                   ...((Number((taxReturn as any).localTaxLiability) || 0) > 0 ? [[`Local Tax (${localityLabel((taxReturn as any).localTaxJurisdiction)})`, (taxReturn as any).localTaxLiability]] as Array<[string, unknown]> : []),
                   ["State Withheld", taxReturn.stateTaxWithheld],
                   ["State Refund/Owed", taxReturn.stateRefundOrOwed],

@@ -134,6 +134,18 @@ match the locality's parent state.
    * @nullable
    */
   priorYearItemized?: boolean | null;
+  /** E12 — TRUE when filer moved between states during the tax year. Requires formerState + residencyChangeDate to be set; engine pro-rates AGI by days and computes both states' resident tax. */
+  residencyChangedInYear: boolean;
+  /**
+   * E12 — Two-letter code of the prior resident state (BEFORE the move). clients.state is the post-move state. Null when full-year resident.
+   * @nullable
+   */
+  formerState?: string | null;
+  /**
+   * E12 — ISO date (YYYY-MM-DD) when residency changed. Filer was former-state resident from Jan 1 to this date (exclusive); current-state resident from this date (inclusive) to Dec 31.
+   * @nullable
+   */
+  residencyChangeDate?: string | null;
   /** @nullable */
   notes?: string | null;
   createdAt: string;
@@ -206,6 +218,18 @@ export interface CreateClientBody {
    * @nullable
    */
   priorYearItemized?: boolean | null;
+  /** E12 — TRUE when filer moved between states during the tax year. */
+  residencyChangedInYear?: boolean;
+  /**
+   * E12 — Two-letter code of the prior resident state.
+   * @nullable
+   */
+  formerState?: string | null;
+  /**
+   * E12 — ISO date (YYYY-MM-DD) when residency changed.
+   * @nullable
+   */
+  residencyChangeDate?: string | null;
   /** @nullable */
   notes?: string | null;
 }
@@ -276,6 +300,18 @@ export interface UpdateClientBody {
    * @nullable
    */
   priorYearItemized?: boolean | null;
+  /** E12 — TRUE when filer moved between states during the tax year. */
+  residencyChangedInYear?: boolean;
+  /**
+   * E12 — Two-letter code of the prior resident state.
+   * @nullable
+   */
+  formerState?: string | null;
+  /**
+   * E12 — ISO date (YYYY-MM-DD) when residency changed.
+   * @nullable
+   */
+  residencyChangeDate?: string | null;
   /** @nullable */
   notes?: string | null;
 }
@@ -983,6 +1019,17 @@ export interface TaxReturn {
   washSalesDetected: number;
   /** E13 — Total $ of capital loss disallowed by IRC §1091 auto-detection. */
   washSaleLossDisallowed: number;
+  /** E12 — Tax computed for the prior resident state on its pro-rated AGI. 0 when full-year. */
+  formerStateTax: number;
+  /**
+   * E12 — Two-letter code of the prior resident state. Null when full-year.
+   * @nullable
+   */
+  formerStateCode?: string | null;
+  /** E12 — Days resident in former state (Jan 1 to changeDate). */
+  daysFormerStateResident: number;
+  /** E12 — Days resident in current state (changeDate to Dec 31). */
+  daysCurrentStateResident: number;
   /** @nullable */
   notes?: string | null;
   createdAt: string;

@@ -409,6 +409,11 @@ export async function recalculateAndUpsertTaxReturn(
     // E13: Auto wash-sale detection summary
     washSalesDetected: result.washSalesDetected,
     washSaleLossDisallowed: String(result.washSaleLossDisallowed),
+    // E12: Part-year residency breakdown
+    formerStateTax: String(result.formerStateTax),
+    formerStateCode: result.formerStateCode,
+    daysFormerStateResident: result.daysFormerStateResident,
+    daysCurrentStateResident: result.daysCurrentStateResident,
   };
 
   if (existing) {

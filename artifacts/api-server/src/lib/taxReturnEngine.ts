@@ -147,6 +147,15 @@ export interface ClientFacts {
    * (tax-friendly) when no prior-year data is available.
    */
   priorYearItemized?: boolean | null;
+  /**
+   * E12 — Part-year residency flags. When residencyChangedInYear=true AND
+   * both formerState + residencyChangeDate are set, the engine pro-rates
+   * AGI by days and computes resident-state tax for each period
+   * independently.
+   */
+  residencyChangedInYear?: boolean | null;
+  formerState?: string | null;
+  residencyChangeDate?: string | null;
 }
 
 export interface W2Fact {
@@ -767,6 +776,22 @@ export interface ComputedTaxReturn {
    * tack-on for the replacement shares).
    */
   washSaleLossDisallowed: number;
+  /**
+   * E12 — Part-year residency tax (former state). 0 when full-year resident.
+   */
+  formerStateTax: number;
+  /**
+   * E12 — Two-letter code of the prior resident state, or null when full-year.
+   */
+  formerStateCode: string | null;
+  /**
+   * E12 — Days resident in former state (Jan 1 to changeDate). 0 when full-year.
+   */
+  daysFormerStateResident: number;
+  /**
+   * E12 — Days resident in current state (changeDate to Dec 31). 0 when full-year.
+   */
+  daysCurrentStateResident: number;
 }
 
 // ── E13 — Auto wash-sale detection ──────────────────────────────────────────
@@ -1804,6 +1829,20 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     (client.dependentsUnder17 ?? 0) +
     (client.otherDependents ?? 0);
 
+  // E12 — Part-year residency: pass when client has residency change set.
+  // Engine pro-rates AGI by days and computes both states' resident tax.
+  const partYearResidencyArg = (
+    client.residencyChangedInYear === true &&
+    client.formerState &&
+    client.residencyChangeDate &&
+    client.formerState.toUpperCase() !== (stateCode ?? "").toUpperCase()
+  )
+    ? {
+        formerState: client.formerState,
+        residencyChangeDate: client.residencyChangeDate,
+      }
+    : undefined;
+
   const multiState = calculateMultiStateTax({
     residentState: stateCode ?? "CA",
     federalAgi: calc.adjustedGrossIncome,
@@ -1814,6 +1853,8 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     localDependentCount,
     // E14 — Total W-2 wages for OH municipal income tax base.
     totalWages,
+    // E12 — Part-year residency split (when set).
+    partYearResidency: partYearResidencyArg,
     options: {
       federalIncomeTaxPaid: federalIncomeTaxForOr,
       retirementIncomeForExemption: form1099Summary.retirementIncome,
@@ -2227,5 +2268,10 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     // or no detected matches).
     washSalesDetected: washSaleResult.washSalesDetected,
     washSaleLossDisallowed: washSaleResult.washSaleLossDisallowed,
+    // E12 — Part-year residency breakdown (0 / null when full-year resident).
+    formerStateTax: multiState.partYearResidency?.formerStateTax ?? 0,
+    formerStateCode: multiState.partYearResidency?.formerState ?? null,
+    daysFormerStateResident: multiState.partYearResidency?.daysFormer ?? 0,
+    daysCurrentStateResident: multiState.partYearResidency?.daysCurrent ?? 0,
   };
 }

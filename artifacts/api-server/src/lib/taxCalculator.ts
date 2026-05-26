@@ -715,11 +715,13 @@ export function calculateFlatRateLocalTax(params: {
 }
 
 export interface MultiStateTaxResult {
-  /** Resident state's tax liability (after credit for NR tax paid) */
+  /** Resident state's tax liability (after credit for NR tax paid). When part-
+   *  year (E12), this equals currentStateTax. */
   residentStateTax: number;
   /** Tax paid to each non-resident state */
   nonresidentStateTaxes: Array<{ state: string; tax: number; wages: number; reciprocityApplied: boolean }>;
-  /** Total state tax across all states (= resident after credit + sum of NR taxes) */
+  /** Total state tax across all states (= resident after credit + sum of NR
+   *  taxes + former-state tax for part-year). */
   totalStateTax: number;
   /** Credit applied at resident state for taxes paid to non-resident states */
   residentCreditApplied: number;
@@ -727,6 +729,33 @@ export interface MultiStateTaxResult {
   residentStateTaxBeforeCredit: number;
   /** Local-jurisdiction income tax (e.g. NYC). Null when no local jurisdiction. */
   localTax: NycLocalTaxCalculation | null;
+  /** E12 — Part-year residency breakdown. Null when filer was full-year
+   *  resident of a single state. */
+  partYearResidency: PartYearResidencyResult | null;
+}
+
+/** E12 — Result of a part-year residency tax computation. */
+export interface PartYearResidencyResult {
+  /** Two-letter code of the state the filer left (resident Jan 1 to changeDate). */
+  formerState: string;
+  /** Two-letter code of the state the filer moved to (resident from changeDate to Dec 31). */
+  currentState: string;
+  /** ISO date when the residency changed (e.g. "2024-04-01"). */
+  residencyChangeDate: string;
+  /** Days the filer was resident in formerState. */
+  daysFormer: number;
+  /** Days the filer was resident in currentState. */
+  daysCurrent: number;
+  /** Total days in the tax year (365 or 366). */
+  daysInYear: number;
+  /** Pro-rated AGI allocated to the former state. */
+  formerStateAgi: number;
+  /** Pro-rated AGI allocated to the current state. */
+  currentStateAgi: number;
+  /** Tax computed for the former state on its pro-rated AGI. */
+  formerStateTax: number;
+  /** Tax computed for the current state on its pro-rated AGI. */
+  currentStateTax: number;
 }
 
 export function calculateMultiStateTax(params: {
@@ -745,6 +774,17 @@ export function calculateMultiStateTax(params: {
   /** E14 — Total W-2 wages (Box 1). Used for OH municipal income tax base
    *  (`wages_only` localities). Default 0 → OH local tax is 0. */
   totalWages?: number;
+  /** E12 — Part-year residency. When set, AGI is pro-rated by days and
+   *  resident-state tax is computed independently for each period. Locality
+   *  tax (NYC etc.) is not applied for part-year filers (sub-gap). */
+  partYearResidency?: {
+    /** Two-letter code of the state the filer was resident in BEFORE the move. */
+    formerState: string;
+    /** ISO date (YYYY-MM-DD) when residency changed. Filer is former-state
+     *  resident from Jan 1 (inclusive) to this date (exclusive); current-
+     *  state resident from this date (inclusive) to Dec 31. */
+    residencyChangeDate: string;
+  };
   options?: {
     federalIncomeTaxPaid?: number;
     retirementIncomeForExemption?: number;
@@ -827,34 +867,70 @@ export function calculateMultiStateTax(params: {
     totalNrWages += nrWages;
   }
 
-  // Resident state tax on worldwide AGI (full computation, with state-specific options)
-  const residentTaxFull = calculateStateTax(
-    params.federalAgi,
-    resident,
-    params.filingStatus,
-    params.taxYear,
-    params.options,
-  );
+  // ── E12 — Part-year residency branch ────────────────────────────────────
+  // When the filer moved between states during the tax year, pro-rate AGI
+  // by day count and compute resident-state tax for each period
+  // independently. This replaces the worldwide-AGI residentTaxFull path.
+  //
+  // Simplifications (documented as sub-gaps):
+  //   - AGI is allocated proportionally by days; the engine doesn't track
+  //     which income items were earned during which period. Real per-state
+  //     part-year forms (NY IT-203, CA 540NR Schedule CA, etc.) source by
+  //     income item.
+  //   - Resident credit-for-tax-paid is SKIPPED for part-year filers (NR
+  //     wages may have been earned during either period; engine can't tell).
+  //   - NYC + flat-rate locality tax SKIPPED for part-year filers (would
+  //     require allocating residence days to each locality, not modeled).
+  //   - State AMT / WA LTCG surcharge / NY/CA-as-resident NR formula all
+  //     skipped on the part-year path.
+  let partYearResidencyResult: PartYearResidencyResult | null = null;
+  let residentTaxFull = 0;
+  let residentStateTax = 0;
+  let residentCreditApplied = 0;
 
-  // Resident credit-for-tax-paid: limited to resident's tax on the same wages
-  // (approximation: resident's marginal rate × NR wages, capped at actual NR tax)
-  // To compute the credit cap, find resident's tax on NR wages only:
-  let residentCreditCap = 0;
-  if (totalNrWages > 0 && params.federalAgi > 0) {
-    // Approximation: ratio of NR wages to AGI × resident tax
-    const proRataResidentTax = (totalNrWages / params.federalAgi) * residentTaxFull;
-    residentCreditCap = proRataResidentTax;
+  if (params.partYearResidency) {
+    const formerStateUpper = params.partYearResidency.formerState.toUpperCase();
+    const py = computePartYearAllocation(
+      formerStateUpper,
+      resident,
+      params.partYearResidency.residencyChangeDate,
+      params.taxYear,
+      params.federalAgi,
+      params.filingStatus,
+      params.options ?? {},
+    );
+    partYearResidencyResult = py;
+    residentTaxFull = py.currentStateTax; // for the return shape
+    residentStateTax = py.currentStateTax;
+  } else {
+    // Resident state tax on worldwide AGI (full computation, with state-specific options)
+    residentTaxFull = calculateStateTax(
+      params.federalAgi,
+      resident,
+      params.filingStatus,
+      params.taxYear,
+      params.options,
+    );
+
+    // Resident credit-for-tax-paid: limited to resident's tax on the same wages
+    // (approximation: resident's marginal rate × NR wages, capped at actual NR tax)
+    // To compute the credit cap, find resident's tax on NR wages only:
+    let residentCreditCap = 0;
+    if (totalNrWages > 0 && params.federalAgi > 0) {
+      // Approximation: ratio of NR wages to AGI × resident tax
+      const proRataResidentTax = (totalNrWages / params.federalAgi) * residentTaxFull;
+      residentCreditCap = proRataResidentTax;
+    }
+    residentCreditApplied = Math.min(totalNrTax, residentCreditCap);
+    residentStateTax = Math.max(0, residentTaxFull - residentCreditApplied);
   }
-  const residentCreditApplied = Math.min(totalNrTax, residentCreditCap);
-  let residentStateTax = Math.max(0, residentTaxFull - residentCreditApplied);
 
   // G4 — WA 7% LTCG excise (RCW 82.87). WA has no PIT but levies a 7%
   // excise on long-term capital gains above the indexed threshold
-  // ($262,000 TY2024). Engine applies only when resident state is WA.
-  // Threshold is per-filer (single + MFJ share the same $262k threshold;
-  // each MFS spouse gets their own — engine treats MFJ as the single-
-  // threshold case per WA DOR clarification).
-  if (resident === "WA") {
+  // ($262,000 TY2024). Engine applies only when resident state is WA
+  // for the full year (E12 part-year skip — would require allocating
+  // LTCG to residence period; not modeled).
+  if (resident === "WA" && !params.partYearResidency) {
     const ltcg = Math.max(0, params.options?.longTermCapitalGains ?? 0);
     const waLtcgThreshold = 262000; // TY2024 indexed; TY2025 ≈ $270k (not yet
     // confirmed; engine treats both years the same as TY2024).
@@ -868,7 +944,7 @@ export function calculateMultiStateTax(params: {
   // and there are AMT preferences (otherwise AMTI ≈ regular taxable and
   // 7% AMT < regular CA rate at high income — no AMT delta).
   const caAmtPrefs = params.options?.amtPreferences ?? 0;
-  if (resident === "CA" && caAmtPrefs > 0) {
+  if (resident === "CA" && caAmtPrefs > 0 && !params.partYearResidency) {
     const fs = params.filingStatus as StateFilingStatus;
     // CA AMT exemption (Schedule P 540, 2024 indexed):
     const caAmtExemption =
@@ -894,7 +970,12 @@ export function calculateMultiStateTax(params: {
   // Falls through if there's a state mismatch (stale localityCode).
   let localTax: NycLocalTaxCalculation | null = null;
   const localityUpper = (params.localityCode ?? "").toUpperCase();
-  if (localityUpper === "NYC" && resident === "NY") {
+  // E12 — Locality tax skipped for part-year filers. Pro-rating NYC PIT to
+  // a partial-year residence isn't modeled (would need NYC-residence days
+  // separately from NY-state residence days). Sub-gap documented.
+  if (params.partYearResidency) {
+    // skip locality
+  } else if (localityUpper === "NYC" && resident === "NY") {
     const year = resolveTaxYear(params.taxYear);
     const nyInfo = STATE_TAX_DATA_BY_YEAR[year]?.["NY"];
     const nyStdDed = nyInfo?.standardDeduction
@@ -930,13 +1011,83 @@ export function calculateMultiStateTax(params: {
     });
   }
 
+  // E12 — totalStateTax includes former-state tax when part-year.
+  const formerStateTaxForTotal = partYearResidencyResult?.formerStateTax ?? 0;
+
   return {
     residentStateTax,
     nonresidentStateTaxes,
-    totalStateTax: residentStateTax + totalNrTax,
+    totalStateTax: residentStateTax + totalNrTax + formerStateTaxForTotal,
     residentCreditApplied,
     residentStateTaxBeforeCredit: residentTaxFull,
     localTax,
+    partYearResidency: partYearResidencyResult,
+  };
+}
+
+// ── E12 — Part-year residency allocation helper ────────────────────────────
+// Days are computed inclusively per IRS convention: filer is former-state
+// resident from Jan 1 through (changeDate - 1 day); current-state resident
+// from changeDate through Dec 31.
+function computePartYearAllocation(
+  formerStateUpper: string,
+  currentStateUpper: string,
+  residencyChangeDate: string,
+  taxYear: number,
+  federalAgi: number,
+  filingStatus: string,
+  options: NonNullable<Parameters<typeof calculateMultiStateTax>[0]["options"]>,
+): PartYearResidencyResult {
+  // Total days in the tax year (leap year handling).
+  const isLeap = ((taxYear % 4 === 0) && (taxYear % 100 !== 0)) || (taxYear % 400 === 0);
+  const daysInYear = isLeap ? 366 : 365;
+  // Jan 1 of taxYear (UTC, midnight).
+  const yearStartMs = Date.UTC(taxYear, 0, 1);
+  const yearEndMs = Date.UTC(taxYear, 11, 31);
+  // Parse residency change date. Accept full ISO timestamps or YYYY-MM-DD.
+  const ms = Date.parse(residencyChangeDate);
+  let daysFormer: number;
+  if (Number.isNaN(ms)) {
+    // Malformed change date — engine falls back to 0-day former (treats as full-year current).
+    daysFormer = 0;
+  } else {
+    const change = new Date(ms);
+    const changeUtcMs = Date.UTC(
+      change.getUTCFullYear(),
+      change.getUTCMonth(),
+      change.getUTCDate(),
+    );
+    // Clamp to [yearStart, yearEnd + 1].
+    const safeChangeMs = Math.max(yearStartMs, Math.min(changeUtcMs, yearEndMs + 86400000));
+    daysFormer = Math.max(0, Math.floor((safeChangeMs - yearStartMs) / 86400000));
+  }
+  const daysCurrent = Math.max(0, daysInYear - daysFormer);
+
+  const federalAgiSafe = Math.max(0, federalAgi);
+  const formerStateAgi = daysInYear > 0 ? federalAgiSafe * (daysFormer / daysInYear) : 0;
+  const currentStateAgi = daysInYear > 0 ? federalAgiSafe * (daysCurrent / daysInYear) : federalAgiSafe;
+
+  // For each period: call calculateStateTax with that period's pro-rated AGI.
+  // We use the same options for both (e.g., taxableSocialSecurity is pro-rated
+  // implicitly by the AGI ratio — slightly conservative; documented sub-gap).
+  const formerStateTax = formerStateAgi > 0
+    ? calculateStateTax(formerStateAgi, formerStateUpper, filingStatus, taxYear, options)
+    : 0;
+  const currentStateTax = currentStateAgi > 0
+    ? calculateStateTax(currentStateAgi, currentStateUpper, filingStatus, taxYear, options)
+    : 0;
+
+  return {
+    formerState: formerStateUpper,
+    currentState: currentStateUpper,
+    residencyChangeDate,
+    daysFormer,
+    daysCurrent,
+    daysInYear,
+    formerStateAgi,
+    currentStateAgi,
+    formerStateTax,
+    currentStateTax,
   };
 }
 

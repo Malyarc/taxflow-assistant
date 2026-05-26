@@ -138,6 +138,23 @@ export const ListClientsResponseItem = zod.object({
     .describe(
       "E6 — Pub 525 tax-benefit rule. true when prior year itemized (Sched A > std ded) → state refund federal-taxable. Null = pipeline auto-derives from prior tax_returns row.",
     ),
+  residencyChangedInYear: zod
+    .boolean()
+    .describe(
+      "E12 — TRUE when filer moved between states during the tax year. Requires formerState + residencyChangeDate to be set; engine pro-rates AGI by days and computes both states' resident tax.",
+    ),
+  formerState: zod
+    .string()
+    .nullish()
+    .describe(
+      "E12 — Two-letter code of the prior resident state (BEFORE the move). clients.state is the post-move state. Null when full-year resident.",
+    ),
+  residencyChangeDate: zod
+    .string()
+    .nullish()
+    .describe(
+      "E12 — ISO date (YYYY-MM-DD) when residency changed. Filer was former-state resident from Jan 1 to this date (exclusive); current-state resident from this date (inclusive) to Dec 31.",
+    ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -212,6 +229,20 @@ export const CreateClientBody = zod.object({
     .describe(
       "E6 — Pub 525 tax-benefit rule. true when prior year itemized → state refund federal-taxable. Null = pipeline auto-derives.",
     ),
+  residencyChangedInYear: zod
+    .boolean()
+    .optional()
+    .describe(
+      "E12 — TRUE when filer moved between states during the tax year.",
+    ),
+  formerState: zod
+    .string()
+    .nullish()
+    .describe("E12 — Two-letter code of the prior resident state."),
+  residencyChangeDate: zod
+    .string()
+    .nullish()
+    .describe("E12 — ISO date (YYYY-MM-DD) when residency changed."),
   notes: zod.string().nullish(),
 });
 
@@ -330,6 +361,23 @@ export const GetClientResponse = zod.object({
     .describe(
       "E6 — Pub 525 tax-benefit rule. true when prior year itemized (Sched A > std ded) → state refund federal-taxable. Null = pipeline auto-derives from prior tax_returns row.",
     ),
+  residencyChangedInYear: zod
+    .boolean()
+    .describe(
+      "E12 — TRUE when filer moved between states during the tax year. Requires formerState + residencyChangeDate to be set; engine pro-rates AGI by days and computes both states' resident tax.",
+    ),
+  formerState: zod
+    .string()
+    .nullish()
+    .describe(
+      "E12 — Two-letter code of the prior resident state (BEFORE the move). clients.state is the post-move state. Null when full-year resident.",
+    ),
+  residencyChangeDate: zod
+    .string()
+    .nullish()
+    .describe(
+      "E12 — ISO date (YYYY-MM-DD) when residency changed. Filer was former-state resident from Jan 1 to this date (exclusive); current-state resident from this date (inclusive) to Dec 31.",
+    ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -409,6 +457,20 @@ export const UpdateClientBody = zod.object({
     .describe(
       "E6 — Pub 525 tax-benefit rule. true when prior year itemized → state refund federal-taxable. Null = pipeline auto-derives.",
     ),
+  residencyChangedInYear: zod
+    .boolean()
+    .optional()
+    .describe(
+      "E12 — TRUE when filer moved between states during the tax year.",
+    ),
+  formerState: zod
+    .string()
+    .nullish()
+    .describe("E12 — Two-letter code of the prior resident state."),
+  residencyChangeDate: zod
+    .string()
+    .nullish()
+    .describe("E12 — ISO date (YYYY-MM-DD) when residency changed."),
   notes: zod.string().nullish(),
 });
 
@@ -519,6 +581,23 @@ export const UpdateClientResponse = zod.object({
     .nullish()
     .describe(
       "E6 — Pub 525 tax-benefit rule. true when prior year itemized (Sched A > std ded) → state refund federal-taxable. Null = pipeline auto-derives from prior tax_returns row.",
+    ),
+  residencyChangedInYear: zod
+    .boolean()
+    .describe(
+      "E12 — TRUE when filer moved between states during the tax year. Requires formerState + residencyChangeDate to be set; engine pro-rates AGI by days and computes both states' resident tax.",
+    ),
+  formerState: zod
+    .string()
+    .nullish()
+    .describe(
+      "E12 — Two-letter code of the prior resident state (BEFORE the move). clients.state is the post-move state. Null when full-year resident.",
+    ),
+  residencyChangeDate: zod
+    .string()
+    .nullish()
+    .describe(
+      "E12 — ISO date (YYYY-MM-DD) when residency changed. Filer was former-state resident from Jan 1 to this date (exclusive); current-state resident from this date (inclusive) to Dec 31.",
     ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
@@ -1161,6 +1240,23 @@ export const GetTaxReturnResponse = zod.object({
     .describe(
       "E13 — Total $ of capital loss disallowed by IRC §1091 auto-detection.",
     ),
+  formerStateTax: zod
+    .number()
+    .describe(
+      "E12 — Tax computed for the prior resident state on its pro-rated AGI. 0 when full-year.",
+    ),
+  formerStateCode: zod
+    .string()
+    .nullish()
+    .describe(
+      "E12 — Two-letter code of the prior resident state. Null when full-year.",
+    ),
+  daysFormerStateResident: zod
+    .number()
+    .describe("E12 — Days resident in former state (Jan 1 to changeDate)."),
+  daysCurrentStateResident: zod
+    .number()
+    .describe("E12 — Days resident in current state (changeDate to Dec 31)."),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -1242,6 +1338,23 @@ export const CalculateTaxReturnResponse = zod.object({
     .describe(
       "E13 — Total $ of capital loss disallowed by IRC §1091 auto-detection.",
     ),
+  formerStateTax: zod
+    .number()
+    .describe(
+      "E12 — Tax computed for the prior resident state on its pro-rated AGI. 0 when full-year.",
+    ),
+  formerStateCode: zod
+    .string()
+    .nullish()
+    .describe(
+      "E12 — Two-letter code of the prior resident state. Null when full-year.",
+    ),
+  daysFormerStateResident: zod
+    .number()
+    .describe("E12 — Days resident in former state (Jan 1 to changeDate)."),
+  daysCurrentStateResident: zod
+    .number()
+    .describe("E12 — Days resident in current state (changeDate to Dec 31)."),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -1331,6 +1444,23 @@ export const UpdateTaxReturnResponse = zod.object({
     .describe(
       "E13 — Total $ of capital loss disallowed by IRC §1091 auto-detection.",
     ),
+  formerStateTax: zod
+    .number()
+    .describe(
+      "E12 — Tax computed for the prior resident state on its pro-rated AGI. 0 when full-year.",
+    ),
+  formerStateCode: zod
+    .string()
+    .nullish()
+    .describe(
+      "E12 — Two-letter code of the prior resident state. Null when full-year.",
+    ),
+  daysFormerStateResident: zod
+    .number()
+    .describe("E12 — Days resident in former state (Jan 1 to changeDate)."),
+  daysCurrentStateResident: zod
+    .number()
+    .describe("E12 — Days resident in current state (changeDate to Dec 31)."),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -2313,6 +2443,23 @@ export const GetRecentClientsResponseItem = zod.object({
     .nullish()
     .describe(
       "E6 — Pub 525 tax-benefit rule. true when prior year itemized (Sched A > std ded) → state refund federal-taxable. Null = pipeline auto-derives from prior tax_returns row.",
+    ),
+  residencyChangedInYear: zod
+    .boolean()
+    .describe(
+      "E12 — TRUE when filer moved between states during the tax year. Requires formerState + residencyChangeDate to be set; engine pro-rates AGI by days and computes both states' resident tax.",
+    ),
+  formerState: zod
+    .string()
+    .nullish()
+    .describe(
+      "E12 — Two-letter code of the prior resident state (BEFORE the move). clients.state is the post-move state. Null when full-year resident.",
+    ),
+  residencyChangeDate: zod
+    .string()
+    .nullish()
+    .describe(
+      "E12 — ISO date (YYYY-MM-DD) when residency changed. Filer was former-state resident from Jan 1 to this date (exclusive); current-state resident from this date (inclusive) to Dec 31.",
     ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),

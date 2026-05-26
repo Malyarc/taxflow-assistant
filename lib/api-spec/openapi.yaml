@@ -1173,7 +1173,7 @@ components:
     # ── Client ──────────────────────────────────────────────────────────────
     Client:
       type: object
-      required: [id, firstName, lastName, email, filingStatus, state, taxYear, dependentsUnder17, otherDependents, createdAt, updatedAt]
+      required: [id, firstName, lastName, email, filingStatus, state, taxYear, dependentsUnder17, otherDependents, residencyChangedInYear, createdAt, updatedAt]
       properties:
         id:
           type: integer
@@ -1267,6 +1267,15 @@ components:
         priorYearItemized:
           type: ["boolean", "null"]
           description: E6 — Pub 525 tax-benefit rule. true when prior year itemized (Sched A > std ded) → state refund federal-taxable. Null = pipeline auto-derives from prior tax_returns row.
+        residencyChangedInYear:
+          type: boolean
+          description: E12 — TRUE when filer moved between states during the tax year. Requires formerState + residencyChangeDate to be set; engine pro-rates AGI by days and computes both states' resident tax.
+        formerState:
+          type: ["string", "null"]
+          description: E12 — Two-letter code of the prior resident state (BEFORE the move). clients.state is the post-move state. Null when full-year resident.
+        residencyChangeDate:
+          type: ["string", "null"]
+          description: E12 — ISO date (YYYY-MM-DD) when residency changed. Filer was former-state resident from Jan 1 to this date (exclusive); current-state resident from this date (inclusive) to Dec 31.
         notes:
           type: ["string", "null"]
         createdAt:
@@ -1343,6 +1352,15 @@ components:
         priorYearItemized:
           type: ["boolean", "null"]
           description: E6 — Pub 525 tax-benefit rule. true when prior year itemized → state refund federal-taxable. Null = pipeline auto-derives.
+        residencyChangedInYear:
+          type: boolean
+          description: E12 — TRUE when filer moved between states during the tax year.
+        formerState:
+          type: ["string", "null"]
+          description: E12 — Two-letter code of the prior resident state.
+        residencyChangeDate:
+          type: ["string", "null"]
+          description: E12 — ISO date (YYYY-MM-DD) when residency changed.
         notes:
           type: ["string", "null"]
 
@@ -1412,6 +1430,15 @@ components:
         priorYearItemized:
           type: ["boolean", "null"]
           description: E6 — Pub 525 tax-benefit rule. true when prior year itemized → state refund federal-taxable. Null = pipeline auto-derives.
+        residencyChangedInYear:
+          type: boolean
+          description: E12 — TRUE when filer moved between states during the tax year.
+        formerState:
+          type: ["string", "null"]
+          description: E12 — Two-letter code of the prior resident state.
+        residencyChangeDate:
+          type: ["string", "null"]
+          description: E12 — ISO date (YYYY-MM-DD) when residency changed.
         notes:
           type: ["string", "null"]
 
@@ -1914,7 +1941,7 @@ components:
     # ── TaxReturn ────────────────────────────────────────────────────────────
     TaxReturn:
       type: object
-      required: [id, clientId, taxYear, washSalesDetected, washSaleLossDisallowed, createdAt, updatedAt]
+      required: [id, clientId, taxYear, washSalesDetected, washSaleLossDisallowed, formerStateTax, daysFormerStateResident, daysCurrentStateResident, createdAt, updatedAt]
       properties:
         id:
           type: integer
@@ -2030,6 +2057,19 @@ components:
         washSaleLossDisallowed:
           type: number
           description: E13 — Total $ of capital loss disallowed by IRC §1091 auto-detection.
+        # E12 — Part-year residency breakdown
+        formerStateTax:
+          type: number
+          description: E12 — Tax computed for the prior resident state on its pro-rated AGI. 0 when full-year.
+        formerStateCode:
+          type: ["string", "null"]
+          description: E12 — Two-letter code of the prior resident state. Null when full-year.
+        daysFormerStateResident:
+          type: integer
+          description: E12 — Days resident in former state (Jan 1 to changeDate).
+        daysCurrentStateResident:
+          type: integer
+          description: E12 — Days resident in current state (changeDate to Dec 31).
         notes:
           type: ["string", "null"]
         createdAt:

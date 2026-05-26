@@ -68,6 +68,10 @@ interface FormState {
   // K8 — Kiddie tax (Form 8615)
   isKiddieTaxFiler: boolean;
   parentsTopMarginalRate: string;
+  // E12 — Part-year residency
+  residencyChangedInYear: boolean;
+  formerState: string; // 2-letter state code, "" = none
+  residencyChangeDate: string; // YYYY-MM-DD, "" = none
   notes: string;
 }
 
@@ -99,6 +103,9 @@ const defaultForm: FormState = {
   mfsLivedApartAllYear: false,
   isKiddieTaxFiler: false,
   parentsTopMarginalRate: "",
+  residencyChangedInYear: false,
+  formerState: "",
+  residencyChangeDate: "",
   notes: "",
 };
 
@@ -162,6 +169,9 @@ export default function ClientForm({ editId }: Props) {
         isKiddieTaxFiler: (existing as { isKiddieTaxFiler?: boolean }).isKiddieTaxFiler ?? false,
         parentsTopMarginalRate: (existing as { parentsTopMarginalRate?: number | null }).parentsTopMarginalRate != null
           ? String((existing as { parentsTopMarginalRate?: number | null }).parentsTopMarginalRate) : "",
+        residencyChangedInYear: (existing as { residencyChangedInYear?: boolean }).residencyChangedInYear ?? false,
+        formerState: (existing as { formerState?: string | null }).formerState ?? "",
+        residencyChangeDate: (existing as { residencyChangeDate?: string | null }).residencyChangeDate ?? "",
         notes: existing.notes || "",
       });
     }
@@ -213,6 +223,9 @@ export default function ClientForm({ editId }: Props) {
       mfsLivedApartAllYear: Boolean(form.mfsLivedApartAllYear),
       isKiddieTaxFiler: Boolean(form.isKiddieTaxFiler),
       parentsTopMarginalRate: form.parentsTopMarginalRate === "" ? null : Number(form.parentsTopMarginalRate),
+      residencyChangedInYear: Boolean(form.residencyChangedInYear),
+      formerState: form.formerState === "" ? null : form.formerState,
+      residencyChangeDate: form.residencyChangeDate === "" ? null : form.residencyChangeDate,
     };
     if (isEdit) {
       updateClient.mutate(
@@ -354,6 +367,50 @@ export default function ClientForm({ editId }: Props) {
                 </p>
               </div>
             )}
+
+            <div className="space-y-2 rounded-md border border-muted p-3">
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="residencyChangedInYear"
+                  checked={form.residencyChangedInYear}
+                  onChange={(e) => set("residencyChangedInYear", e.target.checked)}
+                  className="h-4 w-4"
+                />
+                <Label htmlFor="residencyChangedInYear" className="cursor-pointer">
+                  Moved between states during the tax year (part-year resident)
+                </Label>
+              </div>
+              {form.residencyChangedInYear && (
+                <div className="grid grid-cols-2 gap-4 pt-2">
+                  <div className="space-y-2">
+                    <Label>Former state (before move)</Label>
+                    <Select value={form.formerState || "none"} onValueChange={(v) => set("formerState", v === "none" ? "" : v)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">— Select —</SelectItem>
+                        {US_STATES.filter((s) => s !== form.state).map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Residency change date</Label>
+                    <Input
+                      type="date"
+                      value={form.residencyChangeDate}
+                      onChange={(e) => set("residencyChangeDate", e.target.value)}
+                      min={`${form.taxYear}-01-01`}
+                      max={`${form.taxYear}-12-31`}
+                    />
+                  </div>
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground">
+                E12 — Engine pro-rates AGI by days and computes resident-state tax for each period. Locality (NYC, MD/OH/IN local) is skipped on part-year returns.
+              </p>
+            </div>
 
             <div className="space-y-2">
               <Label>Tax Year</Label>
