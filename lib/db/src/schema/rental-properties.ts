@@ -16,13 +16,15 @@
  * propertyType; not stored. Lets us recompute correctly across tax years
  * without stale data.
  */
-import { pgTable, text, serial, integer, numeric, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, numeric, boolean, timestamp, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { clientsTable } from "./clients";
 
 export const rentalPropertiesTable = pgTable("rental_properties", {
   id: serial("id").primaryKey(),
-  clientId: integer("client_id").notNull(),
+  // Deep-audit DB finding: FK + cascade so deleting a client cleans up rentals.
+  clientId: integer("client_id").notNull().references(() => clientsTable.id, { onDelete: "cascade" }),
   taxYear: integer("tax_year").notNull(),
 
   // ── Property identity ────────────────────────────────────────────────
@@ -62,7 +64,10 @@ export const rentalPropertiesTable = pgTable("rental_properties", {
     .notNull()
     .defaultNow()
     .$onUpdate(() => new Date()),
-});
+}, (table) => ({
+  // Deep-audit DB finding: composite (clientId, taxYear) for engine load.
+  clientYearIdx: index("rental_properties_client_year_idx").on(table.clientId, table.taxYear),
+}));
 
 export const insertRentalPropertySchema = createInsertSchema(rentalPropertiesTable).omit({
   id: true,

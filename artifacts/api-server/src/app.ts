@@ -2,12 +2,19 @@ import express, { type Express } from "express";
 import cors from "cors";
 import helmet from "helmet";
 import pinoHttp from "pino-http";
+import rateLimit from "express-rate-limit";
 import path from "node:path";
 import fs from "node:fs";
 import router from "./routes";
 import { logger } from "./lib/logger";
 
 const app: Express = express();
+
+// Trust the first proxy in front of us (load balancer / nginx / Vercel /
+// CloudFront). Required for express-rate-limit to use the real client IP
+// from X-Forwarded-For rather than the proxy's IP. Adjust `1` if there
+// are more hops (e.g., set to 2 if behind two proxies).
+app.set("trust proxy", 1);
 
 // Don't leak framework version.
 app.disable("x-powered-by");
@@ -54,7 +61,44 @@ app.use(
     },
   }),
 );
-app.use(cors());
+// CORS allowlist (deep-audit security finding). Defaults to no cross-origin
+// in production; in dev (when ALLOWED_ORIGINS unset and NODE_ENV !== production)
+// we allow all so local Vite proxy + Storybook style workflows work.
+// Configure ALLOWED_ORIGINS as a comma-separated list, e.g.
+//   ALLOWED_ORIGINS=https://app.taxflow.example,https://staging.taxflow.example
+const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter((s) => s.length > 0);
+const corsAllowAll = allowedOrigins.length === 0 && process.env.NODE_ENV !== "production";
+app.use(
+  cors({
+    origin: corsAllowAll
+      ? true // dev / unset: reflect request origin
+      : (origin, callback) => {
+          // No origin → same-origin or curl: allow (already not subject to CORS).
+          if (!origin) return callback(null, true);
+          if (allowedOrigins.includes(origin)) return callback(null, true);
+          return callback(new Error("Origin not allowed by CORS"));
+        },
+    credentials: true,
+  }),
+);
+
+// Global rate limit (deep-audit security finding). 200 req / minute / IP
+// covers normal CPA workflows (typical session has < 50 req/min). Heavier
+// endpoints can install their own stricter limiter.
+const globalLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: Number(process.env.RATE_LIMIT_PER_MINUTE ?? 200),
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  // Skip the limiter entirely in NODE_ENV=test so test suites can rip
+  // through endpoints in parallel without 429s.
+  skip: () => process.env.NODE_ENV === "test",
+});
+app.use(globalLimiter);
+
 app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ extended: true, limit: "20mb" }));
 

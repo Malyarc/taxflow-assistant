@@ -20,6 +20,7 @@
     "cors": "^2",
     "drizzle-orm": "catalog:",
     "express": "^5",
+    "express-rate-limit": "^8.5.2",
     "helmet": "^8",
     "pdf-lib": "^1.17.1",
     "pdfkit": "^0.18.0",

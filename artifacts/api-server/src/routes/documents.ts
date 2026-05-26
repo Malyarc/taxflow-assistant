@@ -18,6 +18,7 @@ import {
   extract1099DataFromFile,
   detectMimeType,
   isVisualMimeType,
+  validateAndResolveMimeType,
 } from "../lib/documentExtractor";
 import { logger } from "../lib/logger";
 import { setSecureDownloadHeaders } from "../lib/httpSecurity";
@@ -69,6 +70,18 @@ router.post("/clients/:clientId/documents", async (req, res): Promise<void> => {
   // global Express 20MB body limit).
   if ((parsed.data.fileContent ?? "").length > MAX_UPLOAD_BASE64_BYTES) {
     res.status(413).json({ error: `File too large (max ${Math.floor(MAX_UPLOAD_BASE64_BYTES / 1_000_000)}MB after base64 encoding)` });
+    return;
+  }
+
+  // Deep-audit security finding: validate file content matches the
+  // claimed extension (magic-bytes sniffing). Rejects malicious uploads
+  // that pretend to be PDFs / images.
+  try {
+    validateAndResolveMimeType(parsed.data.fileContent, parsed.data.fileName);
+  } catch (err) {
+    res.status(415).json({
+      error: err instanceof Error ? err.message : "Unsupported file type",
+    });
     return;
   }
 

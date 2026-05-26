@@ -881,6 +881,22 @@ export function detectWashSales(
   let detected = 0;
   let totalDisallowed = 0;
 
+  // Performance optimization (code-quality audit): group rows by security
+  // key up-front so the inner loop only scans matching-security rows
+  // instead of all rows. Drops worst-case from O(n²) to O(n × max-group)
+  // — typically O(n) since most descriptions have few replicas.
+  const bySecurity = new Map<string, number[]>(); // key → indices
+  for (let i = 0; i < rows.length; i++) {
+    const k = normalizeSecurity(rows[i].description);
+    if (!k) continue;
+    let bucket = bySecurity.get(k);
+    if (!bucket) {
+      bucket = [];
+      bySecurity.set(k, bucket);
+    }
+    bucket.push(i);
+  }
+
   for (let i = 0; i < rows.length; i++) {
     const s = rows[i];
     // Skip non-loss rows.
@@ -891,6 +907,8 @@ export function detectWashSales(
     if (!sSold) continue;
     const sKey = normalizeSecurity(s.description);
     if (!sKey) continue;
+    const candidates = bySecurity.get(sKey);
+    if (!candidates) continue;
 
     // Find earliest replacement purchase in the 61-day window.
     const windowStart = sSold.getTime() - 30 * ONE_DAY_MS;
@@ -899,10 +917,10 @@ export function detectWashSales(
     const sAcqMs = sAcq ? sAcq.getTime() : null;
     let bestIdx = -1;
     let bestAcqMs = Infinity;
-    for (let j = 0; j < rows.length; j++) {
+    for (const j of candidates) {
       if (j === i) continue;
       const t = rows[j];
-      if (normalizeSecurity(t.description) !== sKey) continue;
+      // Security match already enforced by the bucket; no need to re-normalize.
       const tAcq = parseISO(t.dateAcquired ?? null);
       if (!tAcq) continue;
       const acqMs = tAcq.getTime();

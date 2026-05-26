@@ -5,14 +5,19 @@
  * One table with all possible columns; per-form fields are NULL when not
  * applicable. The `formType` column discriminates which fields apply.
  */
-import { pgTable, text, serial, integer, numeric, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, numeric, timestamp, jsonb, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { clientsTable } from "./clients";
+import { taxDocumentsTable } from "./tax-documents";
 
 export const form1099DataTable = pgTable("form_1099_data", {
   id: serial("id").primaryKey(),
-  clientId: integer("client_id").notNull(),
-  documentId: integer("document_id"),
+  // Deep-audit DB finding: FK + cascade so deleting a client cleans up 1099s.
+  clientId: integer("client_id").notNull().references(() => clientsTable.id, { onDelete: "cascade" }),
+  // Deep-audit DB finding: FK with set-null so document delete preserves
+  // the 1099 row (CPA-approved data shouldn't disappear with the source PDF).
+  documentId: integer("document_id").references(() => taxDocumentsTable.id, { onDelete: "set null" }),
   taxYear: integer("tax_year").notNull(),
   /** Which 1099 subtype: nec, misc, int, div, b, r, g, k */
   formType: text("form_type").notNull(),
@@ -78,7 +83,12 @@ export const form1099DataTable = pgTable("form_1099_data", {
 
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
-});
+}, (table) => ({
+  // Deep-audit DB finding: composite (clientId, taxYear) for the dominant
+  // engine-load query; documentId index for join-back to source PDF.
+  clientYearIdx: index("form_1099_data_client_year_idx").on(table.clientId, table.taxYear),
+  documentIdx: index("form_1099_data_document_id_idx").on(table.documentId),
+}));
 
 export const insertForm1099DataSchema = createInsertSchema(form1099DataTable).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertForm1099Data = z.infer<typeof insertForm1099DataSchema>;

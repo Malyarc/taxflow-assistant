@@ -82,62 +82,46 @@ export async function computeTaxReturn(
     overrides.taxYear ?? client.taxYear ?? existing?.taxYear ?? new Date().getFullYear() - 1;
 
   // W-2s for the requested year only
-  const w2Records = await db
-    .select()
-    .from(w2DataTable)
-    .where(
+  // Code-quality optimization: load all per-year tables in parallel.
+  // Previously these were 6 sequential awaits → ~6× the network RTT.
+  // Promise.all collapses to a single roundtrip per query batch on the
+  // pool. These queries are independent so there's no ordering risk.
+  const [
+    w2Records,
+    form1099Records,
+    adjustments,
+    rentalProperties,
+    capitalTransactions,
+    scheduleK1,
+  ] = await Promise.all([
+    db.select().from(w2DataTable).where(
       and(eq(w2DataTable.clientId, clientId), eq(w2DataTable.taxYear, taxYear)),
-    );
-
-  // 1099s for the requested year only
-  const form1099Records = await db
-    .select()
-    .from(form1099DataTable)
-    .where(
+    ),
+    db.select().from(form1099DataTable).where(
       and(eq(form1099DataTable.clientId, clientId), eq(form1099DataTable.taxYear, taxYear)),
-    );
-
-  // CPA-authored adjustments (all of them — engine filters by isApplied)
-  const adjustments = await db
-    .select()
-    .from(adjustmentsTable)
-    .where(eq(adjustmentsTable.clientId, clientId));
-
-  // Per-property rental real estate (Schedule E). When present for the
-  // tax year, the engine uses them instead of the aggregate
-  // schedule_e_rental_* adjustments.
-  const rentalProperties = await db
-    .select()
-    .from(rentalPropertiesTable)
-    .where(
+    ),
+    // Adjustments: load all-years; engine filters by isApplied. Auto-loaded
+    // synthetic carryforwards added downstream via synthesizePriorYearCarryforwards.
+    db.select().from(adjustmentsTable).where(eq(adjustmentsTable.clientId, clientId)),
+    db.select().from(rentalPropertiesTable).where(
       and(
         eq(rentalPropertiesTable.clientId, clientId),
         eq(rentalPropertiesTable.taxYear, taxYear),
       ),
-    );
-
-  // Schedule D / Form 8949 per-transaction rows. When present for the tax
-  // year, they replace the 1099-B-derived ST/LT cap-gain totals.
-  const capitalTransactions = await db
-    .select()
-    .from(capitalTransactionsTable)
-    .where(
+    ),
+    db.select().from(capitalTransactionsTable).where(
       and(
         eq(capitalTransactionsTable.clientId, clientId),
         eq(capitalTransactionsTable.taxYear, taxYear),
       ),
-    );
-
-  // Schedule K-1 rows for the year (partnership 1065 + S-corp 1120-S).
-  const scheduleK1 = await db
-    .select()
-    .from(scheduleK1DataTable)
-    .where(
+    ),
+    db.select().from(scheduleK1DataTable).where(
       and(
         eq(scheduleK1DataTable.clientId, clientId),
         eq(scheduleK1DataTable.taxYear, taxYear),
       ),
-    );
+    ),
+  ]);
 
   // Auto-load capital-loss + §469 PAL carryforwards from the prior tax year.
   // We synthesize "virtual" adjustment rows IFF the user has NOT manually

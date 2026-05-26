@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, timestamp, jsonb, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { clientsTable } from "./clients";
@@ -53,7 +53,14 @@ export const auditLogTable = pgTable("audit_log", {
   /** Optional free-text reason / source (e.g. "AI extraction from W-2.pdf"). */
   source: text("source"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+}, (table) => ({
+  // Deep-audit DB finding: per-client list query (newest first, limit 200)
+  // is the dominant audit-log read. composite (clientId, createdAt DESC)
+  // is what Postgres needs to skip the full table sort.
+  clientCreatedIdx: index("audit_log_client_created_idx").on(table.clientId, table.createdAt),
+  // Forensic queries: "show all updates to W-2 row 12345" → entityType + entityId.
+  entityIdx: index("audit_log_entity_idx").on(table.entityType, table.entityId),
+}));
 
 export const insertAuditLogSchema = createInsertSchema(auditLogTable, {
   action: z.enum(["create", "update", "delete"]),

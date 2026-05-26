@@ -44,13 +44,15 @@
  *
  * Source: IRS Form 8949 instructions, Pub 550, Schedule D instructions.
  */
-import { pgTable, text, serial, integer, numeric, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, numeric, boolean, timestamp, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { clientsTable } from "./clients";
 
 export const capitalTransactionsTable = pgTable("capital_transactions", {
   id: serial("id").primaryKey(),
-  clientId: integer("client_id").notNull(),
+  // Deep-audit DB finding: FK + cascade so deleting a client cleans up Sch D rows.
+  clientId: integer("client_id").notNull().references(() => clientsTable.id, { onDelete: "cascade" }),
   taxYear: integer("tax_year").notNull(),
 
   /** Description of property — Form 8949 column (a). E.g. "100 sh AAPL". */
@@ -92,7 +94,12 @@ export const capitalTransactionsTable = pgTable("capital_transactions", {
     .notNull()
     .defaultNow()
     .$onUpdate(() => new Date()),
-});
+}, (table) => ({
+  // Deep-audit DB finding: composite (clientId, taxYear) is the dominant
+  // engine-load query. At scale (1000+ transactions per heavy trader),
+  // this is the difference between a 1ms index seek and a 100ms scan.
+  clientYearIdx: index("capital_transactions_client_year_idx").on(table.clientId, table.taxYear),
+}));
 
 export const insertCapitalTransactionSchema = createInsertSchema(capitalTransactionsTable).omit({
   id: true,

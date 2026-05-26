@@ -374,6 +374,101 @@ export function isVisualMimeType(mimeType: string): boolean {
   return mimeType.startsWith("image/") || mimeType === "application/pdf";
 }
 
+/**
+ * Deep-audit security finding: validate uploaded file MIME by content
+ * (magic bytes) rather than filename extension alone. Catches malicious
+ * uploads that pretend to be PDFs/images. Whitelist of accepted types
+ * matches what the AI extraction supports.
+ *
+ * Returns the detected MIME type, or null when the bytes don't match any
+ * accepted file type — caller rejects the upload.
+ *
+ * Detection by magic bytes (RFC 3552 examples + file(1) signatures):
+ *   PDF: 25 50 44 46    ("%PDF")
+ *   PNG: 89 50 4E 47 0D 0A 1A 0A
+ *   JPEG: FF D8 FF
+ *   WEBP: starts with "RIFF" then "WEBP" at offset 8
+ *   Plain text: heuristic — printable ASCII / UTF-8 throughout the first 512 bytes
+ */
+export function detectMimeFromContent(base64Content: string): string | null {
+  let buf: Buffer;
+  try {
+    buf = Buffer.from(base64Content, "base64");
+  } catch {
+    return null;
+  }
+  if (buf.length < 4) return null;
+
+  // PDF: %PDF
+  if (buf[0] === 0x25 && buf[1] === 0x50 && buf[2] === 0x44 && buf[3] === 0x46) {
+    return "application/pdf";
+  }
+  // PNG: 89 50 4E 47 0D 0A 1A 0A
+  if (
+    buf.length >= 8 &&
+    buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47 &&
+    buf[4] === 0x0d && buf[5] === 0x0a && buf[6] === 0x1a && buf[7] === 0x0a
+  ) {
+    return "image/png";
+  }
+  // JPEG: FF D8 FF
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) {
+    return "image/jpeg";
+  }
+  // WEBP: RIFF....WEBP
+  if (
+    buf.length >= 12 &&
+    buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46 &&
+    buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50
+  ) {
+    return "image/webp";
+  }
+  // Plain text heuristic: only printable + common whitespace in first 512 bytes.
+  const sniff = buf.subarray(0, Math.min(buf.length, 512));
+  let printable = 0;
+  for (const byte of sniff) {
+    // Tab, LF, CR, or printable ASCII range.
+    if (byte === 0x09 || byte === 0x0a || byte === 0x0d || (byte >= 0x20 && byte <= 0x7e)) {
+      printable += 1;
+    } else if (byte >= 0x80) {
+      // UTF-8 continuation/start byte; allow.
+      printable += 1;
+    }
+  }
+  if (printable === sniff.length) return "text/plain";
+  return null;
+}
+
+/**
+ * Cross-check the filename-detected MIME against the content-detected MIME.
+ * Returns the effective MIME (preferring content), or throws when the
+ * combination is unsafe. Throws when:
+ *   - content type is unrecognized (returned null)
+ *   - filename claims PDF but content is image (or vice-versa) — likely tampering
+ */
+export function validateAndResolveMimeType(
+  base64Content: string,
+  fileName: string,
+): string {
+  const declared = detectMimeType(fileName);
+  const detected = detectMimeFromContent(base64Content);
+  if (detected === null) {
+    throw new Error(
+      `Unsupported file content. Allowed: PDF, PNG, JPEG, WEBP, plain text. ` +
+      `Filename declared "${declared}".`,
+    );
+  }
+  // Compatibility matrix: declared/detected mismatch is fine for text/plain
+  // (the extension might just be missing). For visual types, both must agree
+  // — a .pdf upload with image content (or vice-versa) is rejected.
+  if (declared !== "text/plain" && detected !== declared) {
+    throw new Error(
+      `File content (${detected}) does not match filename extension (${declared}).`,
+    );
+  }
+  return detected;
+}
+
 export async function extractTextFromBase64(base64Content: string, fileName: string): Promise<string> {
   const mimeType = detectMimeType(fileName);
 

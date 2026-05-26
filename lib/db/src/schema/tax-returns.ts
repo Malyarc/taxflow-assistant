@@ -1,12 +1,17 @@
-import { pgTable, text, serial, integer, numeric, timestamp, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, numeric, timestamp, unique, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { clientsTable } from "./clients";
 
 export const taxReturnsTable = pgTable(
   "tax_returns",
   {
     id: serial("id").primaryKey(),
-    clientId: integer("client_id").notNull(),
+    // Deep-audit DB finding: FK + cascade so deleting a client cleans up
+    // their tax returns (currently the soft-delete pattern is documented
+    // as a future hardening — this FK ensures correctness when deletes
+    // happen).
+    clientId: integer("client_id").notNull().references(() => clientsTable.id, { onDelete: "cascade" }),
     taxYear: integer("tax_year").notNull(),
     filingStatus: text("filing_status"),
     totalIncome: numeric("total_income", { precision: 12, scale: 2 }),
@@ -146,6 +151,12 @@ export const taxReturnsTable = pgTable(
   (table) => ({
     // One return per (client, year) — enables multi-year tracking
     clientYearUnique: unique("tax_returns_client_year_unique").on(table.clientId, table.taxYear),
+    // Deep-audit DB finding: composite index for the dominant query
+    // shape — "fetch this client's return for this tax year". The unique
+    // constraint above auto-creates an index, but Postgres uses unique-
+    // index lookups slightly differently than a plain composite. Explicit
+    // index here documents the intent.
+    clientYearIdx: index("tax_returns_client_year_idx").on(table.clientId, table.taxYear),
   }),
 );
 

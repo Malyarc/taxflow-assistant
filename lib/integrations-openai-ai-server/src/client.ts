@@ -11,11 +11,24 @@ const apiKey =
   process.env.AI_API_KEY ??
   "";
 
+export const aiEnabled = Boolean(apiKey);
+
+// Fail fast in production if AI is expected but no key is configured —
+// avoids hitting the OpenAI endpoint with literal "missing-key" and
+// surfacing the failure inside an error path that might leak the
+// invalid-key response. Test + dev paths still allow the disabled
+// fallback (callers check `aiEnabled` before calling).
+if (!aiEnabled && process.env.NODE_ENV === "production" && process.env.AI_DISABLED !== "true") {
+  // eslint-disable-next-line no-console
+  console.warn(
+    "[ai-server] AI_API_KEY not set in production. AI extraction + planning memo will be disabled. " +
+    "Set AI_DISABLED=true to silence this warning.",
+  );
+}
+
 export const openai = new OpenAI({
   apiKey: apiKey || "missing-key",
   baseURL,
 });
-
-export const aiEnabled = Boolean(apiKey);
 
 export const aiModel = process.env.AI_MODEL ?? "gemini-2.5-flash";

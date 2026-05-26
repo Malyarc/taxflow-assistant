@@ -1,6 +1,7 @@
-import { pgTable, text, serial, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, timestamp, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { clientsTable } from "./clients";
 
 /**
  * Lifecycle for an uploaded document:
@@ -8,10 +9,17 @@ import { z } from "zod/v4";
  *                       ↘ failed
  * Legacy rows (uploaded before the CPA-review gate landed) may still
  * have status="extracted"; the UI treats that as a synonym of "approved".
+ *
+ * Storage note (deep-audit DB finding): fileContent currently stores the
+ * full base64-encoded document inline. At scale this is a major bloat
+ * (~13GB at 10k docs × 1MB). The future migration is to S3 + signed URL,
+ * leaving only metadata in this row. Not done in this audit — flagged
+ * as a follow-up (D17 / file storage hardening).
  */
 export const taxDocumentsTable = pgTable("tax_documents", {
   id: serial("id").primaryKey(),
-  clientId: integer("client_id").notNull(),
+  // Deep-audit DB finding: FK + cascade so deleting a client cleans up docs.
+  clientId: integer("client_id").notNull().references(() => clientsTable.id, { onDelete: "cascade" }),
   documentType: text("document_type").notNull().default("w2"),
   fileName: text("file_name").notNull(),
   fileContent: text("file_content"),
@@ -24,7 +32,14 @@ export const taxDocumentsTable = pgTable("tax_documents", {
   /** Optional CPA-supplied reason captured at reject time. */
   rejectionReason: text("rejection_reason"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+}, (table) => ({
+  // Deep-audit DB finding: clients tab loads the document list filtered by
+  // clientId. Without this index, list queries scan the table.
+  clientIdx: index("tax_documents_client_id_idx").on(table.clientId),
+  // status-filtered queries (e.g., "list pending_review docs") are
+  // route-level cost — composite (clientId, status) covers it.
+  clientStatusIdx: index("tax_documents_client_status_idx").on(table.clientId, table.status),
+}));
 
 export const insertTaxDocumentSchema = createInsertSchema(taxDocumentsTable).omit({ id: true, createdAt: true });
 export type InsertTaxDocument = z.infer<typeof insertTaxDocumentSchema>;

@@ -24,13 +24,15 @@
  * Sources: 1065 K-1 instructions, 1120-S K-1 instructions, Form 8995-A
  * instructions, IRS Pub 541, IRS Pub 925 (§469).
  */
-import { pgTable, text, serial, integer, numeric, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, numeric, timestamp, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { clientsTable } from "./clients";
 
 export const scheduleK1DataTable = pgTable("schedule_k1_data", {
   id: serial("id").primaryKey(),
-  clientId: integer("client_id").notNull(),
+  // Deep-audit DB finding: FK + cascade so deleting a client cleans up K-1s.
+  clientId: integer("client_id").notNull().references(() => clientsTable.id, { onDelete: "cascade" }),
   taxYear: integer("tax_year").notNull(),
 
   // ── Entity identity ────────────────────────────────────────────────
@@ -93,7 +95,10 @@ export const scheduleK1DataTable = pgTable("schedule_k1_data", {
     .notNull()
     .defaultNow()
     .$onUpdate(() => new Date()),
-});
+}, (table) => ({
+  // Deep-audit DB finding: composite (clientId, taxYear) for engine load.
+  clientYearIdx: index("schedule_k1_data_client_year_idx").on(table.clientId, table.taxYear),
+}));
 
 export const insertScheduleK1DataSchema = createInsertSchema(scheduleK1DataTable).omit({
   id: true,
