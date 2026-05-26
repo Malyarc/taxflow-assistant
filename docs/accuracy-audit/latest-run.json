@@ -1,16 +1,8 @@
 {
-  "generatedAt": "2026-05-26T07:57:18.742Z",
-  "pass": 95,
+  "generatedAt": "2026-05-26T07:59:27.469Z",
+  "pass": 97,
   "realFailures": 0,
-  "documentedGaps": 1,
+  "documentedGaps": 0,
   "failures": [],
-  "gaps": [
-    {
-      "category": "G5-expected",
-      "label": "CA AMT ~$10,860 on high AMTI not modeled (engine state tax = $14627)",
-      "expected": 10860,
-      "actual": 0,
-      "source": "CA FTB Schedule P (540) — 7% flat AMT after exemption ($244,857 single 2024)"
-    }
-  ]
+  "gaps": []
 }

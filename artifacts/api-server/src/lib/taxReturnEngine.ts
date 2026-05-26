@@ -1492,6 +1492,10 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
       // G4 — WA 7% LTCG excise (RCW 82.87). Only applied when resident
       // state is WA. Threshold = $262k TY2024.
       longTermCapitalGains: ltcgPreferential,
+      // G5 — federal AMT preferences total for CA AMT (Schedule P 540).
+      // Only applied when resident state is CA. SALT addback + ISO bargain
+      // + legacy catch-all.
+      amtPreferences: totalAmtPreferences,
     },
   });
   // State + local: state tax is reported separately; local (NYC) is its own line.

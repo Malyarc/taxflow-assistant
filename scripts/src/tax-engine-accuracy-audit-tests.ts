@@ -1283,22 +1283,42 @@ header("G4. WA 7% LTCG excise above $262k — CLOSED");
     r3.stateTaxLiability, 0, 0.01, "Excise is WA-resident-only");
 }
 
-// G5. CA AMT (Schedule P 540) 7% flat — NOT modeled.
-header("G5. CA AMT (Schedule P 540) (NOT modeled — confirmed gap)");
+// G5. CA AMT (Schedule P 540).  CLOSED 2026-05-26.
+// 7% flat AMT after exemption on CA AMTI ≈ federal AGI + federal AMT prefs.
+// CA AMT delta added to state tax when tentative AMT exceeds regular CA tax.
+header("G5. CA AMT (Schedule P 540) — CLOSED");
 {
-  // Single $200k W-2 CA + $200k ISO bargain → AMTI very high. CA AMT 7% × (CA AMTI − $244,857 exemption single 2024).
+  // Single CA $200k W-2 + $200k ISO bargain pref. AMTI ≈ $400k.
+  // Exemption single 2024 = $244,857. AMT base = $155,143.
+  // Tentative AMT = 7% × $155,143 = $10,860.01.
+  // Compare against regular CA tax on $200k AGI (CA brackets, high band).
+  // CA AMT delta = max(0, tentative − regular CA tax).
+  // We assert CA AMT delta is non-zero and roughly matches the audit expectation.
   const r = run({
     client: { filingStatus: "single", state: "CA", taxYear: 2024 },
     w2s: [{ taxYear: 2024, wagesBox1: 200000, stateCode: "CA" }],
     adjustments: [{ adjustmentType: "amt_iso_bargain_element", amount: 200000, isApplied: true }],
   });
-  // Engine returns CA tax based on regular brackets, no AMT layer.
-  // CA AMT would add ~7% × (400k AMTI − 244,857 exemption) ≈ $10,860.
-  FAIL.push({
-    category: "G5-expected", label: `CA AMT ~$10,860 on high AMTI not modeled (engine state tax = $${r.stateTaxLiability.toFixed(0)})`,
-    expected: 10860, actual: 0,
-    source: "CA FTB Schedule P (540) — 7% flat AMT after exemption ($244,857 single 2024)",
+  // CA regular tax on $200k single, std ded ≈ $5.5k → taxable $194.5k.
+  //   CA brackets to $194.5k single 2024 ≈ $14,627 (per prior audit).
+  // CA AMT tentative = $10,860. Since $10,860 < $14,627 regular, no AMT delta.
+  // The engine returns regular CA tax = $14,627 (no AMT added).
+  // To trigger AMT, increase AMTI prefs. Let's try a case where AMT > regular.
+  // Use $200k W-2 + $500k ISO pref → AMTI = $700k. Tentative = 7% × (700k - 244,857) = $31,860.
+  // Regular CA tax on $200k ≈ $14,627. CA AMT delta = $31,860 - $14,627 = $17,233.
+  // State tax = $14,627 + $17,233 = $31,860 (= tentative AMT since AMT binds).
+  const r2 = run({
+    client: { filingStatus: "single", state: "CA", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 200000, stateCode: "CA" }],
+    adjustments: [{ adjustmentType: "amt_iso_bargain_element", amount: 500000, isApplied: true }],
   });
+  // r2.stateTaxLiability ≈ $31,860 (tentative AMT binds since regular < tentative)
+  check("G5", "CA $200k W-2 + $500k ISO → state tax ≈ $31,860 (CA AMT binds)",
+    r2.stateTaxLiability, 31860, 200, "CA Schedule P 540 — 7% × ($700k - $244,857)");
+  // r1.stateTaxLiability ≈ $14,627 (regular tax wins; AMT delta = 0).
+  check("G5", "CA $200k W-2 + $200k ISO → regular CA tax wins (AMT < reg)",
+    r.stateTaxLiability > 14000 && r.stateTaxLiability < 16000 ? 1 : 0, 1, 0,
+    "Regular CA tax exceeds CA AMT tentative");
 }
 
 // ════════════════════════════════════════════════════════════════════════════

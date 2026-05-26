@@ -591,6 +591,10 @@ export function calculateMultiStateTax(params: {
     /** G4 — long-term capital gains for WA 7% LTCG excise tax (RCW 82.87).
      *  Only applied when resident state is WA. */
     longTermCapitalGains?: number;
+    /** G5 — federal AMT preferences total (ISO bargain + SALT addback +
+     *  legacy catch-all) for CA AMT (Schedule P 540). Only applied when
+     *  resident state is CA. */
+    amtPreferences?: number;
   };
 }): MultiStateTaxResult {
   const resident = params.residentState.toUpperCase();
@@ -681,6 +685,25 @@ export function calculateMultiStateTax(params: {
     // confirmed; engine treats both years the same as TY2024).
     const waLtcgExcise = Math.max(0, ltcg - waLtcgThreshold) * 0.07;
     residentStateTax += waLtcgExcise;
+  }
+
+  // G5 — CA AMT (Schedule P 540). 7% flat AMT after exemption on AMTI
+  // (CA AMTI ≈ federal AGI + federal AMT preferences). CA AMT = max(0,
+  // tentative AMT − regular CA tax). Only applied when resident state is CA
+  // and there are AMT preferences (otherwise AMTI ≈ regular taxable and
+  // 7% AMT < regular CA rate at high income — no AMT delta).
+  if (resident === "CA" && (params.options?.amtPreferences ?? 0) > 0) {
+    const fs = params.filingStatus as StateFilingStatus;
+    // CA AMT exemption (Schedule P 540, 2024 indexed):
+    const caAmtExemption =
+      fs === "married_filing_jointly" || fs === "qualifying_widow" ? 326478 :
+      fs === "married_filing_separately" ? 163238 :
+      244857; // single, head_of_household
+    const caAmti = Math.max(0, params.federalAgi) + Math.max(0, params.options.amtPreferences);
+    const caAmtBase = Math.max(0, caAmti - caAmtExemption);
+    const caAmtTentative = 0.07 * caAmtBase;
+    const caAmtDelta = Math.max(0, caAmtTentative - residentStateTax);
+    residentStateTax += caAmtDelta;
   }
 
   // ── Local jurisdiction (NYC) ────────────────────────────────────────────
