@@ -1,0 +1,199 @@
+{
+  "version": "v1.0.0",
+  "reviewedAt": "2026-05-26",
+  "strategies": [
+    {
+      "id": "G1.1",
+      "name": "SEP-IRA / Solo 401(k) for self-employed filer",
+      "category": "retirement",
+      "ircSection": "IRC §408(k)",
+      "irsPub": "Pub 560 (TY2024 SEP cap $69k; TY2025 $70k)",
+      "trigger": "netSeIncome >= 30000 AND no existing SEP/Solo401k retirement adjustment AND filingStatus != married_filing_separately",
+      "formula": "contribution = min((netSeIncome - halfSeDeduction) * 0.20, planLimit); estSavings = contribution * (federalMarginalRate + stateMarginalRate)",
+      "confidence": 0.95,
+      "cpaEffortHours": 1.5,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Whether the client has any other retirement plan (SIMPLE, 401(k))",
+        "Whether the client wants employee-deferral capacity (Solo 401(k)) vs employer-only (SEP)"
+      ],
+      "action": "Open and fund a SEP-IRA (or Solo 401(k) if employee-deferral desired) by the extended return deadline. Contribution = ~{{contribution}}; estimated combined-rate savings ~{{estSavings}}.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.2",
+      "name": "Pass-Through Entity Tax (PTET) election to bypass SALT cap",
+      "category": "state",
+      "ircSection": "IRC §164(b)(6); Notice 2020-75",
+      "irsPub": "IRS Notice 2020-75; state-specific PTET statute",
+      "trigger": "K-1 pass-through income > 0 AND resident state has PTET regime AND SALT cap binds (saltDeductible == $10,000)",
+      "formula": "estSavings = max(0, actualSALT - $10,000) * federalMarginalRate",
+      "confidence": 0.85,
+      "cpaEffortHours": 3.0,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Confirm entity is eligible for PTET in its state (typically S-corp or partnership)",
+        "Confirm all owners consent to PTET election where state requires unanimous consent",
+        "Estimated state tax payable from the entity"
+      ],
+      "action": "Have the pass-through entity make a PTET election for the next tax year so state income tax is paid + deducted at the entity level, bypassing the $10k federal SALT cap. Estimated federal benefit ~{{estSavings}}.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.3",
+      "name": "Bunch itemized deductions in alternate years",
+      "category": "charitable",
+      "ircSection": "IRC §170; §63",
+      "irsPub": "Pub 17; Sch A general",
+      "trigger": "itemizedTotal between 85% and 115% of stdDed AND charitableCash > 0",
+      "formula": "estSavings = stdDed * 0.5 * marginalRate * 0.5 (half-effect over a 2-year alternating cycle)",
+      "confidence": 0.80,
+      "cpaEffortHours": 1.0,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Whether client can prepay next-year charitable gifts in December (cash basis)",
+        "Whether client has flexibility on property-tax timing"
+      ],
+      "action": "Stack two years of charitable cash giving into one tax year (e.g. December prepay + January next year). Take the standard deduction in the off-year. Estimated avg annual benefit ~{{estSavings}}.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.4",
+      "name": "Roth conversion window — fill the bracket",
+      "category": "retirement",
+      "ircSection": "IRC §408A",
+      "irsPub": "Pub 590-A",
+      "trigger": "federalMarginalRate < 0.24 AND taxpayerAge BETWEEN 30 AND 72 (or unknown)",
+      "formula": "conversion = next-bracket headroom; estSavings = conversion * (expectedFutureRate - currentRate). expectedFutureRate placeholder 0.32.",
+      "confidence": 0.60,
+      "cpaEffortHours": 2.0,
+      "recurring": false,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Traditional IRA balance",
+        "Expected future marginal rate (CPA judgment call)",
+        "Whether client expects to itemize in conversion year"
+      ],
+      "action": "Convert ~{{conversion}} of traditional IRA to Roth this year — taxable at the current marginal rate (~{{currentRate}}) but tax-free forever in Roth. Net estimated benefit ~{{estSavings}} assuming a future rate of 32%.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.5",
+      "name": "AMT timing — spread ISO exercises or same-year disqualifying sale",
+      "category": "timing",
+      "ircSection": "IRC §56(b)(3)",
+      "irsPub": "Form 6251 (Part II Line 2k)",
+      "trigger": "amtTax > 0 AND amt_iso_bargain_element adjustment > 0",
+      "formula": "estSavings = amtTax (entirely deferrable by spreading exercises across years OR disqualifying sale in same year)",
+      "confidence": 0.90,
+      "cpaEffortHours": 2.5,
+      "recurring": false,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "ISO exercise schedule and grant dates",
+        "Whether client is willing to do a same-year disqualifying sale (loses LTCG character)"
+      ],
+      "action": "Restructure the ISO exercise plan: spread exercises across tax years to stay below the AMT exemption phase-in, OR execute a same-year disqualifying sale to convert bargain element from AMT preference to ordinary W-2 income. Estimated AMT eliminated ~{{estSavings}}.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.6",
+      "name": "NIIT cliff avoidance — get AGI below the 3.8% threshold",
+      "category": "timing",
+      "ircSection": "IRC §1411",
+      "irsPub": "Form 8960",
+      "trigger": "AGI within +/- $10,000 of NIIT threshold AND netInvestmentIncome > 0",
+      "formula": "estSavings = niitTax (currently paid; defer ordinary income or accelerate deductions to drop AGI below threshold)",
+      "confidence": 0.80,
+      "cpaEffortHours": 1.5,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Deferrable income (year-end bonus, RSU vest timing)",
+        "Acceleratable deductions (charitable cash, HSA, 401(k) employee deferral)"
+      ],
+      "action": "Drop AGI below the NIIT threshold of {{threshold}} by deferring ~{{deferAmount}} of ordinary income to next year OR accelerating an HSA/401(k)/charitable contribution. Estimated NIIT saved ~{{estSavings}}.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.7",
+      "name": "§199A QBI deduction — wage/UBIA limit planning",
+      "category": "business",
+      "ircSection": "IRC §199A(b)(2)",
+      "irsPub": "Pub 535",
+      "trigger": "K-1 pass-through income > 0 AND taxable income in §199A phase-in window",
+      "formula": "estSavings = qbi * 0.20 * federalMarginalRate * fraction_lost_in_phase_in (proxy 0.50 within band)",
+      "confidence": 0.70,
+      "cpaEffortHours": 3.0,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "W-2 wages paid by the pass-through entity (Box 1)",
+        "UBIA of qualified property held by the entity",
+        "Whether activity is a Specified Service Trade or Business (SSTB)"
+      ],
+      "action": "Within the §199A phase-in band, restructure W-2 wages and/or property holdings inside the entity to qualify for the wage/UBIA-based limit on QBI. Estimated recovered QBI deduction value ~{{estSavings}}.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.8",
+      "name": "Charitable Donor-Advised Fund (DAF) bunching",
+      "category": "charitable",
+      "ircSection": "IRC §170; §4966",
+      "irsPub": "Pub 526; §4966 DAF rules",
+      "trigger": "charitableCash > 5000 AND federalMarginalRate >= 0.32",
+      "formula": "estSavings = (charitableCash * 2) * marginalRate * 0.20 (3-year bunching shifts std-ded cliff by ~20% of stacked total)",
+      "confidence": 0.85,
+      "cpaEffortHours": 2.0,
+      "recurring": false,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Whether the client already has a DAF account",
+        "Cash-flow capacity for a 2-3 year forward gift"
+      ],
+      "action": "Open a DAF and front-load 2-3 years of charitable cash into one tax year to clear the standard-deduction cliff, then distribute the grants over time. Estimated benefit ~{{estSavings}}.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.9",
+      "name": "Tax-loss harvesting against $3k ordinary offset",
+      "category": "investment",
+      "ircSection": "IRC §1211; §1212",
+      "irsPub": "Pub 550",
+      "trigger": "capitalLossDeducted < 3000 AND (netLTCG > 0 OR 1099-B activity present)",
+      "formula": "estSavings = (3000 - capitalLossDeducted) * ordinaryMarginalRate (the $3k ordinary offset; carryforward beyond)",
+      "confidence": 0.60,
+      "cpaEffortHours": 1.5,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Unrealized loss inventory in brokerage account(s)",
+        "Whether client trades in a wash-sale-prone way (would defeat the harvest)"
+      ],
+      "action": "Before year-end, realize ~$3,000 of net long-term or short-term capital losses from underperforming positions; reinvest in a non-substantially-identical security. Estimated savings ~{{estSavings}}.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.10",
+      "name": "Foreign Tax Credit claim vs. deduction",
+      "category": "credits",
+      "ircSection": "IRC §901",
+      "irsPub": "Form 1116",
+      "trigger": "foreign_tax_paid > 0 AND foreignTaxCredit.credit < foreign_tax_paid * 0.95",
+      "formula": "estSavings = foreign_tax_paid - foreignTaxCredit.credit (direct $-for-$ credit vs Sch A deduction)",
+      "confidence": 0.95,
+      "cpaEffortHours": 0.5,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Country-by-country foreign tax paid (for Form 1116 Schedule B if > $20k)",
+        "Foreign-source taxable income for the actual Form 1116 limit"
+      ],
+      "action": "Claim foreign taxes paid as a Foreign Tax Credit on Form 1116 instead of (or in addition to) an itemized deduction. Estimated additional savings ~{{estSavings}}.",
+      "formulaRev": 1
+    }
+  ]
+}

@@ -20,6 +20,9 @@
     },
     {
       "path": "./lib/validation"
+    },
+    {
+      "path": "./lib/planning-strategies"
     }
   ]
 }

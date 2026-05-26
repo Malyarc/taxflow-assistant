@@ -692,14 +692,15 @@ export function calculateMultiStateTax(params: {
   // tentative AMT − regular CA tax). Only applied when resident state is CA
   // and there are AMT preferences (otherwise AMTI ≈ regular taxable and
   // 7% AMT < regular CA rate at high income — no AMT delta).
-  if (resident === "CA" && (params.options?.amtPreferences ?? 0) > 0) {
+  const caAmtPrefs = params.options?.amtPreferences ?? 0;
+  if (resident === "CA" && caAmtPrefs > 0) {
     const fs = params.filingStatus as StateFilingStatus;
     // CA AMT exemption (Schedule P 540, 2024 indexed):
     const caAmtExemption =
       fs === "married_filing_jointly" || fs === "qualifying_widow" ? 326478 :
       fs === "married_filing_separately" ? 163238 :
       244857; // single, head_of_household
-    const caAmti = Math.max(0, params.federalAgi) + Math.max(0, params.options.amtPreferences);
+    const caAmti = Math.max(0, params.federalAgi) + Math.max(0, caAmtPrefs);
     const caAmtBase = Math.max(0, caAmti - caAmtExemption);
     const caAmtTentative = 0.07 * caAmtBase;
     const caAmtDelta = Math.max(0, caAmtTentative - residentStateTax);
