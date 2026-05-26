@@ -189,6 +189,132 @@ function detectSepIra(args: {
   };
 }
 
+// ── G1.2 — PTET (Pass-Through Entity Tax) election ────────────────────────
+
+/**
+ * States that have enacted a Pass-Through Entity Tax regime that lets
+ * S-corp / partnership owners bypass the federal $10k SALT cap. List per the
+ * Phase G plan (AICPA tracker as of 2026-05). New states are added as they
+ * enact PTET; date-version the catalog when the list changes.
+ */
+const PTET_ELECTING_STATES: ReadonlySet<string> = new Set([
+  "AL", "AZ", "AR", "CA", "CO", "CT", "GA", "HI", "IL", "IN",
+  "IA", "KS", "KY", "LA", "MD", "MA", "MI", "MN", "MS", "MO",
+  "MT", "NE", "NJ", "NM", "NY", "NC", "OH", "OK", "OR", "RI",
+  "SC", "UT", "VA", "WV", "WI",
+]);
+
+function detectPtetElection(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+}): OpportunityHit | null {
+  const { client, computed } = args;
+  // Resident state must have a PTET regime.
+  const state = (client.state ?? "").toUpperCase();
+  if (!PTET_ELECTING_STATES.has(state)) return null;
+
+  // Must be a K-1 client with active (i.e. non-passive) pass-through income.
+  // Passive K-1 income doesn't benefit from PTET in the same way (the rule
+  // is intended for owner-operators of S-corps / partnerships).
+  const activeK1 = computed.scheduleK1?.totalActiveOrdinaryIncome ?? 0;
+  if (activeK1 <= 0) return null;
+
+  // Cap must actually bind: itemizing AND saltDeductible at the cap.
+  if (computed.itemizedDeductions == null) return null;
+  const saltCap = client.filingStatus === "married_filing_separately" ? 5000 : 10000;
+  const { saltDeductible, saltUncapped } = computed.scheduleA;
+  if (Math.round(saltDeductible) !== saltCap) return null;
+  if (saltUncapped <= saltCap) return null;
+
+  const fedRate = federalMarginalRate(computed);
+  const recoverable = saltUncapped - saltCap;
+  const estSavings = recoverable * fedRate;
+  if (estSavings <= 0) return null;
+
+  const strategy = strategyById("G1.2");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars = {
+    estSavings: Math.round(estSavings),
+    recoverableSalt: Math.round(recoverable),
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings: Math.round(estSavings),
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Resident state ${state} has a PTET regime; SALT cap binds at ${fmt(saltCap)} but ` +
+      `${fmt(Math.round(saltUncapped))} of state + property tax was paid. Electing PTET would deduct ` +
+      `~${fmt(Math.round(recoverable))} at the entity level instead.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      state,
+      activeK1Income: Math.round(activeK1),
+      saltUncapped: Math.round(saltUncapped),
+      saltCap,
+      recoverableSalt: Math.round(recoverable),
+      federalMarginalRate: fedRate,
+    },
+  };
+}
+
+// ── G1.10 — Foreign Tax Credit unclaimed ──────────────────────────────────
+
+function sumAdjustment(adjustments: AdjustmentFact[], type: string): number {
+  return adjustments
+    .filter((a) => a.adjustmentType === type && a.isApplied !== false)
+    .reduce((s, a) => s + toNum(a.amount), 0);
+}
+
+function detectForeignTaxCreditGap(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { computed, adjustments } = args;
+  const foreignTaxPaid = sumAdjustment(adjustments, "foreign_tax_paid");
+  if (foreignTaxPaid <= 0) return null;
+  const claimed = computed.foreignTaxCredit?.credit ?? 0;
+  // Fire when the engine's auto-claimed FTC is materially below the foreign
+  // tax actually paid — typically because the simplified $300/$600 limit
+  // capped it and Form 1116 wasn't filed.
+  if (claimed >= foreignTaxPaid * 0.95) return null;
+  const recoverable = foreignTaxPaid - claimed;
+  if (recoverable <= 0) return null;
+
+  const strategy = strategyById("G1.10");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars = {
+    estSavings: Math.round(recoverable),
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings: Math.round(recoverable),
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Foreign tax paid of ${fmt(Math.round(foreignTaxPaid))} but only ${fmt(Math.round(claimed))} claimed as FTC. ` +
+      `Filing Form 1116 with foreign-source taxable income unlocks ~${fmt(Math.round(recoverable))} of additional credit.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      foreignTaxPaid: Math.round(foreignTaxPaid),
+      currentlyClaimed: Math.round(claimed),
+      recoverable: Math.round(recoverable),
+    },
+  };
+}
+
 // ── Top-level evaluator ────────────────────────────────────────────────────
 
 export interface PlanningInputs {
@@ -206,7 +332,10 @@ export function evaluatePlanningOpportunities(args: PlanningInputs): Opportunity
   const hits: OpportunityHit[] = [];
   const sepIra = detectSepIra(args);
   if (sepIra) hits.push(sepIra);
-  // future detectors land here (G1.2 - G1.10)
+  const ptet = detectPtetElection({ client: args.client, computed: args.computed });
+  if (ptet) hits.push(ptet);
+  const ftc = detectForeignTaxCreditGap({ computed: args.computed, adjustments: args.adjustments });
+  if (ftc) hits.push(ftc);
   hits.sort((a, b) => b.estSavings - a.estSavings);
   return hits;
 }
