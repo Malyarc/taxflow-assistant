@@ -20,6 +20,8 @@ import {
   useCreateAdjustment,
   useUpdateAdjustment,
   useDeleteAdjustment,
+  useGetPlanningOpportunities,
+  getGetPlanningOpportunitiesQueryKey,
   getGetClientQueryKey,
   getListDocumentsQueryKey,
   getListW2DataQueryKey,
@@ -2152,7 +2154,7 @@ export default function ClientDetail() {
       </div>
 
       <Tabs defaultValue="documents">
-        <TabsList className="grid grid-cols-9 w-full max-w-6xl">
+        <TabsList className="grid grid-cols-10 w-full max-w-6xl">
           <TabsTrigger value="documents">Documents</TabsTrigger>
           <TabsTrigger value="w2data">W-2 Data</TabsTrigger>
           <TabsTrigger value="form1099">1099 Forms</TabsTrigger>
@@ -2162,6 +2164,7 @@ export default function ClientDetail() {
           <TabsTrigger value="calculator">Tax Calculator</TabsTrigger>
           <TabsTrigger value="compare">Year Compare</TabsTrigger>
           <TabsTrigger value="adjustments">Adjustments</TabsTrigger>
+          <TabsTrigger value="planning">Planning</TabsTrigger>
         </TabsList>
 
         <TabsContent value="documents" className="mt-6">
@@ -2190,6 +2193,9 @@ export default function ClientDetail() {
         </TabsContent>
         <TabsContent value="adjustments" className="mt-6">
           <AdjustmentsTab clientId={clientId} />
+        </TabsContent>
+        <TabsContent value="planning" className="mt-6">
+          <PlanningTab clientId={clientId} />
         </TabsContent>
       </Tabs>
     </div>
@@ -3058,5 +3064,160 @@ function ScheduleK1Form({
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ─── Planning Tab (Phase G — Tax Planning detector) ──────────────────────────
+
+const PLANNING_CATEGORY_LABEL: Record<string, string> = {
+  retirement: "Retirement",
+  state: "State",
+  charitable: "Charitable",
+  timing: "Timing",
+  business: "Business",
+  investment: "Investment",
+  credits: "Credits",
+};
+
+const PLANNING_CATEGORY_BADGE: Record<string, string> = {
+  retirement: "bg-emerald-100 text-emerald-900",
+  state: "bg-sky-100 text-sky-900",
+  charitable: "bg-rose-100 text-rose-900",
+  timing: "bg-amber-100 text-amber-900",
+  business: "bg-indigo-100 text-indigo-900",
+  investment: "bg-violet-100 text-violet-900",
+  credits: "bg-teal-100 text-teal-900",
+};
+
+function confidenceBadgeColor(confidence: number): string {
+  if (confidence >= 0.85) return "bg-green-100 text-green-800";
+  if (confidence >= 0.70) return "bg-yellow-100 text-yellow-800";
+  return "bg-gray-100 text-gray-700";
+}
+
+function PlanningTab({ clientId }: { clientId: number }) {
+  const { data, isLoading, error } = useGetPlanningOpportunities(clientId, {
+    query: { queryKey: getGetPlanningOpportunitiesQueryKey(clientId) },
+  });
+
+  if (isLoading) {
+    return (
+      <div className="space-y-3">
+        <Skeleton className="h-24 w-full" />
+        <Skeleton className="h-24 w-full" />
+      </div>
+    );
+  }
+  if (error) {
+    return (
+      <Card>
+        <CardContent className="py-8 text-center text-sm text-muted-foreground">
+          Could not load planning opportunities for this client.
+        </CardContent>
+      </Card>
+    );
+  }
+  if (!data) return null;
+
+  const hits = data.hits ?? [];
+  // Already sorted by estSavings desc by the API. Group by category for the UI.
+  const byCategory = new Map<string, typeof hits>();
+  for (const h of hits) {
+    const cat = h.category as string;
+    if (!byCategory.has(cat)) byCategory.set(cat, []);
+    byCategory.get(cat)!.push(h);
+  }
+  const categories = [...byCategory.keys()].sort((a, b) => {
+    const sa = byCategory.get(a)!.reduce((s, h) => s + Number(h.estSavings ?? 0), 0);
+    const sb = byCategory.get(b)!.reduce((s, h) => s + Number(h.estSavings ?? 0), 0);
+    return sb - sa;
+  });
+
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle>Total estimated annual savings</CardTitle>
+        </CardHeader>
+        <CardContent className="flex items-baseline justify-between">
+          <div className="text-3xl font-semibold tracking-tight">
+            {fmt(Number(data.totalEstSavings ?? 0))}
+          </div>
+          <div className="text-xs text-muted-foreground">
+            Catalog {data.catalogVersion} · Tax year {data.taxYear} · {hits.length} opportunit{hits.length === 1 ? "y" : "ies"}
+          </div>
+        </CardContent>
+      </Card>
+
+      {hits.length === 0 ? (
+        <Card>
+          <CardContent className="py-10 text-center text-sm text-muted-foreground">
+            No planning opportunities detected for this client's current tax year.
+            The deterministic catalog checks 10 rules across retirement, state,
+            charitable, timing, business, investment, and credits.
+          </CardContent>
+        </Card>
+      ) : (
+        categories.map((cat) => (
+          <div key={cat} className="space-y-3">
+            <div className="flex items-center gap-2">
+              <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${PLANNING_CATEGORY_BADGE[cat] ?? "bg-gray-100 text-gray-700"}`}>
+                {PLANNING_CATEGORY_LABEL[cat] ?? cat}
+              </span>
+              <span className="text-xs text-muted-foreground">
+                {byCategory.get(cat)!.length} opportunit{byCategory.get(cat)!.length === 1 ? "y" : "ies"}
+              </span>
+            </div>
+            {byCategory.get(cat)!.map((hit) => (
+              <Card key={hit.strategyId}>
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <CardTitle className="text-base">{hit.name}</CardTitle>
+                      <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                        <span>{hit.strategyId}</span>
+                        <span>·</span>
+                        <span>{Number(hit.cpaEffortHours).toFixed(1)}h CPA effort</span>
+                        {hit.recurring ? (
+                          <>
+                            <span>·</span>
+                            <Badge variant="outline" className="text-xs">Recurring</Badge>
+                          </>
+                        ) : null}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-2xl font-semibold text-emerald-700">
+                        {fmt(Number(hit.estSavings))}
+                      </div>
+                      <span className={`mt-1 inline-flex px-2 py-0.5 rounded text-xs font-medium ${confidenceBadgeColor(Number(hit.confidence))}`}>
+                        {Math.round(Number(hit.confidence) * 100)}% confidence
+                      </span>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm">
+                  <p className="text-muted-foreground">{hit.rationale}</p>
+                  <p className="font-medium">{hit.action}</p>
+                  {Array.isArray(hit.prerequisiteData) && hit.prerequisiteData.length > 0 ? (
+                    <div className="rounded border border-amber-200 bg-amber-50 p-3 text-xs">
+                      <div className="font-medium text-amber-900 mb-1">Still need from client:</div>
+                      <ul className="list-disc pl-5 text-amber-900 space-y-0.5">
+                        {hit.prerequisiteData.map((req: string, i: number) => (
+                          <li key={i}>{req}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  <div className="text-xs text-muted-foreground border-t pt-2">
+                    Citation: {hit.citation}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ))
+      )}
+    </div>
   );
 }
