@@ -24,10 +24,12 @@ import {
   useGetPlanningMemo,
   useGetPlanningClientEmail,
   useGetPlanningMissingData,
+  useGetPlanningMultiYear,
   getGetPlanningOpportunitiesQueryKey,
   getGetPlanningMemoQueryKey,
   getGetPlanningClientEmailQueryKey,
   getGetPlanningMissingDataQueryKey,
+  getGetPlanningMultiYearQueryKey,
   getGetClientQueryKey,
   getListDocumentsQueryKey,
   getListW2DataQueryKey,
@@ -3232,6 +3234,8 @@ function PlanningTab({ clientId }: { clientId: number }) {
 
       <PlanningSynthesisPanel clientId={clientId} enabled={synthesisOn} />
 
+      <MultiYearPlanningSection clientId={clientId} />
+
       {hits.length === 0 ? (
         <Card>
           <CardContent className="py-10 text-center text-sm text-muted-foreground">
@@ -3302,5 +3306,93 @@ function PlanningTab({ clientId }: { clientId: number }) {
         ))
       )}
     </div>
+  );
+}
+
+// ── Multi-year planning section (Phase G4) ────────────────────────────────
+
+function MultiYearPlanningSection({ clientId }: { clientId: number }) {
+  const { data, isLoading, error } = useGetPlanningMultiYear(clientId, {
+    query: { queryKey: getGetPlanningMultiYearQueryKey(clientId) },
+  });
+
+  if (isLoading) return <Skeleton className="h-20 w-full" />;
+  if (error || !data) return null;
+  const hits = data.hits ?? [];
+  const yearsAvailable = Number(data.yearsAvailable ?? 0);
+
+  // Suppress the entire section when only one year of history exists — the
+  // detectors can't fire and an empty card is noise. Surface a brief hint
+  // instead so the CPA knows multi-year detection is in the product.
+  if (yearsAvailable < 2) {
+    return (
+      <Card className="border-dashed">
+        <CardContent className="py-4 text-xs text-muted-foreground">
+          Multi-year planning patterns activate once this client has at least 2 years
+          of computed tax_returns history. Currently {yearsAvailable === 0
+            ? "no tax_returns are persisted yet."
+            : "only the current year is persisted."}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-baseline justify-between gap-3">
+          <CardTitle className="text-base">Multi-year trends</CardTitle>
+          <div className="text-xs text-muted-foreground">
+            Years analyzed: {(data.yearsCovered ?? []).join(", ")} · Catalog {data.catalogVersion}
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        {hits.length === 0 ? (
+          <p className="text-muted-foreground">
+            No multi-year patterns detected across {yearsAvailable} years of history. The 5 G4 detectors
+            check persistent NIIT, persistent AMT, std-ded cliff repetition, stuck capital-loss
+            carryforward, and passive-loss suspension growth.
+          </p>
+        ) : (
+          hits.map((hit) => (
+            <div
+              key={hit.strategyId}
+              className="rounded border border-indigo-200 bg-indigo-50/40 p-3 space-y-2"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="font-medium">{hit.name}</div>
+                  <div className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+                    <span>{hit.strategyId}</span>
+                    <span>·</span>
+                    <span>{Number(hit.cpaEffortHours).toFixed(1)}h CPA effort</span>
+                    {hit.recurring ? (
+                      <>
+                        <span>·</span>
+                        <Badge variant="outline" className="text-xs">Recurring</Badge>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-lg font-semibold text-indigo-700">
+                    {fmt(Number(hit.estSavings))}
+                  </div>
+                  <span className={`mt-1 inline-flex px-2 py-0.5 rounded text-xs font-medium ${confidenceBadgeColor(Number(hit.confidence))}`}>
+                    {Math.round(Number(hit.confidence) * 100)}%
+                  </span>
+                </div>
+              </div>
+              <p className="text-muted-foreground">{hit.rationale}</p>
+              <p className="font-medium">{hit.action}</p>
+              <div className="text-xs text-muted-foreground border-t border-indigo-200 pt-2">
+                Citation: {hit.citation}
+              </div>
+            </div>
+          ))
+        )}
+      </CardContent>
+    </Card>
   );
 }

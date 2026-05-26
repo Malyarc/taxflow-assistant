@@ -135,8 +135,10 @@ function detectPersistentNiit(history: TaxReturnSnapshot[]): OpportunityHit | nu
 
   const strategy = strategyById("G4.1");
   const years = firingYears.length;
+  // years is passed as a string so the interpolate helper doesn't auto-format
+  // it as USD ($2 instead of "2"). Same convention for G4.2 / G4.3 / G4.4 below.
   const vars = {
-    years,
+    years: String(years),
     avgNiit: Math.round(avgNiit),
     estSavings: Math.round(estSavings),
   };
@@ -185,7 +187,7 @@ function detectPersistentAmt(history: TaxReturnSnapshot[]): OpportunityHit | nul
   const strategy = strategyById("G4.2");
   const years = firingYears.length;
   const vars = {
-    years,
+    years: String(years),
     avgAmt: Math.round(avgAmt),
     estSavings: Math.round(estSavings),
   };
@@ -249,7 +251,7 @@ function detectPersistentBunching(history: TaxReturnSnapshot[]): OpportunityHit 
   const years = firingYears.length;
   const yearList = firingYears.map((y) => y.taxYear).sort((a, b) => a - b).join(", ");
   const vars = {
-    years,
+    years: String(years),
     estSavings: Math.round(estSavings),
   };
   return {
@@ -320,7 +322,7 @@ function detectCapitalLossCarryforwardUnused(history: TaxReturnSnapshot[]): Oppo
   }
   const vars = {
     carryforward: Math.round(currentCf),
-    years: yearsStuck,
+    years: String(yearsStuck),
     estSavings: Math.round(estSavings),
   };
   return {
