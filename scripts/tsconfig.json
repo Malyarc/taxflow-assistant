@@ -36,6 +36,7 @@
     "src/tax-engine-accuracy-audit-tests.ts",
     "src/tax-engine-deep-audit-tests.ts",
     "src/tax-engine-planning-tests.ts",
-    "src/tax-engine-planning-integration-tests.ts"
+    "src/tax-engine-planning-integration-tests.ts",
+    "src/seed-dummy-clients.ts"
   ]
 }
