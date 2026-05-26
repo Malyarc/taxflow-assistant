@@ -65,7 +65,7 @@ Future-you will be tempted to "simplify" these. Don't.
 - **Hand-calc every expected value** against IRS published rules before asserting it. The user has been burned by tests passing while the underlying calc was wrong (e.g. the AGI/Line-9 bug shipped despite unit tests passing).
 - **Unit tests alone aren't enough.** Standalone suites verify the calculator; integration suites hit a live API at `localhost:8080` and exercise the full pipeline. Run both.
 - **Adding a new test file** also requires adding it to `scripts/tsconfig.json`'s `exclude` array — the workspace typecheck fails otherwise.
-- **Test files (current set, 1,630 assertions across 26 suites — K1, K2, K3, K5, K6, K10 closed end-to-end 2026-05-23 → 2026-05-24, dropping federal-engine gaps from 10 to 6; deep-audit suite now 170 assertions; AI-overlay 33 included):**
+- **Test files (current set, 1,700+ assertions across 26 suites — ALL 10 K-list federal-engine gaps + ALL 4 state-engine gaps closed end-to-end 2026-05-23 → 2026-05-26; deep-audit suite now 210 assertions, accuracy-audit 97 assertions, 0 documented gaps; AI-overlay 33 env-gated):**
   | File | Needs API |
   |---|---|
   | `tax-engine-tests.ts` | no |
@@ -93,7 +93,7 @@ Future-you will be tempted to "simplify" these. Don't.
   | `tax-engine-capital-transactions-tests.ts` | yes (Form 8949 + wash sale) |
   | `tax-engine-k1-integration-tests.ts` | yes (K-1 CRUD + recalc pipeline) |
   | `tax-engine-accuracy-audit-tests.ts` | no (88 IRS-cited cliff + canonical hand-calc tests; see `docs/accuracy-audit/`) |
-  | `tax-engine-deep-audit-tests.ts` | no (170 deep-audit: per-calc edge cases, 20 client archetypes, invariants, K1/K2/K3/K5/K6/K10 closure cases; see `docs/accuracy-audit/deep-audit-2026-05-23.md`) |
+  | `tax-engine-deep-audit-tests.ts` | no (210 deep-audit: per-calc edge cases, 20 client archetypes, invariants, K1-K10 + K1-MFJ sub-gap full closure; ALL 10 federal K-list gaps closed; see `docs/accuracy-audit/deep-audit-2026-05-23.md`) |
 - **Scenarios are CPA-style end-to-end cases.** Each one has a `Hand-calc:` comment block — keep that convention. When a scenario fails, double-check your hand-calc before mutating the assertion; the calculator is usually right.
 - **Run all suites after any pipeline or schema change.** The Phase 1 work flushed out one regression (scenario 8 — needed to add EITC to expected refund).
 
@@ -159,14 +159,23 @@ Several Phase 2/3 limitations have been resolved (multi-state foundation, MACRS,
 - Most state-specific credits (state EITC: CA, NY, CO, IL, NJ, MA piggyback + MN Working Family Credit wired; CT/DC/DE/IN/IA/KS/LA/ME/MD/MI/MT/NE/NM/OH/OK/OR/RI/VT/VA/WA/WI not modeled. State CTC, state AMT, etc. not modeled)
 - **UltraTax CS file-based import** — see `docs/ultratax-audit.md`. No public UltraTax import format exists; our `.gen` file is rebranded as a vendor-neutral CPA-review summary (the URL path + .gen filename are preserved for backward compat). PDF + CSV + the 10-case `docs/validation-packet/` are the design-partner artifacts. Real UltraTax ingestion (SurePrep API / SDE / GUI automation) is Phase 5 — multi-month, do not start speculatively.
 - **State-specific accuracy gaps** (uncovered + documented in 2026-05-23 accuracy audit; see `docs/accuracy-audit/report.md`): NYC EITC sliding scale (engine has NY state EITC at 30% but not the additional NYC sliding-scale credit), MN $1,750/child refundable CTC (engine has MN WFC but not the separate CTC), WA 7% LTCG excise > $262k, CA AMT (Schedule P 540). State CTCs for CA/CO/NJ/IL/NM/VT also not modeled. PA Schedule SP Tax Forgiveness not modeled. IL personal exemption $250k/$500k phase-out not modeled (engine over-deducts by max $137/filer at the top).
-- **Federal-engine gaps surfaced in the 2026-05-23 DEEP audit** (`docs/accuracy-audit/deep-audit-2026-05-23.md`, K-list, all tracked as positive (closed) or failing (still-open) assertions in `tax-engine-deep-audit-tests.ts`):
-  - **CLOSED 2026-05-23 PM:** K1 — Sch SE Part I Line 9 (SS wage base shared across W-2 + SE) for single/HoH/MFS/QSS. MFJ sub-gap intentionally tracked (engine sums W-2 wages household-wide; IRS rule is per-spouse and needs per-spouse W-2/SE attribution).
-  - **CLOSED 2026-05-23 PM:** K2 — Form 8959 Additional Medicare 0.9% on Medicare wages + SE above filing-status threshold.
-  - **CLOSED 2026-05-24:** K3 — Form 6251 Part III AMT × LTCG preferential rates. AMT now computes MIN of (full 26/28% on AMT base) and (26/28% on AMT-base − LTCG/QDIV + LTCG at 0/15/20% preferential). Saves ~$13k on representative high-LTCG + ISO-bargain case.
-  - **CLOSED 2026-05-24:** K5 — SEHI deduction (Form 7206, IRC §162(l)). Adjustment `self_employed_health_insurance_premiums`; engine caps at (net SE − half-SE); above-the-line on Sched 1 Line 17.
-  - **CLOSED 2026-05-24:** K6 — §121 home-sale exclusion. Adjustment `home_sale_gross_gain_primary_residence`; engine applies $250k single/HoH/MFS / $500k MFJ-or-QSS cap; remainder flows to LTCG.
-  - **CLOSED 2026-05-24:** K10 — SS taxability worksheet (Pub 915 0/50/85%). New `socialSecurityBenefits` and `mfsLivedApartAllYear` client fields. Engine computes the Pub 915 worksheet using AGI-excluding-SS + tax-exempt interest + half SS, then folds taxable SS into AGI as Form 1040 Line 6b.
-  - Still open: K4 NOL carryforward post-TCJA 80% limit; K7 §1202 QSBS; K8 kiddie tax (Form 8615); K9 FEIE §911. Plus the K1 MFJ sub-gap (per-spouse SE attribution corner case) and a K10 sub-gap (engine includes taxable SS in state tax base for non-SS-taxing states — over-taxes SS at state level). Engine net: 6 federal-engine gaps (down from 10).
+- **Federal-engine gaps surfaced in the 2026-05-23 DEEP audit** (`docs/accuracy-audit/deep-audit-2026-05-23.md`, K-list, all tracked as positive (closed) assertions in `tax-engine-deep-audit-tests.ts`). **ALL 10 K-LIST GAPS CLOSED (2026-05-23 → 2026-05-26):**
+  - **K1** — Sch SE Part I Line 9 (SS wage base shared across W-2 + SE). Closed 2026-05-23 PM for single/HoH/MFS/QSS. MFJ sub-gap closed 2026-05-26 with per-spouse W-2/SE attribution (`spouse` field on W2Fact + Form1099Fact). Default fallback when no explicit spouse tag preserves pre-K1-MFJ behavior.
+  - **K2** — Form 8959 Additional Medicare 0.9% on Medicare wages + SE above filing-status threshold. Closed 2026-05-23 PM.
+  - **K3** — Form 6251 Part III AMT × LTCG preferential rates. Closed 2026-05-24. AMT now computes MIN of (full 26/28% on AMT base) and (26/28% on AMT-base − LTCG/QDIV + LTCG at 0/15/20% preferential). Saves ~$13k on representative high-LTCG + ISO-bargain case.
+  - **K4** — NOL carryforward (post-TCJA 80% limit, IRC §172(a)(2)). Closed 2026-05-26. Adjustment `nol_carryforward`; engine caps deduction at 80% of taxable income; tracks `nolCarryforwardRemaining` for next year.
+  - **K5** — SEHI deduction (Form 7206, IRC §162(l)). Closed 2026-05-24. Adjustment `self_employed_health_insurance_premiums`; engine caps at (net SE − half-SE); above-the-line on Sched 1 Line 17.
+  - **K6** — §121 home-sale exclusion. Closed 2026-05-24. Adjustment `home_sale_gross_gain_primary_residence`; engine applies $250k single/HoH/MFS / $500k MFJ-or-QSS cap; remainder flows to LTCG.
+  - **K7** — §1202 QSBS exclusion. Closed 2026-05-26. Adjustments `qsbs_gross_gain` + `qsbs_adjusted_basis`; exclusion = min(gross, max($10M, 10× basis)). Engine assumes 100% post-2010-09-27 acquisition (sub-gap: older 75%/50% acquisitions require pre-multiplication).
+  - **K8** — Kiddie tax (Form 8615). Closed 2026-05-26. New client fields `isKiddieTaxFiler` + `parentsTopMarginalRate`. Engine taxes net unearned income > $2,600 at parent's marginal rate per Form 8615 Line 18 (MAX of regular vs kiddie method).
+  - **K9** — FEIE §911 (Form 2555). Closed 2026-05-26. Adjustments `foreign_earned_income` + `foreign_earned_income_spouse` (MFJ); per-spouse cap $126,500 TY2024 / $130,000 TY2025. Stacking rule applied: tax computed at marginal rate that would have applied including FEIE.
+  - **K10** — SS taxability worksheet (Pub 915 0/50/85%). Closed 2026-05-24. New `socialSecurityBenefits` and `mfsLivedApartAllYear` client fields. K10 state-SS exclusion closed 2026-05-26 (taxable SS excluded from state-tax base for 41 SS-exempt jurisdictions via STATES_TAXING_SS set).
+- **State-engine gaps** (G-list, accuracy-audit suite): **ALL 4 CLOSED 2026-05-26**:
+  - **G1** — NYC EITC sliding scale (NY IT-215 Line 26). Engine bands 30/25/20/15/10/5% by NYAGI. Refundable; excess flows to state refund.
+  - **G2** — MN $1,750/child refundable CTC (Schedule M1CWFC). Joint phase-out with WFC; WFC absorbed first.
+  - **G4** — WA 7% LTCG excise (RCW 82.87). Engine applies to WA-resident filers with LTCG > $262,000 (TY2024).
+  - **G5** — CA AMT (Schedule P 540). 7% flat AMT on CA AMTI > $244,857 single / $326,478 MFJ / $163,238 MFS exemption.
+- **Engine net: ZERO documented gaps** (down from 10 federal + 4 state at start of week).
 - AMT preferences modeled: line 2g state-tax addback (auto from itemized SALT, override available), line 2k ISO bargain element. Still not modeled: line 2i MACRS-vs-ADS depreciation difference, line 2e state-refund recapture, AMT NOL.
 - K-1 §199A wage/UBIA limits + SSTB phase-out (engine applies simplified 20% only); K-1 basis / at-risk fields stored but not enforced; K-1 guaranteed payments (Box 4) not modeled
 - Other carryforwards: NOL, AMT credit, charitable (capital loss + §469 PAL + K-1 passive loss carryforward ARE supported)

@@ -119,34 +119,23 @@ unblocks the first design partner.
 
 ## Recommended sequencing (next 3 sessions)
 
-(As of 2026-05-24 — Phases A, B, B+, C12, C13, C14 + adversarial
-accuracy audit + DEEP audit + security & code-quality batch + K1/K2
-(2026-05-23 PM) + K3/K5/K6/K10 (2026-05-24) all complete. 9 real
-bugs fixed across the three audit tracks. **6 federal-engine gaps
-(down from 10)** + 4 state-engine gaps documented. CPA design-partner
-outreach packet (C11) drafted in `docs/outreach/`.)
+(As of 2026-05-26 — Phases A, B, B+, C12, C13, C14 + adversarial
+accuracy audit + DEEP audit + security & code-quality batch all
+complete. 9 real bugs fixed across the three audit tracks. **ZERO
+documented federal or state engine gaps remain** (all 10 K-list +
+all 4 G-list closed end-to-end during 2026-05-23 → 2026-05-26).
+CPA design-partner outreach packet (C11) drafted in `docs/outreach/`.)
 
-1. **Session 1 (now next):** K1 + K2 (2026-05-23 PM) and K3, K5, K6, K10
-   (2026-05-24) are all closed and deployed. C11 design-partner outreach
-   packet drafted (`docs/outreach/`). Remaining priorities (by impact):
-   - **K4 NOL carryforward (post-TCJA 80% limit)** — moderately common
-     for businesses transitioning out of losses (~3 days)
-   - **K8 Kiddie tax (Form 8615)** — niche but recurring on filers
-     with children's unearned income (~2 days)
-   - **K9 FEIE §911 ($126,500 TY2024) + stacking rule** — expat
-     filers (~2-3 days)
-   - **K7 §1202 QSBS exclusion ($10M / 10× basis)** — tech-founder
-     liquidity events; high $ but rare (~3 days)
-   - **K1 MFJ sub-gap** — needs per-spouse W-2/SE attribution;
-     data-model change required (~3-5 days)
-   - **K10 state-SS exclusion** — engine includes taxable SS in
-     state-tax base; correct for SS-taxing states (CO/CT/KS/MN/MT/
-     NM/RI/UT/VT) but over-taxes SS at state level for the other 41
-     jurisdictions. Per-state opt-out flag (~2 days).
-   - **State gaps**: G1 NYC EITC sliding scale, G2 MN $1,750/child
-     refundable CTC, G4 WA 7% LTCG excise, G5 CA AMT (Sched P 540).
-2. **Session 2:** Begin Phase D15 (CPA-firm multi-tenancy auth) once a
-   paid design partner is committed.
+1. **Session 1 (closed 2026-05-26):** ALL federal K-list gaps (K1-K10
+   inclusive of K1 MFJ sub-gap and K10 state-SS sub-gap) and ALL state
+   gaps (G1 NYC EITC, G2 MN CTC, G4 WA LTCG, G5 CA AMT) closed and
+   deployed. ZERO documented gaps remain. C11 outreach packet drafted.
+2. **Session 2 (now next):** Begin Phase D15 (CPA-firm multi-tenancy
+   auth) once a paid design partner is committed. OR engine completeness
+   pass: charitable carryforward (5-year), AMT credit carryforward,
+   §179 + bonus depreciation, 1099-R early-withdrawal 10% penalty,
+   1099-G nuance, part-year residency in multi-state framework, other
+   local taxes (MD county, OH city), state CTCs beyond MN.
 3. **Session 3:** Continue Phase D depending on what the partner asks
    for first (D16 audit-log hardening, D17 S3 + encryption,
    D18 Stripe billing).
