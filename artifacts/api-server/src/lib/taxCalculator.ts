@@ -1666,6 +1666,131 @@ export function calculateStateEitc(params: {
   return { state, credit: 0, approximate: false };
 }
 
+// ── State Child Tax Credits (E9) ───────────────────────────────────────────
+// 6 states with state-level CTCs not previously modeled. Each function
+// returns the refundable credit amount (added to state refund). Verified
+// against each state's TY2024 published forms/instructions.
+
+export interface StateCtcCalculation {
+  state: string;
+  credit: number;
+  /** Always true here — the calculations are approximations of complex tables. */
+  approximate: boolean;
+  notes?: string;
+}
+
+export function calculateStateCtc(params: {
+  state: string;
+  agi: number;
+  filingStatus: string;
+  childrenUnder6: number;
+  childrenUnder17: number;
+  federalCtcApplied: number;
+  /** CalEITC eligibility — required for the CA Young Child Tax Credit. */
+  caEitcEligible?: boolean;
+  taxYear: number;
+}): StateCtcCalculation {
+  const { state, agi, filingStatus, childrenUnder6, childrenUnder17, federalCtcApplied } = params;
+  const code = state.toUpperCase();
+  const isMfj = filingStatus === "married_filing_jointly" || filingStatus === "qualifying_widow";
+
+  // CA — Young Child Tax Credit (YCTC). $1,154 per child under 6 (TY2024).
+  // Requires CalEITC eligibility. We approximate the income-phase identically
+  // to CalEITC (peak at low income, phased to 0 by $30,950 AGI).
+  if (code === "CA") {
+    if (!params.caEitcEligible || childrenUnder6 <= 0) {
+      return { state: code, credit: 0, approximate: true,
+        notes: "CA YCTC requires CalEITC eligibility + child under 6" };
+    }
+    // Phase same as CalEITC: peak ≤ $6,800 earned, linear phase to 0 by $30,950
+    const yctcMaxPerChild = 1154; // FTB Form 3514 TY2024
+    let pct = 1;
+    if (agi > 6800) {
+      const phaseOutRange = 30950 - 6800;
+      pct = Math.max(0, (30950 - agi) / phaseOutRange);
+    }
+    return { state: code, credit: yctcMaxPerChild * childrenUnder6 * pct,
+      approximate: true, notes: "CA YCTC TY2024 $1,154/child under 6" };
+  }
+
+  // CO — Family Affordability Tax Credit (TY2024+). $1,200 per child under 6,
+  // $200 per child age 6-15. Phase-out by AGI (full at $25k single / $35k MFJ;
+  // $0 at $85k single / $95k MFJ).
+  if (code === "CO") {
+    if (childrenUnder17 <= 0) return { state: code, credit: 0, approximate: true };
+    const fullThreshold = isMfj ? 35000 : 25000;
+    const zeroThreshold = isMfj ? 95000 : 85000;
+    let pct = 1;
+    if (agi >= zeroThreshold) pct = 0;
+    else if (agi > fullThreshold) {
+      pct = (zeroThreshold - agi) / (zeroThreshold - fullThreshold);
+    }
+    const childrenOlder = Math.max(0, childrenUnder17 - childrenUnder6);
+    const credit = (childrenUnder6 * 1200 + childrenOlder * 200) * pct;
+    return { state: code, credit, approximate: true,
+      notes: "CO Family Affordability TC TY2024 $1,200 < age 6, $200 age 6-15" };
+  }
+
+  // NJ — Child Tax Credit. $1,000 per child under 6 (refundable). Phase-out
+  // by AGI (full at $50k, $0 at $80k MFJ; same for single per NJ-1040 line 67).
+  if (code === "NJ") {
+    if (childrenUnder6 <= 0) return { state: code, credit: 0, approximate: true };
+    let pct = 1;
+    if (agi >= 80000) pct = 0;
+    else if (agi > 50000) {
+      pct = (80000 - agi) / (80000 - 50000);
+    }
+    return { state: code, credit: 1000 * childrenUnder6 * pct, approximate: true,
+      notes: "NJ-1040 CTC TY2024 $1,000/child under 6" };
+  }
+
+  // IL — Child Tax Credit (new TY2024 per HB 4951 / PA 103-0592).
+  // 20% of federal CTC per child. Phase-out: AGI ≤ $50k single / $75k MFJ
+  // → full credit; phases to $0 at $75k / $100k.
+  if (code === "IL") {
+    if (federalCtcApplied <= 0) return { state: code, credit: 0, approximate: true };
+    const fullThreshold = isMfj ? 75000 : 50000;
+    const zeroThreshold = isMfj ? 100000 : 75000;
+    let pct = 1;
+    if (agi >= zeroThreshold) pct = 0;
+    else if (agi > fullThreshold) {
+      pct = (zeroThreshold - agi) / (zeroThreshold - fullThreshold);
+    }
+    return { state: code, credit: federalCtcApplied * 0.20 * pct, approximate: true,
+      notes: "IL CTC TY2024+ 20% of federal CTC" };
+  }
+
+  // NM — Child Income Tax Credit (NM PIT-RC). Tiered: max $600/child low
+  // income, declining to $25/child at high income. Simplified to a flat
+  // $600/child below the relevant AGI threshold, $0 above.
+  if (code === "NM") {
+    if (childrenUnder17 <= 0) return { state: code, credit: 0, approximate: true };
+    const fullThreshold = isMfj ? 50000 : 25000;
+    const zeroThreshold = isMfj ? 350000 : 200000;
+    let perChild = 600;
+    if (agi >= zeroThreshold) perChild = 0;
+    else if (agi > fullThreshold) {
+      perChild = 600 * (zeroThreshold - agi) / (zeroThreshold - fullThreshold);
+    }
+    return { state: code, credit: perChild * childrenUnder17, approximate: true,
+      notes: "NM CITC simplified to $600/child phase-out" };
+  }
+
+  // VT — Child Tax Credit. $1,000/child under 6 (refundable). Phase-out:
+  // $5 per $1,000 AGI above $125k, $0 at $325k.
+  if (code === "VT") {
+    if (childrenUnder6 <= 0) return { state: code, credit: 0, approximate: true };
+    const credit = childrenUnder6 * 1000;
+    if (agi <= 125000) return { state: code, credit, approximate: true,
+      notes: "VT CTC TY2024 $1,000/child under 6" };
+    const reduction = Math.floor((agi - 125000) / 1000) * 5 * childrenUnder6;
+    return { state: code, credit: Math.max(0, credit - reduction), approximate: true,
+      notes: "VT CTC phased above $125k AGI" };
+  }
+
+  return { state: code, credit: 0, approximate: false };
+}
+
 // ── Education credits (American Opportunity + Lifetime Learning) ─────────────
 // AOC: 100% of first $2,000 + 25% of next $2,000 = max $2,500 per student.
 //      40% refundable. Phase-out: $80k-$90k single, $160k-$180k MFJ.

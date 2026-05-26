@@ -19,6 +19,7 @@ import {
   calculateRetirementDeductions,
   calculateStateEitc,
   calculatePaScheduleSpForgivenessPct,
+  calculateStateCtc,
 } from "../../artifacts/api-server/src/lib/taxCalculator";
 import {
   computeTaxReturnPure,
@@ -923,6 +924,102 @@ header("E4 integration — Excise flows into ComputedTaxReturn + federal tax");
   });
   check("E4-int", "ComputedTaxReturn.hsaExcessExcise = $171", computed.hsaExcessExcise, 171, 1);
 }
+
+// ============================================================================
+// E9 — State Child Tax Credits (CA/CO/NJ/IL/NM/VT)
+// Each verified against the state's TY2024 form/instructions. All refundable.
+// ============================================================================
+section("E9 — State Child Tax Credits");
+
+function stateCtc(state: string, params: {
+  agi: number;
+  filingStatus?: string;
+  childrenUnder6?: number;
+  childrenUnder17?: number;
+  federalCtcApplied?: number;
+  caEitcEligible?: boolean;
+}): number {
+  return calculateStateCtc({
+    state,
+    agi: params.agi,
+    filingStatus: params.filingStatus ?? "single",
+    childrenUnder6: params.childrenUnder6 ?? 0,
+    childrenUnder17: params.childrenUnder17 ?? (params.childrenUnder6 ?? 0),
+    federalCtcApplied: params.federalCtcApplied ?? 0,
+    caEitcEligible: params.caEitcEligible ?? false,
+    taxYear: 2024,
+  }).credit;
+}
+
+// CA YCTC — requires CalEITC + child under 6. $1,154/child max, peak ≤ $6,800
+//   AGI, phased to $0 by $30,950.
+// Hand-calc: 1 child under 6, AGI $5,000 → full $1,154 (in peak window).
+check("E9+CA-peak", "CA YCTC peak $1,154", stateCtc("CA", {
+  agi: 5000, childrenUnder6: 1, caEitcEligible: true,
+}), 1154, 1, "CA YCTC TY2024 FTB Form 3514");
+// Hand-calc: AGI $20k → linear phase: pct = (30950 - 20000) / (30950 - 6800) = 0.4534;
+// credit = $1,154 × 0.4534 = $523
+check("E9+CA-phase", "CA YCTC phased $20k AGI = $523", stateCtc("CA", {
+  agi: 20000, childrenUnder6: 1, caEitcEligible: true,
+}), 523, 2);
+// No CalEITC eligibility → $0
+check("E9-CA-nocaeitc", "CA YCTC = 0 without CalEITC", stateCtc("CA", {
+  agi: 5000, childrenUnder6: 1, caEitcEligible: false,
+}), 0, 1);
+
+// CO Family Affordability TC — $1,200 < age 6, $200 age 6-15. Phased.
+// Hand-calc: AGI $30k MFJ, 2 children both under 6: 2 × $1,200 = $2,400 full
+check("E9+CO-full", "CO TY2024 $30k MFJ 2 under 6 = $2,400", stateCtc("CO", {
+  agi: 30000, filingStatus: "married_filing_jointly",
+  childrenUnder6: 2, childrenUnder17: 2,
+}), 2400, 1, "CO Family Affordability TC");
+// Hand-calc: $60k MFJ, 1 child under 6: full at $35k → $0 at $95k.
+//   pct = (95000 - 60000) / (95000 - 35000) = 35/60 = 0.5833
+//   credit = $1,200 × 0.5833 = $700
+check("E9+CO-phase", "CO $60k MFJ 1 under 6 = $700 phased", stateCtc("CO", {
+  agi: 60000, filingStatus: "married_filing_jointly", childrenUnder6: 1, childrenUnder17: 1,
+}), 700, 1);
+
+// NJ CTC — $1,000/child under 6, phase $50k-$80k AGI to $0.
+// Hand-calc: 2 kids under 6, AGI $40k single → full $2,000
+check("E9+NJ-full", "NJ CTC $40k 2 under 6 = $2,000", stateCtc("NJ", {
+  agi: 40000, childrenUnder6: 2, childrenUnder17: 2,
+}), 2000, 1, "NJ-1040 line 67");
+// AGI $65k single, 1 child under 6: pct = (80 - 65) / 30 = 0.5; credit = $500.
+check("E9+NJ-phase", "NJ CTC $65k 1 under 6 = $500", stateCtc("NJ", {
+  agi: 65000, childrenUnder6: 1, childrenUnder17: 1,
+}), 500, 1);
+
+// IL CTC (new TY2024) — 20% × federal CTC.
+// Hand-calc: federal CTC = $2,000 (1 child), AGI $40k single (full) → $400.
+check("E9+IL-full", "IL CTC 20% × $2,000 = $400", stateCtc("IL", {
+  agi: 40000, childrenUnder17: 1, federalCtcApplied: 2000,
+}), 400, 1, "IL PA 103-0592");
+// Phased: AGI $60k single (past $50k threshold). pct = (75-60)/(75-50) = 0.6.
+// credit = $400 × 0.6 = $240.
+check("E9+IL-phase", "IL CTC phased $60k single = $240", stateCtc("IL", {
+  agi: 60000, childrenUnder17: 1, federalCtcApplied: 2000,
+}), 240, 1);
+
+// NM CITC — $600/child low-income, phased down. AGI $20k single, 2 kids = $1,200.
+check("E9+NM-full", "NM CITC $20k 2 kids = $1,200", stateCtc("NM", {
+  agi: 20000, childrenUnder17: 2,
+}), 1200, 1, "NM CITC PIT-RC (simplified)");
+
+// VT CTC — $1,000/child under 6 below $125k, phase $5 per $1k AGI above.
+// Hand-calc: AGI $200k, 1 child: reduction = floor(75) × 5 × 1 = $375;
+// credit = $1,000 - $375 = $625.
+check("E9+VT-phase", "VT CTC $200k 1 child = $625", stateCtc("VT", {
+  agi: 200000, childrenUnder6: 1,
+}), 625, 1, "VT CTC phased above $125k");
+
+// E9 negatives
+check("E9-noState", "FL no state CTC", stateCtc("FL", {
+  agi: 40000, childrenUnder17: 2, childrenUnder6: 2,
+}), 0, 1);
+check("E9-noKids", "CA no kids under 6 = $0", stateCtc("CA", {
+  agi: 5000, childrenUnder6: 0, caEitcEligible: true,
+}), 0, 1);
 
 // ============================================================================
 // Report

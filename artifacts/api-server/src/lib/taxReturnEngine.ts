@@ -47,6 +47,7 @@ import {
   calculateStateTax,
   calculateMultiStateTax,
   calculateStateEitc,
+  calculateStateCtc,
   getStateRetirementExemption,
   calculatePassiveActivityLossAllowance,
   calculateMacrsDepreciation,
@@ -1856,9 +1857,27 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // G2 — MN refundable CTC ($1,750/child, joint M1CWFC phase-out) is a
   // separate refundable credit that adds to the state refund.
   const mnCtcRefundable = stateEitc.mnCtc ?? 0;
-  const stateRefundOrOwed = totalStateWithheld - stateTaxLiability + stateEitc.credit + mnCtcRefundable + nycEitcRefundableExcess;
 
-  const totalTaxBurden = totalFederalLiabilityWithRepayment + stateTaxLiability - stateEitc.credit;
+  // E9 — State Child Tax Credits (CA YCTC / CO Family Affordability /
+  // NJ CTC / IL CTC / NM CITC / VT CTC). Refundable, added to state refund.
+  // CA YCTC requires CalEITC eligibility — we approximate as
+  // (CA state EITC > 0 → eligible).
+  const caEitcEligibleForYctc = stateUpper === "CA" && stateEitc.credit > 0;
+  const stateCtc = calculateStateCtc({
+    state: stateUpper,
+    agi: calc.adjustedGrossIncome,
+    filingStatus: client.filingStatus,
+    childrenUnder6: 0, // simplified — we don't track per-child age in current schema
+    childrenUnder17: client.dependentsUnder17 ?? 0,
+    federalCtcApplied: ctc.nonRefundablePortion + ctc.refundableActc,
+    caEitcEligible: caEitcEligibleForYctc,
+    taxYear: calc.taxYear,
+  });
+  const stateCtcRefundable = stateCtc.credit;
+
+  const stateRefundOrOwed = totalStateWithheld - stateTaxLiability + stateEitc.credit + mnCtcRefundable + nycEitcRefundableExcess + stateCtcRefundable;
+
+  const totalTaxBurden = totalFederalLiabilityWithRepayment + stateTaxLiability - stateEitc.credit - stateCtcRefundable;
   const effectiveRate = calc.totalIncome > 0 ? totalTaxBurden / calc.totalIncome : 0;
 
   // ── Compute state retirement exemption (for transparency in result) ──
