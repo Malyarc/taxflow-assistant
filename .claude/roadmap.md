@@ -117,6 +117,113 @@ unblocks the first design partner.
 
 ---
 
+## Phase G — Tax Planning Initiative (the upsell tier)
+
+**Strategic context:** With ZERO documented engine gaps as of 2026-05-26,
+the engine itself is a strong product. The natural next move is to flip
+TaxFlow from "data-keying tool" to "revenue-generating advisory tool"
+by surfacing tax-planning opportunities per client and producing a
+CPA-facing hit list of best clients to upsell into planning engagements.
+
+Rough revenue math justifying the build: planning fees are $750–$3,000
+per engagement. For a CPA with 80 clients, top 20 × 40% conversion ×
+$1,800 average = ~$14,400 of new annual revenue from this feature. We
+charge a Pro tier ($2,500/month vs Standard $1,000/month); pays for
+itself on 2 engagements. This is a high-margin, high-stickiness module.
+
+**Two-layer architecture:**
+
+1. **Deterministic opportunity detector** (no LLM; rule-based on
+   already-modeled engine data). Each rule: applies/estimated-savings/
+   confidence/action-summary/cpa-effort-hours.
+2. **AI synthesis** (Gemini): consume the structured opportunity list +
+   client context → write planning memo + outreach email + flag missing
+   data. Math stays deterministic; LLM only narrates and ranks.
+
+### Phase G1 — Deterministic opportunity detector (~2 weeks)
+
+Ship 10 highest-impact rules (table below). New endpoint
+`/api/clients/:id/planning-opportunities`. New "Planning" tab in
+ClientDetail. Same hand-calc test discipline as the engine. Each rule
+has positive test cases proving it fires when expected and stays silent
+when not.
+
+The 10 ship rules (in priority order — highest avg savings × highest
+client prevalence × lowest implementation complexity):
+
+| # | Rule | Trigger | Avg savings |
+|---|---|---|---|
+| G1.1 | SEP-IRA / Solo 401(k) for SE filer | `netSeIncome > 30k && no retirement adjustment` | $3k–$15k |
+| G1.2 | PTET election for SALT cap | S-corp/K-1 client in NY/CA/NJ/CT/MA + SALT capped | $5k–$50k |
+| G1.3 | Bunching itemized | `itemized within ±15% of std-ded threshold` | $1k–$3k/cycle |
+| G1.4 | Roth conversion window | Marginal rate < 24% + traditional IRA balance > 0 | $5k–$30k |
+| G1.5 | AMT timing (ISO) | `amtTax > 0 && amt_iso_bargain_element > 0` | $5k–$50k |
+| G1.6 | NIIT cliff avoidance | AGI band $190k–$210k single / $240k–$260k MFJ | $500–$2k |
+| G1.7 | §199A wage/UBIA limit (K-1) | K-1 client just above QBI threshold | $2k–$20k |
+| G1.8 | Charitable DAF bunching | `charitableCash > 5k && marginal rate ≥ 32%` | $1k–$10k |
+| G1.9 | Tax-loss harvesting | Unrealized losses + capital-loss carryforward < $3k | Variable |
+| G1.10 | Foreign Tax Credit unclaimed | `foreign_tax_paid > 0 && no FTC adjustment` | Variable |
+
+### Phase G2 — Composite scoring + CPA hit list (~1 week)
+
+Per-client `PlanningOpportunityScore`:
+```
+score = Σ (opp.estimatedSavings × confidence_weight)
+      × marginal_rate_weight
+      × engagement_complexity
+      × stickiness
+```
+
+New dashboard widget: "Top 10 planning targets" ranked descending,
+filterable by category (retirement / state / business / etc.). Each
+target row shows: client name, est. annual savings, top 3 opportunities,
+"Open planning memo" CTA.
+
+### Phase G3 — AI synthesis (~2 weeks)
+
+Gemini-generated planning memo per client (1-page, CPA-facing) +
+outreach email draft (client-facing, jargon-free) + missing-data list
+("Need: traditional IRA balance, home cost basis, 401k contribution
+rate"). Math stays in the deterministic layer; LLM only narrates.
+
+### Phase G4 — Multi-year intelligence (~1 week)
+
+Compare opportunity-detected vs opportunity-realized across years.
+Detect trend-based opportunities ("client has NIIT for 3 consecutive
+years → structural advice"). Flag carryforwards about to expire.
+Surface "consistency opportunities" (e.g., always near std-ded cliff
+→ should permanently bunch).
+
+### Phase G5 — Pro tier + pricing (~1 week)
+
+Surface Planning module behind a Pro feature flag. Stripe tier upgrade
+flow. Marketing copy update. The free Standard tier keeps all current
+engine features; Pro adds Planning + AI synthesis + hit list.
+
+### Phase G — additional rule set (deferred to G6+ as customer-driven)
+
+These rules are valuable but ship later as customers ask:
+
+- §121 home-sale planning (large appreciation → time the sale)
+- §1202 QSBS holding-period tracking
+- HSA optimization (high-income HDHP not maxing)
+- State residency change analysis (CA/NY → FL/TX/WA)
+- Kiddie-tax income shifting (Roth IRA for child's earned income, etc.)
+- Estate planning (gift tax exclusion utilization)
+- Education / 529 / dependent-care optimization
+- Wash sale avoidance coaching
+- §1091(d) holding-period after wash sale
+- Mega-backdoor Roth detection
+- Saver's Credit + EITC missed-credit alerts
+- §163(j) interest-expense limit (business clients)
+- Cost-segregation studies for real estate
+- §1031 like-kind exchange identification
+
+**Total ship effort for G1+G2+G3+G4+G5: ~6 weeks.** Phase G1 alone is
+enough to demo to a design partner as the "planning superpower" pitch.
+
+---
+
 ## Recommended sequencing (next 3 sessions)
 
 (As of 2026-05-26 — Phases A, B, B+, C12, C13, C14 + adversarial
@@ -130,17 +237,29 @@ CPA design-partner outreach packet (C11) drafted in `docs/outreach/`.)
    inclusive of K1 MFJ sub-gap and K10 state-SS sub-gap) and ALL state
    gaps (G1 NYC EITC, G2 MN CTC, G4 WA LTCG, G5 CA AMT) closed and
    deployed. ZERO documented gaps remain. C11 outreach packet drafted.
-2. **Session 2 (now next):** Begin Phase D15 (CPA-firm multi-tenancy
-   auth) once a paid design partner is committed. OR engine completeness
-   pass: charitable carryforward (5-year), AMT credit carryforward,
-   §179 + bonus depreciation, 1099-R early-withdrawal 10% penalty,
-   1099-G nuance, part-year residency in multi-state framework, other
-   local taxes (MD county, OH city), state CTCs beyond MN.
-3. **Session 3:** Continue Phase D depending on what the partner asks
-   for first (D16 audit-log hardening, D17 S3 + encryption,
-   D18 Stripe billing).
+2. **Session 2 (now next) — recommended: Phase G1 Planning Detector.**
+   Build the 10-rule deterministic opportunity detector + the "Planning"
+   tab per client. This flips TaxFlow from "data-keying tool" to
+   "revenue-generating advisory tool" and is the strongest single
+   differentiator for the C11 outreach pitch. ~2 weeks. Demoable end
+   of week 1 with 3–5 rules.
 
-Hold Phase D until a paid design partner is committed. Phase E and Phase 5 are reactive.
+   Alternative if a paid design partner is committed first: Phase D15
+   (CPA-firm multi-tenancy auth) — required before charging real money.
+
+3. **Session 3:** Phase G2 (CPA hit list + composite scoring) +
+   Phase G3 (AI synthesis layer). Together with G1 these make a
+   complete planning-tier product (~3 weeks total). Sets up the Pro
+   tier pricing.
+
+4. **Session 4+:** Phase D (multi-tenancy / encryption / billing) once
+   a paid design partner is signed. Engine completeness pass for
+   reactive items (charitable carryforward, AMT credit carryforward,
+   §179, 1099-R penalty, part-year residency, other local taxes) only
+   when a customer asks.
+
+Hold Phase D until a paid design partner is committed. Phase E and
+Phase 5 are reactive. Phase G is the recommended next active build.
 
 ---
 

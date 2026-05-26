@@ -191,7 +191,7 @@ Several Phase 2/3 limitations have been resolved (multi-state foundation, MACRS,
 - **Hates test failures that turn out to be wrong test expectations.** Hand-calc before asserting.
 - **Phase 4: Option A (CPA-tool overlay).** Consumer DIY is parked. Don't build interview UI, e-file, or ERO-related infra.
 - Explicitly does NOT want a Lacerte clone (5+ years / $20M+). Wants as close as feasible without that scope.
-- Next-phase priorities: validate UltraTax `.gen` with a real design partner; build Lacerte / ProConnect / Drake adapters; CPA-firm multi-tenancy auth (organizations / users / RBAC). AI-overlay UX shipped 2026-05-21 — covers upload → extract → CPA review → approve → audit-logged record write → `.gen` export.
+- Next-phase priorities: (recommended) Phase G1 Tax Planning Detector — ship 10 deterministic rule-based opportunity detectors per client; flips TaxFlow from data-keying tool to revenue-generating advisory tool. See `.claude/roadmap.md` Phase G. Also pending: CPA-firm multi-tenancy auth (Phase D15); validate UltraTax `.gen` with a real design partner; build Lacerte / ProConnect / Drake adapters. AI-overlay UX shipped 2026-05-21 — covers upload → extract → CPA review → approve → audit-logged record write → `.gen` export.
 
 ## Where to look first when picking up a session
 

@@ -99,7 +99,36 @@ mentioned in commit messages and CLAUDE.md.
 ## Next session — recommended priorities
 
 With zero documented gaps, the engine is at a strong product
-milestone. Priorities now shift away from engine accuracy:
+milestone. Priorities now shift away from engine accuracy toward
+**building the planning advisory layer that monetizes that engine**.
+
+**Option G — Phase G1 Tax Planning Detector (RECOMMENDED).** ~2 weeks.
+Flips TaxFlow from "data-keying tool" to "revenue-generating advisory
+tool". Ship 10 deterministic rule-based detectors per client; each
+produces estimated $-savings + action summary + confidence. New
+"Planning" tab in ClientDetail. Same hand-calc test discipline as the
+engine. Demoable end of week 1 with 3–5 rules.
+
+The 10 ship rules (in priority order):
+1. SEP-IRA / Solo 401(k) for SE filer
+2. PTET election for SALT cap
+3. Bunching itemized
+4. Roth conversion window
+5. AMT timing (ISO)
+6. NIIT cliff avoidance
+7. §199A wage/UBIA limit (K-1)
+8. Charitable DAF bunching
+9. Tax-loss harvesting
+10. Foreign Tax Credit unclaimed
+
+Revenue math: planning fees $750–$3k per engagement; top 20 clients ×
+40% conversion × $1,800 avg = ~$14k new revenue per CPA per year.
+Justifies a $2,500/month Pro tier (vs $1,000/month Standard). Phase G
+sequence: G1 detector (2wk) → G2 hit list + scoring (1wk) → G3 AI
+synthesis memo+email (2wk) → G4 multi-year intelligence (1wk) → G5
+Pro-tier pricing (1wk). Total 6 weeks for the full planning module.
+
+See `.claude/roadmap.md` Phase G section for the detailed plan.
 
 **Option A — Phase D15 (CPA-firm multi-tenancy auth).** Required
 before charging real money. 2–3 weeks. Hold until a paid design
@@ -123,6 +152,8 @@ packet in `docs/outreach/` is ready. With zero documented gaps + a
 1,700+ assertion test suite + an audit report + a 10-case validation
 packet + the AI-extraction benchmark, this is the strongest pitch
 position. Pick 5–10 target firms and send the short-form cold email.
+**Note:** G1 demo would make this pitch dramatically stronger — pair
+the outreach with a 5-rule prototype.
 
 **Option F — Engine completeness (reactive, do as customer asks).**
 Things still not modeled (intentionally non-blocking; do when
@@ -169,6 +200,16 @@ gaps closed and deployed. 1,700+ assertions across 26 suites,
 
 This session, pick ONE:
 
+  Option G — RECOMMENDED. Phase G1 Tax Planning Detector. ~2 weeks.
+  Ship 10 deterministic rule-based opportunity detectors per client
+  (SEP-IRA / PTET / bunching / Roth conversion / AMT-ISO timing /
+  NIIT cliff / §199A wage limit / charitable DAF / tax-loss harvest /
+  FTC unclaimed). New "Planning" tab in ClientDetail. Demoable in
+  week 1 with 3-5 rules. See .claude/roadmap.md Phase G section for
+  the full 6-week plan (G1 detector → G2 hit list → G3 AI synthesis
+  → G4 multi-year → G5 Pro tier). This is the upsell tier that
+  monetizes the now-complete engine.
+
   Option A — Phase D15 CPA-firm multi-tenancy auth. Required before
   charging real money. 2-3 weeks. Wait until a paid design partner
   is committed.
@@ -186,7 +227,8 @@ This session, pick ONE:
   Packet is in docs/outreach/. Strongest pitch position ever: zero
   documented gaps, 1,700+ assertions, validation packet, AI benchmark.
   Pick 5-10 target firms, send the short-form cold email from
-  docs/outreach/cold-email.md.
+  docs/outreach/cold-email.md. (Pairs well with Option G: ship 3-5
+  rules first, then demo planning during outreach calls.)
 
   Option F — Engine completeness (do as customer asks):
     NOL auto-load from prior-year tax_returns row
