@@ -21,7 +21,13 @@ import {
   useUpdateAdjustment,
   useDeleteAdjustment,
   useGetPlanningOpportunities,
+  useGetPlanningMemo,
+  useGetPlanningClientEmail,
+  useGetPlanningMissingData,
   getGetPlanningOpportunitiesQueryKey,
+  getGetPlanningMemoQueryKey,
+  getGetPlanningClientEmailQueryKey,
+  getGetPlanningMissingDataQueryKey,
   getGetClientQueryKey,
   getListDocumentsQueryKey,
   getListW2DataQueryKey,
@@ -3095,10 +3101,78 @@ function confidenceBadgeColor(confidence: number): string {
   return "bg-gray-100 text-gray-700";
 }
 
+function PlanningSynthesisPanel({ clientId, enabled }: { clientId: number; enabled: boolean }) {
+  const memo = useGetPlanningMemo(clientId, {
+    query: { queryKey: getGetPlanningMemoQueryKey(clientId), enabled, staleTime: 5 * 60 * 1000 },
+  });
+  const email = useGetPlanningClientEmail(clientId, {
+    query: { queryKey: getGetPlanningClientEmailQueryKey(clientId), enabled, staleTime: 5 * 60 * 1000 },
+  });
+  const missing = useGetPlanningMissingData(clientId, {
+    query: { queryKey: getGetPlanningMissingDataQueryKey(clientId), enabled, staleTime: 5 * 60 * 1000 },
+  });
+  if (!enabled) return null;
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">CPA planning memo</CardTitle>
+          <div className="text-xs text-muted-foreground">
+            {memo.data?.aiUsed ? `Model: ${memo.data.model}` : memo.data?.model === "stub" ? "Deterministic stub (AI disabled)" : ""}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {memo.isLoading ? (
+            <Skeleton className="h-40 w-full" />
+          ) : memo.data?.content ? (
+            <pre className="text-xs whitespace-pre-wrap font-mono bg-muted/40 p-3 rounded max-h-96 overflow-auto">{memo.data.content}</pre>
+          ) : (
+            <div className="text-sm text-muted-foreground">No memo content.</div>
+          )}
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Client outreach email draft</CardTitle>
+          <div className="text-xs text-muted-foreground">
+            {email.data?.aiUsed ? `Model: ${email.data.model}` : email.data?.model === "stub" ? "Deterministic stub (AI disabled)" : ""}
+          </div>
+        </CardHeader>
+        <CardContent>
+          {email.isLoading ? (
+            <Skeleton className="h-40 w-full" />
+          ) : email.data?.content ? (
+            <pre className="text-xs whitespace-pre-wrap font-mono bg-muted/40 p-3 rounded max-h-96 overflow-auto">{email.data.content}</pre>
+          ) : (
+            <div className="text-sm text-muted-foreground">No email content.</div>
+          )}
+        </CardContent>
+      </Card>
+      <Card className="md:col-span-2">
+        <CardHeader>
+          <CardTitle className="text-base">Still need from client</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {missing.isLoading ? (
+            <Skeleton className="h-24 w-full" />
+          ) : missing.data?.items?.length ? (
+            <ul className="list-disc pl-5 text-sm space-y-1">
+              {missing.data.items.map((it: string, i: number) => <li key={i}>{it}</li>)}
+            </ul>
+          ) : (
+            <div className="text-sm text-muted-foreground">No outstanding data items.</div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 function PlanningTab({ clientId }: { clientId: number }) {
   const { data, isLoading, error } = useGetPlanningOpportunities(clientId, {
     query: { queryKey: getGetPlanningOpportunitiesQueryKey(clientId) },
   });
+  const [synthesisOn, setSynthesisOn] = useState(false);
 
   if (isLoading) {
     return (
@@ -3143,11 +3217,20 @@ function PlanningTab({ clientId }: { clientId: number }) {
           <div className="text-3xl font-semibold tracking-tight">
             {fmt(Number(data.totalEstSavings ?? 0))}
           </div>
-          <div className="text-xs text-muted-foreground">
-            Catalog {data.catalogVersion} · Tax year {data.taxYear} · {hits.length} opportunit{hits.length === 1 ? "y" : "ies"}
+          <div className="flex items-center gap-3">
+            <div className="text-xs text-muted-foreground">
+              Catalog {data.catalogVersion} · Tax year {data.taxYear} · {hits.length} opportunit{hits.length === 1 ? "y" : "ies"}
+            </div>
+            {hits.length > 0 ? (
+              <Button size="sm" variant={synthesisOn ? "outline" : "default"} onClick={() => setSynthesisOn((v) => !v)}>
+                {synthesisOn ? "Hide AI memo" : "Generate AI memo"}
+              </Button>
+            ) : null}
           </div>
         </CardContent>
       </Card>
+
+      <PlanningSynthesisPanel clientId={clientId} enabled={synthesisOn} />
 
       {hits.length === 0 ? (
         <Card>

@@ -565,6 +565,68 @@ paths:
               schema:
                 $ref: "#/components/schemas/PlanningHitList"
 
+  # ── Planning memo + email + missing data (Phase G3) ───────────────────────
+  /clients/{clientId}/planning-memo:
+    get:
+      operationId: getPlanningMemo
+      tags: [planning]
+      summary: AI-generated CPA-facing planning memo
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Planning memo (markdown)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanningMemo"
+        "404":
+          description: Client not found
+  /clients/{clientId}/planning-email:
+    get:
+      operationId: getPlanningClientEmail
+      tags: [planning]
+      summary: AI-drafted client outreach email
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Email body draft
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanningMemo"
+        "404":
+          description: Client not found
+  /clients/{clientId}/planning-missing-data:
+    get:
+      operationId: getPlanningMissingData
+      tags: [planning]
+      summary: Questions the CPA still needs to ask the client
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Missing-data items
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanningMissingData"
+        "404":
+          description: Client not found
+
   # ── Planning opportunities (Phase G) ──────────────────────────────────────
   /clients/{clientId}/planning-opportunities:
     get:
@@ -2437,3 +2499,33 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PlanningHitListEntry"
+
+    PlanningMemo:
+      type: object
+      required: [clientId, taxYear, content, aiUsed, model]
+      properties:
+        clientId:
+          type: integer
+        taxYear:
+          type: integer
+        content:
+          type: string
+        aiUsed:
+          type: boolean
+        model:
+          type: string
+
+    PlanningMissingData:
+      type: object
+      required: [clientId, items, aiUsed, model]
+      properties:
+        clientId:
+          type: integer
+        items:
+          type: array
+          items:
+            type: string
+        aiUsed:
+          type: boolean
+        model:
+          type: string

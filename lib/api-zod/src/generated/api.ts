@@ -1318,6 +1318,50 @@ export const GetPlanningHitListResponse = zod.object({
 });
 
 /**
+ * @summary AI-generated CPA-facing planning memo
+ */
+export const GetPlanningMemoParams = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const GetPlanningMemoResponse = zod.object({
+  clientId: zod.number(),
+  taxYear: zod.number(),
+  content: zod.string(),
+  aiUsed: zod.boolean(),
+  model: zod.string(),
+});
+
+/**
+ * @summary AI-drafted client outreach email
+ */
+export const GetPlanningClientEmailParams = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const GetPlanningClientEmailResponse = zod.object({
+  clientId: zod.number(),
+  taxYear: zod.number(),
+  content: zod.string(),
+  aiUsed: zod.boolean(),
+  model: zod.string(),
+});
+
+/**
+ * @summary Questions the CPA still needs to ask the client
+ */
+export const GetPlanningMissingDataParams = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const GetPlanningMissingDataResponse = zod.object({
+  clientId: zod.number(),
+  items: zod.array(zod.string()),
+  aiUsed: zod.boolean(),
+  model: zod.string(),
+});
+
+/**
  * @summary List detected planning opportunities for a client
  */
 export const GetPlanningOpportunitiesParams = zod.object({

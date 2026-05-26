@@ -1,16 +1,41 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import { db, adjustmentsTable, clientsTable } from "@workspace/db";
-import { GetPlanningOpportunitiesParams } from "@workspace/api-zod";
+import {
+  GetPlanningOpportunitiesParams,
+  GetPlanningMemoParams,
+  GetPlanningClientEmailParams,
+  GetPlanningMissingDataParams,
+} from "@workspace/api-zod";
 import { CATALOG_V1, type OpportunityHit } from "@workspace/planning-strategies";
 import {
   evaluatePlanningOpportunities,
   federalMarginalRate,
   planningScore,
 } from "../lib/planningEngine";
+import {
+  generatePlanningMemo,
+  generateClientOutreachEmail,
+  inferMissingData,
+} from "../lib/planningMemo";
 import { computeTaxReturn } from "../lib/taxReturnPipeline";
 import type { AdjustmentFact } from "../lib/taxReturnEngine";
 import { logger } from "../lib/logger";
+
+async function loadPlanningContext(clientId: number) {
+  const computed = await computeTaxReturn(clientId);
+  if (!computed) return null;
+  const adjustments = await db
+    .select()
+    .from(adjustmentsTable)
+    .where(eq(adjustmentsTable.clientId, clientId));
+  const hits = evaluatePlanningOpportunities({
+    client: computed.client,
+    computed: computed.result,
+    adjustments: adjustments as AdjustmentFact[],
+  });
+  return { computed: computed.result, client: computed.client, hits };
+}
 
 const router: IRouter = Router();
 
@@ -54,6 +79,71 @@ router.get("/clients/:clientId/planning-opportunities", async (req, res): Promis
   } catch (err) {
     logger.error({ err, clientId: params.data.clientId }, "Planning evaluation failed");
     res.status(500).json({ error: "Planning evaluation failed" });
+  }
+});
+
+router.get("/clients/:clientId/planning-memo", async (req, res): Promise<void> => {
+  const params = GetPlanningMemoParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  try {
+    const ctx = await loadPlanningContext(params.data.clientId);
+    if (!ctx) { res.status(404).json({ error: "Client not found" }); return; }
+    const result = await generatePlanningMemo({
+      client: ctx.client, computed: ctx.computed, hits: ctx.hits,
+    });
+    res.json({
+      clientId: params.data.clientId,
+      taxYear: ctx.computed.taxYear,
+      content: result.memo,
+      aiUsed: result.aiUsed,
+      model: result.model,
+    });
+  } catch (err) {
+    logger.error({ err, clientId: params.data.clientId }, "Planning memo failed");
+    res.status(500).json({ error: "Planning memo failed" });
+  }
+});
+
+router.get("/clients/:clientId/planning-email", async (req, res): Promise<void> => {
+  const params = GetPlanningClientEmailParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  try {
+    const ctx = await loadPlanningContext(params.data.clientId);
+    if (!ctx) { res.status(404).json({ error: "Client not found" }); return; }
+    const result = await generateClientOutreachEmail({
+      client: ctx.client, computed: ctx.computed, hits: ctx.hits,
+    });
+    res.json({
+      clientId: params.data.clientId,
+      taxYear: ctx.computed.taxYear,
+      content: result.memo,
+      aiUsed: result.aiUsed,
+      model: result.model,
+    });
+  } catch (err) {
+    logger.error({ err, clientId: params.data.clientId }, "Planning email failed");
+    res.status(500).json({ error: "Planning email failed" });
+  }
+});
+
+router.get("/clients/:clientId/planning-missing-data", async (req, res): Promise<void> => {
+  const params = GetPlanningMissingDataParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  try {
+    const ctx = await loadPlanningContext(params.data.clientId);
+    if (!ctx) { res.status(404).json({ error: "Client not found" }); return; }
+    const result = await inferMissingData({
+      client: ctx.client, computed: ctx.computed, hits: ctx.hits,
+    });
+    res.json({
+      clientId: params.data.clientId,
+      items: result.items,
+      aiUsed: result.aiUsed,
+      model: result.model,
+    });
+  } catch (err) {
+    logger.error({ err, clientId: params.data.clientId }, "Planning missing-data failed");
+    res.status(500).json({ error: "Planning missing-data failed" });
   }
 });
 

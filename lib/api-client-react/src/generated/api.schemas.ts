@@ -1596,6 +1596,21 @@ export interface PlanningHitList {
   entries: PlanningHitListEntry[];
 }
 
+export interface PlanningMemo {
+  clientId: number;
+  taxYear: number;
+  content: string;
+  aiUsed: boolean;
+  model: string;
+}
+
+export interface PlanningMissingData {
+  clientId: number;
+  items: string[];
+  aiUsed: boolean;
+  model: string;
+}
+
 export type GetPlanningHitListParams = {
   category?: GetPlanningHitListCategory;
   minAgi?: number;

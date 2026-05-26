@@ -34,6 +34,8 @@ import type {
   GetPlanningHitListParams,
   HealthStatus,
   PlanningHitList,
+  PlanningMemo,
+  PlanningMissingData,
   PlanningOpportunities,
   RejectExtractionBody,
   RentalProperty,
@@ -2118,6 +2120,275 @@ export function useGetPlanningHitList<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetPlanningHitListQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary AI-generated CPA-facing planning memo
+ */
+export const getGetPlanningMemoUrl = (clientId: number) => {
+  return `/api/clients/${clientId}/planning-memo`;
+};
+
+export const getPlanningMemo = async (
+  clientId: number,
+  options?: RequestInit,
+): Promise<PlanningMemo> => {
+  return customFetch<PlanningMemo>(getGetPlanningMemoUrl(clientId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetPlanningMemoQueryKey = (clientId: number) => {
+  return [`/api/clients/${clientId}/planning-memo`] as const;
+};
+
+export const getGetPlanningMemoQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPlanningMemo>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPlanningMemo>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetPlanningMemoQueryKey(clientId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getPlanningMemo>>> = ({
+    signal,
+  }) => getPlanningMemo(clientId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!clientId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPlanningMemo>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetPlanningMemoQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getPlanningMemo>>
+>;
+export type GetPlanningMemoQueryError = ErrorType<void>;
+
+/**
+ * @summary AI-generated CPA-facing planning memo
+ */
+
+export function useGetPlanningMemo<
+  TData = Awaited<ReturnType<typeof getPlanningMemo>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPlanningMemo>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetPlanningMemoQueryOptions(clientId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary AI-drafted client outreach email
+ */
+export const getGetPlanningClientEmailUrl = (clientId: number) => {
+  return `/api/clients/${clientId}/planning-email`;
+};
+
+export const getPlanningClientEmail = async (
+  clientId: number,
+  options?: RequestInit,
+): Promise<PlanningMemo> => {
+  return customFetch<PlanningMemo>(getGetPlanningClientEmailUrl(clientId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetPlanningClientEmailQueryKey = (clientId: number) => {
+  return [`/api/clients/${clientId}/planning-email`] as const;
+};
+
+export const getGetPlanningClientEmailQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPlanningClientEmail>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPlanningClientEmail>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetPlanningClientEmailQueryKey(clientId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getPlanningClientEmail>>
+  > = ({ signal }) =>
+    getPlanningClientEmail(clientId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!clientId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPlanningClientEmail>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetPlanningClientEmailQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getPlanningClientEmail>>
+>;
+export type GetPlanningClientEmailQueryError = ErrorType<void>;
+
+/**
+ * @summary AI-drafted client outreach email
+ */
+
+export function useGetPlanningClientEmail<
+  TData = Awaited<ReturnType<typeof getPlanningClientEmail>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPlanningClientEmail>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetPlanningClientEmailQueryOptions(clientId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Questions the CPA still needs to ask the client
+ */
+export const getGetPlanningMissingDataUrl = (clientId: number) => {
+  return `/api/clients/${clientId}/planning-missing-data`;
+};
+
+export const getPlanningMissingData = async (
+  clientId: number,
+  options?: RequestInit,
+): Promise<PlanningMissingData> => {
+  return customFetch<PlanningMissingData>(
+    getGetPlanningMissingDataUrl(clientId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetPlanningMissingDataQueryKey = (clientId: number) => {
+  return [`/api/clients/${clientId}/planning-missing-data`] as const;
+};
+
+export const getGetPlanningMissingDataQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPlanningMissingData>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPlanningMissingData>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetPlanningMissingDataQueryKey(clientId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getPlanningMissingData>>
+  > = ({ signal }) =>
+    getPlanningMissingData(clientId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!clientId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPlanningMissingData>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetPlanningMissingDataQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getPlanningMissingData>>
+>;
+export type GetPlanningMissingDataQueryError = ErrorType<void>;
+
+/**
+ * @summary Questions the CPA still needs to ask the client
+ */
+
+export function useGetPlanningMissingData<
+  TData = Awaited<ReturnType<typeof getPlanningMissingData>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPlanningMissingData>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetPlanningMissingDataQueryOptions(clientId, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
