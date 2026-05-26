@@ -1703,7 +1703,10 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // State EITC is refundable — adds to the state refund (or reduces the owed).
   // G1 — refundable NYC EITC excess (when NYC EITC > NYC tax) flows to
   // the state-side refund. State EITC also goes here.
-  const stateRefundOrOwed = totalStateWithheld - stateTaxLiability + stateEitc.credit + nycEitcRefundableExcess;
+  // G2 — MN refundable CTC ($1,750/child, joint M1CWFC phase-out) is a
+  // separate refundable credit that adds to the state refund.
+  const mnCtcRefundable = stateEitc.mnCtc ?? 0;
+  const stateRefundOrOwed = totalStateWithheld - stateTaxLiability + stateEitc.credit + mnCtcRefundable + nycEitcRefundableExcess;
 
   const totalTaxBurden = totalFederalLiabilityWithRepayment + stateTaxLiability - stateEitc.credit;
   const effectiveRate = calc.totalIncome > 0 ? totalTaxBurden / calc.totalIncome : 0;

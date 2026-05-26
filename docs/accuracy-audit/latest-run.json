@@ -1,17 +1,10 @@
 {
-  "generatedAt": "2026-05-26T07:51:53.301Z",
-  "pass": 88,
+  "generatedAt": "2026-05-26T07:55:29.518Z",
+  "pass": 92,
   "realFailures": 0,
-  "documentedGaps": 3,
+  "documentedGaps": 2,
   "failures": [],
   "gaps": [
-    {
-      "category": "G2-expected",
-      "label": "MN CTC $3,500 not credited (only WFC $2204 modeled)",
-      "expected": 3500,
-      "actual": 0,
-      "source": "MN Schedule M1CWFC (2024) lines for the $1,750/child refundable CTC, independent of WFC"
-    },
     {
       "category": "G4-expected",
       "label": "WA LTCG excise $51,660 not modeled (state tax stayed at $0)",

@@ -1204,22 +1204,40 @@ header("G1. NYC EITC sliding scale — CLOSED");
     r.multiState.localTax?.nycEitcRate ?? 0, 0.20, 0.001);
 }
 
-// G2. MN $1,750/child refundable CTC — independent of MN WFC.
-// Schedule M1CWFC lines 14-15 are WFC; CTC is a separate refundable credit.
-header("G2. MN $1,750/child refundable CTC (NOT modeled — confirmed gap)");
+// G2. MN $1,750/child refundable CTC.  CLOSED 2026-05-26.
+// Independent of WFC but shares the M1CWFC joint phase-out (12% × excess
+// over $36,880 MFJ / $31,090 single). WFC is absorbed first; remainder
+// reduces CTC.
+header("G2. MN $1,750/child refundable CTC — CLOSED");
 {
+  // MFJ $40k W-2 2 kids: WFC gross = $2,578.80 ($368.80 base + $2,210 add-on).
+  // Phase-out = 12% × ($40k - $36,880) = $374.40. WFC absorbs all → WFC net
+  // $2,204.40, MN CTC full $3,500.
   const r = run({
     client: { filingStatus: "married_filing_jointly", state: "MN", taxYear: 2024,
               dependentsUnder17: 2 },
     w2s: [{ taxYear: 2024, wagesBox1: 40000, stateCode: "MN" }],
   });
-  // Engine's stateEitc.credit reflects only WFC (verified ~$2,204 at $40k MFJ 2 kids).
-  // MN CTC $1,750 × 2 = $3,500 should be ADDITIONAL.
-  FAIL.push({
-    category: "G2-expected", label: `MN CTC $3,500 not credited (only WFC $${(r.stateEitc?.credit ?? 0).toFixed(0)} modeled)`,
-    expected: 3500, actual: 0,
-    source: "MN Schedule M1CWFC (2024) lines for the $1,750/child refundable CTC, independent of WFC",
+  check("G2", "MFJ $40k 2 kids: MN CTC = $3,500 (full $1,750 × 2)",
+    r.stateEitc?.mnCtc ?? 0, 3500, 1, "MN Schedule M1CWFC 2024 — joint phase-out absorbed by WFC");
+  check("G2", "MFJ $40k 2 kids: WFC = $2,204 (unchanged)",
+    r.stateEitc?.credit ?? 0, 2204.40, 5, "MN WFC after phase-out");
+}
+
+// G2b — high-AGI MN case where WFC is fully phased out and remainder hits CTC.
+// MFJ $80k W-2 2 kids: WFC gross = $2,578.80. Phase-out total = 12% × ($80k - $36,880) = $5,174.40.
+// WFC absorbs $2,578.80, leaving $2,595.60 to hit CTC. MN CTC gross $3,500 - $2,595.60 = $904.40.
+header("G2b. MN CTC partial phase-out");
+{
+  const r = run({
+    client: { filingStatus: "married_filing_jointly", state: "MN", taxYear: 2024,
+              dependentsUnder17: 2 },
+    w2s: [{ taxYear: 2024, wagesBox1: 80000, stateCode: "MN" }],
   });
+  check("G2b", "MFJ $80k 2 kids: WFC = $0 (fully phased out)",
+    r.stateEitc?.credit ?? 0, 0, 1);
+  check("G2b", "MFJ $80k 2 kids: MN CTC = $904.40 (partial phase-out)",
+    r.stateEitc?.mnCtc ?? 0, 904.40, 5, "WFC gross + CTC gross both eaten by combined phase-out");
 }
 
 // G3. MA 4% Millionaire's Surtax above $1,053,750 (2024 indexed). VERIFIED modeled.

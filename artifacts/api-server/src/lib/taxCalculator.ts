@@ -1313,6 +1313,10 @@ export interface StateEitcCalculation {
   /** True = simplified approximation; FTB 3514 worksheet may differ. */
   approximate: boolean;
   ineligibilityReason?: string;
+  /** G2 — MN refundable CTC ($1,750/child, joint M1CWFC phase-out).
+   *  Independent of the WFC portion of `credit`. Caller adds this to the
+   *  state refund alongside `credit`. Zero for non-MN filers. */
+  mnCtc?: number;
 }
 
 export function calculateStateEitc(params: {
@@ -1417,10 +1421,10 @@ export function calculateStateEitc(params: {
     //
     // Investment income limit: $11,600 (matches federal EITC TY2024 cap).
     if (investmentIncome > 11600) {
-      return { state, credit: 0, approximate: true, ineligibilityReason: `MN WFC: investment income $${investmentIncome.toFixed(0)} > $11,600 limit` };
+      return { state, credit: 0, approximate: true, mnCtc: 0, ineligibilityReason: `MN WFC: investment income $${investmentIncome.toFixed(0)} > $11,600 limit` };
     }
     if (earnedIncome <= 0) {
-      return { state, credit: 0, approximate: true, ineligibilityReason: "No earned income" };
+      return { state, credit: 0, approximate: true, mnCtc: 0, ineligibilityReason: "No earned income" };
     }
     // Base: 4% × min(earnedIncome, $9,220) = max base $369 (rounded).
     const baseCap = 9220;
@@ -1428,7 +1432,12 @@ export function calculateStateEitc(params: {
     // Per-child add-ons (M1CWFC 2024 — verified from official schedule):
     const childAdditions = [0, 970, 2210, 2630] as const;
     const addOn = childAdditions[Math.min(3, Math.max(0, numKids)) as 0 | 1 | 2 | 3];
-    const grossCredit = baseCredit + addOn;
+    const wfcGross = baseCredit + addOn;
+    // G2 — MN refundable CTC: $1,750 per qualifying child (under 18). Engine
+    // uses dependentsUnder17 proxy (same count). Phase-out is JOINT with WFC
+    // per Schedule M1CWFC: the 12% × excess reduces (WFC + CTC) combined,
+    // with WFC absorbed first before any reduction hits CTC.
+    const mnCtcGross = Math.max(0, numKids) * 1750;
     // Phase-out base = max(earnedIncome, AGI). Threshold:
     //   $31,090 except MFJ which is $36,880.
     const phaseOutBase = Math.max(earnedIncome, agi);
@@ -1439,8 +1448,11 @@ export function calculateStateEitc(params: {
     const phaseOutRate = 0.12;
     const excess = Math.max(0, phaseOutBase - phaseOutThreshold);
     const phaseOutAmount = excess * phaseOutRate;
-    const credit = Math.max(0, grossCredit - phaseOutAmount);
-    return { state, credit, approximate: true };
+    // Allocate phase-out: first to WFC, then remainder to CTC.
+    const wfcAfterPhaseOut = Math.max(0, wfcGross - phaseOutAmount);
+    const phaseOutRemainder = Math.max(0, phaseOutAmount - wfcGross);
+    const mnCtc = Math.max(0, mnCtcGross - phaseOutRemainder);
+    return { state, credit: wfcAfterPhaseOut, approximate: true, mnCtc };
   }
   // Other states: not modeled.
   return { state, credit: 0, approximate: false };
