@@ -524,6 +524,47 @@ paths:
               schema:
                 $ref: "#/components/schemas/TaxReturn"
 
+  # ── Planning hit list (Phase G2) ──────────────────────────────────────────
+  /planning-hit-list:
+    get:
+      operationId: getPlanningHitList
+      tags: [planning]
+      summary: List all clients ranked by planning-engagement score
+      parameters:
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [retirement, state, charitable, timing, business, investment, credits]
+        - name: minAgi
+          in: query
+          required: false
+          schema:
+            type: number
+        - name: maxAgi
+          in: query
+          required: false
+          schema:
+            type: number
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Hit list ranked desc by PlanningScore
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanningHitList"
+
   # ── Planning opportunities (Phase G) ──────────────────────────────────────
   /clients/{clientId}/planning-opportunities:
     get:
@@ -2354,3 +2395,45 @@ components:
             $ref: "#/components/schemas/OpportunityHit"
         totalEstSavings:
           type: number
+
+    PlanningHitListEntry:
+      type: object
+      required: [clientId, firstName, lastName, state, taxYear, agi, federalMarginalRate, planningScore, totalEstSavings, numHits, topHits]
+      properties:
+        clientId:
+          type: integer
+        firstName:
+          type: string
+        lastName:
+          type: string
+        email:
+          type: ["string", "null"]
+        state:
+          type: string
+        taxYear:
+          type: integer
+        agi:
+          type: number
+        federalMarginalRate:
+          type: number
+        planningScore:
+          type: number
+        totalEstSavings:
+          type: number
+        numHits:
+          type: integer
+        topHits:
+          type: array
+          items:
+            $ref: "#/components/schemas/OpportunityHit"
+
+    PlanningHitList:
+      type: object
+      required: [catalogVersion, entries]
+      properties:
+        catalogVersion:
+          type: string
+        entries:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlanningHitListEntry"

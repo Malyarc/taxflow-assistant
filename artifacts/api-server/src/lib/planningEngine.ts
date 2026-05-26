@@ -64,7 +64,7 @@ function interpolate(template: string, vars: Record<string, number | string>): s
  * from `calculateFederalTaxWithBreakdown` so the rate matches whatever the
  * engine actually used for the tax computation.
  */
-function federalMarginalRate(computed: ComputedTaxReturn): number {
+export function federalMarginalRate(computed: ComputedTaxReturn): number {
   const { marginalRate } = calculateFederalTaxWithBreakdown(
     computed.taxableIncome,
     computed.filingStatus,
@@ -754,6 +754,50 @@ export interface PlanningInputs {
   client: ClientFacts;
   computed: ComputedTaxReturn;
   adjustments: AdjustmentFact[];
+}
+
+// ── Layer 3 — Composite scoring (Phase G2) ────────────────────────────────
+
+/**
+ * Per the Phase G plan. Higher-bracket clients are worth more (planning has
+ * more leverage); more-complex engagements are stickier; recurring rules
+ * compound. The weights are deliberately conservative — the deterministic
+ * estSavings is the load-bearing number; this score only re-orders the hit
+ * list for the CPA's "where do I focus first" view.
+ */
+export function marginalRateWeight(federalMarginalRate: number): number {
+  return 1 + Math.max(0, federalMarginalRate - 0.22) * 5;
+}
+
+export function engagementComplexityWeight(numHits: number): number {
+  return 1 + Math.log(1 + numHits) * 0.3;
+}
+
+export function stickinessWeight(recurring: boolean): number {
+  return recurring ? 1.5 : 1.0;
+}
+
+/**
+ * PlanningScore = (Σ hits of weighted savings) × marginalRateWeight ×
+ *                  engagementComplexityWeight.
+ *
+ * The marginal-rate and engagement-complexity weights are client-level
+ * (constant across hits), so they factor outside the sum. Stickiness is
+ * per-hit (recurring rules compound differently from one-off rules).
+ *
+ * Returns 0 when there are no hits (no opportunity to upsell).
+ */
+export function planningScore(args: {
+  hits: OpportunityHit[];
+  federalMarginalRate: number;
+}): number {
+  const { hits, federalMarginalRate } = args;
+  if (hits.length === 0) return 0;
+  const weightedSavings = hits.reduce(
+    (s, h) => s + h.estSavings * h.confidence * stickinessWeight(h.recurring),
+    0,
+  );
+  return weightedSavings * marginalRateWeight(federalMarginalRate) * engagementComplexityWeight(hits.length);
 }
 
 /**

@@ -1574,3 +1574,45 @@ export interface PlanningOpportunities {
   hits: OpportunityHit[];
   totalEstSavings: number;
 }
+
+export interface PlanningHitListEntry {
+  clientId: number;
+  firstName: string;
+  lastName: string;
+  /** @nullable */
+  email?: string | null;
+  state: string;
+  taxYear: number;
+  agi: number;
+  federalMarginalRate: number;
+  planningScore: number;
+  totalEstSavings: number;
+  numHits: number;
+  topHits: OpportunityHit[];
+}
+
+export interface PlanningHitList {
+  catalogVersion: string;
+  entries: PlanningHitListEntry[];
+}
+
+export type GetPlanningHitListParams = {
+  category?: GetPlanningHitListCategory;
+  minAgi?: number;
+  maxAgi?: number;
+  state?: string;
+  limit?: number;
+};
+
+export type GetPlanningHitListCategory =
+  (typeof GetPlanningHitListCategory)[keyof typeof GetPlanningHitListCategory];
+
+export const GetPlanningHitListCategory = {
+  retirement: "retirement",
+  state: "state",
+  charitable: "charitable",
+  timing: "timing",
+  business: "business",
+  investment: "investment",
+  credits: "credits",
+} as const;

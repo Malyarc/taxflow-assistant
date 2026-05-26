@@ -1254,6 +1254,70 @@ export const UpdateTaxReturnResponse = zod.object({
 });
 
 /**
+ * @summary List all clients ranked by planning-engagement score
+ */
+export const GetPlanningHitListQueryParams = zod.object({
+  category: zod
+    .enum([
+      "retirement",
+      "state",
+      "charitable",
+      "timing",
+      "business",
+      "investment",
+      "credits",
+    ])
+    .optional(),
+  minAgi: zod.coerce.number().optional(),
+  maxAgi: zod.coerce.number().optional(),
+  state: zod.coerce.string().optional(),
+  limit: zod.coerce.number().optional(),
+});
+
+export const GetPlanningHitListResponse = zod.object({
+  catalogVersion: zod.string(),
+  entries: zod.array(
+    zod.object({
+      clientId: zod.number(),
+      firstName: zod.string(),
+      lastName: zod.string(),
+      email: zod.string().nullish(),
+      state: zod.string(),
+      taxYear: zod.number(),
+      agi: zod.number(),
+      federalMarginalRate: zod.number(),
+      planningScore: zod.number(),
+      totalEstSavings: zod.number(),
+      numHits: zod.number(),
+      topHits: zod.array(
+        zod.object({
+          strategyId: zod.string(),
+          name: zod.string(),
+          category: zod.enum([
+            "retirement",
+            "state",
+            "charitable",
+            "timing",
+            "business",
+            "investment",
+            "credits",
+          ]),
+          estSavings: zod.number(),
+          confidence: zod.number(),
+          cpaEffortHours: zod.number(),
+          recurring: zod.boolean(),
+          rationale: zod.string(),
+          action: zod.string(),
+          prerequisiteData: zod.array(zod.string()),
+          citation: zod.string(),
+          inputs: zod.record(zod.string(), zod.unknown()),
+        }),
+      ),
+    }),
+  ),
+});
+
+/**
  * @summary List detected planning opportunities for a client
  */
 export const GetPlanningOpportunitiesParams = zod.object({

@@ -1,6 +1,17 @@
-import { useGetDashboardSummary } from "@workspace/api-client-react";
+import {
+  useGetDashboardSummary,
+  useGetPlanningHitList,
+  getGetPlanningHitListQueryKey,
+} from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
+import { Link } from "wouter";
+
+function fmt(n: number | null | undefined): string {
+  if (n == null) return "—";
+  return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+}
 
 export default function Dashboard() {
   const { data: summary, isLoading } = useGetDashboardSummary();
@@ -57,6 +68,65 @@ export default function Dashboard() {
       ) : (
         <div>No data available</div>
       )}
+
+      <PlanningHitListWidget />
     </div>
+  );
+}
+
+function PlanningHitListWidget() {
+  const { data, isLoading } = useGetPlanningHitList(
+    { limit: 10 },
+    { query: { queryKey: getGetPlanningHitListQueryKey({ limit: 10 }) } },
+  );
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-lg">Top 10 planning targets</CardTitle>
+        <p className="text-xs text-muted-foreground mt-1">
+          Ranked by PlanningScore (estSavings × confidence × marginal-rate weight ×
+          engagement complexity × stickiness). Click a client to open their Planning tab.
+        </p>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <Skeleton className="h-32 w-full" />
+        ) : !data || data.entries.length === 0 ? (
+          <div className="text-sm text-muted-foreground py-4">
+            No planning opportunities detected across the client roster yet.
+            Seed clients with `pnpm --filter @workspace/scripts exec tsx src/seed-dummy-clients.ts`
+            for demo data, or wait for real client returns to be ingested.
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {data.entries.map((entry, idx) => (
+              <Link key={entry.clientId} href={`/clients/${entry.clientId}`}>
+                <div className="flex items-center justify-between p-3 rounded border hover:bg-accent/40 cursor-pointer">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="text-xs text-muted-foreground w-6 text-right font-mono">{idx + 1}</div>
+                    <div className="min-w-0">
+                      <div className="font-medium truncate">{entry.firstName} {entry.lastName}</div>
+                      <div className="text-xs text-muted-foreground truncate">
+                        {entry.state} · TY{entry.taxYear} · AGI {fmt(entry.agi)} · {(entry.federalMarginalRate * 100).toFixed(0)}% marginal
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-0.5 truncate">
+                        {entry.numHits} opportunit{entry.numHits === 1 ? "y" : "ies"}: {entry.topHits.slice(0, 3).map((h) => h.strategyId).join(", ")}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0 ml-2">
+                    <div className="text-base font-semibold text-emerald-700">{fmt(entry.totalEstSavings)}</div>
+                    <Badge variant="outline" className="text-xs mt-0.5">
+                      score {entry.planningScore.toLocaleString()}
+                    </Badge>
+                  </div>
+                </div>
+              </Link>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

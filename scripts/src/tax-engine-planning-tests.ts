@@ -19,6 +19,10 @@ import {
 } from "../../artifacts/api-server/src/lib/taxReturnEngine";
 import {
   evaluatePlanningOpportunities,
+  marginalRateWeight,
+  engagementComplexityWeight,
+  stickinessWeight,
+  planningScore,
 } from "../../artifacts/api-server/src/lib/planningEngine";
 import type { OpportunityHit } from "@workspace/planning-strategies";
 
@@ -1524,6 +1528,52 @@ header("G1.9±7 — Single with $1k loss deducted (below cap): fires");
     check("G1.9±7", "capitalLossDeducted = $1,000",
       Number(hit.inputs.capitalLossDeducted), 1000, 1);
   }
+}
+
+// ============================================================================
+// G2 — Composite scoring helpers (Phase G2)
+// Weights:
+//   marginalRateWeight = 1 + max(0, marginalRate − 0.22) × 5
+//   engagementComplexityWeight = 1 + log(1 + numHits) × 0.3
+//   stickinessWeight = 1.5 if recurring else 1.0
+// ============================================================================
+section("G2 Composite scoring helpers");
+
+header("G2 marginalRateWeight");
+{
+  check("G2", "mrw at 0.22 = 1.0", marginalRateWeight(0.22), 1.0, 0.001);
+  check("G2", "mrw at 0.32 = 1.5", marginalRateWeight(0.32), 1.5, 0.001);
+  check("G2", "mrw at 0.37 = 1.75", marginalRateWeight(0.37), 1.75, 0.001);
+  check("G2", "mrw at 0.12 clamped to 1", marginalRateWeight(0.12), 1.0, 0.001);
+}
+
+header("G2 engagementComplexityWeight");
+{
+  check("G2", "ecw at 0 hits = 1", engagementComplexityWeight(0), 1.0, 0.001);
+  check("G2", "ecw at 1 hit ≈ 1.208", engagementComplexityWeight(1), 1.208, 0.005);
+  check("G2", "ecw at 5 hits ≈ 1.5375", engagementComplexityWeight(5), 1.5375, 0.005);
+  check("G2", "ecw at 10 hits ≈ 1.7193", engagementComplexityWeight(10), 1.7193, 0.005);
+}
+
+header("G2 stickinessWeight");
+{
+  check("G2", "stickiness recurring = 1.5", stickinessWeight(true), 1.5, 0.001);
+  check("G2", "stickiness one-off = 1.0", stickinessWeight(false), 1.0, 0.001);
+}
+
+header("G2 planningScore composite");
+{
+  check("G2", "score no-hits = 0",
+    planningScore({ hits: [], federalMarginalRate: 0.32 }), 0, 0.001);
+
+  // Hand-calc: estSavings $10,000, confidence 0.9, recurring=true, marginal 32%.
+  //   weighted_savings = 10,000 × 0.9 × 1.5 (stickiness) = 13,500
+  //   mrw(0.32) = 1.5; ecw(1) = 1 + ln(2) × 0.3 = 1 + 0.6931 × 0.3 = 1.20794
+  //   score = 13,500 × 1.5 × 1.20794 = 24,460.7 ≈ 24,461
+  const hitMock = { estSavings: 10000, confidence: 0.9, recurring: true } as OpportunityHit;
+  const single = planningScore({ hits: [hitMock], federalMarginalRate: 0.32 });
+  check("G2", "score single recurring hit @ 32% marginal ≈ $24,461",
+    single, 24461, 3, "10000 × 0.9 × 1.5 × mrw(0.32)=1.5 × ecw(1)≈1.208");
 }
 
 // ============================================================================

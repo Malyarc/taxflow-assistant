@@ -31,7 +31,9 @@ import type {
   CreateW2DataBody,
   DashboardSummary,
   Form1099Data,
+  GetPlanningHitListParams,
   HealthStatus,
+  PlanningHitList,
   PlanningOpportunities,
   RejectExtractionBody,
   RentalProperty,
@@ -2026,6 +2028,103 @@ export const useUpdateTaxReturn = <
 > => {
   return useMutation(getUpdateTaxReturnMutationOptions(options));
 };
+
+/**
+ * @summary List all clients ranked by planning-engagement score
+ */
+export const getGetPlanningHitListUrl = (params?: GetPlanningHitListParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/planning-hit-list?${stringifiedParams}`
+    : `/api/planning-hit-list`;
+};
+
+export const getPlanningHitList = async (
+  params?: GetPlanningHitListParams,
+  options?: RequestInit,
+): Promise<PlanningHitList> => {
+  return customFetch<PlanningHitList>(getGetPlanningHitListUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetPlanningHitListQueryKey = (
+  params?: GetPlanningHitListParams,
+) => {
+  return [`/api/planning-hit-list`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetPlanningHitListQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPlanningHitList>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetPlanningHitListParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPlanningHitList>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetPlanningHitListQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getPlanningHitList>>
+  > = ({ signal }) => getPlanningHitList(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPlanningHitList>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetPlanningHitListQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getPlanningHitList>>
+>;
+export type GetPlanningHitListQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List all clients ranked by planning-engagement score
+ */
+
+export function useGetPlanningHitList<
+  TData = Awaited<ReturnType<typeof getPlanningHitList>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: GetPlanningHitListParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPlanningHitList>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetPlanningHitListQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * @summary List detected planning opportunities for a client
