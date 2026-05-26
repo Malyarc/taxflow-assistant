@@ -255,6 +255,18 @@ async function synthesizePriorYearCarryforwards(
     });
   }
 
+  // E3 — Cash charitable carryforward (IRC §170(d)(1), 5-year life).
+  // Auto-loaded as `charitable_carryforward_cash` adjustment so the engine's
+  // Schedule A path applies it against the 60% AGI cap.
+  const charityCarry = Number(priorReturn.charitableCarryforwardCashRemaining ?? 0);
+  if (charityCarry > 0 && !hasManualOverride("charitable_carryforward_cash")) {
+    synthetic.push({
+      adjustmentType: "charitable_carryforward_cash",
+      amount: charityCarry,
+      isApplied: true,
+    });
+  }
+
   return synthetic;
 }
 
@@ -331,6 +343,7 @@ export async function recalculateAndUpsertTaxReturn(
     amtCreditApplied: String(result.amtCreditApplied),
     amtCreditGenerated: String(result.amtCreditGenerated),
     amtCreditCarryforwardRemaining: String(result.amtCreditCarryforwardRemaining),
+    charitableCarryforwardCashRemaining: String(result.charitableCarryforwardCashRemaining),
     qsbsGrossGain: String(result.qsbsGrossGain),
     qsbsSection1202Exclusion: String(result.qsbsSection1202Exclusion),
     qsbsTaxableGain: String(result.qsbsTaxableGain),

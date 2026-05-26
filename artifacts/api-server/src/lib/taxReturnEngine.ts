@@ -604,6 +604,12 @@ export interface ComputedTaxReturn {
   amtCreditGenerated: number;
   /** E2 — Form 8801 unused minimum-tax credit carried forward to next year. */
   amtCreditCarryforwardRemaining: number;
+  /**
+   * E3 — Cash charitable contribution carried forward to next tax year
+   * (IRC §170(d)(1) — excess above 60% AGI cap, up to 5 years).
+   * Sum of (current-year excess + unused prior-year carryforward).
+   */
+  charitableCarryforwardCashRemaining: number;
   /** K7 — §1202 QSBS gross gain on sale of qualifying stock. */
   qsbsGrossGain: number;
   /** K7 — §1202 excluded amount (capped at max($10M, 10×basis)). */
@@ -806,6 +812,10 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const mortgageInterestAdj = sumByType("mortgage_interest");
   const charitableCashAdj = sumByType("charitable_cash");
   const charitablePropertyAdj = sumByType("charitable_property");
+  // E3 — Prior-year cash charitable carryforward (IRC §170(d)(1)).
+  // Auto-loaded by pipeline from prior tax_returns.charitableCarryforwardCashRemaining;
+  // CPA can override via `charitable_carryforward_cash` adjustment.
+  const charitableCarryforwardCashAdj = sumByType("charitable_carryforward_cash");
   // Above-the-line
   const hsaContributionAdj = sumByType("hsa_contribution");
   const iraTraditionalAdj = sumByType("ira_contribution_traditional");
@@ -1331,6 +1341,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
       mortgageInterest: mortgageInterestAdj,
       charitableCash: charitableCashAdj,
       charitableProperty: charitablePropertyAdj,
+      charitableCarryforwardCash: charitableCarryforwardCashAdj,
     },
   });
 
@@ -1816,6 +1827,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     amtCreditApplied,
     amtCreditGenerated,
     amtCreditCarryforwardRemaining,
+    charitableCarryforwardCashRemaining: scheduleA.charitableCarryforwardCashRemaining,
     qsbsGrossGain,
     qsbsSection1202Exclusion,
     qsbsTaxableGain,

@@ -1107,6 +1107,14 @@ export interface ScheduleAInputs {
   mortgageInterest?: number;
   charitableCash?: number;
   charitableProperty?: number;
+  /**
+   * E3 — Cash charitable carryforward from prior year (IRC §170(d)(1) — up
+   * to 5 years). Pipeline auto-loads from prior-year tax_returns
+   * `charitableCarryforwardCashRemaining`. CPA may override via
+   * `charitable_carryforward_cash` adjustment. Property carryforward
+   * (30% AGI cap path) is NOT yet modeled — known limitation.
+   */
+  charitableCarryforwardCash?: number;
 }
 
 export interface ScheduleACalculation {
@@ -1118,8 +1126,10 @@ export interface ScheduleACalculation {
   saltDeductible: number;
   /** Mortgage interest deductible (we don't model the $750k loan limit yet) */
   mortgageDeductible: number;
-  /** Charitable deductible (cash + property, with AGI limits) */
+  /** Charitable deductible (cash + property + carryforward applied this year, with AGI limits) */
   charitableDeductible: number;
+  /** E3 — Cash charitable carried forward to next tax year (excess above 60% AGI cap) */
+  charitableCarryforwardCashRemaining: number;
   /** Total Schedule A deductions */
   totalItemized: number;
   /** Whether itemizing beats the standard deduction */
@@ -1135,7 +1145,7 @@ export function calculateScheduleA(params: {
   inputs: ScheduleAInputs;
 }): ScheduleACalculation {
   const { agi, filingStatus, taxYear, inputs } = params;
-  const { medicalExpenses = 0, stateIncomeTax = 0, statePropertyTax = 0, stateSalesTax = 0, mortgageInterest = 0, charitableCash = 0, charitableProperty = 0 } = inputs;
+  const { medicalExpenses = 0, stateIncomeTax = 0, statePropertyTax = 0, stateSalesTax = 0, mortgageInterest = 0, charitableCash = 0, charitableProperty = 0, charitableCarryforwardCash = 0 } = inputs;
 
   // Medical: only portion above 7.5% of AGI
   const medicalThreshold = Math.max(0, agi) * MEDICAL_AGI_THRESHOLD;
@@ -1150,8 +1160,29 @@ export function calculateScheduleA(params: {
   // Mortgage interest (simplified — we don't enforce the $750k acquisition debt limit)
   const mortgageDeductible = Math.max(0, mortgageInterest);
 
-  // Charitable contributions with AGI limits
-  const cashDeductible = Math.min(charitableCash, agi * CHARITABLE_CASH_AGI_LIMIT);
+  // E3 — Charitable contributions with 60% / 30% AGI caps + 5-year carryforward.
+  // IRC §170(d)(1) ordering: current-year contributions deducted first up to
+  // the AGI cap; prior-year carryforward applied next (chronological order —
+  // we lump as one number, losing the per-vintage tracking but preserving
+  // the deduction sum). Excess current contributions become next year's
+  // carryforward.
+  const cashCap = Math.max(0, agi) * CHARITABLE_CASH_AGI_LIMIT;
+  const currentCashApplied = Math.min(Math.max(0, charitableCash), cashCap);
+  const cashCapHeadroomForCarry = Math.max(0, cashCap - currentCashApplied);
+  const cashCarryforwardApplied = Math.min(
+    Math.max(0, charitableCarryforwardCash),
+    cashCapHeadroomForCarry,
+  );
+  const cashDeductible = currentCashApplied + cashCarryforwardApplied;
+  const currentCashExcessToCarry = Math.max(0, charitableCash - currentCashApplied);
+  const cashCarryforwardUnused = Math.max(
+    0,
+    charitableCarryforwardCash - cashCarryforwardApplied,
+  );
+  // Excess current-year + unused prior-year carryforward both roll to next year.
+  // (Per IRS rules each carryforward has a 5-year life; we don't track the
+  // vintage but the sum is what gets deducted next year up to that year's cap.)
+  const charitableCarryforwardCashRemaining = currentCashExcessToCarry + cashCarryforwardUnused;
   const propDeductible = Math.min(charitableProperty, agi * CHARITABLE_PROPERTY_AGI_LIMIT);
   const charitableDeductible = Math.max(0, cashDeductible + propDeductible);
 
@@ -1168,6 +1199,7 @@ export function calculateScheduleA(params: {
     saltDeductible,
     mortgageDeductible,
     charitableDeductible,
+    charitableCarryforwardCashRemaining,
     totalItemized,
     itemizingBetter,
     deductionToUse,

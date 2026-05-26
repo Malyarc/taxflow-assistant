@@ -68,6 +68,14 @@ export const taxReturnsTable = pgTable(
      * (state-tax preference only, etc.) that don't generate credit.
      */
     amtCreditGenerated: numeric("amt_credit_generated", { precision: 14, scale: 2 }),
+    /**
+     * E3 — Cash charitable contribution carryforward (IRC §170(d)(1)).
+     * Excess of (current-year cash + unused prior carryforward) above the
+     * 60% AGI cap, carried forward to next year (5-year life per IRS rule —
+     * we don't track vintage). Property-charitable carryforward (30% AGI
+     * cap path) is NOT yet modeled.
+     */
+    charitableCarryforwardCashRemaining: numeric("charitable_carryforward_cash_remaining", { precision: 14, scale: 2 }),
     /** K7 — §1202 QSBS gross gain (gross long-term capital gain on QSBS sale). */
     qsbsGrossGain: numeric("qsbs_gross_gain", { precision: 14, scale: 2 }),
     /** K7 — §1202 excluded amount. */

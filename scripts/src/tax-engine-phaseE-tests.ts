@@ -254,6 +254,157 @@ header("E2 boundary — Large carryforward $100k, only $18,343 applied (spread c
 }
 
 // ============================================================================
+// E3 — Cash charitable carryforward (IRC §170(d)(1), 5-year)
+// Excess cash gifts above 60% AGI cap carry forward up to 5 years.
+// Ordering per §170(d)(1): current-year contributions deducted first,
+// then prior carryforward (lumped as one number in our simplified model).
+// ============================================================================
+section("E3 — Cash charitable carryforward (IRC §170(d)(1))");
+
+// --- E3+1: Single TY2024, $100k AGI, $80k cash charity (over 60% cap) ---
+// Hand-calc:
+//   60% AGI cap = $60,000
+//   Current cash applied = min($80k, $60k) = $60,000
+//   Cash carryforward going out = max(0, $80k - $60k) = $20,000
+header("E3+1 — Single $100k AGI, $80k cash, $60k applied, $20k carries to next year");
+{
+  const result = calculateScheduleA({
+    agi: 100000,
+    filingStatus: "single",
+    taxYear: 2024,
+    inputs: { charitableCash: 80000 },
+  });
+  check("E3+1", "charitableDeductible = $60k", result.charitableDeductible, 60000, 1, "60% × $100k AGI cap");
+  check("E3+1", "carryforward out = $20k", result.charitableCarryforwardCashRemaining, 20000, 1);
+}
+
+// --- E3+2: Carryforward applies in subsequent year ---
+// Hand-calc:
+//   Year B: AGI $100k, no current cash, $20k carryforward in (from prior).
+//   Current applied = min($0, $60k) = $0
+//   Headroom = $60k - $0 = $60k
+//   Carryforward applied = min($20k, $60k) = $20,000
+//   charitableDeductible = $20,000
+//   New carryforward out = (current excess $0) + ($20k - $20k unused) = $0
+header("E3+2 — Year B: $0 current, $20k carryforward in, $20k applied, $0 out");
+{
+  const result = calculateScheduleA({
+    agi: 100000,
+    filingStatus: "single",
+    taxYear: 2024,
+    inputs: { charitableCash: 0, charitableCarryforwardCash: 20000 },
+  });
+  check("E3+2", "charitableDeductible = $20k", result.charitableDeductible, 20000, 1);
+  check("E3+2", "carryforward out = $0", result.charitableCarryforwardCashRemaining, 0, 1);
+}
+
+// --- E3+3: Current + carryforward exceeding cap → both partially deducted ---
+// Hand-calc:
+//   AGI $100k, current $50k, carryforward in $30k
+//   Cap = $60k
+//   Current applied = min($50k, $60k) = $50,000
+//   Headroom = $60k - $50k = $10k
+//   Carryforward applied = min($30k, $10k) = $10,000
+//   charitableDeductible = $60,000 (exactly the cap)
+//   Current excess = $50k - $50k = $0
+//   Carryforward unused = $30k - $10k = $20,000
+//   Carryforward out = $0 + $20k = $20,000
+header("E3+3 — Mix: $50k current + $30k cf, cap binds, $20k cf rolls forward");
+{
+  const result = calculateScheduleA({
+    agi: 100000,
+    filingStatus: "single",
+    taxYear: 2024,
+    inputs: { charitableCash: 50000, charitableCarryforwardCash: 30000 },
+  });
+  check("E3+3", "charitableDeductible = $60k", result.charitableDeductible, 60000, 1);
+  check("E3+3", "carryforward out = $20k", result.charitableCarryforwardCashRemaining, 20000, 1);
+}
+
+// --- E3+4: Current overflow + carryforward — both stack to next year ---
+// Hand-calc:
+//   AGI $100k, current $80k (over cap), carryforward in $10k
+//   Cap = $60k
+//   Current applied = min($80k, $60k) = $60,000
+//   Headroom = $0 (cap fully used by current)
+//   Carryforward applied = min($10k, $0) = $0
+//   charitableDeductible = $60,000
+//   Current excess = $80k - $60k = $20,000
+//   Carryforward unused = $10k - $0 = $10,000
+//   Carryforward out = $20k + $10k = $30,000
+header("E3+4 — $80k current + $10k cf, current overflows first, $30k rolls forward");
+{
+  const result = calculateScheduleA({
+    agi: 100000,
+    filingStatus: "single",
+    taxYear: 2024,
+    inputs: { charitableCash: 80000, charitableCarryforwardCash: 10000 },
+  });
+  check("E3+4", "charitableDeductible = $60k", result.charitableDeductible, 60000, 1);
+  check("E3+4", "carryforward out = $30k", result.charitableCarryforwardCashRemaining, 30000, 1);
+}
+
+// --- E3-1: Under cap, no carryforward — no rollover ---
+// Hand-calc:
+//   AGI $200k, current $10k cash. Cap = $120k. $10k < $120k.
+//   charitableDeductible = $10k, carryforward out = $0
+header("E3-1 — Well under cap, no carryforward");
+{
+  const result = calculateScheduleA({
+    agi: 200000,
+    filingStatus: "single",
+    taxYear: 2024,
+    inputs: { charitableCash: 10000 },
+  });
+  check("E3-1", "charitableDeductible = $10k", result.charitableDeductible, 10000, 1);
+  check("E3-1", "carryforward out = $0", result.charitableCarryforwardCashRemaining, 0, 1);
+}
+
+// --- E3-2: Zero cash everywhere — zero everything ---
+header("E3-2 — Zero cash, zero carryforward");
+{
+  const result = calculateScheduleA({
+    agi: 100000,
+    filingStatus: "single",
+    taxYear: 2024,
+    inputs: {},
+  });
+  check("E3-2", "charitableDeductible = $0", result.charitableDeductible, 0, 1);
+  check("E3-2", "carryforward out = $0", result.charitableCarryforwardCashRemaining, 0, 1);
+}
+
+// --- E3 boundary: cash exactly at cap — no excess ---
+// Hand-calc: AGI $100k, current $60k. Cap = $60k. Applied = $60k. Excess = $0.
+header("E3 boundary — cash exactly at 60% cap, no carryforward");
+{
+  const result = calculateScheduleA({
+    agi: 100000,
+    filingStatus: "single",
+    taxYear: 2024,
+    inputs: { charitableCash: 60000 },
+  });
+  check("E3±", "charitableDeductible = $60k", result.charitableDeductible, 60000, 1);
+  check("E3±", "carryforward out = $0", result.charitableCarryforwardCashRemaining, 0, 1);
+}
+
+// --- E3 engine integration: end-to-end via computeTaxReturnPure ---
+// Verify the engine actually persists carryforward through to ComputedTaxReturn
+header("E3 integration — engine end-to-end propagates carryforward to result");
+{
+  const computed = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 100000, federalTaxWithheldBox2: 15000, stateCode: "FL" }],
+    form1099s: [],
+    adjustments: [
+      { adjustmentType: "charitable_cash", amount: 75000, isApplied: true },
+    ],
+    taxYear: 2024,
+  });
+  // AGI = $100k, 60% cap = $60k. Excess = $75k - $60k = $15k carries forward.
+  check("E3-engine", "carryforward = $15k", computed.charitableCarryforwardCashRemaining, 15000, 1);
+}
+
+// ============================================================================
 // Report
 // ============================================================================
 console.log("\n========== RESULTS ==========");

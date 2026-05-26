@@ -1063,6 +1063,7 @@ export const AdjustmentAdjustmentType = {
   amt_state_tax_addback_override: "amt_state_tax_addback_override",
   k1_passive_loss_carryforward: "k1_passive_loss_carryforward",
   amt_credit_carryforward: "amt_credit_carryforward",
+  charitable_carryforward_cash: "charitable_carryforward_cash",
   self_employed_health_insurance_premiums:
     "self_employed_health_insurance_premiums",
   home_sale_gross_gain_primary_residence:
@@ -1133,6 +1134,7 @@ export const CreateAdjustmentBodyAdjustmentType = {
   amt_state_tax_addback_override: "amt_state_tax_addback_override",
   k1_passive_loss_carryforward: "k1_passive_loss_carryforward",
   amt_credit_carryforward: "amt_credit_carryforward",
+  charitable_carryforward_cash: "charitable_carryforward_cash",
   self_employed_health_insurance_premiums:
     "self_employed_health_insurance_premiums",
   home_sale_gross_gain_primary_residence:
@@ -1199,6 +1201,7 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   amt_state_tax_addback_override: "amt_state_tax_addback_override",
   k1_passive_loss_carryforward: "k1_passive_loss_carryforward",
   amt_credit_carryforward: "amt_credit_carryforward",
+  charitable_carryforward_cash: "charitable_carryforward_cash",
   self_employed_health_insurance_premiums:
     "self_employed_health_insurance_premiums",
   home_sale_gross_gain_primary_residence:
