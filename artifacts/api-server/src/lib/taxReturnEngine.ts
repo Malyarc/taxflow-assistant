@@ -1305,9 +1305,16 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
       federalIncomeTaxPaid: federalIncomeTaxForOr,
       retirementIncomeForExemption: form1099Summary.retirementIncome,
       taxpayerAge: client.taxpayerAge ?? undefined,
-      // NJ pension-exclusion phase-out tests against NJ gross income; we use
-      // federal AGI as the approximation (SS not modeled as separate stream).
-      njGrossIncomeApprox: calc.adjustedGrossIncome,
+      // NJ pension-exclusion phase-out tests against NJ gross income; for
+      // K10 NJ explicitly excludes taxable SS from NJ gross. Use
+      // (federal AGI − taxable SS) so NJ filers with retirement income +
+      // SS don't phase out at the lower NJ income they actually report.
+      njGrossIncomeApprox: Math.max(0, calc.adjustedGrossIncome - taxableSocialSecurity),
+      // K10 — taxable SS excluded from state base for the 41 jurisdictions
+      // not in STATES_TAXING_SS (40 states + DC). For the 9 SS-taxing
+      // states (CO/CT/KS/MN/MT/NM/RI/UT/VT), federal AGI inherently
+      // includes taxable SS and the state tax base inherits it.
+      taxableSocialSecurity,
     },
   });
   // State + local: state tax is reported separately; local (NYC) is its own line.

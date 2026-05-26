@@ -1266,6 +1266,72 @@ header("K10. SS taxability — CLOSED");
     w2s: [{ taxYear: 2024, wagesBox1: 50000, stateCode: "FL" }] });
   check("K10i", "No SS field → ssBenefits = 0", i.socialSecurityBenefits, 0, 0.01);
   check("K10i", "No SS field → ssTaxable = 0", i.socialSecurityTaxable, 0, 0.01);
+
+  // K10-state — state SS exclusion for the 41 non-SS-taxing jurisdictions.
+  //
+  // K10j — California retiree (CA exempts SS). MFJ Pub 915 worked example
+  // setup: $48k SS + $30k IRA + $5k interest → taxable SS $18,750.
+  // Total federal income = $30k + $5k + $18,750 = $53,750. Federal AGI =
+  // $53,750. CA: SS exempt from state base. CA state base = $53,750 − $18,750
+  // = $35,000 (less std ded etc.). Verify state tax is materially lower than
+  // the same case in CO (which TAXES SS).
+  const j = run({ client: { filingStatus: "married_filing_jointly", state: "CA", taxYear: 2024,
+    socialSecurityBenefits: 48000 as any } as any,
+    form1099s: [
+      { taxYear: 2024, formType: "r", payerName: "IRA", taxableAmount: 30000 },
+      { taxYear: 2024, formType: "int", payerName: "Bank", interestIncome: 5000 },
+    ] });
+  // CA does NOT tax SS. State base ≈ AGI ($53,750) − SS taxable ($18,750)
+  //   = $35,000 − CA std ded MFJ ($10,726 for TY2024) ≈ $24,274 taxable.
+  //   CA brackets MFJ: 1%-12.3% progressive. ~$240 state tax (low bracket).
+  // CO TAXES SS. State base ≈ AGI $53,750 − CO std ded $29,200 (fed-conforming)
+  //   = $24,550 taxable. CO flat 4.4%. ~$1,080 state tax.
+  // We just check CA state tax < CO state tax for the same federal picture.
+  const kRef = run({ client: { filingStatus: "married_filing_jointly", state: "CO", taxYear: 2024,
+    socialSecurityBenefits: 48000 as any } as any,
+    form1099s: [
+      { taxYear: 2024, formType: "r", payerName: "IRA", taxableAmount: 30000 },
+      { taxYear: 2024, formType: "int", payerName: "Bank", interestIncome: 5000 },
+    ] });
+  check("K10j", "CA retiree: state tax lower than CO equivalent (SS excluded from CA base)",
+    j.stateTaxLiability < kRef.stateTaxLiability ? 1 : 0, 1, 0,
+    "CA not in STATES_TAXING_SS — SS subtracted from state base");
+  check("K10j", "CA retiree: state tax > 0 (other income still taxable)",
+    j.stateTaxLiability > 0 ? 1 : 0, 1, 0);
+
+  // K10k — Colorado retiree same setup. CO IS in STATES_TAXING_SS so state
+  // base includes taxable SS. State tax should be CO_flat × (AGI − std ded).
+  // CO std ded MFJ (fed-conforming) = $29,200 (TY2024). State base = $53,750
+  // − $29,200 = $24,550. CO flat 4.4% = $1,080.20.
+  // (CO also has Earned Income Credit etc. — not subtracted here, just base
+  // tax assertion.)
+  check("K10k", "CO retiree state tax ≈ $1,080 (SS in base, flat 4.4%)",
+    kRef.stateTaxLiability, 1080.20, 50, "CO in STATES_TAXING_SS — SS included");
+
+  // K10l — Florida retiree (no state income tax) — state tax = 0 regardless.
+  const l = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024,
+    socialSecurityBenefits: 24000 as any } as any,
+    form1099s: [{ taxYear: 2024, formType: "r", payerName: "IRA", taxableAmount: 20000 }] });
+  check("K10l", "FL retiree state tax = $0 (no income tax)",
+    l.stateTaxLiability, 0, 0.01, "FL has no state income tax");
+
+  // K10m — New Jersey gross-income approx now excludes taxable SS (NJ
+  // explicitly excludes SS from gross). Test: MFJ NJ with retirement income
+  // + SS — NJ pension exclusion phase-out should use (AGI − SS) not raw AGI.
+  // Setup: $35k IRA + $20k SS, MFJ 65+, NJ.
+  //   AGI = 35000 + taxableSS. Pre-SS AGI for SS calc = 35000.
+  //   Half SS = 10000. Provisional = 35000 + 0 + 10000 = 45000.
+  //   T1=$32k, T2=$44k. Between zones → both apply.
+  //   inZone85 = 45000 - 44000 = 1000 × 85% = 850.
+  //   zone50 = min(0.5 × 20000, 0.5 × 12000) = 6000.
+  //   total = 850 + 6000 = 6850. 85% × 20k = 17000 cap. Taxable SS = 6850.
+  //   Final AGI = 35000 + 6850 = $41,850.
+  // NJ gross approximation = 41850 - 6850 = 35000 (per K10 fix).
+  const m = run({ client: { filingStatus: "married_filing_jointly", state: "NJ", taxYear: 2024,
+    socialSecurityBenefits: 20000 as any, taxpayerAge: 67, spouseAge: 65 } as any,
+    form1099s: [{ taxYear: 2024, formType: "r", payerName: "Pension", taxableAmount: 35000 }] });
+  check("K10m", "NJ MFJ retiree taxable SS ≈ $6,850 (50% + 85% zones)",
+    m.socialSecurityTaxable, 6850, 1, "Pub 915 both-zones");
 }
 
 // ════════════════════════════════════════════════════════════════════════════

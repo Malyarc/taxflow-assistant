@@ -17,6 +17,7 @@
 
 import {
   STATE_TAX_DATA_BY_YEAR,
+  STATES_TAXING_SS,
   hasReciprocity,
   type StateBracket,
   type StateFilingStatus,
@@ -581,6 +582,9 @@ export function calculateMultiStateTax(params: {
     retirementIncomeForExemption?: number;
     taxpayerAge?: number;
     njGrossIncomeApprox?: number;
+    /** K10 — taxable SS from Pub 915. Excluded from state-tax base for the
+     *  41 jurisdictions not in STATES_TAXING_SS. */
+    taxableSocialSecurity?: number;
   };
 }): MultiStateTaxResult {
   const resident = params.residentState.toUpperCase();
@@ -620,7 +624,11 @@ export function calculateMultiStateTax(params: {
         "CA",
         params.filingStatus,
         params.taxYear,
-        {},
+        // K10 — preserve SS exclusion for the CA-as-resident sub-computation
+        // (CA is not in STATES_TAXING_SS). Other options stay scoped to the
+        // resident-state call below to avoid OR-subtraction / NJ-pension
+        // double-counting.
+        { taxableSocialSecurity: params.options?.taxableSocialSecurity },
       );
       const sourceFraction = Math.min(1, Math.max(0, nrWages / params.federalAgi));
       nrTax = taxAsIfResident * sourceFraction;
@@ -849,6 +857,11 @@ export function calculateStateTax(
      * If absent for NJ filers, falls back to federalAgi (conservative).
      */
     njGrossIncomeApprox?: number;
+    /** K10 state-SS exclusion — taxable Social Security amount from Pub 915.
+     *  Subtracted from the state-tax base for states NOT in STATES_TAXING_SS
+     *  (i.e., the 41 jurisdictions that exempt SS from state income tax).
+     *  Default 0. */
+    taxableSocialSecurity?: number;
   },
 ): number {
   const year = resolveTaxYear(taxYear);
@@ -860,6 +873,13 @@ export function calculateStateTax(
   }
   const status = filingStatus as StateFilingStatus;
   const stdDed = pickStateStdDeduction(info.standardDeduction, status);
+  // K10 — for states that exempt SS from their tax base, subtract the
+  // federally-taxable SS amount BEFORE applying state brackets. (For the 9
+  // SS-taxing states in STATES_TAXING_SS, federal AGI inherently includes
+  // taxable SS and we leave it in the state base.)
+  const ssExclusion = !STATES_TAXING_SS.has(code)
+    ? Math.max(0, options?.taxableSocialSecurity ?? 0)
+    : 0;
   // VT (and any future state) — per-filer personal exemption deducted from taxable.
   const personalExemption = info.personalExemption ? pickStateStdDeduction(info.personalExemption, status) : 0;
 
@@ -884,11 +904,13 @@ export function calculateStateTax(
     njGrossIncomeApprox: options?.njGrossIncomeApprox ?? federalAgi,
   }).exemption;
 
-  const stateTaxable = Math.max(0, federalAgi - stdDed - personalExemption - oregonSubtraction - retirementExemption);
+  const stateTaxable = Math.max(0, federalAgi - stdDed - personalExemption - oregonSubtraction - retirementExemption - ssExclusion);
   const brackets = pickStateBrackets(info.brackets, status);
   let tax = applyBrackets(stateTaxable, brackets);
 
-  // Apply surtax (e.g. MA millionaire's tax, CA mental health 1% over $1M)
+  // Apply surtax (e.g. MA millionaire's tax, CA mental health 1% over $1M).
+  // Surtax thresholds use federal AGI per state statute; SS exclusion does
+  // not apply to surtax threshold determination (surtax is on raw AGI band).
   if (info.surtax && federalAgi > info.surtax.threshold) {
     tax += (federalAgi - info.surtax.threshold) * info.surtax.rate;
   }

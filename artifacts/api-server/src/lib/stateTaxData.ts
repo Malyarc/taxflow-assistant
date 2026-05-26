@@ -86,6 +86,18 @@ const FED_CONFORMING_STD_DED_STATES = new Set([
   "CO", "ID", "IA", "MN", "MO", "MT", "NM", "ND", "SC",
 ]);
 
+// K10 state-SS exclusion — states that TAX Social Security benefits (the
+// federally-taxable portion). Federal AGI includes the federally-taxable
+// portion of SS; states NOT in this set exempt SS from their state-tax base.
+// Source: Tax Foundation state-by-state SS taxation table (TY2024 current).
+// CT: phases out — full exclusion below $75k single / $100k MFJ; partial up
+//   to higher AGI; we approximate as fully-taxing (conservative — over-taxes
+//   CT filers below $75k single). Sub-gap documented.
+// All other 41 jurisdictions (40 states + DC) exempt SS at the state level.
+export const STATES_TAXING_SS = new Set([
+  "CO", "CT", "KS", "MN", "MT", "NM", "RI", "UT", "VT",
+]);
+
 // ── Multi-state reciprocity agreements ─────────────────────────────────────
 // If filer resides in a STATE and works in a state listed in their value array,
 // the WORK state does NOT tax the wages — only the resident state taxes them.
