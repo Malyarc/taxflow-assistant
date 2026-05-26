@@ -76,11 +76,18 @@ export function buildTaxReturnPdf(client: Client, ret: ComputedTaxReturn): Promi
       doc.moveDown(0.5);
     }
 
-    section("Income", [
+    const incomeRows: Array<[string, string]> = [
       ["Total income (wages + other)", fmt(ret.totalIncome)],
       ["Above-the-line adjustments", "—"],
       ["Adjusted gross income (AGI)", fmt(ret.adjustedGrossIncome)],
-    ]);
+    ];
+    if ((ret.socialSecurityBenefits ?? 0) > 0) {
+      incomeRows.splice(1, 0,
+        ["Social Security benefits (1040 L6a, gross)", fmt(ret.socialSecurityBenefits)],
+        [`Taxable Social Security (1040 L6b, ${ret.socialSecurityTaxabilityDetail.appliedMaxPercent}% rule)`, fmt(ret.socialSecurityTaxable)],
+      );
+    }
+    section("Income", incomeRows);
 
     section("Deductions", [
       ["Standard / itemized deduction", fmt(ret.standardDeduction)],

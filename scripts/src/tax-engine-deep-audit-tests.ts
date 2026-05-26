@@ -1164,14 +1164,108 @@ header("K9. FEIE §911 — GAP");
   });
 }
 
-// K10. SS taxability worksheet (Pub 915). NOT modeled.
-header("K10. SS taxability — GAP");
+// K10. SS taxability worksheet (Pub 915).  CLOSED 2026-05-24.
+// New client field `socialSecurityBenefits` (Box 5 SSA-1099). Engine
+// computes 0/50/85% taxable portion via Pub 915 worksheet, adds taxable
+// portion to AGI as Form 1040 Line 6b.
+header("K10. SS taxability — CLOSED");
 {
-  FAIL.push({
-    category: "K10-expected", label: "Social Security taxability worksheet (0/50/85%) not modeled (engine has no SS field)",
-    expected: 0, actual: 0,
-    source: "Pub 915",
-  });
+  // K10a — single retiree, $20k SS only, no other income.
+  //   Half SS = 10000. Provisional = 0 + 0 + 10000 = $10,000.
+  //   Threshold1 = $25,000 → provisional under → 0% taxable.
+  const a = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024,
+    socialSecurityBenefits: 20000 as any } as any });
+  check("K10a", "Single $20k SS-only → $0 taxable (provisional under $25k)",
+    a.socialSecurityTaxable, 0, 0.01, "Pub 915 worksheet — under threshold1");
+  check("K10a", "appliedMaxPercent = 0", a.socialSecurityTaxabilityDetail.appliedMaxPercent, 0, 0);
+
+  // K10b — single, $20k SS + $12k IRA + $1k tax-exempt interest.
+  //   Half SS = 10000. Provisional = 12000 + 1000 + 10000 = $23,000.
+  //   Under $25k → 0% taxable.
+  const b = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024,
+    socialSecurityBenefits: 20000 as any } as any,
+    form1099s: [
+      { taxYear: 2024, formType: "r", payerName: "IRA", taxableAmount: 12000 },
+      { taxYear: 2024, formType: "int", payerName: "Muni", taxExemptInterest: 1000 },
+    ] });
+  check("K10b", "Provisional $23k under $25k → SS taxable $0",
+    b.socialSecurityTaxable, 0, 0.01);
+
+  // K10c — single, $20k SS + $20k IRA. Provisional = 20k+0+10k=$30k.
+  //   30k > 25k, ≤ 34k → 50% zone.
+  //   amountOverT1 = 5000. zone50 contribution = min(0.5×5000, halfSs=10000) = $2,500.
+  //   Taxable = $2,500.
+  const c = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024,
+    socialSecurityBenefits: 20000 as any } as any,
+    form1099s: [{ taxYear: 2024, formType: "r", payerName: "IRA", taxableAmount: 20000 }] });
+  check("K10c", "Single $20k SS + $20k IRA → $2,500 taxable (50% zone)",
+    c.socialSecurityTaxable, 2500, 0.01, "Pub 915 — 50% zone");
+  check("K10c", "appliedMaxPercent = 50",
+    c.socialSecurityTaxabilityDetail.appliedMaxPercent, 50, 0);
+
+  // K10d — single, $20k SS + $40k IRA. Provisional = 40k+0+10k=$50k > $34k.
+  //   Both zones. inZone85 = 50000-34000 = 16000. 0.85×16000 = $13,600.
+  //   zone50 = min(0.5×20000, 0.5×(34000-25000)) = min(10000, 4500) = $4,500.
+  //   Total = 13600+4500 = $18,100. 85% × 20k = $17,000.
+  //   Taxable = min(18100, 17000) = $17,000 (85% cap binds).
+  const d = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024,
+    socialSecurityBenefits: 20000 as any } as any,
+    form1099s: [{ taxYear: 2024, formType: "r", payerName: "IRA", taxableAmount: 40000 }] });
+  check("K10d", "Single $20k SS + $40k IRA → $17,000 taxable (85% cap binds)",
+    d.socialSecurityTaxable, 17000, 0.01, "Pub 915 — both zones, 85% × benefits cap");
+  check("K10d", "appliedMaxPercent = 85",
+    d.socialSecurityTaxabilityDetail.appliedMaxPercent, 85, 0);
+
+  // K10e — MFJ Pub 915 worked example: $48,000 SS + $30,000 IRA + $5,000 interest.
+  //   Half = 24000. Provisional = 30000 + 5000 + 24000 = 59,000.
+  //   T1=32k, T2=44k. 59k > 44k → both zones.
+  //   inZone85 = 15000. 0.85×15000 = $12,750.
+  //   zone50 = min(0.5×48000, 0.5×12000) = min(24000, 6000) = $6,000.
+  //   Total = 18,750. 85% of SS = 0.85×48000 = $40,800.
+  //   Taxable = min(18750, 40800) = $18,750.
+  const e = run({ client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024,
+    socialSecurityBenefits: 48000 as any } as any,
+    form1099s: [
+      { taxYear: 2024, formType: "r", payerName: "IRA", taxableAmount: 30000 },
+      { taxYear: 2024, formType: "int", payerName: "Bank", interestIncome: 5000 },
+    ] });
+  check("K10e", "MFJ Pub 915 example $48k SS + $30k IRA + $5k int → $18,750 taxable",
+    e.socialSecurityTaxable, 18750, 0.01, "Pub 915 worked example");
+  check("K10e", "MFJ provisional = $59,000",
+    e.socialSecurityTaxabilityDetail.provisionalIncome, 59000, 0.01);
+
+  // K10f — MFS with spouse all year → 85% of SS taxable.
+  // Single SS $10k, no other income. Provisional = $5,000.
+  // mfsLivedApart = false (default) → 85% rule.
+  // taxable = min(0.85 × 10000, 0.85 × 5000) = min(8500, 4250) = $4,250.
+  const f = run({ client: { filingStatus: "married_filing_separately", state: "FL", taxYear: 2024,
+    socialSecurityBenefits: 10000 as any } as any });
+  check("K10f", "MFS lived with spouse, $10k SS only → $4,250 taxable (provisional × 85%)",
+    f.socialSecurityTaxable, 4250, 0.01, "Pub 915 — MFS-with-spouse $0 threshold");
+  check("K10f", "MFS-with-spouse appliedMaxPercent = 85",
+    f.socialSecurityTaxabilityDetail.appliedMaxPercent, 85, 0);
+
+  // K10g — MFS who lived APART all year → same rules as single.
+  //   $10k SS only, provisional = $5,000 < $25k threshold → $0 taxable.
+  const g = run({ client: { filingStatus: "married_filing_separately", state: "FL", taxYear: 2024,
+    socialSecurityBenefits: 10000 as any, mfsLivedApartAllYear: true as any } as any });
+  check("K10g", "MFS-lived-apart $10k SS-only → $0 taxable (single thresholds)",
+    g.socialSecurityTaxable, 0, 0.01, "Pub 915 — MFS-lived-apart");
+
+  // K10h — SS taxable flows into AGI. K10c above + std ded gives:
+  //   K10c: $20k SS, $20k IRA, $2,500 taxable SS → totalIncome = $20k + $2.5k = $22,500.
+  //   AGI = $22,500 (no above-the-line adjustments).
+  //   Verify the engine ALREADY reflects this in totalIncome/AGI.
+  check("K10c-h", "Total income includes taxable SS + IRA ($20k + $2.5k = $22,500)",
+    c.totalIncome, 22500, 0.01, "Form 1040 Line 9 = Line 6b + Line 4b + ...");
+  check("K10c-h", "AGI = $22,500 (no adjustments)",
+    c.adjustedGrossIncome, 22500, 0.01);
+
+  // K10i — Default (no SS field) returns 0.
+  const i = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, stateCode: "FL" }] });
+  check("K10i", "No SS field → ssBenefits = 0", i.socialSecurityBenefits, 0, 0.01);
+  check("K10i", "No SS field → ssTaxable = 0", i.socialSecurityTaxable, 0, 0.01);
 }
 
 // ════════════════════════════════════════════════════════════════════════════

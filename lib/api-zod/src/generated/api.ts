@@ -95,6 +95,18 @@ export const ListClientsResponseItem = zod.object({
     .describe(
       'Local income tax jurisdiction (currently \"NYC\"). Null = no local PIT.',
     ),
+  socialSecurityBenefits: zod
+    .number()
+    .nullish()
+    .describe(
+      "Total Social Security benefits received (Box 5 SSA-1099 + RRB-1099). Drives Pub 915 0\/50\/85% taxability calc.",
+    ),
+  mfsLivedApartAllYear: zod
+    .boolean()
+    .optional()
+    .describe(
+      "MFS filers only — true if the filer lived APART from their spouse for the entire tax year. Per Pub 915, default false treats MFS-with-spouse case (85% of SS taxable).",
+    ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -222,6 +234,18 @@ export const GetClientResponse = zod.object({
     .describe(
       'Local income tax jurisdiction (currently \"NYC\"). Null = no local PIT.',
     ),
+  socialSecurityBenefits: zod
+    .number()
+    .nullish()
+    .describe(
+      "Total Social Security benefits received (Box 5 SSA-1099 + RRB-1099). Drives Pub 915 0\/50\/85% taxability calc.",
+    ),
+  mfsLivedApartAllYear: zod
+    .boolean()
+    .optional()
+    .describe(
+      "MFS filers only — true if the filer lived APART from their spouse for the entire tax year. Per Pub 915, default false treats MFS-with-spouse case (85% of SS taxable).",
+    ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -346,6 +370,18 @@ export const UpdateClientResponse = zod.object({
     .nullish()
     .describe(
       'Local income tax jurisdiction (currently \"NYC\"). Null = no local PIT.',
+    ),
+  socialSecurityBenefits: zod
+    .number()
+    .nullish()
+    .describe(
+      "Total Social Security benefits received (Box 5 SSA-1099 + RRB-1099). Drives Pub 915 0\/50\/85% taxability calc.",
+    ),
+  mfsLivedApartAllYear: zod
+    .boolean()
+    .optional()
+    .describe(
+      "MFS filers only — true if the filer lived APART from their spouse for the entire tax year. Per Pub 915, default false treats MFS-with-spouse case (85% of SS taxable).",
     ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
@@ -923,6 +959,8 @@ export const GetTaxReturnResponse = zod.object({
   homeSaleGrossGain: zod.number().nullish(),
   homeSaleSection121Exclusion: zod.number().nullish(),
   homeSaleTaxableGain: zod.number().nullish(),
+  socialSecurityBenefits: zod.number().nullish(),
+  socialSecurityTaxable: zod.number().nullish(),
   eitc: zod.number().nullish(),
   aocCredit: zod.number().nullish(),
   aocRefundablePortion: zod.number().nullish(),
@@ -986,6 +1024,8 @@ export const CalculateTaxReturnResponse = zod.object({
   homeSaleGrossGain: zod.number().nullish(),
   homeSaleSection121Exclusion: zod.number().nullish(),
   homeSaleTaxableGain: zod.number().nullish(),
+  socialSecurityBenefits: zod.number().nullish(),
+  socialSecurityTaxable: zod.number().nullish(),
   eitc: zod.number().nullish(),
   aocCredit: zod.number().nullish(),
   aocRefundablePortion: zod.number().nullish(),
@@ -1057,6 +1097,8 @@ export const UpdateTaxReturnResponse = zod.object({
   homeSaleGrossGain: zod.number().nullish(),
   homeSaleSection121Exclusion: zod.number().nullish(),
   homeSaleTaxableGain: zod.number().nullish(),
+  socialSecurityBenefits: zod.number().nullish(),
+  socialSecurityTaxable: zod.number().nullish(),
   eitc: zod.number().nullish(),
   aocCredit: zod.number().nullish(),
   aocRefundablePortion: zod.number().nullish(),
@@ -1758,6 +1800,18 @@ export const GetRecentClientsResponseItem = zod.object({
     .nullish()
     .describe(
       'Local income tax jurisdiction (currently \"NYC\"). Null = no local PIT.',
+    ),
+  socialSecurityBenefits: zod
+    .number()
+    .nullish()
+    .describe(
+      "Total Social Security benefits received (Box 5 SSA-1099 + RRB-1099). Drives Pub 915 0\/50\/85% taxability calc.",
+    ),
+  mfsLivedApartAllYear: zod
+    .boolean()
+    .optional()
+    .describe(
+      "MFS filers only — true if the filer lived APART from their spouse for the entire tax year. Per Pub 915, default false treats MFS-with-spouse case (85% of SS taxable).",
     ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),

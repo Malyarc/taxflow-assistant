@@ -310,6 +310,8 @@ export async function recalculateAndUpsertTaxReturn(
     homeSaleGrossGain: String(result.homeSaleGrossGain),
     homeSaleSection121Exclusion: String(result.homeSaleSection121Exclusion),
     homeSaleTaxableGain: String(result.homeSaleTaxableGain),
+    socialSecurityBenefits: String(result.socialSecurityBenefits),
+    socialSecurityTaxable: String(result.socialSecurityTaxable),
     // Phase 1: Credits
     eitc: String(result.eitc.appliedCredit),
     aocCredit: String(aocCreditTotal),

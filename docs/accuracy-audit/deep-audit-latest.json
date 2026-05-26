@@ -1,8 +1,8 @@
 {
-  "generatedAt": "2026-05-26T06:31:19.216Z",
-  "pass": 154,
+  "generatedAt": "2026-05-26T06:43:10.291Z",
+  "pass": 170,
   "realFailures": 0,
-  "documentedGaps": 5,
+  "documentedGaps": 4,
   "failures": [],
   "gaps": [
     {
@@ -32,13 +32,6 @@
       "expected": 0,
       "actual": 0,
       "source": "Form 2555 (2024)"
-    },
-    {
-      "category": "K10-expected",
-      "label": "Social Security taxability worksheet (0/50/85%) not modeled (engine has no SS field)",
-      "expected": 0,
-      "actual": 0,
-      "source": "Pub 915"
     }
   ]
 }

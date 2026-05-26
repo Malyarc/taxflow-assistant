@@ -61,6 +61,9 @@ interface FormState {
   rentalRealEstateProfessional: boolean;
   // BP2 — local income tax jurisdiction
   localityCode: string; // "" = none; "NYC" = New York City
+  // K10 — Social Security benefits + MFS-lived-apart flag (Pub 915)
+  socialSecurityBenefits: string;
+  mfsLivedApartAllYear: boolean;
   notes: string;
 }
 
@@ -88,6 +91,8 @@ const defaultForm: FormState = {
   rentalActiveParticipant: true,  // IRS default — most rental owners qualify
   rentalRealEstateProfessional: false,
   localityCode: "",
+  socialSecurityBenefits: "",
+  mfsLivedApartAllYear: false,
   notes: "",
 };
 
@@ -145,6 +150,9 @@ export default function ClientForm({ editId }: Props) {
         rentalActiveParticipant: e.rentalActiveParticipant ?? true,
         rentalRealEstateProfessional: e.rentalRealEstateProfessional ?? false,
         localityCode: (existing as { localityCode?: string | null }).localityCode ?? "",
+        socialSecurityBenefits: (existing as { socialSecurityBenefits?: number | null }).socialSecurityBenefits != null
+          ? String((existing as { socialSecurityBenefits?: number | null }).socialSecurityBenefits) : "",
+        mfsLivedApartAllYear: (existing as { mfsLivedApartAllYear?: boolean }).mfsLivedApartAllYear ?? false,
         notes: existing.notes || "",
       });
     }
@@ -182,6 +190,8 @@ export default function ClientForm({ editId }: Props) {
       rentalActiveParticipant: Boolean(form.rentalActiveParticipant),
       rentalRealEstateProfessional: Boolean(form.rentalRealEstateProfessional),
       localityCode: form.localityCode === "" ? null : form.localityCode,
+      socialSecurityBenefits: form.socialSecurityBenefits === "" ? null : Number(form.socialSecurityBenefits),
+      mfsLivedApartAllYear: Boolean(form.mfsLivedApartAllYear),
     };
     if (isEdit) {
       updateClient.mutate(
@@ -495,6 +505,39 @@ export default function ClientForm({ editId }: Props) {
                   />
                   <p className="text-xs text-muted-foreground">For FPL%. Auto = filer + spouse (MFJ) + dependents.</p>
                 </div>
+              </div>
+            </div>
+
+            <div className="border-t pt-4 space-y-4">
+              <div>
+                <h3 className="text-sm font-semibold">Social Security Benefits (Pub 915)</h3>
+                <p className="text-xs text-muted-foreground">For retirees / disability filers. Engine computes 0/50/85% taxable portion (Form 1040 Line 6a/6b).</p>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Social Security Benefits (SSA-1099 Box 5)</Label>
+                  <CurrencyInput
+                    value={form.socialSecurityBenefits}
+                    onChange={(v) => set("socialSecurityBenefits", v)}
+                    placeholder="0.00"
+                  />
+                  <p className="text-xs text-muted-foreground">Total SSA-1099 + RRB-1099 benefits received during the year.</p>
+                </div>
+                {form.filingStatus === "married_filing_separately" && (
+                  <div className="flex items-start gap-2">
+                    <input
+                      id="mfs-lived-apart"
+                      type="checkbox"
+                      className="mt-1"
+                      checked={form.mfsLivedApartAllYear}
+                      onChange={(e) => set("mfsLivedApartAllYear", e.target.checked)}
+                    />
+                    <Label htmlFor="mfs-lived-apart" className="font-normal">
+                      MFS lived apart from spouse ALL year
+                      <p className="text-xs text-muted-foreground mt-1">If unchecked: $0 SS-taxability threshold (85% of SS taxable). If checked: uses single thresholds.</p>
+                    </Label>
+                  </div>
+                )}
               </div>
             </div>
 

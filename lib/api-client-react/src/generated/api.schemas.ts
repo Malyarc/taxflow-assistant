@@ -87,6 +87,13 @@ export interface Client {
    * @nullable
    */
   localityCode?: ClientLocalityCode;
+  /**
+   * Total Social Security benefits received (Box 5 SSA-1099 + RRB-1099). Drives Pub 915 0/50/85% taxability calc.
+   * @nullable
+   */
+  socialSecurityBenefits?: number | null;
+  /** MFS filers only — true if the filer lived APART from their spouse for the entire tax year. Per Pub 915, default false treats MFS-with-spouse case (85% of SS taxable). */
+  mfsLivedApartAllYear?: boolean;
   /** @nullable */
   notes?: string | null;
   createdAt: string;
@@ -807,6 +814,10 @@ export interface TaxReturn {
   homeSaleSection121Exclusion?: number | null;
   /** @nullable */
   homeSaleTaxableGain?: number | null;
+  /** @nullable */
+  socialSecurityBenefits?: number | null;
+  /** @nullable */
+  socialSecurityTaxable?: number | null;
   /** @nullable */
   eitc?: number | null;
   /** @nullable */

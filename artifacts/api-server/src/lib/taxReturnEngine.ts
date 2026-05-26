@@ -25,6 +25,7 @@ import {
   calculateChildTaxCredit,
   calculateSelfEmploymentTax,
   calculateSehiDeduction,
+  calculateSocialSecurityTaxability,
   calculateNiit,
   calculateAdditionalMedicareTax,
   calculateQbi,
@@ -54,6 +55,7 @@ import {
   type CtcCalculation,
   type SeTaxCalculation,
   type SehiCalculation,
+  type SsTaxabilityCalculation,
   type NiitCalculation,
   type AdditionalMedicareTaxCalculation,
   type QbiCalculation,
@@ -119,6 +121,11 @@ export interface ClientFacts {
   rentalRealEstateProfessional?: boolean | null;
   /** Local income tax jurisdiction code (currently "NYC"). Null = no local PIT. */
   localityCode?: string | null;
+  /** K10 — Total SS benefits (Box 5 SSA-1099 + RRB-1099). Null/0 = no SS. */
+  socialSecurityBenefits?: Numish;
+  /** K10 — MFS lived apart from spouse all year (per Pub 915 — true = single-rules
+   *  thresholds; false = MFS-with-spouse, $0 threshold → 85% taxable). */
+  mfsLivedApartAllYear?: boolean | null;
 }
 
 export interface W2Fact {
@@ -305,6 +312,9 @@ export interface Form1099Summary {
   seIncome: number;
   /** Ordinary interest (1099-INT minus tax-exempt portion) */
   interestIncome: number;
+  /** Tax-exempt interest (1099-INT Box 8 — excluded from AGI; used for K10
+   *  Pub 915 SS taxability provisional-income calc). */
+  taxExemptInterest: number;
   /** Ordinary (non-qualified) dividends from 1099-DIV */
   ordinaryDividends: number;
   /** Qualified dividends — LTCG rates */
@@ -354,6 +364,10 @@ export function summarize1099s(records: Form1099Fact[]): Form1099Summary {
     (s, r) => s + Math.max(0, toNum(r.interestIncome) - toNum(r.taxExemptInterest)),
     0,
   );
+  // Tax-exempt interest (1099-INT Box 8) — excluded from AGI but informs the
+  // Pub 915 SS taxability provisional-income calculation (K10).
+  const taxExemptInterest = intRecords.reduce(
+    (s, r) => s + toNum(r.taxExemptInterest), 0);
 
   const qualifiedDividends = divRecords.reduce((s, r) => s + toNum(r.qualifiedDividends), 0);
   // Ordinary dividends per IRS Form 1040 = box 1a - box 1b (qualified portion subtracted)
@@ -452,6 +466,7 @@ export function summarize1099s(records: Form1099Fact[]): Form1099Summary {
   return {
     seIncome,
     interestIncome,
+    taxExemptInterest,
     ordinaryDividends,
     qualifiedDividends,
     longTermCapitalGains,
@@ -557,6 +572,12 @@ export interface ComputedTaxReturn {
    *  Computed from `self_employed_health_insurance_premiums` adjustment, capped
    *  at (net SE earnings − half-SE). */
   sehi: SehiCalculation;
+  /** K10 — Total SS benefits (Form 1040 Line 6a, gross). */
+  socialSecurityBenefits: number;
+  /** K10 — Taxable portion of SS (Form 1040 Line 6b), per Pub 915. */
+  socialSecurityTaxable: number;
+  /** K10 — Detailed Pub 915 worksheet for transparency. */
+  socialSecurityTaxabilityDetail: SsTaxabilityCalculation;
   /** K6 — §121 home-sale gross gain on primary residence (from
    *  `home_sale_gross_gain_primary_residence` adjustment). */
   homeSaleGrossGain: number;
@@ -1118,8 +1139,37 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
 
   const aboveTheLineAdjustments = aboveTheLineExcludingIra + iraDeduction;
 
+  // ── K10 — Social Security taxability (Pub 915 Worksheet) ──────────
+  // SS benefits are NOT currently in totalIncomeProvisional. We compute the
+  // taxable portion using "AGI excluding SS" = the existing provisionalAgi
+  // (which is built from W-2, 1099, K-1, etc. — none containing SS), then
+  // fold the taxable portion into both ordinaryAdditionalIncome and
+  // totalIncomeProvisional so that AGI / taxable income / federal-tax
+  // pipeline downstream sees the full picture.
+  //
+  // Sub-gap (documented): SLI/IRA deductions above were computed against
+  // AGI WITHOUT taxable SS. The Pub 915 worksheet line 6 intentionally
+  // excludes SLI (so SS taxability uses pre-SLI AGI), but IRA's own
+  // Pub 590-A MAGI includes taxable SS. Our engine takes a single pass
+  // (SLI/IRA at pre-SS AGI), which slightly over-deducts SLI/IRA for
+  // filers whose taxable SS would push them into a phase-out band.
+  const agiExcludingSs = Math.max(0, totalIncomeProvisional - aboveTheLineAdjustments);
+  const ssTaxability = calculateSocialSecurityTaxability({
+    ssBenefits: toNum(client.socialSecurityBenefits),
+    agiExcludingSs,
+    taxExemptInterest: form1099Summary.taxExemptInterest,
+    filingStatus: client.filingStatus,
+    mfsLivedApartAllYear: client.mfsLivedApartAllYear ?? false,
+  });
+  const taxableSocialSecurity = ssTaxability.taxableAmount;
+
+  // Final ordinaryAdditionalIncome and totalIncomeProvisional include
+  // taxable SS as ordinary income (Form 1040 Line 6b → flows to Line 9).
+  const ordinaryAdditionalIncomeWithSs = ordinaryAdditionalIncome + taxableSocialSecurity;
+  const totalIncomeProvisionalWithSs = totalIncomeProvisional + taxableSocialSecurity;
+
   // ── Step 4: Schedule A itemized vs Standard ────────────────────────
-  const provisionalAgi = Math.max(0, totalIncomeProvisional - aboveTheLineAdjustments);
+  const provisionalAgi = Math.max(0, totalIncomeProvisionalWithSs - aboveTheLineAdjustments);
 
   const scheduleA = calculateScheduleA({
     agi: provisionalAgi,
@@ -1146,9 +1196,11 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
         : itemizedTotal > stdDed;
 
   // ── Step 5: Run base tax calc (federal AGI + taxable + state) ──────
+  // additionalIncome now includes the taxable portion of Social Security
+  // (K10) — Form 1040 Line 6b flows into Line 9 total income → AGI.
   const calc = runTaxCalculation({
     totalWages,
-    additionalIncome: ordinaryAdditionalIncome,
+    additionalIncome: ordinaryAdditionalIncomeWithSs,
     filingStatus: client.filingStatus,
     stateCode: stateCode ?? "CA",
     useItemizedDeductions,
@@ -1504,6 +1556,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     residentialEnergyCredits: residentialEnergy,
     premiumTaxCredit,
     sehi,
+    socialSecurityBenefits: ssTaxability.ssBenefits,
+    socialSecurityTaxable: taxableSocialSecurity,
+    socialSecurityTaxabilityDetail: ssTaxability,
     homeSaleGrossGain,
     homeSaleSection121Exclusion,
     homeSaleTaxableGain,

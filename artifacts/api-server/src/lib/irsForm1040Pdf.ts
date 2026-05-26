@@ -213,6 +213,9 @@ export async function buildIrsForm1040Pdf(options: BuildIrsForm1040Options): Pro
   safeSet(form, F1040_2024_FIELDS.line3b, fmt(ret.form1099Summary?.ordinaryDividends ?? 0));
   safeSet(form, F1040_2024_FIELDS.line3a, fmt(ret.preferentialIncome ?? 0)); // qualified dividends (preferential portion)
   safeSet(form, F1040_2024_FIELDS.line5b, fmt(ret.form1099Summary?.retirementIncome ?? 0));
+  // K10 — Social Security: Line 6a (gross) and 6b (taxable, per Pub 915).
+  safeSet(form, F1040_2024_FIELDS.line6a, fmt(ret.socialSecurityBenefits ?? 0));
+  safeSet(form, F1040_2024_FIELDS.line6b, fmt(ret.socialSecurityTaxable ?? 0));
   safeSet(form, F1040_2024_FIELDS.line7, fmt(ret.netCapitalGainLoss ?? 0));
 
   safeSet(form, F1040_2024_FIELDS.line9, fmt(ret.totalIncome));

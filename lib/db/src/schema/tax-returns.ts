@@ -42,6 +42,10 @@ export const taxReturnsTable = pgTable(
     homeSaleGrossGain: numeric("home_sale_gross_gain", { precision: 14, scale: 2 }),
     homeSaleSection121Exclusion: numeric("home_sale_section_121_exclusion", { precision: 14, scale: 2 }),
     homeSaleTaxableGain: numeric("home_sale_taxable_gain", { precision: 14, scale: 2 }),
+    /** K10 — Total SS benefits received (Form 1040 Line 6a). */
+    socialSecurityBenefits: numeric("social_security_benefits", { precision: 12, scale: 2 }),
+    /** K10 — Taxable portion of SS (Form 1040 Line 6b). */
+    socialSecurityTaxable: numeric("social_security_taxable", { precision: 12, scale: 2 }),
     // Credits
     eitc: numeric("eitc", { precision: 12, scale: 2 }),
     aocCredit: numeric("aoc_credit", { precision: 12, scale: 2 }),

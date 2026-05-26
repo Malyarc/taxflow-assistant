@@ -1002,6 +1002,12 @@ components:
           type: ["string", "null"]
           description: Local income tax jurisdiction (currently "NYC"). Null = no local PIT.
           enum: ["NYC", null]
+        socialSecurityBenefits:
+          type: ["number", "null"]
+          description: Total Social Security benefits received (Box 5 SSA-1099 + RRB-1099). Drives Pub 915 0/50/85% taxability calc.
+        mfsLivedApartAllYear:
+          type: boolean
+          description: MFS filers only — true if the filer lived APART from their spouse for the entire tax year. Per Pub 915, default false treats MFS-with-spouse case (85% of SS taxable).
         notes:
           type: ["string", "null"]
         createdAt:
@@ -1668,6 +1674,10 @@ components:
         homeSaleSection121Exclusion:
           type: ["number", "null"]
         homeSaleTaxableGain:
+          type: ["number", "null"]
+        socialSecurityBenefits:
+          type: ["number", "null"]
+        socialSecurityTaxable:
           type: ["number", "null"]
         # Credits
         eitc:

@@ -2569,6 +2569,107 @@ export function calculateSehiDeduction(params: {
   return { premiumsPaid: premiums, earnedIncomeCap: cap, deduction: Math.min(premiums, cap) };
 }
 
+// ── Social Security Taxability (Pub 915 Worksheet) — K10 ───────────────────
+// Determines how much of Social Security benefits flows into taxable income.
+// Three outcomes: 0%, up to 50%, or up to 85% of benefits is taxable, based
+// on "provisional income" (AGI excluding SS + tax-exempt interest + half SS).
+//
+// Thresholds (not inflation-adjusted, Pub 915 Worksheet 1):
+//   Single, HoH, QSS, MFS-lived-apart:  $25,000 / $34,000
+//   MFJ:                                 $32,000 / $44,000
+//   MFS-lived-with-spouse-any-time:      $0 / $0 → up to 85% taxable always
+//
+// Algorithm (Pub 915 lines 8-18 collapsed):
+//   • If MFS-lived-with-spouse: taxable = min(85% × benefits, 85% × provisional)
+//   • Else if provisional ≤ T1: 0
+//   • Else if provisional ≤ T2: min(50% × (provisional − T1), 50% × benefits)
+//   • Else (provisional > T2):
+//       taxable = min(85% × benefits,
+//                     85% × (provisional − T2) + min(50% × benefits, 50% × (T2 − T1)))
+export interface SsTaxabilityCalculation {
+  ssBenefits: number;
+  provisionalIncome: number;
+  threshold1: number;
+  threshold2: number;
+  /** 0 (not taxable), 50, or 85 — the maximum % that could apply. */
+  appliedMaxPercent: 0 | 50 | 85;
+  taxableAmount: number;
+}
+
+export function calculateSocialSecurityTaxability(params: {
+  ssBenefits: number;
+  agiExcludingSs: number;
+  taxExemptInterest: number;
+  filingStatus: string;
+  mfsLivedApartAllYear?: boolean;
+}): SsTaxabilityCalculation {
+  const ssBenefits = Math.max(0, params.ssBenefits);
+  if (ssBenefits === 0) {
+    return {
+      ssBenefits: 0,
+      provisionalIncome: 0,
+      threshold1: 0,
+      threshold2: 0,
+      appliedMaxPercent: 0,
+      taxableAmount: 0,
+    };
+  }
+  const halfSs = ssBenefits / 2;
+  const provisional = Math.max(0, params.agiExcludingSs) + Math.max(0, params.taxExemptInterest) + halfSs;
+
+  const isMfj = params.filingStatus === "married_filing_jointly" ||
+                params.filingStatus === "qualifying_widow";
+  const isMfsWithSpouse = params.filingStatus === "married_filing_separately" &&
+                          !params.mfsLivedApartAllYear;
+
+  if (isMfsWithSpouse) {
+    // Pub 915: MFS who lived with spouse any time during the year → $0 threshold.
+    // Up to 85% of SS is taxable.
+    const taxable = Math.min(0.85 * ssBenefits, 0.85 * provisional);
+    return {
+      ssBenefits, provisionalIncome: provisional,
+      threshold1: 0, threshold2: 0,
+      appliedMaxPercent: 85,
+      taxableAmount: Math.max(0, taxable),
+    };
+  }
+
+  const threshold1 = isMfj ? 32000 : 25000;
+  const threshold2 = isMfj ? 44000 : 34000;
+
+  if (provisional <= threshold1) {
+    return {
+      ssBenefits, provisionalIncome: provisional,
+      threshold1, threshold2,
+      appliedMaxPercent: 0,
+      taxableAmount: 0,
+    };
+  }
+  if (provisional <= threshold2) {
+    // 50% zone only
+    const amountOverT1 = provisional - threshold1;
+    const taxable = Math.min(0.5 * amountOverT1, halfSs);
+    return {
+      ssBenefits, provisionalIncome: provisional,
+      threshold1, threshold2,
+      appliedMaxPercent: 50,
+      taxableAmount: Math.max(0, taxable),
+    };
+  }
+  // Both zones: 50% portion (capped at half SS or half of the band width)
+  // plus 85% of the excess over threshold2.
+  const inZone85 = provisional - threshold2;
+  const zone50Contribution = Math.min(halfSs, 0.5 * (threshold2 - threshold1));
+  const total = 0.85 * inZone85 + zone50Contribution;
+  const taxable = Math.min(0.85 * ssBenefits, total);
+  return {
+    ssBenefits, provisionalIncome: provisional,
+    threshold1, threshold2,
+    appliedMaxPercent: 85,
+    taxableAmount: Math.max(0, taxable),
+  };
+}
+
 // ── NIIT (Net Investment Income Tax, IRC §1411) ────────────────────────────
 // 3.8% on the LESSER of (net investment income, MAGI − threshold).
 // Thresholds (not inflation-adjusted): $200k single, $250k MFJ, $125k MFS.

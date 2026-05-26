@@ -43,6 +43,15 @@ export const clientsTable = pgTable("clients", {
   rentalRealEstateProfessional: boolean("rental_real_estate_professional").notNull().default(false),
   /** Local income tax jurisdiction (CPA's domicile + 183-day determination). Currently supported: "NYC". Null = no local income tax. */
   localityCode: text("locality_code"),
+  /** K10 — Social Security benefits received (Box 5 of SSA-1099 + RRB-1099).
+   *  Used for the Pub 915 worksheet to determine 0/50/85% taxable portion.
+   *  Null/0 = no SS benefits. */
+  socialSecurityBenefits: numeric("social_security_benefits", { precision: 12, scale: 2 }),
+  /** K10 — For MFS filers only: TRUE if the filer lived APART from their
+   *  spouse for the entire tax year. Default FALSE (the conservative
+   *  default — MFS-with-spouse means $0 SS-taxability threshold and 85%
+   *  of SS is taxable). Per Pub 915. */
+  mfsLivedApartAllYear: boolean("mfs_lived_apart_all_year").notNull().default(false),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),

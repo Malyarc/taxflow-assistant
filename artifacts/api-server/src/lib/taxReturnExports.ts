@@ -80,6 +80,8 @@ const IRS_LINE_REFERENCE_CODES: Record<string, string> = {
   homeSaleGrossGain: "SCH-D-HOME-GROSS",
   homeSaleSection121Exclusion: "SCH-D-S121-EXCL",
   homeSaleTaxableGain: "SCH-D-HOME-TAXABLE",
+  socialSecurityBenefits: "1040-L6a",
+  socialSecurityTaxable: "1040-L6b",
   iraDeduction: "1040-S1-L20",
   eitc_appliedCredit: "1040-L27",
   aocCredit: "8863-L8",
@@ -172,6 +174,10 @@ function buildExportRows(ret: ComputedTaxReturn): ExportRow[] {
     add("homeSaleGrossGain", "Pub 523 / Sched D Home-Sale", "Primary Residence Sale — Gross Gain", ret.homeSaleGrossGain);
     add("homeSaleSection121Exclusion", "IRC §121", "§121 Home-Sale Exclusion Applied", ret.homeSaleSection121Exclusion);
     add("homeSaleTaxableGain", "Sched D Long-Term", "Home-Sale Taxable Gain (in LTCG)", ret.homeSaleTaxableGain);
+  }
+  if (ret.socialSecurityBenefits > 0) {
+    add("socialSecurityBenefits", "1040 Line 6a", "Social Security Benefits (gross)", ret.socialSecurityBenefits);
+    add("socialSecurityTaxable", "1040 Line 6b", "Social Security Taxable Portion (Pub 915)", ret.socialSecurityTaxable);
   }
 
   // Schedule A
