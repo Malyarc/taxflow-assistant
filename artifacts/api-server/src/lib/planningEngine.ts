@@ -27,6 +27,7 @@ import type { ComputedTaxReturn, ClientFacts, AdjustmentFact } from "./taxReturn
 import {
   calculateFederalTaxWithBreakdown,
   calculateStateTaxWithBreakdown,
+  getFederalStandardDeduction,
 } from "./taxCalculator";
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -315,6 +316,111 @@ function detectForeignTaxCreditGap(args: {
   };
 }
 
+// ── G1.3 — Bunching itemized vs standard ──────────────────────────────────
+
+function detectBunching(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { computed, adjustments } = args;
+  const charitableCash = sumAdjustment(adjustments, "charitable_cash");
+  if (charitableCash <= 0) return null;
+
+  // NB: computed.standardDeduction is the *chosen* deduction (max of std vs
+  // itemized). For this detector we need the actual standard-deduction value
+  // to compute the ±15% band. Pull it directly from the calculator helper.
+  const stdDed = getFederalStandardDeduction(computed.filingStatus, computed.taxYear);
+  const itemizedTotal = computed.scheduleA.totalItemized;
+  // Within ±15% of std ded — bunching has the highest leverage right at the
+  // cliff. Filers far below std ded already lose itemized value; filers far
+  // above already itemize comfortably and don't need bunching.
+  if (itemizedTotal < stdDed * 0.85) return null;
+  if (itemizedTotal > stdDed * 1.15) return null;
+
+  const fedRate = federalMarginalRate(computed);
+  // Phase G plan formula. The 0.25 × stdDed approximates the average annual
+  // benefit of an alternating-year itemize/standard pattern: you "recover"
+  // half the std ded one year (worth marginalRate of that half), averaged
+  // over the 2-year cycle (×0.5).
+  const estSavings = stdDed * 0.25 * fedRate;
+  if (estSavings <= 0) return null;
+
+  const strategy = strategyById("G1.3");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars = { estSavings: Math.round(estSavings) };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings: Math.round(estSavings),
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Itemized total ${fmt(Math.round(itemizedTotal))} is within +/- 15% of the ${fmt(stdDed)} ` +
+      `standard deduction, and there is ${fmt(Math.round(charitableCash))} of cash charitable giving ` +
+      `that could be bunched.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      itemizedTotal: Math.round(itemizedTotal),
+      standardDeduction: stdDed,
+      charitableCash: Math.round(charitableCash),
+      federalMarginalRate: fedRate,
+    },
+  };
+}
+
+// ── G1.8 — Charitable Donor-Advised Fund bunching ─────────────────────────
+
+const G1_8_MIN_CHARITABLE = 5000;
+const G1_8_MIN_MARGINAL_RATE = 0.32;
+
+function detectCharitableDaf(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { computed, adjustments } = args;
+  const charitableCash = sumAdjustment(adjustments, "charitable_cash");
+  if (charitableCash <= G1_8_MIN_CHARITABLE) return null;
+
+  const fedRate = federalMarginalRate(computed);
+  if (fedRate < G1_8_MIN_MARGINAL_RATE) return null;
+
+  // Phase G plan formula: (charitableCash × 2) × marginalRate × 0.2.
+  // The 2× reflects bunching 2-3 years into one; the 0.2 reflects the
+  // fraction recoverable above the standard-deduction floor in the bunch
+  // year (empirical from the AICPA tax-planning playbook).
+  const estSavings = charitableCash * 2 * fedRate * 0.2;
+  if (estSavings <= 0) return null;
+
+  const strategy = strategyById("G1.8");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars = { estSavings: Math.round(estSavings) };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings: Math.round(estSavings),
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Cash charitable giving of ${fmt(Math.round(charitableCash))} at a ${(fedRate * 100).toFixed(0)}% ` +
+      `federal marginal rate is a strong fit for DAF front-loading.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      charitableCash: Math.round(charitableCash),
+      federalMarginalRate: fedRate,
+    },
+  };
+}
+
 // ── Top-level evaluator ────────────────────────────────────────────────────
 
 export interface PlanningInputs {
@@ -336,6 +442,10 @@ export function evaluatePlanningOpportunities(args: PlanningInputs): Opportunity
   if (ptet) hits.push(ptet);
   const ftc = detectForeignTaxCreditGap({ computed: args.computed, adjustments: args.adjustments });
   if (ftc) hits.push(ftc);
+  const bunching = detectBunching({ computed: args.computed, adjustments: args.adjustments });
+  if (bunching) hits.push(bunching);
+  const daf = detectCharitableDaf({ computed: args.computed, adjustments: args.adjustments });
+  if (daf) hits.push(daf);
   hits.sort((a, b) => b.estSavings - a.estSavings);
   return hits;
 }

@@ -583,6 +583,274 @@ header("G1.10±6 — Big foreign-source ratio, limit doesn't bind — no hit");
 }
 
 // ============================================================================
+// G1.3 — Bunching itemized vs standard
+// IRS: IRC §170; §63; Pub 17; Sch A.
+// Trigger: itemizedTotal between stdDed × 0.85 and stdDed × 1.15
+//          AND charitableCash > 0.
+// estSavings = stdDed × 0.25 × federalMarginalRate (avg annual over 2-yr cycle)
+// ============================================================================
+section("G1.3 Bunching itemized vs standard");
+
+// --- G1.3+1 — Single $90k W-2, itemized $14k, charitable $4k ---
+// Hand-calc:
+//   adjustments: state_income $5k, property $2k, mortgage $3k, charitable $4k.
+//   Sch A: SALT uncapped $7k (< $10k cap), mortgage $3k, charitable $4k.
+//   totalItemized = $7k + $3k + $4k = $14,000.
+//   Std ded single 2024 = $14,600 → ±15% = $12,410 to $16,790. $14k in range.
+//   AGI = $90,000 → taxable = $90k − std ded $14,600 = $75,400 (engine picks
+//     std because $14,600 > $14,000). Single 2024: 22% bracket $47,150−$100,525.
+//   marginal = 0.22 → estSavings = $14,600 × 0.25 × 0.22 = $803.
+header("G1.3+1 — Single, itemized $14k vs std $14.6k, charitable $4k: savings $803");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 90000, stateCode: "FL" }],
+    adjustments: [
+      { adjustmentType: "state_income_tax", amount: 5000, isApplied: true },
+      { adjustmentType: "state_property_tax", amount: 2000, isApplied: true },
+      { adjustmentType: "mortgage_interest", amount: 3000, isApplied: true },
+      { adjustmentType: "charitable_cash", amount: 4000, isApplied: true },
+    ],
+  });
+  const hit = findHit(hits, "G1.3");
+  checkTruthy("G1.3+1", "bunching hit fires", hit != null, true);
+  if (hit) {
+    check("G1.3+1", "itemizedTotal = $14,000",
+      Number(hit.inputs.itemizedTotal), 14000, 1);
+    check("G1.3+1", "estSavings = $803", hit.estSavings, 803, 2,
+      "stdDed × 0.25 × marginalRate = 14600 × 0.25 × 0.22");
+  }
+}
+
+// --- G1.3+2 — MFJ $160k, itemized $25k, charitable $10k ---
+// Hand-calc:
+//   adjustments: state_income $8k, property $4k, mortgage $5k, charitable $10k.
+//   SALT uncapped $12k → capped $10k. mortgage $5k, charitable $10k.
+//   totalItemized = $10k + $5k + $10k = $25,000.
+//   Std ded MFJ 2024 = $29,200 → ±15% = $24,820 to $33,580. $25k in range.
+//   AGI $160k → taxable $160k − $29,200 = $130,800. MFJ 22% bracket.
+//   marginal 0.22 → estSavings = $29,200 × 0.25 × 0.22 = $1,606.
+header("G1.3+2 — MFJ itemized $25k vs std $29.2k, charitable $10k: savings $1,606");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 160000, stateCode: "FL" }],
+    adjustments: [
+      { adjustmentType: "state_income_tax", amount: 8000, isApplied: true },
+      { adjustmentType: "state_property_tax", amount: 4000, isApplied: true },
+      { adjustmentType: "mortgage_interest", amount: 5000, isApplied: true },
+      { adjustmentType: "charitable_cash", amount: 10000, isApplied: true },
+    ],
+  });
+  const hit = findHit(hits, "G1.3");
+  checkTruthy("G1.3+2", "bunching hit fires (MFJ)", hit != null, true);
+  if (hit) {
+    check("G1.3+2", "estSavings = $1,606", hit.estSavings, 1606, 2);
+  }
+}
+
+// --- G1.3+3 — Single, itemized just above std ded with small charitable ---
+// adjustments: state_income $5k, mortgage $7k, charitable $3k.
+// totalItemized = $5k + $7k + $3k = $15,000 > std $14,600 → in band.
+// AGI $60k → engine itemizes ($15k > $14.6k). taxable = 60k − 15k = $45k.
+// Single 2024 12% bracket → marginal 0.12.
+// estSavings = $14,600 × 0.25 × 0.12 = $438.
+header("G1.3+3 — Single, itemized $15k just over std, charitable $3k: savings $438");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 60000, stateCode: "FL" }],
+    adjustments: [
+      { adjustmentType: "state_income_tax", amount: 5000, isApplied: true },
+      { adjustmentType: "mortgage_interest", amount: 7000, isApplied: true },
+      { adjustmentType: "charitable_cash", amount: 3000, isApplied: true },
+    ],
+  });
+  const hit = findHit(hits, "G1.3");
+  checkTruthy("G1.3+3", "bunching hit fires", hit != null, true);
+  if (hit) {
+    check("G1.3+3", "estSavings = $438", hit.estSavings, 438, 2);
+  }
+}
+
+// --- G1.3-4 — Itemized too low (far below stdDed × 0.85) ---
+header("G1.3-4 — itemized $1k well below 0.85 × stdDed suppresses (negative)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 200000, stateCode: "FL" }],
+    adjustments: [
+      { adjustmentType: "charitable_cash", amount: 1000, isApplied: true },
+    ],
+  });
+  checkTruthy("G1.3-4", "no bunching hit far below band",
+    findHit(hits, "G1.3") == null, true);
+}
+
+// --- G1.3-5 — In band but no charitable cash ---
+header("G1.3-5 — In band but no charitable_cash suppresses (negative)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 90000, stateCode: "FL" }],
+    adjustments: [
+      { adjustmentType: "state_income_tax", amount: 5000, isApplied: true },
+      { adjustmentType: "mortgage_interest", amount: 9000, isApplied: true },
+    ],
+  });
+  checkTruthy("G1.3-5", "no bunching hit when charitable_cash = 0",
+    findHit(hits, "G1.3") == null, true);
+}
+
+// --- G1.3±6 — Boundary: just above upper band cap (1.15 × stdDed + $1) ---
+// Single 2024: cap = $14,600 × 1.15 = $16,790. Set itemized to $16,791 → out.
+// Use state_income $5k + property $5k + mortgage $5k + charitable $1,791 =
+// $10k SALT (capped from $10k) wait that's exactly cap. Let me use uncapped
+// SALT < $10k: state_income $5k + property $3k + mortgage $7k + charitable
+// $1,791 = $8k SALT + $7k + $1,791 = $16,791.
+header("G1.3±6 — itemized $16,791 just over 1.15 × stdDed — does NOT fire");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 90000, stateCode: "FL" }],
+    adjustments: [
+      { adjustmentType: "state_income_tax", amount: 5000, isApplied: true },
+      { adjustmentType: "state_property_tax", amount: 3000, isApplied: true },
+      { adjustmentType: "mortgage_interest", amount: 7000, isApplied: true },
+      { adjustmentType: "charitable_cash", amount: 1791, isApplied: true },
+    ],
+  });
+  checkTruthy("G1.3±6", "no bunching hit just over 1.15 × stdDed boundary",
+    findHit(hits, "G1.3") == null, true);
+}
+
+// ============================================================================
+// G1.8 — Charitable Donor-Advised Fund (DAF) bunching
+// IRS: IRC §170; §4966; Pub 526.
+// Trigger: charitableCash > $5,000 AND federalMarginalRate ≥ 32%.
+// estSavings = charitableCash × 2 × marginalRate × 0.2
+// ============================================================================
+section("G1.8 Charitable DAF bunching");
+
+// --- G1.8+1 — Single $400k W-2, charitable $20k → marginal 35%, savings $2,800 ---
+// Hand-calc:
+//   AGI $400k. itemized: SALT $30k → $10k cap, mortgage $10k, charitable $20k
+//     → totalItemized $40k. Std ded $14,600 → itemize.
+//   Taxable = $400k − $40k = $360k. Single 2024 35% bracket $243,725-$609,350.
+//   marginal = 0.35. Trigger: charitable $20k > $5k ✓, marginal 0.35 ≥ 0.32 ✓.
+//   estSavings = $20,000 × 2 × 0.35 × 0.20 = $2,800.
+header("G1.8+1 — Single $400k, charitable $20k @ 35% marginal: savings $2,800");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 400000, stateCode: "FL" }],
+    adjustments: [
+      { adjustmentType: "state_income_tax", amount: 20000, isApplied: true },
+      { adjustmentType: "state_property_tax", amount: 10000, isApplied: true },
+      { adjustmentType: "mortgage_interest", amount: 10000, isApplied: true },
+      { adjustmentType: "charitable_cash", amount: 20000, isApplied: true },
+    ],
+  });
+  const hit = findHit(hits, "G1.8");
+  checkTruthy("G1.8+1", "DAF hit fires (single 35%)", hit != null, true);
+  if (hit) {
+    check("G1.8+1", "estSavings = $2,800", hit.estSavings, 2800, 5);
+    check("G1.8+1", "federal marginal = 0.35",
+      Number(hit.inputs.federalMarginalRate), 0.35, 0.001);
+  }
+}
+
+// --- G1.8+2 — MFJ $700k W-2, charitable $15k → marginal 35%, savings $2,100 ---
+// Hand-calc:
+//   adjustments: state $10k → cap, mortgage $20k, charitable $15k → itemized $45k.
+//   Taxable = $700k − $45k = $655k. MFJ 2024 35% bracket $487,450-$731,200.
+//   marginal = 0.35. Trigger: ✓.
+//   estSavings = $15k × 2 × 0.35 × 0.20 = $2,100.
+header("G1.8+2 — MFJ $700k, charitable $15k @ 35% marginal: savings $2,100");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 700000, stateCode: "FL" }],
+    adjustments: [
+      { adjustmentType: "state_income_tax", amount: 10000, isApplied: true },
+      { adjustmentType: "mortgage_interest", amount: 20000, isApplied: true },
+      { adjustmentType: "charitable_cash", amount: 15000, isApplied: true },
+    ],
+  });
+  const hit = findHit(hits, "G1.8");
+  checkTruthy("G1.8+2", "DAF hit fires (MFJ 35%)", hit != null, true);
+  if (hit) {
+    check("G1.8+2", "estSavings = $2,100", hit.estSavings, 2100, 5);
+  }
+}
+
+// --- G1.8+3 — Single $250k W-2, charitable $8k, no other Sch A items ---
+// Hand-calc:
+//   itemized $8k < std ded $14,600 → std. Taxable = $250k − $14,600 = $235,400.
+//   Single 2024 32% bracket $191,950-$243,725 → marginal 0.32.
+//   Trigger: charitable $8k > $5k ✓, marginal 0.32 ≥ 0.32 ✓.
+//   estSavings = $8,000 × 2 × 0.32 × 0.20 = $1,024.
+header("G1.8+3 — Single $250k, charitable $8k @ 32% marginal: savings $1,024");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 250000, stateCode: "FL" }],
+    adjustments: [
+      { adjustmentType: "charitable_cash", amount: 8000, isApplied: true },
+    ],
+  });
+  const hit = findHit(hits, "G1.8");
+  checkTruthy("G1.8+3", "DAF hit fires at the 32% threshold", hit != null, true);
+  if (hit) {
+    check("G1.8+3", "estSavings = $1,024", hit.estSavings, 1024, 5);
+    check("G1.8+3", "marginal = 0.32",
+      Number(hit.inputs.federalMarginalRate), 0.32, 0.001);
+  }
+}
+
+// --- G1.8-4 — Charitable too low ($3k) — must NOT fire ---
+header("G1.8-4 — charitable $3k below threshold suppresses (negative)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 400000, stateCode: "FL" }],
+    adjustments: [
+      { adjustmentType: "charitable_cash", amount: 3000, isApplied: true },
+    ],
+  });
+  checkTruthy("G1.8-4", "no DAF hit when charitable ≤ $5,000",
+    findHit(hits, "G1.8") == null, true);
+}
+
+// --- G1.8-5 — Marginal too low (22%) — must NOT fire ---
+header("G1.8-5 — high charitable but marginal 22% suppresses (negative)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 100000, stateCode: "FL" }],
+    adjustments: [
+      { adjustmentType: "charitable_cash", amount: 20000, isApplied: true },
+    ],
+  });
+  checkTruthy("G1.8-5", "no DAF hit when marginal < 32%",
+    findHit(hits, "G1.8") == null, true);
+}
+
+// --- G1.8±6 — Charitable exactly $5,000 — spec says strict > so NOT fires ---
+header("G1.8±6 — charitable exactly $5,000 boundary — does NOT fire");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 400000, stateCode: "FL" }],
+    adjustments: [
+      { adjustmentType: "charitable_cash", amount: 5000, isApplied: true },
+    ],
+  });
+  checkTruthy("G1.8±6", "no DAF hit at exactly $5,000 (strict >)",
+    findHit(hits, "G1.8") == null, true);
+}
+
+// ============================================================================
 // RESULTS
 // ============================================================================
 
