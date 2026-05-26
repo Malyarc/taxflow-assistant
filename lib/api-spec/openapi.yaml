@@ -1069,6 +1069,12 @@ components:
         localityCode:
           type: ["string", "null"]
           enum: ["NYC", null]
+        socialSecurityBenefits:
+          type: ["number", "null"]
+          description: Total SS benefits (SSA-1099 Box 5 + RRB-1099). Drives Pub 915 0/50/85% taxability.
+        mfsLivedApartAllYear:
+          type: boolean
+          description: For MFS — true if lived apart all year (single-thresholds rules; default false → 85% of SS taxable).
         notes:
           type: ["string", "null"]
 
@@ -1123,6 +1129,12 @@ components:
         localityCode:
           type: ["string", "null"]
           enum: ["NYC", null]
+        socialSecurityBenefits:
+          type: ["number", "null"]
+          description: Total SS benefits (SSA-1099 Box 5 + RRB-1099). Drives Pub 915 0/50/85% taxability.
+        mfsLivedApartAllYear:
+          type: boolean
+          description: For MFS — true if lived apart all year (single-thresholds rules; default false → 85% of SS taxable).
         notes:
           type: ["string", "null"]
 

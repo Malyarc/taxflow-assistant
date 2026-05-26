@@ -155,6 +155,13 @@ export interface CreateClientBody {
   rentalRealEstateProfessional?: boolean;
   /** @nullable */
   localityCode?: CreateClientBodyLocalityCode;
+  /**
+   * Total SS benefits (SSA-1099 Box 5 + RRB-1099). Drives Pub 915 0/50/85% taxability.
+   * @nullable
+   */
+  socialSecurityBenefits?: number | null;
+  /** For MFS — true if lived apart all year (single-thresholds rules; default false → 85% of SS taxable). */
+  mfsLivedApartAllYear?: boolean;
   /** @nullable */
   notes?: string | null;
 }
@@ -214,6 +221,13 @@ export interface UpdateClientBody {
   rentalRealEstateProfessional?: boolean;
   /** @nullable */
   localityCode?: UpdateClientBodyLocalityCode;
+  /**
+   * Total SS benefits (SSA-1099 Box 5 + RRB-1099). Drives Pub 915 0/50/85% taxability.
+   * @nullable
+   */
+  socialSecurityBenefits?: number | null;
+  /** For MFS — true if lived apart all year (single-thresholds rules; default false → 85% of SS taxable). */
+  mfsLivedApartAllYear?: boolean;
   /** @nullable */
   notes?: string | null;
 }

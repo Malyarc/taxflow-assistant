@@ -49,7 +49,8 @@ router.post("/clients", async (req, res): Promise<void> => {
   }
   // Drizzle's numeric() columns are typed as string for inserts. Convert
   // OpenAPI-typed `number | null` fields to that shape.
-  const { spouseEarnedIncome, acaAnnualPremium, acaAnnualSlcsp, acaAdvanceAptc, ...rest } = parsed.data;
+  const { spouseEarnedIncome, acaAnnualPremium, acaAnnualSlcsp, acaAdvanceAptc,
+          socialSecurityBenefits, ...rest } = parsed.data;
   const [client] = await db
     .insert(clientsTable)
     .values({
@@ -59,6 +60,7 @@ router.post("/clients", async (req, res): Promise<void> => {
       ...(acaAnnualPremium != null ? { acaAnnualPremium: String(acaAnnualPremium) } : {}),
       ...(acaAnnualSlcsp != null ? { acaAnnualSlcsp: String(acaAnnualSlcsp) } : {}),
       ...(acaAdvanceAptc != null ? { acaAdvanceAptc: String(acaAdvanceAptc) } : {}),
+      ...(socialSecurityBenefits != null ? { socialSecurityBenefits: String(socialSecurityBenefits) } : {}),
     })
     .returning();
   await writeAudit({ clientId: client.id, action: "create", entityType: "client", entityId: client.id, after: client });
@@ -94,6 +96,12 @@ router.patch("/clients/:id", async (req, res): Promise<void> => {
     return;
   }
   const updateData: Record<string, unknown> = { ...parsed.data, updatedAt: new Date() };
+  // Drizzle numeric() columns require string values — same shape as the
+  // POST handler. Coerce numbers → strings; leave nulls as-is to clear.
+  for (const k of ["spouseEarnedIncome", "acaAnnualPremium", "acaAnnualSlcsp", "acaAdvanceAptc", "socialSecurityBenefits"] as const) {
+    const v = (parsed.data as Record<string, unknown>)[k];
+    if (typeof v === "number") updateData[k] = String(v);
+  }
   if (parsed.data.state !== undefined) {
     const normalized = normalizeState(parsed.data.state);
     if (normalized === "INVALID") {

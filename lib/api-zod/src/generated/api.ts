@@ -146,6 +146,18 @@ export const CreateClientBody = zod.object({
   rentalActiveParticipant: zod.boolean().optional(),
   rentalRealEstateProfessional: zod.boolean().optional(),
   localityCode: zod.union([zod.literal("NYC"), zod.literal(null)]).nullish(),
+  socialSecurityBenefits: zod
+    .number()
+    .nullish()
+    .describe(
+      "Total SS benefits (SSA-1099 Box 5 + RRB-1099). Drives Pub 915 0\/50\/85% taxability.",
+    ),
+  mfsLivedApartAllYear: zod
+    .boolean()
+    .optional()
+    .describe(
+      "For MFS — true if lived apart all year (single-thresholds rules; default false → 85% of SS taxable).",
+    ),
   notes: zod.string().nullish(),
 });
 
@@ -290,6 +302,18 @@ export const UpdateClientBody = zod.object({
   rentalActiveParticipant: zod.boolean().optional(),
   rentalRealEstateProfessional: zod.boolean().optional(),
   localityCode: zod.union([zod.literal("NYC"), zod.literal(null)]).nullish(),
+  socialSecurityBenefits: zod
+    .number()
+    .nullish()
+    .describe(
+      "Total SS benefits (SSA-1099 Box 5 + RRB-1099). Drives Pub 915 0\/50\/85% taxability.",
+    ),
+  mfsLivedApartAllYear: zod
+    .boolean()
+    .optional()
+    .describe(
+      "For MFS — true if lived apart all year (single-thresholds rules; default false → 85% of SS taxable).",
+    ),
   notes: zod.string().nullish(),
 });
 
