@@ -1254,6 +1254,44 @@ export const UpdateTaxReturnResponse = zod.object({
 });
 
 /**
+ * @summary List detected planning opportunities for a client
+ */
+export const GetPlanningOpportunitiesParams = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const GetPlanningOpportunitiesResponse = zod.object({
+  clientId: zod.number(),
+  taxYear: zod.number(),
+  catalogVersion: zod.string(),
+  hits: zod.array(
+    zod.object({
+      strategyId: zod.string(),
+      name: zod.string(),
+      category: zod.enum([
+        "retirement",
+        "state",
+        "charitable",
+        "timing",
+        "business",
+        "investment",
+        "credits",
+      ]),
+      estSavings: zod.number(),
+      confidence: zod.number(),
+      cpaEffortHours: zod.number(),
+      recurring: zod.boolean(),
+      rationale: zod.string(),
+      action: zod.string(),
+      prerequisiteData: zod.array(zod.string()),
+      citation: zod.string(),
+      inputs: zod.record(zod.string(), zod.unknown()),
+    }),
+  ),
+  totalEstSavings: zod.number(),
+});
+
+/**
  * @summary List CPA adjustments for a client
  */
 export const ListAdjustmentsParams = zod.object({

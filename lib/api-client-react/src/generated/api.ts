@@ -32,6 +32,7 @@ import type {
   DashboardSummary,
   Form1099Data,
   HealthStatus,
+  PlanningOpportunities,
   RejectExtractionBody,
   RentalProperty,
   ScheduleK1,
@@ -2025,6 +2026,101 @@ export const useUpdateTaxReturn = <
 > => {
   return useMutation(getUpdateTaxReturnMutationOptions(options));
 };
+
+/**
+ * @summary List detected planning opportunities for a client
+ */
+export const getGetPlanningOpportunitiesUrl = (clientId: number) => {
+  return `/api/clients/${clientId}/planning-opportunities`;
+};
+
+export const getPlanningOpportunities = async (
+  clientId: number,
+  options?: RequestInit,
+): Promise<PlanningOpportunities> => {
+  return customFetch<PlanningOpportunities>(
+    getGetPlanningOpportunitiesUrl(clientId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetPlanningOpportunitiesQueryKey = (clientId: number) => {
+  return [`/api/clients/${clientId}/planning-opportunities`] as const;
+};
+
+export const getGetPlanningOpportunitiesQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPlanningOpportunities>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPlanningOpportunities>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetPlanningOpportunitiesQueryKey(clientId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getPlanningOpportunities>>
+  > = ({ signal }) =>
+    getPlanningOpportunities(clientId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!clientId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPlanningOpportunities>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetPlanningOpportunitiesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getPlanningOpportunities>>
+>;
+export type GetPlanningOpportunitiesQueryError = ErrorType<void>;
+
+/**
+ * @summary List detected planning opportunities for a client
+ */
+
+export function useGetPlanningOpportunities<
+  TData = Awaited<ReturnType<typeof getPlanningOpportunities>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPlanningOpportunities>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetPlanningOpportunitiesQueryOptions(
+    clientId,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * @summary List CPA adjustments for a client

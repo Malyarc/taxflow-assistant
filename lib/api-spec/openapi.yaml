@@ -524,6 +524,28 @@ paths:
               schema:
                 $ref: "#/components/schemas/TaxReturn"
 
+  # ── Planning opportunities (Phase G) ──────────────────────────────────────
+  /clients/{clientId}/planning-opportunities:
+    get:
+      operationId: getPlanningOpportunities
+      tags: [planning]
+      summary: List detected planning opportunities for a client
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Planning opportunities (deterministic — Layer 2 engine)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanningOpportunities"
+        "404":
+          description: Client not found
+
   # ── Adjustments ───────────────────────────────────────────────────────────
   /clients/{clientId}/adjustments:
     get:
@@ -2281,3 +2303,54 @@ components:
           type: integer
         averageRefund:
           type: ["number", "null"]
+
+    # ── Planning opportunities (Phase G) ─────────────────────────────────────
+    OpportunityHit:
+      type: object
+      required: [strategyId, name, category, estSavings, confidence, cpaEffortHours, recurring, rationale, action, prerequisiteData, citation, inputs]
+      properties:
+        strategyId:
+          type: string
+        name:
+          type: string
+        category:
+          type: string
+          enum: [retirement, state, charitable, timing, business, investment, credits]
+        estSavings:
+          type: number
+        confidence:
+          type: number
+        cpaEffortHours:
+          type: number
+        recurring:
+          type: boolean
+        rationale:
+          type: string
+        action:
+          type: string
+        prerequisiteData:
+          type: array
+          items:
+            type: string
+        citation:
+          type: string
+        inputs:
+          type: object
+          additionalProperties: true
+
+    PlanningOpportunities:
+      type: object
+      required: [clientId, taxYear, catalogVersion, hits, totalEstSavings]
+      properties:
+        clientId:
+          type: integer
+        taxYear:
+          type: integer
+        catalogVersion:
+          type: string
+        hits:
+          type: array
+          items:
+            $ref: "#/components/schemas/OpportunityHit"
+        totalEstSavings:
+          type: number

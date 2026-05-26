@@ -1536,3 +1536,41 @@ export interface DashboardSummary {
   /** @nullable */
   averageRefund?: number | null;
 }
+
+export type OpportunityHitCategory =
+  (typeof OpportunityHitCategory)[keyof typeof OpportunityHitCategory];
+
+export const OpportunityHitCategory = {
+  retirement: "retirement",
+  state: "state",
+  charitable: "charitable",
+  timing: "timing",
+  business: "business",
+  investment: "investment",
+  credits: "credits",
+} as const;
+
+export type OpportunityHitInputs = { [key: string]: unknown };
+
+export interface OpportunityHit {
+  strategyId: string;
+  name: string;
+  category: OpportunityHitCategory;
+  estSavings: number;
+  confidence: number;
+  cpaEffortHours: number;
+  recurring: boolean;
+  rationale: string;
+  action: string;
+  prerequisiteData: string[];
+  citation: string;
+  inputs: OpportunityHitInputs;
+}
+
+export interface PlanningOpportunities {
+  clientId: number;
+  taxYear: number;
+  catalogVersion: string;
+  hits: OpportunityHit[];
+  totalEstSavings: number;
+}

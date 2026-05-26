@@ -11,6 +11,7 @@ import auditLogRouter from "./audit-log";
 import rentalPropertiesRouter from "./rental-properties";
 import capitalTransactionsRouter from "./capital-transactions";
 import scheduleK1Router from "./schedule-k1";
+import planningRouter from "./planning";
 
 const router: IRouter = Router();
 
@@ -26,5 +27,6 @@ router.use(auditLogRouter);
 router.use(rentalPropertiesRouter);
 router.use(capitalTransactionsRouter);
 router.use(scheduleK1Router);
+router.use(planningRouter);
 
 export default router;

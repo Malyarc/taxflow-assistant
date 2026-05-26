@@ -35,6 +35,7 @@
     "src/ai-benchmark/run.ts",
     "src/tax-engine-accuracy-audit-tests.ts",
     "src/tax-engine-deep-audit-tests.ts",
-    "src/tax-engine-planning-tests.ts"
+    "src/tax-engine-planning-tests.ts",
+    "src/tax-engine-planning-integration-tests.ts"
   ]
 }
