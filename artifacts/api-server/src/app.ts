@@ -22,27 +22,38 @@ app.disable("x-powered-by");
 // Security headers. CSP allows 'unsafe-inline' for Vite-built React (the
 // bundle uses inline style attributes); tighten when we have a nonce
 // strategy. data:/blob: for `img-src` is needed by BoundedDocumentViewer
-// (PDF.js renders pages to blob URLs).
+// (PDF.js renders pages to blob URLs). fonts.googleapis.com /
+// fonts.gstatic.com are whitelisted for the Inter web font referenced
+// from index.html.
 //
-// HSTS is DISABLED until we have real TLS termination in front of this
-// server. Helmet's default HSTS header forces browsers to use HTTPS for
-// this domain for a year, which strands users when the deployment is
-// HTTP-only (browsers cache the header → forced HTTPS → connection
-// refused). Re-enable (`hsts: { maxAge: ..., includeSubDomains: true,
-// preload: true }`) once a TLS terminator (ALB / CloudFront / nginx +
-// certbot) is in place and port 443 actually responds.
+// Two HTTPS-only behaviours are DISABLED on HTTP-only deployments:
+//   - HSTS: tells browsers to refuse HTTP for a year (cached client-side).
+//   - upgrade-insecure-requests CSP directive: auto-upgrades sub-resource
+//     URLs from http→https when the page is loaded over HTTP. With no TLS
+//     terminator (port 443 closed), the upgrade fails silently and the JS
+//     bundle never loads → blank page.
+//
+// Both re-enable once a TLS terminator (ALB / CloudFront / nginx +
+// certbot) is in place and port 443 actually responds:
+//   - `hsts: { maxAge: ..., includeSubDomains: true, preload: true }`
+//   - remove the `upgradeInsecureRequests: null` override (Helmet's
+//     default re-includes it).
 app.use(
   helmet({
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
         scriptSrc: ["'self'", "'unsafe-inline'"],
-        styleSrc: ["'self'", "'unsafe-inline'"],
+        // Allow Google Fonts stylesheet (index.html loads Inter from
+        // fonts.googleapis.com). Future: self-host the font and drop these.
+        styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+        fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
         imgSrc: ["'self'", "data:", "blob:"],
         connectSrc: ["'self'"],
-        fontSrc: ["'self'", "data:"],
         objectSrc: ["'none'"],
         frameAncestors: ["'self'"],
+        // Override Helmet's default — see HTTP-only note above.
+        upgradeInsecureRequests: null,
       },
     },
     hsts: false,
