@@ -65,7 +65,7 @@ Future-you will be tempted to "simplify" these. Don't.
 - **Hand-calc every expected value** against IRS published rules before asserting it. The user has been burned by tests passing while the underlying calc was wrong (e.g. the AGI/Line-9 bug shipped despite unit tests passing).
 - **Unit tests alone aren't enough.** Standalone suites verify the calculator; integration suites hit a live API at `localhost:8080` and exercise the full pipeline. Run both.
 - **Adding a new test file** also requires adding it to `scripts/tsconfig.json`'s `exclude` array — the workspace typecheck fails otherwise.
-- **Test files (current set, 1,790+ assertions across 28 suites — ALL 10 K-list federal-engine gaps + ALL 4 state-engine gaps closed end-to-end 2026-05-23 → 2026-05-26; Phase G4 multi-year shipped with 70 new hand-calc assertions; Phase G5 Pro-tier gate shipped with 21 new dual-state integration assertions; deep-audit suite still 210 assertions, accuracy-audit 97 assertions, 0 documented gaps; AI-overlay 33 env-gated):**
+- **Test files (current set, 1,910+ assertions across 29 suites — ALL 10 K-list federal-engine gaps + ALL 4 state-engine gaps closed end-to-end 2026-05-23 → 2026-05-26; Phase G4 multi-year shipped with 70 new hand-calc assertions; Phase G5 Pro-tier gate shipped with 21 new dual-state integration assertions; **Phase E shipped 11 of 14 items 2026-05-26 with 129 new hand-calc assertions** (E1 IL exemption / E2 AMT credit cf / E3 charitable cf / E4 HSA Form 8889 / E5 §72(t) penalty / E6 1099-G tax-benefit rule / E7 §179+bonus / E8 NYC school+MCTMT / E9 state CTCs / E10 state EITCs / E11 PA Sched SP); deep-audit suite still 210 assertions, accuracy-audit 97 assertions, 0 documented gaps; AI-overlay 33 env-gated):**
   | File | Needs API |
   |---|---|
   | `tax-engine-tests.ts` | no |
@@ -98,6 +98,7 @@ Future-you will be tempted to "simplify" these. Don't.
   | `tax-engine-planning-integration-tests.ts` | yes (29 assertions: Phase G API surface — G1 SEP via 1099-NEC, G1 PTET via S-corp K-1 + SALT, pure-W-2 silence, 404, G4 persistent NIIT 2-year, G4 single-year-history empty hits, G4 404) |
   | `tax-engine-planning-multi-year-tests.ts` | no (70 hand-calc'd tests across 5 G4 multi-year detectors; Phase G4) |
   | `tax-engine-pro-tier-tests.ts` | yes (Phase G5 — adapts to current PRO_TIER_ENABLED state: 5 on-state assertions OR 16 off-state assertions verifying 402 + body code on every planning endpoint. Run twice for full coverage.) |
+  | `tax-engine-phaseE-tests.ts` | no (Phase E — 129 hand-calc'd assertions across E1-E11: IL exemption cliff, AMT credit Form 8801, charitable §170(d)(1) carryforward, HSA Form 8889 detail + §4973(g) excise, 1099-R §72(t) penalty, 1099-G §111 tax-benefit rule, §179 + bonus depreciation, NYC school + MCTMT, state CTCs CA/CO/NJ/IL/NM/VT, state EITCs for 20 states, PA Schedule SP. See `docs/phase-e-deferred.md` for E12-E14 not yet shipped.) |
 - **Scenarios are CPA-style end-to-end cases.** Each one has a `Hand-calc:` comment block — keep that convention. When a scenario fails, double-check your hand-calc before mutating the assertion; the calculator is usually right.
 - **Run all suites after any pipeline or schema change.** The Phase 1 work flushed out one regression (scenario 8 — needed to add EITC to expected refund).
 

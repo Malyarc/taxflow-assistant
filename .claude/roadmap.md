@@ -74,22 +74,43 @@ Each item is 2–5 days; all are well-documented IRS rules.
 | BP3 | **AMT preferences detail** — ISO bargain element + state-tax addback (Form 6251 line 2g + 2k) | 2-3 days | ✅ Done. Engine auto-derives the line 2g SALT addback from the itemized SALT we already compute (only when itemizing); `amt_iso_bargain_element` adjustment feeds line 2k; `amt_state_tax_addback_override` adjustment can replace the auto value for unusual cases. Legacy `amt_preferences` catch-all continues. 16 hand-calced assertions covering SALT on/off (std vs itemized), override, ISO small + binding, combined, MFJ. No schema or UI changes (adjustment-based). |
 | BP4 | **State EITC expansion** to CO + IL + MN + NJ + MA (~1 day each, ~5 days total) | 5 days | ✅ Done. CO 50% (HB24-1134 one-time TY2024 bump; TY2025=35%, TY2026=25%) — user's "25%" was the pre-2024 rate. IL 20% (PA 102-0700 since TY2023). NJ 40% (since TY2020). MA 40% (Ch. 50 Acts 2023). MN Working Family Credit via Schedule M1CWFC 2024: 4% × min(earned, $9,220) base + child add-ons (+$970 / +$2,210 / +$2,630 for 1/2/3+); phase-out 12% above $31,090 ($36,880 MFJ); $11,600 investment-income limit. 21 hand-calced assertions. **Known limits:** NJ 18+/65+ expansion to childless filers not auto-applied (CPA can enter as manual credit); MA part-year proration not modeled; MN "qualifying older children" approximated as federal-EITC qualifying-children count (close but not exact for mixed-age dependents); MN phase-out uses 12% (skips the 9% carve-out for older-children-only filers). |
 
-### Phase E — still reactive (do when a customer asks)
+### Phase E — Engine completeness (11 of 14 shipped 2026-05-26; 3 deferred)
 
-- NOL carryforward + 80% taxable income limit (post-TCJA)
-- AMT credit carryforward
-- Charitable carryforward (5-year)
-- §179 expense election + bonus depreciation
-- Foreign income exclusion (§911 FEIE), treaty positions
-- HSA Form 8889 detail (testing period, employer contributions)
-- 1099-R early-withdrawal 10% penalty + exception codes
-- 1099-G (unemployment + state-refund taxability per state)
-- Part-year residency in multi-state framework
-- Other local income taxes (MD counties, OH cities, IN counties — NYC promoted above)
-- State CTCs (varies widely by state)
-- State AMTs (CA has its own, e.g.)
-- Auto wash-sale detection across accounts (broker-reported is honored today)
+**Shipped (129 hand-calc'd assertions):**
+- ✅ **E1** — IL personal exemption AGI cliff ($250k single / $500k MFJ)
+- ✅ **E2** — AMT credit carryforward (Form 8801, IRC §53)
+- ✅ **E3** — Charitable cash carryforward (IRC §170(d)(1), 5-year)
+- ✅ **E4** — HSA Form 8889 detail (employer contrib + §4973(g) excise)
+- ✅ **E5** — 1099-R early-withdrawal 10% / 25% penalty (IRC §72(t))
+- ✅ **E6** — 1099-G state-refund tax-benefit rule (Pub 525 / IRC §111) + unemployment §85
+- ✅ **E7** — §179 expense election + §168(k) bonus depreciation
+- ✅ **E8** — NYC School Tax Credit (IT-201 L69) + MCTMT tiered SE tax
+- ✅ **E9** — State CTCs for CA / CO / NJ / IL / NM / VT
+- ✅ **E10** — State EITC piggybacks for 20 new states (CT/DE/IN/IA/KS/LA/MT/NE/NM/OH/OK/OR/RI/VT/VA/DC/ME/MD/MI + WI tiered)
+- ✅ **E11** — PA Schedule SP Tax Forgiveness (61 Pa. Code §111)
+
+**Deferred (see `docs/phase-e-deferred.md` for full implementation plans):**
+- ❌ **E12** — Part-year residency in multi-state framework (3-5 days, schema-level refactor)
+- ❌ **E13** — Auto wash-sale detection + §1091(d) holding-period tack-on (4-6 days, algorithmic)
+- ❌ **E14** — Other local income taxes (MD counties / OH cities / IN counties) (5-10 days for comprehensive; 1-2 days for MD only)
+
+**Also shipped earlier in K-list / state work (already done before Phase E batch):**
+- ✅ NOL carryforward (K4, 80% TCJA limit)
+- ✅ FEIE §911 (K9)
+- ✅ §121 home-sale exclusion (K6)
+- ✅ §1202 QSBS exclusion (K7)
+- ✅ Kiddie tax Form 8615 (K8)
+- ✅ Additional Medicare 0.9% Form 8959 (K2)
+- ✅ Sch SE Line 9 W-2 + SE shared SS wage base (K1)
+- ✅ SS taxability worksheet (K10)
+- ✅ State AMT (G5 CA Schedule P 540)
+
+**Reactive — only ship when a customer asks:**
+- HSA Form 8889 last-month rule (testing period)
+- Auto wash-sale detection (broker-reported is honored today)
 - §1091(d) holding-period tack-on after wash sale
+- State-specific AMT for states other than CA
+- IL personal-exemption dependent allowance (engine modeled flat $2,775/filer)
 
 Tier D3 — entity returns — **out of scope for Option A**: Form 1041 (trust/estate), 1065 (partnership), 1120/1120-S (corporate / S-corp).
 
