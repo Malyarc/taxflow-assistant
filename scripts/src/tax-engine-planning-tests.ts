@@ -851,6 +851,278 @@ header("G1.8±6 — charitable exactly $5,000 boundary — does NOT fire");
 }
 
 // ============================================================================
+// G1.4 — Roth conversion window
+// IRS: IRC §408A; Pub 590-A.
+// Trigger: federalMarginalRate < 0.24 AND taxpayerAge in [30, 72] (or null).
+// conversion = bracketTop − taxableIncome
+// estSavings = conversion × (0.32 future-rate placeholder − currentRate)
+// ============================================================================
+section("G1.4 Roth conversion window");
+
+// --- G1.4+1 — Single FL $50k W-2 → 12% bracket, fill to $47,150 ---
+// Hand-calc:
+//   AGI $50,000. Taxable = $50,000 − $14,600 std = $35,400.
+//   Single 2024: 12% bracket $11,600-$47,150. marginal = 0.12.
+//   conversion = $47,150 − $35,400 = $11,750.
+//   estSavings = $11,750 × (0.32 − 0.12) = $2,350.
+header("G1.4+1 — Single $50k @ 12% bracket → fill $11,750, savings $2,350");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, stateCode: "FL" }],
+  });
+  const hit = findHit(hits, "G1.4");
+  checkTruthy("G1.4+1", "Roth hit fires", hit != null, true);
+  if (hit) {
+    check("G1.4+1", "conversion = $11,750",
+      Number(hit.inputs.conversion), 11750, 1,
+      "12% bracket top $47,150 − taxable $35,400");
+    check("G1.4+1", "estSavings = $2,350",
+      hit.estSavings, 2350, 2,
+      "$11,750 × (0.32 − 0.12)");
+  }
+}
+
+// --- G1.4+2 — MFJ FL $130k W-2 → 22% bracket, fill to $201,050 ---
+// Hand-calc:
+//   AGI $130,000. Taxable = $130k − $29,200 = $100,800.
+//   MFJ 2024: 22% bracket $94,300-$201,050. marginal = 0.22.
+//   conversion = $201,050 − $100,800 = $100,250.
+//   estSavings = $100,250 × (0.32 − 0.22) = $10,025.
+header("G1.4+2 — MFJ $130k @ 22% bracket → fill $100,250, savings $10,025");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 130000, stateCode: "FL" }],
+  });
+  const hit = findHit(hits, "G1.4");
+  checkTruthy("G1.4+2", "Roth hit fires (MFJ 22%)", hit != null, true);
+  if (hit) {
+    check("G1.4+2", "estSavings = $10,025", hit.estSavings, 10025, 5);
+  }
+}
+
+// --- G1.4+3 — HoH FL $80k W-2, taxpayerAge 45 → 12% bracket ---
+// Hand-calc:
+//   AGI $80,000. Taxable = $80,000 − $21,900 HoH std = $58,100.
+//   HoH 2024: 12% bracket $16,550-$63,100. marginal = 0.12.
+//   conversion = $63,100 − $58,100 = $5,000.
+//   estSavings = $5,000 × (0.32 − 0.12) = $1,000.
+header("G1.4+3 — HoH age 45 $80k @ 12% bracket → fill $5,000, savings $1,000");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "head_of_household", state: "FL", taxYear: 2024, taxpayerAge: 45 },
+    w2s: [{ taxYear: 2024, wagesBox1: 80000, stateCode: "FL" }],
+  });
+  const hit = findHit(hits, "G1.4");
+  checkTruthy("G1.4+3", "Roth hit fires for HoH age 45", hit != null, true);
+  if (hit) {
+    check("G1.4+3", "estSavings = $1,000", hit.estSavings, 1000, 2);
+  }
+}
+
+// --- G1.4-4 — Marginal too high (24%) — must NOT fire ---
+// Single $300k W-2 → taxable $285,400 → 35% bracket → > 0.24 → no fire.
+header("G1.4-4 — Single $300k @ 35% marginal suppresses (negative)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 300000, stateCode: "FL" }],
+  });
+  checkTruthy("G1.4-4", "no Roth hit when marginal >= 24%",
+    findHit(hits, "G1.4") == null, true);
+}
+
+// --- G1.4-5 — Age under 30 — must NOT fire ---
+header("G1.4-5 — taxpayerAge 25 suppresses (negative)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 25 },
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, stateCode: "FL" }],
+  });
+  checkTruthy("G1.4-5", "no Roth hit at age 25",
+    findHit(hits, "G1.4") == null, true);
+}
+
+// --- G1.4-6 — Age over 72 — must NOT fire ---
+header("G1.4-6 — taxpayerAge 75 suppresses (negative)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 75 },
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, stateCode: "FL" }],
+  });
+  checkTruthy("G1.4-6", "no Roth hit at age 75",
+    findHit(hits, "G1.4") == null, true);
+}
+
+// --- G1.4±7 — Boundary: marginal exactly 0.24 ---
+// Single 2024: 24% bracket starts at $100,525. Wage $115,125 → taxable
+// $100,525 → marginal 0.22 (still in 22% bracket since strict < at upper).
+// Boost to $115,200 wage → taxable $100,600 → in 24% bracket → marginal 0.24
+// → trigger `< 0.24` fails → no fire.
+header("G1.4±7 — taxable just into 24% bracket: marginal 0.24, suppresses");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 115200, stateCode: "FL" }],
+  });
+  checkTruthy("G1.4±7", "no Roth hit when marginal exactly 0.24",
+    findHit(hits, "G1.4") == null, true);
+}
+
+// ============================================================================
+// G1.5 — AMT timing (ISO bargain element)
+// IRS: IRC §56(b)(3); Form 6251 line 2k.
+// Trigger: amtTax > 0 AND amt_iso_bargain_element adjustment > 0.
+// estSavings = amtTax (full deferrable amount).
+// ============================================================================
+section("G1.5 AMT timing — ISO bargain element");
+
+// --- G1.5+1 — Single $250k W-2 + $100k ISO bargain ---
+// Hand-calc:
+//   Regular tax single 2024 on $235,400 taxable ($250k − $14,600 std):
+//     $1,160 + $4,266 + $11,742.50 + $21,942 + $13,904 = $53,014.50.
+//   AMTI = taxable $235,400 + ISO bargain $100,000 = $335,400.
+//   Single AMT exemption $85,700 (no phaseout below $609,350).
+//   AMT base = $335,400 − $85,700 = $249,700.
+//   Tentative AMT @ 26/28% (breakpoint $232,600):
+//     $232,600 × 0.26 + ($249,700 − $232,600) × 0.28
+//     = $60,476 + $4,788 = $65,264.
+//   amtTax = max(0, $65,264 − $53,014.50) = ~$12,250.
+//   estSavings = $12,250 (entire AMT deferrable / avoidable).
+header("G1.5+1 — Single $250k W-2 + $100k ISO bargain: AMT ~$12,250");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 250000, stateCode: "FL" }],
+    adjustments: [
+      { adjustmentType: "amt_iso_bargain_element", amount: 100000, isApplied: true },
+    ],
+  });
+  const hit = findHit(hits, "G1.5");
+  checkTruthy("G1.5+1", "AMT-ISO hit fires", hit != null, true);
+  if (hit) {
+    check("G1.5+1", "estSavings ≈ $12,250 (Form 6251 tentative − regular)",
+      hit.estSavings, 12250, 10,
+      "Form 6251: 26/28% on $249,700 AMT base − regular tax $53,014");
+    check("G1.5+1", "isoBargainElement = $100,000",
+      Number(hit.inputs.isoBargainElement), 100000, 1);
+  }
+}
+
+// --- G1.5+2 — MFJ $400k W-2 + $200k ISO bargain ---
+// Hand-calc:
+//   Regular tax MFJ 2024 on ($400k − $29,200) = $370,800 taxable:
+//     $2,320 + $8,532 + $23,485 + $40,500 + ($370,800 − $383,900 too high)
+//     Wait: MFJ brackets 2024: 24% to $383,900. $370,800 < $383,900 → in 24%.
+//     $2,320 + $8,532 + $23,485 + ($370,800 − $201,050) × 0.24
+//     = $2,320 + $8,532 + $23,485 + $40,740 = $75,077.
+//   AMTI = $370,800 + $200,000 = $570,800.
+//   MFJ AMT exemption $133,300 (no phaseout below $1,218,700).
+//   AMT base = $570,800 − $133,300 = $437,500.
+//   Tentative @ 26/28% (breakpoint $232,600):
+//     $232,600 × 0.26 + ($437,500 − $232,600) × 0.28
+//     = $60,476 + $57,372 = $117,848.
+//   amtTax = max(0, $117,848 − $75,077) = $42,771.
+header("G1.5+2 — MFJ $400k W-2 + $200k ISO bargain: AMT ~$42,771");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 400000, stateCode: "FL" }],
+    adjustments: [
+      { adjustmentType: "amt_iso_bargain_element", amount: 200000, isApplied: true },
+    ],
+  });
+  const hit = findHit(hits, "G1.5");
+  checkTruthy("G1.5+2", "AMT-ISO hit fires (MFJ)", hit != null, true);
+  if (hit) {
+    check("G1.5+2", "estSavings ≈ $42,771", hit.estSavings, 42771, 10);
+  }
+}
+
+// --- G1.5+3 — Single $180k W-2 + $50k ISO bargain ---
+// Hand-calc:
+//   taxable = $180,000 − $14,600 = $165,400. Single 24% bracket
+//     $100,525-$191,950 → marginal 0.24.
+//   Regular tax: $1,160 + $4,266 + $11,742.50 + ($165,400 − $100,525) × 0.24
+//     = $1,160 + $4,266 + $11,742.50 + $15,570 = $32,738.50.
+//   AMTI = $165,400 + $50,000 = $215,400. Single exemption $85,700.
+//   AMT base = $215,400 − $85,700 = $129,700.
+//   Tentative (under $232,600 → all 26%): $129,700 × 0.26 = $33,722.
+//   amtTax = max(0, $33,722 − $32,738.50) = $983.50 ≈ $984.
+header("G1.5+3 — Single $180k + $50k ISO: AMT ~$984");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 180000, stateCode: "FL" }],
+    adjustments: [
+      { adjustmentType: "amt_iso_bargain_element", amount: 50000, isApplied: true },
+    ],
+  });
+  const hit = findHit(hits, "G1.5");
+  checkTruthy("G1.5+3", "AMT-ISO hit fires (small AMT)", hit != null, true);
+  if (hit) {
+    check("G1.5+3", "estSavings ≈ $984", hit.estSavings, 984, 5);
+  }
+}
+
+// --- G1.5-4 — AMT > 0 but no ISO bargain (driven by SALT addback) ---
+// Setup: MFJ $1M W-2 with high itemized SALT → big AMT line 2g addback,
+// no ISO. amtTax > 0 (from SALT addback) but ISO = 0 → no fire.
+header("G1.5-4 — AMT from SALT addback only, no ISO suppresses (negative)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "married_filing_jointly", state: "CA", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 1500000, stateCode: "CA" }],
+    adjustments: [
+      { adjustmentType: "state_income_tax", amount: 100000, isApplied: true },
+      { adjustmentType: "state_property_tax", amount: 30000, isApplied: true },
+      { adjustmentType: "mortgage_interest", amount: 50000, isApplied: true },
+    ],
+  });
+  checkTruthy("G1.5-4", "no G1.5 hit without ISO bargain element",
+    findHit(hits, "G1.5") == null, true);
+}
+
+// --- G1.5-5 — ISO bargain present but no AMT (low income) ---
+// Single $40k W-2 + $1,000 ISO bargain. AMTI low; exemption $85,700 covers
+// it → amtTax = 0 → no fire.
+header("G1.5-5 — ISO bargain but no AMT suppresses (negative)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 40000, stateCode: "FL" }],
+    adjustments: [
+      { adjustmentType: "amt_iso_bargain_element", amount: 1000, isApplied: true },
+    ],
+  });
+  checkTruthy("G1.5-5", "no G1.5 hit when AMT exemption absorbs bargain",
+    findHit(hits, "G1.5") == null, true);
+}
+
+// --- G1.5±6 — Boundary: tiny ISO bargain that just triggers AMT ---
+// Set bargain just large enough to clip AMT. Single $250k W-2 → AMTI base
+// $235,400. Without prefs, tentative on AMTI − $85,700 = $149,700 × 0.26 =
+// $38,922 (less than regular tax $53k → no AMT). Add $60k ISO → AMTI
+// $295,400, base $209,700, tentative $54,522 → amtTax = $54,522 − $53,014.50 =
+// $1,507.50. Fires with that small amount.
+header("G1.5±6 — Single $250k + $60k ISO: small AMT ~$1,508");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 250000, stateCode: "FL" }],
+    adjustments: [
+      { adjustmentType: "amt_iso_bargain_element", amount: 60000, isApplied: true },
+    ],
+  });
+  const hit = findHit(hits, "G1.5");
+  checkTruthy("G1.5±6", "G1.5 fires with small AMT", hit != null, true);
+  if (hit) {
+    check("G1.5±6", "estSavings ≈ $1,508", hit.estSavings, 1508, 5);
+  }
+}
+
+// ============================================================================
 // RESULTS
 // ============================================================================
 

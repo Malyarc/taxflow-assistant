@@ -421,6 +421,119 @@ function detectCharitableDaf(args: {
   };
 }
 
+// ── G1.4 — Roth conversion window ─────────────────────────────────────────
+
+const G1_4_MAX_MARGINAL = 0.24;
+const G1_4_EXPECTED_FUTURE_RATE = 0.32;
+const G1_4_MIN_AGE = 30;
+const G1_4_MAX_AGE = 72;
+
+function detectRothConversion(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+}): OpportunityHit | null {
+  const { client, computed } = args;
+  const fedRate = federalMarginalRate(computed);
+  // Only fire when there's a meaningful spread vs the assumed future rate.
+  if (fedRate >= G1_4_MAX_MARGINAL) return null;
+
+  const age = client.taxpayerAge;
+  // Unknown age → fire (CPA judgment call). Known age outside range → suppress.
+  if (age != null && (age < G1_4_MIN_AGE || age > G1_4_MAX_AGE)) return null;
+
+  // Headroom to the top of the current bracket. Use calculateFederalTaxWith-
+  // Breakdown to find the last bracket hit; cap on the 37% bracket is Infinity
+  // so we can't fill it.
+  const { breakdown } = calculateFederalTaxWithBreakdown(
+    computed.taxableIncome,
+    computed.filingStatus,
+    computed.taxYear,
+  );
+  if (breakdown.length === 0) return null;
+  const currentBracket = breakdown[breakdown.length - 1];
+  if (!Number.isFinite(currentBracket.bracketMax)) return null;
+  const conversion = Math.max(0, currentBracket.bracketMax - computed.taxableIncome);
+  if (conversion <= 0) return null;
+
+  const spread = G1_4_EXPECTED_FUTURE_RATE - fedRate;
+  const estSavings = conversion * spread;
+  if (estSavings <= 0) return null;
+
+  const strategy = strategyById("G1.4");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars = {
+    estSavings: Math.round(estSavings),
+    conversion: Math.round(conversion),
+    currentRate: `${(fedRate * 100).toFixed(0)}%`,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings: Math.round(estSavings),
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client sits at a ${(fedRate * 100).toFixed(0)}% federal marginal rate with ` +
+      `${fmt(Math.round(conversion))} of headroom to the top of the current bracket. ` +
+      `Converting traditional IRA to Roth this year locks in that rate vs an assumed ` +
+      `future rate of ${(G1_4_EXPECTED_FUTURE_RATE * 100).toFixed(0)}%.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      federalMarginalRate: fedRate,
+      bracketTop: currentBracket.bracketMax,
+      conversion: Math.round(conversion),
+      assumedFutureRate: G1_4_EXPECTED_FUTURE_RATE,
+      taxpayerAge: age ?? null,
+    },
+  };
+}
+
+// ── G1.5 — AMT timing (ISO bargain element) ────────────────────────────────
+
+function detectAmtIsoTiming(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { computed, adjustments } = args;
+  if (computed.amtTax <= 0) return null;
+  const isoBargain = sumAdjustment(adjustments, "amt_iso_bargain_element");
+  if (isoBargain <= 0) return null;
+
+  // The entire AMT could potentially be deferred OR avoided by either
+  // spreading exercises across years (so AMT exemption covers more of it)
+  // or doing a same-year disqualifying sale (converts AMT-preference to
+  // ordinary W-2 income). estSavings = amtTax (the upper bound).
+  const strategy = strategyById("G1.5");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars = { estSavings: Math.round(computed.amtTax) };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings: Math.round(computed.amtTax),
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `AMT of ${fmt(Math.round(computed.amtTax))} driven by ${fmt(Math.round(isoBargain))} of ISO ` +
+      `bargain element. Spreading the exercise across multiple tax years OR a same-year ` +
+      `disqualifying sale would convert the preference and likely eliminate the AMT.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      amtTax: Math.round(computed.amtTax),
+      isoBargainElement: Math.round(isoBargain),
+    },
+  };
+}
+
 // ── Top-level evaluator ────────────────────────────────────────────────────
 
 export interface PlanningInputs {
@@ -446,6 +559,10 @@ export function evaluatePlanningOpportunities(args: PlanningInputs): Opportunity
   if (bunching) hits.push(bunching);
   const daf = detectCharitableDaf({ computed: args.computed, adjustments: args.adjustments });
   if (daf) hits.push(daf);
+  const roth = detectRothConversion({ client: args.client, computed: args.computed });
+  if (roth) hits.push(roth);
+  const amtIso = detectAmtIsoTiming({ computed: args.computed, adjustments: args.adjustments });
+  if (amtIso) hits.push(amtIso);
   hits.sort((a, b) => b.estSavings - a.estSavings);
   return hits;
 }
