@@ -65,7 +65,7 @@ Future-you will be tempted to "simplify" these. Don't.
 - **Hand-calc every expected value** against IRS published rules before asserting it. The user has been burned by tests passing while the underlying calc was wrong (e.g. the AGI/Line-9 bug shipped despite unit tests passing).
 - **Unit tests alone aren't enough.** Standalone suites verify the calculator; integration suites hit a live API at `localhost:8080` and exercise the full pipeline. Run both.
 - **Adding a new test file** also requires adding it to `scripts/tsconfig.json`'s `exclude` array — the workspace typecheck fails otherwise.
-- **Test files (current set, 1,700+ assertions across 26 suites — ALL 10 K-list federal-engine gaps + ALL 4 state-engine gaps closed end-to-end 2026-05-23 → 2026-05-26; deep-audit suite now 210 assertions, accuracy-audit 97 assertions, 0 documented gaps; AI-overlay 33 env-gated):**
+- **Test files (current set, 1,770+ assertions across 27 suites — ALL 10 K-list federal-engine gaps + ALL 4 state-engine gaps closed end-to-end 2026-05-23 → 2026-05-26; Phase G4 multi-year shipped 2026-05-26 with 70 new hand-calc assertions; deep-audit suite still 210 assertions, accuracy-audit 97 assertions, 0 documented gaps; AI-overlay 33 env-gated):**
   | File | Needs API |
   |---|---|
   | `tax-engine-tests.ts` | no |
@@ -95,7 +95,8 @@ Future-you will be tempted to "simplify" these. Don't.
   | `tax-engine-accuracy-audit-tests.ts` | no (88 IRS-cited cliff + canonical hand-calc tests; see `docs/accuracy-audit/`) |
   | `tax-engine-deep-audit-tests.ts` | no (210 deep-audit: per-calc edge cases, 20 client archetypes, invariants, K1-K10 + K1-MFJ sub-gap full closure; ALL 10 federal K-list gaps closed; see `docs/accuracy-audit/deep-audit-2026-05-23.md`) |
   | `tax-engine-planning-tests.ts` | no (133 hand-calc'd tests across 10 G1 detectors + G2 scoring helpers; Phase G) |
-  | `tax-engine-planning-integration-tests.ts` | yes (Phase G API surface: SEP via 1099-NEC ingest, PTET via S-corp K-1 + SALT adjustments, pure-W-2 silence, 404 path) |
+  | `tax-engine-planning-integration-tests.ts` | yes (29 assertions: Phase G API surface — G1 SEP via 1099-NEC, G1 PTET via S-corp K-1 + SALT, pure-W-2 silence, 404, G4 persistent NIIT 2-year, G4 single-year-history empty hits, G4 404) |
+  | `tax-engine-planning-multi-year-tests.ts` | no (70 hand-calc'd tests across 5 G4 multi-year detectors; Phase G4) |
 - **Scenarios are CPA-style end-to-end cases.** Each one has a `Hand-calc:` comment block — keep that convention. When a scenario fails, double-check your hand-calc before mutating the assertion; the calculator is usually right.
 - **Run all suites after any pipeline or schema change.** The Phase 1 work flushed out one regression (scenario 8 — needed to add EITC to expected refund).
 
@@ -194,10 +195,26 @@ Several Phase 2/3 limitations have been resolved (multi-state foundation, MACRS,
   GET `/api/clients/:id/planning-missing-data`,
   GET `/api/planning-hit-list` (firm-wide ranking).
   Frontend: new Planning tab in ClientDetail + Top-10 dashboard widget.
-  Seed: `scripts/src/seed-dummy-clients.ts` ingests 85 archetypes for
-  demos. **Pro tier feature flag (G5) NOT yet shipped** — module is
-  currently available to all clients; gate behind a flag before Pro
-  pricing rollout.
+  Seed: `scripts/src/seed-dummy-clients.ts` ingests 88 archetypes for
+  demos.
+- **Phase G4 — Multi-year intelligence shipped (2026-05-26).** 5
+  multi-year detectors in
+  `artifacts/api-server/src/lib/planningEngineMultiYear.ts`:
+  G4.1 persistent NIIT (avg × 0.5 recovery), G4.2 persistent AMT
+  (avg × 0.4), G4.3 permanent std-ded-cliff bunching (sums Sched A
+  line items so it sees the would-be itemized total even when std-ded
+  chosen), G4.4 capital-loss carryforward stuck (min(cf, $20k) ×
+  marginal), G4.5 passive-loss suspension growing (growth × marginal
+  × 0.5). New endpoint
+  `GET /api/clients/:id/planning-multi-year` returns hits + yearsAvailable
+  + yearsCovered; empty hits when only 1 year persisted.
+  Frontend: "Multi-year trends" section on Planning tab (indigo cards).
+  Seed extension ingests 2 years per archetype (TY2024 prior + TY2025
+  current, ×1.05 YoY scaling) and POSTs /tax-return for both years.
+  Catalog bumped to v1.1.0. 70 hand-calc unit tests + 11 new integration
+  assertions. **Pro tier feature flag (G5) NOT yet shipped** — module
+  is currently available to all clients; gate behind a flag before
+  Pro pricing rollout.
 - AMT preferences modeled: line 2g state-tax addback (auto from itemized SALT, override available), line 2k ISO bargain element. Still not modeled: line 2i MACRS-vs-ADS depreciation difference, line 2e state-refund recapture, AMT NOL.
 - K-1 §199A wage/UBIA limits + SSTB phase-out (engine applies simplified 20% only); K-1 basis / at-risk fields stored but not enforced; K-1 guaranteed payments (Box 4) not modeled
 - Other carryforwards: NOL, AMT credit, charitable (capital loss + §469 PAL + K-1 passive loss carryforward ARE supported)
@@ -213,7 +230,7 @@ Several Phase 2/3 limitations have been resolved (multi-state foundation, MACRS,
 - **Hates test failures that turn out to be wrong test expectations.** Hand-calc before asserting.
 - **Phase 4: Option A (CPA-tool overlay).** Consumer DIY is parked. Don't build interview UI, e-file, or ERO-related infra.
 - Explicitly does NOT want a Lacerte clone (5+ years / $20M+). Wants as close as feasible without that scope.
-- Next-phase priorities (post Phase G1+G2+G3 ship 2026-05-26): (a) Phase G4 multi-year intelligence + G5 Pro tier feature flag (polish); (b) CPA design-partner outreach (C11) using the planning demo as the lead artifact; (c) CPA-firm multi-tenancy auth (Phase D15); validate UltraTax `.gen` with a real design partner; build Lacerte / ProConnect / Drake adapters. AI-overlay UX shipped 2026-05-21 — covers upload → extract → CPA review → approve → audit-logged record write → `.gen` export.
+- Next-phase priorities (post Phase G1+G2+G3+G4 ship 2026-05-26): (a) Phase G5 Pro tier feature flag (~1 day, the last Phase G piece); (b) CPA design-partner outreach (C11) using the complete planning module as the lead artifact (10 G1 + 5 G4 detectors, 88-archetype demo showing $145k+ in surfaced opportunities); (c) CPA-firm multi-tenancy auth (Phase D15) once a paid partner is committed; validate UltraTax `.gen` with a real design partner; build Lacerte / ProConnect / Drake adapters. AI-overlay UX shipped 2026-05-21 — covers upload → extract → CPA review → approve → audit-logged record write → `.gen` export.
 
 ## Where to look first when picking up a session
 

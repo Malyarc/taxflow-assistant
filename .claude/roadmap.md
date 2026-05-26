@@ -197,14 +197,48 @@ identical section structure, no LLM dependency. `AI_PLANNING_MODEL`
 env var overrides default model (set to `gemini-2.5-pro` for higher-
 quality narration on the Pro tier).
 
-### Phase G4 — Multi-year intelligence ❌ **Open (~1 week)**
+### Phase G4 — Multi-year intelligence ✅ **DONE (2026-05-26)**
 
-Compare opportunity-detected vs opportunity-realized across years.
-Detect trend-based opportunities ("client has NIIT for 3 consecutive
-years → structural advice"). Flag carryforwards about to expire.
-Surface "consistency opportunities" (e.g., always near std-ded cliff
-→ should permanently bunch). Pre-req: at least 2 years of tax_returns
-history per client (seed currently ingests one year per archetype).
+5 multi-year detectors shipped in `planningEngineMultiYear.ts`:
+- **G4.1 — Persistent NIIT exposure** (IRC §1411): fires when NIIT > 0
+  in current AND ≥1 prior year. estSavings = avg NIIT × 0.5
+- **G4.2 — Persistent AMT exposure** (IRC §55-§59): fires when AMT > 0
+  in current AND ≥1 prior year. estSavings = avg AMT × 0.4
+- **G4.3 — Permanent bunching strategy** (IRC §170): fires when Sched A
+  line items sum within ±15% of std-ded for current AND ≥1 prior year,
+  with charity > 0 currently. estSavings = stdDed × 0.25 × marginal
+  (multi-year confidence 0.90 vs G1.3's 0.80). Uses sum of per-line
+  Sched A columns rather than the persisted itemizedDeductions (which
+  is null when std-ded chosen — the exact pattern G4.3 needs to detect).
+- **G4.4 — Capital loss carryforward unused** (IRC §1211/§1212): fires
+  when total cap-loss cf > $20k AND not materially declining YoY
+  ($3,500 tolerance covers the IRC §1211 auto-$3k/yr offset).
+  estSavings = min(cf, $20k) × marginal
+- **G4.5 — Passive activity loss suspension growing** (IRC §469): fires
+  when total suspended PAL (Sched E + K-1) > $5k AND grew YoY.
+  estSavings = growth × marginal × 0.5
+
+New endpoint `GET /api/clients/:id/planning-multi-year` loads
+tax_returns history (most-recent first), runs the evaluator, returns
+`{ hits, totalEstSavings, yearsAvailable, yearsCovered, catalogVersion,
+taxYear }`. Returns empty hits with a UI hint when only 1 year of
+history is persisted.
+
+Frontend: new "Multi-year trends" section on the Planning tab below the
+G1 cards. Indigo-bordered cards (visually distinct from G1's emerald).
+Collapses to a short dashed-border hint when history is insufficient.
+
+Seed extension: `seed-dummy-clients.ts` now ingests 2 years per
+archetype (existing data as TY2024 prior, scaled 1.05× as TY2025
+current) and POSTs /tax-return for both years. Idempotent. Pass
+`--no-multi-year` to skip. 3 dedicated G4 demo archetypes added
+(g4-bunching-mfj, g4-cap-loss-cf, g4-pal-growth-mfj) — one per
+detector whose pattern doesn't naturally appear in the other 85
+archetypes.
+
+Tests: 70 hand-calc'd unit assertions + 11 new integration assertions
+(persistent NIIT firing through API, single-year empty hits, 404).
+All 133 G1 unit + 29 planning integration + 210 deep audit still pass.
 
 ### Phase G5 — Pro tier + pricing ❌ **Open (~1 week)**
 
@@ -243,39 +277,42 @@ enough to demo to a design partner as the "planning superpower" pitch.
 ## Recommended sequencing (next 3 sessions)
 
 (As of 2026-05-26 — Phases A, B, B+, C12, C13, C14 + adversarial
-accuracy audit + DEEP audit + security & code-quality batch all
-complete. 9 real bugs fixed across the three audit tracks. **ZERO
-documented federal or state engine gaps remain** (all 10 K-list +
-all 4 G-list closed end-to-end during 2026-05-23 → 2026-05-26).
-CPA design-partner outreach packet (C11) drafted in `docs/outreach/`.)
+accuracy audit + DEEP audit + security & code-quality batch + Phase G
+(G1+G2+G3+G4 multi-year) all complete. **ZERO documented federal or
+state engine gaps remain** (all 10 K-list + all 4 G-list closed
+end-to-end during 2026-05-23 → 2026-05-26). CPA design-partner
+outreach packet (C11) drafted in `docs/outreach/`.)
 
-1. **Session 1 (closed 2026-05-26):** ALL federal K-list gaps (K1-K10
-   inclusive of K1 MFJ sub-gap and K10 state-SS sub-gap) and ALL state
-   gaps (G1 NYC EITC, G2 MN CTC, G4 WA LTCG, G5 CA AMT) closed and
-   deployed. ZERO documented gaps remain. C11 outreach packet drafted.
-2. **Session 2 (now next) — recommended: Phase G1 Planning Detector.**
-   Build the 10-rule deterministic opportunity detector + the "Planning"
-   tab per client. This flips TaxFlow from "data-keying tool" to
-   "revenue-generating advisory tool" and is the strongest single
-   differentiator for the C11 outreach pitch. ~2 weeks. Demoable end
-   of week 1 with 3–5 rules.
+1. **Session N (now next) — recommended: Phase G5 Pro tier feature
+   flag (~1 day minimal).** Module is currently visible to all clients;
+   gate the Planning tab + dashboard widget + new multi-year section
+   behind a `proTierEnabled` boolean (env or per-firm column on the
+   firms table once D15 exists). Show "Upgrade to Pro" CTA when off.
+   Defer Stripe to D18. This is the last piece of Phase G as
+   originally scoped.
 
-   Alternative if a paid design partner is committed first: Phase D15
-   (CPA-firm multi-tenancy auth) — required before charging real money.
+2. **Session N+1 — CPA design-partner outreach (C11).** No code.
+   Strongest pitch position to date: zero documented engine gaps +
+   complete planning module (10 G1 rules + 5 G4 multi-year detectors +
+   AI memo + hit list) + 88 seed clients demo'ing $145k+ in surfaced
+   opportunities. Pair `docs/outreach/cold-email.md` with a screen
+   record of the Planning tab on a high-value archetype like
+   `edge-big-ltcg` (G4.1 with $93k headline savings).
 
-3. **Session 3:** Phase G2 (CPA hit list + composite scoring) +
-   Phase G3 (AI synthesis layer). Together with G1 these make a
-   complete planning-tier product (~3 weeks total). Sets up the Pro
-   tier pricing.
+3. **Session N+2:** Phase D15 (CPA-firm multi-tenancy auth) once a paid
+   design partner is committed. 2-3 weeks. Required before charging
+   real money. Wires actorUserId into audit_log (column already exists,
+   nullable).
 
-4. **Session 4+:** Phase D (multi-tenancy / encryption / billing) once
-   a paid design partner is signed. Engine completeness pass for
-   reactive items (charitable carryforward, AMT credit carryforward,
-   §179, 1099-R penalty, part-year residency, other local taxes) only
-   when a customer asks.
+4. **Session N+3+:** Phase E reactive items as customers request
+   (charitable carryforward, AMT credit carryforward, §179, 1099-R
+   penalty, part-year residency, other local taxes). Phase D16-D19
+   (soft-delete, S3 encryption, Stripe, SOC 2) on a real customer's
+   schedule.
 
 Hold Phase D until a paid design partner is committed. Phase E and
-Phase 5 are reactive. Phase G is the recommended next active build.
+Phase 5 are reactive. Phase G is now complete (G1+G2+G3+G4); only G5
+Pro-tier flag remains as a "before pricing rollout" gate.
 
 ---
 
