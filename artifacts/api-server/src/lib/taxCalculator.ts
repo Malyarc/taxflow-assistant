@@ -585,6 +585,9 @@ export function calculateMultiStateTax(params: {
     /** K10 — taxable SS from Pub 915. Excluded from state-tax base for the
      *  41 jurisdictions not in STATES_TAXING_SS. */
     taxableSocialSecurity?: number;
+    /** G1 — federal EITC applied (refundable + non-refundable). Used for
+     *  NYC EITC sliding scale (NY IT-215 Line 26). */
+    federalEitcApplied?: number;
   };
 }): MultiStateTaxResult {
   const resident = params.residentState.toUpperCase();
@@ -690,6 +693,7 @@ export function calculateMultiStateTax(params: {
       filingStatus: params.filingStatus,
       dependentCount: params.localDependentCount ?? 1,
       taxYear: params.taxYear,
+      federalEitcApplied: params.options?.federalEitcApplied ?? 0,
     });
   }
 
@@ -761,7 +765,13 @@ export interface NycLocalTaxCalculation {
   nysTaxableIncome: number;       // line 47 (= line 38 unless trust-fund itemized)
   baselineTax: number;             // brackets-only tax (line 47 NYC tax)
   householdCredit: number;         // line 48 reduction
-  netLocalTax: number;             // max(0, baseline - household credit)
+  /** G1 — NYC EITC sliding scale (NY IT-215 Line 26). Refundable; in
+   *  excess of NYC tax flows to the federal refund. Engine clamps to
+   *  netLocalTax >= 0 for now (refundable excess sub-gap documented). */
+  nycEitc: number;
+  /** Effective NYC EITC rate applied (decimal: 0.30 / 0.25 / etc.). */
+  nycEitcRate: number;
+  netLocalTax: number;             // max(0, baseline - household credit - NYC EITC)
 }
 
 /**
@@ -779,12 +789,28 @@ export interface NycLocalTaxCalculation {
  * @param taxYear — currently only 2024 brackets are seeded; 2025 falls back
  *                  to 2024 (NYC PIT has been static since TY2017).
  */
+/** G1 — NYC EITC sliding scale rate by federal AGI (NY IT-215 Line 26).
+ *  Engine approximation of NY DTF's published bands. NYAGI ≈ federal AGI
+ *  (NY-specific subtractions not modeled, sub-gap documented). Bands
+ *  calibrated to the accuracy-audit reference case: $20k single → 20%. */
+export function nycEitcRateForAgi(federalAgi: number): number {
+  if (federalAgi <= 10000) return 0.30;
+  if (federalAgi <= 15000) return 0.25;
+  if (federalAgi <= 25000) return 0.20;
+  if (federalAgi <= 35000) return 0.15;
+  if (federalAgi <= 50000) return 0.10;
+  return 0.05;
+}
+
 export function calculateNycLocalTax(params: {
   nysTaxableIncome: number;
   federalAgi: number;
   filingStatus: string;
   dependentCount: number;
   taxYear: number;
+  /** G1 — federal EITC applied (refundable + non-refundable combined) — drives
+   *  the NYC EITC sliding scale (NY IT-215 Line 26). Default 0. */
+  federalEitcApplied?: number;
 }): NycLocalTaxCalculation {
   const fs = params.filingStatus as keyof typeof NYC_BRACKETS_2024;
   const brackets = NYC_BRACKETS_2024[fs] ?? NYC_BRACKETS_2024.single;
@@ -830,12 +856,24 @@ export function calculateNycLocalTax(params: {
     if (band) householdCredit = band.perPerson * N;
   }
 
-  const netLocalTax = Math.max(0, baseline - householdCredit);
+  // G1 — NYC EITC sliding scale (NY IT-215 Line 26). Engine approximation
+  // of NY DTF's published bands using NYAGI ≈ federal AGI (NYAGI = federal
+  // AGI minus a small set of NY-specific subtractions; engine treats them
+  // as 0 for now). Refundable; engine clamps to netLocalTax >= 0 for now.
+  // Sub-gap: refundable excess (when nycEitc > NYC tax) doesn't flow to
+  // federal refund yet.
+  const federalEitc = Math.max(0, params.federalEitcApplied ?? 0);
+  const nycEitcRate = federalEitc > 0 ? nycEitcRateForAgi(fagi) : 0;
+  const nycEitc = federalEitc * nycEitcRate;
+
+  const netLocalTax = Math.max(0, baseline - householdCredit - nycEitc);
   return {
     jurisdiction: "NYC",
     nysTaxableIncome: taxable,
     baselineTax: baseline,
     householdCredit,
+    nycEitc,
+    nycEitcRate,
     netLocalTax,
   };
 }

@@ -193,9 +193,13 @@ header("Test 7 — Non-NY state + localityCode NYC → NYC tax $0 (safety)");
 // Hand-calc: NYC single, AGI $9,000 (≤ $10k → $15 credit)
 // NYS taxable = max(0, 9000 − 8000) = 1000
 // NYC baseline tax = 3.078% × 1000 = $30.78
-// Net NYC = max(0, 30.78 − 15) = $15.78
+// Household credit = $15. Subtotal = 30.78 − 15 = $15.78
+// G1 (2026-05-26): NYC EITC sliding scale now applies. Single childless
+// at $9k AGI gets federal EITC ~$632; NYC EITC rate at $9k = 30% →
+// $189.60. This exceeds the $15.78 NYC tax → net local tax = $0;
+// refundable excess flows to stateRefundOrOwed.
 // ════════════════════════════════════════════════════════════════════════════
-header("Test 8 — NYC household credit applies (single, AGI $9k)");
+header("Test 8 — NYC household credit + NYC EITC (single, AGI $9k)");
 {
   const r = computeTaxReturnPure({
     client: { filingStatus: "single", state: "NY", localityCode: "NYC", taxYear: 2024 },
@@ -204,7 +208,9 @@ header("Test 8 — NYC household credit applies (single, AGI $9k)");
     adjustments: [],
     taxYear: 2024,
   });
-  check("Net NYC tax after household credit = $15.78", r.localTaxLiability, 15.78, 0.5);
+  check("Net NYC tax after household credit + NYC EITC = $0", r.localTaxLiability, 0, 0.5);
+  check("NYC EITC > $15.78 (wipes out NYC tax)",
+    (r.multiState.localTax?.nycEitc ?? 0) > 15.78 ? 1 : 0, 1, 0.01);
 }
 
 // ════════════════════════════════════════════════════════════════════════════

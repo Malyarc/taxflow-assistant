@@ -1181,27 +1181,27 @@ header("F15. IL single $60k with $2,775 exemption → $2,832.64");
 // "documented gap, not a regression."
 section("G. DOCUMENTED LIMITATIONS — known-failure tests (intentional)");
 
-// G1. NYC EITC sliding scale — NYC residents get a city-EITC credit that
-// varies by NYAGI (30/25/20/15/10% of federal EITC). The engine models NY
-// STATE EITC at 30% flat (correct for state) but does NOT add the
-// additional NYC EITC. Per NY IT-215 Instructions.
-header("G1. NYC EITC sliding scale (NOT modeled — confirmed gap)");
+// G1. NYC EITC sliding scale (NY IT-215 Line 26).  CLOSED 2026-05-26.
+// NYC residents get a city-EITC credit on TOP of the NY state EITC 30%
+// piggyback. The credit is a sliding scale of federal EITC based on NYAGI.
+// Engine bands (calibrated): ≤$10k 30%, ≤$15k 25%, ≤$25k 20%, ≤$35k 15%,
+// ≤$50k 10%, >$50k 5%.
+header("G1. NYC EITC sliding scale — CLOSED");
 {
-  // Single $20k NYC, 2 kids → fed EITC ~$6,960. NYAGI $20k = 20% NYC EITC ≈ $1,392.
+  // Single $20k NYC, 2 kids → fed EITC ~$6,960. NYAGI $20k = 20% NYC EITC.
   const r = run({
     client: { filingStatus: "single", state: "NY", taxYear: 2024,
               localityCode: "NYC", dependentsUnder17: 2 },
     w2s: [{ taxYear: 2024, wagesBox1: 20000, stateCode: "NY" }],
   });
   const fedEitc = r.eitc.appliedCredit;
-  const stateEitc = r.stateEitc?.credit ?? 0;
-  // Expected NYC EITC = ~$1,392 at this NYAGI tier (20%). State EITC at 30% is
-  // separate and IS modeled. The gap is NYC-specific (not reflected anywhere).
-  FAIL.push({
-    category: "G1-expected", label: `NYC-specific EITC ~$${(fedEitc * 0.20).toFixed(0)} not credited (state EITC $${stateEitc.toFixed(0)} IS modeled at 30%)`,
-    expected: fedEitc * 0.20, actual: 0,
-    source: "NY IT-215 — NYC EITC sliding scale 30/25/20/15/10% of federal by NYAGI",
-  });
+  const expectedNycEitc = fedEitc * 0.20;
+  // multiState.localTax.nycEitc should equal expectedNycEitc.
+  check("G1", `NYC EITC = $${expectedNycEitc.toFixed(0)} (20% of fed EITC at $20k NYAGI)`,
+    r.multiState.localTax?.nycEitc ?? 0, expectedNycEitc, 5,
+    "NY IT-215 Line 26");
+  check("G1", "NYC EITC rate = 20% at NYAGI $20k",
+    r.multiState.localTax?.nycEitcRate ?? 0, 0.20, 0.001);
 }
 
 // G2. MN $1,750/child refundable CTC — independent of MN WFC.

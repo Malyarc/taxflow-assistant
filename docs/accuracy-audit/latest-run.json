@@ -1,17 +1,10 @@
 {
-  "generatedAt": "2026-05-26T07:46:12.795Z",
-  "pass": 86,
+  "generatedAt": "2026-05-26T07:51:53.301Z",
+  "pass": 88,
   "realFailures": 0,
-  "documentedGaps": 4,
+  "documentedGaps": 3,
   "failures": [],
   "gaps": [
-    {
-      "category": "G1-expected",
-      "label": "NYC-specific EITC ~$1392 not credited (state EITC $2088 IS modeled at 30%)",
-      "expected": 1392,
-      "actual": 0,
-      "source": "NY IT-215 — NYC EITC sliding scale 30/25/20/15/10% of federal by NYAGI"
-    },
     {
       "category": "G2-expected",
       "label": "MN CTC $3,500 not credited (only WFC $2204 modeled)",

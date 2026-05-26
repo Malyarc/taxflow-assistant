@@ -34,6 +34,7 @@ import {
   calculateFederalTaxWithCapitalGains,
   calculateScheduleA,
   calculateEitc,
+  nycEitcRateForAgi,
   calculateEducationCredits,
   calculateRetirementDeductions,
   calculateSaversCredit,
@@ -1614,6 +1615,28 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     taxYear,
   });
 
+  // G1 — NYC EITC sliding scale (NY IT-215 Line 26). Refundable; applied
+  // against NYC local tax. Excess refundable portion (when NYC EITC > NYC
+  // tax) flows to stateRefundOrOwed alongside state EITC.
+  let nycEitcCredit = 0;
+  let nycEitcRate = 0;
+  let nycEitcRefundableExcess = 0;
+  let localTaxLiabilityAfterNycEitc = localTaxLiability;
+  if (multiState.localTax && eitc.appliedCredit > 0) {
+    nycEitcRate = nycEitcRateForAgi(calc.adjustedGrossIncome);
+    nycEitcCredit = eitc.appliedCredit * nycEitcRate;
+    if (nycEitcCredit > localTaxLiability) {
+      nycEitcRefundableExcess = nycEitcCredit - localTaxLiability;
+      localTaxLiabilityAfterNycEitc = 0;
+    } else {
+      localTaxLiabilityAfterNycEitc = localTaxLiability - nycEitcCredit;
+    }
+    // Reflect on the multiState.localTax breakdown for transparency.
+    multiState.localTax.nycEitc = nycEitcCredit;
+    multiState.localTax.nycEitcRate = nycEitcRate;
+    multiState.localTax.netLocalTax = localTaxLiabilityAfterNycEitc;
+  }
+
   const acaHouseholdSizeDefault =
     1 +
     (isMfj ? 1 : 0) +
@@ -1678,7 +1701,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   });
 
   // State EITC is refundable — adds to the state refund (or reduces the owed).
-  const stateRefundOrOwed = totalStateWithheld - stateTaxLiability + stateEitc.credit;
+  // G1 — refundable NYC EITC excess (when NYC EITC > NYC tax) flows to
+  // the state-side refund. State EITC also goes here.
+  const stateRefundOrOwed = totalStateWithheld - stateTaxLiability + stateEitc.credit + nycEitcRefundableExcess;
 
   const totalTaxBurden = totalFederalLiabilityWithRepayment + stateTaxLiability - stateEitc.credit;
   const effectiveRate = calc.totalIncome > 0 ? totalTaxBurden / calc.totalIncome : 0;
@@ -1759,7 +1784,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     scheduleERentalAppliedToAgi: rentalNetAppliedToAgi,
     passiveActivityLoss: passiveLossAllowance,
     scheduleEPassiveLossSuspended: passiveLossAllowance?.suspendedToNextYear ?? 0,
-    localTaxLiability,
+    localTaxLiability: localTaxLiabilityAfterNycEitc,
     localTaxJurisdiction: multiState.localTax ? multiState.localTax.jurisdiction : null,
     scheduleK1: {
       k1Count: k1sForYear.length,
