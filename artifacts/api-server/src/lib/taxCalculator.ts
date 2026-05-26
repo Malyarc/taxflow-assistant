@@ -588,6 +588,9 @@ export function calculateMultiStateTax(params: {
     /** G1 — federal EITC applied (refundable + non-refundable). Used for
      *  NYC EITC sliding scale (NY IT-215 Line 26). */
     federalEitcApplied?: number;
+    /** G4 — long-term capital gains for WA 7% LTCG excise tax (RCW 82.87).
+     *  Only applied when resident state is WA. */
+    longTermCapitalGains?: number;
   };
 }): MultiStateTaxResult {
   const resident = params.residentState.toUpperCase();
@@ -664,7 +667,21 @@ export function calculateMultiStateTax(params: {
     residentCreditCap = proRataResidentTax;
   }
   const residentCreditApplied = Math.min(totalNrTax, residentCreditCap);
-  const residentStateTax = Math.max(0, residentTaxFull - residentCreditApplied);
+  let residentStateTax = Math.max(0, residentTaxFull - residentCreditApplied);
+
+  // G4 — WA 7% LTCG excise (RCW 82.87). WA has no PIT but levies a 7%
+  // excise on long-term capital gains above the indexed threshold
+  // ($262,000 TY2024). Engine applies only when resident state is WA.
+  // Threshold is per-filer (single + MFJ share the same $262k threshold;
+  // each MFS spouse gets their own — engine treats MFJ as the single-
+  // threshold case per WA DOR clarification).
+  if (resident === "WA") {
+    const ltcg = Math.max(0, params.options?.longTermCapitalGains ?? 0);
+    const waLtcgThreshold = 262000; // TY2024 indexed; TY2025 ≈ $270k (not yet
+    // confirmed; engine treats both years the same as TY2024).
+    const waLtcgExcise = Math.max(0, ltcg - waLtcgThreshold) * 0.07;
+    residentStateTax += waLtcgExcise;
+  }
 
   // ── Local jurisdiction (NYC) ────────────────────────────────────────────
   // Only computed when resident state is NY AND localityCode is "NYC". The

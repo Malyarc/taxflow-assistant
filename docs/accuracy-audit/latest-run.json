@@ -1,17 +1,10 @@
 {
-  "generatedAt": "2026-05-26T07:55:29.518Z",
-  "pass": 92,
+  "generatedAt": "2026-05-26T07:57:18.742Z",
+  "pass": 95,
   "realFailures": 0,
-  "documentedGaps": 2,
+  "documentedGaps": 1,
   "failures": [],
   "gaps": [
-    {
-      "category": "G4-expected",
-      "label": "WA LTCG excise $51,660 not modeled (state tax stayed at $0)",
-      "expected": 51660,
-      "actual": 0,
-      "source": "WA RCW 82.87 + DOR — 7% LTCG excise > $262k indexed (TY2024)"
-    },
     {
       "category": "G5-expected",
       "label": "CA AMT ~$10,860 on high AMTI not modeled (engine state tax = $14627)",

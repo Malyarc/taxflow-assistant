@@ -1253,20 +1253,34 @@ header("G3. MA millionaire surtax (VERIFIED modeled — pass-through)");
     "MA Form 1 (2024) Ch. 50 Acts 2023 surtax");
 }
 
-// G4. WA 7% LTCG excise above $262k threshold. NOT modeled.
-header("G4. WA 7% LTCG excise above $262k (NOT modeled — confirmed gap)");
+// G4. WA 7% LTCG excise (RCW 82.87).  CLOSED 2026-05-26.
+// WA has no income tax but levies 7% excise on LTCG > $262,000 (TY2024).
+// Engine applies only for WA residents; stateTaxLiability reflects the excise.
+header("G4. WA 7% LTCG excise above $262k — CLOSED");
 {
+  // G4a — single WA $1M LTCG → (1M - 262k) × 7% = $51,660.
   const r = run({
     client: { filingStatus: "single", state: "WA", taxYear: 2024 },
     form1099s: [{ taxYear: 2024, formType: "b", payerName: "X", longTermGainLoss: 1000000 }],
   });
-  // Expected WA excise = (1,000,000 − 262,000) × 7% = $51,660. WA has no PIT, so
-  // r.stateTaxLiability is 0; the excise should be a separate line we don't have.
-  FAIL.push({
-    category: "G4-expected", label: `WA LTCG excise $51,660 not modeled (state tax stayed at $${r.stateTaxLiability.toFixed(0)})`,
-    expected: 51660, actual: r.stateTaxLiability,
-    source: "WA RCW 82.87 + DOR — 7% LTCG excise > $262k indexed (TY2024)",
+  check("G4a", "Single WA $1M LTCG → state tax $51,660 (7% × $738k)",
+    r.stateTaxLiability, 51660, 1, "WA RCW 82.87");
+
+  // G4b — under threshold. Single WA $200k LTCG → no excise.
+  const r2 = run({
+    client: { filingStatus: "single", state: "WA", taxYear: 2024 },
+    form1099s: [{ taxYear: 2024, formType: "b", payerName: "X", longTermGainLoss: 200000 }],
   });
+  check("G4b", "Single WA $200k LTCG (under $262k threshold) → state tax $0",
+    r2.stateTaxLiability, 0, 0.01, "WA threshold");
+
+  // G4c — non-WA state with high LTCG → excise NOT applied.
+  const r3 = run({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    form1099s: [{ taxYear: 2024, formType: "b", payerName: "X", longTermGainLoss: 1000000 }],
+  });
+  check("G4c", "Non-WA filer with $1M LTCG → state tax $0 (excise WA-only)",
+    r3.stateTaxLiability, 0, 0.01, "Excise is WA-resident-only");
 }
 
 // G5. CA AMT (Schedule P 540) 7% flat — NOT modeled.

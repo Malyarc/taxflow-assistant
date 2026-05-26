@@ -1489,6 +1489,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
       // states (CO/CT/KS/MN/MT/NM/RI/UT/VT), federal AGI inherently
       // includes taxable SS and the state tax base inherits it.
       taxableSocialSecurity,
+      // G4 — WA 7% LTCG excise (RCW 82.87). Only applied when resident
+      // state is WA. Threshold = $262k TY2024.
+      longTermCapitalGains: ltcgPreferential,
     },
   });
   // State + local: state tax is reported separately; local (NYC) is its own line.
