@@ -242,6 +242,19 @@ async function synthesizePriorYearCarryforwards(
     });
   }
 
+  // E2 — Form 8801 minimum-tax credit carryforward (IRC §53). Synthesize
+  // the prior-year ending balance as a current-year input adjustment.
+  // Engine applies it against the spread between regular tax and tentative
+  // minimum tax (when AMT doesn't bind this year).
+  const amtCreditCarry = Number(priorReturn.amtCreditCarryforwardRemaining ?? 0);
+  if (amtCreditCarry > 0 && !hasManualOverride("amt_credit_carryforward")) {
+    synthetic.push({
+      adjustmentType: "amt_credit_carryforward",
+      amount: amtCreditCarry,
+      isApplied: true,
+    });
+  }
+
   return synthetic;
 }
 
@@ -315,6 +328,9 @@ export async function recalculateAndUpsertTaxReturn(
     feieTotalExclusion: String(result.feie.totalExclusion),
     nolDeduction: String(result.nolDeduction),
     nolCarryforwardRemaining: String(result.nolCarryforwardRemaining),
+    amtCreditApplied: String(result.amtCreditApplied),
+    amtCreditGenerated: String(result.amtCreditGenerated),
+    amtCreditCarryforwardRemaining: String(result.amtCreditCarryforwardRemaining),
     qsbsGrossGain: String(result.qsbsGrossGain),
     qsbsSection1202Exclusion: String(result.qsbsSection1202Exclusion),
     qsbsTaxableGain: String(result.qsbsTaxableGain),

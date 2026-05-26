@@ -119,6 +119,141 @@ header("E1-1 — CA $300k (sanity check IL cliff doesn't bleed into CA)");
 }
 
 // ============================================================================
+// E2 — AMT credit carryforward (Form 8801 / IRC §53)
+// Year A: AMT generated; credit carries forward.
+// Year B: AMT doesn't bind → carryforward applies against spread between
+//         regular tax and tentative minimum tax (TMT = regularTax + amtTax).
+// ============================================================================
+section("E2 — AMT credit carryforward (Form 8801, IRC §53)");
+
+// --- E2+1: Year A — single TY2024 W-2 $300k + ISO bargain $200k → AMT generated ---
+// Hand-calc: Engine computes the AMT in this scenario; we verify
+//   (a) amtTax > 0 (the AMT actually fires)
+//   (b) amtCreditGenerated equals amtTax (simplified §53(b) model)
+//   (c) amtCreditApplied = 0 (no carryforward in; nothing to apply)
+//   (d) amtCreditCarryforwardRemaining = amtTax (rolls to next year)
+header("E2+1 — Year A: AMT fires, no prior carryforward, generates credit");
+{
+  const computed = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "TX", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 300000, federalTaxWithheldBox2: 50000, stateCode: "TX" }],
+    form1099s: [],
+    adjustments: [
+      { adjustmentType: "amt_iso_bargain_element", amount: 200000, isApplied: true },
+    ],
+    taxYear: 2024,
+  });
+  checkTruthy("E2+1", "AMT fires", computed.amtTax > 0, true, "ISO bargain $200k drives AMT");
+  check("E2+1", "amtCreditGenerated = amtTax", computed.amtCreditGenerated, computed.amtTax, 1);
+  check("E2+1", "amtCreditApplied = 0 (no carryforward)", computed.amtCreditApplied, 0, 1);
+  check("E2+1", "amtCreditCarryforwardRemaining = amtTax", computed.amtCreditCarryforwardRemaining, computed.amtTax, 1);
+}
+
+// --- E2+2: Year B — same client TY2024 but with $30k carryforward from prior year ---
+// Hand-calc: Same ISO scenario. AMT binds again this year. The §53(c)
+// limit (regularTax - TMT) is 0 when AMT binds, so amtCreditApplied = 0.
+// The new amtTax adds to the carryforward.
+header("E2+2 — Year B: AMT still binds + $30k carryforward in, no credit applied (TMT > regular)");
+{
+  const computed = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "TX", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 300000, federalTaxWithheldBox2: 50000, stateCode: "TX" }],
+    form1099s: [],
+    adjustments: [
+      { adjustmentType: "amt_iso_bargain_element", amount: 200000, isApplied: true },
+      { adjustmentType: "amt_credit_carryforward", amount: 30000, isApplied: true },
+    ],
+    taxYear: 2024,
+  });
+  checkTruthy("E2+2", "AMT fires", computed.amtTax > 0, true);
+  check("E2+2", "amtCreditApplied = 0 (AMT binds)", computed.amtCreditApplied, 0, 1,
+    "§53(c): credit applies only down to TMT; when AMT binds, regular tax < TMT");
+  // Carryforward out = 30000 (in) + new amtTax - 0 (applied)
+  check("E2+2", "carryforward out = $30k + new amtTax",
+    computed.amtCreditCarryforwardRemaining,
+    30000 + computed.amtTax, 1);
+}
+
+// --- E2+3: Year B alt — same client but no ISO this year + $30k carryforward applies ---
+// Hand-calc: Without the ISO bargain, AMT doesn't bind. The spread
+// (regularTax - TMT) is positive, so the carryforward can apply.
+// W-2 $300k single TY2024:
+//   AGI = $300,000
+//   Taxable = $300,000 - $14,600 = $285,400
+//   Regular tax (Single 2024 brackets):
+//     10% × $11,600 = $1,160
+//     12% × ($47,150 - $11,600) = $4,266
+//     22% × ($100,525 - $47,150) = $11,742.50
+//     24% × ($191,950 - $100,525) = $21,942.00
+//     32% × ($243,725 - $191,950) = $16,568.00
+//     35% × ($285,400 - $243,725) = $14,586.25
+//   Sum = $70,264.75
+//   AMTI (no preferences) = taxable = $285,400 (per current engine model)
+//   AMT exemption 2024 single = $85,700, phase-out begins $609,350 → no phase
+//   AMT base = $285,400 - $85,700 = $199,700
+//   AMT @ 26% = $51,922.00 (under $232,600 breakpoint)
+//   TMT = $51,922 < regular $70,264.75 → AMT doesn't bind, amtTax = 0
+//   Spread (regularTax - TMT) = $70,264.75 - $51,922.00 = $18,342.75
+//   amtCreditApplied = min($30,000, $18,342.75, availableForNonRefundable)
+//     ≈ $18,342.75 (assuming sufficient non-refundable headroom)
+//   Carryforward out = $30,000 + 0 (generated) - $18,342.75 ≈ $11,657.25
+header("E2+3 — Year B alt: No ISO this year, $30k cf applies up to TMT spread");
+{
+  const computed = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "TX", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 300000, federalTaxWithheldBox2: 50000, stateCode: "TX" }],
+    form1099s: [],
+    adjustments: [
+      { adjustmentType: "amt_credit_carryforward", amount: 30000, isApplied: true },
+    ],
+    taxYear: 2024,
+  });
+  check("E2+3", "amtTax = 0 (AMT doesn't bind)", computed.amtTax, 0, 1);
+  check("E2+3", "amtCreditApplied ≈ $18,343",
+    computed.amtCreditApplied, 18342.75, 5,
+    "min(cf, regularTax - TMT) = min(30000, 70264.75 - 51922.00)");
+  // Carryforward out = $30,000 - $18,342.75 = $11,657.25 (no new AMT generated)
+  check("E2+3", "carryforward out ≈ $11,657",
+    computed.amtCreditCarryforwardRemaining, 11657.25, 5);
+  check("E2+3", "amtCreditGenerated = 0", computed.amtCreditGenerated, 0, 1);
+}
+
+// --- E2-1: No carryforward + no AMT → all values zero ---
+header("E2-1 — Normal W-2 client, no carryforward, no AMT");
+{
+  const computed = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "TX", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 60000, federalTaxWithheldBox2: 7000, stateCode: "TX" }],
+    form1099s: [],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  check("E2-1", "amtTax = 0", computed.amtTax, 0, 1);
+  check("E2-1", "amtCreditApplied = 0", computed.amtCreditApplied, 0, 1);
+  check("E2-1", "amtCreditGenerated = 0", computed.amtCreditGenerated, 0, 1);
+  check("E2-1", "amtCreditCarryforwardRemaining = 0", computed.amtCreditCarryforwardRemaining, 0, 1);
+}
+
+// --- E2 boundary: Carryforward larger than applicable spread ---
+// Hand-calc: Same as E2+3 but cf = $100,000 (way more than spread).
+// Applied = $18,342.75 (capped by spread); carryforward out = $100k - $18,343 ≈ $81,657
+header("E2 boundary — Large carryforward $100k, only $18,343 applied (spread cap binds)");
+{
+  const computed = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "TX", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 300000, federalTaxWithheldBox2: 50000, stateCode: "TX" }],
+    form1099s: [],
+    adjustments: [
+      { adjustmentType: "amt_credit_carryforward", amount: 100000, isApplied: true },
+    ],
+    taxYear: 2024,
+  });
+  check("E2±", "amtCreditApplied capped by spread", computed.amtCreditApplied, 18342.75, 5);
+  check("E2±", "remaining carryforward = $100k - $18,343",
+    computed.amtCreditCarryforwardRemaining, 81657.25, 5);
+}
+
+// ============================================================================
 // Report
 // ============================================================================
 console.log("\n========== RESULTS ==========");

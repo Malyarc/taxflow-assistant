@@ -52,6 +52,22 @@ export const taxReturnsTable = pgTable(
     nolDeduction: numeric("nol_deduction", { precision: 14, scale: 2 }),
     /** K4 — Unused NOL carryforward for next tax year. */
     nolCarryforwardRemaining: numeric("nol_carryforward_remaining", { precision: 14, scale: 2 }),
+    /**
+     * E2 — Form 8801 AMT credit carryforward (IRC §53). Unused minimum-tax
+     * credit at end of this year, carried to next year. Auto-loaded in the
+     * pipeline as a synthetic `amt_credit_carryforward` adjustment.
+     */
+    amtCreditCarryforwardRemaining: numeric("amt_credit_carryforward_remaining", { precision: 14, scale: 2 }),
+    /** E2 — Form 8801 minimum-tax credit applied against regular tax this year. */
+    amtCreditApplied: numeric("amt_credit_applied", { precision: 14, scale: 2 }),
+    /**
+     * E2 — Form 8801 minimum-tax credit generated this year (IRC §53(b)).
+     * Simplified model: equals `amtTax` (treats all AMT as deferral). CPA can
+     * override the carryforward directly via the `amt_credit_carryforward`
+     * adjustment for unusual cases where AMT was driven by exclusion items
+     * (state-tax preference only, etc.) that don't generate credit.
+     */
+    amtCreditGenerated: numeric("amt_credit_generated", { precision: 14, scale: 2 }),
     /** K7 — §1202 QSBS gross gain (gross long-term capital gain on QSBS sale). */
     qsbsGrossGain: numeric("qsbs_gross_gain", { precision: 14, scale: 2 }),
     /** K7 — §1202 excluded amount. */
