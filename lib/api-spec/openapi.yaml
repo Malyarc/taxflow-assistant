@@ -1248,6 +1248,9 @@ components:
         parentsTopMarginalRate:
           type: ["number", "null"]
           description: K8 — parent's top marginal rate (decimal, e.g. 0.32) used in Form 8615 for the kiddie tax computation.
+        priorYearItemized:
+          type: ["boolean", "null"]
+          description: E6 — Pub 525 tax-benefit rule. true when prior year itemized (Sched A > std ded) → state refund federal-taxable. Null = pipeline auto-derives from prior tax_returns row.
         notes:
           type: ["string", "null"]
         createdAt:
@@ -1321,6 +1324,9 @@ components:
         parentsTopMarginalRate:
           type: ["number", "null"]
           description: Parent's top marginal rate (0.10–0.37) for Form 8615 computation when isKiddieTaxFiler = true.
+        priorYearItemized:
+          type: ["boolean", "null"]
+          description: E6 — Pub 525 tax-benefit rule. true when prior year itemized → state refund federal-taxable. Null = pipeline auto-derives.
         notes:
           type: ["string", "null"]
 
@@ -1387,6 +1393,9 @@ components:
         parentsTopMarginalRate:
           type: ["number", "null"]
           description: Parent's top marginal rate (0.10–0.37) for Form 8615 computation when isKiddieTaxFiler = true.
+        priorYearItemized:
+          type: ["boolean", "null"]
+          description: E6 — Pub 525 tax-benefit rule. true when prior year itemized → state refund federal-taxable. Null = pipeline auto-derives.
         notes:
           type: ["string", "null"]
 

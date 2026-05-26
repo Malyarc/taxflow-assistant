@@ -134,6 +134,18 @@ export interface ClientFacts {
   isKiddieTaxFiler?: boolean | null;
   /** K8 — Parent's top marginal rate (decimal: 0.10/0.12/0.22/0.24/0.32/0.35/0.37). */
   parentsTopMarginalRate?: Numish;
+  /**
+   * E6 — Pub 525 tax-benefit rule for 1099-G state refund.
+   * When true, the prior year's return itemized (Sched A > std ded) so
+   * any state refund this year is federal-taxable. When false/null, the
+   * client used the standard deduction last year and state refunds are
+   * excluded from this year's federal taxable income.
+   *
+   * Pipeline auto-derives this from prior-year tax_returns row (itemized
+   * deductions present + > std ded). Treats null as "default exclusion"
+   * (tax-friendly) when no prior-year data is available.
+   */
+  priorYearItemized?: boolean | null;
 }
 
 export interface W2Fact {
@@ -339,8 +351,14 @@ export interface Form1099Summary {
   shortTermCapitalGains: number;
   /** Retirement income (1099-R taxable amount) */
   retirementIncome: number;
+  /** E5 — IRC §72(t) early-withdrawal penalty (10% on code "1", 25% on code "S"). Added to total federal liability on Sched 2 Line 8. */
+  earlyWithdrawalPenalty: number;
   /** Unemployment + state refund (1099-G) */
   unemploymentIncome: number;
+  /** E6 — 1099-G Box 1 only (unemployment comp). IRC §85 fully federal-taxable. */
+  unemploymentCompensationOnly: number;
+  /** E6 — 1099-G Box 2 only (state/local refund). Pub 525 tax-benefit rule applies. */
+  stateLocalRefundOnly: number;
   /** 1099-K gross payment (treated as additional income unless adjusted) */
   paymentCardIncome: number;
   /** 1099-MISC: rents + royalties + other income */
@@ -402,10 +420,46 @@ export function summarize1099s(records: Form1099Fact[]): Form1099Summary {
     (s, r) => s + toNum(r.taxableAmount ?? r.grossDistribution),
     0,
   );
-  const unemploymentIncome = gRecords.reduce(
-    (s, r) => s + toNum(r.unemploymentCompensation) + toNum(r.stateLocalRefund),
-    0,
-  );
+
+  // E5 — IRC §72(t) Early-Withdrawal Additional Tax (Form 5329 / Sched 2 Line 8).
+  // 10% penalty applies on the TAXABLE portion of an early distribution
+  // (before age 59½). The distribution code (Box 7) determines penalty:
+  //   - "1": Early, no known exception → 10% penalty
+  //   - "S": SIMPLE IRA early w/in first 2 years → 25% penalty (IRC §72(t)(6))
+  //   - "2", "3", "4", "G", "7", "T", "Q", "H", "U", "M", "N", "R": no penalty
+  //   - Other / blank: conservatively no auto-penalty; CPA override via
+  //     adjustment.
+  // Note: trusts the code as reported on 1099-R Box 7. If client turned
+  // 59½ mid-year and broker should have re-coded but didn't, CPA fixes
+  // by editing the 1099-R record. We don't auto-derive from taxpayerAge —
+  // distribution-date is what matters, not year-end age.
+  let earlyWithdrawalPenalty = 0;
+  for (const r of rRecords) {
+    const code = ((r as { distributionCode?: string | null }).distributionCode ?? "").trim();
+    const taxable = toNum(r.taxableAmount ?? r.grossDistribution);
+    if (taxable <= 0) continue;
+    if (code === "1") {
+      earlyWithdrawalPenalty += taxable * 0.10;
+    } else if (code === "S") {
+      // SIMPLE IRA in first 2 years of participation: 25% (IRC §72(t)(6)).
+      earlyWithdrawalPenalty += taxable * 0.25;
+    }
+    // All other codes: 0 penalty. CPA can add a manual additional-tax
+    // adjustment for unusual scenarios (e.g., code 8 excess contribs).
+  }
+  // E6 — IRC §85 (unemployment fully federal-taxable) + Pub 525 tax-benefit
+  // rule for state refunds. We split the 1099-G fields here so the caller
+  // can apply the tax-benefit rule (state refund only taxable if prior year
+  // itemized). The two totals are summed downstream only if/when the rule
+  // confirms taxability.
+  const unemploymentCompensationOnly = gRecords.reduce(
+    (s, r) => s + toNum(r.unemploymentCompensation), 0);
+  const stateLocalRefundOnly = gRecords.reduce(
+    (s, r) => s + toNum(r.stateLocalRefund), 0);
+  // Backwards-compat: original `unemploymentIncome` field totals BOTH so
+  // existing call sites that don't apply the tax-benefit rule see the
+  // legacy behavior. Code that wants Pub 525 should use the split fields.
+  const unemploymentIncome = unemploymentCompensationOnly + stateLocalRefundOnly;
   const paymentCardIncome = kRecords.reduce((s, r) => s + toNum(r.grossPaymentAmount), 0);
   const miscIncome = miscRecords.reduce(
     (s, r) =>
@@ -486,7 +540,10 @@ export function summarize1099s(records: Form1099Fact[]): Form1099Summary {
     longTermCapitalGains,
     shortTermCapitalGains,
     retirementIncome,
+    earlyWithdrawalPenalty,
     unemploymentIncome,
+    unemploymentCompensationOnly,
+    stateLocalRefundOnly,
     paymentCardIncome,
     miscIncome,
     federalWithheld,
@@ -610,6 +667,12 @@ export interface ComputedTaxReturn {
    * Sum of (current-year excess + unused prior-year carryforward).
    */
   charitableCarryforwardCashRemaining: number;
+  /**
+   * E5 — IRC §72(t) early-withdrawal additional tax on the taxable portion
+   * of 1099-R distributions with Box 7 code "1" (10%) or "S" (25%).
+   * Added to total federal liability on Sched 2 Line 8.
+   */
+  earlyWithdrawalPenalty: number;
   /** K7 — §1202 QSBS gross gain on sale of qualifying stock. */
   qsbsGrossGain: number;
   /** K7 — §1202 excluded amount (capped at max($10M, 10×basis)). */
@@ -1201,6 +1264,20 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   //
   // QSBS: the post-exclusion taxable remainder of QSBS gain is added to
   // LTCG (via the LTCG netting variables) — not in ordinary income.
+  // E6 — Pub 525 tax-benefit rule (IRC §111). 1099-G state refund is only
+  // federal-taxable when prior year itemized (Sched A > std ded). Unemployment
+  // is always fully federal-taxable per IRC §85. Pipeline auto-derives the
+  // priorYearItemized flag from prior tax_returns row when available; in
+  // pure-function mode (no DB), CPAs explicitly set it on ClientFacts.
+  // Null/undefined defaults to false (tax-friendly: exclude state refund
+  // until evidence of prior itemization).
+  const priorYearItemized = client.priorYearItemized === true;
+  const taxableStateRefund = priorYearItemized
+    ? form1099Summary.stateLocalRefundOnly
+    : 0;
+  const taxableUnemploymentAndRefund =
+    form1099Summary.unemploymentCompensationOnly + taxableStateRefund;
+
   const ordinaryAdditionalIncomeBeforeRental =
     additionalIncome +
     additionalIncomeAdjustments +
@@ -1209,7 +1286,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     form1099Summary.interestIncome +
     form1099Summary.ordinaryDividends +
     form1099Summary.retirementIncome +
-    form1099Summary.unemploymentIncome +
+    taxableUnemploymentAndRefund +
     form1099Summary.paymentCardIncome +
     form1099Summary.miscIncome +
     ltcgPreferential +
@@ -1530,7 +1607,10 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   });
 
   const totalFederalLiability =
-    regularFederalTax + amt.amtTax + niit.niitTax + se.seTaxTotal + additionalMedicare.additionalMedicareTax;
+    regularFederalTax + amt.amtTax + niit.niitTax + se.seTaxTotal + additionalMedicare.additionalMedicareTax +
+    // E5 — IRC §72(t) early-withdrawal additional tax (Sched 2 Line 8).
+    // Not offset by non-refundable credits per §72(t) statute.
+    form1099Summary.earlyWithdrawalPenalty;
 
   // ── Step 7: Non-refundable credits in IRS Sched 3 order ──
   const incomeTaxOnly = regularFederalTax + amt.amtTax;
@@ -1828,6 +1908,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     amtCreditGenerated,
     amtCreditCarryforwardRemaining,
     charitableCarryforwardCashRemaining: scheduleA.charitableCarryforwardCashRemaining,
+    earlyWithdrawalPenalty: form1099Summary.earlyWithdrawalPenalty,
     qsbsGrossGain,
     qsbsSection1202Exclusion,
     qsbsTaxableGain,

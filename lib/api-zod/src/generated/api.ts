@@ -132,6 +132,12 @@ export const ListClientsResponseItem = zod.object({
     .describe(
       "K8 — parent's top marginal rate (decimal, e.g. 0.32) used in Form 8615 for the kiddie tax computation.",
     ),
+  priorYearItemized: zod
+    .boolean()
+    .nullish()
+    .describe(
+      "E6 — Pub 525 tax-benefit rule. true when prior year itemized (Sched A > std ded) → state refund federal-taxable. Null = pipeline auto-derives from prior tax_returns row.",
+    ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -194,6 +200,12 @@ export const CreateClientBody = zod.object({
     .nullish()
     .describe(
       "Parent's top marginal rate (0.10–0.37) for Form 8615 computation when isKiddieTaxFiler = true.",
+    ),
+  priorYearItemized: zod
+    .boolean()
+    .nullish()
+    .describe(
+      "E6 — Pub 525 tax-benefit rule. true when prior year itemized → state refund federal-taxable. Null = pipeline auto-derives.",
     ),
   notes: zod.string().nullish(),
 });
@@ -307,6 +319,12 @@ export const GetClientResponse = zod.object({
     .describe(
       "K8 — parent's top marginal rate (decimal, e.g. 0.32) used in Form 8615 for the kiddie tax computation.",
     ),
+  priorYearItemized: zod
+    .boolean()
+    .nullish()
+    .describe(
+      "E6 — Pub 525 tax-benefit rule. true when prior year itemized (Sched A > std ded) → state refund federal-taxable. Null = pipeline auto-derives from prior tax_returns row.",
+    ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -374,6 +392,12 @@ export const UpdateClientBody = zod.object({
     .nullish()
     .describe(
       "Parent's top marginal rate (0.10–0.37) for Form 8615 computation when isKiddieTaxFiler = true.",
+    ),
+  priorYearItemized: zod
+    .boolean()
+    .nullish()
+    .describe(
+      "E6 — Pub 525 tax-benefit rule. true when prior year itemized → state refund federal-taxable. Null = pipeline auto-derives.",
     ),
   notes: zod.string().nullish(),
 });
@@ -479,6 +503,12 @@ export const UpdateClientResponse = zod.object({
     .nullish()
     .describe(
       "K8 — parent's top marginal rate (decimal, e.g. 0.32) used in Form 8615 for the kiddie tax computation.",
+    ),
+  priorYearItemized: zod
+    .boolean()
+    .nullish()
+    .describe(
+      "E6 — Pub 525 tax-benefit rule. true when prior year itemized (Sched A > std ded) → state refund federal-taxable. Null = pipeline auto-derives from prior tax_returns row.",
     ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
@@ -2203,6 +2233,12 @@ export const GetRecentClientsResponseItem = zod.object({
     .nullish()
     .describe(
       "K8 — parent's top marginal rate (decimal, e.g. 0.32) used in Form 8615 for the kiddie tax computation.",
+    ),
+  priorYearItemized: zod
+    .boolean()
+    .nullish()
+    .describe(
+      "E6 — Pub 525 tax-benefit rule. true when prior year itemized (Sched A > std ded) → state refund federal-taxable. Null = pipeline auto-derives from prior tax_returns row.",
     ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),

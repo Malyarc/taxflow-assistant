@@ -151,9 +151,36 @@ export async function computeTaxReturn(
     adjustments as AdjustmentFact[],
   );
 
+  // E6 — Pub 525 / IRC §111 tax-benefit rule. Derive whether the prior
+  // year's return itemized — if so, this year's state refund is federal-
+  // taxable; if not (std ded last year), state refund is excluded. We read
+  // the prior-year tax_returns row and compare itemizedDeductions to the
+  // standard deduction. CPAs may override by setting priorYearItemized
+  // explicitly on the client record (when migrating from another system
+  // mid-stream and the prior return isn't in TaxFlow).
+  let priorYearItemizedDerived: boolean | null = null;
+  if (client.priorYearItemized != null) {
+    priorYearItemizedDerived = client.priorYearItemized;
+  } else {
+    const [priorReturnForBenefit] = await db
+      .select()
+      .from(taxReturnsTable)
+      .where(
+        and(
+          eq(taxReturnsTable.clientId, clientId),
+          eq(taxReturnsTable.taxYear, taxYear - 1),
+        ),
+      );
+    if (priorReturnForBenefit) {
+      const itemized = Number(priorReturnForBenefit.itemizedDeductions ?? 0);
+      const std = Number(priorReturnForBenefit.standardDeduction ?? 0);
+      priorYearItemizedDerived = itemized > std;
+    }
+  }
+
   // Drizzle rows satisfy the engine's Fact types via structural typing.
   const result = computeTaxReturnPure({
-    client: client as ClientFacts,
+    client: { ...(client as ClientFacts), priorYearItemized: priorYearItemizedDerived } as ClientFacts,
     w2s: w2Records as W2Fact[],
     form1099s: form1099Records as Form1099Fact[],
     adjustments: [...adjustments, ...synthesizedAdjustments] as AdjustmentFact[],

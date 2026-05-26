@@ -61,6 +61,11 @@ export const clientsTable = pgTable("clients", {
    *  (0.10 / 0.12 / 0.22 / 0.24 / 0.32 / 0.35 / 0.37). Required when
    *  isKiddieTaxFiler = TRUE. */
   parentsTopMarginalRate: numeric("parents_top_marginal_rate", { precision: 5, scale: 4 }),
+  /** E6 — Pub 525 / IRC §111 tax-benefit rule. When NULL, pipeline auto-
+   *  derives from prior-year tax_returns (itemized > std ded). Explicit
+   *  true/false overrides — used when migrating in mid-stream and prior
+   *  return wasn't computed in TaxFlow. Defaults NULL (auto-derive). */
+  priorYearItemized: boolean("prior_year_itemized"),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),

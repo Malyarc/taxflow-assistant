@@ -405,6 +405,210 @@ header("E3 integration — engine end-to-end propagates carryforward to result")
 }
 
 // ============================================================================
+// E5 — IRC §72(t) Early-Withdrawal 10% Penalty (1099-R Box 7 code)
+// 10% on code "1" (early, no known exception); 25% on code "S"
+// (SIMPLE IRA in first 2 years). No penalty on codes 2/3/4/7/G/T/Q etc.
+// ============================================================================
+section("E5 — 1099-R early-withdrawal penalty (IRC §72(t))");
+
+// --- E5+1: Code "1" early distribution → 10% penalty ---
+// Hand-calc: $25,000 distribution × 10% = $2,500 penalty.
+// Single TX no state tax, W-2 $0, taxable income from retirement only.
+header("E5+1 — Code 1 early $25k distribution, 10% = $2,500 penalty");
+{
+  const computed = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "TX", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, federalTaxWithheldBox2: 5000, stateCode: "TX" }],
+    form1099s: [{
+      taxYear: 2024, formType: "r", payerName: "401k Plan",
+      taxableAmount: 25000, grossDistribution: 25000,
+      distributionCode: "1",
+    }],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  check("E5+1", "earlyWithdrawalPenalty = $2,500", computed.earlyWithdrawalPenalty, 2500, 1,
+    "IRC §72(t) 10% × $25k taxable distribution code 1");
+}
+
+// --- E5+2: Code "S" SIMPLE IRA in first 2 years → 25% penalty ---
+// Hand-calc: $10,000 × 25% = $2,500 penalty.
+header("E5+2 — Code S SIMPLE IRA $10k early, 25% = $2,500 penalty");
+{
+  const computed = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "TX", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, federalTaxWithheldBox2: 5000, stateCode: "TX" }],
+    form1099s: [{
+      taxYear: 2024, formType: "r", payerName: "SIMPLE IRA",
+      taxableAmount: 10000, grossDistribution: 10000,
+      distributionCode: "S",
+    }],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  check("E5+2", "earlyWithdrawalPenalty = $2,500", computed.earlyWithdrawalPenalty, 2500, 1,
+    "IRC §72(t)(6) 25% × $10k SIMPLE early");
+}
+
+// --- E5+3: Mixed codes — sums correctly ---
+// Hand-calc: $20k code 1 (10% = $2k) + $5k code S (25% = $1.25k) + $50k code 7 ($0)
+//           = $3,250 total penalty
+header("E5+3 — Multiple 1099-Rs (code 1 + S + 7) sums to $3,250 penalty");
+{
+  const computed = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "TX", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, federalTaxWithheldBox2: 5000, stateCode: "TX" }],
+    form1099s: [
+      { taxYear: 2024, formType: "r", payerName: "401k", taxableAmount: 20000, grossDistribution: 20000, distributionCode: "1" },
+      { taxYear: 2024, formType: "r", payerName: "SIMPLE", taxableAmount: 5000, grossDistribution: 5000, distributionCode: "S" },
+      { taxYear: 2024, formType: "r", payerName: "Normal", taxableAmount: 50000, grossDistribution: 50000, distributionCode: "7" },
+    ],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  check("E5+3", "penalty = $3,250", computed.earlyWithdrawalPenalty, 3250, 1,
+    "$20k × 10% + $5k × 25% + $50k × 0% = $2,000 + $1,250 + $0");
+}
+
+// --- E5-1: Code "7" normal distribution → no penalty ---
+header("E5-1 — Code 7 normal distribution, no penalty");
+{
+  const computed = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "TX", taxYear: 2024 },
+    w2s: [],
+    form1099s: [{
+      taxYear: 2024, formType: "r", payerName: "401k",
+      taxableAmount: 100000, grossDistribution: 100000,
+      distributionCode: "7",
+    }],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  check("E5-1", "penalty = $0", computed.earlyWithdrawalPenalty, 0, 1);
+}
+
+// --- E5-2: Code "2" early but with exception → no penalty ---
+header("E5-2 — Code 2 early w/ exception, no penalty");
+{
+  const computed = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "TX", taxYear: 2024 },
+    w2s: [],
+    form1099s: [{
+      taxYear: 2024, formType: "r", payerName: "401k",
+      taxableAmount: 30000, grossDistribution: 30000,
+      distributionCode: "2",
+    }],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  check("E5-2", "penalty = $0", computed.earlyWithdrawalPenalty, 0, 1);
+}
+
+// --- E5-3: No 1099-R at all → no penalty ---
+header("E5-3 — No 1099-R records, no penalty");
+{
+  const computed = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "TX", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, federalTaxWithheldBox2: 5000, stateCode: "TX" }],
+    form1099s: [],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  check("E5-3", "penalty = $0", computed.earlyWithdrawalPenalty, 0, 1);
+}
+
+// ============================================================================
+// E6 — 1099-G state-refund tax-benefit rule (IRC §111 / Pub 525)
+// Unemployment (IRC §85) fully federal-taxable. State refund only taxable
+// if prior year itemized (had tax benefit).
+// ============================================================================
+section("E6 — 1099-G unemployment + state-refund tax-benefit rule");
+
+// --- E6+1: Prior-year std ded → state refund EXCLUDED from AGI ---
+// Hand-calc:
+//   W-2 $50k + 1099-G ($3k unemployment + $1k state refund)
+//   Pub 525: prior year used std ded → state refund $1k NOT taxable
+//   Unemployment $3k always taxable (IRC §85)
+//   AGI = $50k + $3k = $53k (state refund excluded)
+header("E6+1 — Prior year std ded, state refund excluded, AGI = $53k");
+{
+  const computed = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "TX", taxYear: 2024, priorYearItemized: false },
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, federalTaxWithheldBox2: 5000, stateCode: "TX" }],
+    form1099s: [{
+      taxYear: 2024, formType: "g", payerName: "State",
+      unemploymentCompensation: 3000, stateLocalRefund: 1000,
+    }],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  check("E6+1", "AGI = $53k (refund excluded)", computed.adjustedGrossIncome, 53000, 1,
+    "Pub 525: prior std ded → state refund not federal-taxable");
+}
+
+// --- E6+2: Prior-year itemized → state refund IS taxable ---
+// Hand-calc:
+//   Same as above but priorYearItemized = true
+//   AGI = $50k + $3k + $1k = $54k
+header("E6+2 — Prior year itemized, state refund taxable, AGI = $54k");
+{
+  const computed = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "TX", taxYear: 2024, priorYearItemized: true },
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, federalTaxWithheldBox2: 5000, stateCode: "TX" }],
+    form1099s: [{
+      taxYear: 2024, formType: "g", payerName: "State",
+      unemploymentCompensation: 3000, stateLocalRefund: 1000,
+    }],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  check("E6+2", "AGI = $54k (refund taxable)", computed.adjustedGrossIncome, 54000, 1,
+    "Pub 525: prior itemized → state refund federal-taxable");
+}
+
+// --- E6+3: Unemployment only (no state refund) — same result either way ---
+// Hand-calc: $50k W-2 + $5k unemployment, no refund.
+//   AGI = $55k regardless of prior-year itemization
+header("E6+3 — Unemployment only $5k, priorYearItemized doesn't affect");
+{
+  const computedA = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "TX", taxYear: 2024, priorYearItemized: true },
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, federalTaxWithheldBox2: 5000, stateCode: "TX" }],
+    form1099s: [{ taxYear: 2024, formType: "g", payerName: "State",
+      unemploymentCompensation: 5000, stateLocalRefund: 0 }],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  const computedB = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "TX", taxYear: 2024, priorYearItemized: false },
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, federalTaxWithheldBox2: 5000, stateCode: "TX" }],
+    form1099s: [{ taxYear: 2024, formType: "g", payerName: "State",
+      unemploymentCompensation: 5000, stateLocalRefund: 0 }],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  check("E6+3", "AGI same (priorItemized=true) = $55k", computedA.adjustedGrossIncome, 55000, 1);
+  check("E6+3", "AGI same (priorItemized=false) = $55k", computedB.adjustedGrossIncome, 55000, 1);
+}
+
+// --- E6-1: priorYearItemized=null (default) treats as not itemized ---
+// Engine default: null treated as false. AGI = $50k + $3k = $53k.
+header("E6-1 — priorYearItemized=null defaults to NOT taxable (tax-friendly)");
+{
+  const computed = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "TX", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, federalTaxWithheldBox2: 5000, stateCode: "TX" }],
+    form1099s: [{
+      taxYear: 2024, formType: "g", payerName: "State",
+      unemploymentCompensation: 3000, stateLocalRefund: 1000,
+    }],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  check("E6-1", "Default: AGI = $53k (refund excluded)", computed.adjustedGrossIncome, 53000, 1);
+}
+
+// ============================================================================
 // Report
 // ============================================================================
 console.log("\n========== RESULTS ==========");

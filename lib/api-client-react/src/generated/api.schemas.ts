@@ -124,6 +124,11 @@ export interface Client {
    * @nullable
    */
   parentsTopMarginalRate?: number | null;
+  /**
+   * E6 — Pub 525 tax-benefit rule. true when prior year itemized (Sched A > std ded) → state refund federal-taxable. Null = pipeline auto-derives from prior tax_returns row.
+   * @nullable
+   */
+  priorYearItemized?: boolean | null;
   /** @nullable */
   notes?: string | null;
   createdAt: string;
@@ -199,6 +204,11 @@ export interface CreateClientBody {
    * @nullable
    */
   parentsTopMarginalRate?: number | null;
+  /**
+   * E6 — Pub 525 tax-benefit rule. true when prior year itemized → state refund federal-taxable. Null = pipeline auto-derives.
+   * @nullable
+   */
+  priorYearItemized?: boolean | null;
   /** @nullable */
   notes?: string | null;
 }
@@ -272,6 +282,11 @@ export interface UpdateClientBody {
    * @nullable
    */
   parentsTopMarginalRate?: number | null;
+  /**
+   * E6 — Pub 525 tax-benefit rule. true when prior year itemized → state refund federal-taxable. Null = pipeline auto-derives.
+   * @nullable
+   */
+  priorYearItemized?: boolean | null;
   /** @nullable */
   notes?: string | null;
 }
