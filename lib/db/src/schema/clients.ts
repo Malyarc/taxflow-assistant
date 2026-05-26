@@ -52,6 +52,15 @@ export const clientsTable = pgTable("clients", {
    *  default — MFS-with-spouse means $0 SS-taxability threshold and 85%
    *  of SS is taxable). Per Pub 915. */
   mfsLivedApartAllYear: boolean("mfs_lived_apart_all_year").notNull().default(false),
+  /** K8 — Kiddie tax (Form 8615): TRUE if the return is for a child whose
+   *  unearned income > $2,600 (TY2024) is taxed at the parent's marginal
+   *  rate. CPA confirms eligibility (child < age 18, or 18-23 if full-time
+   *  student dependent on parents). */
+  isKiddieTaxFiler: boolean("is_kiddie_tax_filer").notNull().default(false),
+  /** K8 — Parent's top marginal rate for the Form 8615 computation
+   *  (0.10 / 0.12 / 0.22 / 0.24 / 0.32 / 0.35 / 0.37). Required when
+   *  isKiddieTaxFiler = TRUE. */
+  parentsTopMarginalRate: numeric("parents_top_marginal_rate", { precision: 5, scale: 4 }),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),

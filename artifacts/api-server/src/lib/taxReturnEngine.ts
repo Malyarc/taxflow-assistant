@@ -128,6 +128,11 @@ export interface ClientFacts {
   /** K10 — MFS lived apart from spouse all year (per Pub 915 — true = single-rules
    *  thresholds; false = MFS-with-spouse, $0 threshold → 85% taxable). */
   mfsLivedApartAllYear?: boolean | null;
+  /** K8 — Form 8615 kiddie-tax filer flag. When true and unearned income
+   *  > $2,600, the excess is taxed at parent's marginal rate. */
+  isKiddieTaxFiler?: boolean | null;
+  /** K8 — Parent's top marginal rate (decimal: 0.10/0.12/0.22/0.24/0.32/0.35/0.37). */
+  parentsTopMarginalRate?: Numish;
 }
 
 export interface W2Fact {
@@ -1307,6 +1312,16 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const preferentialIncome = ltcgPreferential + qualifiedDividends;
   const ordinaryPortionOfTaxable = Math.max(0, taxableAfterQbi - preferentialIncome);
 
+  // K8 — Kiddie tax (Form 8615) child unearned income.
+  // Unearned for our engine = interest + ordinary divs + qualified divs +
+  // post-netting LTCG (positive) + post-netting STCG (positive). The
+  // engine's $2,600 threshold is the TY2024 net-unearned figure
+  // ($1,300 std + $1,300 at child rate).
+  const kiddieUnearnedIncome = client.isKiddieTaxFiler
+    ? Math.max(0, form1099Summary.interestIncome + form1099Summary.ordinaryDividends +
+                  qualifiedDividends + Math.max(0, ltcgPreferential) + Math.max(0, stcgInOrdinary) +
+                  k1InterestIncome + k1OrdinaryDividends)
+    : 0;
   const capGains = calculateFederalTaxWithCapitalGains({
     ordinaryTaxableIncome: ordinaryPortionOfTaxable,
     longTermGains: ltcgPreferential,
@@ -1317,6 +1332,14 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     // K9 — FEIE stacking rule: tax computed at the marginal rate that
     // would have applied if FEIE were not excluded.
     feieExclusion,
+    // K8 — Form 8615 kiddie tax (when applicable).
+    kiddieTax: client.isKiddieTaxFiler
+      ? {
+          isKiddieTaxFiler: true,
+          unearnedIncome: kiddieUnearnedIncome,
+          parentsTopMarginalRate: toNum(client.parentsTopMarginalRate),
+        }
+      : undefined,
   });
   const regularFederalTax = capGains.totalFederalTax;
 

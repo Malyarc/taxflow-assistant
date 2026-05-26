@@ -94,6 +94,13 @@ export interface Client {
   socialSecurityBenefits?: number | null;
   /** MFS filers only — true if the filer lived APART from their spouse for the entire tax year. Per Pub 915, default false treats MFS-with-spouse case (85% of SS taxable). */
   mfsLivedApartAllYear?: boolean;
+  /** K8 — true when this return is for a child whose unearned income > $2,600 is taxed at the parent's marginal rate (Form 8615). */
+  isKiddieTaxFiler?: boolean;
+  /**
+   * K8 — parent's top marginal rate (decimal, e.g. 0.32) used in Form 8615 for the kiddie tax computation.
+   * @nullable
+   */
+  parentsTopMarginalRate?: number | null;
   /** @nullable */
   notes?: string | null;
   createdAt: string;
@@ -162,6 +169,13 @@ export interface CreateClientBody {
   socialSecurityBenefits?: number | null;
   /** For MFS — true if lived apart all year (single-thresholds rules; default false → 85% of SS taxable). */
   mfsLivedApartAllYear?: boolean;
+  /** K8 — true when return is for a child subject to kiddie tax (Form 8615; unearned income > $2,600 taxed at parent rate). */
+  isKiddieTaxFiler?: boolean;
+  /**
+   * Parent's top marginal rate (0.10–0.37) for Form 8615 computation when isKiddieTaxFiler = true.
+   * @nullable
+   */
+  parentsTopMarginalRate?: number | null;
   /** @nullable */
   notes?: string | null;
 }
@@ -228,6 +242,13 @@ export interface UpdateClientBody {
   socialSecurityBenefits?: number | null;
   /** For MFS — true if lived apart all year (single-thresholds rules; default false → 85% of SS taxable). */
   mfsLivedApartAllYear?: boolean;
+  /** K8 — true when return is for a child subject to kiddie tax (Form 8615; unearned income > $2,600 taxed at parent rate). */
+  isKiddieTaxFiler?: boolean;
+  /**
+   * Parent's top marginal rate (0.10–0.37) for Form 8615 computation when isKiddieTaxFiler = true.
+   * @nullable
+   */
+  parentsTopMarginalRate?: number | null;
   /** @nullable */
   notes?: string | null;
 }

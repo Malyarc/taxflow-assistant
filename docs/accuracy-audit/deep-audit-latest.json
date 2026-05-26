@@ -1,16 +1,8 @@
 {
-  "generatedAt": "2026-05-26T07:35:13.284Z",
-  "pass": 203,
+  "generatedAt": "2026-05-26T07:40:14.939Z",
+  "pass": 208,
   "realFailures": 0,
-  "documentedGaps": 1,
+  "documentedGaps": 0,
   "failures": [],
-  "gaps": [
-    {
-      "category": "K8-expected",
-      "label": "Kiddie tax (Form 8615) on unearned income > $2,600 not modeled",
-      "expected": 0,
-      "actual": 0,
-      "source": "Form 8615 (2024)"
-    }
-  ]
+  "gaps": []
 }

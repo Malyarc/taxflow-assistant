@@ -107,6 +107,18 @@ export const ListClientsResponseItem = zod.object({
     .describe(
       "MFS filers only — true if the filer lived APART from their spouse for the entire tax year. Per Pub 915, default false treats MFS-with-spouse case (85% of SS taxable).",
     ),
+  isKiddieTaxFiler: zod
+    .boolean()
+    .optional()
+    .describe(
+      "K8 — true when this return is for a child whose unearned income > $2,600 is taxed at the parent's marginal rate (Form 8615).",
+    ),
+  parentsTopMarginalRate: zod
+    .number()
+    .nullish()
+    .describe(
+      "K8 — parent's top marginal rate (decimal, e.g. 0.32) used in Form 8615 for the kiddie tax computation.",
+    ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -157,6 +169,18 @@ export const CreateClientBody = zod.object({
     .optional()
     .describe(
       "For MFS — true if lived apart all year (single-thresholds rules; default false → 85% of SS taxable).",
+    ),
+  isKiddieTaxFiler: zod
+    .boolean()
+    .optional()
+    .describe(
+      "K8 — true when return is for a child subject to kiddie tax (Form 8615; unearned income > $2,600 taxed at parent rate).",
+    ),
+  parentsTopMarginalRate: zod
+    .number()
+    .nullish()
+    .describe(
+      "Parent's top marginal rate (0.10–0.37) for Form 8615 computation when isKiddieTaxFiler = true.",
     ),
   notes: zod.string().nullish(),
 });
@@ -258,6 +282,18 @@ export const GetClientResponse = zod.object({
     .describe(
       "MFS filers only — true if the filer lived APART from their spouse for the entire tax year. Per Pub 915, default false treats MFS-with-spouse case (85% of SS taxable).",
     ),
+  isKiddieTaxFiler: zod
+    .boolean()
+    .optional()
+    .describe(
+      "K8 — true when this return is for a child whose unearned income > $2,600 is taxed at the parent's marginal rate (Form 8615).",
+    ),
+  parentsTopMarginalRate: zod
+    .number()
+    .nullish()
+    .describe(
+      "K8 — parent's top marginal rate (decimal, e.g. 0.32) used in Form 8615 for the kiddie tax computation.",
+    ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -313,6 +349,18 @@ export const UpdateClientBody = zod.object({
     .optional()
     .describe(
       "For MFS — true if lived apart all year (single-thresholds rules; default false → 85% of SS taxable).",
+    ),
+  isKiddieTaxFiler: zod
+    .boolean()
+    .optional()
+    .describe(
+      "K8 — true when return is for a child subject to kiddie tax (Form 8615; unearned income > $2,600 taxed at parent rate).",
+    ),
+  parentsTopMarginalRate: zod
+    .number()
+    .nullish()
+    .describe(
+      "Parent's top marginal rate (0.10–0.37) for Form 8615 computation when isKiddieTaxFiler = true.",
     ),
   notes: zod.string().nullish(),
 });
@@ -406,6 +454,18 @@ export const UpdateClientResponse = zod.object({
     .optional()
     .describe(
       "MFS filers only — true if the filer lived APART from their spouse for the entire tax year. Per Pub 915, default false treats MFS-with-spouse case (85% of SS taxable).",
+    ),
+  isKiddieTaxFiler: zod
+    .boolean()
+    .optional()
+    .describe(
+      "K8 — true when this return is for a child whose unearned income > $2,600 is taxed at the parent's marginal rate (Form 8615).",
+    ),
+  parentsTopMarginalRate: zod
+    .number()
+    .nullish()
+    .describe(
+      "K8 — parent's top marginal rate (decimal, e.g. 0.32) used in Form 8615 for the kiddie tax computation.",
     ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
@@ -1874,6 +1934,18 @@ export const GetRecentClientsResponseItem = zod.object({
     .optional()
     .describe(
       "MFS filers only — true if the filer lived APART from their spouse for the entire tax year. Per Pub 915, default false treats MFS-with-spouse case (85% of SS taxable).",
+    ),
+  isKiddieTaxFiler: zod
+    .boolean()
+    .optional()
+    .describe(
+      "K8 — true when this return is for a child whose unearned income > $2,600 is taxed at the parent's marginal rate (Form 8615).",
+    ),
+  parentsTopMarginalRate: zod
+    .number()
+    .nullish()
+    .describe(
+      "K8 — parent's top marginal rate (decimal, e.g. 0.32) used in Form 8615 for the kiddie tax computation.",
     ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),

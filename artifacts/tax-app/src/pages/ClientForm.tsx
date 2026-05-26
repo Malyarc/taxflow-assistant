@@ -64,6 +64,9 @@ interface FormState {
   // K10 — Social Security benefits + MFS-lived-apart flag (Pub 915)
   socialSecurityBenefits: string;
   mfsLivedApartAllYear: boolean;
+  // K8 — Kiddie tax (Form 8615)
+  isKiddieTaxFiler: boolean;
+  parentsTopMarginalRate: string;
   notes: string;
 }
 
@@ -93,6 +96,8 @@ const defaultForm: FormState = {
   localityCode: "",
   socialSecurityBenefits: "",
   mfsLivedApartAllYear: false,
+  isKiddieTaxFiler: false,
+  parentsTopMarginalRate: "",
   notes: "",
 };
 
@@ -153,6 +158,9 @@ export default function ClientForm({ editId }: Props) {
         socialSecurityBenefits: (existing as { socialSecurityBenefits?: number | null }).socialSecurityBenefits != null
           ? String((existing as { socialSecurityBenefits?: number | null }).socialSecurityBenefits) : "",
         mfsLivedApartAllYear: (existing as { mfsLivedApartAllYear?: boolean }).mfsLivedApartAllYear ?? false,
+        isKiddieTaxFiler: (existing as { isKiddieTaxFiler?: boolean }).isKiddieTaxFiler ?? false,
+        parentsTopMarginalRate: (existing as { parentsTopMarginalRate?: number | null }).parentsTopMarginalRate != null
+          ? String((existing as { parentsTopMarginalRate?: number | null }).parentsTopMarginalRate) : "",
         notes: existing.notes || "",
       });
     }
@@ -192,6 +200,8 @@ export default function ClientForm({ editId }: Props) {
       localityCode: form.localityCode === "" ? null : form.localityCode,
       socialSecurityBenefits: form.socialSecurityBenefits === "" ? null : Number(form.socialSecurityBenefits),
       mfsLivedApartAllYear: Boolean(form.mfsLivedApartAllYear),
+      isKiddieTaxFiler: Boolean(form.isKiddieTaxFiler),
+      parentsTopMarginalRate: form.parentsTopMarginalRate === "" ? null : Number(form.parentsTopMarginalRate),
     };
     if (isEdit) {
       updateClient.mutate(
@@ -536,6 +546,48 @@ export default function ClientForm({ editId }: Props) {
                       MFS lived apart from spouse ALL year
                       <p className="text-xs text-muted-foreground mt-1">If unchecked: $0 SS-taxability threshold (85% of SS taxable). If checked: uses single thresholds.</p>
                     </Label>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="border-t pt-4 space-y-4">
+              <div>
+                <h3 className="text-sm font-semibold">Kiddie Tax (Form 8615)</h3>
+                <p className="text-xs text-muted-foreground">For child returns. Net unearned income above $2,600 (TY2024) is taxed at the parent's top marginal rate.</p>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex items-start gap-2">
+                  <input
+                    id="kiddie-tax-filer"
+                    type="checkbox"
+                    className="mt-1"
+                    checked={form.isKiddieTaxFiler}
+                    onChange={(e) => set("isKiddieTaxFiler", e.target.checked)}
+                  />
+                  <Label htmlFor="kiddie-tax-filer" className="font-normal">
+                    Child subject to kiddie tax
+                    <p className="text-xs text-muted-foreground mt-1">Check when this return is for a child under 18 (or 18–23 if FT student) with unearned income.</p>
+                  </Label>
+                </div>
+                {form.isKiddieTaxFiler && (
+                  <div className="space-y-2">
+                    <Label>Parent's top marginal rate</Label>
+                    <Select value={form.parentsTopMarginalRate || ""} onValueChange={(v) => set("parentsTopMarginalRate", v)}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select rate" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="0.10">10%</SelectItem>
+                        <SelectItem value="0.12">12%</SelectItem>
+                        <SelectItem value="0.22">22%</SelectItem>
+                        <SelectItem value="0.24">24%</SelectItem>
+                        <SelectItem value="0.32">32%</SelectItem>
+                        <SelectItem value="0.35">35%</SelectItem>
+                        <SelectItem value="0.37">37%</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">Used in the Form 8615 worksheet to tax kiddie-tax amount at parent rate.</p>
                   </div>
                 )}
               </div>

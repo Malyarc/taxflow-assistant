@@ -2469,6 +2469,17 @@ export function calculateFederalTaxWithCapitalGains(params: {
    *  Effectively: FEIE is removed from the base but does NOT reduce the
    *  marginal rate on the rest of income. */
   feieExclusion?: number;
+  /** K8 — Form 8615 kiddie tax. When `isKiddieTaxFiler` and net unearned
+   *  income > $2,600 (TY2024 threshold), the excess is taxed at the
+   *  parent's marginal rate. Final tax = MAX(regular_method, kiddie_method)
+   *  per Form 8615 Line 18. */
+  kiddieTax?: {
+    isKiddieTaxFiler: boolean;
+    /** Total child unearned income (interest + dividends + cap gains). */
+    unearnedIncome: number;
+    /** Parent's top marginal rate as decimal (e.g., 0.32). */
+    parentsTopMarginalRate: number;
+  };
 }): CapitalGainsCalculation {
   const year = resolveTaxYear(params.taxYear);
   const status = params.filingStatus in FEDERAL_BRACKETS[year] ? params.filingStatus : "single";
@@ -2498,13 +2509,40 @@ export function calculateFederalTaxWithCapitalGains(params: {
   const ltcgStackBase = feie > 0 ? ordinaryWithStcg + feie : ordinaryWithStcg;
   const prefTax = calculateLtcgQdivStackedTax(ltcgStackBase, ltcgIncluded, status, year);
 
+  // K8 — Kiddie tax (Form 8615 Line 18).
+  // When the child has net unearned income > $2,600, that excess is taxed
+  // at the parent's marginal rate instead of the child's. Engine simplification:
+  // amount-at-parent-rate is treated as ordinary (sub-gap: small LTCG/QDIV
+  // portion within kiddie income is also taxed at parent rate in this model;
+  // IRS Form 8615 uses a more elaborate stacking with the QDCG worksheet).
+  let kiddieTotal = ordinaryTax + prefTax;
+  if (params.kiddieTax && params.kiddieTax.isKiddieTaxFiler && params.kiddieTax.unearnedIncome > 2600) {
+    const totalTaxable = ordinaryWithStcg + ltcgIncluded;
+    const netUnearned = params.kiddieTax.unearnedIncome - 2600;
+    const amountAtParentRate = Math.min(netUnearned, totalTaxable);
+    if (amountAtParentRate > 0) {
+      // Child's remaining ordinary base (after carving out the parent-rate portion).
+      const ordinaryRemaining = Math.max(0, ordinaryWithStcg - amountAtParentRate);
+      const ltcgRemaining = Math.max(0, ltcgIncluded - Math.max(0, amountAtParentRate - ordinaryWithStcg));
+      const childOrdinaryTax = feie > 0
+        ? Math.max(0, calculateFederalTax(ordinaryRemaining + feie, status, year) - calculateFederalTax(feie, status, year))
+        : calculateFederalTax(ordinaryRemaining, status, year);
+      const childPrefStackBase = feie > 0 ? ordinaryRemaining + feie : ordinaryRemaining;
+      const childPrefTax = calculateLtcgQdivStackedTax(childPrefStackBase, ltcgRemaining, status, year);
+      const parentAdditionalTax = amountAtParentRate * Math.max(0, params.kiddieTax.parentsTopMarginalRate);
+      const kiddieMethod = childOrdinaryTax + childPrefTax + parentAdditionalTax;
+      // Form 8615 Line 18: child's tax = larger of regular method or kiddie method.
+      kiddieTotal = Math.max(ordinaryTax + prefTax, kiddieMethod);
+    }
+  }
+
   return {
     ordinaryTaxableIncome: params.ordinaryTaxableIncome,
     longTermGains: params.longTermGains,
     shortTermGains: params.shortTermGains,
     qualifiedDividends: params.qualifiedDividends,
     preferentialRateTax: prefTax,
-    totalFederalTax: ordinaryTax + prefTax,
+    totalFederalTax: kiddieTotal,
   };
 }
 
