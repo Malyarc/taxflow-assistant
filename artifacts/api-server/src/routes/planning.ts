@@ -26,6 +26,7 @@ import {
 import { computeTaxReturn } from "../lib/taxReturnPipeline";
 import type { AdjustmentFact, ClientFacts } from "../lib/taxReturnEngine";
 import { logger } from "../lib/logger";
+import { config } from "../lib/config";
 
 /**
  * Coerce a drizzle numeric column (string | null) to a plain number. Used by
@@ -53,6 +54,26 @@ async function loadPlanningContext(clientId: number) {
 }
 
 const router: IRouter = Router();
+
+/**
+ * Phase G5 — Pro-tier gate. Applied to every planning endpoint via the
+ * router. Returns 402 Payment Required with a stable machine-readable
+ * code so the frontend can present an "Upgrade to Pro" CTA even if it
+ * somehow hits this path with Pro disabled (defense in depth — the
+ * frontend already gates the call sites via /api/settings).
+ */
+router.use((_req, res, next) => {
+  if (!config.proTierEnabled) {
+    res.status(402).json({
+      error: "Pro tier required",
+      code: "PRO_TIER_REQUIRED",
+      message:
+        "Tax-planning features (opportunity detection, AI memos, multi-year intelligence) are available on the Pro tier. Contact your firm administrator to upgrade.",
+    });
+    return;
+  }
+  next();
+});
 
 router.get("/clients/:clientId/planning-opportunities", async (req, res): Promise<void> => {
   const params = GetPlanningOpportunitiesParams.safeParse(req.params);

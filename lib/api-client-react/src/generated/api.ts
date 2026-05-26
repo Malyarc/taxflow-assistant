@@ -38,9 +38,11 @@ import type {
   PlanningMissingData,
   PlanningMultiYear,
   PlanningOpportunities,
+  ProTierRequired,
   RejectExtractionBody,
   RentalProperty,
   ScheduleK1,
+  Settings,
   TaxDocument,
   TaxReturn,
   UpdateAdjustmentBody,
@@ -131,6 +133,81 @@ export function useHealthCheck<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getHealthCheckQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Returns env-driven flags the frontend uses to gate UI surfaces. Currently exposes the Phase G5 Pro-tier flag. Add new fields only when the client genuinely needs them; never expose secrets here.
+
+ * @summary Server-side feature flags exposed to the frontend
+ */
+export const getGetSettingsUrl = () => {
+  return `/api/settings`;
+};
+
+export const getSettings = async (options?: RequestInit): Promise<Settings> => {
+  return customFetch<Settings>(getGetSettingsUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetSettingsQueryKey = () => {
+  return [`/api/settings`] as const;
+};
+
+export const getGetSettingsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getSettings>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getSettings>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetSettingsQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getSettings>>> = ({
+    signal,
+  }) => getSettings({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getSettings>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetSettingsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getSettings>>
+>;
+export type GetSettingsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Server-side feature flags exposed to the frontend
+ */
+
+export function useGetSettings<
+  TData = Awaited<ReturnType<typeof getSettings>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getSettings>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetSettingsQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -2069,7 +2146,7 @@ export const getGetPlanningHitListQueryKey = (
 
 export const getGetPlanningHitListQueryOptions = <
   TData = Awaited<ReturnType<typeof getPlanningHitList>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<ProTierRequired>,
 >(
   params?: GetPlanningHitListParams,
   options?: {
@@ -2100,7 +2177,7 @@ export const getGetPlanningHitListQueryOptions = <
 export type GetPlanningHitListQueryResult = NonNullable<
   Awaited<ReturnType<typeof getPlanningHitList>>
 >;
-export type GetPlanningHitListQueryError = ErrorType<unknown>;
+export type GetPlanningHitListQueryError = ErrorType<ProTierRequired>;
 
 /**
  * @summary List all clients ranked by planning-engagement score
@@ -2108,7 +2185,7 @@ export type GetPlanningHitListQueryError = ErrorType<unknown>;
 
 export function useGetPlanningHitList<
   TData = Awaited<ReturnType<typeof getPlanningHitList>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<ProTierRequired>,
 >(
   params?: GetPlanningHitListParams,
   options?: {
@@ -2152,7 +2229,7 @@ export const getGetPlanningMemoQueryKey = (clientId: number) => {
 
 export const getGetPlanningMemoQueryOptions = <
   TData = Awaited<ReturnType<typeof getPlanningMemo>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<ProTierRequired | void>,
 >(
   clientId: number,
   options?: {
@@ -2188,7 +2265,7 @@ export const getGetPlanningMemoQueryOptions = <
 export type GetPlanningMemoQueryResult = NonNullable<
   Awaited<ReturnType<typeof getPlanningMemo>>
 >;
-export type GetPlanningMemoQueryError = ErrorType<void>;
+export type GetPlanningMemoQueryError = ErrorType<ProTierRequired | void>;
 
 /**
  * @summary AI-generated CPA-facing planning memo
@@ -2196,7 +2273,7 @@ export type GetPlanningMemoQueryError = ErrorType<void>;
 
 export function useGetPlanningMemo<
   TData = Awaited<ReturnType<typeof getPlanningMemo>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<ProTierRequired | void>,
 >(
   clientId: number,
   options?: {
@@ -2240,7 +2317,7 @@ export const getGetPlanningClientEmailQueryKey = (clientId: number) => {
 
 export const getGetPlanningClientEmailQueryOptions = <
   TData = Awaited<ReturnType<typeof getPlanningClientEmail>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<ProTierRequired | void>,
 >(
   clientId: number,
   options?: {
@@ -2277,7 +2354,8 @@ export const getGetPlanningClientEmailQueryOptions = <
 export type GetPlanningClientEmailQueryResult = NonNullable<
   Awaited<ReturnType<typeof getPlanningClientEmail>>
 >;
-export type GetPlanningClientEmailQueryError = ErrorType<void>;
+export type GetPlanningClientEmailQueryError =
+  ErrorType<ProTierRequired | void>;
 
 /**
  * @summary AI-drafted client outreach email
@@ -2285,7 +2363,7 @@ export type GetPlanningClientEmailQueryError = ErrorType<void>;
 
 export function useGetPlanningClientEmail<
   TData = Awaited<ReturnType<typeof getPlanningClientEmail>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<ProTierRequired | void>,
 >(
   clientId: number,
   options?: {
@@ -2332,7 +2410,7 @@ export const getGetPlanningMissingDataQueryKey = (clientId: number) => {
 
 export const getGetPlanningMissingDataQueryOptions = <
   TData = Awaited<ReturnType<typeof getPlanningMissingData>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<ProTierRequired | void>,
 >(
   clientId: number,
   options?: {
@@ -2369,7 +2447,8 @@ export const getGetPlanningMissingDataQueryOptions = <
 export type GetPlanningMissingDataQueryResult = NonNullable<
   Awaited<ReturnType<typeof getPlanningMissingData>>
 >;
-export type GetPlanningMissingDataQueryError = ErrorType<void>;
+export type GetPlanningMissingDataQueryError =
+  ErrorType<ProTierRequired | void>;
 
 /**
  * @summary Questions the CPA still needs to ask the client
@@ -2377,7 +2456,7 @@ export type GetPlanningMissingDataQueryError = ErrorType<void>;
 
 export function useGetPlanningMissingData<
   TData = Awaited<ReturnType<typeof getPlanningMissingData>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<ProTierRequired | void>,
 >(
   clientId: number,
   options?: {
@@ -2424,7 +2503,7 @@ export const getGetPlanningOpportunitiesQueryKey = (clientId: number) => {
 
 export const getGetPlanningOpportunitiesQueryOptions = <
   TData = Awaited<ReturnType<typeof getPlanningOpportunities>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<ProTierRequired | void>,
 >(
   clientId: number,
   options?: {
@@ -2461,7 +2540,8 @@ export const getGetPlanningOpportunitiesQueryOptions = <
 export type GetPlanningOpportunitiesQueryResult = NonNullable<
   Awaited<ReturnType<typeof getPlanningOpportunities>>
 >;
-export type GetPlanningOpportunitiesQueryError = ErrorType<void>;
+export type GetPlanningOpportunitiesQueryError =
+  ErrorType<ProTierRequired | void>;
 
 /**
  * @summary List detected planning opportunities for a client
@@ -2469,7 +2549,7 @@ export type GetPlanningOpportunitiesQueryError = ErrorType<void>;
 
 export function useGetPlanningOpportunities<
   TData = Awaited<ReturnType<typeof getPlanningOpportunities>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<ProTierRequired | void>,
 >(
   clientId: number,
   options?: {
@@ -2518,7 +2598,7 @@ export const getGetPlanningMultiYearQueryKey = (clientId: number) => {
 
 export const getGetPlanningMultiYearQueryOptions = <
   TData = Awaited<ReturnType<typeof getPlanningMultiYear>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<ProTierRequired | void>,
 >(
   clientId: number,
   options?: {
@@ -2555,7 +2635,7 @@ export const getGetPlanningMultiYearQueryOptions = <
 export type GetPlanningMultiYearQueryResult = NonNullable<
   Awaited<ReturnType<typeof getPlanningMultiYear>>
 >;
-export type GetPlanningMultiYearQueryError = ErrorType<void>;
+export type GetPlanningMultiYearQueryError = ErrorType<ProTierRequired | void>;
 
 /**
  * @summary Multi-year tax-planning patterns (Phase G4)
@@ -2563,7 +2643,7 @@ export type GetPlanningMultiYearQueryError = ErrorType<void>;
 
 export function useGetPlanningMultiYear<
   TData = Awaited<ReturnType<typeof getPlanningMultiYear>>,
-  TError = ErrorType<void>,
+  TError = ErrorType<ProTierRequired | void>,
 >(
   clientId: number,
   options?: {

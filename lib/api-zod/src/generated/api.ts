@@ -15,6 +15,19 @@ export const HealthCheckResponse = zod.object({
 });
 
 /**
+ * Returns env-driven flags the frontend uses to gate UI surfaces. Currently exposes the Phase G5 Pro-tier flag. Add new fields only when the client genuinely needs them; never expose secrets here.
+
+ * @summary Server-side feature flags exposed to the frontend
+ */
+export const GetSettingsResponse = zod.object({
+  proTierEnabled: zod
+    .boolean()
+    .describe(
+      "Phase G5 — when false the frontend hides the Planning tab and the dashboard Top-10 widget, and all planning endpoints respond 402. Controlled by the PRO_TIER_ENABLED env var on the api-server.\n",
+    ),
+});
+
+/**
  * @summary List all clients
  */
 export const ListClientsResponseItem = zod.object({

@@ -240,15 +240,37 @@ Tests: 70 hand-calc'd unit assertions + 11 new integration assertions
 (persistent NIIT firing through API, single-year empty hits, 404).
 All 133 G1 unit + 29 planning integration + 210 deep audit still pass.
 
-### Phase G5 — Pro tier + pricing ❌ **Open (~1 week)**
+### Phase G5 — Pro tier feature flag ✅ **DONE (2026-05-26)**
 
-Surface Planning module behind a Pro feature flag (currently the
-Planning tab + dashboard widget are available to all clients).
-Stripe tier upgrade flow (Phase D18 — out of scope). Marketing copy
-update. The free Standard tier keeps all current engine features;
-Pro would add Planning + AI synthesis + hit list. Minimal version of
-G5: add `proTierEnabled` boolean (env or per-firm) and hide the
-Planning tab + dashboard widget when off; defer Stripe to D18.
+Env-var gate on every planning surface. Default `PRO_TIER_ENABLED=true`
+preserves existing demo behavior; set to `false` to gate ahead of
+pricing rollout.
+
+- New endpoint `GET /api/settings` returns `{ proTierEnabled }`.
+- New module `artifacts/api-server/src/lib/config.ts` parses the env
+  var once at startup. `parseBoolEnv()` accepts true/1/yes/false/0/no
+  (case-insensitive), falls back to a passed default for anything else.
+- Planning router middleware returns HTTP 402 Payment Required with
+  `{ code: "PRO_TIER_REQUIRED" }` body on all 6 planning endpoints
+  (planning-opportunities, planning-multi-year, planning-memo,
+  planning-email, planning-missing-data, planning-hit-list) when off.
+- Frontend gating via `useGetSettings`:
+  - Dashboard: Top-10 widget swaps to `<UpgradeProCard variant="widget" />`
+  - ClientDetail: Planning tab + content hidden, grid drops from
+    `grid-cols-10` to `grid-cols-9`
+  - Gates only when `proTierEnabled === false` (not on loading state)
+    so existing Pro firms don't see a flash of "no Planning" while
+    the settings request is in flight.
+- New `<UpgradeProCard>` component renders the upsell card with the
+  feature list (10 G1 rules, 5 G4 multi-year, AI memo, hit list).
+  CTA button is a disabled visual placeholder; real billing is D18.
+- 21 new dual-state integration assertions in
+  `scripts/src/tax-engine-pro-tier-tests.ts`. Adapts to whichever
+  state the server is in: 5 on-state OR 16 off-state. Run twice
+  (once per state) for full coverage.
+
+Stripe billing flow (D18) is still deferred. Phase G is now fully
+complete (G1+G2+G3+G4+G5).
 
 ### Phase G — additional rule set (deferred to G6+ as customer-driven)
 
@@ -278,37 +300,35 @@ enough to demo to a design partner as the "planning superpower" pitch.
 
 (As of 2026-05-26 — Phases A, B, B+, C12, C13, C14 + adversarial
 accuracy audit + DEEP audit + security & code-quality batch + Phase G
-(G1+G2+G3+G4 multi-year) all complete. **ZERO documented federal or
-state engine gaps remain** (all 10 K-list + all 4 G-list closed
-end-to-end during 2026-05-23 → 2026-05-26). CPA design-partner
-outreach packet (C11) drafted in `docs/outreach/`.)
+(G1+G2+G3+G4+G5) all complete. **ZERO documented federal or state
+engine gaps remain** (all 10 K-list + all 4 G-list closed end-to-end
+during 2026-05-23 → 2026-05-26). CPA design-partner outreach packet
+(C11) drafted in `docs/outreach/`.)
 
-1. **Session N (now next) — recommended: Phase G5 Pro tier feature
-   flag (~1 day minimal).** Module is currently visible to all clients;
-   gate the Planning tab + dashboard widget + new multi-year section
-   behind a `proTierEnabled` boolean (env or per-firm column on the
-   firms table once D15 exists). Show "Upgrade to Pro" CTA when off.
-   Defer Stripe to D18. This is the last piece of Phase G as
-   originally scoped.
+1. **Session N (now next) — recommended: CPA design-partner outreach
+   (C11). No code.** Strongest pitch position to date — zero documented
+   engine gaps + complete planning module (10 G1 + 5 G4 + AI synthesis
+   + Pro-tier gating ready for pricing) + 88-archetype demo surfacing
+   $145k+ in opportunities. Pair `docs/outreach/cold-email.md` with a
+   screen record of the Planning tab on `edge-big-ltcg` (G4.1 $93k
+   headline). 5-10 target firms.
 
-2. **Session N+1 — CPA design-partner outreach (C11).** No code.
-   Strongest pitch position to date: zero documented engine gaps +
-   complete planning module (10 G1 rules + 5 G4 multi-year detectors +
-   AI memo + hit list) + 88 seed clients demo'ing $145k+ in surfaced
-   opportunities. Pair `docs/outreach/cold-email.md` with a screen
-   record of the Planning tab on a high-value archetype like
-   `edge-big-ltcg` (G4.1 with $93k headline savings).
+2. **Session N+1 — Phase D15 multi-tenancy auth (~2-3 weeks).**
+   Required before charging real money. Wires `actorUserId` into
+   audit_log (column already exists, nullable). Per-firm tables,
+   RBAC, per-client visibility. Hold until a paid partner is
+   committed; this is the gate to billing.
 
-3. **Session N+2:** Phase D15 (CPA-firm multi-tenancy auth) once a paid
-   design partner is committed. 2-3 weeks. Required before charging
-   real money. Wires actorUserId into audit_log (column already exists,
-   nullable).
+3. **Session N+2 — Phase D18 Stripe billing (1-2 weeks).** The G5
+   Pro-tier feature gate is already in place; D18 plugs the per-firm
+   `proTierEnabled` column (added in D15) into a Stripe subscription
+   state. Migrate the env-var flag to a per-firm column when the first
+   paid customer signs.
 
-4. **Session N+3+:** Phase E reactive items as customers request
-   (charitable carryforward, AMT credit carryforward, §179, 1099-R
-   penalty, part-year residency, other local taxes). Phase D16-D19
-   (soft-delete, S3 encryption, Stripe, SOC 2) on a real customer's
-   schedule.
+4. **Session N+3+ — Phase E reactive items + Phase D16/D17/D19 on a
+   real customer's schedule.** (Charitable carryforward, AMT credit
+   carryforward, §179, 1099-R penalty, part-year residency, other
+   local taxes; soft-delete, S3 encryption, SOC 2 Type I.)
 
 Hold Phase D until a paid design partner is committed. Phase E and
 Phase 5 are reactive. Phase G is now complete (G1+G2+G3+G4); only G5

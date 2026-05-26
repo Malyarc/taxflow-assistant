@@ -12,10 +12,12 @@ import rentalPropertiesRouter from "./rental-properties";
 import capitalTransactionsRouter from "./capital-transactions";
 import scheduleK1Router from "./schedule-k1";
 import planningRouter from "./planning";
+import settingsRouter from "./settings";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use(settingsRouter);
 router.use(clientsRouter);
 router.use(documentsRouter);
 router.use(w2DataRouter);

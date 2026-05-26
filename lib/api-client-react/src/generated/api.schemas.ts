@@ -9,6 +9,29 @@ export interface HealthStatus {
   status: string;
 }
 
+export interface Settings {
+  /** Phase G5 — when false the frontend hides the Planning tab and the dashboard Top-10 widget, and all planning endpoints respond 402. Controlled by the PRO_TIER_ENABLED env var on the api-server.
+   */
+  proTierEnabled: boolean;
+}
+
+export type ProTierRequiredCode =
+  (typeof ProTierRequiredCode)[keyof typeof ProTierRequiredCode];
+
+export const ProTierRequiredCode = {
+  PRO_TIER_REQUIRED: "PRO_TIER_REQUIRED",
+} as const;
+
+/**
+ * Body of the HTTP 402 response on planning endpoints when the Pro tier feature flag is off. Carries a stable `code` the frontend keys off for the upgrade CTA.
+
+ */
+export interface ProTierRequired {
+  error: string;
+  code: ProTierRequiredCode;
+  message: string;
+}
+
 export type ClientFilingStatus =
   (typeof ClientFilingStatus)[keyof typeof ClientFilingStatus];
 

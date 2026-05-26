@@ -38,6 +38,7 @@
     "src/tax-engine-planning-tests.ts",
     "src/tax-engine-planning-integration-tests.ts",
     "src/tax-engine-planning-multi-year-tests.ts",
+    "src/tax-engine-pro-tier-tests.ts",
     "src/seed-dummy-clients.ts"
   ]
 }

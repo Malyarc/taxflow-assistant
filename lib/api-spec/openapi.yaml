@@ -10,6 +10,8 @@ servers:
 tags:
   - name: health
     description: Health operations
+  - name: settings
+    description: Server-side flags exposed to the frontend (Pro tier, etc.)
   - name: clients
     description: Client management
   - name: documents
@@ -42,6 +44,23 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  /settings:
+    get:
+      operationId: getSettings
+      tags: [settings]
+      summary: Server-side feature flags exposed to the frontend
+      description: >
+        Returns env-driven flags the frontend uses to gate UI surfaces.
+        Currently exposes the Phase G5 Pro-tier flag. Add new fields only
+        when the client genuinely needs them; never expose secrets here.
+      responses:
+        "200":
+          description: Settings snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Settings"
 
   # ── Clients ──────────────────────────────────────────────────────────────
   /clients:
@@ -564,6 +583,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PlanningHitList"
+        "402":
+          description: Pro tier disabled (PRO_TIER_ENABLED=false on the server)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProTierRequired"
 
   # ── Planning memo + email + missing data (Phase G3) ───────────────────────
   /clients/{clientId}/planning-memo:
@@ -584,6 +609,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PlanningMemo"
+        "402":
+          description: Pro tier disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProTierRequired"
         "404":
           description: Client not found
   /clients/{clientId}/planning-email:
@@ -604,6 +635,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PlanningMemo"
+        "402":
+          description: Pro tier disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProTierRequired"
         "404":
           description: Client not found
   /clients/{clientId}/planning-missing-data:
@@ -624,6 +661,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PlanningMissingData"
+        "402":
+          description: Pro tier disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProTierRequired"
         "404":
           description: Client not found
 
@@ -646,6 +689,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PlanningOpportunities"
+        "402":
+          description: Pro tier disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProTierRequired"
         "404":
           description: Client not found
 
@@ -673,6 +722,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/PlanningMultiYear"
+        "402":
+          description: Pro tier disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProTierRequired"
         "404":
           description: Client not found
 
@@ -1086,6 +1141,33 @@ components:
       required: [status]
       properties:
         status:
+          type: string
+
+    Settings:
+      type: object
+      required: [proTierEnabled]
+      properties:
+        proTierEnabled:
+          description: >
+            Phase G5 — when false the frontend hides the Planning tab and the
+            dashboard Top-10 widget, and all planning endpoints respond 402.
+            Controlled by the PRO_TIER_ENABLED env var on the api-server.
+          type: boolean
+
+    ProTierRequired:
+      description: >
+        Body of the HTTP 402 response on planning endpoints when the Pro
+        tier feature flag is off. Carries a stable `code` the frontend
+        keys off for the upgrade CTA.
+      type: object
+      required: [error, code, message]
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+          enum: [PRO_TIER_REQUIRED]
+        message:
           type: string
 
     # ── Client ──────────────────────────────────────────────────────────────

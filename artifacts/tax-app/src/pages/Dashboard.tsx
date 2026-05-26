@@ -1,12 +1,15 @@
 import {
   useGetDashboardSummary,
   useGetPlanningHitList,
+  useGetSettings,
   getGetPlanningHitListQueryKey,
+  getGetSettingsQueryKey,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
+import { UpgradeProCard } from "@/components/UpgradeProCard";
 
 function fmt(n: number | null | undefined): string {
   if (n == null) return "—";
@@ -15,6 +18,13 @@ function fmt(n: number | null | undefined): string {
 
 export default function Dashboard() {
   const { data: summary, isLoading } = useGetDashboardSummary();
+  const { data: settings } = useGetSettings({
+    query: { queryKey: getGetSettingsQueryKey() },
+  });
+  // Hide the planning widget only when settings explicitly says off.
+  // While loading we render the widget — falling back to the prior behavior
+  // and avoiding a flash of "Upgrade to Pro" for an existing Pro firm.
+  const planningGated = settings?.proTierEnabled === false;
 
   return (
     <div className="p-8 max-w-6xl mx-auto space-y-8">
@@ -69,7 +79,7 @@ export default function Dashboard() {
         <div>No data available</div>
       )}
 
-      <PlanningHitListWidget />
+      {planningGated ? <UpgradeProCard variant="widget" /> : <PlanningHitListWidget />}
     </div>
   );
 }

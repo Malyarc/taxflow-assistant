@@ -65,7 +65,7 @@ Future-you will be tempted to "simplify" these. Don't.
 - **Hand-calc every expected value** against IRS published rules before asserting it. The user has been burned by tests passing while the underlying calc was wrong (e.g. the AGI/Line-9 bug shipped despite unit tests passing).
 - **Unit tests alone aren't enough.** Standalone suites verify the calculator; integration suites hit a live API at `localhost:8080` and exercise the full pipeline. Run both.
 - **Adding a new test file** also requires adding it to `scripts/tsconfig.json`'s `exclude` array — the workspace typecheck fails otherwise.
-- **Test files (current set, 1,770+ assertions across 27 suites — ALL 10 K-list federal-engine gaps + ALL 4 state-engine gaps closed end-to-end 2026-05-23 → 2026-05-26; Phase G4 multi-year shipped 2026-05-26 with 70 new hand-calc assertions; deep-audit suite still 210 assertions, accuracy-audit 97 assertions, 0 documented gaps; AI-overlay 33 env-gated):**
+- **Test files (current set, 1,790+ assertions across 28 suites — ALL 10 K-list federal-engine gaps + ALL 4 state-engine gaps closed end-to-end 2026-05-23 → 2026-05-26; Phase G4 multi-year shipped with 70 new hand-calc assertions; Phase G5 Pro-tier gate shipped with 21 new dual-state integration assertions; deep-audit suite still 210 assertions, accuracy-audit 97 assertions, 0 documented gaps; AI-overlay 33 env-gated):**
   | File | Needs API |
   |---|---|
   | `tax-engine-tests.ts` | no |
@@ -97,6 +97,7 @@ Future-you will be tempted to "simplify" these. Don't.
   | `tax-engine-planning-tests.ts` | no (133 hand-calc'd tests across 10 G1 detectors + G2 scoring helpers; Phase G) |
   | `tax-engine-planning-integration-tests.ts` | yes (29 assertions: Phase G API surface — G1 SEP via 1099-NEC, G1 PTET via S-corp K-1 + SALT, pure-W-2 silence, 404, G4 persistent NIIT 2-year, G4 single-year-history empty hits, G4 404) |
   | `tax-engine-planning-multi-year-tests.ts` | no (70 hand-calc'd tests across 5 G4 multi-year detectors; Phase G4) |
+  | `tax-engine-pro-tier-tests.ts` | yes (Phase G5 — adapts to current PRO_TIER_ENABLED state: 5 on-state assertions OR 16 off-state assertions verifying 402 + body code on every planning endpoint. Run twice for full coverage.) |
 - **Scenarios are CPA-style end-to-end cases.** Each one has a `Hand-calc:` comment block — keep that convention. When a scenario fails, double-check your hand-calc before mutating the assertion; the calculator is usually right.
 - **Run all suites after any pipeline or schema change.** The Phase 1 work flushed out one regression (scenario 8 — needed to add EITC to expected refund).
 
@@ -112,7 +113,7 @@ Future-you will be tempted to "simplify" these. Don't.
 
 SSH: `ssh -i ~/Downloads/taxflow-key.pem ubuntu@ec2-18-188-192-154.us-east-2.compute.amazonaws.com`. Project lives at `~/taxflow-pro` (NOT `taxflow-assistant`).
 
-There is NO `~/.env` on the box. Env vars (DATABASE_URL → Neon, AI_API_KEY) are baked into the running pm2 process. To deploy, source them out of pm2:
+There is NO `~/.env` on the box. Env vars (DATABASE_URL → Neon, AI_API_KEY, and optionally PRO_TIER_ENABLED for Phase G5 gating — defaults to true) are baked into the running pm2 process. To deploy, source them out of pm2:
 
 ```bash
 ssh -i ~/Downloads/taxflow-key.pem ubuntu@ec2-18-188-192-154.us-east-2.compute.amazonaws.com
@@ -212,9 +213,27 @@ Several Phase 2/3 limitations have been resolved (multi-state foundation, MACRS,
   Seed extension ingests 2 years per archetype (TY2024 prior + TY2025
   current, ×1.05 YoY scaling) and POSTs /tax-return for both years.
   Catalog bumped to v1.1.0. 70 hand-calc unit tests + 11 new integration
-  assertions. **Pro tier feature flag (G5) NOT yet shipped** — module
-  is currently available to all clients; gate behind a flag before
-  Pro pricing rollout.
+  assertions.
+- **Phase G5 — Pro tier feature flag shipped (2026-05-26).** Env-var
+  driven gate on every planning surface. `PRO_TIER_ENABLED=true`
+  (default) preserves current behavior. Set `PRO_TIER_ENABLED=false`
+  to gate ahead of pricing rollout:
+  - New endpoint `GET /api/settings` exposes the flag (boolean) for
+    frontend gating. Add new flags here as needed; never expose secrets.
+  - All `/api/.../planning-*` and `/api/planning-hit-list` routes
+    return HTTP 402 Payment Required with `{ code: "PRO_TIER_REQUIRED" }`
+    when off. Single middleware in `routes/planning.ts`.
+  - Frontend reads `/api/settings` via `useGetSettings`:
+    - Dashboard: Top-10 planning widget swaps to an `UpgradeProCard`
+    - ClientDetail: Planning tab trigger + content hidden; grid drops
+      from `grid-cols-10` to `grid-cols-9`
+    - Gates only on explicit `proTierEnabled === false` to avoid
+      flashing the paywall during settings load
+  - 21 new dual-state Pro-tier integration assertions
+    (`tax-engine-pro-tier-tests.ts`): 5 on-state + 16 off-state.
+  - Stripe billing flow deferred to D18; the CTA button is a visual
+    placeholder. Future: per-firm `proTierEnabled` column after D15
+    multi-tenancy lands.
 - AMT preferences modeled: line 2g state-tax addback (auto from itemized SALT, override available), line 2k ISO bargain element. Still not modeled: line 2i MACRS-vs-ADS depreciation difference, line 2e state-refund recapture, AMT NOL.
 - K-1 §199A wage/UBIA limits + SSTB phase-out (engine applies simplified 20% only); K-1 basis / at-risk fields stored but not enforced; K-1 guaranteed payments (Box 4) not modeled
 - Other carryforwards: NOL, AMT credit, charitable (capital loss + §469 PAL + K-1 passive loss carryforward ARE supported)
@@ -230,7 +249,7 @@ Several Phase 2/3 limitations have been resolved (multi-state foundation, MACRS,
 - **Hates test failures that turn out to be wrong test expectations.** Hand-calc before asserting.
 - **Phase 4: Option A (CPA-tool overlay).** Consumer DIY is parked. Don't build interview UI, e-file, or ERO-related infra.
 - Explicitly does NOT want a Lacerte clone (5+ years / $20M+). Wants as close as feasible without that scope.
-- Next-phase priorities (post Phase G1+G2+G3+G4 ship 2026-05-26): (a) Phase G5 Pro tier feature flag (~1 day, the last Phase G piece); (b) CPA design-partner outreach (C11) using the complete planning module as the lead artifact (10 G1 + 5 G4 detectors, 88-archetype demo showing $145k+ in surfaced opportunities); (c) CPA-firm multi-tenancy auth (Phase D15) once a paid partner is committed; validate UltraTax `.gen` with a real design partner; build Lacerte / ProConnect / Drake adapters. AI-overlay UX shipped 2026-05-21 — covers upload → extract → CPA review → approve → audit-logged record write → `.gen` export.
+- Next-phase priorities (post Phase G1+G2+G3+G4+G5 ship 2026-05-26 — Phase G fully complete): (a) CPA design-partner outreach (C11) using the complete planning module as the lead artifact (10 G1 + 5 G4 detectors, 88-archetype demo showing $145k+ in surfaced opportunities, Pro-tier gating ready for pricing rollout); (b) CPA-firm multi-tenancy auth (Phase D15) once a paid partner is committed; (c) Stripe billing flow (D18) — only after a paid partner asks for it; validate UltraTax `.gen` with a real design partner; build Lacerte / ProConnect / Drake adapters. AI-overlay UX shipped 2026-05-21 — covers upload → extract → CPA review → approve → audit-logged record write → `.gen` export.
 
 ## Where to look first when picking up a session
 

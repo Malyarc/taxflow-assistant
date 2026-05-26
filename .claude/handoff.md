@@ -1,182 +1,184 @@
-# Handoff Note — 2026-05-26 (Phase G4 multi-year intelligence shipped)
+# Handoff Note — 2026-05-26 (Phase G5 Pro-tier gating shipped — Phase G complete)
 
 Session continuation point for the next Claude (or human) working on
 TaxFlow Assistant.
 
 ## Headline
 
-**Phase G4 — Multi-year tax-planning intelligence landed end-to-end.**
-The planning module now detects patterns across multiple tax years
-(persistent NIIT/AMT, std-ded-cliff bunching, stuck capital-loss
-carryforward, growing passive-loss suspension) in addition to the 10
-single-year G1 rules. With Phase G1+G2+G3+G4 all shipped, Phase G is
-complete except for the G5 Pro-tier feature flag.
+**Phase G5 — Pro-tier feature flag landed end-to-end.** With G5, Phase
+G is now COMPLETE (G1+G2+G3+G4+G5). All planning surfaces are gated
+behind a single `PRO_TIER_ENABLED` env var on the api-server; default
+`true` preserves existing behavior, toggling to `false` flips the UI
+into upsell mode and locks the planning endpoints with HTTP 402.
 
-Engine still at zero documented gaps. CPA outreach pitch position is the
-strongest it has ever been: 1,770+ hand-calc assertions, ZERO engine
-gaps, complete planning module (15 detector rules total — 10 single-year
-+ 5 multi-year), AI memo + email synthesis, 88-archetype demo seed
-surfacing $145k+ in planning opportunities.
+Engine still at zero documented gaps. Engine math is unchanged
+(740+ pure assertions across 6 suites still green). 21 new dual-state
+gating assertions verify both Pro-on and Pro-off branches.
 
-## What landed (session commits, in order)
+## What landed (session commits)
 
-| Commit | SHA       | Title |
-|---|---|---|
-| 1 | `e6ad3b5` | G4 catalog entries — 5 multi-year strategies (catalog v1.1.0) |
-| 2 | `727222a` | planningEngineMultiYear.ts + 5 G4 detectors + 70 hand-calc unit tests |
-| 3 | `a1d0225` | API endpoint /planning-multi-year + OpenAPI + 11 new integration assertions |
-| 4 | `16287d5` | Planning tab "Multi-year trends" section + action-template fix |
-| 5 | `2e9f863` | Multi-year seed extension + G4.3 cliff-detection bug fix + 3 G4 demo archetypes |
+| Commit | Title |
+|---|---|
+| 1 | G5 backend — config + /settings endpoint + planning 402 middleware + OpenAPI + codegen + UpgradeProCard + frontend gating + 21 dual-state integration assertions + docs |
+
+(Shipping as a single tight commit; everything is interdependent and
+small. Server-only changes wouldn't be testable without the frontend;
+frontend gating wouldn't be observable without the server flag.)
 
 ## Test state
 
-- **70/70 G4 multi-year unit tests pass** (new this session).
-- **29/29 planning integration tests pass** (was 18; +11 G4).
-- **133/133 G1 unit tests pass** (unchanged).
-- **210/210 deep-audit assertions pass** (unchanged).
-- **97/97 accuracy-audit assertions pass** (unchanged).
-- Workspace typecheck clean across all 12 workspaces (incl. regenerated
-  api-zod + api-client-react after OpenAPI bump).
-- **Engine net: ZERO documented gaps** (preserved from prior session).
+- **193/193 tax-engine-tests** (regression sweep)
+- **37/37 tax-engine-deep-tests**
+- **210/210 deep-audit assertions** (unchanged)
+- **97/97 accuracy-audit assertions** (unchanged)
+- **133/133 G1 planning unit tests** (unchanged)
+- **70/70 G4 multi-year unit tests** (unchanged)
+- **29/29 planning integration tests** (unchanged, Pro-on)
+- **5/5 pro-tier integration (Pro-on branch) — NEW**
+- **16/16 pro-tier integration (Pro-off branch) — NEW**
+- Workspace typecheck clean across all 12 workspaces.
+- **Engine net: ZERO documented gaps** (preserved).
 
-## Architecture (5-layer planning module — now complete except G5)
+## Architecture (Phase G5 specifics)
 
-1. **Catalog (Layer 1)** — `lib/planning-strategies/strategies-v1.json`
-   v1.1.0, 15 strategies (10 G1 + 5 G4), validated at module load.
-2. **Detector engine (Layer 2, deterministic)** — two sibling modules:
-   - `planningEngine.ts` (G1 single-year)
-   - `planningEngineMultiYear.ts` (G4 multi-year — new this session)
-3. **Scoring (Layer 3, deterministic)** — `planningScore()` in
-   planningEngine; weights single-year hits only at present.
-4. **AI synthesis (Layer 4, LLM narration only — NEVER math)** —
-   `planningMemo.ts` consumes the deterministic hits.
-5. **Online intel refresh (Layer 5)** — NOT BUILT. Clean seam left.
+### Server config (`artifacts/api-server/src/lib/config.ts`)
 
-## G4 detector specs (recap from the catalog)
+Single-source-of-truth for env-driven flags. `parseBoolEnv()` accepts
+`true/1/yes/false/0/no` (case-insensitive). Default value passed by
+caller. Exports `config` object frozen at module load:
 
-| Rule | IRC | Trigger | Formula | Confidence |
-|---|---|---|---|---|
-| G4.1 | §1411 | NIIT > 0 in current AND ≥ 1 prior year | avg(niitTax) × 0.5 | 0.70 |
-| G4.2 | §55-§59 | AMT > 0 in current AND ≥ 1 prior year | avg(amtTax) × 0.4 | 0.65 |
-| G4.3 | §170; §63 | Sched A line items sum within ±15% of std-ded in current AND ≥ 1 prior year, charity > 0 currently | stdDed × 0.25 × marginal | 0.90 |
-| G4.4 | §1211; §1212 | cap-loss carryforward > $20k AND not declining > $3,500/yr | min(cf, $20k) × marginal | 0.65 |
-| G4.5 | §469 | suspended PAL > $5k AND grew YoY | growth × marginal × 0.5 | 0.60 |
-
-## New endpoint
-
-```
-GET /api/clients/:id/planning-multi-year
-  → { clientId, taxYear, catalogVersion, hits[], totalEstSavings,
-      yearsAvailable, yearsCovered: number[] }
+```ts
+export const config = {
+  proTierEnabled: parseBoolEnv(process.env.PRO_TIER_ENABLED, true),
+};
 ```
 
-## Frontend changes
+### `/api/settings` endpoint (`routes/settings.ts`)
 
-- **New "Multi-year trends" section on the Planning tab.** Indigo cards
-  visually distinct from the emerald G1 cards. Shows year coverage in
-  the section header.
-- When `yearsAvailable < 2`, collapses to a short dashed-border hint:
-  "Multi-year planning patterns activate once this client has at
-  least 2 years of computed tax_returns history."
+Returns `{ proTierEnabled: boolean }`. The frontend reads this via the
+auto-generated `useGetSettings` React Query hook. Add new public flags
+to this surface only when the client needs them; never expose secrets.
 
-## Seed extension
+### Planning router middleware (`routes/planning.ts`)
 
-`scripts/src/seed-dummy-clients.ts` now has a second pass after the main
-archetype seed:
+A single `router.use((_req, res, next) => ...)` at the top of the
+planning router returns HTTP 402 + JSON body when the flag is off:
 
-- For each archetype, mirrors its W-2/1099/K-1 records at TY+1 (TY2025
-  by default) with ×1.05 amounts. Adjustments are shared across years
-  (no per-year column).
-- Runs POST /tax-return for both years to persist tax_returns snapshots
-  so the G4 detector has history to read.
-- Idempotent on year-2 ingestion; always re-runs the compute (cheap).
-- Pass `--no-multi-year` to skip and seed single-year only.
+```json
+{
+  "error": "Pro tier required",
+  "code": "PRO_TIER_REQUIRED",
+  "message": "Tax-planning features ... are available on the Pro tier..."
+}
+```
 
-3 dedicated demo archetypes added:
-- `g4-bunching-mfj` — fires G4.3 ($1,650/yr)
-- `g4-cap-loss-cf` — fires G4.4 ($4,400/yr)
-- `g4-pal-growth-mfj` — fires G4.5 ($6,000/yr)
+Stable `code` field for frontend logic to key off. All six planning
+endpoints are gated by virtue of being inside the planning router.
 
-## Production-data verification (local DB)
+### Frontend gating
 
-After re-seeding: 88 seed clients, 11 fire G4 hits, **$145,499 total
-estSavings on display**. Coverage across all 5 G4 rules:
+`useGetSettings` is wired in **Dashboard** and **ClientDetail**:
 
-| Rule | Fires on | Headline savings |
-|---|---|---|
-| G4.1 | 4 clients (incl. `edge-big-ltcg` — $93,575/yr) | $93k+ |
-| G4.2 | 2 clients (incl. `high-amt-binding` — $17,107/yr) | $17k |
-| G4.3 | 3 clients (g4-bunching demo + 2 organic) | $1.6k–$2.5k each |
-| G4.4 | 1 client (g4-cap-loss-cf demo) | $4.4k |
-| G4.5 | 1 client (g4-pal-growth-mfj demo) | $6k |
+- **Dashboard**: When `settings?.proTierEnabled === false`, renders
+  `<UpgradeProCard variant="widget" />` in place of `<PlanningHitListWidget />`.
+- **ClientDetail**: When `settings?.proTierEnabled === false`, the
+  "Planning" `<TabsTrigger>` is hidden, the `<TabsContent>` is not
+  rendered, and the grid drops from `grid-cols-10` to `grid-cols-9`.
+- Both surfaces gate **only on explicit `=== false`**, not on missing/
+  loading data, so existing Pro firms don't see a flash of "no Planning"
+  during the brief settings fetch.
 
-## Bug fix surfaced by exercising the seed
+### `<UpgradeProCard>` (`components/UpgradeProCard.tsx`)
 
-**G4.3 cliff detector was silently no-op'ing for std-ded filers.** The
-detector originally read `TaxReturnSnapshot.itemizedDeductions`, which
-the engine populates only when the filer actually itemized. For std-ded
-filers — the very pattern G4.3 is designed to catch — the column is
-null and the detector skipped them. Fixed by summing the per-line
-Sched A columns (medical + salt + mortgage + charity) for the
-"would-be itemized" total via a new `wouldBeItemizedTotal()` helper.
-Required adding 3 new fields to `TaxReturnSnapshot` and updating the
-route handler and the G4.3 unit tests to set the line items rather
-than the chosen-itemized field. All 70 unit tests still pass; the
-g4-bunching-mfj demo archetype now correctly fires G4.3 in the seed.
+The visual paywall. Indigo + emerald gradient, dashed border,
+"Pro" badge, feature list of what's gated (10 G1 + 5 G4 + AI memo +
+hit list), and a disabled "Upgrade to Pro" button. Two variants
+(`widget` for dashboard, `tab` for ClientDetail — only `widget` is
+used in this rollout since the Planning tab is hidden entirely when
+off, but the variant is available for future "show as locked tab" UX).
+
+## Production verification (post-deploy)
+
+After EC2 deploy with `PRO_TIER_ENABLED=true`:
+
+```bash
+# Confirm settings endpoint exposes the flag
+curl http://ec2-18-188-192-154.us-east-2.compute.amazonaws.com/api/settings
+# → {"proTierEnabled":true}
+
+# Confirm planning endpoint still works (Pro on)
+curl http://ec2-18-188-192-154.us-east-2.compute.amazonaws.com/api/clients/<ID>/planning-opportunities
+# → 200 with hits
+
+# Re-run gate tests (locally) against EC2 by tunneling, OR ssh + run pro-tier tests
+ssh ec2:~/taxflow-pro && pnpm --filter @workspace/scripts exec tsx src/tax-engine-pro-tier-tests.ts
+```
+
+To flip to off-state on EC2 (e.g., during pricing rollout):
+1. `pm2 set taxflow:PRO_TIER_ENABLED false`
+2. `pm2 restart taxflow --update-env`
+3. Verify `/api/settings` → `false`, planning endpoints → 402.
+
+## Visual verification (this session)
+
+Verified end-to-end in the local browser preview:
+
+**Pro=ON (default):**
+- Dashboard shows the "Top 10 planning targets" widget
+- ClientDetail shows 10 tabs incl. "Planning"; `grid-cols-10`
+- Planning tab content renders G1 hits + G4 "Multi-year trends" section
+  with catalog v1.1.0
+
+**Pro=OFF (with `PRO_TIER_ENABLED=false` env override):**
+- Dashboard shows the `UpgradeProCard` in place of Top-10 widget
+- ClientDetail shows 9 tabs (no "Planning"); `grid-cols-9`
+- All planning endpoints respond 402 (confirmed via 16 integration
+  assertions covering all six paths + body shape)
 
 ## Open items (next session priorities)
 
-**Option A — Phase G5 Pro tier feature flag (~1 day, RECOMMENDED).**
-The Planning tab + dashboard widget + new multi-year section are
-currently shown to all clients. Add a `proTierEnabled` boolean (env
-var or per-firm column after D15) and gate Phase G features behind it.
-Show "Upgrade to Pro" CTA when off. Defer Stripe + billing to D18.
-This is the last piece of Phase G as originally scoped — completing it
-closes out Phase G entirely.
+**Option A (RECOMMENDED): CPA design-partner outreach (C11). No code.**
+Strongest pitch position to date — Phase G fully complete + zero
+documented engine gaps + Pro-tier gating ready for pricing rollout.
+Pair `docs/outreach/cold-email.md` with a screen record of the
+Planning tab on `edge-big-ltcg` (G4.1 with $93k headline savings).
 
-**Option B — CPA design-partner outreach (C11).** No code. Strongest
-pitch position to date. Pair `docs/outreach/cold-email.md` with a
-screen record of the Planning tab on a high-value archetype like
-`edge-big-ltcg` (G4.1 $93k headline + other hits). Or send the seed-DB
-to a partner for hands-on exploration.
+**Option B — Phase D15 CPA-firm multi-tenancy auth (~2-3 weeks).**
+Required before charging real money. Wires `actorUserId` into
+audit_log. Per-firm tables, RBAC, per-client visibility. Hold until
+a paid partner is committed; this is the gate to billing.
 
-**Option C — Phase D15 multi-tenancy auth (~2-3 weeks).** Required
-before charging real money. Hold until a paid design partner is
-committed. Wires `actorUserId` into `audit_log` (column already
-exists, nullable).
+**Option C — Phase D18 Stripe billing (1-2 weeks, requires D15 first).**
+G5 already wires the gate; D18 migrates the env-var flag to a per-firm
+column (added in D15) plugged into a Stripe subscription state.
 
-**Option D — Live AI smoke verification.** Stub mode is verified. The
-live Gemini path (planning memo + email + missing-data) has been
-exercised in prior sessions; if quality is uneven on production, set
-`AI_PLANNING_MODEL=gemini-2.5-pro` on EC2 pm2.
+**Option D — Phase E reactive items as customers ask.** Charitable
+carryforward, AMT credit carryforward, §179, 1099-R penalty,
+part-year residency, other local taxes. Don't build speculatively.
 
-## Sub-gaps + known limits (Phase G4)
+## Sub-gaps + known limits (Phase G5)
 
-- **G4 detectors are pure** — no LLM, no I/O. All math hand-verified
-  per IRC citation. The "would-be itemized" sum in G4.3 captures
-  medical + salt + mortgage + charity but not the smaller Sched A
-  lines (casualty losses, gambling losses, other itemized). Real
-  clients with those line items will be slightly mis-estimated on
-  the cliff check; acceptable for a detection heuristic.
-- **G4.5 PAL growth** — adjustments are shared across tax years in
-  the current schema. The seed extension's ×1.05 scaling applies only
-  to W-2/1099/K-1 records, not adjustments. So PAL growth in the seed
-  comes from the §469 carryforward synthesis (prior year's suspended
-  PAL flows in as a "new" loss the next year) rather than from
-  growing rental losses. Real customers' growing PAL is naturally
-  captured.
-- **G4 multi-year intelligence assumes engine-supported tax years.**
-  The seed currently uses TY2024 + TY2025 (the two years with first-
-  class engine constants). Extending to TY2023 history would require
-  back-porting brackets / SEP / QBI thresholds to TY2023 in the
-  engine.
-- **G4 not yet behind a Pro-tier flag.** Same caveat as G1+G2+G3.
+- **G5 is server-wide, not per-firm.** Single env var on the api-server
+  applies to ALL clients/firms. Per-firm gating waits for D15
+  multi-tenancy (which adds a firms table and the place to put a
+  per-row `proTierEnabled`). Migration path documented in roadmap.
+- **CTA button is a non-functional placeholder.** The "Upgrade to Pro"
+  button on the paywall card is intentionally disabled. Real billing
+  is D18 (Stripe).
+- **No flash-of-paywall during settings load.** Both surfaces default
+  to Pro-on while settings is loading. If settings ever fails to load,
+  we fall through to showing Planning (failing open). For a paid
+  product this would need to fail closed; that's a D18 hardening.
+- **Tab restore behavior.** Tabs use `defaultValue="documents"`, so
+  if a user previously had Planning open and then Pro turns off,
+  they land on Documents (the default). Acceptable for the
+  no-stateful-URL design.
 
 ## EC2 deploy
 
-Schema unchanged this round so `pnpm --filter @workspace/db run push`
-is a no-op. The frontend tab + dashboard widget are unchanged from G3;
-only the new MultiYearPlanningSection component requires a fresh build.
+Schema unchanged. Only api-server build + pm2 restart + frontend rsync
++ optional pm2 env update for the new flag (default `true` keeps
+existing behavior).
 
 ```bash
 ssh -i ~/Downloads/taxflow-key.pem ubuntu@ec2-18-188-192-154.us-east-2.compute.amazonaws.com
@@ -186,85 +188,53 @@ git pull origin main
 pnpm install
 export DATABASE_URL=$(pm2 env 0 | awk -F": " '/^DATABASE_URL:/ {print $2; exit}')
 export AI_API_KEY=$(pm2 env 0 | awk -F": " '/^AI_API_KEY:/ {print $2; exit}')
+# (Optional) export PRO_TIER_ENABLED=false  # if you want to flip the gate
 pnpm --filter @workspace/api-server run build
 pm2 restart taxflow
 curl http://localhost:8080/api/healthz
+curl http://localhost:8080/api/settings
 
-# Frontend — Multi-year trends section is new. Build locally + rsync:
+# Frontend — UpgradeProCard + settings hook are new. Build locally + rsync:
 # LOCAL:
 pnpm --filter @workspace/tax-app run build
 rsync -e "ssh -i ~/Downloads/taxflow-key.pem" -avz --delete \
   artifacts/tax-app/dist/public/ \
   ubuntu@ec2-18-188-192-154.us-east-2.compute.amazonaws.com:~/taxflow-pro/artifacts/tax-app/dist/public/
-
-# (Optional) Re-run seed on prod to get multi-year demo data on EC2:
-# Already ingested locally via the seed extension — production will
-# need a re-run to ingest 2025 rows for the existing 85 archetypes.
-# Run on the box (NOT against EC2 from local — see localhost-only DNS note):
-#   pnpm --filter @workspace/scripts exec tsx ./src/seed-dummy-clients.ts
 ```
-
-## Production verification (post-deploy)
-
-```bash
-curl http://ec2-18-188-192-154.us-east-2.compute.amazonaws.com/api/healthz
-
-# Pick a seed client ID from /api/clients and:
-curl http://ec2-18-188-192-154.us-east-2.compute.amazonaws.com/api/clients/<ID>/planning-multi-year
-```
-
-Expect `yearsAvailable: 1` initially (existing seeds are single-year);
-re-run seed on the box to populate TY2025 snapshots and trigger G4 hits.
 
 ## How to start the next Claude session
-
-Pasteable prompt below.
-
----
 
 ```
 Project: TaxFlow Assistant.
 
-Read these four files first, in order:
-  1. .claude/handoff.md           — Phase G4 multi-year shipped (this session)
-  2. .claude/roadmap.md           — G5 / Phase D / Phase 5 plan
+Read these files first, in order:
+  1. .claude/handoff.md           — Phase G5 shipped + Phase G complete (this session)
+  2. .claude/roadmap.md           — Phase D / Phase 5 / reactive E items
   3. CLAUDE.md                    — invariants, closure log, planning architecture
-  4. .claude/phase-g-plan.md      — original Phase G session-kickoff plan (G5 spec)
+  4. docs/outreach/cold-email.md  — if doing C11 outreach
 
-Where we left off (2026-05-26): Phase G4 deployed end-to-end. 5 multi-
-year detectors (persistent NIIT/AMT, std-ded-cliff bunching, capital-loss
-carryforward growth, passive-loss suspension growth). New endpoint
-/planning-multi-year. Frontend "Multi-year trends" section on the
-Planning tab. Seed extension produces 2 years per archetype + 3
-dedicated G4 demo archetypes. 70 hand-calc unit + 11 new integration
-assertions all pass. Engine still at zero documented gaps. Phase G is
-now complete except for G5.
+Where we left off (2026-05-26): Phase G is now fully complete.
+G1 (10 single-year detectors), G2 (firm-wide hit list), G3 (AI
+synthesis), G4 (5 multi-year detectors), G5 (Pro-tier env-var gate).
+Engine still at zero documented gaps. 1,790+ test assertions across
+28 suites. Pro-tier gating verified end-to-end in both states.
 
 This session, pick ONE:
 
-  Option A — RECOMMENDED. Phase G5 Pro tier feature flag (~1 day).
-  Last piece of Phase G as originally scoped. Add `proTierEnabled`
-  boolean (env var or per-firm column after D15). Hide Planning tab +
-  dashboard widget + new multi-year section when off. Show "Upgrade
-  to Pro" CTA. Defer Stripe to D18. Completes Phase G entirely.
+  Option A — RECOMMENDED. CPA design-partner outreach (C11). No code.
+  Strongest pitch position ever — Phase G complete + zero documented
+  engine gaps. Pair docs/outreach/cold-email.md with a screen record
+  of the Planning tab on edge-big-ltcg (G4.1 $93k headline).
 
-  Option B — CPA design-partner outreach (C11). No code. Strongest
-  pitch position ever — 15 detector rules + AI synthesis + 88-archetype
-  demo + $145k+ surfaced savings + zero documented engine gaps.
-  Send docs/outreach/cold-email.md with a screen record of the
-  Planning tab on edge-big-ltcg ($93k headline G4.1 hit).
+  Option B — Phase D15 CPA-firm multi-tenancy auth (~2-3 weeks).
+  Required before charging real money. Hold until paid partner.
 
-  Option C — Phase D15 CPA-firm multi-tenancy auth (~2-3 weeks).
-  Required before charging real money. Hold until a paid design
-  partner is committed.
+  Option C — Phase D18 Stripe billing (1-2 weeks, requires D15 first).
 
-  Option D — Live AI smoke + Pro-tier model upgrade. Verify Gemini
-  live path produces high-quality memos on EC2 + planning-email +
-  planning-missing-data. Toggle AI_PLANNING_MODEL=gemini-2.5-pro in
-  pm2 if Flash output is uneven.
+  Option D — Phase E reactive items only when a customer asks.
 
 Quality bar (same as prior sessions):
-- Each item ships as its own commit
+- Each chunk ships as its own commit
 - All existing tests must stay at 0 real failures
 - Update roadmap.md / CLAUDE.md / handoff.md at session end
 - Deploy to EC2 at the end

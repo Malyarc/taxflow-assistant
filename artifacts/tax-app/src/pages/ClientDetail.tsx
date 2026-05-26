@@ -25,11 +25,13 @@ import {
   useGetPlanningClientEmail,
   useGetPlanningMissingData,
   useGetPlanningMultiYear,
+  useGetSettings,
   getGetPlanningOpportunitiesQueryKey,
   getGetPlanningMemoQueryKey,
   getGetPlanningClientEmailQueryKey,
   getGetPlanningMissingDataQueryKey,
   getGetPlanningMultiYearQueryKey,
+  getGetSettingsQueryKey,
   getGetClientQueryKey,
   getListDocumentsQueryKey,
   getListW2DataQueryKey,
@@ -2115,6 +2117,13 @@ export default function ClientDetail() {
   const { data: client, isLoading } = useGetClient(clientId, {
     query: { enabled: !!clientId, queryKey: getGetClientQueryKey(clientId) },
   });
+  // Phase G5 — Pro tier gate. Hide the Planning tab when the api-server
+  // has PRO_TIER_ENABLED=false. Falls through (shows tab) while settings
+  // is loading, so existing Pro firms don't see a flash of "no Planning".
+  const { data: settings } = useGetSettings({
+    query: { queryKey: getGetSettingsQueryKey() },
+  });
+  const proTierEnabled = settings?.proTierEnabled !== false;
 
   if (isLoading) {
     return (
@@ -2162,7 +2171,7 @@ export default function ClientDetail() {
       </div>
 
       <Tabs defaultValue="documents">
-        <TabsList className="grid grid-cols-10 w-full max-w-6xl">
+        <TabsList className={`grid ${proTierEnabled ? "grid-cols-10" : "grid-cols-9"} w-full max-w-6xl`}>
           <TabsTrigger value="documents">Documents</TabsTrigger>
           <TabsTrigger value="w2data">W-2 Data</TabsTrigger>
           <TabsTrigger value="form1099">1099 Forms</TabsTrigger>
@@ -2172,7 +2181,7 @@ export default function ClientDetail() {
           <TabsTrigger value="calculator">Tax Calculator</TabsTrigger>
           <TabsTrigger value="compare">Year Compare</TabsTrigger>
           <TabsTrigger value="adjustments">Adjustments</TabsTrigger>
-          <TabsTrigger value="planning">Planning</TabsTrigger>
+          {proTierEnabled ? <TabsTrigger value="planning">Planning</TabsTrigger> : null}
         </TabsList>
 
         <TabsContent value="documents" className="mt-6">
@@ -2202,9 +2211,11 @@ export default function ClientDetail() {
         <TabsContent value="adjustments" className="mt-6">
           <AdjustmentsTab clientId={clientId} />
         </TabsContent>
-        <TabsContent value="planning" className="mt-6">
-          <PlanningTab clientId={clientId} />
-        </TabsContent>
+        {proTierEnabled ? (
+          <TabsContent value="planning" className="mt-6">
+            <PlanningTab clientId={clientId} />
+          </TabsContent>
+        ) : null}
       </Tabs>
     </div>
   );
