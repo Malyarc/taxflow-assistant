@@ -82,6 +82,12 @@ const IRS_LINE_REFERENCE_CODES: Record<string, string> = {
   homeSaleTaxableGain: "SCH-D-HOME-TAXABLE",
   socialSecurityBenefits: "1040-L6a",
   socialSecurityTaxable: "1040-L6b",
+  feieTotalExclusion: "2555-L45",
+  nolDeduction: "1040-S1-L8a",
+  nolCarryforwardRemaining: "NOL-CARRY",
+  qsbsGrossGain: "QSBS-GROSS",
+  qsbsSection1202Exclusion: "QSBS-S1202-EXCL",
+  qsbsTaxableGain: "QSBS-TAXABLE",
   iraDeduction: "1040-S1-L20",
   eitc_appliedCredit: "1040-L27",
   aocCredit: "8863-L8",
@@ -178,6 +184,22 @@ function buildExportRows(ret: ComputedTaxReturn): ExportRow[] {
   if (ret.socialSecurityBenefits > 0) {
     add("socialSecurityBenefits", "1040 Line 6a", "Social Security Benefits (gross)", ret.socialSecurityBenefits);
     add("socialSecurityTaxable", "1040 Line 6b", "Social Security Taxable Portion (Pub 915)", ret.socialSecurityTaxable);
+  }
+  if (ret.feie.totalExclusion > 0) {
+    add("feieTotalExclusion", "Form 2555 Line 45 → Sched 1 L8d", "FEIE Foreign Earned Income Exclusion (§911)", ret.feie.totalExclusion);
+  }
+  if (ret.nolDeduction > 0) {
+    add("nolDeduction", "Sched 1 Line 8a", "NOL Carryforward Deducted (IRC §172, 80% limit)", ret.nolDeduction);
+    if (ret.nolCarryforwardRemaining > 0) {
+      add("nolCarryforwardRemaining", "Carryforward to next year", "NOL Carryforward — Unused (next year)", ret.nolCarryforwardRemaining);
+    }
+  }
+  if (ret.qsbsGrossGain > 0) {
+    add("qsbsGrossGain", "Pub 550 §1202", "QSBS Gross Gain", ret.qsbsGrossGain);
+    add("qsbsSection1202Exclusion", "IRC §1202", "§1202 QSBS Exclusion Applied", ret.qsbsSection1202Exclusion);
+    if (ret.qsbsTaxableGain > 0) {
+      add("qsbsTaxableGain", "Sched D Long-Term", "QSBS Taxable Gain (in LTCG)", ret.qsbsTaxableGain);
+    }
   }
 
   // Schedule A

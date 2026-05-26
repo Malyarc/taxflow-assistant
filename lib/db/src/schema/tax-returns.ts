@@ -46,6 +46,18 @@ export const taxReturnsTable = pgTable(
     socialSecurityBenefits: numeric("social_security_benefits", { precision: 12, scale: 2 }),
     /** K10 — Taxable portion of SS (Form 1040 Line 6b). */
     socialSecurityTaxable: numeric("social_security_taxable", { precision: 12, scale: 2 }),
+    /** K9 — FEIE §911 excluded amount (Form 2555 Line 45). */
+    feieTotalExclusion: numeric("feie_total_exclusion", { precision: 12, scale: 2 }),
+    /** K4 — NOL carryforward deducted this year (capped at 80% of taxable income). */
+    nolDeduction: numeric("nol_deduction", { precision: 14, scale: 2 }),
+    /** K4 — Unused NOL carryforward for next tax year. */
+    nolCarryforwardRemaining: numeric("nol_carryforward_remaining", { precision: 14, scale: 2 }),
+    /** K7 — §1202 QSBS gross gain (gross long-term capital gain on QSBS sale). */
+    qsbsGrossGain: numeric("qsbs_gross_gain", { precision: 14, scale: 2 }),
+    /** K7 — §1202 excluded amount. */
+    qsbsSection1202Exclusion: numeric("qsbs_section_1202_exclusion", { precision: 14, scale: 2 }),
+    /** K7 — §1202 taxable remainder added to LTCG. */
+    qsbsTaxableGain: numeric("qsbs_taxable_gain", { precision: 14, scale: 2 }),
     // Credits
     eitc: numeric("eitc", { precision: 12, scale: 2 }),
     aocCredit: numeric("aoc_credit", { precision: 12, scale: 2 }),

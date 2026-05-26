@@ -2463,17 +2463,40 @@ export function calculateFederalTaxWithCapitalGains(params: {
   shortTermGains: number;
   filingStatus: string;
   taxYear: number;
+  /** K9 — FEIE excluded amount (Form 2555). When > 0, applies the IRS
+   *  Foreign Earned Income Tax Worksheet stacking rule:
+   *    tax = calculateFederalTax(ordinary + FEIE) − calculateFederalTax(FEIE)
+   *  Effectively: FEIE is removed from the base but does NOT reduce the
+   *  marginal rate on the rest of income. */
+  feieExclusion?: number;
 }): CapitalGainsCalculation {
   const year = resolveTaxYear(params.taxYear);
   const status = params.filingStatus in FEDERAL_BRACKETS[year] ? params.filingStatus : "single";
   const ltcgIncluded = Math.max(0, params.longTermGains) + Math.max(0, params.qualifiedDividends);
   const ordinaryWithStcg = Math.max(0, params.ordinaryTaxableIncome) + Math.max(0, params.shortTermGains);
+  const feie = Math.max(0, params.feieExclusion ?? 0);
 
-  // Ordinary tax on the ordinary-income portion (incl. STCG)
-  const ordinaryTax = calculateFederalTax(ordinaryWithStcg, status, year);
+  // Ordinary tax on the ordinary-income portion (incl. STCG).
+  // K9 stacking rule: when FEIE > 0, compute tax on (ordinary + FEIE)
+  // then subtract tax on FEIE alone — so the remaining income stacks at
+  // the FEIE-displaced marginal rate. When FEIE = 0, falls back to the
+  // simple ordinary tax computation.
+  let ordinaryTax: number;
+  if (feie > 0) {
+    const taxOnOrdinaryPlusFeie = calculateFederalTax(ordinaryWithStcg + feie, status, year);
+    const taxOnFeieAlone = calculateFederalTax(feie, status, year);
+    ordinaryTax = Math.max(0, taxOnOrdinaryPlusFeie - taxOnFeieAlone);
+  } else {
+    ordinaryTax = calculateFederalTax(ordinaryWithStcg, status, year);
+  }
 
   // Preferential tax: LTCG/QDIV stack on top of ordinary income at 0/15/20%.
-  const prefTax = calculateLtcgQdivStackedTax(ordinaryWithStcg, ltcgIncluded, status, year);
+  // K9 sub-gap: when both FEIE and LTCG are present, the IRS Foreign Earned
+  // Income Tax Worksheet adjusts the LTCG stacking position. We stack LTCG
+  // above (ordinaryWithStcg + feie) so LTCG occupies the right brackets,
+  // then no second subtraction is applied (FEIE is ordinary, not LTCG).
+  const ltcgStackBase = feie > 0 ? ordinaryWithStcg + feie : ordinaryWithStcg;
+  const prefTax = calculateLtcgQdivStackedTax(ltcgStackBase, ltcgIncluded, status, year);
 
   return {
     ordinaryTaxableIncome: params.ordinaryTaxableIncome,
@@ -2589,6 +2612,59 @@ export function calculateSehiDeduction(params: {
   const premiums = Math.max(0, params.premiumsPaid);
   const cap = Math.max(0, params.seNetEarnings - params.halfSeDeduction);
   return { premiumsPaid: premiums, earnedIncomeCap: cap, deduction: Math.min(premiums, cap) };
+}
+
+// ── Foreign Earned Income Exclusion (IRC §911, Form 2555) — K9 ─────────────
+// Annual per-spouse exclusion for foreign earned income (wages / SE earned
+// abroad while qualifying via bona fide residence or physical presence
+// test). Excluded from gross income — but the IRS Foreign Earned Income
+// Tax Worksheet applies the "stacking rule": post-FEIE tax is computed at
+// the marginal rate that WOULD have applied including the excluded income.
+// This means FEIE removes income from the base but does NOT reduce the
+// marginal rate.
+//
+// TY2024: $126,500 per spouse. TY2025: $130,000 (Rev. Proc. 2024-40).
+// MFJ: each spouse independently qualifying can claim the per-spouse cap.
+// Engine accepts two adjustments: foreign_earned_income (primary filer) and
+// foreign_earned_income_spouse (MFJ only, for the second spouse).
+//
+// Eligibility (CPA confirms): bona fide residence in foreign country for
+// uninterrupted full tax year, OR physical presence in foreign countries
+// 330+ days in a 12-month period. Housing exclusion / deduction NOT modeled.
+const FEIE_CAP: Record<TaxYear, number> = { 2024: 126500, 2025: 130000 };
+
+export interface FeieCalculation {
+  taxpayerForeignIncome: number;
+  spouseForeignIncome: number;
+  taxpayerExclusion: number;
+  spouseExclusion: number;
+  totalExclusion: number;
+}
+
+export function calculateFeie(params: {
+  taxpayerForeignEarnedIncome: number;
+  spouseForeignEarnedIncome: number;
+  filingStatus: string;
+  taxYear: number;
+}): FeieCalculation {
+  const year = resolveTaxYear(params.taxYear);
+  const cap = FEIE_CAP[year];
+  const taxpayerForeignIncome = Math.max(0, params.taxpayerForeignEarnedIncome);
+  const taxpayerExclusion = Math.min(taxpayerForeignIncome, cap);
+  const isMfj = params.filingStatus === "married_filing_jointly" ||
+                params.filingStatus === "qualifying_widow";
+  // MFS: each spouse files separately — they get their own cap. We treat
+  // foreign_earned_income_spouse as ignored for MFS (each spouse uses
+  // their own foreign_earned_income adjustment).
+  const spouseForeignIncome = isMfj ? Math.max(0, params.spouseForeignEarnedIncome) : 0;
+  const spouseExclusion = isMfj ? Math.min(spouseForeignIncome, cap) : 0;
+  return {
+    taxpayerForeignIncome,
+    spouseForeignIncome,
+    taxpayerExclusion,
+    spouseExclusion,
+    totalExclusion: taxpayerExclusion + spouseExclusion,
+  };
 }
 
 // ── Social Security Taxability (Pub 915 Worksheet) — K10 ───────────────────

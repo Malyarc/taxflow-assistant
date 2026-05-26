@@ -1691,6 +1691,18 @@ components:
           type: ["number", "null"]
         socialSecurityTaxable:
           type: ["number", "null"]
+        feieTotalExclusion:
+          type: ["number", "null"]
+        nolDeduction:
+          type: ["number", "null"]
+        nolCarryforwardRemaining:
+          type: ["number", "null"]
+        qsbsGrossGain:
+          type: ["number", "null"]
+        qsbsSection1202Exclusion:
+          type: ["number", "null"]
+        qsbsTaxableGain:
+          type: ["number", "null"]
         # Credits
         eitc:
           type: ["number", "null"]
@@ -1773,7 +1785,7 @@ components:
           type: integer
         adjustmentType:
           type: string
-          enum: [deduction, credit, additional_income, withholding_adjustment, other, self_employment_income, investment_income, qbi_income, amt_preferences, medical_expenses, state_income_tax, state_property_tax, state_sales_tax, mortgage_interest, charitable_cash, charitable_property, hsa_contribution, ira_contribution_traditional, ira_contribution_roth, schedule_c_expenses, dependent_care_expenses, qualified_education_expenses_aoc, qualified_education_expenses_llc, retirement_contributions_savers, educator_expenses, student_loan_interest, foreign_tax_paid, foreign_source_taxable_income, residential_clean_energy, energy_efficient_home, energy_efficient_heatpump, ev_charger_property, capital_loss_carryforward_short, capital_loss_carryforward_long, schedule_e_rental_income, schedule_e_rental_expenses, schedule_e_macrs_depreciation, schedule_e_passive_loss_carryforward, amt_iso_bargain_element, amt_state_tax_addback_override, k1_passive_loss_carryforward, self_employed_health_insurance_premiums, home_sale_gross_gain_primary_residence]
+          enum: [deduction, credit, additional_income, withholding_adjustment, other, self_employment_income, investment_income, qbi_income, amt_preferences, medical_expenses, state_income_tax, state_property_tax, state_sales_tax, mortgage_interest, charitable_cash, charitable_property, hsa_contribution, ira_contribution_traditional, ira_contribution_roth, schedule_c_expenses, dependent_care_expenses, qualified_education_expenses_aoc, qualified_education_expenses_llc, retirement_contributions_savers, educator_expenses, student_loan_interest, foreign_tax_paid, foreign_source_taxable_income, residential_clean_energy, energy_efficient_home, energy_efficient_heatpump, ev_charger_property, capital_loss_carryforward_short, capital_loss_carryforward_long, schedule_e_rental_income, schedule_e_rental_expenses, schedule_e_macrs_depreciation, schedule_e_passive_loss_carryforward, amt_iso_bargain_element, amt_state_tax_addback_override, k1_passive_loss_carryforward, self_employed_health_insurance_premiums, home_sale_gross_gain_primary_residence, foreign_earned_income, foreign_earned_income_spouse, nol_carryforward, qsbs_gross_gain, qsbs_adjusted_basis]
         amount:
           type: number
         description:
@@ -1795,7 +1807,7 @@ components:
       properties:
         adjustmentType:
           type: string
-          enum: [deduction, credit, additional_income, withholding_adjustment, other, self_employment_income, investment_income, qbi_income, amt_preferences, medical_expenses, state_income_tax, state_property_tax, state_sales_tax, mortgage_interest, charitable_cash, charitable_property, hsa_contribution, ira_contribution_traditional, ira_contribution_roth, schedule_c_expenses, dependent_care_expenses, qualified_education_expenses_aoc, qualified_education_expenses_llc, retirement_contributions_savers, educator_expenses, student_loan_interest, foreign_tax_paid, foreign_source_taxable_income, residential_clean_energy, energy_efficient_home, energy_efficient_heatpump, ev_charger_property, capital_loss_carryforward_short, capital_loss_carryforward_long, schedule_e_rental_income, schedule_e_rental_expenses, schedule_e_macrs_depreciation, schedule_e_passive_loss_carryforward, amt_iso_bargain_element, amt_state_tax_addback_override, k1_passive_loss_carryforward, self_employed_health_insurance_premiums, home_sale_gross_gain_primary_residence]
+          enum: [deduction, credit, additional_income, withholding_adjustment, other, self_employment_income, investment_income, qbi_income, amt_preferences, medical_expenses, state_income_tax, state_property_tax, state_sales_tax, mortgage_interest, charitable_cash, charitable_property, hsa_contribution, ira_contribution_traditional, ira_contribution_roth, schedule_c_expenses, dependent_care_expenses, qualified_education_expenses_aoc, qualified_education_expenses_llc, retirement_contributions_savers, educator_expenses, student_loan_interest, foreign_tax_paid, foreign_source_taxable_income, residential_clean_energy, energy_efficient_home, energy_efficient_heatpump, ev_charger_property, capital_loss_carryforward_short, capital_loss_carryforward_long, schedule_e_rental_income, schedule_e_rental_expenses, schedule_e_macrs_depreciation, schedule_e_passive_loss_carryforward, amt_iso_bargain_element, amt_state_tax_addback_override, k1_passive_loss_carryforward, self_employed_health_insurance_premiums, home_sale_gross_gain_primary_residence, foreign_earned_income, foreign_earned_income_spouse, nol_carryforward, qsbs_gross_gain, qsbs_adjusted_basis]
         amount:
           type: number
         description:
@@ -1810,7 +1822,7 @@ components:
       properties:
         adjustmentType:
           type: string
-          enum: [deduction, credit, additional_income, withholding_adjustment, other, self_employment_income, investment_income, qbi_income, amt_preferences, medical_expenses, state_income_tax, state_property_tax, state_sales_tax, mortgage_interest, charitable_cash, charitable_property, hsa_contribution, ira_contribution_traditional, ira_contribution_roth, schedule_c_expenses, dependent_care_expenses, qualified_education_expenses_aoc, qualified_education_expenses_llc, retirement_contributions_savers, educator_expenses, student_loan_interest, foreign_tax_paid, foreign_source_taxable_income, residential_clean_energy, energy_efficient_home, energy_efficient_heatpump, ev_charger_property, capital_loss_carryforward_short, capital_loss_carryforward_long, schedule_e_rental_income, schedule_e_rental_expenses, schedule_e_macrs_depreciation, schedule_e_passive_loss_carryforward, amt_iso_bargain_element, amt_state_tax_addback_override, k1_passive_loss_carryforward, self_employed_health_insurance_premiums, home_sale_gross_gain_primary_residence]
+          enum: [deduction, credit, additional_income, withholding_adjustment, other, self_employment_income, investment_income, qbi_income, amt_preferences, medical_expenses, state_income_tax, state_property_tax, state_sales_tax, mortgage_interest, charitable_cash, charitable_property, hsa_contribution, ira_contribution_traditional, ira_contribution_roth, schedule_c_expenses, dependent_care_expenses, qualified_education_expenses_aoc, qualified_education_expenses_llc, retirement_contributions_savers, educator_expenses, student_loan_interest, foreign_tax_paid, foreign_source_taxable_income, residential_clean_energy, energy_efficient_home, energy_efficient_heatpump, ev_charger_property, capital_loss_carryforward_short, capital_loss_carryforward_long, schedule_e_rental_income, schedule_e_rental_expenses, schedule_e_macrs_depreciation, schedule_e_passive_loss_carryforward, amt_iso_bargain_element, amt_state_tax_addback_override, k1_passive_loss_carryforward, self_employed_health_insurance_premiums, home_sale_gross_gain_primary_residence, foreign_earned_income, foreign_earned_income_spouse, nol_carryforward, qsbs_gross_gain, qsbs_adjusted_basis]
         amount:
           type: number
         description:

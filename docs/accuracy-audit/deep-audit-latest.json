@@ -1,37 +1,16 @@
 {
-  "generatedAt": "2026-05-26T07:20:15.268Z",
-  "pass": 175,
+  "generatedAt": "2026-05-26T07:35:13.284Z",
+  "pass": 203,
   "realFailures": 0,
-  "documentedGaps": 4,
+  "documentedGaps": 1,
   "failures": [],
   "gaps": [
-    {
-      "category": "K4-expected",
-      "label": "NOL carryforward (post-TCJA 80% taxable income limit) not modeled",
-      "expected": 0,
-      "actual": 0,
-      "source": "IRC §172(a)(2) post-TCJA"
-    },
-    {
-      "category": "K7-expected",
-      "label": "§1202 QSBS 100% exclusion (post-2010 acquisitions) not modeled",
-      "expected": 0,
-      "actual": 0,
-      "source": "IRC §1202"
-    },
     {
       "category": "K8-expected",
       "label": "Kiddie tax (Form 8615) on unearned income > $2,600 not modeled",
       "expected": 0,
       "actual": 0,
       "source": "Form 8615 (2024)"
-    },
-    {
-      "category": "K9-expected",
-      "label": "FEIE §911 ($126,500 TY2024) + stacking rule not modeled",
-      "expected": 0,
-      "actual": 0,
-      "source": "Form 2555 (2024)"
     }
   ]
 }

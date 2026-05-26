@@ -997,14 +997,54 @@ header("K3. AMT × LTCG: Form 6251 Part III preferential rates — CLOSED");
     "Form 6251 Part III picks the lower of the two AMT paths");
 }
 
-// K4. NOL carryforward (post-TCJA 80% limit). NOT modeled.
-header("K4. NOL carryforward — GAP");
+// K4. NOL carryforward (post-TCJA 80% limit, IRC §172(a)(2)).  CLOSED 2026-05-26.
+header("K4. NOL carryforward — CLOSED");
 {
-  FAIL.push({
-    category: "K4-expected", label: "NOL carryforward (post-TCJA 80% taxable income limit) not modeled",
-    expected: 0, actual: 0,
-    source: "IRC §172(a)(2) post-TCJA",
-  });
+  // K4a — Simple case: $100k W-2 single FL, $50k NOL carryforward.
+  //   Std ded $14,600. Pre-NOL taxable = $85,400.
+  //   80% limit = 0.80 × $85,400 = $68,320.
+  //   NOL deduction = min($50,000, $68,320) = $50,000.
+  //   Post-NOL taxable = $85,400 - $50,000 = $35,400.
+  //   Unused NOL = $0.
+  const a = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 100000, stateCode: "FL" }],
+    adjustments: [{ adjustmentType: "nol_carryforward", amount: 50000, isApplied: true }] });
+  check("K4a", "$100k W-2 + $50k NOL → NOL deduction $50,000 (under 80% limit)",
+    a.nolDeduction, 50000, 0.01, "IRC §172(a)(2)");
+  check("K4a", "NOL unused = $0",
+    a.nolCarryforwardRemaining, 0, 0.01);
+  check("K4a", "Taxable income post-NOL = $35,400",
+    a.taxableIncome, 35400, 0.10, "$100k - $14,600 std - $50,000 NOL = $35,400");
+
+  // K4b — 80% limit binds: $100k W-2 + $100k NOL.
+  //   Pre-NOL taxable = $85,400. 80% limit = $68,320.
+  //   NOL deduction = min($100,000, $68,320) = $68,320.
+  //   Unused NOL = $100,000 - $68,320 = $31,680.
+  const b = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 100000, stateCode: "FL" }],
+    adjustments: [{ adjustmentType: "nol_carryforward", amount: 100000, isApplied: true }] });
+  check("K4b", "$100k W-2 + $100k NOL → deduction capped at 80% = $68,320",
+    b.nolDeduction, 68320, 0.10, "post-TCJA 80% limit binds");
+  check("K4b", "NOL unused = $31,680",
+    b.nolCarryforwardRemaining, 31680, 0.10, "carries to next year");
+
+  // K4c — No NOL adjustment → deduction = 0, remaining = 0.
+  const c = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, stateCode: "FL" }] });
+  check("K4c", "No NOL adjustment → nolDeduction = 0",
+    c.nolDeduction, 0, 0.01);
+  check("K4c", "No NOL adjustment → nolCarryforwardRemaining = 0",
+    c.nolCarryforwardRemaining, 0, 0.01);
+
+  // K4d — NOL exceeds zero income (taxable = 0 case): no deduction.
+  const d = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 10000, stateCode: "FL" }],
+    adjustments: [{ adjustmentType: "nol_carryforward", amount: 50000, isApplied: true }] });
+  // Pre-NOL taxable = max(0, 10000 - 14600) = 0. 80% × 0 = 0. NOL deduction = 0.
+  check("K4d", "Income below std ded → NOL deduction = $0 (limit binds at 0)",
+    d.nolDeduction, 0, 0.01, "80% × $0 = $0");
+  check("K4d", "Unused NOL = full $50,000",
+    d.nolCarryforwardRemaining, 50000, 0.01);
 }
 
 // K5. SEHI deduction (self-employed health insurance — Form 7206).  CLOSED 2026-05-24.
@@ -1134,14 +1174,58 @@ header("K6. §121 home-sale exclusion — CLOSED");
     g.homeSaleSection121Exclusion, 0, 0.01);
 }
 
-// K7. §1202 QSBS. NOT modeled.
-header("K7. §1202 QSBS — GAP");
+// K7. §1202 QSBS exclusion.  CLOSED 2026-05-26.
+header("K7. §1202 QSBS — CLOSED");
 {
-  FAIL.push({
-    category: "K7-expected", label: "§1202 QSBS 100% exclusion (post-2010 acquisitions) not modeled",
-    expected: 0, actual: 0,
-    source: "IRC §1202",
-  });
+  // K7a — Founder with $5M gross gain, $100k basis (post-2010 100% exclusion).
+  //   Cap = max($10M, 10 × $100k) = max($10M, $1M) = $10M.
+  //   Excluded = min($5M, $10M) = $5M (fully excluded).
+  //   Taxable = $0.
+  const a = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    adjustments: [
+      { adjustmentType: "qsbs_gross_gain", amount: 5000000, isApplied: true },
+      { adjustmentType: "qsbs_adjusted_basis", amount: 100000, isApplied: true },
+    ] });
+  check("K7a", "$5M QSBS gain, $100k basis → $5M excluded (under $10M cap)",
+    a.qsbsSection1202Exclusion, 5000000, 0.01, "min(gross, max($10M, 10× basis)) cap");
+  check("K7a", "Taxable QSBS gain = $0",
+    a.qsbsTaxableGain, 0, 0.01);
+
+  // K7b — Above $10M cap: $15M gross gain, $500k basis.
+  //   Cap = max($10M, $5M) = $10M.
+  //   Excluded = $10M. Taxable = $5M → flows to LTCG.
+  const b = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    adjustments: [
+      { adjustmentType: "qsbs_gross_gain", amount: 15000000, isApplied: true },
+      { adjustmentType: "qsbs_adjusted_basis", amount: 500000, isApplied: true },
+    ] });
+  check("K7b", "$15M gain, $500k basis → $10M excluded (cap binds)",
+    b.qsbsSection1202Exclusion, 10000000, 0.01);
+  check("K7b", "$5M taxable QSBS gain → LTCG",
+    b.qsbsTaxableGain, 5000000, 0.01);
+  check("K7b", "Net cap gain reflects $5M from QSBS",
+    b.netCapitalGainLoss, 5000000, 0.01, "QSBS taxable remainder flows to LTCG");
+
+  // K7c — 10× basis cap binds: $20M gain on $3M basis.
+  //   Cap = max($10M, 10 × $3M) = max($10M, $30M) = $30M.
+  //   Excluded = min($20M, $30M) = $20M (fully excluded under 10×-basis cap).
+  const c = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    adjustments: [
+      { adjustmentType: "qsbs_gross_gain", amount: 20000000, isApplied: true },
+      { adjustmentType: "qsbs_adjusted_basis", amount: 3000000, isApplied: true },
+    ] });
+  check("K7c", "$20M gain, $3M basis → $20M excluded (10×-basis cap dominates)",
+    c.qsbsSection1202Exclusion, 20000000, 0.01, "max($10M, 10× $3M) = $30M cap");
+  check("K7c", "Taxable QSBS gain = $0",
+    c.qsbsTaxableGain, 0, 0.01);
+
+  // K7d — No QSBS adjustment → all zero.
+  const d = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, stateCode: "FL" }] });
+  check("K7d", "No QSBS adjustment → qsbsGrossGain = 0",
+    d.qsbsGrossGain, 0, 0.01);
+  check("K7d", "No QSBS adjustment → qsbsSection1202Exclusion = 0",
+    d.qsbsSection1202Exclusion, 0, 0.01);
 }
 
 // K8. Kiddie tax (Form 8615). NOT modeled.
@@ -1154,14 +1238,87 @@ header("K8. Kiddie tax (Form 8615) — GAP");
   });
 }
 
-// K9. FEIE (§911) for expats. NOT modeled.
-header("K9. FEIE §911 — GAP");
+// K9. FEIE (§911) for expats.  CLOSED 2026-05-26.
+header("K9. FEIE §911 — CLOSED");
 {
-  FAIL.push({
-    category: "K9-expected", label: "FEIE §911 ($126,500 TY2024) + stacking rule not modeled",
-    expected: 0, actual: 0,
-    source: "Form 2555 (2024)",
-  });
+  // K9a — Single expat with $100k foreign earned income (under $126,500 cap).
+  //   Excluded = $100,000. Taxable income = 0 (foreign income excluded, no std-ded subtraction since AGI = 0 already).
+  //   Actually: total income = $100k (added) - $100k (excluded) = $0. AGI = $0.
+  //   Std ded $14,600. Taxable = max(0, 0 - 14600) = $0. Federal tax = $0.
+  const a = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    adjustments: [{ adjustmentType: "foreign_earned_income", amount: 100000, isApplied: true }] });
+  check("K9a", "Single $100k foreign earned → $100k excluded",
+    a.feie.taxpayerExclusion, 100000, 0.01, "Form 2555 — under $126,500 cap");
+  check("K9a", "Net AGI = $0 (full exclusion)",
+    a.adjustedGrossIncome, 0, 0.01);
+
+  // K9b — Cap binds: $200k foreign earned single.
+  //   Excluded = $126,500 (TY2024 cap). Taxable foreign = $73,500.
+  //   AGI = $73,500. Taxable = $58,900 ($73,500 - $14,600 std).
+  //   Tax computed with stacking rule: tax on (58900 + 126500) - tax on 126500.
+  //   tax on $185,400 single 2024 = ... let me compute:
+  //     1160 + 4266 + 11742.50 + 21942 + (185400-243725)*.35 — wait, 185400 < 243725, so:
+  //     1160 + 4266 + (100525-47150)*.22 + (185400-100525)*.24 = 1160 + 4266 + 11742.50 + 20370 = $37,538.50
+  //   tax on $126,500 single 2024:
+  //     1160 + 4266 + (100525-47150)*.22 + (126500-100525)*.24 = 1160 + 4266 + 11742.50 + 6234 = $23,402.50
+  //   ordinary tax = $37,538.50 - $23,402.50 = $14,136.00
+  //   federalTaxLiability = $14,136 (no other taxes).
+  const b = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    adjustments: [{ adjustmentType: "foreign_earned_income", amount: 200000, isApplied: true }] });
+  check("K9b", "Single $200k foreign earned → $126,500 excluded (cap binds)",
+    b.feie.taxpayerExclusion, 126500, 0.01, "TY2024 cap");
+  check("K9b", "AGI = $73,500 ($200k - $126,500 exclusion)",
+    b.adjustedGrossIncome, 73500, 0.10);
+  check("K9b", "Federal tax ≈ $14,136 (with stacking rule)",
+    b.federalTaxLiability, 14136, 5, "Foreign Earned Income Tax Worksheet stacking");
+
+  // K9c — MFJ both spouses claim FEIE.
+  //   Taxpayer foreign $130k → excluded $126,500.
+  //   Spouse foreign $80k → excluded $80,000.
+  //   Total exclusion = $206,500.
+  const c = run({ client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024 },
+    adjustments: [
+      { adjustmentType: "foreign_earned_income", amount: 130000, isApplied: true },
+      { adjustmentType: "foreign_earned_income_spouse", amount: 80000, isApplied: true },
+    ] });
+  check("K9c", "MFJ both spouses FEIE → taxpayer $126,500 + spouse $80,000 = $206,500 excluded",
+    c.feie.totalExclusion, 206500, 0.01, "Per-spouse cap on each Form 2555");
+
+  // K9d — MFS — spouse adjustment is ignored.
+  const d = run({ client: { filingStatus: "married_filing_separately", state: "FL", taxYear: 2024 },
+    adjustments: [
+      { adjustmentType: "foreign_earned_income", amount: 80000, isApplied: true },
+      { adjustmentType: "foreign_earned_income_spouse", amount: 80000, isApplied: true },
+    ] });
+  check("K9d", "MFS → spouse adjustment ignored, only taxpayer's $80k excluded",
+    d.feie.totalExclusion, 80000, 0.01, "MFS files separately — spouse FEIE goes on spouse's own return");
+
+  // K9e — TY2025 cap is $130,000.
+  const e = run({ client: { filingStatus: "single", state: "FL", taxYear: 2025 },
+    adjustments: [{ adjustmentType: "foreign_earned_income", amount: 200000, isApplied: true }] });
+  check("K9e", "TY2025 single $200k foreign → $130,000 excluded",
+    e.feie.taxpayerExclusion, 130000, 0.01, "Rev. Proc. 2024-40");
+
+  // K9f — No FEIE adjustment → totalExclusion = 0.
+  const f = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, stateCode: "FL" }] });
+  check("K9f", "No FEIE adjustment → totalExclusion = 0",
+    f.feie.totalExclusion, 0, 0.01);
+
+  // K9g — Stacking rule verification: same domestic income $80k with and without FEIE.
+  //   Without FEIE: $80k W-2 single. Taxable = $65,400. Tax = $9,524.
+  //   With FEIE ($50k foreign on top of $80k W-2):
+  //     Total income = $80k + $50k - $50k = $80k. AGI = $80k. Taxable = $65,400.
+  //     Stacking: tax on ($65,400 + $50,000) = tax on $115,400 - tax on $50,000.
+  //     tax on $115,400 single: 1160 + 4266 + (100525-47150)*.22 + (115400-100525)*.24 = 1160 + 4266 + 11742.50 + 3570 = $20,738.50
+  //     tax on $50,000 single: 1160 + 4266 + (50000-47150)*.22 = 1160 + 4266 + 627 = $6,053.00
+  //     ordinary tax = $20,738.50 - $6,053.00 = $14,685.50
+  //   Note: with FEIE pushes the remaining $65,400 into higher brackets than without it.
+  const g = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 80000, stateCode: "FL" }],
+    adjustments: [{ adjustmentType: "foreign_earned_income", amount: 50000, isApplied: true }] });
+  check("K9g", "Stacking: $80k W-2 + $50k FEIE → tax $14,685.50 (vs no-FEIE $9,524)",
+    g.federalTaxLiability, 14685.50, 5, "Foreign Earned Income Tax Worksheet — FEIE pushes domestic income into higher brackets");
 }
 
 // K10. SS taxability worksheet (Pub 915).  CLOSED 2026-05-24.

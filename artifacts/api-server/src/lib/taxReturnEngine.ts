@@ -26,6 +26,7 @@ import {
   calculateSelfEmploymentTax,
   calculateSehiDeduction,
   calculateSocialSecurityTaxability,
+  calculateFeie,
   calculateNiit,
   calculateAdditionalMedicareTax,
   calculateQbi,
@@ -56,6 +57,7 @@ import {
   type SeTaxCalculation,
   type SehiCalculation,
   type SsTaxabilityCalculation,
+  type FeieCalculation,
   type NiitCalculation,
   type AdditionalMedicareTaxCalculation,
   type QbiCalculation,
@@ -578,6 +580,18 @@ export interface ComputedTaxReturn {
   socialSecurityTaxable: number;
   /** K10 — Detailed Pub 915 worksheet for transparency. */
   socialSecurityTaxabilityDetail: SsTaxabilityCalculation;
+  /** K9 — Foreign Earned Income Exclusion detail (Form 2555). */
+  feie: FeieCalculation;
+  /** K4 — NOL carryforward applied this year (capped at 80% of taxable income). */
+  nolDeduction: number;
+  /** K4 — NOL carryforward remaining for next tax year. */
+  nolCarryforwardRemaining: number;
+  /** K7 — §1202 QSBS gross gain on sale of qualifying stock. */
+  qsbsGrossGain: number;
+  /** K7 — §1202 excluded amount (capped at max($10M, 10×basis)). */
+  qsbsSection1202Exclusion: number;
+  /** K7 — §1202 taxable remainder added to LTCG. */
+  qsbsTaxableGain: number;
   /** K6 — §121 home-sale gross gain on primary residence (from
    *  `home_sale_gross_gain_primary_residence` adjustment). */
   homeSaleGrossGain: number;
@@ -783,6 +797,25 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // (sub-gap; CPA can split the gain into a separate LTCG entry if QSS no
   // longer qualifies).
   const homeSaleGrossGainAdj = sumByType("home_sale_gross_gain_primary_residence");
+  // K9: FEIE §911 foreign earned income exclusion (Form 2555). Two
+  // adjustments — primary filer + (MFJ-only) spouse. Engine caps each at
+  // the per-spouse annual exclusion ($126,500 TY2024 / $130,000 TY2025).
+  // Eligibility (bona fide residence / 330-day physical presence test) is
+  // the CPA's responsibility — engine assumes the adjustment is valid.
+  const feieTaxpayerAdj = sumByType("foreign_earned_income");
+  const feieSpouseAdj = sumByType("foreign_earned_income_spouse");
+  // K4: NOL carryforward (post-TCJA 80% taxable income limit, IRC §172(a)(2)).
+  // CPA enters prior-year NOL available. Engine caps deduction at 80% of
+  // taxable income computed without the NOL. Unused remainder carries to
+  // next year (engine returns nolCarryforwardRemaining for transparency).
+  const nolCarryforwardAdj = sumByType("nol_carryforward");
+  // K7: §1202 QSBS exclusion. CPA enters gross gain on QSBS sale + adjusted
+  // basis. Engine excludes min(gross, max(10_000_000, 10 × basis)). Remainder
+  // flows to LTCG. Defaults to 100% post-2010-09-27 acquisitions (most
+  // common case). For 75% / 50% (older acquisitions) CPA can pre-adjust the
+  // entered gain (multiply by 1.33 or 2.0 respectively). Tracked sub-gap.
+  const qsbsGrossGainAdj = sumByType("qsbs_gross_gain");
+  const qsbsAdjustedBasisAdj = sumByType("qsbs_adjusted_basis");
   // Credits
   const dependentCareExpensesAdj = sumByType("dependent_care_expenses");
   const llcExpensesAdj = sumByType("qualified_education_expenses_llc");
@@ -967,11 +1000,22 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const homeSaleSection121Exclusion = Math.min(homeSaleGrossGain, section121Cap);
   const homeSaleTaxableGain = Math.max(0, homeSaleGrossGain - section121Cap);
 
+  // K7 — §1202 QSBS exclusion. Computed before LTCG netting so the taxable
+  // remainder can join LTCG. Exclusion = min(gross, max($10M, 10×basis)).
+  // Engine assumes 100% post-2010-09-27 acquisition (most common case);
+  // for older 75%/50% acquisitions the CPA can pre-multiply the entered gross.
+  const qsbsGrossGain = Math.max(0, qsbsGrossGainAdj);
+  const qsbsAdjustedBasis = Math.max(0, qsbsAdjustedBasisAdj);
+  const qsbsCap = Math.max(10_000_000, 10 * qsbsAdjustedBasis);
+  const qsbsSection1202Exclusion = Math.min(qsbsGrossGain, qsbsCap);
+  const qsbsTaxableGain = Math.max(0, qsbsGrossGain - qsbsCap);
+
   // K-1 net ST/LT capital gain (Box 8 / 9a) joins the cap-gain netting
   // alongside 1099-B-derived gains. Subtract prior-year loss carryforwards.
-  // Home-sale taxable remainder is long-term (primary-residence ownership > 2y per §121).
+  // Home-sale taxable remainder (K6) and QSBS taxable remainder (K7) are
+  // long-term per §121 (2-of-5 ownership) and §1202 (5-year holding).
   let netSTCG = form1099Summary.shortTermCapitalGains + k1Stcg - stcgCarryforward;
-  let netLTCG = form1099Summary.longTermCapitalGains + k1Ltcg - ltcgCarryforward + homeSaleTaxableGain;
+  let netLTCG = form1099Summary.longTermCapitalGains + k1Ltcg - ltcgCarryforward + homeSaleTaxableGain + qsbsTaxableGain;
 
   // Cross-netting per Schedule D Lines 7, 15, 16
   if (netSTCG > 0 && netLTCG < 0) {
@@ -1040,11 +1084,35 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     scheduleEMacrsDepreciationAdj -
     scheduleEPassiveLossCarryforwardAdj;
 
+  // K9 — FEIE §911. Compute exclusion before income aggregation so we can
+  // both add the gross foreign income to AGI and subtract the excluded
+  // portion. Stacking rule (Foreign Earned Income Tax Worksheet) is applied
+  // at the federal-tax-computation step (passed via feieExclusion).
+  const feie = calculateFeie({
+    taxpayerForeignEarnedIncome: feieTaxpayerAdj,
+    spouseForeignEarnedIncome: feieSpouseAdj,
+    filingStatus: client.filingStatus,
+    taxYear,
+  });
+  const feieGrossForeignIncome = feie.taxpayerForeignIncome + feie.spouseForeignIncome;
+  const feieExclusion = feie.totalExclusion;
+  // K7 QSBS variables are declared above (next to K6 home-sale) so they can
+  // join LTCG netting.
+
   // Provisional AGI (before applying rental net) — used as MAGI for §469
   // phase-out and as initial AGI before any rental adjustment.
   // K-1 income flows here: active ordinary (Sch E Part II), passive-bucket
   // net applied (after carryforward netting), interest, ord div, royalties.
   // (K-1 qualified dividends and K-1 cap gains already folded above.)
+  //
+  // FEIE: foreign earned income flows into ordinary, then the excluded
+  // portion is subtracted. Net effect: only the non-excludable portion of
+  // foreign income is in AGI. The federal-tax calc applies the IRS stacking
+  // rule to compute tax at the marginal rate that WOULD have applied
+  // including the excluded amount.
+  //
+  // QSBS: the post-exclusion taxable remainder of QSBS gain is added to
+  // LTCG (via the LTCG netting variables) — not in ordinary income.
   const ordinaryAdditionalIncomeBeforeRental =
     additionalIncome +
     additionalIncomeAdjustments +
@@ -1064,7 +1132,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     k1PassiveAppliedToAgi +
     k1InterestIncome +
     k1OrdinaryDividends +
-    k1Royalties;
+    k1Royalties +
+    feieGrossForeignIncome -  // K9 — add gross foreign earned income
+    feieExclusion;            // K9 — subtract FEIE excluded portion
   const provisionalAgiForPal = Math.max(0, totalWages + ordinaryAdditionalIncomeBeforeRental);
 
   let rentalNetAppliedToAgi = 0;
@@ -1219,7 +1289,18 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     qbiIncome: qbiIncome + k1QbiContribution,
     taxableIncomeBeforeQbi: calc.taxableIncome,
   });
-  const taxableAfterQbi = Math.max(0, calc.taxableIncome - qbi.finalDeduction);
+
+  // K4 — NOL carryforward (post-TCJA 80% limit, IRC §172(a)(2)).
+  // NOL deduction is the lesser of (NOL carryforward, 80% × taxable income
+  // before the NOL deduction). Applied between calc.taxableIncome and QBI.
+  // Unused NOL carries to next year. Engine returns transparency fields.
+  const nolCarryforwardAvailable = Math.max(0, nolCarryforwardAdj);
+  const nolLimit = 0.80 * Math.max(0, calc.taxableIncome);
+  const nolDeduction = Math.min(nolCarryforwardAvailable, Math.max(0, nolLimit));
+  const nolCarryforwardRemaining = Math.max(0, nolCarryforwardAvailable - nolDeduction);
+  const taxableAfterNol = Math.max(0, calc.taxableIncome - nolDeduction);
+
+  const taxableAfterQbi = Math.max(0, taxableAfterNol - qbi.finalDeduction);
 
   // ── Step 6: Federal tax (ordinary + preferential) ──────────────────
   // Use post-netting LTCG (not raw 1099-B value) for preferential calculation.
@@ -1233,6 +1314,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     shortTermGains: 0, // post-netting STCG already in ordinaryPortionOfTaxable
     filingStatus: client.filingStatus,
     taxYear,
+    // K9 — FEIE stacking rule: tax computed at the marginal rate that
+    // would have applied if FEIE were not excluded.
+    feieExclusion,
   });
   const regularFederalTax = capGains.totalFederalTax;
 
@@ -1569,6 +1653,12 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     homeSaleGrossGain,
     homeSaleSection121Exclusion,
     homeSaleTaxableGain,
+    feie,
+    nolDeduction,
+    nolCarryforwardRemaining,
+    qsbsGrossGain,
+    qsbsSection1202Exclusion,
+    qsbsTaxableGain,
     capitalLossDeducted,
     capitalLossCarryforwardShort,
     capitalLossCarryforwardLong,

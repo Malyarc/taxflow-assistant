@@ -1954,6 +1954,11 @@ function AdjustmentsTab({ clientId }: { clientId: number }) {
     ira_contribution_roth: "Roth IRA Contribution",
     self_employed_health_insurance_premiums: "Self-Employed Health Insurance Premiums (Form 7206, Sched 1 L17)",
     home_sale_gross_gain_primary_residence: "Home Sale — Primary Residence Gross Gain (§121 exclusion auto-applied)",
+    foreign_earned_income: "Foreign Earned Income — Primary Filer (Form 2555 §911, capped at $126,500 TY2024)",
+    foreign_earned_income_spouse: "Foreign Earned Income — Spouse (MFJ only; same per-spouse cap)",
+    nol_carryforward: "NOL Carryforward (post-TCJA 80% limit, IRC §172)",
+    qsbs_gross_gain: "§1202 QSBS Gross Gain (exclusion auto-applied: max($10M, 10× basis))",
+    qsbs_adjusted_basis: "§1202 QSBS Adjusted Basis (for the 10× cap)",
     // Schedule C
     schedule_c_expenses: "Schedule C Business Expenses",
     // Credit-driving expenses

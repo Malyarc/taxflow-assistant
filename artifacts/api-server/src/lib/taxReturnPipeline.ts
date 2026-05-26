@@ -312,6 +312,12 @@ export async function recalculateAndUpsertTaxReturn(
     homeSaleTaxableGain: String(result.homeSaleTaxableGain),
     socialSecurityBenefits: String(result.socialSecurityBenefits),
     socialSecurityTaxable: String(result.socialSecurityTaxable),
+    feieTotalExclusion: String(result.feie.totalExclusion),
+    nolDeduction: String(result.nolDeduction),
+    nolCarryforwardRemaining: String(result.nolCarryforwardRemaining),
+    qsbsGrossGain: String(result.qsbsGrossGain),
+    qsbsSection1202Exclusion: String(result.qsbsSection1202Exclusion),
+    qsbsTaxableGain: String(result.qsbsTaxableGain),
     // Phase 1: Credits
     eitc: String(result.eitc.appliedCredit),
     aocCredit: String(aocCreditTotal),

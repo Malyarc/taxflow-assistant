@@ -100,6 +100,8 @@ export function buildTaxReturnPdf(client: Client, ret: ComputedTaxReturn): Promi
     if (ret.retirementDeductions.hsaDeductible > 0) atlRows.push(["HSA deduction (Sched 1 L13)", fmt(ret.retirementDeductions.hsaDeductible)]);
     if (ret.retirementDeductions.iraDeductible > 0) atlRows.push(["Traditional IRA deduction (Sched 1 L20)", fmt(ret.retirementDeductions.iraDeductible)]);
     if (ret.sehi.deduction > 0) atlRows.push(["SE health insurance (Sched 1 L17, Form 7206)", fmt(ret.sehi.deduction)]);
+    if (ret.feie.totalExclusion > 0) atlRows.push(["FEIE §911 (Form 2555, Line 45)", `(${fmt(ret.feie.totalExclusion)})`]);
+    if (ret.nolDeduction > 0) atlRows.push(["NOL carryforward deducted (Sched 1 L8a)", `(${fmt(ret.nolDeduction)})`]);
     if (ret.educatorExpenses.deductible > 0) atlRows.push(["Educator expenses (Sched 1 L11)", fmt(ret.educatorExpenses.deductible)]);
     if (ret.studentLoanInterest.deductible > 0) atlRows.push(["Student loan interest (Sched 1 L21)", fmt(ret.studentLoanInterest.deductible)]);
     if (ret.scheduleCExpenses > 0) atlRows.push(["Schedule C business expenses", fmt(ret.scheduleCExpenses)]);
@@ -125,6 +127,13 @@ export function buildTaxReturnPdf(client: Client, ret: ComputedTaxReturn): Promi
         sdRows.push(["Home sale gross gain (primary residence)", fmt(ret.homeSaleGrossGain)]);
         sdRows.push(["§121 exclusion applied", `(${fmt(ret.homeSaleSection121Exclusion)})`]);
         sdRows.push(["Taxable home-sale gain (added to LTCG)", fmt(ret.homeSaleTaxableGain)]);
+      }
+      if (ret.qsbsGrossGain > 0) {
+        sdRows.push(["§1202 QSBS gross gain", fmt(ret.qsbsGrossGain)]);
+        sdRows.push(["§1202 exclusion applied", `(${fmt(ret.qsbsSection1202Exclusion)})`]);
+        if (ret.qsbsTaxableGain > 0) {
+          sdRows.push(["Taxable QSBS gain (added to LTCG)", fmt(ret.qsbsTaxableGain)]);
+        }
       }
       if (ret.capitalLossDeducted > 0) sdRows.push(["Capital loss deducted (Sched D L21)", `(${fmt(ret.capitalLossDeducted)})`]);
       if (ret.capitalLossCarryforwardShort > 0) sdRows.push(["Short-term carryforward to next year", fmt(ret.capitalLossCarryforwardShort)]);

@@ -833,6 +833,18 @@ export interface TaxReturn {
   /** @nullable */
   socialSecurityTaxable?: number | null;
   /** @nullable */
+  feieTotalExclusion?: number | null;
+  /** @nullable */
+  nolDeduction?: number | null;
+  /** @nullable */
+  nolCarryforwardRemaining?: number | null;
+  /** @nullable */
+  qsbsGrossGain?: number | null;
+  /** @nullable */
+  qsbsSection1202Exclusion?: number | null;
+  /** @nullable */
+  qsbsTaxableGain?: number | null;
+  /** @nullable */
   eitc?: number | null;
   /** @nullable */
   aocCredit?: number | null;
@@ -941,6 +953,11 @@ export const AdjustmentAdjustmentType = {
     "self_employed_health_insurance_premiums",
   home_sale_gross_gain_primary_residence:
     "home_sale_gross_gain_primary_residence",
+  foreign_earned_income: "foreign_earned_income",
+  foreign_earned_income_spouse: "foreign_earned_income_spouse",
+  nol_carryforward: "nol_carryforward",
+  qsbs_gross_gain: "qsbs_gross_gain",
+  qsbs_adjusted_basis: "qsbs_adjusted_basis",
 } as const;
 
 export interface Adjustment {
@@ -1005,6 +1022,11 @@ export const CreateAdjustmentBodyAdjustmentType = {
     "self_employed_health_insurance_premiums",
   home_sale_gross_gain_primary_residence:
     "home_sale_gross_gain_primary_residence",
+  foreign_earned_income: "foreign_earned_income",
+  foreign_earned_income_spouse: "foreign_earned_income_spouse",
+  nol_carryforward: "nol_carryforward",
+  qsbs_gross_gain: "qsbs_gross_gain",
+  qsbs_adjusted_basis: "qsbs_adjusted_basis",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -1065,6 +1087,11 @@ export const UpdateAdjustmentBodyAdjustmentType = {
     "self_employed_health_insurance_premiums",
   home_sale_gross_gain_primary_residence:
     "home_sale_gross_gain_primary_residence",
+  foreign_earned_income: "foreign_earned_income",
+  foreign_earned_income_spouse: "foreign_earned_income_spouse",
+  nol_carryforward: "nol_carryforward",
+  qsbs_gross_gain: "qsbs_gross_gain",
+  qsbs_adjusted_basis: "qsbs_adjusted_basis",
 } as const;
 
 export interface UpdateAdjustmentBody {
