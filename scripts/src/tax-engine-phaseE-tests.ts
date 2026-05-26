@@ -1022,6 +1022,110 @@ check("E9-noKids", "CA no kids under 6 = $0", stateCtc("CA", {
 }), 0, 1);
 
 // ============================================================================
+// E7 — §179 expense election + §168(k) bonus depreciation
+// §179 cap TY2024 $1,160k, phase-out start $2,890k. Income limit: can't
+// exceed net SE income. Bonus depreciation 60% × basis TY2024 (40% TY2025).
+// ============================================================================
+section("E7 — §179 expense election + bonus depreciation");
+
+// --- E7+1: SE filer $100k income elects $50k §179, all within caps ---
+// Hand-calc:
+//   Gross SE = $100k; net SE = $100k × 0.9235 = $92,350.
+//   §179 cap TY2024 = $1,160,000 (well above $50k)
+//   §179 income limit = net SE $92,350 (above $50k)
+//   §179 applied = $50,000
+//   AGI = (gross SE - deductible half SE tax - $50k §179) ≈ $100k - $7,065 - $50k = ~$42,935
+header("E7+1 — $50k §179 election on $100k SE, all deductible");
+{
+  const computed = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "TX", taxYear: 2024 },
+    w2s: [],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "Client",
+      nonemployeeCompensation: 100000 }],
+    adjustments: [
+      { adjustmentType: "section_179_expense_election", amount: 50000, isApplied: true },
+    ],
+    taxYear: 2024,
+  });
+  check("E7+1", "section179Applied = $50,000", computed.section179Applied, 50000, 1);
+  check("E7+1", "section179Carryforward = 0", computed.section179Carryforward, 0, 1);
+}
+
+// --- E7+2: §179 election exceeds net SE income → income limit binds, carries forward ---
+// Hand-calc:
+//   Gross SE = $50,000; net SE = $46,175
+//   §179 elected = $100,000
+//   §179 applied = min($100k, $1.16M cap, $46,175 net SE) = $46,175
+//   Carryforward = $100k - $46,175 = $53,825
+header("E7+2 — $100k elected on $50k SE → applied $46,175, $53,825 cf");
+{
+  const computed = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "TX", taxYear: 2024 },
+    w2s: [],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "Client",
+      nonemployeeCompensation: 50000 }],
+    adjustments: [
+      { adjustmentType: "section_179_expense_election", amount: 100000, isApplied: true },
+    ],
+    taxYear: 2024,
+  });
+  check("E7+2", "section179Applied ≈ $46,175 (income limit)",
+    computed.section179Applied, 46175, 2);
+  check("E7+2", "section179Carryforward ≈ $53,825",
+    computed.section179Carryforward, 53825, 2);
+}
+
+// --- E7+3: Bonus depreciation 60% × $80k basis = $48,000 ---
+// Hand-calc: TY2024 bonus rate = 60%; $80k × 0.60 = $48,000
+header("E7+3 — Bonus depreciation $80k basis × 60% = $48,000");
+{
+  const computed = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "TX", taxYear: 2024 },
+    w2s: [],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "Client",
+      nonemployeeCompensation: 200000 }],
+    adjustments: [
+      { adjustmentType: "bonus_depreciation_basis", amount: 80000, isApplied: true },
+    ],
+    taxYear: 2024,
+  });
+  check("E7+3", "bonusDepreciationApplied = $48,000",
+    computed.bonusDepreciationApplied, 48000, 1, "60% × $80k TY2024");
+}
+
+// --- E7+4: TY2025 bonus rate = 40% ---
+// Hand-calc: $80k × 0.40 = $32,000
+header("E7+4 — TY2025 bonus 40%, $80k × 40% = $32,000");
+{
+  const computed = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "TX", taxYear: 2025 },
+    w2s: [],
+    form1099s: [{ taxYear: 2025, formType: "nec", payerName: "Client",
+      nonemployeeCompensation: 200000 }],
+    adjustments: [
+      { adjustmentType: "bonus_depreciation_basis", amount: 80000, isApplied: true },
+    ],
+    taxYear: 2025,
+  });
+  check("E7+4", "bonusDepreciation = $32,000 in TY2025",
+    computed.bonusDepreciationApplied, 32000, 1, "40% × $80k TY2025");
+}
+
+// --- E7-1: No §179, no bonus → both zero ---
+header("E7-1 — No §179/bonus adjustments, both zero");
+{
+  const computed = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "TX", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 80000, federalTaxWithheldBox2: 10000, stateCode: "TX" }],
+    form1099s: [],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  check("E7-1", "section179Applied = 0", computed.section179Applied, 0, 1);
+  check("E7-1", "bonusDepreciationApplied = 0", computed.bonusDepreciationApplied, 0, 1);
+}
+
+// ============================================================================
 // Report
 // ============================================================================
 console.log("\n========== RESULTS ==========");

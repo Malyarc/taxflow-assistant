@@ -680,6 +680,22 @@ export interface ComputedTaxReturn {
    * `hsa_employer_contribution` adjustments. Reported on Form 5329 Part VII.
    */
   hsaExcessExcise: number;
+  /**
+   * E7 — §179 expense election applied this year (Form 4562 Line 12).
+   * Capped at min(elected, §179 cap with phase-out, net SE income).
+   */
+  section179Applied: number;
+  /**
+   * E7 — §179 elected amount not used this year (exceeded net SE income).
+   * Carries forward to next year per IRC §179(b)(3)(B). CPA tracks
+   * externally for now (no auto-pipeline carryforward yet).
+   */
+  section179Carryforward: number;
+  /**
+   * E7 — Bonus depreciation applied this year per IRC §168(k):
+   * 60% × basis for TY2024, 40% TY2025. No income limit.
+   */
+  bonusDepreciationApplied: number;
   /** K7 — §1202 QSBS gross gain on sale of qualifying stock. */
   qsbsGrossGain: number;
   /** K7 — §1202 excluded amount (capped at max($10M, 10×basis)). */
@@ -853,6 +869,38 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const additionalIncomeAdjustments = sumByType("additional_income");
   const withholdingAdjustments = sumByType("withholding_adjustment");
   const otherDeductions = sumByType("other");
+
+  // E7 — §179 expense election + §168(k) bonus depreciation. Both reduce
+  // business income (effectively additional deductions). Apply caps + phase-out:
+  //   - §179 cap TY2024: $1,160,000 (Rev. Proc. 2023-34)
+  //   - §179 phase-out: dollar-for-dollar above $2,890,000 of qualified property
+  //   - §179 income limit: can't exceed net business income (no NOL via §179)
+  //   - Bonus depreciation: 60% × cost basis TY2024, 40% TY2025 (no income limit)
+  // CPA enters the elected §179 amount and the cost basis of bonus-eligible
+  // property; engine computes the actual deduction.
+  const section179ElectedAdj = sumByType("section_179_expense_election");
+  const bonusDeprBasisAdj = sumByType("bonus_depreciation_basis");
+  const SECTION_179_CAPS: Record<number, { cap: number; phaseStart: number }> = {
+    2024: { cap: 1160000, phaseStart: 2890000 },
+    2025: { cap: 1220000, phaseStart: 3050000 }, // Rev. Proc. 2024-40
+  };
+  const BONUS_DEPR_RATES: Record<number, number> = {
+    2024: 0.60,
+    2025: 0.40,
+  };
+  const s179Cfg = SECTION_179_CAPS[taxYear] ?? SECTION_179_CAPS[2024];
+  // Phase-out: §179 limit reduced $-for-$ when total qualified property
+  // purchases (approximated as §179 elected + bonus depr basis) exceed
+  // the phase-out threshold.
+  const totalQualifiedPropertyApprox = section179ElectedAdj + bonusDeprBasisAdj;
+  const s179PhaseOut = Math.max(0, totalQualifiedPropertyApprox - s179Cfg.phaseStart);
+  const s179EffectiveCap = Math.max(0, s179Cfg.cap - s179PhaseOut);
+  // §179 applied = min(elected, cap, net business income) — income limit
+  // applied later when we have net SE earnings; for now use the cap.
+  const section179Preliminary = Math.min(section179ElectedAdj, s179EffectiveCap);
+  // Bonus depreciation: % × basis. No income limit.
+  const bonusDepreciationApplied = bonusDeprBasisAdj *
+    (BONUS_DEPR_RATES[taxYear] ?? BONUS_DEPR_RATES[2024]);
 
   // Income / SE / investment / QBI / AMT
   const seIncomeFromAdj = sumByType("self_employment_income");
@@ -1358,8 +1406,14 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   });
   const hsaDeduction = retirementForLimits.hsaDeductible;
 
+  // E7 — Apply §179 income limit. Can't exceed net business (SE) income;
+  // any unused §179 amount carries forward (CPA tracks externally for now).
+  const section179Applied = Math.min(section179Preliminary, Math.max(0, se.netSeEarnings));
+  const section179Carryforward = Math.max(0, section179Preliminary - section179Applied);
   const aboveTheLineDeterministic =
-    deductionAdjustments + otherDeductions + se.deductibleHalf + hsaDeduction + educatorDeduction + sehi.deduction;
+    deductionAdjustments + otherDeductions + se.deductibleHalf + hsaDeduction + educatorDeduction + sehi.deduction +
+    // E7 — §179 + bonus depreciation. Both reduce taxable income.
+    section179Applied + bonusDepreciationApplied;
 
   const magiForSli = Math.max(0, totalIncomeProvisional - aboveTheLineDeterministic);
   const studentLoanInterest = calculateStudentLoanInterest({
@@ -1948,6 +2002,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     charitableCarryforwardCashRemaining: scheduleA.charitableCarryforwardCashRemaining,
     earlyWithdrawalPenalty: form1099Summary.earlyWithdrawalPenalty,
     hsaExcessExcise: retirement.hsaExcessExcise,
+    section179Applied,
+    section179Carryforward,
+    bonusDepreciationApplied,
     qsbsGrossGain,
     qsbsSection1202Exclusion,
     qsbsTaxableGain,
