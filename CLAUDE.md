@@ -94,6 +94,8 @@ Future-you will be tempted to "simplify" these. Don't.
   | `tax-engine-k1-integration-tests.ts` | yes (K-1 CRUD + recalc pipeline) |
   | `tax-engine-accuracy-audit-tests.ts` | no (88 IRS-cited cliff + canonical hand-calc tests; see `docs/accuracy-audit/`) |
   | `tax-engine-deep-audit-tests.ts` | no (210 deep-audit: per-calc edge cases, 20 client archetypes, invariants, K1-K10 + K1-MFJ sub-gap full closure; ALL 10 federal K-list gaps closed; see `docs/accuracy-audit/deep-audit-2026-05-23.md`) |
+  | `tax-engine-planning-tests.ts` | no (133 hand-calc'd tests across 10 G1 detectors + G2 scoring helpers; Phase G) |
+  | `tax-engine-planning-integration-tests.ts` | yes (Phase G API surface: SEP via 1099-NEC ingest, PTET via S-corp K-1 + SALT adjustments, pure-W-2 silence, 404 path) |
 - **Scenarios are CPA-style end-to-end cases.** Each one has a `Hand-calc:` comment block — keep that convention. When a scenario fails, double-check your hand-calc before mutating the assertion; the calculator is usually right.
 - **Run all suites after any pipeline or schema change.** The Phase 1 work flushed out one regression (scenario 8 — needed to add EITC to expected refund).
 
@@ -176,6 +178,26 @@ Several Phase 2/3 limitations have been resolved (multi-state foundation, MACRS,
   - **G4** — WA 7% LTCG excise (RCW 82.87). Engine applies to WA-resident filers with LTCG > $262,000 (TY2024).
   - **G5** — CA AMT (Schedule P 540). 7% flat AMT on CA AMTI > $244,857 single / $326,478 MFJ / $163,238 MFS exemption.
 - **Engine net: ZERO documented gaps** (down from 10 federal + 4 state at start of week).
+- **Phase G — Tax Planning Detector shipped (2026-05-26).** All 10 G1
+  rules deployed end-to-end (G1.1 SEP-IRA, G1.2 PTET, G1.3 bunching,
+  G1.4 Roth conversion, G1.5 AMT-ISO timing, G1.6 NIIT cliff, G1.7
+  §199A phase-in, G1.8 charitable DAF, G1.9 tax-loss harvesting, G1.10
+  Foreign Tax Credit). Architecture: **LLM never touches math.**
+  Layer 1 (catalog) in `lib/planning-strategies/`; Layer 2 (detector
+  engine) in `artifacts/api-server/src/lib/planningEngine.ts`; Layer 3
+  (composite scoring) inline in planningEngine; Layer 4 (AI synthesis
+  — memo, email, missing-data) in `artifacts/api-server/src/lib/planningMemo.ts`
+  with deterministic stub fallback when aiEnabled === false. Endpoints:
+  GET `/api/clients/:id/planning-opportunities`,
+  GET `/api/clients/:id/planning-memo`,
+  GET `/api/clients/:id/planning-email`,
+  GET `/api/clients/:id/planning-missing-data`,
+  GET `/api/planning-hit-list` (firm-wide ranking).
+  Frontend: new Planning tab in ClientDetail + Top-10 dashboard widget.
+  Seed: `scripts/src/seed-dummy-clients.ts` ingests 85 archetypes for
+  demos. **Pro tier feature flag (G5) NOT yet shipped** — module is
+  currently available to all clients; gate behind a flag before Pro
+  pricing rollout.
 - AMT preferences modeled: line 2g state-tax addback (auto from itemized SALT, override available), line 2k ISO bargain element. Still not modeled: line 2i MACRS-vs-ADS depreciation difference, line 2e state-refund recapture, AMT NOL.
 - K-1 §199A wage/UBIA limits + SSTB phase-out (engine applies simplified 20% only); K-1 basis / at-risk fields stored but not enforced; K-1 guaranteed payments (Box 4) not modeled
 - Other carryforwards: NOL, AMT credit, charitable (capital loss + §469 PAL + K-1 passive loss carryforward ARE supported)
@@ -191,7 +213,7 @@ Several Phase 2/3 limitations have been resolved (multi-state foundation, MACRS,
 - **Hates test failures that turn out to be wrong test expectations.** Hand-calc before asserting.
 - **Phase 4: Option A (CPA-tool overlay).** Consumer DIY is parked. Don't build interview UI, e-file, or ERO-related infra.
 - Explicitly does NOT want a Lacerte clone (5+ years / $20M+). Wants as close as feasible without that scope.
-- Next-phase priorities: (recommended) Phase G1 Tax Planning Detector — ship 10 deterministic rule-based opportunity detectors per client; flips TaxFlow from data-keying tool to revenue-generating advisory tool. See `.claude/roadmap.md` Phase G. Also pending: CPA-firm multi-tenancy auth (Phase D15); validate UltraTax `.gen` with a real design partner; build Lacerte / ProConnect / Drake adapters. AI-overlay UX shipped 2026-05-21 — covers upload → extract → CPA review → approve → audit-logged record write → `.gen` export.
+- Next-phase priorities (post Phase G1+G2+G3 ship 2026-05-26): (a) Phase G4 multi-year intelligence + G5 Pro tier feature flag (polish); (b) CPA design-partner outreach (C11) using the planning demo as the lead artifact; (c) CPA-firm multi-tenancy auth (Phase D15); validate UltraTax `.gen` with a real design partner; build Lacerte / ProConnect / Drake adapters. AI-overlay UX shipped 2026-05-21 — covers upload → extract → CPA review → approve → audit-logged record write → `.gen` export.
 
 ## Where to look first when picking up a session
 

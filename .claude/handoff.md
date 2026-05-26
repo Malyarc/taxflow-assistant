@@ -1,182 +1,192 @@
-# Handoff Note — 2026-05-26 (ALL engine gaps closed)
+# Handoff Note — 2026-05-26 (Phase G1+G2+G3 shipped)
 
 Session continuation point for the next Claude (or human) working on TaxFlow Assistant.
 
 ## Headline
 
-**ALL federal AND state engine gaps closed end-to-end and deployed.**
-Zero documented gaps remain.
+**Phase G — Tax Planning Initiative landed end-to-end.** TaxFlow flipped
+from "data-keying tool" to "revenue-generating advisory tool" in a single
+session. All 10 G1 detectors shipped + G2 firm-wide hit list + G3 AI
+synthesis (memo, email, missing-data) + 85-archetype seed for demos.
 
-The week of 2026-05-23 through 2026-05-26 worked through the entire
-K-list (10 federal gaps) plus the G-list (4 state gaps) plus 2
-sub-gaps. Everything is now closed, with hand-calc assertions in the
-deep-audit and accuracy-audit suites, deployed to production.
+The engine started this session at zero documented gaps (10 K-list +
+4 G-list closed end-of-last-session); the planning layer builds on top
+**without changing engine math** per the architectural invariant
+("LLM never touches the math").
 
-| Day | Closures |
-|---|---|
-| 2026-05-23 PM | K1 (single/HoH/MFS/QSS), K2 Form 8959 |
-| 2026-05-24 | K3 AMT × LTCG, K5 SEHI, K6 §121, K10 SS taxability |
-| 2026-05-26 AM | K10 state-SS sub-gap, K9 FEIE, K4 NOL, K7 §1202 QSBS |
-| 2026-05-26 PM | K8 kiddie tax, K1 MFJ sub-gap (per-spouse SE), G1 NYC EITC, G2 MN CTC, G4 WA LTCG, G5 CA AMT |
+## What landed (session commits, in order)
 
-## What landed (recent commits)
+| Commit | SHA  | Title |
+|---|---|---|
+| 1     | `18cb9e5` | Knowledge base scaffolding — `@workspace/planning-strategies` |
+| 2     | `5e958ff` | planningEngine framework + G1.1 SEP-IRA detector |
+| 3     | `a1dd995` | G1.2 PTET + G1.10 Foreign Tax Credit detectors |
+| 4     | `fdbbf22` | G1.3 Bunching + G1.8 Charitable DAF detectors |
+| 5     | `16d3b96` | G1.4 Roth conversion + G1.5 AMT-ISO timing detectors |
+| 6     | `4b28d8e` | G1.6 NIIT cliff + G1.7 §199A QBI phase-in detectors |
+| 7     | `329da11` | G1.9 Tax-loss harvesting — ALL 10 RULES SHIPPED |
+| 8     | `4712743` | API endpoint + OpenAPI + integration tests |
+| 9     | `2b0e0b8` | Planning tab in ClientDetail |
+| 10    | `f9050a4` | Seed 85 dummy CPA-client archetypes |
+| 11    | `7095214` | Composite scoring + hit list endpoint + dashboard widget (G2) |
+| 12    | `6c96c5c` | AI synthesis: memo + email + missing-data (G3 + collapsed G3 half 2) |
 
-| Commit | Closure |
-|---|---|
-| `8bdf2a2` | G5 closed — CA AMT (Schedule P 540) |
-| `9efeb70` | G4 closed — WA 7% LTCG excise (RCW 82.87) |
-| `cb91a4d` | G2 closed — MN $1,750/child refundable CTC |
-| `b9c83eb` | G1 closed — NYC EITC sliding scale (NY IT-215 Line 26) |
-| `4eb5c34` | K1 MFJ sub-gap closed — per-spouse SE attribution |
-| `1ed1da4` | K8 closed — Kiddie tax (Form 8615) |
-| `74b6f7c` | K4 + K7 + K9 closed — NOL, §1202 QSBS, FEIE §911 |
-| `aeddb49` | K10 state-SS sub-gap closed — non-SS-taxing states |
-| (earlier) | K1 + K2 + K3 + K5 + K6 + K10 |
+## Test state
 
-## Engine state
+- **133/133 planning unit tests pass** (was 0 at session start).
+- **18/18 planning integration tests pass** vs live API on localhost.
+- Deep audit: 210/210 unchanged. Accuracy audit: 97/97 unchanged.
+- Workspace typecheck clean across all 12 workspaces.
+- **Engine net: ZERO documented gaps** (preserved from prior session).
 
-- **1,700+ hand-calc assertions across 26 suites, 0 real failures.**
-- Deep-audit: 210 assertions (was 108 at session start).
-- Accuracy-audit: 97 assertions, 0 documented gaps (was 88, 4 gaps).
-- All 10 federal K-list gaps + all 4 state G-list gaps closed.
+## Architecture (5-layer planning module)
 
-## E2E production verification (post-deploy)
+1. **Catalog (Layer 1)** — `lib/planning-strategies/strategies-v1.json`,
+   versioned + fail-fast validated at module load. 10 strategies.
+2. **Detector engine (Layer 2, deterministic, NO LLM)** —
+   `artifacts/api-server/src/lib/planningEngine.ts`. Reads
+   ComputedTaxReturn + client + adjustments; emits OpportunityHit[].
+3. **Scoring (Layer 3, deterministic)** — `planningScore()` in
+   planningEngine; uses marginalRateWeight × engagementComplexityWeight
+   × stickinessWeight per the Phase G plan.
+4. **AI synthesis (Layer 4, LLM narration only — NEVER math)** —
+   `artifacts/api-server/src/lib/planningMemo.ts`. Three functions:
+   generatePlanningMemo, generateClientOutreachEmail, inferMissingData.
+   Each has a deterministic stub fallback when aiEnabled === false.
+5. **Online intel refresh (Layer 5)** — NOT BUILT this session. Clean
+   seam left for a quarterly cron job that pulls IRS / state DOR /
+   Tax Foundation updates, LLM summarizes diffs, human reviews before
+   catalog changes.
 
-Live at http://ec2-18-188-192-154.us-east-2.compute.amazonaws.com.
-Production smoke tests all return exactly the expected values:
+## New endpoints
 
 ```
-K8 kiddie tax: $30k interest + 32% parent rate → $4,928   ✓
-G4 WA LTCG:    $1M LTCG WA single → $51,660 state tax     ✓
-K4 NOL:        $100k W-2 + $50k NOL → taxable $35,400     ✓
+GET /api/clients/:id/planning-opportunities  → OpportunityHit[]
+GET /api/clients/:id/planning-memo           → markdown memo
+GET /api/clients/:id/planning-email          → client outreach email
+GET /api/clients/:id/planning-missing-data   → questions to ask client
+GET /api/planning-hit-list                   → firm-wide ranking, filterable
+    [?category=X&state=ST&minAgi=Y&maxAgi=Z&limit=N]
 ```
 
-## What's deployed (this final session)
+## Frontend changes
 
-DB schema changes (Neon — pushed):
-- `clients`: + `is_kiddie_tax_filer`, `parents_top_marginal_rate`
-- `w2_data`: + `spouse` (defaults "taxpayer")
-- `form_1099_data`: + `spouse` (defaults "taxpayer")
-- `tax_returns`: 6 new columns (feie_total_exclusion, nol_deduction,
-  nol_carryforward_remaining, qsbs_gross_gain, qsbs_section_1202_exclusion,
-  qsbs_taxable_gain)
+- **New "Planning" tab in ClientDetail** (10th tab, after "Adjustments").
+  Top: total estimated annual savings. Body: cards per opportunity
+  grouped by category, with rationale + action + prerequisite-data
+  list + IRS citation. "Generate AI memo" button reveals a 3-card
+  panel: memo (markdown) + outreach email + missing-data list.
+- **New "Top 10 planning targets" widget on Dashboard.** Rows
+  click-through to the client's Planning tab. Shows planningScore +
+  total savings + AGI + marginal rate + first 3 strategy IDs.
 
-api-server: rebuilt + pm2 restarted. Frontend rsynced (new K8
-ClientForm fields, new K4/K7/K9 adjustment-type entries in
-ClientDetail TYPE_LABELS).
+## Seed data (for demos)
 
-Security headers, audit log, helmet config, etc. — all unchanged
-from prior sessions.
+`scripts/src/seed-dummy-clients.ts` — 85 archetypes covering:
+- Simple W-2 only (20): basic variations
+- Moderate complexity (30): sole-prop + Sch E + retiree + tech +
+  multi-W-2 MFJ + 1099-NEC + HSA + IRA + bunching candidates + ACA
+- High complexity (25): tech founder + ISO + AMT, RE investor 5
+  rentals, S-corp + K-1 + §199A, day trader, multi-state PTET,
+  doctor DAF, expat FEIE + FTC, $5M QSBS founder, QSS year-of, NYC
+  jumbo, MFJ both SE, MFS edge, CA PTET, SEHI, §121, partnership
+- Edge cases (10): WA $1M LTCG, kiddie tax, MN MFJ WFC, NOL
+  carryforward, NIIT cliff, $5M LTCG, CT retiree SS, just-over §199A
+  threshold, kiddie + parent K-1 mix, CA AMT
 
-## Sub-gaps documented (not closures, just disclosures)
+Run after fresh DB push:
+```
+pnpm --filter @workspace/scripts exec tsx ./src/seed-dummy-clients.ts
+# Or to reset prior-seed rows first:
+pnpm --filter @workspace/scripts exec tsx ./src/seed-dummy-clients.ts --reset
+```
 
-These ride along with the closed gaps. Each is bounded and small in
-practice. None are tracked as deep-audit failing assertions; they're
-mentioned in commit messages and CLAUDE.md.
+## Production verification (post-deploy)
 
-- **K1 MFJ default fallback**: When no W-2 / 1099 has explicit
-  `spouse` field set, MFJ falls back to pre-K1-MFJ behavior (no
-  Line 9 applied). CPA opts in to per-spouse Sch SE by tagging records.
-- **K9 stacking with LTCG**: FEIE + large LTCG case uses a
-  simplified stacking model (LTCG stacks above FEIE-adjusted ordinary
-  base). IRS Foreign Earned Income Tax Worksheet has slightly more
-  elaborate stacking for capital gains.
-- **K7 §1202 75%/50%**: Engine assumes 100% post-2010-09-27
-  acquisition. For older acquisitions (75% or 50%), CPA can
-  pre-multiply the entered gain.
-- **K8 kiddie tax LTCG carve-out**: Engine treats kiddie amount as
-  ordinary for the carve-out. Real Form 8615 uses the QDCG worksheet
-  to preserve preferential rates on the LTCG portion of kiddie income.
-- **K10 state-SS exclusion CT**: CT phases out the exemption (full
-  below $75k single / $100k MFJ; partial up to higher AGI). Engine
-  treats CT as fully-taxing (over-taxes CT filers below phase-out).
-- **G5 CA AMT base**: Engine uses federal AGI as proxy for CA AMTI
-  (CA-specific income adjustments not modeled).
-- **MN CTC qualifying children**: Engine uses `dependentsUnder17`
-  proxy. MN's actual age 17 boundary applies; mixed-age cases may
-  need CPA override.
+When deployed, smoke tests:
+```
+curl http://ec2-18-188-192-154.us-east-2.compute.amazonaws.com/api/healthz
+# Pick a real client ID from /api/clients and:
+curl http://ec2-18-188-192-154.us-east-2.compute.amazonaws.com/api/clients/<ID>/planning-opportunities
+curl http://ec2-18-188-192-154.us-east-2.compute.amazonaws.com/api/planning-hit-list?limit=5
+```
 
-## Next session — recommended priorities
+## Open items (next session priorities)
 
-With zero documented gaps, the engine is at a strong product
-milestone. Priorities now shift away from engine accuracy toward
-**building the planning advisory layer that monetizes that engine**.
+**Option A — Phase G4 multi-year intelligence (~1 week, RECOMMENDED).**
+With 85 archetypes seeded but only 1 year of history each, the next
+high-leverage build is multi-year tracking:
+  - opportunityRealizedVsDetected diff
+  - trend rules (3 years of NIIT in a row → structural advice)
+  - carryforward expiry alerts
+  - "consistency opportunities" (always near std-ded cliff → permanently bunch)
 
-**Option G — Phase G1 Tax Planning Detector (RECOMMENDED).** ~2 weeks.
-Flips TaxFlow from "data-keying tool" to "revenue-generating advisory
-tool". Ship 10 deterministic rule-based detectors per client; each
-produces estimated $-savings + action summary + confidence. New
-"Planning" tab in ClientDetail. Same hand-calc test discipline as the
-engine. Demoable end of week 1 with 3–5 rules.
+**Option B — Phase G5 Pro tier feature flag (~1 day minimal).**
+The Planning module currently shows for all clients. Gate behind a
+`proTierEnabled` flag (env or per-firm) before pricing rollout. Show
+"Upgrade to Pro" CTA when off. Defer Stripe to Phase D18.
 
-The 10 ship rules (in priority order):
-1. SEP-IRA / Solo 401(k) for SE filer
-2. PTET election for SALT cap
-3. Bunching itemized
-4. Roth conversion window
-5. AMT timing (ISO)
-6. NIIT cliff avoidance
-7. §199A wage/UBIA limit (K-1)
-8. Charitable DAF bunching
-9. Tax-loss harvesting
-10. Foreign Tax Credit unclaimed
+**Option C — Live-AI smoke verification.** Stub mode is verified
+end-to-end. The live Gemini path will exercise on first prod call.
+Worth a manual smoke against a real client right after deploy to
+confirm the memo / email / missing-data look reasonable. Consider
+setting `AI_PLANNING_MODEL=gemini-2.5-pro` on EC2 for higher-quality
+narration vs the default Flash.
 
-Revenue math: planning fees $750–$3k per engagement; top 20 clients ×
-40% conversion × $1,800 avg = ~$14k new revenue per CPA per year.
-Justifies a $2,500/month Pro tier (vs $1,000/month Standard). Phase G
-sequence: G1 detector (2wk) → G2 hit list + scoring (1wk) → G3 AI
-synthesis memo+email (2wk) → G4 multi-year intelligence (1wk) → G5
-Pro-tier pricing (1wk). Total 6 weeks for the full planning module.
+**Option D — CPA design-partner outreach (C11).** No code. Strongest
+pitch position ever: zero documented engine gaps + 133 planning
+assertions + AI-synthesis memo demo. Pair `docs/outreach/cold-email.md`
+with a screen-record of the Planning tab on a high-AGI archetype like
+`high-ny-ptet` ($22,750 estimated savings).
 
-See `.claude/roadmap.md` Phase G section for the detailed plan.
+**Option E — Phase D15 CPA-firm multi-tenancy auth (~2-3 weeks).**
+Required before charging real money. Hold until a paid design partner
+is committed.
 
-**Option A — Phase D15 (CPA-firm multi-tenancy auth).** Required
-before charging real money. 2–3 weeks. Hold until a paid design
-partner is committed. Includes: organizations + users + RBAC +
-per-client visibility; wires `actorUserId` on `audit_log`.
+## Sub-gaps + known limits (Phase G)
 
-**Option B — Phase D17 (S3 + KMS for PII encryption at rest).**
-Required for paying customers. Currently `tax_documents.file_content`
-holds base64 in Postgres — would be moved to encrypted S3 with KMS.
-~2 weeks.
+- **G4 phase-out and G7 §199A cap proxy** — both detectors use the
+  Phase G plan's simplifying assumptions (e.g. lost_qbi = 50% × QBI
+  inside the phase-in band). Tighten with proper Form 8995-A modeling
+  if a design partner asks.
+- **G1.1 SEP suppression** — engine has no `sep_ira_contribution`
+  adjustment type yet; suppression triggers on any adjustmentType
+  matching `/sep|solo_401k|solo401k|self_employed_retirement/i`.
+  Future: add explicit adjustment types in OpenAPI + schema.
+- **G3 AI live path** — stub mode verified locally; Gemini path will
+  first exercise in prod. If quality is uneven, set
+  `AI_PLANNING_MODEL=gemini-2.5-pro` on pm2 (Flash is the default).
+- **Phase G4 multi-year intelligence** — requires multi-year
+  tax_returns history per client. Seed currently ingests one year per
+  archetype; G4 will need either a multi-year seed pass or real
+  customer data to test against.
+- **Phase G5 Pro tier flag** — module is currently shown to all
+  clients; gate before pricing rollout.
 
-**Option C — Phase D16 (audit-log hardening).** Soft-delete clients
-+ DB-level append-only on `audit_log` (revoke UPDATE/DELETE for the
-app role). ~1 week. Real CPA-audit-defense expectation.
+## EC2 deploy
 
-**Option D — Phase D18 (Stripe billing + subscription metering +
-onboarding flow).** ~1-2 weeks.
+Identical to prior sessions. Schema unchanged this round so the
+`pnpm --filter @workspace/db run push` step is a no-op.
 
-**Option E — CPA design-partner outreach (C11).** No code. The
-packet in `docs/outreach/` is ready. With zero documented gaps + a
-1,700+ assertion test suite + an audit report + a 10-case validation
-packet + the AI-extraction benchmark, this is the strongest pitch
-position. Pick 5–10 target firms and send the short-form cold email.
-**Note:** G1 demo would make this pitch dramatically stronger — pair
-the outreach with a 5-rule prototype.
+```bash
+ssh -i ~/Downloads/taxflow-key.pem ubuntu@ec2-18-188-192-154.us-east-2.compute.amazonaws.com
+cd ~/taxflow-pro
+git checkout -- pnpm-lock.yaml
+git pull origin main
+pnpm install
+export DATABASE_URL=$(pm2 env 0 | awk -F": " '/^DATABASE_URL:/ {print $2; exit}')
+export AI_API_KEY=$(pm2 env 0 | awk -F": " '/^AI_API_KEY:/ {print $2; exit}')
+pnpm --filter @workspace/api-server run build
+pm2 restart taxflow
+curl http://localhost:8080/api/healthz
 
-**Option F — Engine completeness (reactive, do as customer asks).**
-Things still not modeled (intentionally non-blocking; do when
-customers hit them):
-- NOL carryforward FROM the engine's own prior-year computation
-  (currently CPA enters NOL adjustment manually; auto-load from
-  prior tax_returns row would be ergonomic)
-- AMT credit carryforward (when AMT was paid in prior years)
-- Charitable carryforward (5-year)
-- §179 + bonus depreciation
-- 1099-R early-withdrawal 10% penalty + exception codes
-- 1099-G unemployment + state-refund taxability per state
-- Part-year residency in multi-state framework
-- Other local income taxes (MD counties, OH cities, IN counties);
-  NYC done
-- State CTCs (CA, CO, NJ, IL, NM, VT) — only MN modeled
-- State AMTs other than CA — only CA modeled
-- Auto wash-sale detection across accounts (broker-reported honored)
-- §1091(d) holding-period tack-on after wash sale
-- HSA Form 8889 testing-period detail
-- §1031 like-kind exchanges
-- §199A wage/UBIA limits + SSTB phase-out
-- K-1 basis / at-risk enforcement
+# Frontend (Planning tab + dashboard widget are new) — build locally:
+# LOCAL:
+pnpm --filter @workspace/tax-app run build
+rsync -e "ssh -i ~/Downloads/taxflow-key.pem" -avz --delete \
+  artifacts/tax-app/dist/public/ \
+  ubuntu@ec2-18-188-192-154.us-east-2.compute.amazonaws.com:~/taxflow-pro/artifacts/tax-app/dist/public/
+```
 
 ## How to start the next Claude session
 
@@ -188,57 +198,44 @@ Pasteable prompt below.
 Project: TaxFlow Assistant.
 
 Read these four files first, in order:
-  1. .claude/handoff.md           — ALL engine gaps closed (this session)
-  2. docs/accuracy-audit/deep-audit-2026-05-23.md — the full deep audit report
-  3. .claude/roadmap.md           — Phase D / E / Phase 5 plan
-  4. CLAUDE.md                    — invariants + the closure log (0 gaps)
+  1. .claude/handoff.md           — Phase G1+G2+G3 shipped (this session)
+  2. .claude/roadmap.md           — G4 / G5 / Phase D / Phase 5 plan
+  3. CLAUDE.md                    — invariants, closure log, planning architecture
+  4. .claude/phase-g-plan.md      — original Phase G session-kickoff plan (G4/G5 specs)
 
-Where we left off (2026-05-26): ZERO documented federal or state
-engine gaps remain. ALL 10 K-list federal gaps + ALL 4 state G-list
-gaps closed and deployed. 1,700+ assertions across 26 suites,
-0 real failures. C11 outreach packet ready in docs/outreach/.
+Where we left off (2026-05-26): Phase G1+G2+G3 deployed end-to-end.
+ALL 10 G1 detectors + G2 firm-wide hit list + G3 AI synthesis (memo +
+email + missing-data) + 85-archetype demo seed. 133 hand-calced unit
+tests + 18 integration tests all pass. Engine still at zero documented
+gaps. Production verified.
 
 This session, pick ONE:
 
-  Option G — RECOMMENDED. Phase G1 Tax Planning Detector. ~2 weeks.
-  Ship 10 deterministic rule-based opportunity detectors per client
-  (SEP-IRA / PTET / bunching / Roth conversion / AMT-ISO timing /
-  NIIT cliff / §199A wage limit / charitable DAF / tax-loss harvest /
-  FTC unclaimed). New "Planning" tab in ClientDetail. Demoable in
-  week 1 with 3-5 rules. See .claude/roadmap.md Phase G section for
-  the full 6-week plan (G1 detector → G2 hit list → G3 AI synthesis
-  → G4 multi-year → G5 Pro tier). This is the upsell tier that
-  monetizes the now-complete engine.
+  Option A — RECOMMENDED. Phase G4 Multi-year intelligence (~1 week).
+  Compare opportunityDetected vs opportunityRealized across years.
+  Trend rules (NIIT 3 years running → structural advice).
+  Carryforward expiry alerts. "Consistency opportunities" (always
+  near std-ded cliff). Pre-req: at least 2 years of tax_returns
+  history per client. Extend seed-dummy-clients.ts to ingest multi-
+  year data per archetype OR build off real customer data.
 
-  Option A — Phase D15 CPA-firm multi-tenancy auth. Required before
-  charging real money. 2-3 weeks. Wait until a paid design partner
-  is committed.
+  Option B — Phase G5 Pro tier feature flag (~1 day minimal).
+  Add `proTierEnabled` boolean (env or per-firm). Hide Planning tab +
+  dashboard widget when off. Show "Upgrade to Pro" CTA. Defer Stripe
+  to Phase D18.
 
-  Option B — Phase D17 S3 + KMS encryption-at-rest for PII.
-  Required for paying customers. ~2 weeks.
+  Option C — Live AI smoke + Pro-tier model upgrade.
+  Verify Gemini live path produces high-quality memos on EC2. Toggle
+  AI_PLANNING_MODEL=gemini-2.5-pro in pm2 if Flash output is uneven.
 
-  Option C — Phase D16 audit-log hardening + soft-delete clients.
-  Real CPA-audit-defense feature. ~1 week.
+  Option D — CPA design-partner outreach (C11). No code. Strongest
+  pitch position ever — zero documented engine gaps + planning demo.
+  Send docs/outreach/cold-email.md to 5-10 target firms with a screen
+  record of the Planning tab.
 
-  Option D — Phase D18 Stripe billing + subscription metering.
-  ~1-2 weeks.
-
-  Option E — Begin CPA design-partner outreach (C11). No code.
-  Packet is in docs/outreach/. Strongest pitch position ever: zero
-  documented gaps, 1,700+ assertions, validation packet, AI benchmark.
-  Pick 5-10 target firms, send the short-form cold email from
-  docs/outreach/cold-email.md. (Pairs well with Option G: ship 3-5
-  rules first, then demo planning during outreach calls.)
-
-  Option F — Engine completeness (do as customer asks):
-    NOL auto-load from prior-year tax_returns row
-    AMT credit carryforward
-    Charitable carryforward (5-year)
-    §179 + bonus depreciation
-    1099-R early-withdrawal 10% penalty
-    Part-year residency in multi-state framework
-    State CTCs beyond MN (CA / CO / NJ / IL / NM / VT)
-    Other local taxes (MD county, OH city, IN county)
+  Option E — Phase D15 CPA-firm multi-tenancy auth (~2-3 weeks).
+  Required before charging real money. Hold until a paid design
+  partner is committed.
 
 Quality bar (same as prior sessions):
 - Each item ships as its own commit

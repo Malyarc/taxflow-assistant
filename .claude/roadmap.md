@@ -140,13 +140,16 @@ itself on 2 engagements. This is a high-margin, high-stickiness module.
    client context → write planning memo + outreach email + flag missing
    data. Math stays deterministic; LLM only narrates and ranks.
 
-### Phase G1 — Deterministic opportunity detector (~2 weeks)
+### Phase G1 — Deterministic opportunity detector ✅ **DONE (2026-05-26)**
 
-Ship 10 highest-impact rules (table below). New endpoint
+All 10 rules shipped (G1.1 through G1.10). New endpoint
 `/api/clients/:id/planning-opportunities`. New "Planning" tab in
-ClientDetail. Same hand-calc test discipline as the engine. Each rule
-has positive test cases proving it fires when expected and stays silent
-when not.
+ClientDetail (10th tab). 121 hand-calced tests + 18 integration
+tests against live API. Architecture: deterministic detector engine
+at `artifacts/api-server/src/lib/planningEngine.ts`, versioned catalog
+at `lib/planning-strategies/strategies-v1.json` with fail-fast
+validator at module load. Seed script `scripts/src/seed-dummy-clients.ts`
+ingests 85 archetypes for demos.
 
 The 10 ship rules (in priority order — highest avg savings × highest
 client prevalence × lowest implementation complexity):
@@ -164,41 +167,54 @@ client prevalence × lowest implementation complexity):
 | G1.9 | Tax-loss harvesting | Unrealized losses + capital-loss carryforward < $3k | Variable |
 | G1.10 | Foreign Tax Credit unclaimed | `foreign_tax_paid > 0 && no FTC adjustment` | Variable |
 
-### Phase G2 — Composite scoring + CPA hit list (~1 week)
+### Phase G2 — Composite scoring + CPA hit list ✅ **DONE (2026-05-26)**
 
-Per-client `PlanningOpportunityScore`:
+PlanningScore implemented per spec:
 ```
-score = Σ (opp.estimatedSavings × confidence_weight)
-      × marginal_rate_weight
-      × engagement_complexity
-      × stickiness
+score = (Σ hits of estSavings × confidence × stickinessWeight)
+      × marginalRateWeight × engagementComplexityWeight
 ```
+where marginalRateWeight = 1 + max(0, marginal − 0.22) × 5,
+engagementComplexityWeight = 1 + log(1 + numHits) × 0.3,
+stickinessWeight = 1.5 if recurring else 1.0.
 
-New dashboard widget: "Top 10 planning targets" ranked descending,
-filterable by category (retirement / state / business / etc.). Each
-target row shows: client name, est. annual savings, top 3 opportunities,
-"Open planning memo" CTA.
+New endpoint `GET /api/planning-hit-list` with optional ?category /
+?state / ?minAgi / ?maxAgi / ?limit filters. Dashboard now shows a
+"Top 10 planning targets" widget (each row links to that client's
+Planning tab). 12 new unit tests cover scoring helpers + composite
+formula.
 
-### Phase G3 — AI synthesis (~2 weeks)
+### Phase G3 — AI synthesis ✅ **DONE (2026-05-26)**
 
-Gemini-generated planning memo per client (1-page, CPA-facing) +
-outreach email draft (client-facing, jargon-free) + missing-data list
-("Need: traditional IRA balance, home cost basis, 401k contribution
-rate"). Math stays in the deterministic layer; LLM only narrates.
+`generatePlanningMemo`, `generateClientOutreachEmail`, and
+`inferMissingData` in `artifacts/api-server/src/lib/planningMemo.ts`.
+Strict system prompts forbid LLM number invention / speculation /
+adding opportunities not in the supplied list. Three GET endpoints:
+`/planning-memo`, `/planning-email`, `/planning-missing-data`. Frontend
+"Generate AI memo" button on the Planning tab lazy-loads all three.
+**Deterministic stub fallback** when aiEnabled === false (no AI key) —
+identical section structure, no LLM dependency. `AI_PLANNING_MODEL`
+env var overrides default model (set to `gemini-2.5-pro` for higher-
+quality narration on the Pro tier).
 
-### Phase G4 — Multi-year intelligence (~1 week)
+### Phase G4 — Multi-year intelligence ❌ **Open (~1 week)**
 
 Compare opportunity-detected vs opportunity-realized across years.
 Detect trend-based opportunities ("client has NIIT for 3 consecutive
 years → structural advice"). Flag carryforwards about to expire.
 Surface "consistency opportunities" (e.g., always near std-ded cliff
-→ should permanently bunch).
+→ should permanently bunch). Pre-req: at least 2 years of tax_returns
+history per client (seed currently ingests one year per archetype).
 
-### Phase G5 — Pro tier + pricing (~1 week)
+### Phase G5 — Pro tier + pricing ❌ **Open (~1 week)**
 
-Surface Planning module behind a Pro feature flag. Stripe tier upgrade
-flow. Marketing copy update. The free Standard tier keeps all current
-engine features; Pro adds Planning + AI synthesis + hit list.
+Surface Planning module behind a Pro feature flag (currently the
+Planning tab + dashboard widget are available to all clients).
+Stripe tier upgrade flow (Phase D18 — out of scope). Marketing copy
+update. The free Standard tier keeps all current engine features;
+Pro would add Planning + AI synthesis + hit list. Minimal version of
+G5: add `proTierEnabled` boolean (env or per-firm) and hide the
+Planning tab + dashboard widget when off; defer Stripe to D18.
 
 ### Phase G — additional rule set (deferred to G6+ as customer-driven)
 
