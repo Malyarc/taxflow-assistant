@@ -1,166 +1,261 @@
-# 12-Minute Live Demo Script
+# Demo Script — 15-minute walkthrough
 
-Pre-flight (do BEFORE the Zoom):
-- Open http://ec2-18-188-192-154.us-east-2.compute.amazonaws.com in a
-  fresh browser window
-- Have 1 sample W-2 PDF + 1 sample 1099-INT PDF ready on your desktop
-- Pre-create a demo client "Sarah Johnson, Single, CA, TY2024, 1 child"
-  to avoid spending demo time on the new-client form
-- Have `docs/validation-packet/` open in a 2nd tab to grab the
-  hand-keyable cases if they want to test their software offline
+Refreshed 2026-05-26 to lead with the **Phase G planning module**
+(the strongest differentiator). Old script focused on AI extraction;
+research showed advisory revenue is the better hook for Persona 2.
 
-## Script
+**Total time: 15 minutes.** Hard stop. If they want more, schedule a
+follow-up. Their first session needs to end with them WANTING more,
+not exhausted.
 
-**(0:00 – 1:00) Pitch the workflow in one minute**
+**Demo URL:** http://ec2-18-188-192-154.us-east-2.compute.amazonaws.com
 
-> "Here's what I want to show you. We're going to upload a client's
-> W-2 PDF, AI extracts every field, you review them on a per-field
-> diff against what the AI guessed, you approve. The values land on
-> the client record with a full audit trail. Engine recomputes the
-> 1040, you export PDF/CSV/.gen. You then plug that into UltraTax or
-> whatever you use for the actual filing.
->
-> The model never changes the client record. It proposes — you
-> approve. Twelve minutes, watch."
+---
 
-**(1:00 – 3:00) Upload + extract**
+## Pre-demo prep (5 min the day before)
 
-- Click "Sarah Johnson" → Documents tab
-- Drop the W-2 PDF
-- Watch the "pending_review" badge appear
-- Point out the 8MB cap, 50-doc queue limit, audit log
+1. Confirm EC2 is up: `curl http://ec2.../api/healthz`
+2. Confirm Pro tier is ON: `curl http://ec2.../api/settings` → `proTierEnabled: true`
+3. Pick the demo client. **Default:** `edge-big-ltcg` (G4.1 fires with
+   $93k headline). Backup: `high-tech-founder-iso` (G4.2 with $5k).
+4. Pre-open two browser tabs:
+   - Tab 1: Dashboard (`/`) — for the Top-10 widget
+   - Tab 2: `/clients/<edge-big-ltcg-id>` — Planning tab pre-clicked
+5. Have `positioning.md` open on a 2nd monitor for sanity reference.
+6. Mute Slack / phone / email notifications.
 
-> "You can drop in W-2, 1099-NEC, 1099-INT/DIV/B/R/G/K/MISC, 1098-E,
-> 1098, K-1, and SSA-1099 today. Gemini Flash extracts. Real W-2 F1
-> 0.865 on our benchmark. Whether the AI gets it right or wrong
-> doesn't matter for the engine — you're going to confirm every
-> field."
+---
 
-**(3:00 – 6:00) Review modal — the diff column**
+## Minute-by-minute script
 
-- Click "Review" on the W-2 row
-- The review modal opens with the PDF on the left, extracted fields
-  on the right, bounding boxes overlaid
-- Point at each diff indicator:
-  - ✓ green = AI value matches what's on the doc, kept
-  - ✎ amber = CPA changed it (shows AI value struck-through →
-    your value)
-  - + sky blue = field AI didn't extract but CPA added
-  - ⊘ amber clear = AI guessed something CPA wiped
+### 0:00-1:00 — Opening (60 sec)
 
-> "Here's the box I make. Every field is shown to you. You can
-> compare against the PDF on the left — bounding boxes are exact. If
-> the AI got it right, ✓, you keep moving. If it's wrong, you fix it.
-> If you don't see something the AI extracted that you need on the
-> return, you type it in.
->
-> Critically: nothing has touched the client record yet. Only after
-> you click Approve. Look at the audit log — every approval is
-> stamped with the AI's value AND your final value AND a timestamp.
-> If a client ever questions a number, you can prove what the AI
-> proposed vs. what you approved."
+> "Thanks for the time. Plan for this is 15 minutes. I'll walk you
+> through the two things TaxFlow does that your existing software
+> doesn't — the planning module, then the AI extraction. Stop me
+> anywhere with questions; I'd rather have a conversation than a
+> presentation."
 
-- Click "Approve" — the row turns green
-- Switch to the Tax Calculator tab to show the engine has updated
+> "Quick context: we're not trying to replace Lacerte / UltraTax /
+> Drake. We sit on top of them. The pitch is twofold: identify
+> advisory revenue opportunities across your book, AND save 20-30
+> min/return of keying time. I'll show the advisory piece first
+> because it's the bigger dollar conversation."
 
-**(6:00 – 8:00) The calculator**
+### 1:00-2:00 — Dashboard / Top-10 widget (60 sec)
 
-- Show federal + state breakdown
-- Click "Tax Returns" sidebar — show the engine values updated
+Open Tab 1 (Dashboard). Point at the "Top 10 planning targets" widget.
 
-> "Engine computes federal + state in under 50 milliseconds. Every
-> line on Form 1040, every credit, Schedule A, AMT (Form 6251 Part
-> III preferential LTCG rates), NIIT, Additional Medicare (Form
-> 8959), SE tax with Sch SE Line 9 shared SS wage base, §121
-> home-sale exclusion, SS taxability worksheet 0/50/85% — all of it.
->
-> Here's the disclosure I make up front. The engine has 1,584
-> hand-calculated test assertions across 26 suites with 0 failures.
-> I'll send you the audit report after this call. There are six
-> federal-engine gaps I haven't built yet — kiddie tax, FEIE for
-> expats, NOL carryforward, §1202 QSBS for tech founders. If you hit
-> one I haven't built, I prioritize it and ship it inside two weeks."
+> "This is the firm-wide ranked list. Every client is scored on a
+> composite — estimated savings × confidence × marginal-rate weight
+> × engagement complexity. You'd look at this Monday morning and
+> know which 10 conversations to prioritize this week."
 
-**(8:00 – 10:00) Exports**
+> "Each row clicks through to that client's planning tab. Real-world
+> ranking, not theoretical."
 
-- Click "Tax Return (PDF)" — show the PDF summary
-- Click "IRS Form 1040 (PDF)" — show the filled IRS form
-- Click "CSV" — show the IRS-line-reference format
-- Click ".gen" — show the vendor-neutral summary
+### 2:00-3:30 — Click into `edge-big-ltcg` (90 sec)
 
-> "You can take any of these into your existing software. The PDF is
-> a clean one-page summary you can email the client. The IRS Form
-> 1040 PDF is the actual IRS-published form filled with our numbers
-> — for client signature review. The CSV has IRS line references
-> per row. The .gen file is a vendor-neutral text dump organized by
-> IRS form / line / value. Hand-keyable into UltraTax in maybe 5
-> minutes per return.
->
-> I'd love to ship a real UltraTax import file, but the audit I did
-> last week confirmed UltraTax CS has no public file-based import
-> format for 1040s. So I'm not pretending — PDF/CSV/.gen is the
-> workflow. If a paid customer specifically needs file-based
-> ingestion, that's a multi-month build I'll commit to."
+Click the top entry (or specifically `edge-big-ltcg` if visible).
 
-**(10:00 – 11:30) The validation packet**
+> "This is a single-year archetype — founder selling $5M of QSBS
+> stock. Let me show you what the engine flags."
 
-- Open docs/validation-packet/ link in the 2nd tab
-- Show the README listing the 10 cases
+Scroll through the G1 hits. Highlight 2-3:
 
-> "Here's what I want to send you home with. Ten hand-keyable cases
-> covering single, MFJ, HoH, W-2 only, Sch C, LTCG, ISO bargain AMT,
-> EITC, retiree with SS, multi-state. Each one has the inputs as a
-> CSV, the expected outputs computed by our engine, and a PDF for
-> the client-facing view.
->
-> Take these into UltraTax / Lacerte / ProConnect / Drake. Hand-key
-> the inputs. Compare the outputs line by line. If the numbers don't
-> match yours, I want to know — that's the most valuable feedback
-> you can give me. If they do match, you have an independent
-> verification against your existing software."
+- G1.1 SEP-IRA (if SE income > $30k): "$13,646 contribution opportunity"
+- G1.6 NIIT cliff: "Right at the threshold, $X recoverable"
+- G1.9 Tax-loss harvesting: "$3k against ordinary income"
 
-**(11:30 – 12:00) The ask**
+> "Total estimated annual federal savings: $93,575 across 5
+> opportunities. Notice the citation footer on each — IRC §1411,
+> §1211, §408(k). Every dollar is hand-calc'd against the published
+> rule. There's no LLM in the math layer."
 
-> "Two paths from here. One: you take the validation packet, run it
-> through your software, send me an email saying 'matches' or 'this
-> field is off' on each case. Twenty minutes of your time.
->
-> Two: you pilot with $500–$1,000/month for 30 days, cap at 10
-> clients. Weekly 30-minute Zoom. I prioritize whatever trips you
-> up. If after 30 days you don't see value, you stop paying. If you
-> do, I'd appreciate a reference once you're comfortable.
->
-> Either way, I'll send you the audit report, the validation packet,
-> and the test-suite summary by the end of today. What feels right?"
+### 3:30-5:00 — Multi-year trends section (90 sec)
 
-## After the demo (within 60 minutes)
+Scroll to the "Multi-year trends" section.
 
-Send this email:
+> "This is where most planning tools stop short. Single-year
+> detectors catch one-off opportunities; this client has had NIIT
+> in both 2024 and 2025 — that's not a timing problem, it's a
+> structural one. The recommendation isn't 'defer income to next
+> year', it's 'restructure entity / harvest losses systematically /
+> evaluate moving income to retirement accounts'."
 
-> Subject: TaxFlow demo follow-up — materials inside
->
-> Hi [First name],
->
-> Thanks for the 12 minutes. As promised, here's everything to take
-> with you:
->
-> 1. Audit report: [link to docs/accuracy-audit/deep-audit-2026-05-23.md]
-> 2. Validation packet (10 hand-keyable cases): [link / zip attachment]
-> 3. Test suite summary: 1,584 hand-calc assertions across 26
->    suites, 0 real failures. 6 federal gaps disclosed.
-> 4. Live demo URL: http://ec2-18-188-192-154.us-east-2.compute.amazonaws.com
->    (demo client "Sarah Johnson" is your sandbox — feel free to upload
->    sample docs and approve / reject)
->
-> Two next steps, whichever you prefer:
->
-> A) Run the validation packet through your software. Email me a
->    "matches" or per-case disagreement. ~20 minutes of your time.
->
-> B) Pilot — $500–$1,000/month, cap at 10 clients, 30 days. I'll
->    draft a one-page agreement if you want to go this route.
->
-> Either way: any field, line, or workflow that tripped you up in
-> the demo, I'd love to hear about it. That's how this gets better.
->
-> — John
+> "That's the difference between transactional and advisory work,
+> and it's where the higher-fee engagements live."
+
+### 5:00-6:30 — Generate AI memo (90 sec)
+
+Click "Generate AI memo" button. Wait ~10 seconds for the response.
+
+> "While we wait — under the hood, the AI gets the structured
+> opportunity list as input. It generates the memo, the client
+> outreach email, and the missing-data list. The LLM never touches
+> the math; it only narrates what the deterministic engine produced.
+> That's the malpractice defense — if a partner reviews and signs
+> off, they're signing off on the math, not on AI guesses."
+
+When the memo loads, scroll through it briefly. Don't read it
+verbatim.
+
+> "1-page CPA memo, formal language, structured by category. The
+> client email is a different tone — warmer, less technical. The
+> missing-data list is what you still need to ask the client before
+> the engagement starts."
+
+### 6:30-8:00 — Pivot to AI extraction (90 sec)
+
+> "OK that's the planning layer. Let me show you the other half —
+> the AI extraction overlay."
+
+Navigate to a different client (or a fresh client). Open the
+Documents tab.
+
+> "Today's solo CPA spends 30-45 minutes typing W-2 boxes from a
+> client's PDF into Drake. We cut that to under 5 minutes. Watch:"
+
+Click "Upload Document", select a sample W-2 PDF, wait for
+extraction.
+
+> "AI extracts every field — box 1 wages, box 2 fed withholding,
+> all the way through state info. Bounding boxes show where on the
+> source PDF each value came from."
+
+### 8:00-9:30 — Review modal (90 sec)
+
+Click "Review" on the extracted document. Show the per-field diff
+modal.
+
+> "This is the part Holistiplan and Corvee don't have. CPA sees
+> every extracted field next to the source. Four explicit states:"
+
+Point at each:
+- ✓ kept (emerald): "AI got it right, kept as-is"
+- ✎ changed (amber): "AI had a value, you overrode it — both visible"
+- + added (sky): "You added a value AI missed"
+- ⊘ cleared (amber): "AI extracted a value you removed"
+
+> "Nothing lands in the client record until you click 'Approve'.
+> When you do, it's audit-logged. Every field you accepted or
+> overrode is tracked, with a `before` and `after` for your review
+> defense."
+
+### 9:30-11:00 — Engine + exports (90 sec)
+
+Approve the extraction. Navigate to the Tax Calculator tab.
+
+> "Engine recomputes the federal + state tax return — that's
+> 1040, Sch 1-3, A, B, C, D, E, SE, AMT, NIIT, additional Medicare,
+> kiddie tax, FEIE, all of it. Multi-state with resident credit
+> for non-resident state tax."
+
+> "Exports: a real IRS Form 1040 PDF that's pre-filled with the
+> computed values, a full-detail PDF, a CSV with IRS line refs,
+> and a vendor-neutral .gen summary you'd hand to your prep tech
+> to key into UltraTax or Lacerte."
+
+### 11:00-12:30 — The honest gap-disclosure (90 sec)
+
+This is the most important 90 seconds. CPAs respect honesty.
+
+> "Three things I want to be upfront about:"
+
+> "**One:** we don't do e-filing. You file through your existing
+> software. Our exports bridge the gap; the actual filing happens
+> in your stack."
+
+> "**Two:** we're not SOC 2 compliant yet. That's on the roadmap
+> after we have a paid customer requiring it — it's 3-6 months
+> and $30-60k of work I won't burn on speculation. For mid-size
+> firms with procurement gating on SOC 2, we'd talk about pilot
+> scope around that."
+
+> "**Three:** Holistiplan and Corvee exist. Holistiplan is the
+> $160/mo budget option for financial advisors; Corvee is the
+> $15-30k/yr kitchen-sink for CPAs. What we do that they don't:
+> our 15 rules are hand-calc'd and IRC-cited (Corvee's 1,500 are
+> heuristics), we have multi-year intelligence they don't, and we
+> include the AI extraction layer they make you key into separately.
+> 1,790+ test assertions, zero documented engine gaps, independent
+> audit last week."
+
+### 12:30-14:00 — Validation packet + ROI (90 sec)
+
+Open `docs/validation-packet/` in a file browser or describe it.
+
+> "Last piece: this is the 10-case validation packet. PDF + CSV +
+> .gen for each case. They cover single, MFJ, HoH, Sch C, K-1,
+> LTCG/QDIV mix, EITC, ISO bargain, retiree with SS — the spread
+> of typical 1040 complexity. You'd take these, hand-key them into
+> Lacerte or UltraTax at your pace, and compare line-by-line. If
+> the numbers diverge anywhere, we want to know — I fix bugs
+> inside a week during a pilot."
+
+> "ROI math for [your firm size estimate]: at ~500 clients with
+> even a 20% conversion on planning, $4k avg engagement, that's
+> $80k of incremental advisory revenue against our $30k Pro
+> subscription. Break-even is well below your client count."
+
+### 14:00-15:00 — Close (60 sec)
+
+> "What I'm looking for is one paid design partner — $500/mo for
+> the first 30 days, $1,000/mo months 2-3, capped at 10 clients.
+> Weekly 30-min Zoom check-ins where you tell me what trips you up.
+> Bugs you find get fixed inside a week. Public reference (your
+> name + firm) only after 30 days if you confirm value."
+
+> "Three questions for you, then I want to hear what's on your mind:"
+
+> "1. What does your current planning conversation look like —
+>    is it built into the prep engagement, or a separate session?"
+
+> "2. How are you ID'ing which clients to talk to about advisory
+>    today? Gut, partner judgment, or something more systematic?"
+
+> "3. What would make this a 'yes' for a 30-day pilot — and what's
+>    the dealbreaker that would make it a 'no'?"
+
+### After they answer
+
+- **Listen.** Take notes, don't rebut.
+- **Promise nothing concrete on roadmap items unless certain.**
+- **If they say yes**: send the pilot terms (in `partner-faq.md`
+  section "What does the paid pilot look like?") within 24 hours.
+- **If they say no**: ask for one sentence on why. That's the most
+  valuable data point we can get.
+
+---
+
+## Anticipated questions during the demo
+
+(Detailed answers in `partner-faq.md`. Quick fielding here:)
+
+| Question | 1-sentence response |
+|---|---|
+| "What about Holistiplan?" | "Holistiplan is great for the financial-advisor / AUM workflow; we're built for the CPA prep + advisory motion specifically — and we don't separate the planning UI from the source-document keying." |
+| "Why should I trust your math?" | "1,790+ hand-calc'd test assertions, zero documented gaps, independent audit found and fixed 9 bugs last week — happy to share the audit report." |
+| "What if your AI extraction is wrong?" | "CPA reviews every field before it lands in the record. The AI is a productivity layer, not a decision-maker." |
+| "Can I export to UltraTax / Lacerte?" | "Vendor-neutral .gen file + PDF + CSV. No public UltraTax import format exists; SurePrep API is the only commercial path and we'd take that on for a paid customer." |
+| "Pricing?" | "$1,000/mo for the extraction overlay (Standard); $2,500/mo with the planning module (Pro). Pilot is $500/mo for 30 days." |
+| "How long does setup take?" | "About 30 minutes — we'd import your top 10-20 clients during the pilot kickoff. We can demo the import on the next call." |
+| "Where are the client docs stored?" | "Right now in the application database (single-tenant). Production-grade S3 + KMS encryption is on the roadmap for D17, ~2 weeks of work once a pilot is signed." |
+| "Multi-tenancy / user accounts?" | "Honest answer: single-tenant today, multi-tenancy is on the roadmap (D15, 2-3 weeks). For the pilot we'd run you on a dedicated instance." |
+| "Is the data encrypted?" | "In transit yes (TLS). At rest, the DB layer encrypts on disk; full S3 + KMS for documents is D17 (~2 weeks)." |
+
+---
+
+## After the demo (within 24 hours)
+
+Send a follow-up email with:
+
+1. **Link to the validation packet** they keep regardless of pilot
+2. **The 3 specific takeaways** from THEIR firm context (what
+   their planning conversation looks like, what their ID method is,
+   what the pilot would unlock)
+3. **Pilot terms (1 page)** — pricing, scope, timeline, expectations
+4. **One specific ask** — yes/no on a 30-day pilot, NOT "any
+   questions?"
+
+Example template in `partner-faq.md` "Pilot offer" section.

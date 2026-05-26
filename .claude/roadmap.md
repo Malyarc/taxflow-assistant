@@ -38,7 +38,7 @@ Run in parallel with Phase B.
 
 | # | Item | Status | Effort |
 |---|---|---|---|
-| C11 | **Find a CPA design partner** | ❌ Open | Calendar time. Required for C12 hand-off. |
+| C11 | **CPA design-partner outreach packet — research-backed** | ✅ Done (2026-05-26) | Synthesized 20+ industry sources (Journal of Accountancy 2025 tax-software survey, CPA Trendlines 2026 outlook, Thomson Reuters Tax Advisory 2026, NATP fee survey, AICPA stats, IRS preparer data, vendor comparisons) into 3 CPA personas, software-landscape map, and competitor analysis (Holistiplan, Corvee/Instead). Refreshed all 5 existing outreach docs (cold-email / one-pager / demo-script / partner-faq) + added 3 new ones (cpa-persona-research / positioning / gap-analysis / pricing). Packet now leads with Phase G planning module ($93k headline savings on edge-big-ltcg) rather than AI extraction. **Live-partner recruitment is the next step but blocked on user availability, not on packet readiness.** |
 | C12 | **UltraTax `.gen` validation** | ✅ Done (2026-05-23) | The audit (`docs/ultratax-audit.md`) found that no documented UltraTax CS file-based import format exists; `.gen` rebranded as a vendor-neutral CPA-review summary; wrong IRS line refs fixed (Sch A mortgage L10→L8a; dropped fictional 1040-L12A); 10-case validation packet of PDF + CSV + TXT now lives in `docs/validation-packet/` for a CPA partner to hand-key into UltraTax and compare. Also caught + fixed a BP3 OpenAPI schema gap (amt_iso_bargain_element + 2 others). |
 | C13 | **AI extraction accuracy benchmark** | ✅ Done (2026-05-23); LIVE re-run pending paid quota | Synthetic-corpus generator (25 W-2 + 75 1099 across 8 variants, seeded RNG), pdfkit renderer mimicking IRS box-grid layouts, LIVE + MOCK extractors, per-field scorer, markdown + CSV reports. MOCK sample at `docs/ai-benchmark/`. First real LIVE run on 2026-05-23 hit Gemini Flash free-tier daily quota at request ~25 — W-2 cohort (25 docs) cleanly completed at **precision 97.5% / recall 77.7% / F1 0.865**; preserved under `docs/ai-benchmark/live-partial-2026-05-23/` with analysis in `LIVE-RUN-NOTES.md`. Re-run with paid quota (or after free-tier reset) for a clean 100-doc report. Harness now hardened against 429: 8s→60s exponential backoff per request + 6.5s default inter-request pacing. |
 | C14 | **Side-by-side AI vs CPA diff column** in the review modal | ✅ Done (2026-05-23) | Promoted the AI value from a hover tooltip to an always-visible per-field DiffIndicator with four explicit states: ✓ kept (emerald), ✎ changed (amber, `<ai-strike> → <cpa>`), + added by CPA (sky blue), ⊘ cleared (amber, `<ai-strike> cleared`). CPA sees at a glance which fields the AI got right vs which they overrode. Smoke-tested locally; deployed. |
@@ -305,13 +305,14 @@ engine gaps remain** (all 10 K-list + all 4 G-list closed end-to-end
 during 2026-05-23 → 2026-05-26). CPA design-partner outreach packet
 (C11) drafted in `docs/outreach/`.)
 
-1. **Session N (now next) — recommended: CPA design-partner outreach
-   (C11). No code.** Strongest pitch position to date — zero documented
-   engine gaps + complete planning module (10 G1 + 5 G4 + AI synthesis
-   + Pro-tier gating ready for pricing) + 88-archetype demo surfacing
-   $145k+ in opportunities. Pair `docs/outreach/cold-email.md` with a
-   screen record of the Planning tab on `edge-big-ltcg` (G4.1 $93k
-   headline). 5-10 target firms.
+1. **Session N (now next) — recommended: LIVE CPA outreach campaign.**
+   The C11 outreach packet is complete (research-synthesized, refreshed
+   for Phase G). Next move requires user (John) availability: build
+   target list of 30-50 Persona-2 firms in CA/NY/IL/NJ/MA, send the
+   refreshed cold email, run 5-10 demos using the new demo script, close
+   1 paid pilot at $500/mo for 30 days. See `docs/outreach/positioning.md`
+   "Outreach prioritization" section for target-firm selection criteria
+   and `docs/outreach/cpa-persona-research.md` for empirical backing.
 
 2. **Session N+1 — Phase D15 multi-tenancy auth (~2-3 weeks).**
    Required before charging real money. Wires `actorUserId` into

@@ -1,87 +1,124 @@
 # TaxFlow Assistant — One-Pager
 
-**A CPA-tool overlay for 1040 prep. Upload client docs → AI extract →
-CPA reviews + overrides on a per-field diff → approved values write to
-the client record (audit-logged) → export to your existing tax
-software via PDF / CSV / vendor-neutral .gen summary.**
+**An AI overlay for the CPA's 1040 workflow. Two layers Drake / Lacerte /
+ProConnect / UltraTax don't have: (1) AI extraction from client documents,
+and (2) a deterministic tax-planning module that ranks every client by
+upsellable advisory opportunity with IRC-cited estimated savings.**
+
+We don't replace tax-prep software. We don't do e-filing. We don't manage
+client documents or e-sign or billing. Those stay with your existing
+stack. We add the AI layer above.
 
 ## The pitch in one line
 
-Cut the document-keying time on a 1040 from 30 minutes to 5 minutes,
-without trusting the AI: every value is shown to you for confirmation
-before it touches the client record.
+> On a sample high-AGI client in our demo, the planning engine surfaces
+> $93,575 of estimated annual federal-tax savings across 5 IRC-cited
+> opportunities. Across 88 demo clients, $145k+ in total advisory
+> revenue waiting to be converted. Hand-calc'd math, not LLM guesses.
 
 ## What it does today (live)
 
-- Upload PDFs (W-2, 1099-NEC, 1099-INT/DIV/B/R/G/K/MISC, 1098-E, 1098,
-  K-1, SSA-1099)
+**AI extraction layer (Phase A2):**
+- Upload PDFs: W-2, 1099 (NEC/INT/DIV/B/R/G/K/MISC), 1098-E, 1098, K-1, SSA-1099
 - AI extracts every field with bounding boxes
 - CPA reviews each extracted field next to a snippet of the source PDF
-- Approve, edit, add, or clear any value — diff is shown explicitly
+- Approve, edit, add, or clear any value — per-field diff is explicit
 - Engine recomputes the return (federal + state, including NYC PIT)
-- Export: real IRS Form 1040 PDF (filled with computed values), full-
-  detail PDF summary, CSV with IRS line references, vendor-neutral
-  .gen summary
+- Export: real IRS Form 1040 PDF, detailed PDF summary, CSV with IRS
+  line refs, vendor-neutral .gen summary
+
+**Tax-planning module (Phase G — 15 detector rules):**
+
+*Single-year detectors (G1.1 – G1.10):*
+- G1.1 SEP-IRA / Solo 401(k) opportunity (IRC §408(k))
+- G1.2 PTET election (IRC §164(b)(6))
+- G1.3 Bunch itemized deductions (IRC §170, §63)
+- G1.4 Roth conversion window (IRC §408A)
+- G1.5 AMT timing — ISO bargain element (IRC §56(b)(3))
+- G1.6 NIIT cliff avoidance (IRC §1411)
+- G1.7 §199A QBI wage/UBIA limit (IRC §199A(b)(2))
+- G1.8 Charitable DAF bunching (IRC §170, §4966)
+- G1.9 Tax-loss harvesting (IRC §1211, §1212)
+- G1.10 Foreign Tax Credit claim (IRC §901)
+
+*Multi-year detectors (G4.1 – G4.5, requires ≥2 years of history):*
+- G4.1 Persistent NIIT exposure (IRC §1411)
+- G4.2 Persistent AMT exposure (IRC §55-§59)
+- G4.3 Permanent bunching strategy (IRC §170)
+- G4.4 Capital loss carryforward unused (IRC §1211)
+- G4.5 Passive activity loss suspension growing (IRC §469)
+
+*Plus firm-wide ranking, AI-drafted memo, client outreach email,
+missing-data list.*
 
 ## Why the engine is worth trusting
 
-| Coverage | Status |
+| Coverage area | Status |
 |---|---|
 | Federal Form 1040, Schedules 1/2/3, A, B, C, D, E, SE | ✅ |
-| Federal AMT (Form 6251) — with Form 6251 Part III LTCG preferential rates (closed K3) | ✅ |
+| Federal AMT (Form 6251, incl. Part III LTCG preferential rates) | ✅ K3 |
 | Federal NIIT (Form 8960) | ✅ |
-| Federal Additional Medicare 0.9% (Form 8959 — closed K2) | ✅ |
-| SS taxability worksheet 0/50/85% (Pub 915 — closed K10) | ✅ |
-| Self-Employed Health Insurance (Form 7206 — closed K5) | ✅ |
-| §121 home-sale exclusion $250k/$500k (closed K6) | ✅ |
-| Sch SE Line 9 W-2 + SE shared SS wage base (closed K1) | ✅ |
-| Schedule D per-transaction + Form 8949 + wash-sale | ✅ |
+| Additional Medicare 0.9% (Form 8959) | ✅ K2 |
+| Sch SE Line 9 W-2 + SE shared SS wage base | ✅ K1 |
+| SS taxability worksheet (Pub 915, 0/50/85%) | ✅ K10 |
+| Self-Employed Health Insurance deduction (Form 7206) | ✅ K5 |
+| §121 home-sale exclusion ($250k/$500k) | ✅ K6 |
+| §1202 QSBS exclusion ($10M/10× basis) | ✅ K7 |
+| Kiddie tax (Form 8615) | ✅ K8 |
+| FEIE §911 (Form 2555 expat earned income) | ✅ K9 |
+| NOL carryforward (post-TCJA 80% limit) | ✅ K4 |
+| Schedule D per-transaction + Form 8949 + wash sale | ✅ |
 | Schedule E per-property + MACRS depreciation + §469 PAL | ✅ |
-| Schedule K-1 (1065 + 1120-S) — Box 1/2/3/14A SE/§199A QBI/passive bucket | ✅ |
-| §199A QBI (simplified — wage/UBIA limits not enforced above threshold) | ⚠ |
+| Schedule K-1 (1065 + 1120-S, Box 1/2/3/14A + §199A QBI + passive bucket) | ✅ |
 | Form 1116 Foreign Tax Credit (binding + non-binding limit) | ✅ |
 | ACA Premium Tax Credit (Form 8962) | ✅ |
-| Education credits (AOC + LLC) with phase-out | ✅ |
-| CTC / ACTC / EITC / Saver's Credit / Dep Care | ✅ |
-| Multi-state — resident credit for non-resident state tax | ✅ |
+| Multi-state — resident + non-resident with resident credit | ✅ |
 | CA 540NR non-resident bracket calc | ✅ |
 | NYC personal income tax (4 brackets per filing status) | ✅ |
 | State EITC piggybacks (CA, NY, CO, IL, NJ, MA + MN WFC) | ✅ |
 | HI / NJ / NY / PA / IL / MS retirement-income state exemptions | ✅ |
-| **Test coverage** | **1,584+ hand-calc assertions across 26 test suites, 0 real failures** |
-| **Independent audit** | 9 real bugs found + fixed in the 2026-05-23 triple-track audit (security, code quality, tax engine) |
+| CA AMT (Schedule P 540) | ✅ G5-state |
+| **Test coverage** | **1,790+ hand-calc'd assertions across 28 suites, 0 real failures** |
+| **Documented engine gaps** | **ZERO** (down from 10 federal + 4 state at start of audit week) |
+| **Independent audit** | 9 real bugs found + fixed in 2026-05-23 triple-track audit |
 
-## What it doesn't model (disclosed)
+## How we're different from Holistiplan / Corvee / Instead
 
-Federal engine gaps still open (6):
-- K4 NOL carryforward (post-TCJA 80% limit)
-- K7 §1202 QSBS exclusion (tech founder liquidity)
-- K8 Kiddie tax (Form 8615)
-- K9 FEIE §911 (expat earned income)
-- K1 MFJ sub-gap (per-spouse SE attribution — uncommon corner case)
-- State-level SS exclusion for non-SS-taxing states
+| Dimension | Holistiplan | Corvee/Instead | **TaxFlow** |
+|---|---|---|---|
+| Buyer | Financial advisors | CPAs | CPAs |
+| Pricing | $160/mo | $15-30k/yr | $2.5k/mo |
+| # strategies | OCR analysis | 1,500+ heuristics | **15 hand-calc'd, IRC-cited** |
+| Math model | OCR + computation | Heuristics | **Deterministic, every $-amount cites IRC + Pub** |
+| Multi-year intelligence | Limited | Limited | **5 G4 detectors** |
+| AI extraction from source docs | No | No | **Yes** |
+| E-filing | No | No | No (we leave this to Drake / UltraTax) |
+| Practice management | No | No | No (TaxDome / Karbon territory) |
 
-State engine gaps (4):
-- NYC EITC sliding scale; MN $1,750/child refundable CTC; WA 7%
-  LTCG excise > $262k; CA AMT (Schedule P 540)
+## What we don't do (by design)
 
-Out of scope (will not build until you ask):
-- E-filing (you e-file through your existing software)
-- File-based UltraTax / Lacerte / ProConnect / Drake import (no
-  public format exists; we ship PDF/CSV/.gen instead)
+- ❌ E-filing — you file through your existing software
+- ❌ Practice management — TaxDome / Karbon / Canopy own this
+- ❌ Tax-prep replacement — Drake / Lacerte / ProConnect / UltraTax own this
+- ❌ Entity returns (1041 / 1065 / 1120 / 1120-S) — 1040 only
+- ❌ File-based UltraTax import — no public format exists; we ship
+      vendor-neutral .gen + 10-case validation packet instead
 
 ## The deal
 
-We're looking for one paid design partner. $500–$1,000/month, capped
-at 10 clients during the pilot. In return: weekly 30-minute Zoom
-check-ins where you tell us what trips you up. Engine bugs you find
-get fixed inside a week. Workflow gaps get prioritized into the
-roadmap. Reference (with your name + firm) after 30 days if you
-confirm value.
+We're looking for **one paid design partner** (small-mid firm, 4-20 staff).
+$500-$1,000/month for 30-60 days, capped at 10-25 clients. In return:
 
-Live demo: 12 minutes, screen-shared. Pre-loaded with 10 hand-keyable
-validation cases so you can audit the engine against your existing
-software in real-time.
+- Weekly 30-min Zoom check-ins where you tell us what trips you up
+- Bug fixes inside a week
+- Roadmap influence (your pain points become our prioritization)
+- Reference (with your name + firm) after 30 days if you confirm value
+
+**Live demo: 15 minutes, screen-shared.** Pre-loaded with a real
+high-AGI client showing the $93k headline + 10-case validation packet
+so you can audit the engine against your existing software in
+real-time.
 
 **Contact:** [Your name] · [Your email] · [Your phone]
 **Demo URL:** http://ec2-18-188-192-154.us-east-2.compute.amazonaws.com
+**Test credentials:** demo / demo (read-only, full data visible)
