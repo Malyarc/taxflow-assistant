@@ -74,9 +74,9 @@ Each item is 2–5 days; all are well-documented IRS rules.
 | BP3 | **AMT preferences detail** — ISO bargain element + state-tax addback (Form 6251 line 2g + 2k) | 2-3 days | ✅ Done. Engine auto-derives the line 2g SALT addback from the itemized SALT we already compute (only when itemizing); `amt_iso_bargain_element` adjustment feeds line 2k; `amt_state_tax_addback_override` adjustment can replace the auto value for unusual cases. Legacy `amt_preferences` catch-all continues. 16 hand-calced assertions covering SALT on/off (std vs itemized), override, ISO small + binding, combined, MFJ. No schema or UI changes (adjustment-based). |
 | BP4 | **State EITC expansion** to CO + IL + MN + NJ + MA (~1 day each, ~5 days total) | 5 days | ✅ Done. CO 50% (HB24-1134 one-time TY2024 bump; TY2025=35%, TY2026=25%) — user's "25%" was the pre-2024 rate. IL 20% (PA 102-0700 since TY2023). NJ 40% (since TY2020). MA 40% (Ch. 50 Acts 2023). MN Working Family Credit via Schedule M1CWFC 2024: 4% × min(earned, $9,220) base + child add-ons (+$970 / +$2,210 / +$2,630 for 1/2/3+); phase-out 12% above $31,090 ($36,880 MFJ); $11,600 investment-income limit. 21 hand-calced assertions. **Known limits:** NJ 18+/65+ expansion to childless filers not auto-applied (CPA can enter as manual credit); MA part-year proration not modeled; MN "qualifying older children" approximated as federal-EITC qualifying-children count (close but not exact for mixed-age dependents); MN phase-out uses 12% (skips the 9% carve-out for older-children-only filers). |
 
-### Phase E — Engine completeness (11 of 14 shipped 2026-05-26; 3 deferred)
+### Phase E — Engine completeness (ALL 14 SHIPPED 2026-05-26)
 
-**Shipped (129 hand-calc'd assertions):**
+**Shipped (235 hand-calc'd assertions across E1-E14):**
 - ✅ **E1** — IL personal exemption AGI cliff ($250k single / $500k MFJ)
 - ✅ **E2** — AMT credit carryforward (Form 8801, IRC §53)
 - ✅ **E3** — Charitable cash carryforward (IRC §170(d)(1), 5-year)
@@ -88,11 +88,12 @@ Each item is 2–5 days; all are well-documented IRS rules.
 - ✅ **E9** — State CTCs for CA / CO / NJ / IL / NM / VT
 - ✅ **E10** — State EITC piggybacks for 20 new states (CT/DE/IN/IA/KS/LA/MT/NE/NM/OH/OK/OR/RI/VT/VA/DC/ME/MD/MI + WI tiered)
 - ✅ **E11** — PA Schedule SP Tax Forgiveness (61 Pa. Code §111)
+- ✅ **E12** — Part-year residency in multi-state framework (pro-rata day-count + both-state resident tax)
+- ✅ **E13** — Auto wash-sale detection + §1091(d) basis adjustment (IRC §1091)
+- ✅ **E14** — Other local income taxes — 44 jurisdictions (24 MD counties + 10 OH cities + 10 IN counties)
 
-**Deferred (see `docs/phase-e-deferred.md` for full implementation plans):**
-- ❌ **E12** — Part-year residency in multi-state framework (3-5 days, schema-level refactor)
-- ❌ **E13** — Auto wash-sale detection + §1091(d) holding-period tack-on (4-6 days, algorithmic)
-- ❌ **E14** — Other local income taxes (MD counties / OH cities / IN counties) (5-10 days for comprehensive; 1-2 days for MD only)
+See `docs/phase-e-deferred.md` for the closed-out implementation
+notes (kept as historical record).
 
 **Also shipped earlier in K-list / state work (already done before Phase E batch):**
 - ✅ NOL carryforward (K4, 80% TCJA limit)
