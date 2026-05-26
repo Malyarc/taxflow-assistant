@@ -1537,6 +1537,64 @@ export function calculateStateEitc(params: {
     const mnCtc = Math.max(0, mnCtcGross - phaseOutRemainder);
     return { state, credit: wfcAfterPhaseOut, approximate: true, mnCtc };
   }
+  // E10 — Additional state EITC piggybacks (20+ states).
+  // Each verified against the state DOR's official EITC form/instructions
+  // for TY2024. All require federal EITC eligibility unless otherwise
+  // noted. Rates are %-of-federal-EITC unless flagged as independent.
+  //
+  // States with refundable %-piggyback (taxpayer claims credit → refund
+  // if exceeds state tax). All approximate — exact state worksheets may
+  // differ in rounding and ancillary phase-outs.
+  const STATE_EITC_PCT_OF_FEDERAL: Record<string, number> = {
+    CT: 0.40, // CT-EITC, Conn. Gen. Stat. §12-704e (raised from 30% in TY2023)
+    DE: 0.045, // DE Sched 1 — choice of 4.5% refundable vs 20% non-ref; we use refundable
+    IN: 0.10, // IN Sched IN-EIC
+    IA: 0.15, // IA-1040 Sched 1A
+    KS: 0.17, // K-40 Line 19
+    LA: 0.05, // IT-540 Line 9, Sched E
+    MT: 0.10, // Montana Earned Income Credit (Form EITC)
+    NE: 0.10, // NE 1040N Sched I Line 39
+    NM: 0.25, // NM Working Families Tax Credit (PIT-RC)
+    OH: 0.30, // Ohio IT-1040, non-refundable. (We treat as refundable in this
+              // simplified model since downstream `credit` reduces state tax + flows
+              // refund — Ohio CPAs override if needed.)
+    OK: 0.05, // OK 511 — non-refundable since 2017; same simplification
+    OR: 0.09, // OR-EIC (12% if dependent under age 3; simplified to 9%)
+    RI: 0.16, // RI Sched EIC
+    VT: 0.38, // VT EIC (raised from 36% to 38% in TY2024)
+    VA: 0.15, // VA Sched ADJ Line 19 — choice of 20% non-ref vs 15% refundable; use 15%
+    DC: 0.70, // DC EITC — simplified to 70% (actual is 70% w/ kids, complex childless)
+    ME: 0.25, // ME Earned Income Credit — 25% w/ kids, 50% childless; simplified to 25%
+    MD: 0.45, // MD Form 502 Line 22 — 45% standard (50% Maryland refundable since TY2023);
+              // expanded for childless filers (~100% of federal) not modeled — use 45%
+    MI: 0.30, // MI Sched 1 — Public Act 4 of 2023 raised from 6% to 30% retroactive
+  };
+  if (state in STATE_EITC_PCT_OF_FEDERAL) {
+    if (!federalEitcEligible) {
+      return { state, credit: 0, approximate: true,
+        ineligibilityReason: "Federal EITC ineligible (state piggyback requires it)" };
+    }
+    const rate = STATE_EITC_PCT_OF_FEDERAL[state];
+    return { state, credit: federalEitcApplied * rate, approximate: true };
+  }
+
+  // WI — tiered by # qualifying children (Wisc. Stat. §71.07(9e)).
+  //   1 child: 4%, 2 kids: 11%, 3+ kids: 34%. 0 children: 0% (WI doesn't offer
+  //   childless EITC unlike federal post-ARPA).
+  if (state === "WI") {
+    if (!federalEitcEligible || numKids === 0) {
+      return { state, credit: 0, approximate: true,
+        ineligibilityReason: "WI EITC requires federal EITC + qualifying child" };
+    }
+    const wiRates: Record<1 | 2 | 3, number> = { 1: 0.04, 2: 0.11, 3: 0.34 };
+    const rate = wiRates[Math.min(3, numKids) as 1 | 2 | 3];
+    return { state, credit: federalEitcApplied * rate, approximate: true };
+  }
+
+  // WA — Working Families Tax Credit (RCW 82.08.0206) is an independent
+  // calc (not federal-EITC piggyback): max ~$1,200/yr (married + 3+ kids),
+  // phased on AGI. Sketched but not implemented — too divergent from the
+  // piggyback pattern. CPA enters via manual credit adjustment.
   // Other states: not modeled.
   return { state, credit: 0, approximate: false };
 }

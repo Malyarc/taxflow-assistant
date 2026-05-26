@@ -17,6 +17,7 @@ import {
   calculateAmt,
   calculateScheduleA,
   calculateRetirementDeductions,
+  calculateStateEitc,
 } from "../../artifacts/api-server/src/lib/taxCalculator";
 import {
   computeTaxReturnPure,
@@ -606,6 +607,83 @@ header("E6-1 — priorYearItemized=null defaults to NOT taxable (tax-friendly)")
     taxYear: 2024,
   });
   check("E6-1", "Default: AGI = $53k (refund excluded)", computed.adjustedGrossIncome, 53000, 1);
+}
+
+// ============================================================================
+// E10 — State EITC piggybacks (20+ new states)
+// Each state's published % of federal EITC. Test with a fixed federal
+// EITC ($1,000 stand-in) so the math is trivial and every state is
+// verified separately.
+// ============================================================================
+section("E10 — State EITC piggyback rates");
+
+function stateEitc(state: string, fedEitc: number, qualifyingChildren = 2): number {
+  return calculateStateEitc({
+    state,
+    federalEitcApplied: fedEitc,
+    federalEitcEligible: fedEitc > 0,
+    agi: 25000,
+    earnedIncome: 25000,
+    investmentIncome: 0,
+    qualifyingChildren,
+    taxYear: 2024,
+    filingStatus: "single",
+  }).credit;
+}
+
+// E10+1 through E10+19 — individual state piggyback verifications.
+// Federal EITC base of $1,000 makes hand-calc trivial: credit = $1,000 × rate.
+header("E10+ — Each state's piggyback rate at $1,000 federal EITC");
+
+check("E10+CT", "CT 40% piggyback = $400", stateEitc("CT", 1000), 400, 1, "Conn. Gen. Stat. §12-704e");
+check("E10+DE", "DE 4.5% refundable piggyback = $45", stateEitc("DE", 1000), 45, 1, "DE Sched 1 refundable choice");
+check("E10+IN", "IN 10% piggyback = $100", stateEitc("IN", 1000), 100, 1, "IN Sched IN-EIC");
+check("E10+IA", "IA 15% piggyback = $150", stateEitc("IA", 1000), 150, 1, "IA-1040 Sched 1A");
+check("E10+KS", "KS 17% piggyback = $170", stateEitc("KS", 1000), 170, 1, "K-40 Line 19");
+check("E10+LA", "LA 5% piggyback = $50", stateEitc("LA", 1000), 50, 1, "IT-540 Sched E");
+check("E10+MT", "MT 10% piggyback = $100", stateEitc("MT", 1000), 100, 1, "Montana EIC");
+check("E10+NE", "NE 10% piggyback = $100", stateEitc("NE", 1000), 100, 1, "NE 1040N Sched I");
+check("E10+NM", "NM 25% piggyback = $250", stateEitc("NM", 1000), 250, 1, "NM Working Families TC");
+check("E10+OH", "OH 30% piggyback = $300", stateEitc("OH", 1000), 300, 1, "Ohio IT-1040");
+check("E10+OK", "OK 5% piggyback = $50", stateEitc("OK", 1000), 50, 1, "OK 511");
+check("E10+OR", "OR 9% piggyback = $90", stateEitc("OR", 1000), 90, 1, "OR-EIC");
+check("E10+RI", "RI 16% piggyback = $160", stateEitc("RI", 1000), 160, 1, "RI Sched EIC");
+check("E10+VT", "VT 38% piggyback = $380", stateEitc("VT", 1000), 380, 1, "VT EIC (raised TY2024)");
+check("E10+VA", "VA 15% refundable piggyback = $150", stateEitc("VA", 1000), 150, 1, "VA Sched ADJ refundable choice");
+check("E10+DC", "DC 70% piggyback (simplified) = $700", stateEitc("DC", 1000), 700, 1, "DC EITC");
+check("E10+ME", "ME 25% piggyback (with kids) = $250", stateEitc("ME", 1000), 250, 1, "ME Earned Income Credit");
+check("E10+MD", "MD 45% piggyback = $450", stateEitc("MD", 1000), 450, 1, "MD Form 502");
+check("E10+MI", "MI 30% piggyback = $300", stateEitc("MI", 1000), 300, 1, "MI Sched 1 PA 4 of 2023");
+
+// WI — tiered by # qualifying children
+check("E10+WI-1", "WI 1 kid: 4% = $40", stateEitc("WI", 1000, 1), 40, 1, "Wisc. Stat. §71.07(9e)");
+check("E10+WI-2", "WI 2 kids: 11% = $110", stateEitc("WI", 1000, 2), 110, 1);
+check("E10+WI-3+", "WI 3+ kids: 34% = $340", stateEitc("WI", 1000, 3), 340, 1);
+check("E10+WI-0", "WI 0 kids: 0 (no childless EITC)", stateEitc("WI", 1000, 0), 0, 1);
+
+// E10-1 — Federal-ineligible client gets $0 state EITC
+header("E10-1 — Federal-ineligible client → state EITC = $0");
+{
+  const out = calculateStateEitc({
+    state: "CT",
+    federalEitcApplied: 0,
+    federalEitcEligible: false,
+    agi: 50000,
+    earnedIncome: 50000,
+    investmentIncome: 0,
+    qualifyingChildren: 0,
+    taxYear: 2024,
+    filingStatus: "single",
+  });
+  check("E10-1", "CT $0 when not federal-eligible", out.credit, 0, 1);
+}
+
+// E10-2 — Non-piggyback state → $0
+header("E10-2 — Non-piggyback state (FL = no income tax) returns $0");
+{
+  check("E10-2", "FL no state EITC", stateEitc("FL", 1000), 0, 1);
+  check("E10-2", "TX no state EITC", stateEitc("TX", 1000), 0, 1);
+  check("E10-2", "WA no piggyback (independent calc not modeled)", stateEitc("WA", 1000), 0, 1);
 }
 
 // ============================================================================
