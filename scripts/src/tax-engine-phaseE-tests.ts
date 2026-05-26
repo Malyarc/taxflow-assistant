@@ -20,6 +20,7 @@ import {
   calculateStateEitc,
   calculatePaScheduleSpForgivenessPct,
   calculateStateCtc,
+  calculateNycLocalTax,
 } from "../../artifacts/api-server/src/lib/taxCalculator";
 import {
   computeTaxReturnPure,
@@ -1123,6 +1124,103 @@ header("E7-1 — No §179/bonus adjustments, both zero");
   });
   check("E7-1", "section179Applied = 0", computed.section179Applied, 0, 1);
   check("E7-1", "bonusDepreciationApplied = 0", computed.bonusDepreciationApplied, 0, 1);
+}
+
+// ============================================================================
+// E8 — NYC School Tax Credit + MCTMT
+// School Tax Credit (IT-201 Line 69b): flat $63 single / $125 MFJ when
+//   NYAGI < $250k. NYC UBT explicitly NOT modeled (complex entity-type rules).
+// MCTMT: tiered SE tax. 0.34% over $50k → 0.50% over $362.5k → 0.60% over $675k.
+// ============================================================================
+section("E8 — NYC School Tax Credit + MCTMT");
+
+// --- E8+1: NYC single $100k W-2 → school credit $63 ---
+header("E8+1 — Single $100k NYC, school credit $63");
+{
+  const out = calculateNycLocalTax({
+    nysTaxableIncome: 90000, // approx NYS taxable
+    federalAgi: 100000,
+    filingStatus: "single",
+    dependentCount: 1,
+    taxYear: 2024,
+  });
+  check("E8+1", "schoolTaxCredit = $63", out.nycSchoolTaxCredit, 63, 1, "IT-201 Line 69b");
+  check("E8+1", "no MCTMT (no SE income)", out.nycMctmt, 0, 1);
+}
+
+// --- E8+2: NYC MFJ $200k W-2 → school credit $125 ---
+header("E8+2 — MFJ $200k NYC, school credit $125");
+{
+  const out = calculateNycLocalTax({
+    nysTaxableIncome: 170000,
+    federalAgi: 200000,
+    filingStatus: "married_filing_jointly",
+    dependentCount: 2,
+    taxYear: 2024,
+  });
+  check("E8+2", "MFJ schoolTaxCredit = $125", out.nycSchoolTaxCredit, 125, 1);
+}
+
+// --- E8-1: NYC single $300k → above $250k AGI cliff, no school credit ---
+header("E8-1 — Single $300k > $250k NYAGI, no school credit");
+{
+  const out = calculateNycLocalTax({
+    nysTaxableIncome: 280000,
+    federalAgi: 300000,
+    filingStatus: "single",
+    dependentCount: 1,
+    taxYear: 2024,
+  });
+  check("E8-1", "schoolTaxCredit = $0", out.nycSchoolTaxCredit, 0, 1);
+}
+
+// --- E8+3: NYC SE filer $200k → MCTMT $510 ---
+// Hand-calc:
+//   Net SE = $200,000; exemption $50k; tier1 spread = $200k - $50k = $150k
+//   MCTMT = $150,000 × 0.34% = $510
+header("E8+3 — NYC SE $200k → MCTMT 0.34% × ($200k - $50k) = $510");
+{
+  const out = calculateNycLocalTax({
+    nysTaxableIncome: 180000,
+    federalAgi: 200000,
+    filingStatus: "single",
+    dependentCount: 1,
+    taxYear: 2024,
+    netSeEarnings: 200000,
+  });
+  check("E8+3", "MCTMT = $510", out.nycMctmt, 510, 1, "0.34% × $150k tier 1");
+}
+
+// --- E8+4: NYC SE filer $500k → MCTMT tier 1 + tier 2 ---
+// Hand-calc:
+//   tier1 = min(500k, 362.5k) - 50k = 312,500 × 0.34% = $1,062.50
+//   tier2 = max(0, min(500k, 675k) - 362.5k) = 137,500 × 0.50% = $687.50
+//   total = $1,750
+header("E8+4 — NYC SE $500k → MCTMT $1,750 (tier 1 + 2)");
+{
+  const out = calculateNycLocalTax({
+    nysTaxableIncome: 470000,
+    federalAgi: 500000,
+    filingStatus: "single",
+    dependentCount: 1,
+    taxYear: 2024,
+    netSeEarnings: 500000,
+  });
+  check("E8+4", "MCTMT = $1,750", out.nycMctmt, 1750, 1);
+}
+
+// --- E8-2: NYC SE filer below $50k → no MCTMT ---
+header("E8-2 — SE earnings below $50k exemption, no MCTMT");
+{
+  const out = calculateNycLocalTax({
+    nysTaxableIncome: 40000,
+    federalAgi: 45000,
+    filingStatus: "single",
+    dependentCount: 1,
+    taxYear: 2024,
+    netSeEarnings: 45000,
+  });
+  check("E8-2", "MCTMT = $0", out.nycMctmt, 0, 1);
 }
 
 // ============================================================================

@@ -1661,6 +1661,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
       // E11 — Dependent count for PA Schedule SP Tax Forgiveness bracket
       // adjustment ($9,500 per dependent). Only applied when resident is PA.
       dependentCount: (client.dependentsUnder17 ?? 0) + (client.otherDependents ?? 0),
+      // E8 — Net SE earnings for NYC MCTMT. Only applied when
+      // localityCode === "NYC".
+      netSeEarnings: se.netSeEarnings,
     },
   });
   // State + local: state tax is reported separately; local (NYC) is its own line.
@@ -1928,10 +1931,13 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     taxYear: calc.taxYear,
   });
   const stateCtcRefundable = stateCtc.credit;
+  // E8 — NYC School Tax Credit (IT-201 Line 69) is REFUNDABLE at state
+  // level. Add to state refund alongside state EITC and CTCs.
+  const nycSchoolTaxCreditRefundable = multiState.localTax?.nycSchoolTaxCredit ?? 0;
 
-  const stateRefundOrOwed = totalStateWithheld - stateTaxLiability + stateEitc.credit + mnCtcRefundable + nycEitcRefundableExcess + stateCtcRefundable;
+  const stateRefundOrOwed = totalStateWithheld - stateTaxLiability + stateEitc.credit + mnCtcRefundable + nycEitcRefundableExcess + stateCtcRefundable + nycSchoolTaxCreditRefundable;
 
-  const totalTaxBurden = totalFederalLiabilityWithRepayment + stateTaxLiability - stateEitc.credit - stateCtcRefundable;
+  const totalTaxBurden = totalFederalLiabilityWithRepayment + stateTaxLiability - stateEitc.credit - stateCtcRefundable - nycSchoolTaxCreditRefundable;
   const effectiveRate = calc.totalIncome > 0 ? totalTaxBurden / calc.totalIncome : 0;
 
   // ── Compute state retirement exemption (for transparency in result) ──

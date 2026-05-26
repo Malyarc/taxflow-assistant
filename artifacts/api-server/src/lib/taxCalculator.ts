@@ -599,6 +599,9 @@ export function calculateMultiStateTax(params: {
      *  ($9,500 per dependent added to eligibility thresholds). Pass
      *  client.dependentsUnder17 + client.otherDependents. */
     dependentCount?: number;
+    /** E8 — Net SE earnings for NYC MCTMT (Metropolitan Commuter
+     *  Transportation Mobility Tax). Only applied when localityCode === "NYC". */
+    netSeEarnings?: number;
   };
 }): MultiStateTaxResult {
   const resident = params.residentState.toUpperCase();
@@ -739,6 +742,7 @@ export function calculateMultiStateTax(params: {
       dependentCount: params.localDependentCount ?? 1,
       taxYear: params.taxYear,
       federalEitcApplied: params.options?.federalEitcApplied ?? 0,
+      netSeEarnings: params.options?.netSeEarnings ?? 0,
     });
   }
 
@@ -816,7 +820,14 @@ export interface NycLocalTaxCalculation {
   nycEitc: number;
   /** Effective NYC EITC rate applied (decimal: 0.30 / 0.25 / etc.). */
   nycEitcRate: number;
-  netLocalTax: number;             // max(0, baseline - household credit - NYC EITC)
+  /** E8 — NYC School Tax Credit (IT-201 Line 69). Flat refundable per
+   *  filer + dependents. $63 single / $125 MFJ when NYAGI < $250k. */
+  nycSchoolTaxCredit: number;
+  /** E8 — MCTMT (NYS PMT-Web Form MTA-6). 0.34% on net SE earnings above
+   *  $50k. Applied only when client is in MCTD (currently we trigger on
+   *  localityCode === "NYC"; surrounding counties not modeled). */
+  nycMctmt: number;
+  netLocalTax: number;             // max(0, baseline - household credit - NYC EITC - school credit) + mctmt
 }
 
 /**
@@ -856,6 +867,10 @@ export function calculateNycLocalTax(params: {
   /** G1 — federal EITC applied (refundable + non-refundable combined) — drives
    *  the NYC EITC sliding scale (NY IT-215 Line 26). Default 0. */
   federalEitcApplied?: number;
+  /** E8 — Net SE earnings allocated to MCTD (NYC + 7 surrounding counties).
+   *  Engine uses total net SE when localityCode === "NYC"; surrounding-
+   *  county allocation not modeled. Default 0 → no MCTMT. */
+  netSeEarnings?: number;
 }): NycLocalTaxCalculation {
   const fs = params.filingStatus as keyof typeof NYC_BRACKETS_2024;
   const brackets = NYC_BRACKETS_2024[fs] ?? NYC_BRACKETS_2024.single;
@@ -911,12 +926,44 @@ export function calculateNycLocalTax(params: {
   const nycEitcRate = federalEitc > 0 ? nycEitcRateForAgi(fagi) : 0;
   const nycEitc = federalEitc * nycEitcRate;
 
-  const netLocalTax = Math.max(0, baseline - householdCredit - nycEitc);
+  // E8 — NYC School Tax Credit (IT-201 Line 69b). Refundable, flat amount
+  // by filing status when NYAGI < $250k. Engine uses federal AGI as a
+  // proxy for NYAGI (NY-specific subtractions not modeled).
+  let nycSchoolTaxCredit = 0;
+  if (fagi < 250000) {
+    nycSchoolTaxCredit = isMfj ? 125 : 63; // includes QSS and HoH via isMfj truthy path
+  }
+
+  // E8 — MCTMT (Metropolitan Commuter Transportation Mobility Tax, NYS
+  // PMT-MTA-6). Tiered rate on net SE earnings allocated to MCTD above
+  // the $50,000 annual exemption:
+  //   $50,001 - $362,500: 0.34%
+  //   $362,501 - $675,000: 0.50% (incremental)
+  //   $675,001+: 0.60% (incremental)
+  // Engine applies in the simplified-tier form for most filers.
+  const netSe = Math.max(0, params.netSeEarnings ?? 0);
+  let nycMctmt = 0;
+  if (netSe > 50000) {
+    const tier1Cap = 362500;
+    const tier2Cap = 675000;
+    const inTier1 = Math.min(netSe, tier1Cap) - 50000;
+    const inTier2 = Math.max(0, Math.min(netSe, tier2Cap) - tier1Cap);
+    const inTier3 = Math.max(0, netSe - tier2Cap);
+    nycMctmt = inTier1 * 0.0034 + inTier2 * 0.0050 + inTier3 * 0.0060;
+  }
+
+  // E8 — School Tax Credit per IT-201 Line 69 is REFUNDABLE at the state
+  // level (not subtracted from NYC PIT directly). Engine returns the credit
+  // for transparency; engine.ts adds it to stateRefundOrOwed alongside
+  // state EITC. MCTMT is its own line — ADDED to net local tax.
+  const netLocalTax = Math.max(0, baseline - householdCredit - nycEitc) + nycMctmt;
   return {
     jurisdiction: "NYC",
     nysTaxableIncome: taxable,
     baselineTax: baseline,
     householdCredit,
+    nycSchoolTaxCredit,
+    nycMctmt,
     nycEitc,
     nycEitcRate,
     netLocalTax,
