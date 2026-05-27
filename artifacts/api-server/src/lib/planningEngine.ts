@@ -4173,6 +4173,316 @@ function detectSection72tSepp(args: {
   };
 }
 
+// ── G1.52 — Estimated Tax Safe Harbor §6654 (heuristic) ─────────────────
+
+const G1_52_MIN_SE = 20_000;
+const G1_52_MIN_FED_TAX = 5_000;
+const G1_52_HEURISTIC_PENALTY = 300;
+
+function detectEstimatedTaxSafeHarbor(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { computed, adjustments } = args;
+  const netSe = computed.detail.se.netSeEarnings;
+  if (netSe < G1_52_MIN_SE) return null;
+  if (computed.federalTaxLiability < G1_52_MIN_FED_TAX) return null;
+  void adjustments;
+
+  // Determine 100% vs 110% rule based on AGI threshold.
+  const safeHarborPct = computed.adjustedGrossIncome > 150_000 ? 110 : 100;
+  const estSavings = G1_52_HEURISTIC_PENALTY;
+
+  const strategy = strategyById("G1.52");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    safeHarborPct,
+    estSavings,
+    taxYear: computed.taxYear,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client has ${fmt(Math.round(netSe))} net SE earnings + ${fmt(Math.round(computed.federalTaxLiability))} ` +
+      `federal tax. SE income lacks W-2 withholding — at risk of §6654 underpayment penalty unless ` +
+      `quarterly estimated tax is paid. Safe harbor: ${safeHarborPct}% of prior year tax.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      netSeEarnings: Math.round(netSe),
+      federalTaxLiability: Math.round(computed.federalTaxLiability),
+      agi: Math.round(computed.adjustedGrossIncome),
+      safeHarborPct,
+      heuristicPenalty: G1_52_HEURISTIC_PENALTY,
+    },
+    assumptions: [
+      `HEURISTIC — engine doesn't yet track quarterly withholding vs prior-year safe harbor. Fires on SE-heavy income mix as proxy for underpayment risk.`,
+      `Safe harbor §6654(d)(1)(B): pay greater of (100% of prior tax / 110% if AGI > $150k) OR 90% of current.`,
+      `110% threshold ($150k AGI single / $75k MFS) — applies based on PRIOR-year AGI per §6654(d)(1)(C).`,
+      `Withholding treated as paid EVENLY over the year — estimated tax payments credited by QUARTER.`,
+      `Quarterly due dates: April 15, June 15, September 15, January 15 (per §6654(c)).`,
+      `Penalty = (underpayment × AFR + 3% per §6621) by quarter, computed via Form 2210.`,
+      `Annualized-income method (Form 2210 Schedule AI) available for clients with uneven income (seasonal SE).`,
+      `Heuristic estSavings $300 typical — real penalty scales with shortfall + interest period.`,
+    ],
+  };
+}
+
+// ── G1.53 — Kiddie Tax §1(g) minimization (heuristic) ────────────────────
+
+const G1_53_MIN_AGI = 200_000;
+const G1_53_UNEARNED_THRESHOLD = 2_600;
+const G1_53_ASSUMED_EXCESS = 5_000;
+const G1_53_RATE_DIFFERENTIAL = 0.32 - 0.10;
+
+function detectKiddieTax(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+}): OpportunityHit | null {
+  const { client, computed } = args;
+  const kidsUnder17 = client.dependentsUnder17 ?? 0;
+  if (kidsUnder17 <= 0) return null;
+  if (computed.adjustedGrossIncome < G1_53_MIN_AGI) return null;
+
+  // estSavings per affected child × num kids (conservatively assume 1 affected).
+  const numAffected = Math.min(kidsUnder17, 1);
+  const estSavings = Math.round(G1_53_ASSUMED_EXCESS * G1_53_RATE_DIFFERENTIAL * numAffected);
+
+  const strategy = strategyById("G1.53");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = { estSavings };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client AGI ${fmt(Math.round(computed.adjustedGrossIncome))} + ${kidsUnder17} dependent(s) under 17. ` +
+      `If any child has unearned income > $2,600 (TY2024 threshold), excess is taxed at parent's marginal ` +
+      `rate via Form 8615. Shift to growth-oriented or tax-deferred investments to minimize current-year ` +
+      `unearned income. Per affected child: ~${fmt(estSavings)}/year.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      dependentsUnder17: kidsUnder17,
+      numAffectedAssumed: numAffected,
+      agi: Math.round(computed.adjustedGrossIncome),
+      unearnedThreshold: G1_53_UNEARNED_THRESHOLD,
+      assumedExcessUnearned: G1_53_ASSUMED_EXCESS,
+      rateDifferential: G1_53_RATE_DIFFERENTIAL,
+    },
+    assumptions: [
+      `HEURISTIC — engine cannot track child's unearned income. Fires for HNW families with kids under 17.`,
+      `TY2024 unearned-income thresholds (Rev. Proc. 2023-34): $1,300 (no tax) + $1,300 (child's rate) = $2,600 free.`,
+      `Excess unearned income taxed at PARENT's marginal rate per IRC §1(g)(7)(A) and Form 8615.`,
+      `Kiddie tax applies under 18 (or 18-23 if full-time student dependent, or 18 with no earned income > half support).`,
+      `Rate differential heuristic ${(G1_53_RATE_DIFFERENTIAL * 100).toFixed(0)}% = parent 32% − child 10%. Real differential varies (could be 27% at top brackets).`,
+      `Mitigation: shift child investments to growth-oriented (LTCG-favored), tax-deferred wrappers (529 / custodial Roth), or delay realization until child turns 18.`,
+      `Election: Form 8814 lets parent report on parent's return (only if child's income < $13,000 TY2024).`,
+    ],
+  };
+}
+
+// ── G1.54 — §183 Hobby Loss qualification (heuristic) ────────────────────
+
+const G1_54_HOBBY_RANGE_MIN = 1_000;
+const G1_54_HOBBY_RANGE_MAX = 10_000;
+const G1_54_ASSUMED_LOSS = 5_000;
+
+function detectHobbyLossQualification(args: {
+  computed: ComputedTaxReturn;
+}): OpportunityHit | null {
+  const { computed } = args;
+  const netSe = computed.detail.se.netSeEarnings;
+  // Heuristic: SE income in $1k-$10k range signals possible hobby concern
+  // (low profit, ambiguous business). Outside this range, presumed business
+  // or pure hobby — no planning angle.
+  if (netSe < G1_54_HOBBY_RANGE_MIN || netSe > G1_54_HOBBY_RANGE_MAX) return null;
+
+  const fedRate = federalMarginalRate(computed);
+  const stateRate = stateMarginalRate(computed);
+  const estSavings = Math.round(G1_54_ASSUMED_LOSS * (fedRate + stateRate));
+
+  const strategy = strategyById("G1.54");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = { estSavings };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Net SE earnings ${fmt(Math.round(netSe))} are in the borderline $1k-$10k range — IRS scrutiny ` +
+      `risk for §183 hobby-vs-business reclassification. If activity becomes a hobby (Reg §1.183-2(b) ` +
+      `9-factor test fails), post-TCJA NO expense deduction. Preserving business status protects ` +
+      `~${fmt(estSavings)} of typical deductible loss recovery.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      netSeEarnings: Math.round(netSe),
+      hobbyRangeMin: G1_54_HOBBY_RANGE_MIN,
+      hobbyRangeMax: G1_54_HOBBY_RANGE_MAX,
+      assumedLoss: G1_54_ASSUMED_LOSS,
+      federalMarginalRate: fedRate,
+      stateMarginalRate: stateRate,
+    },
+    assumptions: [
+      `HEURISTIC — fires for borderline SE income ($1k-$10k) where IRS hobby-reclassification risk is highest.`,
+      `Post-TCJA: hobby losses + expenses are NOT deductible at all (was 2%-AGI misc itemized pre-2018).`,
+      `Safe harbor §183(d): presumed for profit if profitable 3 of 5 years (2 of 7 for horse breeding).`,
+      `Failing safe harbor: 9-factor test (Reg §1.183-2(b)) — profit motive, expertise, time/effort, asset appreciation, prior success, history of income/loss, level of profit, financial status, personal pleasure.`,
+      `Documentation requirements: separate bank account, written business plan, accounting books, contemporaneous time logs, professional advisors.`,
+      `Assumed $5k typical loss recovery × marginal rate. Real value varies.`,
+      `Engine cannot verify documentation quality — CPA reviews actual records.`,
+    ],
+  };
+}
+
+// ── G1.55 — Custodial Roth IRA for child (heuristic) ─────────────────────
+
+const G1_55_MIN_NET_SE = 50_000;
+const G1_55_CONTRIBUTION_CAP = 7_000;
+const G1_55_GROWTH_50YR = Math.pow(1.07, 50);
+const G1_55_DISCOUNT_50YR = Math.pow(1.05, 50);
+const G1_55_FUTURE_RATE = 0.32;
+
+function detectCustodialRothIra(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+}): OpportunityHit | null {
+  const { client, computed } = args;
+  const netSe = computed.detail.se.netSeEarnings;
+  if (netSe < G1_55_MIN_NET_SE) return null;
+  const kidsUnder17 = client.dependentsUnder17 ?? 0;
+  if (kidsUnder17 <= 0) return null;
+
+  // PV of $7k Roth contribution at 7% growth × 50 yrs × 32% future rate,
+  // discounted at 5%/yr. Per child assumed.
+  const growthDollars = G1_55_CONTRIBUTION_CAP * (G1_55_GROWTH_50YR - 1);
+  const estSavingsPerChild = Math.round((growthDollars * G1_55_FUTURE_RATE) / G1_55_DISCOUNT_50YR);
+  const numAffected = Math.min(kidsUnder17, 1); // conservative: 1 child
+  const estSavings = estSavingsPerChild * numAffected;
+  if (estSavings <= 0) return null;
+
+  const strategy = strategyById("G1.55");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = { estSavings };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client has ${fmt(Math.round(netSe))} net SE + ${kidsUnder17} dependent(s) under 17 — fits the ` +
+      `family-employment (G1.49) pattern. Once child has W-2 earned income from the business, parent ` +
+      `can open a custodial Roth IRA + contribute up to ${fmt(G1_55_CONTRIBUTION_CAP)}/yr (or earned ` +
+      `income, whichever less). 50+ years of tax-free growth: PV ~${fmt(estSavings)} per child per year.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      netSeEarnings: Math.round(netSe),
+      dependentsUnder17: kidsUnder17,
+      numAffectedAssumed: numAffected,
+      contributionCap: G1_55_CONTRIBUTION_CAP,
+      growthAssumption: 0.07,
+      futureRateAssumption: G1_55_FUTURE_RATE,
+      discountRate: 0.05,
+      horizonYears: 50,
+      estSavingsPerChild,
+    },
+    assumptions: [
+      `Companion to G1.49 family employment — child needs EARNED INCOME (W-2 wages or SE) to fund Roth.`,
+      `Contribution cap: lesser of $7,000 (TY2024) or child's earned income.`,
+      `Long-term PV uses 7%/yr growth × 50 yrs × 32% future rate, discounted at 5%/yr.`,
+      `ZERO current-year tax benefit (Roth is after-tax). MASSIVE long-term tax-free growth.`,
+      `Custodial Roth IRA (UTMA/UGMA-titled): parent or guardian as custodian. Child takes control at age 18 or 21 by state.`,
+      `Heuristic assumes 1 child funded. Multi-child families scale linearly (each child gets own Roth + contribution cap).`,
+      `Roth contributions ALWAYS withdrawable tax-free as basis recovery (Treas. Reg. §1.408A-6 Q&A 8) — no penalty even before 59½.`,
+    ],
+  };
+}
+
+// ── G1.56 — Specific-Share-ID at sale (heuristic) ────────────────────────
+
+const G1_56_MIN_GAIN = 5_000;
+const G1_56_BASIS_DIFFERENTIAL_PCT = 0.04; // 4% of gain heuristic (20% basis-spread × 20% LTCG)
+
+function detectSpecificShareId(args: {
+  computed: ComputedTaxReturn;
+}): OpportunityHit | null {
+  const { computed } = args;
+  const ltcg = computed.form1099Summary?.longTermCapitalGains ?? 0;
+  const stcg = computed.form1099Summary?.shortTermCapitalGains ?? 0;
+  const totalGain = ltcg + stcg;
+  if (totalGain < G1_56_MIN_GAIN) return null;
+
+  const estSavings = Math.round(totalGain * G1_56_BASIS_DIFFERENTIAL_PCT);
+  if (estSavings <= 0) return null;
+
+  const strategy = strategyById("G1.56");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    estSavings,
+    saleAmount: Math.round(totalGain),
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client realized ${fmt(Math.round(totalGain))} of capital gains (LT ${fmt(Math.round(ltcg))} + ` +
+      `ST ${fmt(Math.round(stcg))}) from brokerage activity. Default lot-ID = FIFO. Switching to ` +
+      `specific-lot identification (HIFO or hand-picked lots) BEFORE the sell order can shave ~4% ` +
+      `of gain ≈ ${fmt(estSavings)}.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      longTermCapitalGains: Math.round(ltcg),
+      shortTermCapitalGains: Math.round(stcg),
+      totalGain: Math.round(totalGain),
+      basisDifferentialPct: G1_56_BASIS_DIFFERENTIAL_PCT,
+    },
+    assumptions: [
+      `Election must be made AT TIME OF SALE per Treas. Reg. §1.1012-1(c)(7) — NOT retroactively at 1040 filing.`,
+      `Default lot-ID for individual brokerage = FIFO. Mutual funds default = average cost.`,
+      `Specific-ID election allowed for covered shares (post-2012 stocks per IRC §6045(g)(2)(B)).`,
+      `HIFO (highest-in-first-out) typically minimizes gain on partial sale.`,
+      `Heuristic 4%-of-gain assumes 20% lot-basis spread × 20% LTCG rate. Real differential varies by holding length + price history.`,
+      `Engine does NOT have per-lot data — heuristic only. CPA reviews 1099-B basis breakdown.`,
+      `Note: long-term vs short-term lot selection ALSO matters — selecting LT lots over ST at same basis swap saves the bracket differential (e.g., 22% ord vs 15% LTCG).`,
+    ],
+  };
+}
+
 // ── Top-level evaluator ────────────────────────────────────────────────────
 
 export interface PlanningInputs {
@@ -4351,6 +4661,18 @@ export function evaluatePlanningOpportunities(args: PlanningInputs): Opportunity
   if (washSale) hits.push(washSale);
   const sepp = detectSection72tSepp({ client, computed, assetBalances });
   if (sepp) hits.push(sepp);
+  // Phase H — H1 catalog v1.9: G1.52 est-tax safe harbor / G1.53 kiddie /
+  // G1.54 §183 hobby / G1.55 custodial Roth / G1.56 specific-share-ID.
+  const estTax = detectEstimatedTaxSafeHarbor({ computed, adjustments });
+  if (estTax) hits.push(estTax);
+  const kiddie = detectKiddieTax({ client, computed });
+  if (kiddie) hits.push(kiddie);
+  const hobby = detectHobbyLossQualification({ computed });
+  if (hobby) hits.push(hobby);
+  const custodialRoth = detectCustodialRothIra({ client, computed });
+  if (custodialRoth) hits.push(custodialRoth);
+  const specificShare = detectSpecificShareId({ computed });
+  if (specificShare) hits.push(specificShare);
   hits.sort((a, b) => b.estSavings - a.estSavings);
   return hits;
 }

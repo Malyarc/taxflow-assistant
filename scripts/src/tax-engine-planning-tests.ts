@@ -3009,6 +3009,201 @@ header("G1.50-3 — Age 55 + IRA $300k + W-2 $250k: suppressed (no transition si
   checkTruthy("G1.50-3", "no fire income > $200k", findHit(hits, "G1.50") == null, true);
 }
 
+section("H1 catalog v1.9 — 5 new detectors (G1.52 / G1.53 / G1.54 / G1.55 / G1.56)");
+
+// ── G1.52 Estimated Tax Safe Harbor §6654 ──────────────────────────────
+// Hand-calc: single FL, $80k 1099-NEC.
+//   netSE = $73,880. > $20k threshold ✓.
+//   Federal tax ~$10k → > $5k ✓.
+//   AGI ~$74k < $150k → safeHarborPct = 100. estSavings = $300 fixed.
+header("H1v1.9 G1.52+1 — Single SE $80k: estSavings $300 (100% safe harbor)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "Solo", nonemployeeCompensation: 80000 } as unknown as TaxReturnInputs["form1099s"][number]],
+  });
+  const hit = findHit(hits, "G1.52");
+  checkTruthy("G1.52+1", "fires (SE > $20k + fed tax > $5k)", hit != null, true);
+  if (hit) {
+    check("G1.52+1", "estSavings = $300", hit.estSavings, 300);
+    check("G1.52+1", "safeHarborPct = 100 (AGI < $150k)",
+      Number(hit.inputs.safeHarborPct), 100);
+  }
+}
+
+// Positive: high AGI → 110% rule
+header("H1v1.9 G1.52+2 — Single SE $300k: safeHarborPct = 110");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "x", nonemployeeCompensation: 300000 } as unknown as TaxReturnInputs["form1099s"][number]],
+  });
+  const hit = findHit(hits, "G1.52");
+  if (hit) {
+    check("G1.52+2", "safeHarborPct = 110 (AGI > $150k)",
+      Number(hit.inputs.safeHarborPct), 110);
+  }
+}
+
+// Negative: pure W-2 (withholding handled by employer)
+header("G1.52-3 — Pure W-2 $100k: suppressed (no SE income — withholding adequate)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 100000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  checkTruthy("G1.52-3", "no fire pure W-2", findHit(hits, "G1.52") == null, true);
+}
+
+// ── G1.53 Kiddie Tax §1(g) ────────────────────────────────────────────
+// Hand-calc: single FL, $250k W-2, 1 dependent under 17.
+//   AGI $250k > $200k ✓. kidsUnder17 = 1.
+//   numAffected = 1. estSavings = $5,000 × 0.22 × 1 = $1,100.
+header("H1v1.9 G1.53+1 — Single AGI $250k + 1 kid under 17: estSavings $1,100");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, dependentsUnder17: 1 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 250000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  const hit = findHit(hits, "G1.53");
+  checkTruthy("G1.53+1", "fires (AGI > $200k + kids)", hit != null, true);
+  if (hit) {
+    check("G1.53+1", "estSavings = $1,100 ($5k × (32% − 10%))",
+      hit.estSavings, 1100);
+  }
+}
+
+// Negative: no kids
+header("G1.53-2 — No dependents under 17: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, dependentsUnder17: 0 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 250000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  checkTruthy("G1.53-2", "no fire without kids", findHit(hits, "G1.53") == null, true);
+}
+
+// Negative: AGI below threshold
+header("G1.53-3 — AGI $100k + kids: suppressed (below $200k HNW proxy)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, dependentsUnder17: 2 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 100000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  checkTruthy("G1.53-3", "no fire AGI < $200k", findHit(hits, "G1.53") == null, true);
+}
+
+// ── G1.54 §183 Hobby Loss ──────────────────────────────────────────────
+// Hand-calc: single FL, $5k 1099-NEC + $80k W-2.
+//   netSE = $5k × 0.9235 = $4,617. In $1k-$10k range ✓.
+//   AGI ~$85k. Taxable = $85k - half-SE - $14,600 = $70k → 22% bracket.
+//   estSavings = $5,000 × (0.22 + 0) = $1,100.
+header("H1v1.9 G1.54+1 — SE $5k (borderline hobby) + W-2 $80k: estSavings $1,100");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 80000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "Side", nonemployeeCompensation: 5000 } as unknown as TaxReturnInputs["form1099s"][number]],
+  });
+  const hit = findHit(hits, "G1.54");
+  checkTruthy("G1.54+1", "fires (SE in $1k-$10k borderline range)", hit != null, true);
+  if (hit) {
+    check("G1.54+1", "estSavings = $1,100 ($5k × 22%)",
+      hit.estSavings, 1100, 50);
+  }
+}
+
+// Negative: substantial SE income (clearly business)
+header("G1.54-2 — SE $80k: suppressed (clearly business — over $10k upper bound)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "x", nonemployeeCompensation: 80000 } as unknown as TaxReturnInputs["form1099s"][number]],
+  });
+  checkTruthy("G1.54-2", "no fire SE > $10k", findHit(hits, "G1.54") == null, true);
+}
+
+// Negative: no SE income
+header("G1.54-3 — Pure W-2: suppressed (no SE activity)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 80000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  checkTruthy("G1.54-3", "no fire without SE", findHit(hits, "G1.54") == null, true);
+}
+
+// ── G1.55 Custodial Roth IRA ────────────────────────────────────────────
+// Hand-calc: single FL, $80k 1099-NEC, 1 dependent under 17.
+//   netSE = $73,880. > $50k threshold ✓. kidsUnder17 = 1.
+//   growth = 1.07^50 = 29.457. discount = 1.05^50 = 11.467.
+//   growthDollars = $7,000 × (29.457 - 1) = $199,201.
+//   estSavingsPerChild = $199,201 × 0.32 / 11.467 = $5,558.
+//   numAffected = min(1, 1) = 1.
+//   estSavings = $5,558.
+header("H1v1.9 G1.55+1 — SE $80k + 1 kid under 17: estSavings $5,558 PV (50-yr Roth)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, dependentsUnder17: 1 } as unknown as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "x", nonemployeeCompensation: 80000 } as unknown as TaxReturnInputs["form1099s"][number]],
+  });
+  const hit = findHit(hits, "G1.55");
+  checkTruthy("G1.55+1", "fires (SE > $50k + kids)", hit != null, true);
+  if (hit) {
+    check("G1.55+1", "estSavings ≈ $5,558 PV", hit.estSavings, 5558, 10);
+  }
+}
+
+// Negative: low SE
+header("G1.55-2 — SE $30k + 1 kid: suppressed (SE < $50k)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, dependentsUnder17: 1 } as unknown as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "x", nonemployeeCompensation: 30000 } as unknown as TaxReturnInputs["form1099s"][number]],
+  });
+  checkTruthy("G1.55-2", "no fire SE < $50k", findHit(hits, "G1.55") == null, true);
+}
+
+// Negative: no kids
+header("G1.55-3 — SE $100k + no kids: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, dependentsUnder17: 0 } as unknown as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "x", nonemployeeCompensation: 100000 } as unknown as TaxReturnInputs["form1099s"][number]],
+  });
+  checkTruthy("G1.55-3", "no fire without kids", findHit(hits, "G1.55") == null, true);
+}
+
+// ── G1.56 Specific-Share-ID ────────────────────────────────────────────
+// Hand-calc: single FL, $50k W-2 + $30k LTCG via 1099-B.
+//   totalGain = $30,000 > $5k threshold ✓.
+//   estSavings = $30,000 × 0.04 = $1,200.
+header("H1v1.9 G1.56+1 — LTCG $30k: estSavings $1,200 (4% of gain)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    form1099s: [{ taxYear: 2024, formType: "b", payerName: "Schwab", longTermGainLoss: 30000 } as unknown as TaxReturnInputs["form1099s"][number]],
+  });
+  const hit = findHit(hits, "G1.56");
+  checkTruthy("G1.56+1", "fires (LTCG > $5k)", hit != null, true);
+  if (hit) {
+    check("G1.56+1", "estSavings = $1,200 ($30k × 4%)",
+      hit.estSavings, 1200);
+  }
+}
+
+// Negative: small gain
+header("G1.56-2 — LTCG $2k: suppressed (below $5k floor)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    form1099s: [{ taxYear: 2024, formType: "b", payerName: "x", longTermGainLoss: 2000 } as unknown as TaxReturnInputs["form1099s"][number]],
+  });
+  checkTruthy("G1.56-2", "no fire gain < $5k", findHit(hits, "G1.56") == null, true);
+}
+
 // ============================================================================
 // RESULTS
 // ============================================================================

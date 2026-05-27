@@ -512,6 +512,81 @@ section("SCENARIO 8 — Self-employed solo on ACA, FL, age 40");
 }
 
 // ============================================================================
+// SCENARIO 9 — HNW family with kids + side SE + brokerage activity
+// MFJ, CA, age 42 (both).
+// $250k W-2 + $80k 1099-NEC consulting.
+// 2 dependents under 17.
+// $20k LTCG from 1099-B.
+// Expected to trigger MANY v1.9 + earlier strategies: G1.1 SEP (SE > $30k),
+// G1.42 SEHI (SE > $30k), G1.49 Family Employment (SE > $50k + kids),
+// G1.52 est-tax safe harbor (SE > $20k + fed tax > $5k), G1.53 Kiddie
+// (AGI > $200k + kids), G1.55 Custodial Roth (SE > $50k + kids),
+// G1.56 Specific-Share-ID (LTCG > $5k). PLUS G1.26 Backdoor Roth (AGI
+// > $240k MFJ).
+// ============================================================================
+section("SCENARIO 9 — HNW family with kids + side SE + brokerage, CA MFJ");
+
+{
+  const inputs: TaxReturnInputs = {
+    client: {
+      filingStatus: "married_filing_jointly",
+      state: "CA",
+      taxYear: 2024,
+      taxpayerAge: 42,
+      dependentsUnder17: 2,
+    } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 250000, stateCode: "CA" } as unknown as TaxReturnInputs["w2s"][number]],
+    form1099s: [
+      { taxYear: 2024, formType: "nec", payerName: "Consulting", nonemployeeCompensation: 80000 } as unknown as TaxReturnInputs["form1099s"][number],
+      { taxYear: 2024, formType: "b", payerName: "Schwab", longTermGainLoss: 20000 } as unknown as TaxReturnInputs["form1099s"][number],
+    ],
+    adjustments: [],
+    assetBalances: [],
+    taxYear: 2024,
+  };
+  const hits = runFull(inputs);
+  header(`Found: ${ids(hits).join(", ") || "(none)"}`);
+  // Core v1.9 hits:
+  checkSubset("S9", "fires G1.52 est-tax safe harbor (SE > $20k + fed tax > $5k)",
+    ["G1.52"], ids(hits));
+  checkSubset("S9", "fires G1.53 kiddie tax (AGI > $200k + kids)",
+    ["G1.53"], ids(hits));
+  checkSubset("S9", "fires G1.55 custodial Roth (SE > $50k + kids)",
+    ["G1.55"], ids(hits));
+  checkSubset("S9", "fires G1.56 specific-share-ID (LTCG > $5k)",
+    ["G1.56"], ids(hits));
+  // Companion strategies that should also fire:
+  checkSubset("S9", "fires G1.1 SEP-IRA (SE > $30k)", ["G1.1"], ids(hits));
+  checkSubset("S9", "fires G1.42 SEHI (SE > $30k)", ["G1.42"], ids(hits));
+  checkSubset("S9", "fires G1.49 family employment (SE > $50k + kids under 17)",
+    ["G1.49"], ids(hits));
+  // Should NOT fire:
+  // G1.54 §183 hobby — SE $80k > $10k upper bound → suppressed
+  checkNotFires("S9", "G1.54 §183 hobby correctly suppressed (SE > $10k = clearly business)",
+    "G1.54", hits);
+  // G1.32 DCFSA — no dependent_care_expenses adjustment
+  checkNotFires("S9", "G1.32 DCFSA correctly suppressed (no dep care expenses)",
+    "G1.32", hits);
+  // G1.50 §72(t) SEPP — age 42 < 50 → suppressed
+  checkNotFires("S9", "G1.50 §72(t) correctly suppressed (age < 50)",
+    "G1.50", hits);
+  // Verify key estSavings amounts
+  const estTaxHit = findHit(hits, "G1.52");
+  if (estTaxHit) {
+    checkInRange("S9", "G1.52 estSavings = $300", estTaxHit.estSavings, 295, 305);
+  }
+  const kiddieHit = findHit(hits, "G1.53");
+  if (kiddieHit) {
+    checkInRange("S9", "G1.53 estSavings ≈ $1,100", kiddieHit.estSavings, 1_050, 1_150);
+  }
+  const specHit = findHit(hits, "G1.56");
+  if (specHit) {
+    checkInRange("S9", "G1.56 estSavings = $800 ($20k × 4%)",
+      specHit.estSavings, 795, 805);
+  }
+}
+
+// ============================================================================
 // RESULTS
 // ============================================================================
 

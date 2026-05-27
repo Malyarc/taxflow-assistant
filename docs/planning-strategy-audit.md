@@ -1,16 +1,25 @@
-# Planning Strategy Audit — Catalog v1.8
+# Planning Strategy Audit — Catalog v1.9
 
 **Date:** 2026-05-27
-**Catalog version:** v1.8.0 (47 strategies total: 42 G1.X + 5 G4.X)
+**Catalog version:** v1.9.0 (52 strategies total: 47 G1.X + 5 G4.X)
 **Auditor:** Engineering pass — IRC citations + TY2024/2025 limits verified against IRS sources.
 
 ## Verdict
 
-**All 47 catalog strategies are correct + valid for real-world CPA use as of TY2024/2025.** Every IRC section, dollar limit, phase-out threshold, and rate is current per the published IRS revenue procedures (Notice 2023-75 for TY2024; Notice 2024-80 / Rev. Proc. 2024-40 for TY2025). All formulas reflect post-TCJA + IRA 2022 + SECURE 2.0 law. Heuristic estSavings are documented as such in each detector's `assumptions: string[]`.
+**All 52 catalog strategies are correct + valid for real-world CPA use as of TY2024/2025.** Every IRC section, dollar limit, phase-out threshold, and rate is current per the published IRS revenue procedures (Notice 2023-75 for TY2024; Notice 2024-80 / Rev. Proc. 2024-40 for TY2025). All formulas reflect post-TCJA + IRA 2022 + SECURE 2.0 law. Heuristic estSavings are documented as such in each detector's `assumptions: string[]`.
 
 No incorrect IRC citations found. No outdated dollar limits found. No mis-stated phase-out thresholds found.
 
-## Catalog inventory by category (v1.8 = 42 G1 strategies)
+## Catalog inventory by category (v1.9 = 47 G1 strategies)
+
+### v1.9 NEW strategies (5)
+| ID | Name | IRC | Limit / Detail | H2 | Verdict |
+|---|---|---|---|---|---|
+| G1.52 | Est-Tax Safe Harbor §6654 | §6654(d)(1)(B) | 100% / 110% prior yr; 90% current | heuristic | ✓ Valid |
+| G1.53 | Kiddie Tax §1(g) min | §1(g); Rev. Proc. 2023-34 | $2,600 free + excess at parent rate | heuristic | ✓ Valid |
+| G1.54 | §183 Hobby Loss qualification | §183(d); Reg §1.183-2(b) | 3-of-5 yrs safe harbor | heuristic | ✓ Valid |
+| G1.55 | Custodial Roth IRA for child | §408A(c) | $7,000 cap; child earned income req | heuristic | ✓ Valid |
+| G1.56 | Specific-Share-ID lot selection | Reg §1.1012-1(c) | Election at time of sale | heuristic | ✓ Valid |
 
 ### v1.8 NEW strategies (5)
 | ID | Name | IRC | Limit / Detail | H2 | Verdict |
