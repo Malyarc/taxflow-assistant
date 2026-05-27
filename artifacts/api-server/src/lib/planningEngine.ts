@@ -2933,6 +2933,479 @@ function detectSection121HomeSale(args: {
   };
 }
 
+// ── G1.29 — §529 → Roth IRA SECURE 2.0 ───────────────────────────────────
+
+const G1_29_MIN_529_BALANCE = 35_000;
+const G1_29_PV_GROWTH = Math.pow(1.07, 20);
+const G1_29_PV_DISCOUNT = Math.pow(1.05, 20);
+const G1_29_FUTURE_RATE = 0.32;
+
+function detect529ToRoth(args: {
+  computed: ComputedTaxReturn;
+  assetBalances?: AssetBalanceFact[];
+}): OpportunityHit | null {
+  const { computed, assetBalances } = args;
+  if (!assetBalances || assetBalances.length === 0) return null;
+  const total529 = assetBalances
+    .filter((a) => a.assetType === "529")
+    .reduce((s, a) => s + toNum(a.balance), 0);
+  if (total529 < G1_29_MIN_529_BALANCE) return null;
+
+  // Heuristic PV: $35k × growth × futureRate / discount.
+  const lifetimeRollover = 35_000;
+  const growthDollars = lifetimeRollover * (G1_29_PV_GROWTH - 1);
+  const estSavings = Math.round((growthDollars * G1_29_FUTURE_RATE) / G1_29_PV_DISCOUNT);
+  if (estSavings <= 0) return null;
+
+  const strategy = strategyById("G1.29");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  void computed;
+  const vars: Record<string, number | string> = { estSavings };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client has ${fmt(Math.round(total529))} in 529 college-savings balance. If the 529 has been ` +
+      `open 15+ years AND the rolled contributions are 5+ years old (SECURE 2.0 §126), beneficiary ` +
+      `can roll up to $35,000 lifetime into a Roth IRA — annual cap = IRA contribution cap ($7k / $8k 50+).`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      total529Balance: Math.round(total529),
+      lifetimeRolloverCap: lifetimeRollover,
+      annualIraCap: 7_000,
+      growthAssumption: 0.07,
+      futureRateAssumption: G1_29_FUTURE_RATE,
+      discountRate: 0.05,
+      horizonYears: 20,
+    },
+    assumptions: [
+      `NEW for TY2024+ per SECURE 2.0 §126.`,
+      `Lifetime cap $35,000 per beneficiary (NOT per 529 account).`,
+      `Annual rollover counts against IRA contribution limit ($7k / $8k 50+) — beneficiary cannot also make separate IRA contribution that year up to the cap.`,
+      `Beneficiary OWNS the resulting Roth IRA (must have earned income equal to rollover amount).`,
+      `529 must be open >= 15 years; contributions being rolled must be >= 5 years old per §529(c)(3)(E)(iii) (engine cannot verify; CPA confirms).`,
+      `Long-term PV uses 7%/yr growth × 20 yrs × ${(G1_29_FUTURE_RATE * 100).toFixed(0)}% future rate, discounted at 5%/yr.`,
+      `No current-year tax delta — Roth contributions are after-tax. Benefit is purely future tax-free growth.`,
+    ],
+  };
+}
+
+// ── G1.31 — Saver's Credit §25B ──────────────────────────────────────────
+
+const G1_31_AGI_BANDS: Record<string, Array<{ rate: number; maxAgi: number }>> = {
+  single: [
+    { rate: 0.50, maxAgi: 23_000 },
+    { rate: 0.20, maxAgi: 25_000 },
+    { rate: 0.10, maxAgi: 38_250 },
+  ],
+  married_filing_separately: [
+    { rate: 0.50, maxAgi: 23_000 },
+    { rate: 0.20, maxAgi: 25_000 },
+    { rate: 0.10, maxAgi: 38_250 },
+  ],
+  head_of_household: [
+    { rate: 0.50, maxAgi: 34_500 },
+    { rate: 0.20, maxAgi: 37_500 },
+    { rate: 0.10, maxAgi: 57_375 },
+  ],
+  married_filing_jointly: [
+    { rate: 0.50, maxAgi: 46_000 },
+    { rate: 0.20, maxAgi: 50_000 },
+    { rate: 0.10, maxAgi: 76_500 },
+  ],
+  qualifying_widow: [
+    { rate: 0.50, maxAgi: 46_000 },
+    { rate: 0.20, maxAgi: 50_000 },
+    { rate: 0.10, maxAgi: 76_500 },
+  ],
+};
+const G1_31_CONTRIB_CAP_SINGLE = 2_000;
+const G1_31_CONTRIB_CAP_MFJ = 4_000;
+const G1_31_MIN_AGE = 18;
+
+function detectSaversCredit(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+  baselineInputs?: TaxReturnInputs;
+}): OpportunityHit | null {
+  const { client, computed, adjustments, baselineInputs } = args;
+  const age = client.taxpayerAge;
+  if (age != null && age < G1_31_MIN_AGE) return null;
+  // Suppress if already claimed.
+  if (sumAdjustment(adjustments, "retirement_contributions_savers") > 0) return null;
+  // Need some sign of retirement contribution (so the credit applies to something).
+  const anyRetirement =
+    sumAdjustment(adjustments, "ira_contribution_traditional") +
+    sumAdjustment(adjustments, "ira_contribution_roth") +
+    sumAdjustment(adjustments, "self_employed_retirement") +
+    sumAdjustment(adjustments, "hsa_contribution");
+  if (anyRetirement <= 0) return null;
+
+  // Determine applicable rate from AGI bracket.
+  const bands = G1_31_AGI_BANDS[client.filingStatus] ?? G1_31_AGI_BANDS.single;
+  const agi = computed.adjustedGrossIncome;
+  const matchedBand = bands.find((b) => agi <= b.maxAgi);
+  if (!matchedBand) return null;
+
+  const cap = client.filingStatus === "married_filing_jointly" ||
+              client.filingStatus === "qualifying_widow"
+    ? G1_31_CONTRIB_CAP_MFJ
+    : G1_31_CONTRIB_CAP_SINGLE;
+  const qualifyingContrib = Math.min(anyRetirement, cap);
+  const estSavings = Math.round(qualifyingContrib * matchedBand.rate);
+  if (estSavings <= 0) return null;
+
+  // Cap by federal tax liability (non-refundable).
+  const cappedSavings = Math.min(estSavings, Math.round(computed.federalTaxLiability));
+  if (cappedSavings <= 0) return null;
+
+  // H2 mutation: add retirement_contributions_savers = cap. Engine
+  // computes the credit via the credit-ordering pipeline.
+  const whatIf = runDetectorWhatIf({
+    baselineInputs,
+    scenarioId: "G1.31-savers-credit",
+    label: `Saver's Credit cap $${cap.toLocaleString("en-US")}`,
+    mutations: [
+      { kind: "add_adjustment", adjustmentType: "retirement_contributions_savers", amount: cap },
+    ],
+    semantics: "savings",
+    varyAmount: false,
+  });
+
+  const strategy = strategyById("G1.31");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = { estSavings: cappedSavings };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings: cappedSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `AGI ${fmt(Math.round(agi))} (${client.filingStatus}) is within the Saver's Credit ` +
+      `${(matchedBand.rate * 100).toFixed(0)}% band. Existing retirement contributions ` +
+      `${fmt(Math.round(anyRetirement))} qualify (cap ${fmt(cap)}). Credit ~${fmt(cappedSavings)} ` +
+      `via Form 8880 — many CPAs miss this for low/mid-income clients with retirement savings.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      agi: Math.round(agi),
+      filingStatus: client.filingStatus,
+      bandRate: matchedBand.rate,
+      qualifyingContribution: Math.round(qualifyingContrib),
+      contributionCap: cap,
+      computedCredit: estSavings,
+      cappedSavings,
+      federalTaxLiability: Math.round(computed.federalTaxLiability),
+    },
+    assumptions: [
+      `TY2024 phase-out brackets per IRS Notice 2023-75: 50% / 20% / 10% / 0% by AGI band.`,
+      `Contribution cap counted: $2,000 single / MFS / HoH; $4,000 MFJ / QSS.`,
+      `Non-refundable — capped at federal tax liability (engine reports the capped value).`,
+      `Excludes full-time students (5+ months) and individuals claimed as dependents — CPA confirms.`,
+      `Existing IRA rollovers + distributions reduce qualifying contribution per §25B(d)(2) — engine doesn't auto-net distributions.`,
+      `H2 mutation adds retirement_contributions_savers — engine routes through credit-ordering pipeline.`,
+    ],
+    whatIf,
+  };
+}
+
+// ── G1.32 — DCFSA vs §21 Dependent Care Credit choice ────────────────────
+
+const G1_32_DCFSA_LIMIT = 5_000;
+const G1_32_FICA_RATE = 0.0765;
+const G1_32_MIN_MARGINAL = 0.22;
+const G1_32_SECTION_21_RATE_APPROX = 0.20;
+
+function detectDcfsaVsCredit(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { client, computed, adjustments } = args;
+  void client;
+  const depCareExpenses = sumAdjustment(adjustments, "dependent_care_expenses");
+  if (depCareExpenses <= 0) return null;
+  // Need W-2 income (DCFSA requires employer-sponsored plan).
+  const hasW2 = computed.totalIncome > 0; // proxy — engine doesn't expose W-2 vs SE split cleanly
+  if (!hasW2) return null;
+
+  const fedRate = federalMarginalRate(computed);
+  if (fedRate < G1_32_MIN_MARGINAL) return null;
+
+  const stateRate = stateMarginalRate(computed);
+  // DCFSA savings vs §21 credit:
+  //   DCFSA: $5k × (federal + state + FICA)
+  //   §21 credit foregone: $3k × 20% (rough; engine has actual based on AGI)
+  // Net benefit = DCFSA - lost §21 portion
+  const dcfsaSavings = G1_32_DCFSA_LIMIT * (fedRate + stateRate + G1_32_FICA_RATE);
+  const lostSection21 = Math.min(depCareExpenses, 3_000) * G1_32_SECTION_21_RATE_APPROX;
+  const estSavings = Math.round(dcfsaSavings - lostSection21);
+  if (estSavings <= 0) return null;
+
+  const strategy = strategyById("G1.32");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    dcfsaAmount: G1_32_DCFSA_LIMIT,
+    nextTaxYear: computed.taxYear + 1,
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client has ${fmt(Math.round(depCareExpenses))} of dependent care expenses at a ` +
+      `${(fedRate * 100).toFixed(0)}% federal marginal rate. Electing the $5,000 DCFSA via ` +
+      `employer payroll saves more than the §21 credit because the marginal rate (+FICA) exceeds ` +
+      `the 20% credit rate on the first $3k.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      dependentCareExpenses: Math.round(depCareExpenses),
+      federalMarginalRate: fedRate,
+      stateMarginalRate: stateRate,
+      ficaRate: G1_32_FICA_RATE,
+      dcfsaLimit: G1_32_DCFSA_LIMIT,
+      dcfsaSavings: Math.round(dcfsaSavings),
+      lostSection21: Math.round(lostSection21),
+    },
+    assumptions: [
+      `DCFSA cap $5,000 (IRC §129(a)(2)) — both spouses must work. MFS limited to $2,500.`,
+      `Saves marginal income tax + FICA 7.65% (employer + employee combined; engine uses employee-side 7.65%).`,
+      `§21 Credit is 20-35% of $3k (1 child) / $6k (2+ children). Engine approximates as 20% for the comparison — CPA uses actual phase-down rate.`,
+      `DCFSA reduces §21 qualifying expenses (no double-dip per §129(e)(7)).`,
+      `Strategy is FORWARD-LOOKING — election must happen during open enrollment for next tax year.`,
+      `Heuristic — actual savings depend on number of children, exact AGI, state DCFSA conformity (CA / NJ don't tax DCFSA; PA does).`,
+    ],
+  };
+}
+
+// ── G1.36 — R&D Credit §41 ───────────────────────────────────────────────
+
+const G1_36_MIN_SE = 100_000;
+const G1_36_ASSUMED_QRE = 50_000;
+const G1_36_FIRST_TIME_RATE = 0.06;
+const G1_36_ASC_RATE = 0.14;
+
+function detectRdCredit(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { computed, adjustments } = args;
+  const netSe = computed.detail.se.netSeEarnings;
+  if (netSe < G1_36_MIN_SE) return null;
+  // Suppress if any prior R&D credit signal.
+  const existingCredits = sumAdjustment(adjustments, "credit");
+  if (existingCredits >= 2_000) return null;
+
+  // Heuristic: assume first-time claimant. ASC = 14% × (current − 50% prior 3-yr avg).
+  // For first-time: 6% × current QREs.
+  const estSavings = Math.round(G1_36_ASSUMED_QRE * G1_36_FIRST_TIME_RATE);
+
+  const strategy = strategyById("G1.36");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = { estSavings };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client has ${fmt(Math.round(netSe))} of net SE income (proxy for tech / engineering / ` +
+      `software-development profile). If client performs qualifying research (4-part test under ` +
+      `§41(d)), credit ~${fmt(estSavings)} on $50k assumed QREs via Form 6765 alternative ` +
+      `simplified method.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      netSeEarnings: Math.round(netSe),
+      assumedQre: G1_36_ASSUMED_QRE,
+      firstTimeRate: G1_36_FIRST_TIME_RATE,
+      ascRate: G1_36_ASC_RATE,
+    },
+    assumptions: [
+      `4-part test (§41(d)): permitted purpose, technological in nature, eliminate uncertainty, process of experimentation.`,
+      `Qualifying Research Expenses (QREs): wages for R&D activities, supplies, 65% of contract research.`,
+      `Alternative Simplified Credit (ASC) = 14% × (current QREs − 50% prior 3-yr avg). First-time claimants: 6% × current QREs (heuristic uses this).`,
+      `Small business (gross receipts < $5M AND in business < 5 yrs) can use credit against payroll tax up to $500k/yr under §41(h) — useful even if no income tax.`,
+      `§174 (post-TCJA) requires R&D expenses to be CAPITALIZED + amortized 5 yrs domestic / 15 yrs foreign — separate from the credit. R&D credit reduces capitalizable basis.`,
+      `Heavy documentation requirement — time studies / project records / 4-part-test narratives. Most claims need a specialist (often boutique R&D firms charge 20-30% of credit).`,
+      `Heuristic estSavings = $50k QRE × 6% = $3,000. Real claims often $20k-$200k+ for tech-SE clients.`,
+    ],
+  };
+}
+
+// ── G1.37 — §25C Energy Efficient Home Improvement ───────────────────────
+
+const G1_37_ASSUMED_HEATPUMP_COST = 5_000;
+const G1_37_HEATPUMP_CREDIT_RATE = 0.30;
+const G1_37_HEATPUMP_CAP = 2_000;
+
+function detectEnergyEfficientHome(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+  assetBalances?: AssetBalanceFact[];
+  baselineInputs?: TaxReturnInputs;
+}): OpportunityHit | null {
+  const { computed, adjustments, assetBalances, baselineInputs } = args;
+  if (sumAdjustment(adjustments, "energy_efficient_home") > 0) return null;
+  if (sumAdjustment(adjustments, "energy_efficient_heatpump") > 0) return null;
+  const hasResidence = (assetBalances ?? []).some((a) => a.assetType === "primary_residence");
+  const hasMortgage = sumAdjustment(adjustments, "mortgage_interest") > 0;
+  if (!hasResidence && !hasMortgage) return null;
+  if (computed.federalTaxLiability < 1_000) return null;
+
+  // Heat pump example: $5k install × 30% = $1,500. Below the $2k cap.
+  const credit = Math.min(
+    Math.round(G1_37_ASSUMED_HEATPUMP_COST * G1_37_HEATPUMP_CREDIT_RATE),
+    G1_37_HEATPUMP_CAP,
+  );
+
+  const whatIf = runDetectorWhatIf({
+    baselineInputs,
+    scenarioId: "G1.37-25c",
+    label: `§25C heat pump credit $${credit.toLocaleString("en-US")}`,
+    mutations: [
+      { kind: "add_adjustment", adjustmentType: "energy_efficient_heatpump", amount: G1_37_ASSUMED_HEATPUMP_COST },
+    ],
+    semantics: "savings",
+    varyAmount: true,
+  });
+
+  const strategy = strategyById("G1.37");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    taxYear: computed.taxYear,
+    estSavings: credit,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings: credit,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Homeowner (per H5 primary_residence or mortgage signal). Installing a qualifying ENERGY STAR ` +
+      `heat pump (~${fmt(G1_37_ASSUMED_HEATPUMP_COST)} typical) delivers ${fmt(credit)} of §25C credit ` +
+      `(30% × cost, capped at $2,000 for heat pumps).`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      assumedHeatPumpCost: G1_37_ASSUMED_HEATPUMP_COST,
+      creditRate: G1_37_HEATPUMP_CREDIT_RATE,
+      heatPumpCap: G1_37_HEATPUMP_CAP,
+      computedCredit: credit,
+      federalTaxLiability: Math.round(computed.federalTaxLiability),
+    },
+    assumptions: [
+      `IRA 2022 §13301 raised credit to 30% with annual caps; expires 2032-12-31.`,
+      `Annual cap STRUCTURE: $1,200 general (windows $600, doors $250/$500 max, audit $150, AC/furnace/boiler $600); $2,000 separately for heat pumps + heat-pump water heaters + biomass stoves. Combined max ~$3,200.`,
+      `NO carryforward — use-it-or-lose-it each year (vs §25D residential clean energy which IS carryforward-able).`,
+      `Heuristic uses heat-pump example ($5k install). Other items (windows, doors) have lower caps + different rates.`,
+      `ENERGY STAR certification required (Notice 2024-09).`,
+      `Rental property does NOT qualify — primary or secondary residence only.`,
+      `H2 mutation adds energy_efficient_heatpump = $5,000 install cost — engine computes 30% × cost capped at $2,000.`,
+    ],
+    whatIf,
+  };
+}
+
+// ── G1.40 — §1244 Ordinary loss on small biz stock ───────────────────────
+
+const G1_40_MIN_CAP_LOSS_CF = 25_000;
+const G1_40_ORDINARY_CAP_SINGLE = 50_000;
+const G1_40_ORDINARY_CAP_MFJ = 100_000;
+const G1_40_RATE_SPREAD = 0.17;
+
+function detectSection1244(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { client, computed, adjustments } = args;
+  if (computed.totalIncome < 100_000) return null;
+  const capLossCf = sumAdjustment(adjustments, "capital_loss_carryforward_short") +
+                    sumAdjustment(adjustments, "capital_loss_carryforward_long");
+  if (capLossCf < G1_40_MIN_CAP_LOSS_CF) return null;
+
+  const cap = client.filingStatus === "married_filing_jointly" ||
+              client.filingStatus === "qualifying_widow"
+    ? G1_40_ORDINARY_CAP_MFJ
+    : G1_40_ORDINARY_CAP_SINGLE;
+  // Recharacterizable portion = min(carryforward, cap).
+  const recharacterizable = Math.min(capLossCf, cap);
+  const estSavings = Math.round(recharacterizable * G1_40_RATE_SPREAD);
+  if (estSavings <= 0) return null;
+
+  const strategy = strategyById("G1.40");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    ordinaryCap: cap,
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client has ${fmt(Math.round(capLossCf))} of capital loss carryforward. If any of that loss is ` +
+      `from a failed SMALL BUSINESS C-CORP that met §1244 qualifying-stock criteria at original issuance, ` +
+      `up to ${fmt(cap)} can be recharacterized as ORDINARY (deductible without the $3k/yr cap) instead ` +
+      `of capital. Rate spread ~17% (ordinary − LTCG) recovers ~${fmt(estSavings)}.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      capitalLossCarryforward: Math.round(capLossCf),
+      ordinaryCap: cap,
+      recharacterizable: Math.round(recharacterizable),
+      rateSpread: G1_40_RATE_SPREAD,
+    },
+    assumptions: [
+      `HEURISTIC — engine cannot verify §1244 qualifying-stock status. CPA confirms all 5 requirements.`,
+      `Annual ordinary-loss cap: $50,000 single/MFS/HoH/QSS; $100,000 MFJ. Excess flows to capital loss (Sch D).`,
+      `Stock must be: (1) DOMESTIC C-CORP, (2) issued for money/property (not services), (3) ORIGINAL ISSUANCE to client, (4) corp raised ≤ $1M equity at issuance, (5) corp had > 50% gross receipts from active T/B in 5 yrs preceding loss.`,
+      `Rate spread heuristic 17% — approximate gap between ordinary marginal (24-37%) and LTCG (0-20%). Real spread varies.`,
+      `Loss must be from sale, exchange, or worthlessness (Form 4797 Part I, NOT Sch D).`,
+      `Strategy is REACTIVE — applies to loss already incurred. Forward planning: structure equity rounds to preserve §1244 eligibility (< $1M raised).`,
+    ],
+  };
+}
+
 // ── Top-level evaluator ────────────────────────────────────────────────────
 
 export interface PlanningInputs {
@@ -3073,6 +3546,20 @@ export function evaluatePlanningOpportunities(args: PlanningInputs): Opportunity
   if (qsbs) hits.push(qsbs);
   const homeSale = detectSection121HomeSale({ client, computed, adjustments, assetBalances });
   if (homeSale) hits.push(homeSale);
+  // Phase H — H1 catalog v1.6: G1.29 §529→Roth / G1.31 Saver's Credit /
+  // G1.32 DCFSA / G1.36 R&D §41 / G1.37 §25C / G1.40 §1244.
+  const five29ToRoth = detect529ToRoth({ computed, assetBalances });
+  if (five29ToRoth) hits.push(five29ToRoth);
+  const saversCredit = detectSaversCredit({ client, computed, adjustments, baselineInputs });
+  if (saversCredit) hits.push(saversCredit);
+  const dcfsa = detectDcfsaVsCredit({ client, computed, adjustments });
+  if (dcfsa) hits.push(dcfsa);
+  const rdCredit = detectRdCredit({ computed, adjustments });
+  if (rdCredit) hits.push(rdCredit);
+  const energy25c = detectEnergyEfficientHome({ computed, adjustments, assetBalances, baselineInputs });
+  if (energy25c) hits.push(energy25c);
+  const section1244 = detectSection1244({ client, computed, adjustments });
+  if (section1244) hits.push(section1244);
   hits.sort((a, b) => b.estSavings - a.estSavings);
   return hits;
 }

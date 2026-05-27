@@ -2340,6 +2340,263 @@ header("G1.45-3 — Small $50k embedded gain (below $100k floor): suppressed");
     findHit(hits, "G1.45") == null, true);
 }
 
+section("H1 catalog v1.6 — 6 new detectors (G1.29 / G1.31 / G1.32 / G1.36 / G1.37 / G1.40)");
+
+// ── G1.29 §529 → Roth IRA SECURE 2.0 ────────────────────────────────────
+// Hand-calc:
+//   growth = 1.07^20 = 3.8696844
+//   discount = 1.05^20 = 2.6532977
+//   growthDollars = $35,000 × (3.8696844 - 1) = $100,438.9
+//   estSavings = $100,438.9 × 0.32 / 2.6532977 = $12,114 (rounded)
+header("H1v1.6 G1.29+1 — H5 529 $40k: estSavings $12,114 PV long-term Roth growth");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 80000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    assetBalances: [
+      { assetType: "529", balance: "40000", accountName: "Vanguard 529", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  const hit = findHit(hits, "G1.29");
+  checkTruthy("G1.29+1", "fires for 529 balance >= $35k", hit != null, true);
+  if (hit) {
+    check("G1.29+1", "estSavings ≈ $12,114 PV", hit.estSavings, 12114, 50,
+      "$35k × (1.07^20 − 1) × 0.32 / 1.05^20");
+  }
+}
+
+// Negative: small 529 balance
+header("G1.29-2 — 529 $20k (below $35k cap): suppressed");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 80000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    assetBalances: [
+      { assetType: "529", balance: "20000", accountName: "x", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  checkTruthy("G1.29-2", "no fire when 529 < $35k", findHit(hits, "G1.29") == null, true);
+}
+
+// ── G1.31 Saver's Credit §25B ───────────────────────────────────────────
+// Hand-calc: MFJ FL, age 45, $49k W-2, $5k ROTH IRA contribution.
+//   Roth IRA is NOT deductible → AGI stays at $49,000.
+//   Band = 20% (MFJ $46k-$50k). cap = $4,000.
+//   qualifyingContrib = min($5,000, $4,000) = $4,000.
+//   estSavings = $4,000 × 0.20 = $800.
+//   Taxable = $49k - $29,200 = $19,800. Federal tax = $1,160 + 12% × $8,200 = $2,144.
+//   cappedSavings = min($800, $2,144) = $800.
+header("H1v1.6 G1.31+1 — MFJ AGI $49k + Roth IRA $5k: estSavings $800 (20% band)");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024, taxpayerAge: 45 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 49000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [
+      // Roth IRA — NOT above-the-line deductible. AGI stays at $49k.
+      { adjustmentType: "ira_contribution_roth", amount: 5000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  const hit = findHit(hits, "G1.31");
+  checkTruthy("G1.31+1", "fires for MFJ in 20% band with Roth IRA", hit != null, true);
+  if (hit) {
+    check("G1.31+1", "estSavings = $800 (cap $4k × 20%)", hit.estSavings, 800, 5);
+    check("G1.31+1", "bandRate = 0.20", Number(hit.inputs.bandRate), 0.20, 0.001);
+  }
+}
+
+// Negative: AGI over phase-out top ($76,500 MFJ)
+header("G1.31-2 — MFJ AGI $90k Roth (over $76,500 cap): suppressed");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024, taxpayerAge: 45 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 90000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [
+      { adjustmentType: "ira_contribution_roth", amount: 5000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  checkTruthy("G1.31-2", "no fire AGI > phase-out", findHit(hits, "G1.31") == null, true);
+}
+
+// Negative: no retirement contribution
+header("G1.31-3 — In phase-out but no retirement contribution: suppressed");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 30 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 30000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  checkTruthy("G1.31-3", "no fire without retirement contribution",
+    findHit(hits, "G1.31") == null, true);
+}
+
+// ── G1.32 DCFSA vs §21 ──────────────────────────────────────────────────
+// Hand-calc: single FL, $100k W-2, $3k dependent_care_expenses.
+//   Taxable = $100k - $14,600 = $85,400 → 22% bracket. fedRate = 0.22.
+//   stateRate = 0 (FL).
+//   dcfsaSavings = $5,000 × (0.22 + 0 + 0.0765) = $1,482.50.
+//   lostSection21 = min($3,000, $3,000) × 0.20 = $600.
+//   estSavings = round($1,482.50 - $600) = $883.
+header("H1v1.6 G1.32+1 — Single $100k W-2 + $3k dep care: estSavings $883");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 100000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [
+      { adjustmentType: "dependent_care_expenses", amount: 3000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  const hit = findHit(hits, "G1.32");
+  checkTruthy("G1.32+1", "fires (dep care + 22% marginal)", hit != null, true);
+  if (hit) {
+    check("G1.32+1", "estSavings = $883", hit.estSavings, 883, 5);
+  }
+}
+
+// Negative: low marginal rate
+header("G1.32-2 — Low income (12% bracket): suppressed (DCFSA doesn't beat §21)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 40000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [
+      { adjustmentType: "dependent_care_expenses", amount: 3000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  checkTruthy("G1.32-2", "no fire marginal < 22%", findHit(hits, "G1.32") == null, true);
+}
+
+// ── G1.36 R&D Credit §41 ────────────────────────────────────────────────
+// Hand-calc: single FL, $150k 1099-NEC.
+//   netSE = $150k × 0.9235 = $138,525. > $100k threshold. ✓
+//   estSavings = $50,000 × 0.06 = $3,000 (first-time claimant rate).
+header("H1v1.6 G1.36+1 — Single SE $150k: estSavings $3,000 (first-time ASC)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "Tech Co", nonemployeeCompensation: 150000 } as unknown as TaxReturnInputs["form1099s"][number]],
+  });
+  const hit = findHit(hits, "G1.36");
+  checkTruthy("G1.36+1", "fires for SE > $100k", hit != null, true);
+  if (hit) {
+    check("G1.36+1", "estSavings = $3,000", hit.estSavings, 3000, 5);
+  }
+}
+
+// Negative: SE income too low
+header("G1.36-2 — SE $80k (below $100k floor): suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "x", nonemployeeCompensation: 80000 } as unknown as TaxReturnInputs["form1099s"][number]],
+  });
+  checkTruthy("G1.36-2", "no fire SE < $100k", findHit(hits, "G1.36") == null, true);
+}
+
+// ── G1.37 §25C Energy Efficient Home ────────────────────────────────────
+// Hand-calc: single FL, $80k W-2, mortgage interest $5k (homeowner signal).
+//   Taxable = $80k - $14,600 = $65,400. 22% bracket.
+//   Federal tax = $1,160 + $4,266 + 22% × $18,250 = $9,441. > $1,000. ✓
+//   credit = min($5,000 × 0.30, $2,000) = $1,500.
+header("H1v1.6 G1.37+1 — Single $80k + mortgage: estSavings $1,500 (heat pump credit)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 80000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [
+      { adjustmentType: "mortgage_interest", amount: 5000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  const hit = findHit(hits, "G1.37");
+  checkTruthy("G1.37+1", "fires for homeowner with fed tax > $1k", hit != null, true);
+  if (hit) {
+    check("G1.37+1", "estSavings = $1,500 (heat pump 30% × $5k capped at $2k)",
+      hit.estSavings, 1500, 5);
+  }
+}
+
+// Negative: no homeowner signal
+header("G1.37-2 — No homeowner signal: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 80000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  checkTruthy("G1.37-2", "no fire without homeowner signal",
+    findHit(hits, "G1.37") == null, true);
+}
+
+// Negative: existing §25C adjustment (suppress double-suggestion)
+header("G1.37-3 — Existing §25C adjustment: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 80000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [
+      { adjustmentType: "mortgage_interest", amount: 5000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+      { adjustmentType: "energy_efficient_heatpump", amount: 4000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  checkTruthy("G1.37-3", "no fire when §25C already on return",
+    findHit(hits, "G1.37") == null, true);
+}
+
+// ── G1.40 §1244 Ordinary Loss ───────────────────────────────────────────
+// Hand-calc: single FL, $150k W-2, capital_loss_carryforward_long $40k.
+//   totalIncome > $100k ✓
+//   capLossCf = $40k > $25k threshold ✓
+//   cap (single) = $50,000
+//   recharacterizable = min($40k, $50k) = $40,000
+//   estSavings = $40,000 × 0.17 = $6,800
+header("H1v1.6 G1.40+1 — Single $150k W-2 + $40k LT cap-loss CF: estSavings $6,800");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 150000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [
+      { adjustmentType: "capital_loss_carryforward_long", amount: 40000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  const hit = findHit(hits, "G1.40");
+  checkTruthy("G1.40+1", "fires for cap loss > $25k + income > $100k", hit != null, true);
+  if (hit) {
+    check("G1.40+1", "ordinaryCap = $50,000 (single)",
+      Number(hit.inputs.ordinaryCap), 50000);
+    check("G1.40+1", "estSavings = $6,800 ($40k × 0.17 spread)",
+      hit.estSavings, 6800, 5);
+  }
+}
+
+// Positive MFJ: cap doubles to $100k
+header("H1v1.6 G1.40+2 — MFJ $150k + $90k LT cap-loss CF: estSavings $15,300");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 150000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [
+      { adjustmentType: "capital_loss_carryforward_long", amount: 90000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  const hit = findHit(hits, "G1.40");
+  if (hit) {
+    check("G1.40+2", "ordinaryCap = $100,000 (MFJ)",
+      Number(hit.inputs.ordinaryCap), 100000);
+    check("G1.40+2", "estSavings = $15,300 ($90k × 0.17)",
+      hit.estSavings, 15300, 5);
+  }
+}
+
+// Negative: small cap loss carryforward
+header("G1.40-3 — $10k cap loss CF (below $25k floor): suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 150000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [
+      { adjustmentType: "capital_loss_carryforward_long", amount: 10000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  checkTruthy("G1.40-3", "no fire cap loss < $25k", findHit(hits, "G1.40") == null, true);
+}
+
 // ============================================================================
 // RESULTS
 // ============================================================================

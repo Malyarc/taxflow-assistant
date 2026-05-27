@@ -1,5 +1,5 @@
 {
-  "version": "v1.5.0",
+  "version": "v1.6.0",
   "reviewedAt": "2026-05-27",
   "strategies": [
     {
@@ -360,6 +360,144 @@
         "Trust attorney + actuarial valuation (complex — 6-12 month setup)"
       ],
       "action": "Engage a trust attorney to draft a CRT. Transfer the appreciated asset; CRT sells tax-free; client receives annuity/unitrust income stream + immediate charitable deduction for the present value of the remainder interest. Heuristic savings estimate available only after the §7520 actuarial calculation.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.29",
+      "name": "§529 → Roth IRA rollover (SECURE 2.0)",
+      "category": "retirement",
+      "ircSection": "IRC §529(c)(3)(E); SECURE 2.0 §126",
+      "irsPub": "Pub 970; SECURE 2.0 §126 (effective TY2024)",
+      "trigger": "H5 529 asset balance >= $35,000 (lifetime rollover cap). CPA confirms 529 has been open >= 15 years AND contributions being rolled are >= 5 years old.",
+      "formula": "Annual rollover up to IRA cap ($7k TY2024 under 50; $8k 50+); lifetime cap $35,000 per beneficiary. Treated as Roth IRA contribution — counts against the annual IRA limit. estSavings (PV) = $35k × (1.07^20 − 1) × 0.32 / 1.05^20 = ~$12,114 long-term Roth growth.",
+      "confidence": 0.50,
+      "cpaEffortHours": 1.5,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Date 529 account was opened (must be 15+ years old)",
+        "Date of contributions being rolled (must be at least 5 years old per §529(c)(3)(E)(iii))",
+        "Beneficiary must have earned income equal to the rollover amount in the year",
+        "529 beneficiary owns the Roth IRA (beneficiary = recipient)",
+        "Lifetime $35k cap is per BENEFICIARY (not per account)",
+        "Annual rollover counts against the IRA contribution limit ($7k / $8k)"
+      ],
+      "action": "Roll up to $7,000/year ($8k if 50+) from the 529 to the beneficiary's Roth IRA. Lifetime cap $35,000. Long-term PV of tax-free Roth growth ~{{estSavings}}.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.31",
+      "name": "Saver's Credit §25B (Retirement Savings Contributions)",
+      "category": "credits",
+      "ircSection": "IRC §25B",
+      "irsPub": "Form 8880; Pub 590-A; Notice 2023-75 (TY2024 thresholds)",
+      "trigger": "AGI within phase-out (TY2024 single: < $38,250; MFJ: < $76,500; HoH: < $57,375) AND has any retirement contribution (IRA / 401(k) / 403(b) / etc.) AND no existing retirement_contributions_savers adjustment AND age >= 18 AND not a full-time student/dependent.",
+      "formula": "Credit = applicable_rate × min(contributions, $2,000 single / $4,000 MFJ). Rate brackets TY2024: 50% (single < $23k / MFJ < $46k); 20% (single $23,001-$25,000 / MFJ $46k-$50,000); 10% (single $25,001-$38,250 / MFJ $50k-$76,500); 0% above. Non-refundable.",
+      "confidence": 0.85,
+      "cpaEffortHours": 0.5,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Confirm client age >= 18",
+        "Confirm client is NOT a full-time student (5+ months) and NOT claimed as dependent",
+        "Total retirement contributions for the year (IRA / 401(k) employee deferral / 403(b) / Solo 401(k))",
+        "AGI computation (used to determine bracket)",
+        "Note: existing IRA rollovers + distributions reduce the qualifying contribution amount (§25B(d)(2))"
+      ],
+      "action": "If client is contributing to retirement and AGI is within the Saver's Credit phase-out, claim ~{{estSavings}} on Form 8880. Non-refundable — usable up to federal tax liability.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.32",
+      "name": "Dependent Care FSA vs §21 Credit choice",
+      "category": "credits",
+      "ircSection": "IRC §129 (DCFSA) vs §21 (Dep Care Credit)",
+      "irsPub": "Pub 503; Form 2441",
+      "trigger": "Has dependent_care_expenses > 0 AND has W-2 income (eligible for employer DCFSA enrollment) AND federal marginal rate >= 22% (DCFSA beats §21 credit at higher brackets).",
+      "formula": "DCFSA: $5,000 elective deferral pre-tax. Saves marginal (federal + state) tax + FICA 7.65%. §21 credit: 20-35% of $3k/1 child or $6k/2+ children depending on AGI. Heuristic estSavings = $5,000 × (marginal + 0.0765) − ($600 §21 credit already claimed for $3k expense at 20% rate).",
+      "confidence": 0.75,
+      "cpaEffortHours": 1.0,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Confirm employer offers DCFSA enrollment (most do; verify with HR)",
+        "Number of qualifying children + qualifying expenses",
+        "Marriage / earned-income status of both spouses (DCFSA requires both work, §21 same)",
+        "Coordinate with §21 credit cap: DCFSA election dollars REDUCE the §21 qualifying expenses (no double-dip)"
+      ],
+      "action": "For TY{{nextTaxYear}}, elect ${{dcfsaAmount}} of pre-tax DCFSA via employer payroll. Saves ~{{estSavings}}/yr vs taking the §21 credit alone. Strategy is FORWARD-looking — must elect during open enrollment.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.36",
+      "name": "R&D Tax Credit §41 (Alternative Simplified Method)",
+      "category": "credits",
+      "ircSection": "IRC §41; §174",
+      "irsPub": "Form 6765; Reg. §1.41-4; Rev. Proc. 2024-23",
+      "trigger": "Net SE earnings > $100,000 (proxy for tech / engineering / software dev profile) AND no existing R&D credit adjustment.",
+      "formula": "Alternative Simplified Credit (ASC) = 14% × (current-year QREs − 50% of prior-3-yr avg QREs). For first-time claimants: 6% × current QREs. Heuristic estSavings = $50,000 assumed QREs × 14% = $7,000. Larger when QREs scale.",
+      "confidence": 0.40,
+      "cpaEffortHours": 12.0,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Identify Qualified Research Expenses (QREs): wages for R&D activities, supplies, 65% of contract research",
+        "Four-part test (§41(d)): permitted purpose, technological in nature, elimination of uncertainty, process of experimentation",
+        "Track time studies / project documentation per Reg. §1.41-4(c)",
+        "Form 6765 required (election: regular credit OR alternative simplified method)",
+        "§174 capitalization (post-TCJA): R&D expenses MUST be capitalized + amortized over 5 yrs (15 yrs foreign); credit reduces capitalizable basis",
+        "Small business (gross receipts < $5M, in business < 5 yrs): can use credit against payroll tax up to $500k/yr",
+        "Most state credits also available (CA, MA, NY, AZ, MN — separate filings)"
+      ],
+      "action": "If client performs qualifying R&D (software development, engineering, scientific experimentation), file Form 6765. On $50k QREs, ASC credit ~{{estSavings}}. Setup requires QRE documentation + 4-part test analysis.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.37",
+      "name": "Energy Efficient Home Improvement Credit §25C (heat pumps / windows / doors)",
+      "category": "credits",
+      "ircSection": "IRC §25C; IRA 2022 §13301",
+      "irsPub": "Form 5695 Part II; Notice 2024-09",
+      "trigger": "Client owns home (H5 primary_residence OR mortgage_interest > 0) AND no existing energy_efficient_home or energy_efficient_heatpump adjustment AND federal tax liability >= $1,000.",
+      "formula": "30% credit on qualifying improvements. Annual caps: $1,200 general; $2,000 heat pumps / heat pump water heaters / biomass; $600 windows; $250 per exterior door (max $500); $150 home energy audit; $600 central AC / furnace / boiler. Heuristic estSavings = $5,000 heat pump install × 30% = $1,500.",
+      "confidence": 0.60,
+      "cpaEffortHours": 0.5,
+      "recurring": true,
+      "validUntil": "2032-12-31",
+      "prerequisiteData": [
+        "Identify qualifying ENERGY STAR improvements: heat pump, heat pump water heater, central AC, furnace, biomass stove, insulation, windows, doors",
+        "Manufacturer's qualifying certification (Notice 2024-09)",
+        "Receipts + installation date",
+        "ANNUAL cap — separate from §25D (residential clean energy 30% with no cap)",
+        "NO carryforward — use it or lose it each year (vs §25D which carries forward)",
+        "Rental property does NOT qualify",
+        "Installed home energy audit by qualified auditor needed for $150 credit"
+      ],
+      "action": "Install ENERGY STAR heat pump / windows / insulation at primary residence. TY{{taxYear}} 30% credit (~{{estSavings}} on $5k heat pump). Annual cap $3,200 combined ($1,200 + $2,000 heat pump). NO carryforward — replenishes each year.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.40",
+      "name": "§1244 Ordinary Loss on Small Business Stock",
+      "category": "investment",
+      "ircSection": "IRC §1244",
+      "irsPub": "Pub 550; Form 4797 Part I",
+      "trigger": "Capital loss carryforward (ST + LT) > $25,000 AND no §1244 marker AND total income > $100,000 (loss has material recovery value).",
+      "formula": "§1244 lets up to $50,000 single / $100,000 MFJ of loss on qualifying small business stock be ORDINARY (deductible without the $3k cap) instead of capital (limited to $3k/yr against ordinary). Spread: ordinary marginal rate (24-37%) − LTCG rate (0-20%) = up to 17 percentage points of recovery. Heuristic estSavings = $50k × 0.17 = $8,500 (single).",
+      "confidence": 0.45,
+      "cpaEffortHours": 3.0,
+      "recurring": false,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Stock must be DOMESTIC C-CORP (not S-corp, not LLC, not partnership)",
+        "At time of issuance: corporation must have raised ≤ $1,000,000 in equity (small business plan-of-financing requirement)",
+        "Stock issued for MONEY or PROPERTY (not services)",
+        "Original-issuance: client must be the ORIGINAL holder (not secondary purchaser)",
+        "Corp's gross receipts > 50% from active trade/business in 5 yrs preceding loss (NOT investment income, holding cos, etc.)",
+        "Loss must be from sale, exchange, or worthlessness (Form 4797 Part I, NOT Sch D)",
+        "Annual ordinary-loss cap: $50k single / MFS, $100k MFJ. Excess flows to capital loss."
+      ],
+      "action": "If client has worthless or sold-at-loss stock from a failed small business C-corp, verify §1244 qualifying-stock criteria. Up to {{ordinaryCap}} of the loss converts from capital (capped at $3k/yr) to ordinary (full deduction). Estimated recovery ~{{estSavings}}.",
       "formulaRev": 1
     },
     {
