@@ -21,6 +21,7 @@
 import {
   CATALOG_V1,
   type OpportunityHit,
+  type OpportunityMultiYear,
   type OpportunityWhatIf,
   type PlanningStrategy,
   type WhatIfMutation,
@@ -39,6 +40,11 @@ import {
   getFederalStandardDeduction,
 } from "./taxCalculator";
 import { runWhatIfScenarios } from "./whatIfEngine";
+import {
+  compareMultiYearTrajectories,
+  DEFAULT_INCOME_GROWTH,
+  runMultiYearTrajectory,
+} from "./multiYearEngine";
 
 /**
  * H2 + H12 — Run the detector's mutation through the pure engine and
@@ -118,6 +124,76 @@ function runDetectorWhatIf(args: {
     delta: results[1].delta,
     semantics,
     sensitivity,
+  };
+}
+
+/**
+ * H3 — Run a multi-year scenario for a detector. Used by strategies whose
+ * value spans multiple years (G1.3 bunching, G1.4 Roth long-term, G1.8 DAF).
+ *
+ * Runs TWO trajectories of the same horizon:
+ *   - Baseline: caller-supplied per-year mutations (often all undefined for
+ *     strategies where the baseline is "do nothing"; for Roth long-term the
+ *     baseline includes a year-N projected RMD).
+ *   - Scenario: caller-supplied per-year strategy mutations.
+ *
+ * Returns the OpportunityMultiYear with per-year fed+state burden for both
+ * trajectories + totalSavings (positive = scenario saves over the window).
+ *
+ * Returns undefined when `baselineInputs` is missing (planning-hit-list and
+ * similar callers opt out of H3 by not passing baselineInputs).
+ *
+ * Cost: 2 × horizonYears engine runs. Caller decides whether the detector
+ * is worth that overhead (we only wire it where the multi-year delta adds
+ * real signal — currently G1.3 / G1.4 / G1.8).
+ */
+function runDetectorMultiYear(args: {
+  baselineInputs: TaxReturnInputs | undefined;
+  horizonYears: number;
+  baselineMutationsByYear?: ReadonlyArray<readonly WhatIfMutation[] | undefined>;
+  scenarioMutationsByYear: ReadonlyArray<readonly WhatIfMutation[] | undefined>;
+  growthFactor?: number;
+  multiYearAssumptions: string[];
+}): OpportunityMultiYear | undefined {
+  const {
+    baselineInputs,
+    horizonYears,
+    baselineMutationsByYear,
+    scenarioMutationsByYear,
+    growthFactor,
+    multiYearAssumptions,
+  } = args;
+  if (!baselineInputs) return undefined;
+  if (horizonYears < 1) return undefined;
+
+  const growth = growthFactor ?? DEFAULT_INCOME_GROWTH;
+  const baselineProj = runMultiYearTrajectory(baselineInputs, horizonYears, {
+    incomeGrowth: growth,
+    mutationsByYear: baselineMutationsByYear,
+  });
+  const scenarioProj = runMultiYearTrajectory(baselineInputs, horizonYears, {
+    incomeGrowth: growth,
+    mutationsByYear: scenarioMutationsByYear,
+  });
+  const delta = compareMultiYearTrajectories(baselineProj, scenarioProj);
+
+  const baselineYearTax = baselineProj.yearReturns.map((r) =>
+    Math.round(r.federalTaxLiability + r.stateTaxLiability),
+  );
+  const scenarioYearTax = scenarioProj.yearReturns.map((r) =>
+    Math.round(r.federalTaxLiability + r.stateTaxLiability),
+  );
+  const yearByYearDelta = delta.yearByYearCombined.map((v) => Math.round(v));
+  const totalSavings = -Math.round(delta.totalCombinedDelta);
+
+  return {
+    horizonYears,
+    baselineYearTax,
+    scenarioYearTax,
+    yearByYearDelta,
+    totalSavings,
+    growthAssumption: growth,
+    multiYearAssumptions,
   };
 }
 
@@ -477,8 +553,9 @@ function detectForeignTaxCreditGap(args: {
 function detectBunching(args: {
   computed: ComputedTaxReturn;
   adjustments: AdjustmentFact[];
+  baselineInputs?: TaxReturnInputs;
 }): OpportunityHit | null {
-  const { computed, adjustments } = args;
+  const { computed, adjustments, baselineInputs } = args;
   const charitableCash = sumAdjustment(adjustments, "charitable_cash");
   if (charitableCash <= 0) return null;
 
@@ -498,8 +575,49 @@ function detectBunching(args: {
   // benefit of an alternating-year itemize/standard pattern: you "recover"
   // half the std ded one year (worth marginalRate of that half), averaged
   // over the 2-year cycle (×0.5).
-  const estSavings = stdDed * 0.25 * fedRate;
-  if (estSavings <= 0) return null;
+  const heuristicEstSavings = stdDed * 0.25 * fedRate;
+  if (heuristicEstSavings <= 0) return null;
+
+  // H3 — Multi-year 2-year alternating cycle.
+  // Baseline: each year donates currentCharitableCash (engine projects
+  // unchanged; income scales 3%/yr).
+  // Scenario: year 0 doubles charitable_cash (bunch); year 1 zeros it out.
+  // Same total giving over the cycle; only timing differs. The
+  // `totalSavings` is the engine-verified multi-year delta.
+  const multiYear = runDetectorMultiYear({
+    baselineInputs,
+    horizonYears: 2,
+    scenarioMutationsByYear: [
+      [
+        {
+          kind: "set_adjustment",
+          adjustmentType: "charitable_cash",
+          amount: Math.round(charitableCash * 2),
+        },
+      ],
+      [
+        {
+          kind: "set_adjustment",
+          adjustmentType: "charitable_cash",
+          amount: 0,
+        },
+      ],
+    ],
+    multiYearAssumptions: [
+      `2-year alternating cycle: year 0 doubles charitable_cash to ${Math.round(charitableCash * 2).toLocaleString("en-US")} (push above std-ded), year 1 zeros it out (take std-ded).`,
+      `SAME total giving across the cycle — only timing changes.`,
+      `Income scaled at 3%/year compound projection.`,
+      `Engine clamps unknown future years to TY2025 brackets — comparison delta is meaningful even though absolute year-2+ numbers don't reflect future bracket inflation.`,
+    ],
+  });
+
+  // Prefer engine-verified multi-year savings when available; fall back to
+  // the heuristic. Divide by horizonYears for annualized estSavings (CPAs
+  // think in $/year, not $/cycle).
+  const annualMultiYearSavings = multiYear && multiYear.totalSavings > 0
+    ? multiYear.totalSavings / multiYear.horizonYears
+    : null;
+  const estSavings = annualMultiYearSavings ?? heuristicEstSavings;
 
   const strategy = strategyById("G1.3");
   const fmt = (n: number) =>
@@ -525,13 +643,17 @@ function detectBunching(args: {
       standardDeduction: stdDed,
       charitableCash: Math.round(charitableCash),
       federalMarginalRate: fedRate,
+      heuristicEstSavings: Math.round(heuristicEstSavings),
+      annualMultiYearSavings: annualMultiYearSavings != null ? Math.round(annualMultiYearSavings) : null,
     },
     assumptions: [
-      `Bunching is a MULTI-YEAR strategy (alternate itemize / standard each year) — single-year H2 mutation can't capture the multi-year cycle.`,
-      `Heuristic estSavings = stdDed × 0.25 × marginal rate, approximating the average annual benefit of the alternating cycle.`,
+      `Bunching is a MULTI-YEAR strategy (alternate itemize / standard each year).`,
       `Fires within ±15% of std-ded threshold where bunching has the highest leverage.`,
-      `H2 verification deferred — needs H3 multi-year scenario modeling (Phase H roadmap).`,
+      annualMultiYearSavings != null
+        ? `Engine-verified via H3 multi-year primitive (2-year cycle). Heuristic was ${fmt(Math.round(heuristicEstSavings))}/year.`
+        : `Heuristic estSavings = stdDed × 0.25 × marginal rate (no H3 multi-year baseline available — pass baselineInputs to enable engine verification).`,
     ],
+    multiYear,
   };
 }
 
@@ -543,8 +665,9 @@ const G1_8_MIN_MARGINAL_RATE = 0.32;
 function detectCharitableDaf(args: {
   computed: ComputedTaxReturn;
   adjustments: AdjustmentFact[];
+  baselineInputs?: TaxReturnInputs;
 }): OpportunityHit | null {
-  const { computed, adjustments } = args;
+  const { computed, adjustments, baselineInputs } = args;
   const charitableCash = sumAdjustment(adjustments, "charitable_cash");
   if (charitableCash <= G1_8_MIN_CHARITABLE) return null;
 
@@ -555,8 +678,54 @@ function detectCharitableDaf(args: {
   // The 2× reflects bunching 2-3 years into one; the 0.2 reflects the
   // fraction recoverable above the standard-deduction floor in the bunch
   // year (empirical from the AICPA tax-planning playbook).
-  const estSavings = charitableCash * 2 * fedRate * 0.2;
-  if (estSavings <= 0) return null;
+  const heuristicEstSavings = charitableCash * 2 * fedRate * 0.2;
+  if (heuristicEstSavings <= 0) return null;
+
+  // H3 — Multi-year 3-year DAF front-loading.
+  // Baseline: each year donates currentCharitableCash.
+  // Scenario: year 0 contributes 3× current to DAF; years 1-2 grant FROM
+  // the DAF (no new charitable_cash). Same total giving; concentrated for
+  // the bunch year so itemized clears the std-ded cliff.
+  const multiYear = runDetectorMultiYear({
+    baselineInputs,
+    horizonYears: 3,
+    scenarioMutationsByYear: [
+      [
+        {
+          kind: "set_adjustment",
+          adjustmentType: "charitable_cash",
+          amount: Math.round(charitableCash * 3),
+        },
+      ],
+      [
+        {
+          kind: "set_adjustment",
+          adjustmentType: "charitable_cash",
+          amount: 0,
+        },
+      ],
+      [
+        {
+          kind: "set_adjustment",
+          adjustmentType: "charitable_cash",
+          amount: 0,
+        },
+      ],
+    ],
+    multiYearAssumptions: [
+      `3-year DAF front-loading: year 0 contributes ${Math.round(charitableCash * 3).toLocaleString("en-US")} (3 years' worth) to the DAF; years 1 and 2 grant FROM the DAF balance (no new TaxFlow charitable_cash).`,
+      `Same total giving across the 3-year cycle — concentration shifts the year-0 deduction above std-ded.`,
+      `Income scaled at 3%/year compound for projection years.`,
+      `60% AGI cap on cash gifts NOT modeled — large concentrated gifts can exceed the cap (excess carries forward 5 years per §170(d)(1)).`,
+    ],
+  });
+
+  // Prefer engine-verified multi-year savings (annualized over the cycle)
+  // when available; fall back to heuristic.
+  const annualMultiYearSavings = multiYear && multiYear.totalSavings > 0
+    ? multiYear.totalSavings / multiYear.horizonYears
+    : null;
+  const estSavings = annualMultiYearSavings ?? heuristicEstSavings;
 
   const strategy = strategyById("G1.8");
   const fmt = (n: number) =>
@@ -579,13 +748,17 @@ function detectCharitableDaf(args: {
     inputs: {
       charitableCash: Math.round(charitableCash),
       federalMarginalRate: fedRate,
+      heuristicEstSavings: Math.round(heuristicEstSavings),
+      annualMultiYearSavings: annualMultiYearSavings != null ? Math.round(annualMultiYearSavings) : null,
     },
     assumptions: [
       `Donor-Advised Fund bunching is a MULTI-YEAR strategy (front-load 2-3 years of giving into one tax year, take std-ded in the off years).`,
-      `Heuristic estSavings = charitable × 2 × marginal rate × 0.2 — the 2× reflects bunching cycle, 0.2 the recovery above std-ded floor in the bunch year (AICPA playbook).`,
       `Fires at $5k+ charitable AND 32%+ marginal rate — the threshold where DAF logistics + tax benefit exceed implementation friction.`,
-      `H2 verification deferred — needs H3 multi-year scenario modeling.`,
+      annualMultiYearSavings != null
+        ? `Engine-verified via H3 multi-year primitive (3-year cycle). Heuristic was ${fmt(Math.round(heuristicEstSavings))}/year.`
+        : `Heuristic estSavings = charitable × 2 × marginal rate × 0.2 (no baselineInputs for H3 multi-year verification).`,
     ],
+    multiYear,
   };
 }
 
@@ -649,6 +822,50 @@ function detectRothConversion(args: {
     varyAmount: true,
   });
 
+  // H3 — 5-year horizon. Baseline = "leave it in trad IRA, distribute in 5
+  // years": year-4 (5 years inclusive of year 0) adds additional_income of
+  // (conversion × growth^4) representing the projected required distribution.
+  // Scenario = "convert now": year-0 adds additional_income of conversion;
+  // years 1-4 unchanged (Roth distributions are tax-free).
+  //
+  // The trad-IRA growth rate (default 7%, S&P 500 long-term proxy) is
+  // DECOUPLED from the income-scaling rate (default 3%) — the IRA grows
+  // tax-deferred at market returns, not at wage growth.
+  const TRAD_IRA_GROWTH = 1.07;
+  const HORIZON = 5;
+  const projectedDistribution = Math.round(conversion * Math.pow(TRAD_IRA_GROWTH, HORIZON - 1));
+  // For an N-year array, index N-1 is the last year. Use undefined for
+  // years 0..N-2 so they pass through unchanged.
+  const baselineMuts: (readonly WhatIfMutation[] | undefined)[] = new Array(HORIZON).fill(undefined);
+  baselineMuts[HORIZON - 1] = [
+    {
+      kind: "add_adjustment",
+      adjustmentType: "additional_income",
+      amount: projectedDistribution,
+    },
+  ];
+  const scenarioMuts: (readonly WhatIfMutation[] | undefined)[] = new Array(HORIZON).fill(undefined);
+  scenarioMuts[0] = [
+    {
+      kind: "add_adjustment",
+      adjustmentType: "additional_income",
+      amount: Math.round(conversion),
+    },
+  ];
+  const multiYear = runDetectorMultiYear({
+    baselineInputs,
+    horizonYears: HORIZON,
+    baselineMutationsByYear: baselineMuts,
+    scenarioMutationsByYear: scenarioMuts,
+    multiYearAssumptions: [
+      `5-year horizon comparing "convert ${Math.round(conversion).toLocaleString("en-US")} now" vs. "leave in trad IRA, distribute ${projectedDistribution.toLocaleString("en-US")} in year 4".`,
+      `Trad-IRA balance grows at ${((TRAD_IRA_GROWTH - 1) * 100).toFixed(0)}%/year tax-deferred (S&P 500 long-term proxy) — decoupled from wage growth (3%/year used for income projection).`,
+      `Year-4 distribution is a SIMPLIFIED PROXY for actual lifetime RMDs which spread across many years (SECURE 2.0 starts RMDs at age 73).`,
+      `Engine clamps unknown future years to TY2025 brackets — the actual bracket arbitrage may differ if future statutes change rates.`,
+      `Ignores any state-residency change between year 0 and year 4 — assumes client stays in the same state.`,
+    ],
+  });
+
   const strategy = strategyById("G1.4");
   const fmt = (n: number) =>
     n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
@@ -682,13 +899,14 @@ function detectRothConversion(args: {
     },
     assumptions: [
       `Conversion amount = headroom to top of current marginal bracket (locks in current rate).`,
-      `Future marginal rate assumed at ${(G1_4_EXPECTED_FUTURE_RATE * 100).toFixed(0)}% (Phase G plan baseline — CPA judgment call to refine).`,
-      `H2 delta represents the CURRENT-YEAR TAX COST of the conversion. Long-term net benefit (heuristic estSavings) = conversion × (futureRate − currentRate).`,
+      `Future marginal rate assumed at ${(G1_4_EXPECTED_FUTURE_RATE * 100).toFixed(0)}% for the heuristic estSavings (Phase G plan baseline).`,
+      `H2 delta represents the CURRENT-YEAR TAX COST of the conversion. Long-term net benefit captured by H3 multi-year scenario (see multiYear field).`,
       `Engine modeled as added "additional_income" — same arithmetic effect as 1099-R taxable distribution from traditional IRA.`,
-      `Pro-rata rule for after-tax basis (§408(d)(2)) NOT modeled — assumes 100% pre-tax IRA balance (requires Form 8606 — H6).`,
+      `Pro-rata rule for after-tax basis (§408(d)(2)) NOT modeled — H6 Form 8606 handles that for clients with after-tax IRA basis.`,
       `Sensitivity range computed at ±10% of the conversion amount.`,
     ],
     whatIf,
+    multiYear,
   };
 }
 
@@ -1946,9 +2164,9 @@ export function evaluatePlanningOpportunities(args: PlanningInputs): Opportunity
   if (ptet) hits.push(ptet);
   const ftc = detectForeignTaxCreditGap({ computed, adjustments, baselineInputs });
   if (ftc) hits.push(ftc);
-  const bunching = detectBunching({ computed, adjustments });
+  const bunching = detectBunching({ computed, adjustments, baselineInputs });
   if (bunching) hits.push(bunching);
-  const daf = detectCharitableDaf({ computed, adjustments });
+  const daf = detectCharitableDaf({ computed, adjustments, baselineInputs });
   if (daf) hits.push(daf);
   const roth = detectRothConversion({ client, computed, baselineInputs });
   if (roth) hits.push(roth);

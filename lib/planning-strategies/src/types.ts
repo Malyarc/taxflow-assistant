@@ -172,6 +172,46 @@ export interface OpportunityWhatIf {
 }
 
 /**
+ * H3 — Multi-year scenario projection attached to an OpportunityHit by
+ * detectors whose value only materializes across multiple years
+ * (G1.3 bunching, G1.8 DAF, G1.4 Roth conversion long-term). The frontend
+ * renders this as a per-year burden trajectory + headline `totalSavings`.
+ *
+ * Sign convention: `totalSavings` is POSITIVE when the scenario reduces
+ * combined (fed + state) tax over the projection window. This is the
+ * opposite of `OpportunityWhatIf.delta.combinedTaxDelta` (where negative
+ * = savings), because the multi-year card always presents a "savings"
+ * number to the CPA and dual-sign semantics are confusing in a per-year
+ * table.
+ */
+export interface OpportunityMultiYear {
+  /** Horizon (inclusive of year 0). Typical: 2 (bunching), 3 (DAF), 5 (Roth). */
+  horizonYears: number;
+  /** Combined (fed + state) tax per year for the baseline trajectory. */
+  baselineYearTax: number[];
+  /** Combined (fed + state) tax per year for the scenario trajectory. */
+  scenarioYearTax: number[];
+  /** Per-year scenario−baseline delta. Negative = scenario saves that year. */
+  yearByYearDelta: number[];
+  /**
+   * Multi-year savings = −sum(yearByYearDelta). POSITIVE = scenario saves
+   * tax over the window; NEGATIVE = costs more. The headline planning
+   * number for multi-year strategies.
+   */
+  totalSavings: number;
+  /** Income growth factor used (1.03 = 3%/year). */
+  growthAssumption: number;
+  /**
+   * Strategy-specific multi-year assumptions (distinct from the
+   * single-year `assumptions`). Examples:
+   *   - "Modeled as a 2-year alternating cycle (year 0 bunched, year 1 off)"
+   *   - "Year-5 projected RMD added to baseline at 7% growth"
+   *   - "Income scaled at 3%/year compound"
+   */
+  multiYearAssumptions: string[];
+}
+
+/**
  * One detected opportunity for a specific client. Produced by Layer 2
  * (deterministic detection engine). Consumed by Layer 3 (scoring),
  * Layer 4 (LLM memo), and the frontend Planning tab.
@@ -218,4 +258,11 @@ export interface OpportunityHit {
    * shape. Absent for detectors with no clean mutation.
    */
   whatIf?: OpportunityWhatIf;
+  /**
+   * H3 — Multi-year projection for strategies whose value only
+   * materializes across multiple years (bunching, DAF front-loading,
+   * Roth conversion long-term). Present on G1.3 / G1.8 / G1.4 when
+   * baselineInputs are provided to the planning engine.
+   */
+  multiYear?: OpportunityMultiYear;
 }

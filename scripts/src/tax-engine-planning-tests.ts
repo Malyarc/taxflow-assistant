@@ -1577,6 +1577,264 @@ header("G2 planningScore composite");
 }
 
 // ============================================================================
+// H3 — Multi-year detector wiring (G1.3 bunching, G1.4 Roth, G1.8 DAF)
+// ============================================================================
+//
+// These tests verify the multi-year scenario primitive is wired into the
+// detectors when baselineInputs are supplied. When no baselineInputs are
+// supplied (most existing tests above), the heuristic estSavings stays.
+//
+// Helper: `runPlanningH3` runs the engine WITH baselineInputs so multi-year
+// activates. Otherwise identical to `runPlanning`.
+
+function runPlanningH3(
+  inputs: Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] },
+): OpportunityHit[] {
+  const fullInputs: TaxReturnInputs = {
+    w2s: [], form1099s: [], adjustments: [],
+    taxYear: inputs.client.taxYear ?? 2024,
+    ...inputs,
+  } as TaxReturnInputs;
+  const computed = computeTaxReturnPure(fullInputs);
+  return evaluatePlanningOpportunities({
+    client: fullInputs.client,
+    computed,
+    adjustments: fullInputs.adjustments ?? [],
+    baselineInputs: fullInputs,
+  });
+}
+
+section("H3 multi-year wiring");
+
+// ── G1.3 bunching multi-year wiring ──────────────────────────────────────
+//
+// Setup: single FL $90k W-2, TY2024, age 45.
+// Adjustments: state_income $5k + property $2k + mortgage $3k + charity $4k.
+// Sch A: SALT $7k + mortgage $3k + charity $4k = $14,000.
+// Std ded TY2024 single = $14,600 → engine picks std ded.
+// Marginal = 22% (taxable $75,400 in $47,150-$100,525 bracket).
+//
+// H3 scenario:
+//   Year 0 (TY2024): set charitable_cash to $8,000 (2x).
+//     New Sch A: $7k SALT + $3k mtg + $8k charity = $18,000 itemized.
+//     Pick itemized. Taxable = $90,000 - $18,000 = $72,000.
+//     Tax: 10% × 11,600 + 12% × (47,150 − 11,600) + 22% × (72,000 − 47,150)
+//        = 1,160 + 4,266 + 5,467 = $10,893
+//   Year 1 (TY2025, clamped brackets): set charitable_cash to 0.
+//     Scaled income: $90k × 1.03 = $92,700.
+//     Scaled SALT: $5,150 + $2,060 = $7,210 (capped — well under $10k).
+//     Scaled mtg: $3,090. Sch A: $10,300. Std ded TY2025 single = $15,000.
+//     Std ded > itemized → use $15k.
+//     Taxable = $92,700 − $15,000 = $77,700.
+//     Tax: 10% × 11,925 + 12% × (48,475 − 11,925) + 22% × (77,700 − 48,475)
+//        = 1,192.50 + 4,386 + 6,429.50 = $12,008
+//
+// Baseline:
+//   Year 0: charity $4k, Sch A $14k < std $14.6k → use std. Taxable $75,400.
+//     Tax: 1,160 + 4,266 + 22% × (75,400 − 47,150)
+//        = 1,160 + 4,266 + 6,215 = $11,641
+//   Year 1: scaled charity $4,120. Scaled SALT $7,210. Scaled mtg $3,090.
+//     Sch A: $14,420. Std ded $15,000 > itemized → use std.
+//     Taxable = $92,700 − $15,000 = $77,700.
+//     Tax: $12,008 (same as scenario year 1).
+//
+// Scenario federal tax total = $10,893 + $12,008 = $22,901.
+// Baseline federal tax total = $11,641 + $12,008 = $23,649.
+// totalCombinedDelta = $22,901 − $23,649 = −$748. totalSavings = +$748.
+// Annualized = $748 / 2 = $374. State = FL = 0. ✓
+//
+// estSavings: with H3 wiring, becomes $374 (multi-year annualized).
+// Heuristic would be $14,600 × 0.25 × 0.22 = $803.
+header("H3.G1.3+1 — bunching wired, 2-year cycle, totalSavings ≈ $748");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 90000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [
+      { adjustmentType: "state_income_tax", amount: 5000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+      { adjustmentType: "state_property_tax", amount: 2000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+      { adjustmentType: "mortgage_interest", amount: 3000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+      { adjustmentType: "charitable_cash", amount: 4000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  const hit = findHit(hits, "G1.3");
+  checkTruthy("H3.G1.3+1", "G1.3 fires with baselineInputs", hit != null, true);
+  if (hit) {
+    checkTruthy("H3.G1.3+1", "multiYear present", hit.multiYear != null, true);
+    if (hit.multiYear) {
+      check("H3.G1.3+1", "horizonYears = 2", hit.multiYear.horizonYears, 2);
+      check("H3.G1.3+1", "baselineYearTax length = 2", hit.multiYear.baselineYearTax.length, 2);
+      check("H3.G1.3+1", "scenarioYearTax length = 2", hit.multiYear.scenarioYearTax.length, 2);
+      // Engine-verified totalSavings ≈ $748 (allow ±$100 for rounding +
+      // engine subtleties like rate-bracket fence-posts).
+      check("H3.G1.3+1", "totalSavings ≈ $748 (engine-verified)",
+        hit.multiYear.totalSavings, 748, 100,
+        "year-0 scenario picks itemized $18k vs baseline std $14.6k = $3.4k extra deduction × 22% ≈ $748");
+      // Annualized = 748/2 = $374. estSavings should match this.
+      check("H3.G1.3+1", "estSavings = annualized multi-year ≈ $374",
+        hit.estSavings, 374, 50);
+    }
+  }
+}
+
+// ── G1.3 bunching WITHOUT baselineInputs → falls back to heuristic ─────────
+// Same setup as H3.G1.3+1 but using runPlanning (no baselineInputs). The
+// multi-year should be undefined and estSavings should use the heuristic.
+header("H3.G1.3-2 — no baselineInputs → multiYear undefined, estSavings = heuristic $803");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 90000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [
+      { adjustmentType: "state_income_tax", amount: 5000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+      { adjustmentType: "state_property_tax", amount: 2000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+      { adjustmentType: "mortgage_interest", amount: 3000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+      { adjustmentType: "charitable_cash", amount: 4000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  const hit = findHit(hits, "G1.3");
+  checkTruthy("H3.G1.3-2", "G1.3 fires (no baselineInputs)", hit != null, true);
+  if (hit) {
+    checkTruthy("H3.G1.3-2", "multiYear absent without baselineInputs",
+      hit.multiYear == null, true);
+    check("H3.G1.3-2", "estSavings = heuristic $803", hit.estSavings, 803, 2);
+  }
+}
+
+// ── G1.8 DAF multi-year wiring (3-year front-loading) ────────────────────
+//
+// Setup: single CA $400k W-2, TY2024, age 45. State income tax $30k (CA
+// has high state tax — keeps SALT cap binding). Charitable $20k cash.
+// CA marginal at $400k taxable ≈ 9.3% bracket.
+//
+// Federal: marginal rate at ~$385k taxable income = 32% bracket (TY2024
+// single: $191,950-$243,725 = 32%; $243,725-$609,350 = 35%). So marginal
+// is in 32-35% range — satisfies G1.8's >= 32% threshold.
+//
+// I'm not hand-calc'ing the exact multi-year delta here (too many
+// CA-specific moving parts). Instead I verify:
+//   - hit fires when charitable > $5k AND marginal >= 32%
+//   - multiYear present with horizonYears = 3
+//   - totalSavings > 0 (front-loading 3 years' giving into year 0 should
+//     push above std-ded cliff in that year)
+//   - estSavings = totalSavings / 3
+header("H3.G1.8+1 — DAF wired, 3-year cycle, totalSavings > 0");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "CA", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 400000, stateCode: "CA" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [
+      { adjustmentType: "state_income_tax", amount: 30000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+      { adjustmentType: "charitable_cash", amount: 20000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  const hit = findHit(hits, "G1.8");
+  checkTruthy("H3.G1.8+1", "G1.8 fires (charitable $20k > $5k, marginal >= 32%)",
+    hit != null, true);
+  if (hit) {
+    checkTruthy("H3.G1.8+1", "multiYear present", hit.multiYear != null, true);
+    if (hit.multiYear) {
+      check("H3.G1.8+1", "horizonYears = 3", hit.multiYear.horizonYears, 3);
+      check("H3.G1.8+1", "baselineYearTax length = 3",
+        hit.multiYear.baselineYearTax.length, 3);
+      // Tax should be strictly positive in each year.
+      for (let y = 0; y < 3; y++) {
+        checkTruthy(`H3.G1.8+1`,
+          `baselineYearTax[${y}] > 0`,
+          hit.multiYear.baselineYearTax[y] > 0, true);
+      }
+      // The DAF scenario front-loads year 0 (3x charitable) and zeros
+      // out years 1 and 2. Year 0 itemized clears the std-ded cliff
+      // more decisively; years 1-2 take std-ded. Expect totalSavings > 0.
+      // For a high-bracket CA filer, multi-year savings should be
+      // meaningful (likely > $500 over the 3-year window).
+      checkTruthy("H3.G1.8+1", "totalSavings > 0", hit.multiYear.totalSavings > 0, true);
+      checkTruthy("H3.G1.8+1", "totalSavings is meaningful (> $500)",
+        hit.multiYear.totalSavings > 500, true);
+    }
+  }
+}
+
+// ── G1.4 Roth multi-year wiring (5-year horizon with year-4 distribution) ─
+//
+// Setup: single FL $50k W-2, TY2024, age 45. Lowish-bracket filer → G1.4
+// fires when marginal < 24%. At $50k W-2:
+//   AGI = $50k. Taxable = $50k − $14,600 std ded = $35,400.
+//   Single 2024: 22% bracket starts at $47,150. So marginal is 12%.
+// 12% < 24% → G1.4 fires. Headroom to top of 12% bracket = $47,150 − $35,400
+// = $11,750 → that's the conversion amount.
+//
+// H3 5-year: baseline year 4 adds additional_income = $11,750 × 1.07^4 =
+// $11,750 × 1.3108 = $15,402 (projected RMD). Scenario year 0 adds
+// $11,750 (conversion now).
+//
+// Sign check: at year-0 the scenario pays MORE tax (the conversion is
+// added income). At year-4 the baseline pays MORE tax (the RMD is added
+// income). Whether totalSavings is positive depends on whether the year-4
+// distribution at year-4's bracket exceeds the year-0 conversion at
+// year-0's bracket.
+//
+// Year 0 scenario extra tax: $11,750 × 12% = $1,410 (fills into 12%
+// bracket since conversion just hits top of 12%).
+//   Actually wait — the conversion fills $11,750 from $35,400 to $47,150
+//   which is exactly the top of 12% bracket. So all of $11,750 × 12% = $1,410.
+//
+// Year 4 baseline: scaled wages $50k × 1.03^4 = $56,275. Taxable (after
+// $15k 2025 std ded) = $41,275. Add $15,402 distribution. New taxable
+// = $56,677. TY2025 12% bracket goes up to $48,475. So $48,475 - $41,275
+// = $7,200 fills 12% bracket. Remaining $15,402 - $7,200 = $8,202 goes
+// into 22% bracket. Tax delta: $7,200 × 12% + $8,202 × 22% = $864 + $1,804
+// = $2,668.
+//
+// totalCombinedDelta = scenario - baseline. Only year 0 (scenario) and
+// year 4 (baseline) have non-zero deltas.
+//   Year 0: scenario extra = $1,410. baseline = 0. Delta = +$1,410.
+//   Year 4: scenario = 0. baseline extra = $2,668. Delta = -$2,668.
+//   Total = $1,410 - $2,668 = -$1,258. multiYear.totalSavings = +$1,258.
+header("H3.G1.4+1 — Roth wired, 5-year horizon, totalSavings ≈ +$1,258");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 45 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  const hit = findHit(hits, "G1.4");
+  checkTruthy("H3.G1.4+1", "G1.4 fires (marginal < 24%)", hit != null, true);
+  if (hit) {
+    checkTruthy("H3.G1.4+1", "multiYear present", hit.multiYear != null, true);
+    if (hit.multiYear) {
+      check("H3.G1.4+1", "horizonYears = 5", hit.multiYear.horizonYears, 5);
+      check("H3.G1.4+1", "baselineYearTax length = 5",
+        hit.multiYear.baselineYearTax.length, 5);
+      // Year 4 baseline tax should exceed year 4 scenario tax because of
+      // the modeled trad-IRA distribution.
+      checkTruthy("H3.G1.4+1", "year-4 baseline tax > year-4 scenario tax",
+        hit.multiYear.baselineYearTax[4] > hit.multiYear.scenarioYearTax[4], true);
+      // Year 0 scenario tax should exceed year 0 baseline tax (conversion cost).
+      checkTruthy("H3.G1.4+1", "year-0 scenario tax > year-0 baseline tax (conversion cost)",
+        hit.multiYear.scenarioYearTax[0] > hit.multiYear.baselineYearTax[0], true);
+      // totalSavings ≈ +$1,258. Allow ±$300 for bracket fence-post + state.
+      check("H3.G1.4+1", "totalSavings ≈ +$1,258 (engine-verified bracket arbitrage)",
+        hit.multiYear.totalSavings, 1258, 300);
+    }
+  }
+}
+
+// ── G1.4 Roth WITHOUT baselineInputs → multiYear undefined ─────────────────
+header("H3.G1.4-2 — no baselineInputs → multiYear undefined, estSavings = heuristic");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 45 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  const hit = findHit(hits, "G1.4");
+  checkTruthy("H3.G1.4-2", "G1.4 fires (no baselineInputs)", hit != null, true);
+  if (hit) {
+    checkTruthy("H3.G1.4-2", "multiYear absent",
+      hit.multiYear == null, true);
+  }
+}
+
+// ============================================================================
 // RESULTS
 // ============================================================================
 

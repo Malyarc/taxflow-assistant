@@ -1971,6 +1971,24 @@ export interface OpportunityWhatIf {
   sensitivity?: WhatIfSensitivity;
 }
 
+export interface OpportunityMultiYear {
+  /** Years projected (inclusive of year 0). */
+  horizonYears: number;
+  /** Per-year combined (fed + state) tax for the baseline trajectory. */
+  baselineYearTax: number[];
+  /** Per-year combined (fed + state) tax for the scenario trajectory. */
+  scenarioYearTax: number[];
+  /** Per-year scenario−baseline delta (negative = scenario saves that year). */
+  yearByYearDelta: number[];
+  /** Multi-year savings = −sum(yearByYearDelta). POSITIVE = scenario saves tax over the window; NEGATIVE = costs more.
+   */
+  totalSavings: number;
+  /** Annual income growth factor used in the projection (1.03 = 3%/year). */
+  growthAssumption: number;
+  /** Strategy-specific assumptions (distinct from single-year `assumptions`). */
+  multiYearAssumptions: string[];
+}
+
 export interface OpportunityHit {
   strategyId: string;
   name: string;
@@ -1990,6 +2008,9 @@ export interface OpportunityHit {
   /** Phase H — H2 + H12. Engine-verified what-if data when the detector has a clean single-year mutation. Includes the exact mutations the engine ran, the resulting per-field delta, sign semantics, and an optional ±10% sensitivity range. Absent for detectors with no clean single-year mutation (G1.3 bunching, G1.8 DAF — multi-year; G1.7 §199A wage limit — engine doesn't model the limit yet).
    */
   whatIf?: OpportunityWhatIf;
+  /** Phase H — H3. Multi-year projection for strategies whose value materializes across years (G1.3 bunching, G1.8 DAF front-loading, G1.4 Roth conversion long-term). Includes a per-year burden trajectory for both baseline + scenario and a headline `totalSavings`.
+   */
+  multiYear?: OpportunityMultiYear;
 }
 
 export interface CrossStrategySummary {

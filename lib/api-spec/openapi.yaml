@@ -3170,6 +3170,51 @@ components:
             — engine doesn't model the limit yet).
           allOf:
             - $ref: "#/components/schemas/OpportunityWhatIf"
+        multiYear:
+          description: >
+            Phase H — H3. Multi-year projection for strategies whose
+            value materializes across years (G1.3 bunching, G1.8 DAF
+            front-loading, G1.4 Roth conversion long-term). Includes a
+            per-year burden trajectory for both baseline + scenario and
+            a headline `totalSavings`.
+          allOf:
+            - $ref: "#/components/schemas/OpportunityMultiYear"
+
+    OpportunityMultiYear:
+      type: object
+      required: [horizonYears, baselineYearTax, scenarioYearTax, yearByYearDelta, totalSavings, growthAssumption, multiYearAssumptions]
+      properties:
+        horizonYears:
+          description: Years projected (inclusive of year 0).
+          type: integer
+        baselineYearTax:
+          description: Per-year combined (fed + state) tax for the baseline trajectory.
+          type: array
+          items:
+            type: number
+        scenarioYearTax:
+          description: Per-year combined (fed + state) tax for the scenario trajectory.
+          type: array
+          items:
+            type: number
+        yearByYearDelta:
+          description: Per-year scenario−baseline delta (negative = scenario saves that year).
+          type: array
+          items:
+            type: number
+        totalSavings:
+          description: >
+            Multi-year savings = −sum(yearByYearDelta). POSITIVE = scenario
+            saves tax over the window; NEGATIVE = costs more.
+          type: number
+        growthAssumption:
+          description: Annual income growth factor used in the projection (1.03 = 3%/year).
+          type: number
+        multiYearAssumptions:
+          description: Strategy-specific assumptions (distinct from single-year `assumptions`).
+          type: array
+          items:
+            type: string
 
     OpportunityWhatIf:
       type: object

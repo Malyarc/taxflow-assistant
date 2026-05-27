@@ -4146,6 +4146,7 @@ function PlanningTab({ clientId }: { clientId: number }) {
                   <p className="text-muted-foreground">{hit.rationale}</p>
                   <p className="font-medium">{hit.action}</p>
                   <PlanningHitWhatIfPanel hit={hit} />
+                  <PlanningHitMultiYearPanel hit={hit} />
                   <PlanningHitAssumptions hit={hit} />
                   {Array.isArray(hit.prerequisiteData) && hit.prerequisiteData.length > 0 ? (
                     <div className="rounded border border-amber-200 bg-amber-50 p-3 text-xs">
@@ -4181,6 +4182,15 @@ type HitCardProps = {
       semantics?: "savings" | "cost" | string;
       sensitivity?: { low?: number | string; mid?: number | string; high?: number | string };
       mutations?: Array<{ kind: string; adjustmentType?: string; amount?: number | string; field?: string; value?: unknown }>;
+    };
+    multiYear?: {
+      horizonYears?: number | string;
+      baselineYearTax?: Array<number | string>;
+      scenarioYearTax?: Array<number | string>;
+      yearByYearDelta?: Array<number | string>;
+      totalSavings?: number | string;
+      growthAssumption?: number | string;
+      multiYearAssumptions?: string[] | null;
     };
     assumptions?: string[] | null;
   };
@@ -4290,6 +4300,81 @@ function PlanningHitWhatIfPanel({ hit }: HitCardProps) {
             </span>
           ))}
         </div>
+      ) : null}
+    </div>
+  );
+}
+
+// Phase H — H3 multi-year scenario panel
+function PlanningHitMultiYearPanel({ hit }: HitCardProps) {
+  if (!hit.multiYear) return null;
+  const my = hit.multiYear;
+  const horizon = Number(my.horizonYears ?? 0);
+  if (horizon < 1) return null;
+  const totalSavings = Number(my.totalSavings ?? 0);
+  const baselineTax = (my.baselineYearTax ?? []).map((v) => Number(v));
+  const scenarioTax = (my.scenarioYearTax ?? []).map((v) => Number(v));
+  const yearDelta = (my.yearByYearDelta ?? []).map((v) => Number(v));
+  const isPositive = totalSavings > 0;
+  const headerColor = isPositive ? "text-indigo-900" : "text-slate-800";
+  const sumLabel = isPositive
+    ? `Saves ${fmt(Math.abs(totalSavings))} over ${horizon} years`
+    : `Costs ${fmt(Math.abs(totalSavings))} over ${horizon} years`;
+  return (
+    <div className="rounded border border-indigo-200 bg-indigo-50/40 p-3 text-xs">
+      <div className={`mb-2 font-medium ${headerColor}`}>
+        Multi-year projection (H3) · {sumLabel}
+      </div>
+      <table className="w-full text-[11px] tabular-nums">
+        <thead className="text-indigo-700">
+          <tr>
+            <th className="text-left font-medium">Year</th>
+            <th className="text-right font-medium">Baseline tax</th>
+            <th className="text-right font-medium">Scenario tax</th>
+            <th className="text-right font-medium">Δ</th>
+          </tr>
+        </thead>
+        <tbody className="text-indigo-900">
+          {Array.from({ length: horizon }).map((_, y) => {
+            const b = baselineTax[y] ?? 0;
+            const s = scenarioTax[y] ?? 0;
+            const d = yearDelta[y] ?? 0;
+            return (
+              <tr key={y}>
+                <td className="py-0.5">Year {y}</td>
+                <td className="text-right">{fmt(b)}</td>
+                <td className="text-right">{fmt(s)}</td>
+                <td className={`text-right ${d < 0 ? "text-emerald-700" : d > 0 ? "text-amber-700" : ""}`}>
+                  {signedFmt(d)}
+                </td>
+              </tr>
+            );
+          })}
+          <tr className="border-t border-indigo-200">
+            <td className="pt-1 font-medium">Total</td>
+            <td className="pt-1 text-right font-medium">
+              {fmt(baselineTax.reduce((a, b) => a + b, 0))}
+            </td>
+            <td className="pt-1 text-right font-medium">
+              {fmt(scenarioTax.reduce((a, b) => a + b, 0))}
+            </td>
+            <td className="pt-1 text-right font-medium text-indigo-900">
+              {signedFmt(scenarioTax.reduce((a, b) => a + b, 0) - baselineTax.reduce((a, b) => a + b, 0))}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      {Array.isArray(my.multiYearAssumptions) && my.multiYearAssumptions.length > 0 ? (
+        <details className="mt-2">
+          <summary className="cursor-pointer text-[10px] font-medium text-indigo-700">
+            Multi-year assumptions ({my.multiYearAssumptions.length})
+          </summary>
+          <ul className="mt-1 list-disc pl-4 text-[10px] text-indigo-700 space-y-0.5">
+            {my.multiYearAssumptions.map((a, i) => (
+              <li key={i}>{a}</li>
+            ))}
+          </ul>
+        </details>
       ) : null}
     </div>
   );
