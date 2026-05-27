@@ -41,6 +41,7 @@
     "src/tax-engine-pro-tier-tests.ts",
     "src/tax-engine-phaseE-tests.ts",
     "src/tax-engine-cpa-scenarios-tests.ts",
+    "src/tax-engine-form4868-tests.ts",
     "src/seed-dummy-clients.ts"
   ]
 }

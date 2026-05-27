@@ -757,6 +757,145 @@ interface BreakdownResponse {
   };
 }
 
+// ─── C8 — Form 4868 (Extension) ───────────────────────────────────────────
+// Lives under the Tax Calculator tab. Live preview of Lines 4-7 via the
+// JSON endpoint; PDF download via the sibling /pdf endpoint.
+interface Form4868Preview {
+  taxYear: number;
+  estimatedTotalTax: number;
+  totalPayments: number;
+  balanceDue: number;
+  amountBeingPaid: number;
+  outOfCountry: boolean;
+  form1040NrNoWithholding: boolean;
+}
+
+function fmt4868(n: number): string {
+  if (!Number.isFinite(n)) return "—";
+  return n.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  });
+}
+
+function Form4868Card({ clientId, taxYear }: { clientId: number; taxYear: number }) {
+  const [amountBeingPaid, setAmountBeingPaid] = useState("");
+  const [estimatedTaxPaid, setEstimatedTaxPaid] = useState("");
+  const [outOfCountry, setOutOfCountry] = useState(false);
+  const [form1040Nr, setForm1040Nr] = useState(false);
+
+  function buildQuery(): string {
+    const p = new URLSearchParams({ taxYear: String(taxYear) });
+    if (amountBeingPaid !== "") p.set("amountBeingPaid", amountBeingPaid);
+    if (estimatedTaxPaid !== "") p.set("estimatedTaxAlreadyPaid", estimatedTaxPaid);
+    if (outOfCountry) p.set("outOfCountry", "true");
+    if (form1040Nr) p.set("form1040NrNoWithholding", "true");
+    return p.toString();
+  }
+
+  const previewQuery = useQuery<Form4868Preview>({
+    queryKey: ["form-4868", clientId, taxYear, amountBeingPaid, estimatedTaxPaid, outOfCountry, form1040Nr],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${clientId}/tax-return/form-4868?${buildQuery()}`);
+      if (!res.ok) throw new Error("Form 4868 preview failed");
+      return res.json();
+    },
+    retry: false,
+  });
+
+  function handleDownload() {
+    const link = document.createElement("a");
+    link.href = `/api/clients/${clientId}/tax-return/form-4868/pdf?${buildQuery()}`;
+    link.download = "";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  const data = previewQuery.data;
+
+  return (
+    <Card className="print:hidden">
+      <CardHeader>
+        <CardTitle className="text-base">Form 4868 — Extension to File</CardTitle>
+        <p className="text-xs text-muted-foreground mt-1">
+          Automatic 6-month extension (Oct 15 for calendar-year filers). Extension to <strong>file</strong>, not to <strong>pay</strong> — any balance due accrues interest + late-pay penalty from Apr 15 unless 90% paid by then.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <Label htmlFor="form4868-amount-paying">Amount paying with extension (Line 7)</Label>
+            <CurrencyInput
+              value={amountBeingPaid}
+              onChange={setAmountBeingPaid}
+              placeholder="defaults to balance due"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Leave blank to pay full balance due. Partial OK — interest accrues on unpaid portion.
+            </p>
+          </div>
+          <div>
+            <Label htmlFor="form4868-est-paid">Estimated tax already paid this year</Label>
+            <CurrencyInput
+              value={estimatedTaxPaid}
+              onChange={setEstimatedTaxPaid}
+              placeholder="0"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              Q1-Q4 estimated payments not already in the engine via W-2 withholding.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-2">
+            <Switch id="form4868-out-of-country" checked={outOfCountry} onCheckedChange={setOutOfCountry} />
+            <Label htmlFor="form4868-out-of-country" className="cursor-pointer">
+              Line 8 — Out of the country on April 15 (auto +2-month extension)
+            </Label>
+          </div>
+          <div className="flex items-center gap-2">
+            <Switch id="form4868-1040nr" checked={form1040Nr} onCheckedChange={setForm1040Nr} />
+            <Label htmlFor="form4868-1040nr" className="cursor-pointer">
+              Line 9 — Filing Form 1040-NR, no US-withheld wages (extends to Dec 15)
+            </Label>
+          </div>
+        </div>
+
+        <div className="rounded-md border bg-slate-50 p-4">
+          <div className="grid grid-cols-2 gap-y-2 text-sm">
+            <span className="text-slate-600">Line 4 — Estimated total tax</span>
+            <span className="font-mono text-right">{data ? fmt4868(data.estimatedTotalTax) : "—"}</span>
+            <span className="text-slate-600">Line 5 — Total payments</span>
+            <span className="font-mono text-right">{data ? fmt4868(data.totalPayments) : "—"}</span>
+            <span className="text-slate-600 font-medium">Line 6 — Balance due</span>
+            <span className={`font-mono text-right font-medium ${data && data.balanceDue > 0 ? "text-red-700" : ""}`}>
+              {data ? fmt4868(data.balanceDue) : "—"}
+            </span>
+            <span className="text-emerald-700 font-semibold">Line 7 — Paying with extension</span>
+            <span className="font-mono text-right text-emerald-700 font-semibold">{data ? fmt4868(data.amountBeingPaid) : "—"}</span>
+          </div>
+        </div>
+
+        {previewQuery.error ? (
+          <p className="text-xs text-red-600">
+            Could not load Form 4868 preview: {String((previewQuery.error as Error).message)}
+          </p>
+        ) : null}
+
+        <div>
+          <Button onClick={handleDownload} disabled={previewQuery.isLoading || !data}>
+            Download Form 4868 (PDF)
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: number }) {
   const { data: taxReturn, isLoading } = useGetTaxReturn(clientId, {
     query: { queryKey: getGetTaxReturnQueryKey(clientId), retry: false },
@@ -1036,6 +1175,8 @@ function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: nu
               Print return
             </Button>
           </div>
+
+          <Form4868Card clientId={clientId} taxYear={taxYear} />
         </div>
       ) : (
         <Card>

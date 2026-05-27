@@ -11,6 +11,7 @@ import {
 import { recalculateAndUpsertTaxReturn, computeTaxReturn } from "../lib/taxReturnPipeline";
 import { buildTaxReturnPdf } from "../lib/pdfExport";
 import { buildIrsForm1040Pdf } from "../lib/irsForm1040Pdf";
+import { calculateForm4868, buildForm4868Pdf, type Form4868Input } from "../lib/form4868";
 import {
   buildTaxReturnCsvExport,
   buildTaxReturnJsonExport,
@@ -164,6 +165,76 @@ router.get("/clients/:clientId/tax-return/form-1040", async (req, res): Promise<
     // avoid leaking absolute filesystem paths or pdf-lib internals.
     logger.error({ err }, "Failed to build IRS Form 1040 PDF");
     res.status(500).json({ error: "Failed to build Form 1040 PDF" });
+  }
+});
+
+// ── C8 — Form 4868 (Application for Automatic Extension) ─────────────────
+// JSON preview endpoint. Frontend uses this to show Lines 4-7 live as the
+// CPA tweaks amountBeingPaid / estimatedTaxAlreadyPaid / out-of-country.
+// PDF download is the sibling /form-4868/pdf endpoint.
+function parseForm4868Input(req: import("express").Request): Form4868Input {
+  const num = (v: unknown): number | undefined => {
+    if (typeof v !== "string" || v === "") return undefined;
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 0 ? n : undefined;
+  };
+  const bool = (v: unknown): boolean => v === "true" || v === "1";
+  return {
+    amountBeingPaid: num(req.query.amountBeingPaid),
+    estimatedTaxAlreadyPaid: num(req.query.estimatedTaxAlreadyPaid),
+    outOfCountry: bool(req.query.outOfCountry),
+    form1040NrNoWithholding: bool(req.query.form1040NrNoWithholding),
+  };
+}
+
+router.get("/clients/:clientId/tax-return/form-4868", async (req, res): Promise<void> => {
+  const params = GetTaxReturnParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const yearRaw = req.query.taxYear;
+  const overrideYear = typeof yearRaw === "string" && Number.isFinite(Number(yearRaw))
+    ? Number(yearRaw)
+    : undefined;
+  const computed = await computeTaxReturn(params.data.clientId, overrideYear ? { taxYear: overrideYear } : {});
+  if (!computed) {
+    res.status(404).json({ error: "Client not found" });
+    return;
+  }
+  const input = parseForm4868Input(req);
+  const form = calculateForm4868({ ret: computed.result, input });
+  res.json(form);
+});
+
+router.get("/clients/:clientId/tax-return/form-4868/pdf", async (req, res): Promise<void> => {
+  const params = GetTaxReturnParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const yearRaw = req.query.taxYear;
+  const overrideYear = typeof yearRaw === "string" && Number.isFinite(Number(yearRaw))
+    ? Number(yearRaw)
+    : undefined;
+  const computed = await computeTaxReturn(params.data.clientId, overrideYear ? { taxYear: overrideYear } : {});
+  if (!computed) {
+    res.status(404).json({ error: "Client not found" });
+    return;
+  }
+  try {
+    const input = parseForm4868Input(req);
+    const form = calculateForm4868({ ret: computed.result, input });
+    const pdf = await buildForm4868Pdf({ client: computed.client, ret: computed.result, form });
+    const fileName = `form-4868-${computed.client.firstName}-${computed.client.lastName}-${computed.result.taxYear}.pdf`;
+    setSecureDownloadHeaders(res, {
+      fileName, contentType: "application/pdf", disposition: "attachment",
+      length: pdf.length, fallbackExt: ".pdf",
+    });
+    res.send(pdf);
+  } catch (err) {
+    logger.error({ err }, "Failed to build Form 4868 PDF");
+    res.status(500).json({ error: "Failed to build Form 4868 PDF" });
   }
 });
 
