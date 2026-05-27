@@ -150,6 +150,143 @@ export function computeForm8606ProRata(
   };
 }
 
+// ── Part III — Roth IRA distribution basis recovery (Lines 19-25) ────────
+
+export interface Form8606PartIIIInputs {
+  /** Roth distribution amount this year (Line 19). */
+  rothDistribution: number;
+  /**
+   * Total Roth contributions basis (lifetime) — always tax-free. From H5
+   * roth_ira asset rows' `afterTaxBasis` column or explicit CPA entry.
+   */
+  rothContributionsBasis: number;
+  /**
+   * Roth balance BEFORE the distribution. Used to derive earnings =
+   * balanceBefore − contributionsBasis. If omitted, defaults to
+   * distribution + contributionsBasis (treats the distribution as the
+   * entire taxable side).
+   */
+  rothBalanceBeforeDistribution?: number;
+  /** Owner age at distribution. Drives 10% early-withdrawal penalty. */
+  ownerAge?: number | null;
+  /**
+   * Whether the FIRST Roth contribution is 5+ years old. The 5-year clock
+   * for QUALIFIED distributions. Defaults true (CPA-validated assumption
+   * for most clients with material Roth balance) when undefined.
+   */
+  firstRothFiveYearsOld?: boolean;
+}
+
+export interface Form8606PartIIIResult {
+  /**
+   * Whether the entire distribution is a "qualified distribution"
+   * (over 59½ AND 5-year clock met) — tax-free, no penalty.
+   * Treas. Reg. §1.408A-6 Q&A 1.
+   */
+  isQualifiedDistribution: boolean;
+  /** Tax-free portion (basis recovery + qualified earnings). */
+  basisRecovered: number;
+  /** Taxable earnings portion (ordinary income). */
+  taxableEarnings: number;
+  /** 10% additional tax — applies to taxableEarnings when under 59½. */
+  earlyDistributionPenalty: number;
+  /** Remaining contribution basis after distribution (carryforward). */
+  basisRemaining: number;
+  /** Line 19 — total distributions from Roth IRAs. */
+  line19_distribution: number;
+  /** Line 20 — qualified first-home etc. (0 for MVP). */
+  line20_qualifiedException: number;
+  /** Line 21 — Line 19 − Line 20. */
+  line21_nonExceptionDistribution: number;
+  /** Line 22 — basis in Roth contributions. */
+  line22_contributionBasis: number;
+  /** Line 23 — Line 21 − Line 22 (remaining after contribution recovery). */
+  line23_remainingAfterBasis: number;
+  /** Line 25 — taxable amount (flows to Form 1040 Line 4b). */
+  line25_taxableAmount: number;
+}
+
+/**
+ * Compute Form 8606 Part III. Implements the basis-first ordering rule
+ * of Treas. Reg. §1.408A-6 Q&A 8:
+ *
+ *   1. Contributions come out first — always tax-free, no penalty.
+ *   2. Conversions come out next (oldest first, per-conversion 5-year clock).
+ *      MVP simplification: treats all converted basis as "old" (5+ year
+ *      clock met). CPA refines via explicit recent-conversion entry.
+ *   3. Earnings come out last — taxable + 10% penalty if under 59½.
+ *
+ * QUALIFIED distribution (over 59½ AND first-Roth 5+ years old per
+ * IRC §408A(d)(2)(A)): the entire distribution is tax-free, no penalty.
+ */
+export function computeForm8606PartIII(
+  inputs: Form8606PartIIIInputs,
+): Form8606PartIIIResult {
+  const dist = Math.max(0, inputs.rothDistribution);
+  const basis = Math.max(0, inputs.rothContributionsBasis);
+  const age = inputs.ownerAge ?? null;
+  const fiveYearClock = inputs.firstRothFiveYearsOld ?? true;
+  const isOver59 = age != null && age >= 59.5;
+  const isQualified = isOver59 && fiveYearClock;
+
+  if (dist <= 0) {
+    return {
+      isQualifiedDistribution: isQualified,
+      basisRecovered: 0,
+      taxableEarnings: 0,
+      earlyDistributionPenalty: 0,
+      basisRemaining: basis,
+      line19_distribution: 0,
+      line20_qualifiedException: 0,
+      line21_nonExceptionDistribution: 0,
+      line22_contributionBasis: basis,
+      line23_remainingAfterBasis: 0,
+      line25_taxableAmount: 0,
+    };
+  }
+
+  if (isQualified) {
+    return {
+      isQualifiedDistribution: true,
+      basisRecovered: dist,
+      taxableEarnings: 0,
+      earlyDistributionPenalty: 0,
+      basisRemaining: Math.max(0, basis - dist),
+      line19_distribution: dist,
+      line20_qualifiedException: dist,
+      line21_nonExceptionDistribution: 0,
+      line22_contributionBasis: basis,
+      line23_remainingAfterBasis: 0,
+      line25_taxableAmount: 0,
+    };
+  }
+
+  // Non-qualified: basis-first ordering.
+  const basisRecovered = Math.min(dist, basis);
+  const remainingAfterBasis = dist - basisRecovered;
+  // MVP: treat the post-basis remainder as TAXABLE EARNINGS. (CPA refines
+  // when there are recent conversions that should come out before earnings
+  // — those are tax-free for income tax but still get the 10% penalty.)
+  const taxableEarnings = remainingAfterBasis;
+  const penalty = !isOver59 && taxableEarnings > 0
+    ? Math.round(taxableEarnings * 0.10)
+    : 0;
+
+  return {
+    isQualifiedDistribution: false,
+    basisRecovered,
+    taxableEarnings,
+    earlyDistributionPenalty: penalty,
+    basisRemaining: Math.max(0, basis - basisRecovered),
+    line19_distribution: dist,
+    line20_qualifiedException: 0,
+    line21_nonExceptionDistribution: dist,
+    line22_contributionBasis: basis,
+    line23_remainingAfterBasis: remainingAfterBasis,
+    line25_taxableAmount: taxableEarnings,
+  };
+}
+
 // ── PDF rendering ─────────────────────────────────────────────────────────
 
 function fmt$(n: number): string {
@@ -168,11 +305,13 @@ export interface BuildForm8606PdfOptions {
   client: Client;
   taxYear: number;
   result: Form8606ProRataResult;
+  /** Phase H — H6. Optional Part III (Roth distribution basis recovery). */
+  partIII?: Form8606PartIIIResult;
 }
 
 /** Render a substitute Form 8606 PDF (Pub 1167). */
 export function buildForm8606Pdf(options: BuildForm8606PdfOptions): Promise<Buffer> {
-  const { client, taxYear, result } = options;
+  const { client, taxYear, result, partIII } = options;
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: "letter", margin: 50 });
     const chunks: Buffer[] = [];
@@ -282,6 +421,76 @@ export function buildForm8606Pdf(options: BuildForm8606PdfOptions): Promise<Buff
     doc.text(`Tax-free (basis recovered): ${fmt$(result.excludedAmount)}`, 60, calloutY + 36);
     doc.text(`Taxable (added to ordinary income): ${fmt$(result.taxableAmount)}`, 320, calloutY + 22);
     doc.text(`Basis carryforward: ${fmt$(result.basisCarryforward)}`, 320, calloutY + 36);
+
+    // ── Part III — Roth IRA distribution (Lines 19-25) ───────────────────
+    if (partIII && partIII.line19_distribution > 0) {
+      doc.moveDown(1.2);
+      doc
+        .fontSize(12)
+        .font("Helvetica-Bold")
+        .fillColor("#000")
+        .text("Part III — Distributions From Roth IRAs");
+      doc.moveDown(0.3);
+
+      const drawLine3 = (
+        label: string,
+        value: number,
+        lineRef: string,
+        bold = false,
+      ) => {
+        const y = doc.y;
+        doc.font(bold ? "Helvetica-Bold" : "Helvetica").fontSize(10).fillColor("#000");
+        doc.text(lineRef, 50, y, { width: 30, align: "right" });
+        doc.text(label, 90, y, { width: 380 });
+        doc.text(fmt$(value), 480, y, { width: 80, align: "right" });
+        doc.moveDown(0.25);
+      };
+
+      drawLine3("Total Roth IRA distributions this year", partIII.line19_distribution, "19");
+      drawLine3("Qualified first-home / etc. exception", partIII.line20_qualifiedException, "20");
+      drawLine3("Non-exception distribution (Line 19 − Line 20)",
+        partIII.line21_nonExceptionDistribution, "21");
+      drawLine3("Basis in Roth contributions (cumulative)", partIII.line22_contributionBasis, "22");
+      drawLine3("Remaining after contribution recovery (Line 21 − Line 22)",
+        partIII.line23_remainingAfterBasis, "23");
+      drawLine3("Taxable amount of Roth distribution (Form 1040 Line 4b)",
+        partIII.line25_taxableAmount, "25", true);
+
+      doc.moveDown(0.4);
+      doc.fontSize(9).font("Helvetica-Oblique").fillColor("#555");
+      doc.text(
+        "Ordering rule (Treas. Reg. §1.408A-6 Q&A 8): contributions come out first (tax-free), then conversions oldest first (5-year clock per conversion), then earnings (taxable + 10% penalty if under 59½). MVP simplification: post-basis remainder treated as taxable earnings — CPA refines for recent-conversion edge cases.",
+        { width: 510 },
+      );
+      doc.moveDown(0.4);
+
+      // Part III summary callout
+      const partIIICalloutY = doc.y;
+      const calloutColor = partIII.isQualifiedDistribution ? "#0a5d2a" : "#a04500";
+      doc
+        .rect(50, partIIICalloutY, 510, 80)
+        .lineWidth(1)
+        .strokeColor(calloutColor)
+        .stroke();
+      doc.fontSize(11).font("Helvetica-Bold").fillColor(calloutColor)
+        .text(
+          partIII.isQualifiedDistribution
+            ? "Qualified distribution — entire amount tax-free"
+            : "Non-qualified distribution",
+          60, partIIICalloutY + 6,
+        );
+      doc.fontSize(10).font("Helvetica").fillColor("#000");
+      doc.text(`Distribution: ${fmt$(partIII.line19_distribution)}`, 60, partIIICalloutY + 22);
+      doc.text(`Basis recovered (tax-free): ${fmt$(partIII.basisRecovered)}`, 60, partIIICalloutY + 36);
+      doc.text(`Taxable earnings: ${fmt$(partIII.taxableEarnings)}`, 60, partIIICalloutY + 50);
+      doc.text(`Basis remaining: ${fmt$(partIII.basisRemaining)}`, 320, partIIICalloutY + 22);
+      if (partIII.earlyDistributionPenalty > 0) {
+        doc.fillColor("#a04500");
+        doc.text(`10% penalty (under 59½): ${fmt$(partIII.earlyDistributionPenalty)}`,
+          320, partIIICalloutY + 50);
+        doc.fillColor("#000");
+      }
+    }
 
     doc.end();
   });

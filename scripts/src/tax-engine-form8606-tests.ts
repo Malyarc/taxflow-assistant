@@ -9,6 +9,7 @@
  */
 import {
   computeForm8606ProRata,
+  computeForm8606PartIII,
 } from "../../artifacts/api-server/src/lib/form8606";
 
 const PASS: string[] = [];
@@ -170,6 +171,183 @@ function check(label: string, actual: number, expected: number, tol = 0.5): void
   });
   check("Case 8 negative conversion clamped to 0", r.conversionAmount, 0);
   check("Case 8 negative balance clamped to 0", r.yearEndBalance, 0);
+}
+
+function checkBool(label: string, actual: boolean, expected: boolean): void {
+  if (actual === expected) PASS.push(`✓ ${label}`);
+  else FAIL.push(`✗ ${label}: expected ${expected}, got ${actual}`);
+}
+
+// ── PART III — Roth IRA distribution basis recovery (Lines 19-25) ─────────
+// Reference: Treas. Reg. §1.408A-6 Q&A 8 (ordering rule); IRC §72(t) (10%).
+
+// ── PIII Case 1: Qualified distribution (over 59½, 5-yr clock) ────────────
+// Owner age 65, $50k distribution from $200k Roth balance with $80k basis,
+// first Roth was 10 years ago. Entire $50k is tax-free, no penalty.
+{
+  const r = computeForm8606PartIII({
+    rothDistribution: 50000,
+    rothContributionsBasis: 80000,
+    rothBalanceBeforeDistribution: 200000,
+    ownerAge: 65,
+    firstRothFiveYearsOld: true,
+  });
+  checkBool("PIII Case 1 isQualifiedDistribution = true", r.isQualifiedDistribution, true);
+  check("PIII Case 1 basisRecovered = 50,000 (entire)", r.basisRecovered, 50000);
+  check("PIII Case 1 taxableEarnings = 0", r.taxableEarnings, 0);
+  check("PIII Case 1 earlyDistributionPenalty = 0", r.earlyDistributionPenalty, 0);
+  check("PIII Case 1 basisRemaining = 30,000 (80k − 50k)", r.basisRemaining, 30000);
+}
+
+// ── PIII Case 2: Non-qualified, distribution entirely from basis ──────────
+// Owner age 45 (under 59½), $40k distribution, $80k contribution basis.
+// All $40k comes out of basis → tax-free, no penalty.
+// Line 19 = 40k. Line 22 = 80k. Line 23 = 0. Line 25 = 0.
+{
+  const r = computeForm8606PartIII({
+    rothDistribution: 40000,
+    rothContributionsBasis: 80000,
+    rothBalanceBeforeDistribution: 100000,
+    ownerAge: 45,
+    firstRothFiveYearsOld: true,
+  });
+  checkBool("PIII Case 2 isQualifiedDistribution = false (under 59½)", r.isQualifiedDistribution, false);
+  check("PIII Case 2 basisRecovered = 40,000 (within basis)", r.basisRecovered, 40000);
+  check("PIII Case 2 taxableEarnings = 0", r.taxableEarnings, 0);
+  check("PIII Case 2 earlyDistributionPenalty = 0 (no taxable)", r.earlyDistributionPenalty, 0);
+  check("PIII Case 2 line25_taxableAmount = 0", r.line25_taxableAmount, 0);
+  check("PIII Case 2 basisRemaining = 40,000 (80k − 40k)", r.basisRemaining, 40000);
+}
+
+// ── PIII Case 3: Non-qualified, distribution exceeds basis ────────────────
+// Owner age 50, $50k distribution, $30k basis, $100k balance.
+// First $30k from basis (tax-free). Remaining $20k = earnings → taxable +
+// 10% penalty.
+// Line 19 = 50k. Line 22 = 30k. Line 23 = 20k. Line 25 = 20k.
+// Penalty = 20k × 10% = $2,000.
+{
+  const r = computeForm8606PartIII({
+    rothDistribution: 50000,
+    rothContributionsBasis: 30000,
+    rothBalanceBeforeDistribution: 100000,
+    ownerAge: 50,
+    firstRothFiveYearsOld: true,
+  });
+  checkBool("PIII Case 3 isQualifiedDistribution = false", r.isQualifiedDistribution, false);
+  check("PIII Case 3 basisRecovered = 30,000 (full basis)", r.basisRecovered, 30000);
+  check("PIII Case 3 taxableEarnings = 20,000", r.taxableEarnings, 20000);
+  check("PIII Case 3 earlyDistributionPenalty = 2,000 (10% × 20k)", r.earlyDistributionPenalty, 2000);
+  check("PIII Case 3 line25_taxableAmount = 20,000", r.line25_taxableAmount, 20000);
+  check("PIII Case 3 basisRemaining = 0 (basis fully recovered)", r.basisRemaining, 0);
+}
+
+// ── PIII Case 4: Over 59½ but 5-yr clock NOT met → non-qualified ──────────
+// Owner age 62 BUT first Roth was 3 years ago. Distribution $25k, basis $10k.
+// Not qualified (clock not met). $10k from basis tax-free + no penalty
+// (over 59½). $15k earnings taxable + NO penalty (over 59½ exempts §72(t)).
+{
+  const r = computeForm8606PartIII({
+    rothDistribution: 25000,
+    rothContributionsBasis: 10000,
+    rothBalanceBeforeDistribution: 50000,
+    ownerAge: 62,
+    firstRothFiveYearsOld: false,
+  });
+  checkBool("PIII Case 4 isQualifiedDistribution = false (clock not met)", r.isQualifiedDistribution, false);
+  check("PIII Case 4 basisRecovered = 10,000", r.basisRecovered, 10000);
+  check("PIII Case 4 taxableEarnings = 15,000", r.taxableEarnings, 15000);
+  // Penalty = 0 because age >= 59.5 — §72(t) exception
+  check("PIII Case 4 earlyDistributionPenalty = 0 (over 59½)", r.earlyDistributionPenalty, 0);
+}
+
+// ── PIII Case 5: Zero distribution → all zeros, basis unchanged ───────────
+{
+  const r = computeForm8606PartIII({
+    rothDistribution: 0,
+    rothContributionsBasis: 50000,
+    rothBalanceBeforeDistribution: 100000,
+    ownerAge: 45,
+  });
+  check("PIII Case 5 line19_distribution = 0", r.line19_distribution, 0);
+  check("PIII Case 5 basisRecovered = 0", r.basisRecovered, 0);
+  check("PIII Case 5 basisRemaining = 50,000 (unchanged)", r.basisRemaining, 50000);
+}
+
+// ── PIII Case 6: Negative inputs clamped to 0 ─────────────────────────────
+{
+  const r = computeForm8606PartIII({
+    rothDistribution: -5000,
+    rothContributionsBasis: -1000,
+    rothBalanceBeforeDistribution: -2000,
+    ownerAge: 30,
+  });
+  check("PIII Case 6 negative distribution clamped", r.line19_distribution, 0);
+  check("PIII Case 6 basisRecovered = 0 (negative)", r.basisRecovered, 0);
+  check("PIII Case 6 basisRemaining = 0 (negative basis clamped)", r.basisRemaining, 0);
+}
+
+// ── PIII Case 7: Distribution exactly equals basis (edge: $0 earnings) ────
+{
+  const r = computeForm8606PartIII({
+    rothDistribution: 25000,
+    rothContributionsBasis: 25000,
+    rothBalanceBeforeDistribution: 100000,
+    ownerAge: 40,
+    firstRothFiveYearsOld: true,
+  });
+  check("PIII Case 7 basisRecovered = 25,000 (exact match)", r.basisRecovered, 25000);
+  check("PIII Case 7 taxableEarnings = 0", r.taxableEarnings, 0);
+  check("PIII Case 7 earlyDistributionPenalty = 0", r.earlyDistributionPenalty, 0);
+  check("PIII Case 7 basisRemaining = 0", r.basisRemaining, 0);
+}
+
+// ── PIII Case 8: Distribution > balance impossible but engine handles ─────
+// Defensive: distribution $200k > balance $50k. Shouldn't happen in real
+// returns but the engine doesn't validate balance>=distribution.
+{
+  const r = computeForm8606PartIII({
+    rothDistribution: 200000,
+    rothContributionsBasis: 50000,
+    rothBalanceBeforeDistribution: 50000,
+    ownerAge: 40,
+    firstRothFiveYearsOld: true,
+  });
+  // basis $50k recovered; remaining $150k all treated as taxable
+  // (over-reporting, but the right defensive direction).
+  check("PIII Case 8 basisRecovered = 50,000 (full basis)", r.basisRecovered, 50000);
+  check("PIII Case 8 taxableEarnings = 150,000", r.taxableEarnings, 150000);
+  check("PIII Case 8 penalty = 15,000 (under 59½)", r.earlyDistributionPenalty, 15000);
+}
+
+// ── PIII Case 9: Age default behavior (firstRothFiveYearsOld default true) ─
+// Omit firstRothFiveYearsOld → defaults to true. Age 70 → qualified.
+{
+  const r = computeForm8606PartIII({
+    rothDistribution: 10000,
+    rothContributionsBasis: 5000,
+    rothBalanceBeforeDistribution: 50000,
+    ownerAge: 70,
+  });
+  checkBool("PIII Case 9 default firstRothFiveYearsOld=true → qualified", r.isQualifiedDistribution, true);
+  check("PIII Case 9 taxableEarnings = 0 (qualified)", r.taxableEarnings, 0);
+}
+
+// ── PIII Case 10: Age null (unknown) → not qualified, no penalty ──────────
+// When age is null, we can't apply §72(t) penalty either way. Conservative
+// engine behavior: treat as NOT over 59½ (apply penalty on earnings).
+{
+  const r = computeForm8606PartIII({
+    rothDistribution: 30000,
+    rothContributionsBasis: 10000,
+    rothBalanceBeforeDistribution: 80000,
+    ownerAge: null,
+  });
+  checkBool("PIII Case 10 null age → not qualified", r.isQualifiedDistribution, false);
+  check("PIII Case 10 basisRecovered = 10,000", r.basisRecovered, 10000);
+  check("PIII Case 10 taxableEarnings = 20,000", r.taxableEarnings, 20000);
+  // age null → engine treats as "under 59.5" → apply penalty
+  check("PIII Case 10 penalty applied (age unknown, treated as under 59½)",
+    r.earlyDistributionPenalty, 2000);
 }
 
 // ── Print results ─────────────────────────────────────────────────────────

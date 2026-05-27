@@ -3304,6 +3304,11 @@ const ASSET_TYPES = [
   { value: "hsa", label: "HSA" },
   { value: "529", label: "529 college savings" },
   { value: "brokerage_taxable", label: "Brokerage (taxable)" },
+  // Phase H — H5 expansion (v1.1):
+  { value: "espp_shares", label: "ESPP shares (cost basis + purchase price)" },
+  { value: "iso_amt_credit_shares", label: "ISO shares (AMT-credit basis)" },
+  { value: "restricted_stock_pre_83b", label: "Restricted stock — pre-§83(b) election" },
+  { value: "crypto", label: "Crypto (BTC / ETH / etc.)" },
   { value: "real_estate", label: "Real estate (investment)" },
   { value: "primary_residence", label: "Primary residence" },
   { value: "other", label: "Other" },

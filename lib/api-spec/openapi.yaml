@@ -2474,7 +2474,7 @@ components:
           type: integer
         adjustmentType:
           type: string
-          enum: [deduction, credit, additional_income, withholding_adjustment, other, self_employment_income, investment_income, qbi_income, amt_preferences, medical_expenses, state_income_tax, state_property_tax, state_sales_tax, mortgage_interest, charitable_cash, charitable_property, hsa_contribution, hsa_employer_contribution, ira_contribution_traditional, ira_contribution_roth, schedule_c_expenses, section_179_expense_election, bonus_depreciation_basis, dependent_care_expenses, qualified_education_expenses_aoc, qualified_education_expenses_llc, retirement_contributions_savers, educator_expenses, student_loan_interest, foreign_tax_paid, foreign_source_taxable_income, residential_clean_energy, energy_efficient_home, energy_efficient_heatpump, ev_charger_property, capital_loss_carryforward_short, capital_loss_carryforward_long, schedule_e_rental_income, schedule_e_rental_expenses, schedule_e_macrs_depreciation, schedule_e_passive_loss_carryforward, amt_iso_bargain_element, amt_state_tax_addback_override, k1_passive_loss_carryforward, amt_credit_carryforward, charitable_carryforward_cash, self_employed_health_insurance_premiums, home_sale_gross_gain_primary_residence, foreign_earned_income, foreign_earned_income_spouse, nol_carryforward, qsbs_gross_gain, qsbs_adjusted_basis, section_1031_realized_gain, section_1031_boot_received, iso_disqualifying_disposition_ordinary, espp_disqualifying_disposition_ordinary, section_163j_business_interest_expense, section_163j_business_interest_income, section_163j_carryforward_from_prior, section_163j_floor_plan_financing_interest, section_461l_excess_loss_addback, roth_conversion_amount, nondeductible_ira_contribution, traditional_ira_distribution, augusta_rule_rent, nua_lump_sum_employer_stock, mega_backdoor_roth_after_tax_contribution]
+          enum: [deduction, credit, additional_income, withholding_adjustment, other, self_employment_income, investment_income, qbi_income, amt_preferences, medical_expenses, state_income_tax, state_property_tax, state_sales_tax, mortgage_interest, charitable_cash, charitable_property, hsa_contribution, hsa_employer_contribution, ira_contribution_traditional, ira_contribution_roth, schedule_c_expenses, section_179_expense_election, bonus_depreciation_basis, dependent_care_expenses, qualified_education_expenses_aoc, qualified_education_expenses_llc, retirement_contributions_savers, educator_expenses, student_loan_interest, foreign_tax_paid, foreign_source_taxable_income, residential_clean_energy, energy_efficient_home, energy_efficient_heatpump, ev_charger_property, capital_loss_carryforward_short, capital_loss_carryforward_long, schedule_e_rental_income, schedule_e_rental_expenses, schedule_e_macrs_depreciation, schedule_e_passive_loss_carryforward, amt_iso_bargain_element, amt_state_tax_addback_override, k1_passive_loss_carryforward, amt_credit_carryforward, charitable_carryforward_cash, self_employed_health_insurance_premiums, home_sale_gross_gain_primary_residence, foreign_earned_income, foreign_earned_income_spouse, nol_carryforward, qsbs_gross_gain, qsbs_adjusted_basis, section_1031_realized_gain, section_1031_boot_received, iso_disqualifying_disposition_ordinary, espp_disqualifying_disposition_ordinary, section_163j_business_interest_expense, section_163j_business_interest_income, section_163j_carryforward_from_prior, section_163j_floor_plan_financing_interest, section_461l_excess_loss_addback, roth_conversion_amount, nondeductible_ira_contribution, traditional_ira_distribution, augusta_rule_rent, nua_lump_sum_employer_stock, mega_backdoor_roth_after_tax_contribution, roth_ira_distribution]
         amount:
           type: number
         description:
@@ -2496,7 +2496,7 @@ components:
       properties:
         adjustmentType:
           type: string
-          enum: [deduction, credit, additional_income, withholding_adjustment, other, self_employment_income, investment_income, qbi_income, amt_preferences, medical_expenses, state_income_tax, state_property_tax, state_sales_tax, mortgage_interest, charitable_cash, charitable_property, hsa_contribution, hsa_employer_contribution, ira_contribution_traditional, ira_contribution_roth, schedule_c_expenses, section_179_expense_election, bonus_depreciation_basis, dependent_care_expenses, qualified_education_expenses_aoc, qualified_education_expenses_llc, retirement_contributions_savers, educator_expenses, student_loan_interest, foreign_tax_paid, foreign_source_taxable_income, residential_clean_energy, energy_efficient_home, energy_efficient_heatpump, ev_charger_property, capital_loss_carryforward_short, capital_loss_carryforward_long, schedule_e_rental_income, schedule_e_rental_expenses, schedule_e_macrs_depreciation, schedule_e_passive_loss_carryforward, amt_iso_bargain_element, amt_state_tax_addback_override, k1_passive_loss_carryforward, amt_credit_carryforward, charitable_carryforward_cash, self_employed_health_insurance_premiums, home_sale_gross_gain_primary_residence, foreign_earned_income, foreign_earned_income_spouse, nol_carryforward, qsbs_gross_gain, qsbs_adjusted_basis, section_1031_realized_gain, section_1031_boot_received, iso_disqualifying_disposition_ordinary, espp_disqualifying_disposition_ordinary, section_163j_business_interest_expense, section_163j_business_interest_income, section_163j_carryforward_from_prior, section_163j_floor_plan_financing_interest, section_461l_excess_loss_addback, roth_conversion_amount, nondeductible_ira_contribution, traditional_ira_distribution, augusta_rule_rent, nua_lump_sum_employer_stock, mega_backdoor_roth_after_tax_contribution]
+          enum: [deduction, credit, additional_income, withholding_adjustment, other, self_employment_income, investment_income, qbi_income, amt_preferences, medical_expenses, state_income_tax, state_property_tax, state_sales_tax, mortgage_interest, charitable_cash, charitable_property, hsa_contribution, hsa_employer_contribution, ira_contribution_traditional, ira_contribution_roth, schedule_c_expenses, section_179_expense_election, bonus_depreciation_basis, dependent_care_expenses, qualified_education_expenses_aoc, qualified_education_expenses_llc, retirement_contributions_savers, educator_expenses, student_loan_interest, foreign_tax_paid, foreign_source_taxable_income, residential_clean_energy, energy_efficient_home, energy_efficient_heatpump, ev_charger_property, capital_loss_carryforward_short, capital_loss_carryforward_long, schedule_e_rental_income, schedule_e_rental_expenses, schedule_e_macrs_depreciation, schedule_e_passive_loss_carryforward, amt_iso_bargain_element, amt_state_tax_addback_override, k1_passive_loss_carryforward, amt_credit_carryforward, charitable_carryforward_cash, self_employed_health_insurance_premiums, home_sale_gross_gain_primary_residence, foreign_earned_income, foreign_earned_income_spouse, nol_carryforward, qsbs_gross_gain, qsbs_adjusted_basis, section_1031_realized_gain, section_1031_boot_received, iso_disqualifying_disposition_ordinary, espp_disqualifying_disposition_ordinary, section_163j_business_interest_expense, section_163j_business_interest_income, section_163j_carryforward_from_prior, section_163j_floor_plan_financing_interest, section_461l_excess_loss_addback, roth_conversion_amount, nondeductible_ira_contribution, traditional_ira_distribution, augusta_rule_rent, nua_lump_sum_employer_stock, mega_backdoor_roth_after_tax_contribution, roth_ira_distribution]
         amount:
           type: number
         description:
@@ -2511,7 +2511,7 @@ components:
       properties:
         adjustmentType:
           type: string
-          enum: [deduction, credit, additional_income, withholding_adjustment, other, self_employment_income, investment_income, qbi_income, amt_preferences, medical_expenses, state_income_tax, state_property_tax, state_sales_tax, mortgage_interest, charitable_cash, charitable_property, hsa_contribution, hsa_employer_contribution, ira_contribution_traditional, ira_contribution_roth, schedule_c_expenses, section_179_expense_election, bonus_depreciation_basis, dependent_care_expenses, qualified_education_expenses_aoc, qualified_education_expenses_llc, retirement_contributions_savers, educator_expenses, student_loan_interest, foreign_tax_paid, foreign_source_taxable_income, residential_clean_energy, energy_efficient_home, energy_efficient_heatpump, ev_charger_property, capital_loss_carryforward_short, capital_loss_carryforward_long, schedule_e_rental_income, schedule_e_rental_expenses, schedule_e_macrs_depreciation, schedule_e_passive_loss_carryforward, amt_iso_bargain_element, amt_state_tax_addback_override, k1_passive_loss_carryforward, amt_credit_carryforward, charitable_carryforward_cash, self_employed_health_insurance_premiums, home_sale_gross_gain_primary_residence, foreign_earned_income, foreign_earned_income_spouse, nol_carryforward, qsbs_gross_gain, qsbs_adjusted_basis, section_1031_realized_gain, section_1031_boot_received, iso_disqualifying_disposition_ordinary, espp_disqualifying_disposition_ordinary, section_163j_business_interest_expense, section_163j_business_interest_income, section_163j_carryforward_from_prior, section_163j_floor_plan_financing_interest, section_461l_excess_loss_addback, roth_conversion_amount, nondeductible_ira_contribution, traditional_ira_distribution, augusta_rule_rent, nua_lump_sum_employer_stock, mega_backdoor_roth_after_tax_contribution]
+          enum: [deduction, credit, additional_income, withholding_adjustment, other, self_employment_income, investment_income, qbi_income, amt_preferences, medical_expenses, state_income_tax, state_property_tax, state_sales_tax, mortgage_interest, charitable_cash, charitable_property, hsa_contribution, hsa_employer_contribution, ira_contribution_traditional, ira_contribution_roth, schedule_c_expenses, section_179_expense_election, bonus_depreciation_basis, dependent_care_expenses, qualified_education_expenses_aoc, qualified_education_expenses_llc, retirement_contributions_savers, educator_expenses, student_loan_interest, foreign_tax_paid, foreign_source_taxable_income, residential_clean_energy, energy_efficient_home, energy_efficient_heatpump, ev_charger_property, capital_loss_carryforward_short, capital_loss_carryforward_long, schedule_e_rental_income, schedule_e_rental_expenses, schedule_e_macrs_depreciation, schedule_e_passive_loss_carryforward, amt_iso_bargain_element, amt_state_tax_addback_override, k1_passive_loss_carryforward, amt_credit_carryforward, charitable_carryforward_cash, self_employed_health_insurance_premiums, home_sale_gross_gain_primary_residence, foreign_earned_income, foreign_earned_income_spouse, nol_carryforward, qsbs_gross_gain, qsbs_adjusted_basis, section_1031_realized_gain, section_1031_boot_received, iso_disqualifying_disposition_ordinary, espp_disqualifying_disposition_ordinary, section_163j_business_interest_expense, section_163j_business_interest_income, section_163j_carryforward_from_prior, section_163j_floor_plan_financing_interest, section_461l_excess_loss_addback, roth_conversion_amount, nondeductible_ira_contribution, traditional_ira_distribution, augusta_rule_rent, nua_lump_sum_employer_stock, mega_backdoor_roth_after_tax_contribution, roth_ira_distribution]
         amount:
           type: number
         description:
@@ -2677,6 +2677,64 @@ components:
         excludedFractionPct:
           description: Pro-rata fraction as a percentage (0-100), for display.
           type: number
+        partIII:
+          description: >
+            Phase H — H6. Form 8606 Part III (Lines 19-25). Roth IRA
+            distribution basis recovery + qualified-distribution gate.
+            Present when client took a Roth distribution (sum of
+            `roth_ira_distribution` adjustments > 0) OR has a tracked
+            Roth contributions basis (H5 roth_ira afterTaxBasis > 0).
+          allOf:
+            - $ref: "#/components/schemas/Form8606PartIIIResult"
+
+    Form8606PartIIIResult:
+      type: object
+      required:
+        - isQualifiedDistribution
+        - basisRecovered
+        - taxableEarnings
+        - earlyDistributionPenalty
+        - basisRemaining
+        - line19_distribution
+        - line20_qualifiedException
+        - line21_nonExceptionDistribution
+        - line22_contributionBasis
+        - line23_remainingAfterBasis
+        - line25_taxableAmount
+      properties:
+        isQualifiedDistribution:
+          description: Over 59½ AND first-Roth 5+ years old → entire distribution tax-free, no penalty.
+          type: boolean
+        basisRecovered:
+          description: Tax-free portion (contribution basis recovery).
+          type: number
+        taxableEarnings:
+          description: Ordinary income portion (flows to Form 1040 Line 4b).
+          type: number
+        earlyDistributionPenalty:
+          description: 10% additional tax on taxableEarnings when under 59½ (IRC §72(t)).
+          type: number
+        basisRemaining:
+          description: Remaining Roth contribution basis carried to next year.
+          type: number
+        line19_distribution:
+          description: Total Roth IRA distributions this year.
+          type: number
+        line20_qualifiedException:
+          description: First-home / education / etc. exception amount (Pub 590-B).
+          type: number
+        line21_nonExceptionDistribution:
+          description: Line 19 − Line 20.
+          type: number
+        line22_contributionBasis:
+          description: Basis in Roth contributions (lifetime).
+          type: number
+        line23_remainingAfterBasis:
+          description: Line 21 − Line 22 — remaining after contribution basis recovery.
+          type: number
+        line25_taxableAmount:
+          description: Taxable amount of Roth distribution (Form 1040 Line 4b).
+          type: number
 
     # ── Asset balances (Phase H — H5) ─────────────────────────────────────────
     AssetBalance:
@@ -2703,6 +2761,10 @@ components:
             - hsa
             - 529
             - brokerage_taxable
+            - espp_shares
+            - iso_amt_credit_shares
+            - restricted_stock_pre_83b
+            - crypto
             - real_estate
             - primary_residence
             - other
@@ -2747,6 +2809,10 @@ components:
             - hsa
             - 529
             - brokerage_taxable
+            - espp_shares
+            - iso_amt_credit_shares
+            - restricted_stock_pre_83b
+            - crypto
             - real_estate
             - primary_residence
             - other
@@ -2782,6 +2848,10 @@ components:
             - hsa
             - 529
             - brokerage_taxable
+            - espp_shares
+            - iso_amt_credit_shares
+            - restricted_stock_pre_83b
+            - crypto
             - real_estate
             - primary_residence
             - other

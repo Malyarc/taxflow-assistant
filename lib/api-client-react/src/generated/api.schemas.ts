@@ -1188,6 +1188,7 @@ export const AdjustmentAdjustmentType = {
   nua_lump_sum_employer_stock: "nua_lump_sum_employer_stock",
   mega_backdoor_roth_after_tax_contribution:
     "mega_backdoor_roth_after_tax_contribution",
+  roth_ira_distribution: "roth_ira_distribution",
 } as const;
 
 export interface Adjustment {
@@ -1283,6 +1284,7 @@ export const CreateAdjustmentBodyAdjustmentType = {
   nua_lump_sum_employer_stock: "nua_lump_sum_employer_stock",
   mega_backdoor_roth_after_tax_contribution:
     "mega_backdoor_roth_after_tax_contribution",
+  roth_ira_distribution: "roth_ira_distribution",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -1374,6 +1376,7 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   nua_lump_sum_employer_stock: "nua_lump_sum_employer_stock",
   mega_backdoor_roth_after_tax_contribution:
     "mega_backdoor_roth_after_tax_contribution",
+  roth_ira_distribution: "roth_ira_distribution",
 } as const;
 
 export interface UpdateAdjustmentBody {
@@ -1476,6 +1479,31 @@ export interface UpdateRentalPropertyBody {
   notes?: string | null;
 }
 
+export interface Form8606PartIIIResult {
+  /** Over 59½ AND first-Roth 5+ years old → entire distribution tax-free, no penalty. */
+  isQualifiedDistribution: boolean;
+  /** Tax-free portion (contribution basis recovery). */
+  basisRecovered: number;
+  /** Ordinary income portion (flows to Form 1040 Line 4b). */
+  taxableEarnings: number;
+  /** 10% additional tax on taxableEarnings when under 59½ (IRC §72(t)). */
+  earlyDistributionPenalty: number;
+  /** Remaining Roth contribution basis carried to next year. */
+  basisRemaining: number;
+  /** Total Roth IRA distributions this year. */
+  line19_distribution: number;
+  /** First-home / education / etc. exception amount (Pub 590-B). */
+  line20_qualifiedException: number;
+  /** Line 19 − Line 20. */
+  line21_nonExceptionDistribution: number;
+  /** Basis in Roth contributions (lifetime). */
+  line22_contributionBasis: number;
+  /** Line 21 − Line 22 — remaining after contribution basis recovery. */
+  line23_remainingAfterBasis: number;
+  /** Taxable amount of Roth distribution (Form 1040 Line 4b). */
+  line25_taxableAmount: number;
+}
+
 export interface Form8606Result {
   taxYear: number;
   /** Form 8606 Line 2 — basis carried in from prior year. */
@@ -1502,6 +1530,9 @@ export interface Form8606Result {
   basisCarryforward: number;
   /** Pro-rata fraction as a percentage (0-100), for display. */
   excludedFractionPct: number;
+  /** Phase H — H6. Form 8606 Part III (Lines 19-25). Roth IRA distribution basis recovery + qualified-distribution gate. Present when client took a Roth distribution (sum of `roth_ira_distribution` adjustments > 0) OR has a tracked Roth contributions basis (H5 roth_ira afterTaxBasis > 0).
+   */
+  partIII?: Form8606PartIIIResult;
 }
 
 export type AssetBalanceAssetType =
@@ -1519,6 +1550,10 @@ export const AssetBalanceAssetType = {
   hsa: "hsa",
   NUMBER_529: 529,
   brokerage_taxable: "brokerage_taxable",
+  espp_shares: "espp_shares",
+  iso_amt_credit_shares: "iso_amt_credit_shares",
+  restricted_stock_pre_83b: "restricted_stock_pre_83b",
+  crypto: "crypto",
   real_estate: "real_estate",
   primary_residence: "primary_residence",
   other: "other",
@@ -1561,6 +1596,10 @@ export const CreateAssetBalanceBodyAssetType = {
   hsa: "hsa",
   NUMBER_529: 529,
   brokerage_taxable: "brokerage_taxable",
+  espp_shares: "espp_shares",
+  iso_amt_credit_shares: "iso_amt_credit_shares",
+  restricted_stock_pre_83b: "restricted_stock_pre_83b",
+  crypto: "crypto",
   real_estate: "real_estate",
   primary_residence: "primary_residence",
   other: "other",
@@ -1595,6 +1634,10 @@ export const UpdateAssetBalanceBodyAssetType = {
   hsa: "hsa",
   NUMBER_529: 529,
   brokerage_taxable: "brokerage_taxable",
+  espp_shares: "espp_shares",
+  iso_amt_credit_shares: "iso_amt_credit_shares",
+  restricted_stock_pre_83b: "restricted_stock_pre_83b",
+  crypto: "crypto",
   real_estate: "real_estate",
   primary_residence: "primary_residence",
   other: "other",

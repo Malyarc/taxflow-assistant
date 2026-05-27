@@ -2609,6 +2609,7 @@ export const ListAdjustmentsResponseItem = zod.object({
     "augusta_rule_rent",
     "nua_lump_sum_employer_stock",
     "mega_backdoor_roth_after_tax_contribution",
+    "roth_ira_distribution",
   ]),
   amount: zod.number(),
   description: zod.string(),
@@ -2696,6 +2697,7 @@ export const CreateAdjustmentBody = zod.object({
     "augusta_rule_rent",
     "nua_lump_sum_employer_stock",
     "mega_backdoor_roth_after_tax_contribution",
+    "roth_ira_distribution",
   ]),
   amount: zod.number(),
   description: zod.string(),
@@ -2782,6 +2784,7 @@ export const UpdateAdjustmentBody = zod.object({
       "augusta_rule_rent",
       "nua_lump_sum_employer_stock",
       "mega_backdoor_roth_after_tax_contribution",
+      "roth_ira_distribution",
     ])
     .optional(),
   amount: zod.number().optional(),
@@ -2862,6 +2865,7 @@ export const UpdateAdjustmentResponse = zod.object({
     "augusta_rule_rent",
     "nua_lump_sum_employer_stock",
     "mega_backdoor_roth_after_tax_contribution",
+    "roth_ira_distribution",
   ]),
   amount: zod.number(),
   description: zod.string(),
@@ -2936,6 +2940,54 @@ export const GetForm8606Response = zod.object({
   excludedFractionPct: zod
     .number()
     .describe("Pro-rata fraction as a percentage (0-100), for display."),
+  partIII: zod
+    .object({
+      isQualifiedDistribution: zod
+        .boolean()
+        .describe(
+          "Over 59½ AND first-Roth 5+ years old → entire distribution tax-free, no penalty.",
+        ),
+      basisRecovered: zod
+        .number()
+        .describe("Tax-free portion (contribution basis recovery)."),
+      taxableEarnings: zod
+        .number()
+        .describe("Ordinary income portion (flows to Form 1040 Line 4b)."),
+      earlyDistributionPenalty: zod
+        .number()
+        .describe(
+          "10% additional tax on taxableEarnings when under 59½ (IRC §72(t)).",
+        ),
+      basisRemaining: zod
+        .number()
+        .describe("Remaining Roth contribution basis carried to next year."),
+      line19_distribution: zod
+        .number()
+        .describe("Total Roth IRA distributions this year."),
+      line20_qualifiedException: zod
+        .number()
+        .describe(
+          "First-home \/ education \/ etc. exception amount (Pub 590-B).",
+        ),
+      line21_nonExceptionDistribution: zod
+        .number()
+        .describe("Line 19 − Line 20."),
+      line22_contributionBasis: zod
+        .number()
+        .describe("Basis in Roth contributions (lifetime)."),
+      line23_remainingAfterBasis: zod
+        .number()
+        .describe(
+          "Line 21 − Line 22 — remaining after contribution basis recovery.",
+        ),
+      line25_taxableAmount: zod
+        .number()
+        .describe("Taxable amount of Roth distribution (Form 1040 Line 4b)."),
+    })
+    .optional()
+    .describe(
+      "Phase H — H6. Form 8606 Part III (Lines 19-25). Roth IRA distribution basis recovery + qualified-distribution gate. Present when client took a Roth distribution (sum of `roth_ira_distribution` adjustments > 0) OR has a tracked Roth contributions basis (H5 roth_ira afterTaxBasis > 0).\n",
+    ),
 });
 
 /**
@@ -2968,6 +3020,10 @@ export const ListAssetBalancesResponseItem = zod.object({
     zod.literal("hsa"),
     zod.literal(529),
     zod.literal("brokerage_taxable"),
+    zod.literal("espp_shares"),
+    zod.literal("iso_amt_credit_shares"),
+    zod.literal("restricted_stock_pre_83b"),
+    zod.literal("crypto"),
     zod.literal("real_estate"),
     zod.literal("primary_residence"),
     zod.literal("other"),
@@ -3015,6 +3071,10 @@ export const CreateAssetBalanceBody = zod.object({
     zod.literal("hsa"),
     zod.literal(529),
     zod.literal("brokerage_taxable"),
+    zod.literal("espp_shares"),
+    zod.literal("iso_amt_credit_shares"),
+    zod.literal("restricted_stock_pre_83b"),
+    zod.literal("crypto"),
     zod.literal("real_estate"),
     zod.literal("primary_residence"),
     zod.literal("other"),
@@ -3050,6 +3110,10 @@ export const UpdateAssetBalanceBody = zod.object({
       zod.literal("hsa"),
       zod.literal(529),
       zod.literal("brokerage_taxable"),
+      zod.literal("espp_shares"),
+      zod.literal("iso_amt_credit_shares"),
+      zod.literal("restricted_stock_pre_83b"),
+      zod.literal("crypto"),
       zod.literal("real_estate"),
       zod.literal("primary_residence"),
       zod.literal("other"),
@@ -3079,6 +3143,10 @@ export const UpdateAssetBalanceResponse = zod.object({
     zod.literal("hsa"),
     zod.literal(529),
     zod.literal("brokerage_taxable"),
+    zod.literal("espp_shares"),
+    zod.literal("iso_amt_credit_shares"),
+    zod.literal("restricted_stock_pre_83b"),
+    zod.literal("crypto"),
     zod.literal("real_estate"),
     zod.literal("primary_residence"),
     zod.literal("other"),

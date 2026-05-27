@@ -12,7 +12,12 @@ import { recalculateAndUpsertTaxReturn, computeTaxReturn } from "../lib/taxRetur
 import { buildTaxReturnPdf } from "../lib/pdfExport";
 import { buildIrsForm1040Pdf } from "../lib/irsForm1040Pdf";
 import { calculateForm4868, buildForm4868Pdf, type Form4868Input } from "../lib/form4868";
-import { computeForm8606ProRata, buildForm8606Pdf } from "../lib/form8606";
+import {
+  computeForm8606ProRata,
+  computeForm8606PartIII,
+  buildForm8606Pdf,
+  type Form8606PartIIIResult,
+} from "../lib/form8606";
 import {
   captureFiledSnapshot,
   computeAmendmentDiff,
@@ -257,10 +262,11 @@ router.get("/clients/:clientId/tax-return/form-4868/pdf", async (req, res): Prom
  *     balances (sum across all traditional_ira, sep_ira, simple_ira types)
  */
 async function loadForm8606Inputs(clientId: number) {
-  const { db, adjustmentsTable, assetBalancesTable } = await import("@workspace/db");
-  const [adjustments, assets] = await Promise.all([
+  const { db, adjustmentsTable, assetBalancesTable, clientsTable } = await import("@workspace/db");
+  const [adjustments, assets, clientRows] = await Promise.all([
     db.select().from(adjustmentsTable).where(eq(adjustmentsTable.clientId, clientId)),
     db.select().from(assetBalancesTable).where(eq(assetBalancesTable.clientId, clientId)),
+    db.select().from(clientsTable).where(eq(clientsTable.id, clientId)),
   ]);
   const num = (v: string | number | null | undefined): number => {
     if (v == null) return 0;
@@ -275,12 +281,27 @@ async function loadForm8606Inputs(clientId: number) {
   const tradAssets = assets.filter((a) => tradAssetTypes.has(a.assetType));
   const totalTraditionalIraBalance = tradAssets.reduce((s, a) => s + num(a.balance), 0);
   const totalAfterTaxBasis = tradAssets.reduce((s, a) => s + num(a.afterTaxBasis), 0);
+  // Part III inputs — Roth IRA aggregates.
+  const rothAssets = assets.filter((a) => a.assetType === "roth_ira");
+  const rothBalance = rothAssets.reduce((s, a) => s + num(a.balance), 0);
+  const rothContributionsBasis = rothAssets.reduce((s, a) => s + num(a.afterTaxBasis), 0);
   return {
-    conversionAmount: sumAdj("roth_conversion_amount"),
-    nondeductibleContribution: sumAdj("nondeductible_ira_contribution"),
-    totalTraditionalIraBalance,
-    totalAfterTaxBasis,
-    otherDistributions: sumAdj("traditional_ira_distribution"),
+    partI: {
+      conversionAmount: sumAdj("roth_conversion_amount"),
+      nondeductibleContribution: sumAdj("nondeductible_ira_contribution"),
+      totalTraditionalIraBalance,
+      totalAfterTaxBasis,
+      otherDistributions: sumAdj("traditional_ira_distribution"),
+    },
+    partIII: {
+      rothDistribution: sumAdj("roth_ira_distribution"),
+      rothContributionsBasis,
+      rothBalanceBeforeDistribution: rothBalance + sumAdj("roth_ira_distribution"),
+      ownerAge: clientRows[0]?.taxpayerAge ?? null,
+      // MVP: assume first Roth contribution is 5+ years old when any Roth
+      // balance exists. CPA can refine via a future client-level field.
+      firstRothFiveYearsOld: rothBalance > 0 || rothContributionsBasis > 0,
+    },
   };
 }
 
@@ -296,8 +317,16 @@ router.get("/clients/:clientId/form-8606", async (req, res): Promise<void> => {
     return;
   }
   const inputs = await loadForm8606Inputs(params.data.clientId);
-  const result = computeForm8606ProRata(inputs);
-  res.json({ taxYear: computed.result.taxYear, ...result });
+  const result = computeForm8606ProRata(inputs.partI);
+  let partIII: Form8606PartIIIResult | undefined;
+  if (inputs.partIII.rothDistribution > 0 || inputs.partIII.rothContributionsBasis > 0) {
+    partIII = computeForm8606PartIII(inputs.partIII);
+  }
+  res.json({
+    taxYear: computed.result.taxYear,
+    ...result,
+    ...(partIII ? { partIII } : {}),
+  });
 });
 
 router.get("/clients/:clientId/form-8606/pdf", async (req, res): Promise<void> => {
@@ -313,11 +342,16 @@ router.get("/clients/:clientId/form-8606/pdf", async (req, res): Promise<void> =
   }
   try {
     const inputs = await loadForm8606Inputs(params.data.clientId);
-    const result = computeForm8606ProRata(inputs);
+    const result = computeForm8606ProRata(inputs.partI);
+    let partIII: Form8606PartIIIResult | undefined;
+    if (inputs.partIII.rothDistribution > 0 || inputs.partIII.rothContributionsBasis > 0) {
+      partIII = computeForm8606PartIII(inputs.partIII);
+    }
     const pdf = await buildForm8606Pdf({
       client: computed.client,
       taxYear: computed.result.taxYear,
       result,
+      partIII,
     });
     const fileName = `form-8606-${computed.client.firstName}-${computed.client.lastName}-${computed.result.taxYear}.pdf`;
     setSecureDownloadHeaders(res, {

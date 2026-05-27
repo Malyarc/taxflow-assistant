@@ -39,6 +39,21 @@ export const assetBalancesTable = pgTable("client_asset_balances", {
    * - hsa                     Health Savings Account
    * - 529                     529 college-savings plan
    * - brokerage_taxable       taxable brokerage (cost basis tracked separately per lot)
+   * - espp_shares             ESPP shares — costBasis = discounted purchase price;
+   *                           afterTaxBasis (repurposed) = ordinary income already
+   *                           recognized at purchase (15% lookback discount). Drives
+   *                           disqualifying-disposition ordinary-income classification.
+   * - iso_amt_credit_shares   ISO shares held past disqualifying window — costBasis is
+   *                           regular-tax basis, afterTaxBasis is AMT basis. The
+   *                           difference is the AMT credit basis recovered as §53
+   *                           credit when regular tax > AMT in a future year.
+   * - restricted_stock_pre_83b  Restricted stock where the client did NOT make a §83(b)
+   *                           election — costBasis = FMV at GRANT date (recorded for
+   *                           tracking); ordinary income recognized at VEST per Treas.
+   *                           Reg. §1.83-1. Pre-vest balance shows the stock at risk.
+   * - crypto                  Crypto (BTC / ETH / etc.). costBasis tracked. IRS treats
+   *                           as property (Notice 2014-21); each disposition = taxable
+   *                           event. Held > 1 year = LTCG.
    * - real_estate             investment property (separate from rental-properties table)
    * - primary_residence       owner-occupied home (FMV)
    * - other                   catch-all
