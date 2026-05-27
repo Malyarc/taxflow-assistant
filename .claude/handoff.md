@@ -3,6 +3,19 @@
 Session continuation point for the next Claude (or human) working on
 TaxFlow Assistant.
 
+## ⚡ Read this first
+
+The full open TODO is in **`docs/todo.md`** — durable, git-tracked,
+~30 open tasks organized into:
+- **A** — strategic / business
+- **B** — Planning Strategy tool smartness upgrades (H1-H12)
+- **C** — engine coverage push (federal + state)
+- **D** — infra / security hardening
+- **E** — reactive / deferred
+
+Read `docs/todo.md` BEFORE picking a task. The Claude task tool inside
+any single session is ephemeral — only that file persists.
+
 ## Headline
 
 **Deep four-axis audit complete (code quality / security / database /
@@ -247,25 +260,26 @@ applied. 20 new real-world CPA scenarios as a regression suite (146
 new hand-calc'd assertions). 2,150+ assertions across 30 suites.
 Engine still at zero documented federal/state gaps.
 
-This session, pick ONE:
+Also shipped after the audit: HSTS + upgrade-insecure-requests
+removed from the Helmet CSP because they were stranding sub-resource
+loads on the HTTP-only EC2 deploy (commits 90e7e72 + 8d31796). EC2
+site is back online and rendering correctly.
 
-  Option A — RECOMMENDED if a paid partner is committed.
-  Phase D15 multi-tenancy auth (~2-3 weeks).
+The full open TODO list is in `docs/todo.md` (~30 tasks organized
+A/B/C/D/E). Show it to me. Top recommendation is task **H2
+(what-if engine, 1-2 wks)** — single biggest planning-accuracy
+unlock; every existing planning rule becomes credible immediately.
 
-  Option B — Send the C11 outreach packet (complete, audit-passed).
-  Live CPA outreach. 4-6 weeks calendar to signed pilot.
-
-  Option C — Phase D17 file-storage hardening: SSN pgcrypto encryption
-  + tax_documents.fileContent → S3. ~2 weeks.
-
-  Option D — Audit follow-ups (~1 day each):
-   - Split ClientDetail.tsx + remove `as any` casts.
-   - Drizzle versioned migrations vs push.
-   - Add audit_log partitioning.
+Sub-recommendations after H2:
+  - C1 coverage-matrix doc (1 day — foundation for state work)
+  - H5 asset balance tracking (2-3 wks — unlocks RMD/NUA/Roth strategies)
+  - A2 D15 multi-tenancy auth (2-3 wks — gating real billing)
+  - A1 live CPA outreach (needs YOUR availability, not engineering)
 
 Quality bar:
 - Each chunk ships as its own commit
 - All existing tests must stay at 0 real failures
-- Update roadmap.md / CLAUDE.md / handoff.md at session end
-- Deploy to EC2 at the end
+- Update docs/todo.md / .claude/handoff.md / CLAUDE.md at session end
+- Deploy to EC2 at the end (incl. git pull + db push + pm2 restart
+  on EC2 + local pnpm build + rsync — see deploy steps section)
 ```
