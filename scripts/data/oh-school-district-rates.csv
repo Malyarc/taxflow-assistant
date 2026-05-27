@@ -1,0 +1,227 @@
+sd_code,name,county,rate,base,notes
+0201,Ada EVSD,Hardin,0.0125,traditional,Ada EVSD — 1.25% traditional
+0202,Allen East LSD,Allen,0.0125,traditional,Allen East — 1.25% traditional
+0301,Anna LSD,Shelby,0.0150,earned_income,Anna LSD — 1.5% earned-income
+0501,Arcadia LSD,Hancock,0.0125,traditional,Arcadia — 1.25% traditional
+0601,Arlington LSD,Hancock,0.0125,traditional,Arlington — 1.25% traditional
+0701,Ayersville LSD,Defiance,0.0125,traditional,Ayersville — 1.25% traditional
+0801,Bath LSD,Allen,0.0075,earned_income,Bath LSD — 0.75% earned-income
+0901,Beavercreek CSD,Greene,0.0000,traditional,Beavercreek — no SDIT
+1001,Bellbrook-Sugarcreek LSD,Greene,0.0000,traditional,Bellbrook-Sugarcreek — no SDIT
+1101,Berlin-Milan LSD,Erie,0.0100,earned_income,Berlin-Milan — 1.0% earned-income
+1201,Berne Union LSD,Fairfield,0.0200,traditional,Berne Union — 2.0% traditional
+1301,Bethel LSD,Miami,0.0125,traditional,Bethel LSD — 1.25% traditional
+1401,Bexley CSD,Franklin,0.0000,traditional,Bexley — no SDIT
+1501,Big Walnut LSD,Delaware,0.0075,earned_income,Big Walnut — 0.75% earned-income
+1601,Bloom-Carroll LSD,Fairfield,0.0125,traditional,Bloom-Carroll — 1.25% traditional
+1701,Bowling Green CSD,Wood,0.0050,traditional,Bowling Green — 0.5% traditional
+1801,Brookville LSD,Montgomery,0.0125,traditional,Brookville — 1.25% traditional
+1901,Buckeye Central LSD,Crawford,0.0125,traditional,Buckeye Central — 1.25% traditional
+2001,Buckeye LSD,Medina,0.0000,traditional,Buckeye LSD (Medina) — no SDIT
+2101,Buckeye Valley LSD,Delaware,0.0100,traditional,Buckeye Valley — 1.0% traditional
+2201,Cardinal LSD,Geauga,0.0125,traditional,Cardinal — 1.25% traditional
+2301,Carrollton EVSD,Carroll,0.0125,traditional,Carrollton EVSD — 1.25% traditional
+2401,Cedar Cliff LSD,Greene,0.0125,traditional,Cedar Cliff — 1.25% traditional
+2501,Celina CSD,Mercer,0.0100,traditional,Celina CSD — 1.0% traditional
+2601,Central LSD,Defiance,0.0150,traditional,Central LSD (Defiance) — 1.5% traditional
+2701,Chagrin Falls EVSD,Cuyahoga,0.0000,traditional,Chagrin Falls EVSD — no SDIT
+2801,Chippewa LSD,Wayne,0.0150,traditional,Chippewa — 1.5% traditional
+2901,Cincinnati CSD,Hamilton,0.0000,traditional,Cincinnati CSD — no SDIT (uses Cincinnati city tax instead)
+3001,Circleville CSD,Pickaway,0.0050,traditional,Circleville CSD — 0.5% traditional
+3101,Clear Fork Valley LSD,Richland,0.0100,traditional,Clear Fork Valley — 1.0% traditional
+3201,Cloverleaf LSD,Medina,0.0000,traditional,Cloverleaf — no SDIT
+3301,Coldwater EVSD,Mercer,0.0075,traditional,Coldwater EVSD — 0.75% traditional
+3401,Columbus CSD,Franklin,0.0000,traditional,Columbus CSD — no SDIT (uses Columbus city tax)
+3501,Cory-Rawson LSD,Hancock,0.0100,traditional,Cory-Rawson — 1.0% traditional
+3601,Cuyahoga Falls CSD,Summit,0.0000,traditional,Cuyahoga Falls CSD — no SDIT (Akron city tax)
+3701,Dalton LSD,Wayne,0.0100,traditional,Dalton LSD — 1.0% traditional
+3801,Dayton CSD,Montgomery,0.0000,traditional,Dayton CSD — no SDIT (uses Dayton city tax)
+3901,Defiance CSD,Defiance,0.0075,traditional,Defiance CSD — 0.75% traditional
+4001,Delphos CSD,Allen,0.0050,traditional,Delphos CSD — 0.5% traditional
+4101,Delaware CSD,Delaware,0.0000,traditional,Delaware CSD — no SDIT
+4201,Dover CSD,Tuscarawas,0.0100,traditional,Dover CSD — 1.0% traditional
+4301,Dublin CSD,Franklin,0.0000,traditional,Dublin CSD — no SDIT
+4401,East Liverpool CSD,Columbiana,0.0150,traditional,East Liverpool — 1.5% traditional
+4501,Eastland-Fairfield Career Center,Multiple,0.0000,traditional,Eastland-Fairfield Career — no SDIT
+4601,Eaton CSD,Preble,0.0150,traditional,Eaton CSD — 1.5% traditional
+4701,Edgewood CSD,Butler,0.0125,traditional,Edgewood CSD — 1.25% traditional
+4801,Edison LSD,Erie,0.0100,traditional,Edison LSD — 1.0% traditional
+4901,Edon-Northwest LSD,Williams,0.0100,traditional,Edon-Northwest — 1.0% traditional
+5001,Elgin LSD,Marion,0.0075,traditional,Elgin LSD — 0.75% traditional
+5101,Elmwood LSD,Wood,0.0125,earned_income,Elmwood — 1.25% earned-income
+5201,Eshte CSD,Cuyahoga,0.0000,traditional,Eshte CSD — no SDIT
+5301,Evergreen LSD,Fulton,0.0150,traditional,Evergreen LSD — 1.5% traditional
+5401,Fairborn CSD,Greene,0.0000,traditional,Fairborn CSD — no SDIT
+5501,Fairbanks LSD,Union,0.0100,traditional,Fairbanks — 1.0% traditional
+5601,Fairfield Union LSD,Fairfield,0.0200,traditional,Fairfield Union — 2.0% traditional
+5701,Fairlawn LSD,Shelby,0.0125,traditional,Fairlawn LSD (Shelby) — 1.25% traditional
+5801,Fayetteville-Perry LSD,Brown,0.0100,traditional,Fayetteville-Perry — 1.0% traditional
+5901,Felicity-Franklin LSD,Clermont,0.0125,traditional,Felicity-Franklin — 1.25% traditional
+6001,Findlay CSD,Hancock,0.0100,traditional,Findlay CSD — 1.0% traditional
+6101,Firelands LSD,Erie,0.0125,traditional,Firelands — 1.25% traditional
+6201,Forest Hills LSD,Hamilton,0.0000,traditional,Forest Hills — no SDIT
+6301,Fort Frye LSD,Washington,0.0150,traditional,Fort Frye — 1.5% traditional
+6401,Fort Recovery LSD,Mercer,0.0150,traditional,Fort Recovery — 1.5% traditional
+6501,Franklin CSD,Warren,0.0000,traditional,Franklin CSD (Warren) — no SDIT
+6601,Fredericktown LSD,Knox,0.0125,traditional,Fredericktown — 1.25% traditional
+6701,Galion CSD,Crawford,0.0100,traditional,Galion CSD — 1.0% traditional
+6801,Garaway LSD,Tuscarawas,0.0150,traditional,Garaway LSD — 1.5% traditional
+6901,Genoa Area LSD,Ottawa,0.0125,traditional,Genoa Area — 1.25% traditional
+7001,Geneva Area CSD,Ashtabula,0.0125,traditional,Geneva Area — 1.25% traditional
+7101,Geneva-on-the-Lake LSD,Ashtabula,0.0050,traditional,Geneva-on-the-Lake — 0.5% traditional
+7201,Goshen LSD,Clermont,0.0100,earned_income,Goshen — 1.0% earned-income
+7301,Granville EVSD,Licking,0.0075,earned_income,Granville EVSD — 0.75% earned-income
+7401,Greenville CSD,Darke,0.0050,traditional,Greenville CSD — 0.5% traditional
+7501,Groveport-Madison LSD,Franklin,0.0125,traditional,Groveport-Madison — 1.25% traditional
+7601,Hamilton CSD,Butler,0.0000,traditional,Hamilton CSD — no SDIT
+7701,Hardin Northern LSD,Hardin,0.0125,traditional,Hardin Northern — 1.25% traditional
+7801,Harrison Hills CSD,Harrison,0.0125,traditional,Harrison Hills — 1.25% traditional
+7901,Heath CSD,Licking,0.0100,traditional,Heath CSD — 1.0% traditional
+8001,Hicksville EVSD,Defiance,0.0150,traditional,Hicksville EVSD — 1.5% traditional
+8101,Highland LSD,Medina,0.0125,traditional,Highland LSD (Medina) — 1.25% traditional
+8201,Hilliard CSD,Franklin,0.0000,traditional,Hilliard CSD — no SDIT
+8301,Holgate LSD,Henry,0.0125,traditional,Holgate LSD — 1.25% traditional
+8401,Hopewell-Loudon LSD,Seneca,0.0050,traditional,Hopewell-Loudon — 0.5% traditional
+8501,Houston LSD,Shelby,0.0150,earned_income,Houston LSD — 1.5% earned-income
+8601,Huber Heights CSD,Montgomery,0.0125,traditional,Huber Heights CSD — 1.25% traditional
+8701,Hudson CSD,Summit,0.0000,traditional,Hudson CSD — no SDIT
+8801,Huntington LSD,Ross,0.0100,traditional,Huntington — 1.0% traditional
+8901,Indian Lake LSD,Logan,0.0150,traditional,Indian Lake LSD — 1.5% traditional
+9001,Jackson CSD,Jackson,0.0100,traditional,Jackson CSD — 1.0% traditional
+9101,James A Garfield LSD,Portage,0.0150,traditional,James A Garfield — 1.5% traditional
+9201,Jefferson LSD (Madison),Madison,0.0125,traditional,Jefferson LSD (Madison) — 1.25% traditional
+9301,Jennings LSD,Putnam,0.0150,traditional,Jennings LSD — 1.5% traditional
+9401,Johnstown-Monroe LSD,Licking,0.0075,earned_income,Johnstown-Monroe — 0.75% earned-income
+9501,Kalida LSD,Putnam,0.0100,traditional,Kalida LSD — 1.0% traditional
+9601,Kenton CSD,Hardin,0.0075,traditional,Kenton CSD — 0.75% traditional
+9701,Kings LSD,Warren,0.0050,traditional,Kings — 0.5% traditional
+9801,Kirtland LSD,Lake,0.0000,traditional,Kirtland LSD — no SDIT
+9901,Lakewood LSD,Licking,0.0100,traditional,Lakewood LSD (Licking) — 1.0% traditional
+1100,Lancaster CSD,Fairfield,0.0050,traditional,Lancaster CSD — 0.5% traditional
+1101A,Lebanon CSD,Warren,0.0000,traditional,Lebanon CSD — no SDIT
+1102,Liberty-Benton LSD,Hancock,0.0075,traditional,Liberty-Benton — 0.75% traditional
+1103,Liberty Center LSD,Henry,0.0150,traditional,Liberty Center — 1.5% traditional
+1104,Liberty LSD (Trumbull),Trumbull,0.0150,traditional,Liberty (Trumbull) — 1.5% traditional
+1105,Liberty-Union Thurston LSD,Fairfield,0.0175,traditional,Liberty-Union Thurston — 1.75% traditional
+1106,Licking Heights LSD,Licking,0.0075,earned_income,Licking Heights — 0.75% earned-income
+1107,Licking Valley LSD,Licking,0.0100,traditional,Licking Valley — 1.0% traditional
+1108,Lima CSD,Allen,0.0050,traditional,Lima CSD — 0.5% traditional
+1109,Lincoln CSD (Lincoln),Hancock,0.0125,traditional,Lincoln (Hancock) — 1.25% traditional
+1110,Little Miami LSD,Warren,0.0100,traditional,Little Miami — 1.0% traditional
+1111,Logan Elm LSD,Pickaway,0.0125,traditional,Logan Elm — 1.25% traditional
+1112,Lorain CSD,Lorain,0.0000,traditional,Lorain CSD — no SDIT
+1113,Loveland CSD,Hamilton,0.0000,traditional,Loveland CSD — no SDIT
+1114,Madison-Plains LSD,Madison,0.0175,traditional,Madison-Plains — 1.75% traditional
+1115,Marlington LSD,Stark,0.0100,traditional,Marlington — 1.0% traditional
+1116,Mansfield CSD,Richland,0.0000,traditional,Mansfield CSD — no SDIT
+1117,Marietta CSD,Washington,0.0050,traditional,Marietta CSD — 0.5% traditional
+1118,Marysville EVSD,Union,0.0050,traditional,Marysville EVSD — 0.5% traditional
+1119,Maumee CSD,Lucas,0.0000,traditional,Maumee CSD — no SDIT
+1120,Mayfield CSD,Cuyahoga,0.0000,traditional,Mayfield CSD — no SDIT
+1121,Mechanicsburg EVSD,Champaign,0.0175,traditional,Mechanicsburg — 1.75% traditional
+1122,Medina CSD,Medina,0.0000,traditional,Medina CSD — no SDIT
+1123,Mercer County Career Center,Mercer,0.0000,traditional,Mercer County Career Center — no SDIT
+1124,Miami East LSD,Miami,0.0125,traditional,Miami East — 1.25% traditional
+1125,Miami Trace LSD,Fayette,0.0125,traditional,Miami Trace — 1.25% traditional
+1126,Middletown CSD,Butler,0.0000,traditional,Middletown CSD — no SDIT
+1127,Milford EVSD,Clermont,0.0000,traditional,Milford EVSD — no SDIT
+1128,Millersport LSD,Fairfield,0.0150,traditional,Millersport — 1.5% traditional
+1129,Minerva LSD,Stark,0.0100,traditional,Minerva LSD — 1.0% traditional
+1130,Minster LSD,Auglaize,0.0100,earned_income,Minster — 1.0% earned-income
+1131,Monroeville LSD,Huron,0.0125,traditional,Monroeville LSD (Huron) — 1.25% traditional
+1132,Mt Vernon CSD,Knox,0.0050,traditional,Mt Vernon CSD — 0.5% traditional
+1133,National Trail LSD,Preble,0.0175,traditional,National Trail — 1.75% traditional
+1134,New Bremen LSD,Auglaize,0.0125,earned_income,New Bremen — 1.25% earned-income
+1135,New Knoxville LSD,Auglaize,0.0075,traditional,New Knoxville — 0.75% traditional
+1136,New London LSD,Huron,0.0100,traditional,New London — 1.0% traditional
+1137,New Lexington City SD,Perry,0.0125,traditional,New Lexington — 1.25% traditional
+1138,Newark CSD,Licking,0.0075,traditional,Newark CSD — 0.75% traditional
+1139,Newcomerstown EVSD,Tuscarawas,0.0125,traditional,Newcomerstown — 1.25% traditional
+1140,Newton LSD,Miami,0.0150,traditional,Newton LSD — 1.5% traditional
+1141,North Baltimore LSD,Wood,0.0100,traditional,North Baltimore — 1.0% traditional
+1142,Northeastern LSD,Clark,0.0100,traditional,Northeastern LSD (Clark) — 1.0% traditional
+1143,Northridge LSD,Licking,0.0075,traditional,Northridge LSD (Licking) — 0.75% traditional
+1144,Northwest LSD,Hamilton,0.0000,traditional,Northwest LSD (Hamilton) — no SDIT
+1145,Norton CSD,Summit,0.0000,traditional,Norton CSD — no SDIT
+1146,Norwalk CSD,Huron,0.0050,traditional,Norwalk CSD — 0.5% traditional
+1147,Norwood CSD,Hamilton,0.0000,traditional,Norwood CSD — no SDIT
+1148,Oak Hills LSD,Hamilton,0.0000,traditional,Oak Hills — no SDIT
+1149,Oberlin CSD,Lorain,0.0050,traditional,Oberlin CSD — 0.5% traditional
+1150,Old Fort LSD,Seneca,0.0100,traditional,Old Fort — 1.0% traditional
+1151,Olentangy LSD,Delaware,0.0075,earned_income,Olentangy LSD — 0.75% earned-income
+1152,Ontario LSD,Richland,0.0100,traditional,Ontario LSD — 1.0% traditional
+1153,Otsego LSD,Wood,0.0100,traditional,Otsego — 1.0% traditional
+1154,Ottawa-Glandorf LSD,Putnam,0.0100,traditional,Ottawa-Glandorf — 1.0% traditional
+1155,Painesville CSD,Lake,0.0050,traditional,Painesville CSD — 0.5% traditional
+1156,Pandora-Gilboa LSD,Putnam,0.0100,traditional,Pandora-Gilboa — 1.0% traditional
+1157,Parkway LSD,Mercer,0.0100,traditional,Parkway — 1.0% traditional
+1158,Patrick Henry LSD,Henry,0.0150,traditional,Patrick Henry — 1.5% traditional
+1159,Paulding EVSD,Paulding,0.0150,traditional,Paulding EVSD — 1.5% traditional
+1160,Pickerington LSD,Fairfield,0.0100,earned_income,Pickerington LSD — 1.0% earned-income
+1161,Piqua CSD,Miami,0.0125,traditional,Piqua CSD — 1.25% traditional
+1162,Pleasant LSD,Marion,0.0075,traditional,Pleasant LSD (Marion) — 0.75% traditional
+1163,Portsmouth CSD,Scioto,0.0050,traditional,Portsmouth CSD — 0.5% traditional
+1164,Princeton CSD,Hamilton,0.0000,traditional,Princeton CSD — no SDIT
+1165,Ravenna CSD,Portage,0.0100,traditional,Ravenna CSD — 1.0% traditional
+1166,Reynoldsburg CSD,Franklin,0.0050,traditional,Reynoldsburg CSD — 0.5% traditional
+1167,Riverside LSD (Logan),Logan,0.0125,traditional,Riverside LSD (Logan) — 1.25% traditional
+1168,Rocky River CSD,Cuyahoga,0.0000,traditional,Rocky River CSD — no SDIT
+1169,Ross LSD,Butler,0.0100,traditional,Ross LSD (Butler) — 1.0% traditional
+1170,Russia LSD,Shelby,0.0150,earned_income,Russia LSD — 1.5% earned-income
+1171,Sandy Valley LSD,Stark,0.0100,traditional,Sandy Valley — 1.0% traditional
+1172,Sebring LSD,Mahoning,0.0125,traditional,Sebring LSD — 1.25% traditional
+1173,Shadyside LSD,Belmont,0.0100,traditional,Shadyside — 1.0% traditional
+1174,Shaker Heights CSD,Cuyahoga,0.0000,traditional,Shaker Heights CSD — no SDIT
+1175,Shawnee LSD (Allen),Allen,0.0050,traditional,Shawnee LSD (Allen) — 0.5% traditional
+1176,Sidney CSD,Shelby,0.0075,traditional,Sidney CSD — 0.75% traditional
+1177,Smithville-Western LSD,Wayne,0.0150,traditional,Smithville-Western — 1.5% traditional
+1178,South-Western CSD,Franklin,0.0000,traditional,South-Western CSD — no SDIT
+1179,Southwest LSD,Hamilton,0.0000,traditional,Southwest LSD (Hamilton) — no SDIT
+1180,Spencerville LSD,Allen,0.0125,traditional,Spencerville — 1.25% traditional
+1181,Springboro CSD,Warren,0.0000,traditional,Springboro CSD — no SDIT
+1182,Springfield LSD (Clark),Clark,0.0000,traditional,Springfield LSD (Clark) — no SDIT
+1183,Springfield LSD (Summit),Summit,0.0000,traditional,Springfield LSD (Summit) — no SDIT
+1184,Stow-Munroe Falls CSD,Summit,0.0000,traditional,Stow-Munroe Falls — no SDIT
+1185,Streetsboro CSD,Portage,0.0000,traditional,Streetsboro CSD — no SDIT
+1186,Strongsville CSD,Cuyahoga,0.0000,traditional,Strongsville CSD — no SDIT
+1187,Sugarcreek LSD (Greene),Greene,0.0000,traditional,Sugarcreek LSD (Greene) — no SDIT
+1188,Switzerland of Ohio LSD,Monroe,0.0100,traditional,Switzerland of Ohio — 1.0% traditional
+1189,Sycamore CSD,Hamilton,0.0000,traditional,Sycamore CSD — no SDIT
+1190,Talawanda CSD,Butler,0.0125,traditional,Talawanda — 1.25% traditional
+1191,Tallmadge CSD,Summit,0.0000,traditional,Tallmadge CSD — no SDIT
+1192,Tipp City EVSD,Miami,0.0125,traditional,Tipp City — 1.25% traditional
+1193,Toledo CSD,Lucas,0.0000,traditional,Toledo CSD — no SDIT (uses Toledo city tax)
+1194,Tri-Valley LSD,Muskingum,0.0125,earned_income,Tri-Valley — 1.25% earned-income
+1195,Triway LSD,Wayne,0.0100,traditional,Triway — 1.0% traditional
+1196,Twin Valley CSD,Preble,0.0125,traditional,Twin Valley — 1.25% traditional
+1197,Union LSD (Clark),Clark,0.0125,traditional,Union LSD (Clark) — 1.25% traditional
+1198,Upper Arlington CSD,Franklin,0.0000,traditional,Upper Arlington — no SDIT
+1199,Upper Sandusky EVSD,Wyandot,0.0100,traditional,Upper Sandusky — 1.0% traditional
+1200,Valley View LSD,Cuyahoga,0.0000,traditional,Valley View LSD (Cuyahoga) — no SDIT
+1228,Van Buren LSD,Hancock,0.0100,traditional,Van Buren LSD — 1.0% traditional
+1202,Van Wert CSD,Van Wert,0.0050,traditional,Van Wert CSD — 0.5% traditional
+1203,Vanlue LSD,Hancock,0.0100,traditional,Vanlue LSD — 1.0% traditional
+1204,Vermilion LSD,Erie,0.0125,traditional,Vermilion LSD — 1.25% traditional
+1205,Wapakoneta CSD,Auglaize,0.0050,traditional,Wapakoneta CSD — 0.5% traditional
+1206,Warrensville Heights CSD,Cuyahoga,0.0000,traditional,Warrensville Heights — no SDIT
+1207,Washington CH CSD,Fayette,0.0000,traditional,Washington Court House CSD — no SDIT
+1208,Wauseon EVSD,Fulton,0.0150,traditional,Wauseon EVSD — 1.5% traditional
+1209,Waverly CSD,Pike,0.0075,traditional,Waverly CSD — 0.75% traditional
+1210,Wayne Trace LSD,Paulding,0.0125,traditional,Wayne Trace — 1.25% traditional
+1211,Waynesville LSD,Warren,0.0100,traditional,Waynesville LSD — 1.0% traditional
+1212,Wellsville LSD,Columbiana,0.0125,traditional,Wellsville LSD — 1.25% traditional
+1213,West Branch LSD,Mahoning,0.0125,traditional,West Branch — 1.25% traditional
+1214,West Clermont LSD,Clermont,0.0000,traditional,West Clermont — no SDIT
+1215,West Holmes LSD,Holmes,0.0100,traditional,West Holmes — 1.0% traditional
+1216,Westerville CSD,Franklin,0.0000,traditional,Westerville CSD — no SDIT
+1217,Wheelersburg LSD,Scioto,0.0100,traditional,Wheelersburg — 1.0% traditional
+1218,Whitehall CSD,Franklin,0.0000,traditional,Whitehall CSD — no SDIT
+1219,Whitmer LSD,Lucas,0.0000,traditional,Whitmer LSD — no SDIT
+1220,Wilmington CSD,Clinton,0.0100,traditional,Wilmington CSD — 1.0% traditional
+1221,Wooster CSD,Wayne,0.0000,traditional,Wooster CSD — no SDIT
+1222,Worthington CSD,Franklin,0.0100,earned_income,Worthington CSD — 1.0% earned-income (NEW 2024)
+1223,Wynford LSD,Crawford,0.0100,traditional,Wynford — 1.0% traditional
+1224,Xenia CSD,Greene,0.0000,traditional,Xenia CSD — no SDIT
+1225,Yellow Springs EVSD,Greene,0.0100,traditional,Yellow Springs — 1.0% traditional
+1226,Youngstown CSD,Mahoning,0.0000,traditional,Youngstown CSD — no SDIT (uses Youngstown city tax)
+1227,Zanesville CSD,Muskingum,0.0050,traditional,Zanesville CSD — 0.5% traditional

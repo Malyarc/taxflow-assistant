@@ -1,0 +1,176 @@
+psd_code,municipality,county,combined_rate,resident_rate,non_resident_rate,notes
+510101,Philadelphia,Philadelphia,0.0375,0.0375,0.0344,Philly Wage Tax (resident 3.75%; non-res 3.44% TY2024)
+700102,Pittsburgh,Allegheny,0.0300,0.0300,0.0100,2% city + 1% PSD; non-res 1% (Act 511)
+350201,Allentown,Lehigh,0.01975,0.01975,0.0100,Combined 1.975%
+250301,Erie,Erie,0.0195,0.0195,0.0100,1.95% combined
+060401,Reading,Berks,0.0270,0.0270,0.0100,2.70% combined
+350202,Bethlehem,Northampton,0.0100,0.0100,0.0100,1.0% combined
+670501,Scranton,Lackawanna,0.0340,0.0340,0.0100,Act 511 + commuter
+220601,Lancaster,Lancaster,0.0205,0.0205,0.0100,1.1% muni + 0.95% SD
+360701,Harrisburg,Dauphin,0.0200,0.0200,0.0100,2.0% combined
+670801,Wilkes-Barre,Luzerne,0.0300,0.0300,0.0100,3.0% combined
+060901,Altoona,Blair,0.0160,0.0160,0.0100,1.6% combined
+671001,York,York,0.0185,0.0185,0.0100,1.85% combined
+541101,Bensalem,Bucks,0.0100,0.0100,0.0100,Act 32 default
+541201,Lower Merion,Montgomery,0.0100,0.0100,0.0100,Act 32 default 1%
+541301,Abington,Montgomery,0.0100,0.0100,0.0100,Act 32 default
+541401,Cheltenham,Montgomery,0.0100,0.0100,0.0100,Act 32 default
+541501,Tredyffrin,Chester,0.0100,0.0100,0.0100,Act 32 default
+541601,Upper Darby,Delaware,0.0100,0.0100,0.0100,Act 32 default
+541701,Haverford,Delaware,0.0100,0.0100,0.0100,Act 32 default
+541801,Radnor,Delaware,0.0100,0.0100,0.0100,Act 32 default
+541901,Springfield,Delaware,0.0100,0.0100,0.0100,Act 32 default
+542001,Marple,Delaware,0.0100,0.0100,0.0100,Act 32 default
+542101,Norristown,Montgomery,0.0150,0.0150,0.0100,1.5% combined
+542201,Pottstown,Montgomery,0.0175,0.0175,0.0100,1.75% combined
+542301,Plymouth,Montgomery,0.0100,0.0100,0.0100,Act 32 default
+542401,Whitemarsh,Montgomery,0.0100,0.0100,0.0100,Act 32 default
+542501,Lower Providence,Montgomery,0.0100,0.0100,0.0100,Act 32 default
+542601,Hatboro,Montgomery,0.0125,0.0125,0.0100,1.25% combined
+542701,Ambler,Montgomery,0.0100,0.0100,0.0100,Act 32 default
+542801,Conshohocken,Montgomery,0.0100,0.0100,0.0100,Act 32 default
+542901,King of Prussia,Montgomery,0.0100,0.0100,0.0100,Act 32 default
+543001,Limerick,Montgomery,0.0100,0.0100,0.0100,Act 32 default
+543101,Pottsgrove,Montgomery,0.0150,0.0150,0.0100,1.5% combined
+543201,Royersford,Montgomery,0.0150,0.0150,0.0100,1.5% combined
+543301,Souderton,Montgomery,0.0100,0.0100,0.0100,Act 32 default
+543401,Lansdale,Montgomery,0.0125,0.0125,0.0100,1.25% combined
+543501,North Penn,Montgomery,0.0100,0.0100,0.0100,Act 32 default
+543601,Upper Gwynedd,Montgomery,0.0100,0.0100,0.0100,Act 32 default
+543701,Upper Merion,Montgomery,0.0100,0.0100,0.0100,Act 32 default
+543801,Worcester,Montgomery,0.0100,0.0100,0.0100,Act 32 default
+543901,Whitpain,Montgomery,0.0100,0.0100,0.0100,Act 32 default
+544001,Horsham,Montgomery,0.0100,0.0100,0.0100,Act 32 default
+544101,Hatfield,Montgomery,0.0100,0.0100,0.0100,Act 32 default
+702101,Bethel Park,Allegheny,0.0100,0.0100,0.0100,Act 32 default
+702201,Mount Lebanon,Allegheny,0.0100,0.0100,0.0100,Act 32 default
+702301,Penn Hills,Allegheny,0.0100,0.0100,0.0100,Act 32 default
+702401,Monroeville,Allegheny,0.0100,0.0100,0.0100,Act 32 default
+702501,Plum,Allegheny,0.0100,0.0100,0.0100,Act 32 default
+702601,Pine,Allegheny,0.0100,0.0100,0.0100,Act 32 default
+702701,Ross,Allegheny,0.0100,0.0100,0.0100,Act 32 default
+702801,Shaler,Allegheny,0.0100,0.0100,0.0100,Act 32 default
+702901,Hampton,Allegheny,0.0100,0.0100,0.0100,Act 32 default
+703001,Mc Candless,Allegheny,0.0100,0.0100,0.0100,Act 32 default
+703101,Mc Keesport,Allegheny,0.0150,0.0150,0.0100,1.5% combined
+703201,South Park,Allegheny,0.0100,0.0100,0.0100,Act 32 default
+703301,Upper Saint Clair,Allegheny,0.0100,0.0100,0.0100,Act 32 default
+703401,West Mifflin,Allegheny,0.0100,0.0100,0.0100,Act 32 default
+703501,Whitehall,Allegheny,0.0100,0.0100,0.0100,Act 32 default
+703601,Wilkinsburg,Allegheny,0.0100,0.0100,0.0100,Act 32 default
+131701,Berwyn,Chester,0.0100,0.0100,0.0100,Act 32 default
+131801,Coatesville,Chester,0.0125,0.0125,0.0100,1.25% combined
+131901,Downingtown,Chester,0.0100,0.0100,0.0100,Act 32 default
+132001,Exton,Chester,0.0100,0.0100,0.0100,Act 32 default
+132101,Kennett Square,Chester,0.0125,0.0125,0.0100,1.25% combined
+132201,Phoenixville,Chester,0.0100,0.0100,0.0100,Act 32 default
+132301,West Chester,Chester,0.0100,0.0100,0.0100,Act 32 default
+132401,Westtown,Chester,0.0100,0.0100,0.0100,Act 32 default
+132501,East Whiteland,Chester,0.0100,0.0100,0.0100,Act 32 default
+132601,Uwchlan,Chester,0.0100,0.0100,0.0100,Act 32 default
+082701,Doylestown,Bucks,0.0100,0.0100,0.0100,Act 32 default
+082801,Levittown,Bucks,0.0125,0.0125,0.0100,1.25% combined
+082901,Newtown,Bucks,0.0100,0.0100,0.0100,Act 32 default
+083001,Quakertown,Bucks,0.0125,0.0125,0.0100,1.25% combined
+083101,Sellersville,Bucks,0.0125,0.0125,0.0100,1.25% combined
+083201,Warminster,Bucks,0.0125,0.0125,0.0100,1.25% combined
+083301,Warrington,Bucks,0.0100,0.0100,0.0100,Act 32 default
+083401,Lower Makefield,Bucks,0.0100,0.0100,0.0100,Act 32 default
+083501,Middletown Bucks,Bucks,0.0100,0.0100,0.0100,Act 32 default
+083601,Upper Makefield,Bucks,0.0100,0.0100,0.0100,Act 32 default
+083701,Buckingham,Bucks,0.0100,0.0100,0.0100,Act 32 default
+223801,Manheim,Lancaster,0.0150,0.0150,0.0100,1.5% combined
+223901,Ephrata,Lancaster,0.0150,0.0150,0.0100,1.5% combined
+224001,Lititz,Lancaster,0.0150,0.0150,0.0100,1.5% combined
+224101,Elizabethtown,Lancaster,0.0100,0.0100,0.0100,Act 32 default
+224201,New Holland,Lancaster,0.0125,0.0125,0.0100,1.25% combined
+364301,Hummelstown,Dauphin,0.0100,0.0100,0.0100,Act 32 default
+364401,Hershey,Dauphin,0.0100,0.0100,0.0100,Act 32 default
+364501,Middletown Dauphin,Dauphin,0.0150,0.0150,0.0100,1.5% combined
+364601,Steelton,Dauphin,0.0150,0.0150,0.0100,1.5% combined
+674701,Wilkes-Barre Twp,Luzerne,0.0250,0.0250,0.0100,2.5% combined
+674801,Hazleton,Luzerne,0.0250,0.0250,0.0100,2.5% combined
+674901,Nanticoke,Luzerne,0.0200,0.0200,0.0100,2.0% combined
+675001,Carbondale,Lackawanna,0.0300,0.0300,0.0100,3.0% combined
+675101,Dunmore,Lackawanna,0.0300,0.0300,0.0100,3.0% combined
+675201,Throop,Lackawanna,0.0250,0.0250,0.0100,2.5% combined
+675301,Old Forge,Lackawanna,0.0250,0.0250,0.0100,2.5% combined
+675401,Moosic,Lackawanna,0.0200,0.0200,0.0100,2.0% combined
+675501,Taylor,Lackawanna,0.0200,0.0200,0.0100,2.0% combined
+675601,Olyphant,Lackawanna,0.0250,0.0250,0.0100,2.5% combined
+365701,Lower Paxton,Dauphin,0.0150,0.0150,0.0100,1.5% combined
+365801,Susquehanna Twp,Dauphin,0.0100,0.0100,0.0100,Act 32 default
+365901,Penbrook,Dauphin,0.0150,0.0150,0.0100,1.5% combined
+366001,Paxtang,Dauphin,0.0100,0.0100,0.0100,Act 32 default
+066101,Wyomissing,Berks,0.0100,0.0100,0.0100,Act 32 default
+066201,Sinking Spring,Berks,0.0125,0.0125,0.0100,1.25% combined
+066301,Shillington,Berks,0.0125,0.0125,0.0100,1.25% combined
+066401,Boyertown,Berks,0.0125,0.0125,0.0100,1.25% combined
+066501,Kutztown,Berks,0.0100,0.0100,0.0100,Act 32 default
+066601,Hamburg,Berks,0.0125,0.0125,0.0100,1.25% combined
+676701,York Township,York,0.0125,0.0125,0.0100,1.25% combined
+676801,Spring Grove,York,0.0125,0.0125,0.0100,1.25% combined
+676901,Hanover,York,0.0150,0.0150,0.0100,1.5% combined
+677001,Red Lion,York,0.0150,0.0150,0.0100,1.5% combined
+677101,Manchester,York,0.0100,0.0100,0.0100,Act 32 default
+677201,Dover,York,0.0125,0.0125,0.0100,1.25% combined
+567301,State College,Centre,0.0125,0.0125,0.0100,1.25% combined
+567401,Bellefonte,Centre,0.0100,0.0100,0.0100,Act 32 default
+567501,Patton Centre,Centre,0.0100,0.0100,0.0100,Act 32 default
+567601,Ferguson,Centre,0.0100,0.0100,0.0100,Act 32 default
+067701,Exeter,Berks,0.0100,0.0100,0.0100,Act 32 default
+067801,Cumru,Berks,0.0100,0.0100,0.0100,Act 32 default
+067901,Birdsboro,Berks,0.0125,0.0125,0.0100,1.25% combined
+578001,Williamsport,Lycoming,0.0150,0.0150,0.0100,1.5% combined
+578101,South Williamsport,Lycoming,0.0125,0.0125,0.0100,1.25% combined
+588201,Indiana PA,Indiana,0.0150,0.0150,0.0100,1.5% combined
+598301,Punxsutawney,Jefferson,0.0125,0.0125,0.0100,1.25% combined
+608401,Johnstown,Cambria,0.0200,0.0200,0.0100,2.0% combined
+608501,Ebensburg,Cambria,0.0150,0.0150,0.0100,1.5% combined
+618601,Sharon,Mercer,0.0175,0.0175,0.0100,1.75% combined
+618701,Hermitage,Mercer,0.0150,0.0150,0.0100,1.5% combined
+628801,New Castle,Lawrence,0.0200,0.0200,0.0100,2.0% combined
+638901,Beaver Falls,Beaver,0.0175,0.0175,0.0100,1.75% combined
+639001,Aliquippa,Beaver,0.0175,0.0175,0.0100,1.75% combined
+649101,Washington PA,Washington,0.0150,0.0150,0.0100,1.5% combined
+649201,Canonsburg,Washington,0.0150,0.0150,0.0100,1.5% combined
+649301,Peters,Washington,0.0100,0.0100,0.0100,Act 32 default
+649401,Cecil,Washington,0.0100,0.0100,0.0100,Act 32 default
+659501,Connellsville,Fayette,0.0150,0.0150,0.0100,1.5% combined
+659601,Uniontown,Fayette,0.0200,0.0200,0.0100,2.0% combined
+669701,Pottsville,Schuylkill,0.0150,0.0150,0.0100,1.5% combined
+669801,Schuylkill Haven,Schuylkill,0.0125,0.0125,0.0100,1.25% combined
+669901,Tamaqua,Schuylkill,0.0125,0.0125,0.0100,1.25% combined
+689001,Easton,Northampton,0.0195,0.0195,0.0100,1.95% combined
+689101,Wilson,Northampton,0.0100,0.0100,0.0100,Act 32 default
+689201,Forks,Northampton,0.0100,0.0100,0.0100,Act 32 default
+689301,Palmer,Northampton,0.0100,0.0100,0.0100,Act 32 default
+689401,Bushkill,Northampton,0.0100,0.0100,0.0100,Act 32 default
+689501,Lower Saucon,Northampton,0.0100,0.0100,0.0100,Act 32 default
+359601,Salisbury Twp,Lehigh,0.0100,0.0100,0.0100,Act 32 default
+359701,Whitehall Twp,Lehigh,0.0100,0.0100,0.0100,Act 32 default
+359801,Lower Macungie,Lehigh,0.0100,0.0100,0.0100,Act 32 default
+359901,Upper Macungie,Lehigh,0.0100,0.0100,0.0100,Act 32 default
+360001,South Whitehall,Lehigh,0.0100,0.0100,0.0100,Act 32 default
+360002,Catasauqua,Lehigh,0.0150,0.0150,0.0100,1.5% combined
+360003,Emmaus,Lehigh,0.0125,0.0125,0.0100,1.25% combined
+360004,Macungie,Lehigh,0.0100,0.0100,0.0100,Act 32 default
+360005,Coopersburg,Lehigh,0.0100,0.0100,0.0100,Act 32 default
+115001,Lehighton,Carbon,0.0150,0.0150,0.0100,1.5% combined
+115002,Jim Thorpe,Carbon,0.0125,0.0125,0.0100,1.25% combined
+705001,Munhall,Allegheny,0.0100,0.0100,0.0100,Act 32 default
+705002,Homestead,Allegheny,0.0100,0.0100,0.0100,Act 32 default
+705003,Duquesne,Allegheny,0.0150,0.0150,0.0100,1.5% combined
+705004,Clairton,Allegheny,0.0200,0.0200,0.0100,2.0% combined
+705005,Glassport,Allegheny,0.0150,0.0150,0.0100,1.5% combined
+705006,Coraopolis,Allegheny,0.0150,0.0150,0.0100,1.5% combined
+705007,Sewickley,Allegheny,0.0100,0.0100,0.0100,Act 32 default
+705008,Carnegie,Allegheny,0.0100,0.0100,0.0100,Act 32 default
+705009,Greentree,Allegheny,0.0100,0.0100,0.0100,Act 32 default
+705010,Castle Shannon,Allegheny,0.0100,0.0100,0.0100,Act 32 default
+705011,Brentwood,Allegheny,0.0100,0.0100,0.0100,Act 32 default
+705012,Baldwin,Allegheny,0.0100,0.0100,0.0100,Act 32 default
+705013,Crafton,Allegheny,0.0100,0.0100,0.0100,Act 32 default
+705014,Dormont,Allegheny,0.0100,0.0100,0.0100,Act 32 default
+705015,Mt Oliver,Allegheny,0.0150,0.0150,0.0100,1.5% combined
+000000,Act 32 Default,Multiple,0.0100,0.0100,0.0100,PA Act 32 default 1% (use when specific muni unknown)

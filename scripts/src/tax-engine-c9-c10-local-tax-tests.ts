@@ -41,10 +41,12 @@ function localCalc(code: string, wages: number, state: string) {
 // ── C9 — PA local EIT ─────────────────────────────────────────────────────
 section("C9 — PA local EIT (Act 511 / Act 32)");
 
-header("PA registry contains 13 new municipalities");
+header("PA registry contains 13 inline + ~165 bulk = ~177 PA jurisdictions");
 {
   const paCount = localityCodesForState("PA").length;
-  check("C9 count", "13 PA jurisdictions registered", paCount, 13);
+  // C9 bulk shipped 2026-05-27: 13 inline + ~164 bulk-registry-net-of-overlap.
+  // Expect: ≥ 150 (allows future additions without breaking this test).
+  checkTruthy("C9 count", `≥ 150 PA jurisdictions (got ${paCount})`, paCount >= 150, true);
 }
 
 header("C9-1 Philadelphia 3.75% × $80k W-2 = $3,000");
@@ -109,10 +111,12 @@ header("C9 E2E: PA client with Philly EIT — local tax flows through pipeline")
 // ── C10 — OH School District Income Tax ──────────────────────────────────
 section("C10 — Ohio School District Income Tax (Form SD-100)");
 
-header("OH registry contains 25 total (10 cities + 15 SDs)");
+header("OH registry contains 25 inline + ~226 bulk SDs (post C10-bulk shipping)");
 {
   const ohCount = localityCodesForState("OH").length;
-  check("C10 count", "OH jurisdictions = 25", ohCount, 25);
+  // C10 bulk shipped 2026-05-27: 25 inline (10 cities + 15 inline SDs) + 226
+  // bulk-registry-net-of-overlap. Expect: ≥ 200 (allows future additions).
+  checkTruthy("C10 count", `≥ 200 OH jurisdictions (got ${ohCount})`, ohCount >= 200, true);
 }
 
 header("C10-1 Olentangy LSD 0.75% × $80k = $600");

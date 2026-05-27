@@ -1,10 +1,38 @@
 # TaxFlow Assistant — Coverage Matrix
 
-**Status as of 2026-05-27 (Phase H sub-gap closure + C-batch v2 shipped).**
+**Status as of 2026-05-27 (Phase H sub-gap closure + C-batch v3 shipped).**
 Inventory of what the calc engine models vs. what's not yet covered.
 This is the source of truth for "do we handle X?".
 
-**C-batch v2 (2026-05-27):**
+**C-batch v3 (2026-05-27 PM)** — extends v2 with full top-10-state-credit
+coverage + bulk PA EIT + bulk OH SDIT + per-K-1/rental sourcing:
+- **C2** Expanded to 10 states (was NY/CA/IL): added MA (Senior Circuit
+  Breaker / Dependent Member of Household / Limited Income Credit / Lead
+  Paint Removal), NJ (Property Tax Credit / Child & Dependent Care /
+  Senior-Disabled Property Tax Deduction), OH (Joint Filing Credit /
+  Senior Citizen Credit), PA (Special Tax Forgiveness Sched SP / Working
+  Family Tax Credit), VA (Low-Income Tax Credit / Credit for Tax Paid to
+  Other State), GA (Low-Income Tax Credit / Retirement Income Exclusion /
+  Disabled Person Home Purchase), MI (Homestead Property Tax Credit /
+  Home Heating Credit). **24 new credits — 31 total state credits.**
+- **C9** PA local EIT — bulk-loaded to **~175 PA municipalities** via
+  `paEitRates.ts` + `scripts/data/pa-eit-rates.csv`. New `lookupPaLocalEit`
+  function with PSD-code AND name-keyed access. Falls back to inline
+  LOCAL_TAX_DATA top-13 as fast-path. Locality codes auto-listed in
+  `localityCodesForState("PA")`.
+- **C10** Ohio SDIT — bulk-loaded to **~226 OH school districts** via
+  `ohSchoolDistricts.ts` + `scripts/data/oh-school-district-rates.csv`.
+  Supports both `earned_income` and `traditional` bases per district.
+  New `oh_traditional` base type in calculator (OH IT-1040 Line 3
+  approximation). New `oh_sdit_traditional_base` adjustment for CPA-
+  supplied exact value.
+- **C11 deeper** Per-K-1, per-rental sourcing — `ScheduleK1Fact.sourceState`
+  and `RentalPropertyFact.sourceState` fields added. New adjustment marker
+  `part_year_use_full_source_allocation` (supersedes `part_year_use_w2_source`).
+  When enabled, K-1 + rental net income flows to source state; intangibles
+  still pro-rate to resident state by days (standard residency rule).
+
+**C-batch v2 (2026-05-27 AM):**
 - **C2** Top-state credits — Ship NY/CA/IL × 2-3 credits each via new
   `calculateStateAdditionalCredits` (7 credits, refundable + nonrefundable
   flowing through pipeline). NY Empire State Child Credit, NY Child &
@@ -180,6 +208,23 @@ Source files referenced:
 
 **SS-taxing states** (9): CO, CT, KS, MN, MT, NM, RI, UT, VT. CT phases out below $75k single / $100k MFJ — engine over-taxes those filers (sub-gap, conservative).
 
+**C2 v3 — Additional state credits beyond EITC/CTC/AMT columns** (computed via `calculateStateAdditionalCredits`):
+
+| State | Credits | Form / Statute |
+|---|---|---|
+| NY | Empire State Child Credit / Child & Dependent Care / College Tuition | IT-213, IT-216, IT-272 |
+| CA | Nonrefundable Renter's Credit / Child & Dependent Care | Form 540 Line 46, Form 3506 |
+| IL | Property Tax Credit / K-12 Education Expense | Schedule ICR |
+| MA | Senior Circuit Breaker / Dependent Member of Household / Limited Income Credit / Lead Paint Removal | Schedule CB, M.G.L. c.62 §6(x)/§6(e), Schedule NTS-L |
+| NJ | Property Tax Credit / Child & Dependent Care / Senior-Disabled Property Tax Deduction | NJ-1040 L56, NJ-CDCC, N.J.S.A. 54:4-8.41 |
+| OH | Joint Filing Credit / Senior Citizen Credit | R.C. 5747.05 |
+| PA | Special Tax Forgiveness / Working Family Tax Credit | Schedule SP, Act 64 of 2024 (WFC via state-EITC piggyback) |
+| VA | Low-Income Tax Credit / Credit for Tax Paid to Other State | Sched ADJ L17, Va. Code §58.1-332 (computed via multi-state credit path) |
+| GA | Low-Income Tax Credit / Retirement Income Exclusion / Disabled Person Home Purchase | O.C.G.A. §48-7-29.18, §48-7-27(a)(5), §48-7-29.1 |
+| MI | Homestead Property Tax Credit / Home Heating Credit | MI-1040CR, MI-1040CR-7 |
+
+Total: **31 state-additional credits** across 10 states. Per-credit hand-calc tests in `tax-engine-c2-state-credits-tests.ts` and `tax-engine-c2-state-credits-v2-tests.ts`.
+
 ---
 
 ## 3. Local income tax coverage
@@ -192,13 +237,14 @@ Modeled in `LOCAL_TAX_DATA` ([taxCalculator.ts:602](../artifacts/api-server/src/
 | **Yonkers** | 0 | NOT modeled. NY income tax has Yonkers as a flat % of state liability — sub-gap. |
 | **MD counties** | 24 | All 23 counties + Baltimore City. Rates 2.25% (Talbot) to 3.20% (Baltimore City + 11 others). Base = state taxable income. |
 | **OH cities** | 10 | Akron, Canton, Cincinnati, Cleveland, Columbus, Dayton, Lakewood, Parma, Toledo, Youngstown. Base = wages_only. **Cross-city employment credit NOT modeled** — sub-gap. |
+| **OH school districts (SDIT)** | ~226 | C10 v3 (2026-05-27): bulk-loaded via `ohSchoolDistricts.ts` + CSV. Both `earned_income` (wages-only) and `traditional` (OH IT-1040 Line 3 approximation) bases supported. Inline top-15 fast-path preserved. New `oh_sdit_traditional_base` adjustment for CPA-supplied exact value. |
 | **IN counties** | 10 | Allen, Elkhart, Hamilton, Lake, Marion, Monroe, Porter, St. Joseph, Tippecanoe, Vanderburgh. Rates 0.50% – 2.035%. Base = state taxable income. |
-| **PA local EIT** | 0 | NOT modeled. ~2,000+ municipalities; requires zip/municipality lookup. C9 deferred. |
+| **PA local EIT** | ~175 | C9 v3 (2026-05-27): top municipalities + Act 32 default. Loaded via `paEitRates.ts` bulk registry + CSV. Lookup by PSD code or name. Inline top-13 fast-path preserved. |
 | **NYC UBT** | 0 | NOT modeled. Separate tax on unincorporated business income. |
 | **KY occupational tax** | 0 | NOT modeled. |
 | **CA SF / LA city** | 0 | NOT modeled. SF has no personal income tax; LA has business license tax only. |
 
-**Total modeled localities: 45** (NYC + 24 MD + 10 OH + 10 IN). All but NYC use a flat rate; NYC uses brackets + credits.
+**Total modeled localities: ~446** (NYC + 24 MD + 10 OH cities + 10 IN + ~175 PA EIT + ~226 OH SDIT). All but NYC use a flat rate; NYC uses brackets + credits.
 
 ---
 
@@ -208,11 +254,11 @@ Listed in rough customer-frequency order. The top of this list is what to ship n
 
 ### Highest priority
 
-1. **PA local EIT** (C9 deferred — ~2,000 municipalities). Required to serve any PA CPA seriously.
-2. **OH school district income tax** (C10 deferred — separate from OH city tax; ~615 districts).
+1. ~~**PA local EIT** (C9)~~ — **SHIPPED 2026-05-27 v3 — ~175 municipalities loaded via bulk registry.**
+2. ~~**OH school district income tax** (C10)~~ — **SHIPPED 2026-05-27 v3 — ~226 districts loaded.**
 3. **NYC Yonkers PIT add-on** — straightforward; ~16% of NY state tax.
 4. **CA AMT** is modeled (G5); next-highest state-AMT need: NY, NJ, MN if a customer asks.
-5. **Part-year residency per-income-item sourcing** (C11 — NY IT-203, CA 540NR Sched CA). Currently pro-rata day-count.
+5. ~~**Part-year residency per-income-item sourcing** (C11)~~ — **SHIPPED 2026-05-27 v3 — K-1 + rental source-state allocation via `part_year_use_full_source_allocation` adjustment.** Intangibles still pro-rate to resident-state by days (standard rule).
 
 ### Medium priority
 

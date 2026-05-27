@@ -1189,6 +1189,20 @@ export const AdjustmentAdjustmentType = {
   mega_backdoor_roth_after_tax_contribution:
     "mega_backdoor_roth_after_tax_contribution",
   roth_ira_distribution: "roth_ira_distribution",
+  ca_renter_months: "ca_renter_months",
+  k12_education_expenses: "k12_education_expenses",
+  college_tuition_qualified: "college_tuition_qualified",
+  annual_rent_paid: "annual_rent_paid",
+  part_year_use_w2_source: "part_year_use_w2_source",
+  part_year_use_full_source_allocation: "part_year_use_full_source_allocation",
+  ma_assessed_home_value: "ma_assessed_home_value",
+  ma_water_sewer_half: "ma_water_sewer_half",
+  ma_lead_paint_removal_cost: "ma_lead_paint_removal_cost",
+  pa_eligibility_income: "pa_eligibility_income",
+  ga_disabled_home_purchase_cost: "ga_disabled_home_purchase_cost",
+  mi_home_heating_cost: "mi_home_heating_cost",
+  mi_household_resources: "mi_household_resources",
+  oh_sdit_traditional_base: "oh_sdit_traditional_base",
 } as const;
 
 export interface Adjustment {
@@ -1285,6 +1299,20 @@ export const CreateAdjustmentBodyAdjustmentType = {
   mega_backdoor_roth_after_tax_contribution:
     "mega_backdoor_roth_after_tax_contribution",
   roth_ira_distribution: "roth_ira_distribution",
+  ca_renter_months: "ca_renter_months",
+  k12_education_expenses: "k12_education_expenses",
+  college_tuition_qualified: "college_tuition_qualified",
+  annual_rent_paid: "annual_rent_paid",
+  part_year_use_w2_source: "part_year_use_w2_source",
+  part_year_use_full_source_allocation: "part_year_use_full_source_allocation",
+  ma_assessed_home_value: "ma_assessed_home_value",
+  ma_water_sewer_half: "ma_water_sewer_half",
+  ma_lead_paint_removal_cost: "ma_lead_paint_removal_cost",
+  pa_eligibility_income: "pa_eligibility_income",
+  ga_disabled_home_purchase_cost: "ga_disabled_home_purchase_cost",
+  mi_home_heating_cost: "mi_home_heating_cost",
+  mi_household_resources: "mi_household_resources",
+  oh_sdit_traditional_base: "oh_sdit_traditional_base",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -1377,6 +1405,20 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   mega_backdoor_roth_after_tax_contribution:
     "mega_backdoor_roth_after_tax_contribution",
   roth_ira_distribution: "roth_ira_distribution",
+  ca_renter_months: "ca_renter_months",
+  k12_education_expenses: "k12_education_expenses",
+  college_tuition_qualified: "college_tuition_qualified",
+  annual_rent_paid: "annual_rent_paid",
+  part_year_use_w2_source: "part_year_use_w2_source",
+  part_year_use_full_source_allocation: "part_year_use_full_source_allocation",
+  ma_assessed_home_value: "ma_assessed_home_value",
+  ma_water_sewer_half: "ma_water_sewer_half",
+  ma_lead_paint_removal_cost: "ma_lead_paint_removal_cost",
+  pa_eligibility_income: "pa_eligibility_income",
+  ga_disabled_home_purchase_cost: "ga_disabled_home_purchase_cost",
+  mi_home_heating_cost: "mi_home_heating_cost",
+  mi_household_resources: "mi_household_resources",
+  oh_sdit_traditional_base: "oh_sdit_traditional_base",
 } as const;
 
 export interface UpdateAdjustmentBody {

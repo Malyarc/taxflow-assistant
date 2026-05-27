@@ -277,6 +277,14 @@ export interface RentalPropertyFact {
   isActiveParticipant?: boolean | null;
   rentalIncome?: Numish;
   totalExpenses?: Numish;
+  /**
+   * C11 — Optional 2-letter state code for the property's physical location.
+   * When the filer is part-year (E12) and full-source allocation marker is
+   * enabled (`part_year_use_full_source_allocation`), rental net income flows
+   * to the state where the property sits, not pro-rata-by-days. Most real-
+   * estate sourcing rules require this (situs-of-property rule).
+   */
+  sourceState?: string | null;
 }
 
 /**
@@ -319,6 +327,14 @@ export interface ScheduleK1Fact {
   basisAtYearStart?: Numish;
   basisAtYearEnd?: Numish;
   atRiskAmount?: Numish;
+  /**
+   * C11 — Optional 2-letter state code for the K-1's pass-through state.
+   * When the filer is part-year (E12) and full-source allocation marker is
+   * enabled (`part_year_use_full_source_allocation`), K-1 income flows to
+   * the source state rather than pro-rata-by-days. Real K-1 sourcing per
+   * NY IT-203 / CA 540NR Schedule CA pattern.
+   */
+  sourceState?: string | null;
 }
 
 /**
@@ -2047,6 +2063,18 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
 
   // E12 — Part-year residency: pass when client has residency change set.
   // Engine pro-rates AGI by days and computes both states' resident tax.
+  //
+  // C11 — Two opt-in source-allocation markers:
+  //   * `part_year_use_w2_source` — wages sourced per W-2 stateCode
+  //   * `part_year_use_full_source_allocation` — ALSO sources K-1 income
+  //     (by `sourceState`) and rental net income (by `RentalPropertyFact.sourceState`
+  //     or `state` field if no sourceState), and intangibles (interest/div/
+  //     STCG/LTCG) to the resident state by days.
+  const useW2SourceAllocation =
+    sumByType("part_year_use_w2_source") > 0 ||
+    sumByType("part_year_use_full_source_allocation") > 0;
+  const useFullSourceAllocation =
+    sumByType("part_year_use_full_source_allocation") > 0;
   const partYearResidencyArg = (
     client.residencyChangedInYear === true &&
     client.formerState &&
@@ -2056,13 +2084,67 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     ? {
         formerState: client.formerState,
         residencyChangeDate: client.residencyChangeDate,
-        // C11 — Opt-in via `part_year_use_w2_source` adjustment marker
-        // (amount > 0 = enabled). When enabled, wages are sourced per
-        // W-2 stateCode (NY IT-203 / CA 540NR pattern) rather than
-        // pure pro-rata by days.
-        useW2SourceAllocation: sumByType("part_year_use_w2_source") > 0,
+        useW2SourceAllocation,
       }
     : undefined;
+
+  // C11 deeper — When full source allocation is enabled and the filer is
+  // part-year, aggregate K-1 income by sourceState + rental net income by
+  // sourceState. These flow to their source-state share rather than
+  // pro-rata-by-days (standard NY IT-203 / CA 540NR sourcing rule).
+  let perStateOtherSourced: Record<string, number> | undefined;
+  if (useFullSourceAllocation && partYearResidencyArg) {
+    perStateOtherSourced = {};
+    // K-1 sourcing: sum each K-1's net income (Box 1 + Box 2 + Box 3 +
+    // interest/div/royalties/STCG/LTCG) to its sourceState.
+    for (const k of inputs.scheduleK1 ?? []) {
+      if (k.taxYear !== taxYear) continue;
+      const src = (k.sourceState ?? "").toUpperCase();
+      if (!src) continue; // No source → fall through to pro-rata
+      const k1NetIncome =
+        toNum(k.box1OrdinaryIncome) +
+        toNum(k.box2RentalRealEstate) +
+        toNum(k.box3OtherRentalIncome) +
+        toNum(k.interestIncome) +
+        toNum(k.ordinaryDividends) +
+        toNum(k.royalties) +
+        toNum(k.netShortTermCapitalGain) +
+        toNum(k.netLongTermCapitalGain);
+      if (k1NetIncome === 0) continue;
+      perStateOtherSourced[src] =
+        (perStateOtherSourced[src] ?? 0) + k1NetIncome;
+    }
+    // Rental sourcing: rental net = income − expenses − MACRS. Source to
+    // the rental property's state field.
+    for (const p of inputs.rentalProperties ?? []) {
+      if (p.taxYear !== taxYear) continue;
+      const src = (p.sourceState ?? "").toUpperCase();
+      if (!src) continue; // No source → fall through to pro-rata
+      const propIncome = toNum(p.rentalIncome);
+      const propExpenses = toNum(p.totalExpenses);
+      let propDepreciation = 0;
+      if (
+        toNum(p.basis) > 0 &&
+        (p.placedInServiceYear ?? 0) > 0 &&
+        (p.placedInServiceMonth ?? 0) >= 1 &&
+        (p.placedInServiceMonth ?? 0) <= 12
+      ) {
+        const dep = calculateMacrsDepreciation({
+          basis: toNum(p.basis),
+          propertyType:
+            p.propertyType === "commercial" ? "commercial" : "residential",
+          monthPlacedInService: p.placedInServiceMonth ?? 1,
+          yearPlacedInService: p.placedInServiceYear ?? taxYear,
+          taxYear,
+        });
+        propDepreciation = dep.currentYearDepreciation;
+      }
+      const netRental = propIncome - propExpenses - propDepreciation;
+      if (netRental === 0) continue;
+      perStateOtherSourced[src] =
+        (perStateOtherSourced[src] ?? 0) + netRental;
+    }
+  }
 
   const multiState = calculateMultiStateTax({
     residentState: stateCode ?? "CA",
@@ -2103,6 +2185,15 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
       // E8 — Net SE earnings for NYC MCTMT. Only applied when
       // localityCode === "NYC".
       netSeEarnings: se.netSeEarnings,
+      // C10 — Optional CPA-supplied OH IT-1040 Line 3 for SDIT traditional
+      // base. Read via adjustment marker `oh_sdit_traditional_base`. Only
+      // applied for OH SDIT-traditional districts.
+      ohTraditionalBase: sumByType("oh_sdit_traditional_base") > 0
+        ? sumByType("oh_sdit_traditional_base")
+        : undefined,
+      // C11 deeper — Per-state K-1 + rental sourcing (only used when
+      // `part_year_use_full_source_allocation` is enabled AND filer is part-year).
+      perStateOtherSourced,
     },
   });
   // State + local: state tax is reported separately; local (NYC) is its own line.
@@ -2374,20 +2465,54 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // level. Add to state refund alongside state EITC and CTCs.
   const nycSchoolTaxCreditRefundable = multiState.localTax?.nycSchoolTaxCredit ?? 0;
 
-  // C2 — State Additional Credits (NY/CA/IL non-EITC/CTC credits).
+  // C2 — State Additional Credits (NY/CA/IL + MA/NJ/OH/PA/VA/GA/MI non-EITC/CTC credits).
   // Refundable portion adds to state refund; nonRefundable reduces
   // state tax liability (capped at 0).
+  // For MA LIC, OH JFC, PA Sched SP, VA LITC, GA LIC the credit references the
+  // pre-additional state tax liability — pass it explicitly.
+  const taxpayerEarnedIncomeForOh = isMfj
+    ? Math.max(0, earnedIncomeHousehold - spouseEarnedIncome)
+    : earnedIncomeHousehold;
   const stateAdditionalCredits = calculateStateAdditionalCredits({
     state: stateUpper,
     taxYear: calc.taxYear,
     agi: calc.adjustedGrossIncome,
     filingStatus: client.filingStatus,
     dependentsUnder17: client.dependentsUnder17 ?? 0,
+    otherDependents: client.otherDependents ?? 0,
     federalCdccApplied: dependentCareCredit.appliedCredit,
     propertyTaxPaid: sumByType("state_property_tax"),
     k12QualifiedExpenses: sumByType("k12_education_expenses"),
     monthsRented: sumByType("ca_renter_months"),
     collegeTuitionExpenses: sumByType("college_tuition_qualified"),
+    // Annual rent for MA Circuit Breaker (renter pathway) + NJ Property Tax Credit (renter pathway)
+    annualRentPaid: sumByType("annual_rent_paid"),
+    // Age inputs for MA Circuit Breaker, GA Retirement Exclusion, OH Senior Citizen, NJ Senior
+    taxpayerAge: client.taxpayerAge ?? undefined,
+    spouseAge: client.spouseAge ?? undefined,
+    // OH Joint Filing Credit needs each spouse with earned income > $500
+    spouseQualifyingIncome: spouseEarnedIncome,
+    taxpayerQualifyingIncome: taxpayerEarnedIncomeForOh,
+    // Pre-credit state tax for MA LIC, OH JFC, PA Sched SP, VA LITC, GA LIC
+    preCreditStateTaxLiability: stateTaxLiability,
+    // Retirement income (1099-R distributions + pension)
+    retirementIncome: form1099Summary.retirementIncome,
+    // MA Circuit Breaker — assessed home value + ½ water/sewer
+    maAssessedHomeValue: sumByType("ma_assessed_home_value"),
+    maWaterSewerHalf: sumByType("ma_water_sewer_half"),
+    // MA Lead Paint Removal Credit
+    maLeadPaintRemovalCost: sumByType("ma_lead_paint_removal_cost"),
+    // PA Schedule SP eligibility income override (otherwise AGI)
+    paEligibilityIncome: sumByType("pa_eligibility_income") > 0
+      ? sumByType("pa_eligibility_income")
+      : undefined,
+    // GA Disabled Person Home Purchase retrofit cost
+    gaDisabledHomePurchaseCost: sumByType("ga_disabled_home_purchase_cost"),
+    // MI Home Heating Credit cost + household resources
+    miHomeHeatingCost: sumByType("mi_home_heating_cost"),
+    miHouseholdResources: sumByType("mi_household_resources") > 0
+      ? sumByType("mi_household_resources")
+      : undefined,
   });
   const stateAdditionalRefundable = stateAdditionalCredits.totalRefundable;
   const stateAdditionalNonRefundable = stateAdditionalCredits.totalNonRefundable;

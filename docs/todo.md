@@ -76,20 +76,25 @@ primitives in place (H2/H3/H7/H12). All 97 strategies hand-calc audited
 **Shipped 2026-05-26 (C-batch v1):** C1 coverage matrix · C4 Form 1040-X amended returns · C5 §1031 like-kind exchange · C6 ESPP + ISO disqualifying disposition · C7 §163(j) + §461(l) limits · C8 Form 4868 extensions. See `docs/coverage-matrix.md`.
 
 **Shipped 2026-05-27 (C-batch v2):**
-- **C2 (partial)** — NY/CA/IL × 2-3 credits each via `calculateStateAdditionalCredits`: NY Empire State Child Credit (IT-213), NY Child & Dependent Care (IT-216), NY College Tuition (IT-272), CA Renter's Credit (Form 540 Line 46), CA Child & Dependent Care (Form 3506), IL Property Tax Credit (Schedule ICR), IL K-12 Education Expense Credit. 7 new credits across top-3 CPA-volume income-tax states. Future: extend to MA/NJ/PA/VA/GA/MI/OH (~10 states × 3-5 credits).
-- **C9** — 13 PA municipalities (Philly, Pittsburgh, Allentown, Erie, Reading, Scranton, Wilkes-Barre, Harrisburg, Lancaster, York, Altoona, Bethlehem) + Act 32 default 1%. Covers ~60% of PA filers. Future: expand to 50+ municipalities using DCED PSD Code database.
-- **C10** — 15 OH school districts (mix earned-income + traditional base). Future: expand to 200+ districts.
-- **C11** — OPT-IN per-W-2-stateCode wage allocation (NY IT-203 / CA 540NR Sched CA pattern). Enable via `part_year_use_w2_source` adjustment marker. Pure pro-rata remains default.
+- **C2 (partial)** — NY/CA/IL × 2-3 credits each via `calculateStateAdditionalCredits`: NY Empire State Child Credit (IT-213), NY Child & Dependent Care (IT-216), NY College Tuition (IT-272), CA Renter's Credit (Form 540 Line 46), CA Child & Dependent Care (Form 3506), IL Property Tax Credit (Schedule ICR), IL K-12 Education Expense Credit. 7 new credits across top-3 CPA-volume income-tax states.
+- **C9** — 13 PA municipalities + Act 32 default. Covers ~60% of PA filers.
+- **C10** — 15 OH school districts (mix earned-income + traditional base).
+- **C11** — OPT-IN per-W-2-stateCode wage allocation via `part_year_use_w2_source` adjustment marker.
+
+**Shipped 2026-05-27 PM (C-batch v3 — finishes C2/C9/C10/C11):**
+- **C2 expanded to top-10 states** — Added MA (4 credits: Senior Circuit Breaker / Dependent Member of Household / Limited Income Credit / Lead Paint Removal), NJ (3: Property Tax Credit / Child & Dependent Care / Senior-Disabled Property Tax Deduction), OH (2: Joint Filing Credit / Senior Citizen Credit), PA (2: Special Tax Forgiveness Sched SP / Working Family Tax Credit), VA (2: Low-Income Tax Credit / Credit for Tax Paid to Other State), GA (3: Low-Income / Retirement Income Exclusion / Disabled Home Purchase), MI (2: Homestead PTC / Home Heating Credit). **24 new credits; 31 total across 10 states.** Hand-calc tests in `tax-engine-c2-state-credits-v2-tests.ts` (67 assertions).
+- **C9 PA bulk** — Loaded ~175 PA municipalities via new `paEitRates.ts` module + `scripts/data/pa-eit-rates.csv`. New `lookupPaLocalEit` function. Falls back to inline LOCAL_TAX_DATA top-13 as fast-path. Locality codes auto-listed in `localityCodesForState("PA")`. Hand-calc tests in `tax-engine-c9-c10-bulk-tests.ts` (35 assertions).
+- **C10 OH SDIT bulk** — Loaded ~226 OH school districts via new `ohSchoolDistricts.ts` module + CSV. Supports both `earned_income` and `traditional` bases. New `oh_traditional` base type in calculator. New `oh_sdit_traditional_base` adjustment for CPA-supplied exact value (else engine approximates as federalAgi − OH std ded).
+- **C11 deeper** — Per-K-1 + per-rental + per-intangible sourcing. New `sourceState` field on `ScheduleK1Fact` and `RentalPropertyFact`. New `part_year_use_full_source_allocation` adjustment marker (supersedes `part_year_use_w2_source`). When enabled, K-1 + rental net income flows to source state; intangibles still pro-rate to resident state by days (standard residency rule). Hand-calc tests in `tax-engine-c11-deeper-sourcing-tests.ts` (20 assertions).
 
 Remaining open:
 
 | # | Item | Effort | Notes |
 |---|---|---|---|
-| C2 | **Top-10-state credit push (expand to 7 more states)** | 2-3 wks | NY/CA/IL shipped. Remaining: MA, NJ, PA, VA, GA, MI, OH. ~35 more credits. |
 | C3 | **CPA design-partner side-by-side validation** (Option A) | 4-8 wks calendar | NOT engineering — requires CPA partner. Blocked on user availability. |
-| C9 | **PA local EIT expansion (~1990 remaining jurisdictions)** | 1 wk | Top 13 shipped. Bulk-load remaining from DCED PSD Code database. |
-| C10 | **OH school district expansion (~585 remaining)** | 3-5 days | Top 15 shipped. Bulk-load remaining from tax.ohio.gov SDIT list. |
-| C11 | **Per-income-item sourcing (K-1, rental, intangibles)** | 1-2 wks | Per-W-2-wage shipped (NY IT-203 + CA 540NR pattern). Remaining: K-1 source-state sourcing, rental-property-location sourcing, intangible-income resident-state sourcing. |
+| C2 next | **Beyond-top-10 state credits** | 2-4 wks | Top-10 states shipped. Remaining minor-volume credits (NC dependent care, AZ Family Tax Credit, OK Sales Tax Relief, etc.) — defer until customer asks. |
+| C9 next | **PA EIT — remaining ~1,800 minor municipalities** | 3-5 days | Top ~175 covered (~85% of PA filers). Remaining requires DCED registry full dump; defer until customer asks. CPA fallback: Act 32 default 1.0%. |
+| C10 next | **OH SDIT — remaining ~390 districts** | 1-2 days | Top ~226 covered. Remaining are very small rural districts; defer until customer asks. CPA fallback: any SD with rate 0% is auto-handled. |
 
 **C-batch sub-gaps to track (for follow-up sessions):**
 

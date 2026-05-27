@@ -25,6 +25,14 @@ import {
   type StateBracket,
   type StateFilingStatus,
 } from "./stateTaxData";
+import {
+  lookupPaLocalEit,
+  PA_EIT_REGISTRY,
+} from "./paEitRates";
+import {
+  lookupOhSchoolDistrict,
+  OH_SCHOOL_DISTRICT_REGISTRY,
+} from "./ohSchoolDistricts";
 
 export const SUPPORTED_TAX_YEARS = [2024, 2025] as const;
 export type TaxYear = (typeof SUPPORTED_TAX_YEARS)[number];
@@ -704,17 +712,47 @@ export const LOCAL_TAX_DATA: Record<string, LocalityInfo> = {
   "OH-SD-TRI-VALLEY":      { jurisdictionLabel: "Tri-Valley LSD (Muskingum), OH", state: "OH", rate: 0.0125, base: "wages_only" }, // 1.25% earned-income
 };
 
-/** E14 — Convenience: list of locality codes available for a given state. */
+/** E14 / C9 / C10 — Convenience: list of locality codes available for a given
+ *  state. Includes the inline LOCAL_TAX_DATA entries PLUS the bulk PA EIT
+ *  registry (C9) and OH SD registry (C10). */
 export function localityCodesForState(stateCode: string): Array<{ code: string; label: string }> {
   const stUpper = stateCode.toUpperCase();
   if (stUpper === "NY") return [{ code: "NYC", label: "New York City (NYC PIT)" }];
-  return Object.entries(LOCAL_TAX_DATA)
+  const inline = Object.entries(LOCAL_TAX_DATA)
     .filter(([, info]) => info.state === stUpper)
     .map(([code, info]) => ({ code, label: info.jurisdictionLabel }));
+  // C9 — Append PA bulk registry (excludes anything already covered inline).
+  if (stUpper === "PA") {
+    const inlineCodes = new Set(inline.map((e) => e.code));
+    for (const entry of PA_EIT_REGISTRY) {
+      const key = `PA-${entry.municipality.toUpperCase().replace(/[\s.,]+/g, "_").replace(/[^A-Z0-9_-]/g, "")}`;
+      if (!inlineCodes.has(key)) {
+        inline.push({
+          code: key,
+          label: `${entry.municipality}, PA (${(entry.combinedRate * 100).toFixed(2)}%)`,
+        });
+      }
+    }
+  }
+  // C10 — Append OH SD bulk registry.
+  if (stUpper === "OH") {
+    const inlineCodes = new Set(inline.map((e) => e.code));
+    for (const entry of OH_SCHOOL_DISTRICT_REGISTRY) {
+      const key = `OH-SD-${entry.sdCode}`;
+      if (!inlineCodes.has(key)) {
+        inline.push({
+          code: key,
+          label: `${entry.name} (${entry.county}, OH — ${(entry.rate * 100).toFixed(2)}% ${entry.base})`,
+        });
+      }
+    }
+  }
+  return inline;
 }
 
 /** E14 — Flat-rate locality dispatch. Returns null when localityCode isn't
- *  in LOCAL_TAX_DATA (caller handles NYC + null). Uses zero-value NYC fields
+ *  in LOCAL_TAX_DATA AND not in the C9 PA EIT bulk registry / C10 OH SDIT
+ *  bulk registry. Caller handles NYC + null. Uses zero-value NYC fields
  *  so callers see a uniform shape. */
 export function calculateFlatRateLocalTax(params: {
   localityCode: string;
@@ -723,32 +761,115 @@ export function calculateFlatRateLocalTax(params: {
   totalWages: number;
   filingStatus: string;
   taxYear: number;
+  /** C10 — Approximate "OH traditional base" = OH IT-1040 Line 3 (Ohio
+   *  taxable income before personal exemption); engine uses federalAgi −
+   *  state std ded when not supplied (consistent with `state_taxable`). */
+  ohTraditionalBase?: number;
 }): NycLocalTaxCalculation | null {
   const info = LOCAL_TAX_DATA[params.localityCode];
-  if (!info) return null;
-  // Enforce state match — a stale localityCode after a state change
-  // silently skips rather than producing a phantom local tax.
-  if (info.state !== params.residentState.toUpperCase()) return null;
+  if (info) {
+    // Enforce state match — a stale localityCode after a state change
+    // silently skips rather than producing a phantom local tax.
+    if (info.state !== params.residentState.toUpperCase()) return null;
+    return computeFlatRateLocalTaxFromInfo(
+      params.localityCode,
+      info.rate,
+      info.base,
+      params.federalAgi,
+      params.totalWages,
+      info.state,
+      params.filingStatus,
+      params.taxYear,
+      params.ohTraditionalBase,
+    );
+  }
+  // C9 — PA bulk registry fallback
+  const codeUp = (params.localityCode ?? "").toUpperCase();
+  if (codeUp.startsWith("PA-") && params.residentState.toUpperCase() === "PA") {
+    const pa = lookupPaLocalEit(codeUp);
+    if (pa) {
+      return computeFlatRateLocalTaxFromInfo(
+        params.localityCode,
+        pa.combinedRate,
+        "wages_only",
+        params.federalAgi,
+        params.totalWages,
+        "PA",
+        params.filingStatus,
+        params.taxYear,
+        params.ohTraditionalBase,
+      );
+    }
+  }
+  // C10 — OH SDIT bulk registry fallback
+  if (codeUp.startsWith("OH-SD-") && params.residentState.toUpperCase() === "OH") {
+    const oh = lookupOhSchoolDistrict(codeUp);
+    if (oh) {
+      // OH SDs use "earned_income" (wages only) or "traditional" (OH IT-1040
+      // Line 3 ≈ taxable income before exemption). Map to engine base types.
+      const dispatchBase: LocalityTaxBase | "oh_traditional" =
+        oh.base === "earned_income" ? "wages_only" : "oh_traditional";
+      return computeFlatRateLocalTaxFromInfo(
+        params.localityCode,
+        oh.rate,
+        dispatchBase,
+        params.federalAgi,
+        params.totalWages,
+        "OH",
+        params.filingStatus,
+        params.taxYear,
+        params.ohTraditionalBase,
+      );
+    }
+  }
+  return null;
+}
 
-  // Compute the base per locality rule.
+/** Helper: compute the base + tax for the dispatched locality. */
+function computeFlatRateLocalTaxFromInfo(
+  localityCode: string,
+  rate: number,
+  baseType: LocalityTaxBase | "oh_traditional",
+  federalAgi: number,
+  totalWages: number,
+  parentState: string,
+  filingStatus: string,
+  taxYear: number,
+  ohTraditionalBase?: number,
+): NycLocalTaxCalculation {
   let base = 0;
-  if (info.base === "federal_agi") {
-    base = Math.max(0, params.federalAgi);
-  } else if (info.base === "wages_only") {
-    base = Math.max(0, params.totalWages);
+  if (baseType === "federal_agi") {
+    base = Math.max(0, federalAgi);
+  } else if (baseType === "wages_only") {
+    base = Math.max(0, totalWages);
+  } else if (baseType === "oh_traditional") {
+    // C10 — OH SDIT traditional base = Ohio IT-1040 Line 3 (Ohio taxable
+    // income before personal exemption). Engine approximates this as
+    // federal AGI − OH std ded (OH std ded = 0 for individual filers since
+    // OH uses personal exemption instead). When CPA supplies the exact
+    // traditional base, prefer that.
+    if (ohTraditionalBase != null && ohTraditionalBase >= 0) {
+      base = ohTraditionalBase;
+    } else {
+      const year = resolveTaxYear(taxYear);
+      const stInfo = STATE_TAX_DATA_BY_YEAR[year]?.["OH"];
+      const stdDed = stInfo?.standardDeduction
+        ? pickStateStdDeduction(stInfo.standardDeduction, filingStatus as StateFilingStatus)
+        : 0;
+      base = Math.max(0, federalAgi - stdDed);
+    }
   } else {
     // state_taxable: federalAgi − resident-state std ded.
-    const year = resolveTaxYear(params.taxYear);
-    const stInfo = STATE_TAX_DATA_BY_YEAR[year]?.[info.state];
+    const year = resolveTaxYear(taxYear);
+    const stInfo = STATE_TAX_DATA_BY_YEAR[year]?.[parentState];
     const stdDed = stInfo?.standardDeduction
-      ? pickStateStdDeduction(stInfo.standardDeduction, params.filingStatus as StateFilingStatus)
+      ? pickStateStdDeduction(stInfo.standardDeduction, filingStatus as StateFilingStatus)
       : 0;
-    base = Math.max(0, params.federalAgi - stdDed);
+    base = Math.max(0, federalAgi - stdDed);
   }
-
-  const tax = base * info.rate;
+  const tax = base * rate;
   return {
-    jurisdiction: params.localityCode,
+    jurisdiction: localityCode,
     nysTaxableIncome: 0,
     baselineTax: tax,
     householdCredit: 0,
@@ -757,7 +878,7 @@ export function calculateFlatRateLocalTax(params: {
     nycSchoolTaxCredit: 0,
     nycMctmt: 0,
     netLocalTax: tax,
-    flatRate: info.rate,
+    flatRate: rate,
     taxBase: base,
   };
 }
@@ -844,6 +965,15 @@ export function calculateMultiStateTax(params: {
      * during the former-state residence period.
      */
     useW2SourceAllocation?: boolean;
+    /**
+     * C11 deeper — Per-state sourced non-wage income (K-1 + rental). Keys
+     * are uppercase 2-letter state codes. Only used when
+     * `useW2SourceAllocation` is true; the engine subtracts these from the
+     * pro-rata-by-days residual to avoid double-counting. Intangibles
+     * (interest/div/cap gains) still pro-rate to the resident state by
+     * days — the standard residency rule for intangible income.
+     */
+    perStateOtherSourced?: Readonly<Record<string, number>>;
   };
   options?: {
     federalIncomeTaxPaid?: number;
@@ -870,6 +1000,13 @@ export function calculateMultiStateTax(params: {
     /** E8 — Net SE earnings for NYC MCTMT (Metropolitan Commuter
      *  Transportation Mobility Tax). Only applied when localityCode === "NYC". */
     netSeEarnings?: number;
+    /** C10 — Optional OH IT-1040 Line 3 (Ohio taxable income before personal
+     *  exemption) used as the SDIT "traditional" base. When undefined, the
+     *  engine approximates as federalAgi − OH std ded (Sub-gap: OH std ded
+     *  is 0 for individual filers; engine over-applies vs. real Line 3 which
+     *  also subtracts personal exemptions). Only applied for OH SDIT entries
+     *  whose base = "traditional". */
+    ohTraditionalBase?: number;
   };
 }): MultiStateTaxResult {
   const resident = params.residentState.toUpperCase();
@@ -963,6 +1100,12 @@ export function calculateMultiStateTax(params: {
           (perStateWageMap[code] ?? 0) + Math.max(0, entry.wages);
       }
     }
+    // C11 deeper — Per-state non-wage situs-sourced income (K-1 + rental).
+    // Only meaningful when full source allocation is enabled; otherwise the
+    // engine pro-rates all non-wage income by days.
+    const perStateOtherSourcedMap = params.partYearResidency.useW2SourceAllocation
+      ? params.options?.perStateOtherSourced
+      : undefined;
     const py = computePartYearAllocation(
       formerStateUpper,
       resident,
@@ -972,6 +1115,7 @@ export function calculateMultiStateTax(params: {
       params.filingStatus,
       params.options ?? {},
       perStateWageMap,
+      perStateOtherSourcedMap,
     );
     partYearResidencyResult = py;
     residentTaxFull = py.currentStateTax; // for the return shape
@@ -1072,9 +1216,12 @@ export function calculateMultiStateTax(params: {
       federalEitcApplied: params.options?.federalEitcApplied ?? 0,
       netSeEarnings: params.options?.netSeEarnings ?? 0,
     });
-  } else if (params.localityCode && LOCAL_TAX_DATA[params.localityCode]) {
+  } else if (params.localityCode) {
     // E14 — Flat-rate locality dispatch (MD counties, OH cities, IN counties).
-    // Returns null when state doesn't match (stale localityCode protection).
+    // C9 — Falls back to PA bulk registry when localityCode starts "PA-".
+    // C10 — Falls back to OH SDIT bulk registry when localityCode starts "OH-SD-".
+    // Returns null when state doesn't match (stale localityCode protection)
+    // OR when the code matches nothing.
     localTax = calculateFlatRateLocalTax({
       localityCode: params.localityCode,
       residentState: resident,
@@ -1082,6 +1229,7 @@ export function calculateMultiStateTax(params: {
       totalWages: params.totalWages ?? 0,
       filingStatus: params.filingStatus,
       taxYear: params.taxYear,
+      ohTraditionalBase: params.options?.ohTraditionalBase,
     });
   }
 
@@ -1127,6 +1275,14 @@ function computePartYearAllocation(
    * (original behavior).
    */
   perStateWages?: Readonly<Record<string, number>>,
+  /**
+   * C11 deeper — Per-state K-1 / rental / other "situs-sourced" income
+   * allocation. Each key is a 2-letter state; the value is the total
+   * non-wage income sourced to that state. Subtracted from the pro-rata
+   * residual (intangibles + other non-sourced income) so it isn't
+   * double-counted. When undefined, all non-wage income still pro-rates.
+   */
+  perStateOtherSourced?: Readonly<Record<string, number>>,
 ): PartYearResidencyResult {
   // Total days in the tax year (leap year handling).
   const isLeap = ((taxYear % 4 === 0) && (taxYear % 100 !== 0)) || (taxYear % 400 === 0);
@@ -1159,20 +1315,37 @@ function computePartYearAllocation(
 
   if (perStateWages && Object.keys(perStateWages).length > 0) {
     // C11 — Per-W-2 stateCode allocation (NY IT-203 / CA 540NR pattern).
-    // Wages flow to their respective state; non-wage income pro-rates by days.
+    // Wages flow to their respective state; non-wage income pro-rates by days
+    // unless `perStateOtherSourced` has explicit per-state allocations for it.
     const w2WagesFormer = Math.max(0, perStateWages[formerStateUpper] ?? 0);
     const w2WagesCurrent = Math.max(0, perStateWages[currentStateUpper] ?? 0);
     const totalW2Wages = Object.values(perStateWages).reduce(
       (s, v) => s + Math.max(0, v),
       0,
     );
-    const nonW2Agi = Math.max(0, federalAgiSafe - totalW2Wages);
+    // C11 deeper — Subtract situs-sourced non-wage income from the pro-rata
+    // residual so it isn't double-counted. K-1, rentals, etc. sourced to a
+    // specific state.
+    const situsSourcedTotal = perStateOtherSourced
+      ? Object.values(perStateOtherSourced).reduce((s, v) => s + Math.max(0, v), 0)
+      : 0;
+    const situsFormer = perStateOtherSourced
+      ? Math.max(0, perStateOtherSourced[formerStateUpper] ?? 0)
+      : 0;
+    const situsCurrent = perStateOtherSourced
+      ? Math.max(0, perStateOtherSourced[currentStateUpper] ?? 0)
+      : 0;
+    // Remaining (intangible + other) income that pro-rates by days.
+    const nonW2NonSitusAgi = Math.max(
+      0,
+      federalAgiSafe - totalW2Wages - situsSourcedTotal,
+    );
     const nonW2Former =
-      daysInYear > 0 ? nonW2Agi * (daysFormer / daysInYear) : 0;
+      daysInYear > 0 ? nonW2NonSitusAgi * (daysFormer / daysInYear) : 0;
     const nonW2Current =
-      daysInYear > 0 ? nonW2Agi * (daysCurrent / daysInYear) : nonW2Agi;
-    formerStateAgi = w2WagesFormer + nonW2Former;
-    currentStateAgi = w2WagesCurrent + nonW2Current;
+      daysInYear > 0 ? nonW2NonSitusAgi * (daysCurrent / daysInYear) : nonW2NonSitusAgi;
+    formerStateAgi = w2WagesFormer + situsFormer + nonW2Former;
+    currentStateAgi = w2WagesCurrent + situsCurrent + nonW2Current;
   } else {
     // Existing pure pro-rata-by-days fallback.
     formerStateAgi =
@@ -2319,16 +2492,64 @@ export interface StateAdditionalCreditsInput {
   agi: number;
   filingStatus: string;
   dependentsUnder17: number;
-  /** Federal Child & Dependent Care Credit applied (for NY + CA piggybacks). */
+  /** Other dependents (HoH dependents, qualifying older children, etc.).
+   *  Combined with dependentsUnder17 for MA NTS/LIC dep-add, NJ dependents,
+   *  GA personal exemptions, OH joint-filing dep counts, etc. */
+  otherDependents?: number;
+  /** Federal Child & Dependent Care Credit applied (for NY/CA/NJ piggybacks). */
   federalCdccApplied?: number;
-  /** Property tax adjustment (Schedule A line for SALT property) for IL Property Tax Credit. */
+  /** Property tax adjustment (Schedule A SALT property) for IL/NJ/MI Property Tax Credit / Homestead. */
   propertyTaxPaid?: number;
   /** Qualified K-12 education expenses (IL K-12 credit). */
   k12QualifiedExpenses?: number;
-  /** Months rented (CA Renter's Credit requires ≥ 6 months). */
+  /** Months rented (CA Renter's Credit + MA Circuit Breaker + NJ Property Tax Credit renter pathway). */
   monthsRented?: number;
   /** Qualified college tuition expenses (NY College Tuition Credit). */
   collegeTuitionExpenses?: number;
+  /** Total annual rent paid (MA Circuit Breaker uses 25% × rent; NJ Property Tax Credit renter pathway uses 18% × rent). */
+  annualRentPaid?: number;
+  /** Taxpayer's age at year-end (MA Circuit Breaker requires ≥ 65; GA Retirement
+   *  Exclusion at 65+; OH Senior Citizen Credit requires ≥ 65). */
+  taxpayerAge?: number;
+  /** Spouse's age at year-end (used for MFJ where either spouse is 65+ for MA/GA/OH). */
+  spouseAge?: number;
+  /** Spouse earned income (OH Joint Filing Credit requires both spouses with
+   *  qualifying earned income; pass spouse W-2 + SE income summed). */
+  spouseQualifyingIncome?: number;
+  /** Taxpayer's own earned income (W-2 + SE) for OH Joint Filing Credit. */
+  taxpayerQualifyingIncome?: number;
+  /** State income tax owed (pre-credit). Used for MA Circuit Breaker maximum
+   *  (the credit is capped at the actual MA tax up to $2,730), MA LIC tax-
+   *  reduction calculation, OH Joint Filing Credit (rate × pre-credit tax),
+   *  and several other "credit against tax" calculations. */
+  preCreditStateTaxLiability?: number;
+  /** Retirement income (pension + IRA + 401(k) distributions) used for GA
+   *  Retirement Income Exclusion. */
+  retirementIncome?: number;
+  /** Massachusetts Circuit Breaker — assessed home value (must be ≤ $1,172,000
+   *  TY2024 for homeowner eligibility). 0 = renter pathway. */
+  maAssessedHomeValue?: number;
+  /** Massachusetts Circuit Breaker — half of water+sewer expense; added to
+   *  property tax for the 10%-of-income threshold. */
+  maWaterSewerHalf?: number;
+  /** New Jersey — paid lead-paint removal expenses (MA Lead Paint Removal
+   *  Credit; up to $1,500/unit). */
+  maLeadPaintRemovalCost?: number;
+  /** Pennsylvania — Schedule SP eligibility income (taxpayer + spouse + 50%
+   *  of investment income). Computed upstream. */
+  paEligibilityIncome?: number;
+  /** Virginia — adjusted federal AGI for VA Low-Income Tax Credit
+   *  (computed = federal AGI − VA additions/subtractions; engine uses AGI). */
+  vaTaxableIncome?: number;
+  /** Georgia — disabled person home purchase cost (one-time GA credit up
+   *  to $500 for retrofitting; CPA enters qualified retrofit cost). */
+  gaDisabledHomePurchaseCost?: number;
+  /** Michigan — home heating cost (paid utility + propane + fuel oil).
+   *  Used for MI Home Heating Credit. */
+  miHomeHeatingCost?: number;
+  /** Michigan — household resources (broader income definition than AGI;
+   *  CPA-supplied. Default = AGI if not provided). */
+  miHouseholdResources?: number;
 }
 
 export interface StateAdditionalCreditEntry {
@@ -2553,6 +2774,607 @@ export function calculateStateAdditionalCredits(
       source: "IL Schedule ICR Line 11 TY2024 (25% × (expenses − $250); cap $750; AGI cap)",
       approximate: false,
       ineligibilityReason: k12Reason,
+    });
+  }
+
+  // ── MA credits ──────────────────────────────────────────────────────
+  if (code === "MA") {
+    const taxpayerAge = params.taxpayerAge ?? 0;
+    const spouseAge = params.spouseAge ?? 0;
+    const totalDependents =
+      Math.max(0, params.dependentsUnder17) + Math.max(0, params.otherDependents ?? 0);
+    const preCreditTax = Math.max(0, params.preCreditStateTaxLiability ?? 0);
+
+    // ── MA Senior Circuit Breaker (Schedule CB) ──
+    // TY2024: Maximum credit $2,730 (M.G.L. c.62, §6(k)). Refundable.
+    // Eligibility:
+    //   - Taxpayer (or spouse if MFJ) ≥ 65 at end of tax year
+    //   - Total income ≤ $72k single / $91k HoH / $109k MFJ (TY2024)
+    //   - Assessed home value ≤ $1,172,000 (homeowner pathway)
+    // Formula:
+    //   Homeowner: credit = property tax + ½ water/sewer − 10% × MA income
+    //   Renter:    credit = 25% × annual rent − 10% × MA income
+    //   Cap = $2,730 (TY2024)
+    const cbAgeQualified =
+      taxpayerAge >= 65 ||
+      ((isMfj || filingStatus === "qualifying_widow") && spouseAge >= 65);
+    const cbIncomeLimit =
+      filingStatus === "head_of_household" ? 91_000 :
+      isMfj || filingStatus === "qualifying_widow" ? 109_000 : 72_000;
+    const cbAssessedValue = params.maAssessedHomeValue ?? 0;
+    const cbAssessedCap = 1_172_000;
+    let cbCredit = 0;
+    let cbReason: string | undefined;
+
+    if (!cbAgeQualified) {
+      cbReason = "Taxpayer (or spouse if MFJ) must be 65+";
+    } else if (agi > cbIncomeLimit) {
+      cbReason = `MA income > $${cbIncomeLimit.toLocaleString("en-US")} cap`;
+    } else if (cbAssessedValue > 0 && cbAssessedValue > cbAssessedCap) {
+      cbReason = "Assessed home value > $1,172,000 cap";
+    } else {
+      const tenPctIncome = agi * 0.10;
+      let excess: number;
+      if (cbAssessedValue > 0) {
+        // Homeowner pathway
+        const propTax = Math.max(0, params.propertyTaxPaid ?? 0);
+        const waterSewerHalf = Math.max(0, params.maWaterSewerHalf ?? 0);
+        excess = propTax + waterSewerHalf - tenPctIncome;
+      } else {
+        // Renter pathway: 25% × annual rent
+        const rentEquivalent = Math.max(0, params.annualRentPaid ?? 0) * 0.25;
+        excess = rentEquivalent - tenPctIncome;
+      }
+      cbCredit = Math.max(0, Math.min(excess, 2_730));
+      if (cbCredit === 0) cbReason = "Property tax/rent does not exceed 10% of MA income";
+    }
+    entries.push({
+      id: "ma-senior-circuit-breaker",
+      name: "MA Senior Circuit Breaker",
+      amount: cbCredit,
+      refundable: true,
+      source: "MA Schedule CB TY2024 (cap $2,730; age 65+, income ≤ $72k/$91k/$109k)",
+      approximate: false,
+      ineligibilityReason: cbReason,
+    });
+
+    // ── MA Dependent Member of Household / Dependent Care ──
+    // M.G.L. c.62, §6(x). $310/dependent who is a "qualifying member of
+    // household" (child < 13, disabled spouse, disabled dep). Refundable.
+    // Engine simplification: $310 per dependentsUnder17 (matches the
+    // dominant case: children under 13 in the household).
+    // TY2024: increased from $240 → $310 per Mass H.4104. Cap removed in
+    // 2023 (was previously 2 dependents max).
+    const dmohCredit = 310 * Math.max(0, params.dependentsUnder17);
+    entries.push({
+      id: "ma-dependent-member-household-credit",
+      name: "MA Dependent Member of Household Credit",
+      amount: dmohCredit,
+      refundable: true,
+      source: "MA M.G.L. c.62 §6(x) TY2024 ($310/qualifying dependent; refundable)",
+      approximate: true,
+      ineligibilityReason: params.dependentsUnder17 <= 0 ? "No qualifying dependents under 13" : undefined,
+    });
+
+    // ── MA Limited Income Credit (Schedule NTS-L) ──
+    // M.G.L. c.62, §5. Phases in MA tax above the NTS floor. Nonrefundable.
+    // TY2024 NTS floors:
+    //   Single: $8,000
+    //   HoH:    $14,400 + $1,000/dep
+    //   MFJ:    $16,400 + $1,000/dep
+    // LIC ceilings (NTS × 1.75 — standard formula):
+    //   Single: $14,000
+    //   HoH:    $25,200 + $1,750/dep
+    //   MFJ:    $28,700 + $1,750/dep
+    // Formula: tax (after LIC) = (AGI − NTS floor) × 10%
+    //          credit = max(0, preTax − tax after LIC)
+    let licCredit = 0;
+    let licReason: string | undefined;
+    if (isMfs) {
+      licReason = "MFS not eligible for LIC per MA Form 1 instructions";
+    } else {
+      const ntsFloor =
+        filingStatus === "head_of_household" ? 14_400 + 1_000 * totalDependents :
+        isMfj || filingStatus === "qualifying_widow" ? 16_400 + 1_000 * totalDependents :
+        8_000;
+      const licCeiling = ntsFloor * 1.75; // approximate formula per MA Schedule NTS-L
+      if (agi <= ntsFloor) {
+        // NTS (no tax) — implemented as a credit that fully zeroes the pre-credit tax.
+        licCredit = preCreditTax;
+        if (preCreditTax <= 0) licReason = "No MA tax to offset (NTS automatic)";
+      } else if (agi <= licCeiling) {
+        const reducedTax = (agi - ntsFloor) * 0.10;
+        licCredit = Math.max(0, preCreditTax - reducedTax);
+      } else {
+        licReason = `MA AGI > $${Math.round(licCeiling).toLocaleString("en-US")} (LIC ceiling)`;
+      }
+    }
+    entries.push({
+      id: "ma-limited-income-credit",
+      name: "MA Limited Income Credit",
+      amount: licCredit,
+      refundable: false,
+      source: "MA Schedule NTS-L TY2024 (NTS floor $8k/$14.4k+$1k dep/$16.4k+$1k dep; LIC ceiling = floor × 1.75; reduced tax = excess × 10%)",
+      approximate: true,
+      ineligibilityReason: licReason,
+    });
+
+    // ── MA Lead Paint Removal Credit ──
+    // M.G.L. c.62, §6(e). Up to $1,500/unit for delivery-of-paint-removal
+    // compliance with chap 111, §197. Nonrefundable. Up to $3,000 per
+    // residence (engine simplification: $1,500 cap per claim).
+    // Carryforward 7 years (not modeled).
+    const leadCost = Math.max(0, params.maLeadPaintRemovalCost ?? 0);
+    const leadCredit = Math.min(leadCost, 1_500);
+    entries.push({
+      id: "ma-lead-paint-removal-credit",
+      name: "MA Lead Paint Removal Credit",
+      amount: leadCredit,
+      refundable: false,
+      source: "MA M.G.L. c.62 §6(e) TY2024 (up to $1,500/unit; nonrefundable; 7-yr CF not modeled)",
+      approximate: true,
+      ineligibilityReason: leadCost <= 0 ? "No lead-paint-removal cost reported" : undefined,
+    });
+  }
+
+  // ── NJ credits ──────────────────────────────────────────────────────
+  if (code === "NJ") {
+    const taxpayerAge = params.taxpayerAge ?? 0;
+    const spouseAge = params.spouseAge ?? 0;
+
+    // ── NJ Property Tax Credit (NJ-1040 Line 56) — homeowner / renter ──
+    // N.J.S.A. 54A:3A-15. Lesser of:
+    //   (a) $50 refundable credit, OR
+    //   (b) 18% of rent considered property tax (renters) /
+    //        100% of property tax paid (homeowners), capped at $15,000.
+    // Engine implements the $50 base credit (most filers; full property-tax
+    // deduction handled separately via NJ-1040 Line 41 — not in this calc).
+    // The $50 credit is REFUNDABLE per N.J.S.A. 54A:3A-18.
+    const propertyTax = Math.max(0, params.propertyTaxPaid ?? 0);
+    const annualRent = Math.max(0, params.annualRentPaid ?? 0);
+    let njPtcCredit = 0;
+    let njPtcReason: string | undefined;
+    if (propertyTax <= 0 && annualRent <= 0) {
+      njPtcReason = "No NJ property tax paid AND no rent reported";
+    } else {
+      // Engine ships the $50 minimum credit; CPA can override to full
+      // 18%-of-rent or property-tax-deduction calculation if needed.
+      njPtcCredit = 50;
+    }
+    entries.push({
+      id: "nj-property-tax-credit",
+      name: "NJ Property Tax Credit",
+      amount: njPtcCredit,
+      refundable: true,
+      source: "NJ-1040 Line 56 / N.J.S.A. 54A:3A-15 TY2024 ($50 base credit; alternative deduction not modeled)",
+      approximate: true,
+      ineligibilityReason: njPtcReason,
+    });
+
+    // ── NJ Child & Dependent Care Credit ──
+    // N.J.S.A. 54A:4-19. % of federal CDCC, tiered by NJ AGI per
+    // NJ-1040 Schedule NJ-CDCC TY2024:
+    //   ≤ $30,000: 50% × federal CDCC
+    //   $30k-$60k: 40% × federal CDCC
+    //   $60k-$90k: 30% × federal CDCC
+    //   $90k-$120k: 20% × federal CDCC
+    //   $120k-$150k: 10% × federal CDCC
+    //   > $150k: 0%
+    // Refundable (NJ 2021 statute).
+    const fedCdcc = params.federalCdccApplied ?? 0;
+    let njCdccRate = 0;
+    if (agi <= 30_000) njCdccRate = 0.50;
+    else if (agi <= 60_000) njCdccRate = 0.40;
+    else if (agi <= 90_000) njCdccRate = 0.30;
+    else if (agi <= 120_000) njCdccRate = 0.20;
+    else if (agi <= 150_000) njCdccRate = 0.10;
+    const njCdccCredit = fedCdcc * njCdccRate;
+    entries.push({
+      id: "nj-child-dependent-care-credit",
+      name: "NJ Child & Dependent Care Credit",
+      amount: njCdccCredit,
+      refundable: true,
+      source: "NJ-1040 Schedule NJ-CDCC TY2024 (% of federal CDCC tiered by AGI)",
+      approximate: false,
+      ineligibilityReason: fedCdcc <= 0 ? "No federal CDCC claimed" : agi > 150_000 ? "AGI > $150k" : undefined,
+    });
+
+    // ── NJ Senior/Disabled Property Tax Deduction ──
+    // N.J.S.A. 54:4-8.41. $250 nonrefundable deduction for residents 65+ or
+    // disabled, with income ≤ $10,000 (excluding SS). Approximate as a $250
+    // credit (treating the deduction × top marginal rate equivalence).
+    // Engine eligibility: age ≥ 65 (or MFJ either spouse 65+) and AGI ≤
+    // $150k (the NJ income cap for property-tax-deduction purposes; the
+    // $10k disabled cap is much tighter and rarely applies).
+    const njSeniorQualified =
+      taxpayerAge >= 65 ||
+      ((isMfj || filingStatus === "qualifying_widow") && spouseAge >= 65);
+    let njSeniorCredit = 0;
+    let njSeniorReason: string | undefined;
+    if (!njSeniorQualified) {
+      njSeniorReason = "Taxpayer (or spouse if MFJ) must be 65+ or disabled";
+    } else if (agi > 150_000) {
+      njSeniorReason = "NJ income > $150k cap";
+    } else {
+      njSeniorCredit = 250;
+    }
+    entries.push({
+      id: "nj-senior-property-tax-deduction",
+      name: "NJ Senior/Disabled Property Tax Deduction",
+      amount: njSeniorCredit,
+      refundable: false,
+      source: "NJ N.J.S.A. 54:4-8.41 TY2024 ($250 senior/disabled deduction; engine approximates as credit-equivalent)",
+      approximate: true,
+      ineligibilityReason: njSeniorReason,
+    });
+  }
+
+  // ── OH credits ──────────────────────────────────────────────────────
+  if (code === "OH") {
+    const taxpayerAge = params.taxpayerAge ?? 0;
+    const spouseAge = params.spouseAge ?? 0;
+    const preCreditTax = Math.max(0, params.preCreditStateTaxLiability ?? 0);
+
+    // ── OH Joint Filing Credit (R.C. 5747.05) ──
+    // Tiered % of pre-credit OH tax for MFJ where BOTH spouses have
+    // qualifying earned income > $500. TY2024 rates per R.C. 5747.05(A):
+    //   OH taxable income < $25k: 20%
+    //   $25k-$50k: 15%
+    //   $50k-$75k: 10%
+    //   > $75k:    5%
+    // Maximum credit: $650.
+    // Nonrefundable.
+    const taxpayerQualifying = Math.max(0, params.taxpayerQualifyingIncome ?? 0);
+    const spouseQualifying = Math.max(0, params.spouseQualifyingIncome ?? 0);
+    let jfcCredit = 0;
+    let jfcReason: string | undefined;
+    if (!isMfj) {
+      jfcReason = "Joint Filing Credit available only for MFJ filers";
+    } else if (taxpayerQualifying < 500 || spouseQualifying < 500) {
+      jfcReason = "Each spouse must have qualifying earned income > $500";
+    } else {
+      let jfcRate = 0.05;
+      if (agi < 25_000) jfcRate = 0.20;
+      else if (agi < 50_000) jfcRate = 0.15;
+      else if (agi < 75_000) jfcRate = 0.10;
+      jfcCredit = Math.min(650, preCreditTax * jfcRate);
+    }
+    entries.push({
+      id: "oh-joint-filing-credit",
+      name: "OH Joint Filing Credit",
+      amount: jfcCredit,
+      refundable: false,
+      source: "OH R.C. 5747.05(A) TY2024 (20/15/10/5% tiered by OH AGI; cap $650; MFJ with each spouse earning > $500)",
+      approximate: false,
+      ineligibilityReason: jfcReason,
+    });
+
+    // ── OH Senior Citizen Credit (R.C. 5747.05(B)) ──
+    // $50 nonrefundable credit per RETURN if taxpayer (or spouse if MFJ)
+    // is 65+ at year-end. One credit per return regardless of count.
+    const seniorQualified =
+      taxpayerAge >= 65 ||
+      ((isMfj || filingStatus === "qualifying_widow") && spouseAge >= 65);
+    const ohSeniorCredit = seniorQualified ? 50 : 0;
+    entries.push({
+      id: "oh-senior-citizen-credit",
+      name: "OH Senior Citizen Credit",
+      amount: ohSeniorCredit,
+      refundable: false,
+      source: "OH R.C. 5747.05(B) TY2024 ($50 nonrefundable per return; age 65+)",
+      approximate: false,
+      ineligibilityReason: seniorQualified ? undefined : "Taxpayer (or spouse if MFJ) must be 65+",
+    });
+  }
+
+  // ── PA credits ──────────────────────────────────────────────────────
+  if (code === "PA") {
+    const totalDependents =
+      Math.max(0, params.dependentsUnder17) + Math.max(0, params.otherDependents ?? 0);
+    const preCreditTax = Math.max(0, params.preCreditStateTaxLiability ?? 0);
+
+    // ── PA Special Tax Forgiveness (Schedule SP) ──
+    // 72 P.S. §7304. Nonrefundable. Eligibility income brackets phase from
+    // 100% forgiveness at low income to 0% at top of band ($6,500 per
+    // filer + $9,500 per dependent for single; MFJ doubled).
+    //
+    // Engine simplification (TY2024 published bracket): forgiveness % by
+    // eligibility income above floor:
+    //   Floor: $6,500 (single) / $13,000 (MFJ); + $9,500 per dependent
+    //   100% at floor, 90% +$250, 80% +$500, ..., 10% +$2,250
+    //   Above floor + $2,250: 0% (no Sched SP relief)
+    //
+    // Engine ships the discrete 10-step table; CPA can override the
+    // computed eligibility income via paEligibilityIncome.
+    const baseFloor =
+      isMfj || filingStatus === "qualifying_widow" ? 13_000 : 6_500;
+    const eligibilityFloor = baseFloor + 9_500 * totalDependents;
+    const eligibilityIncome = Math.max(0, params.paEligibilityIncome ?? agi);
+    let spForgivenessPct = 0;
+    let spReason: string | undefined;
+    if (eligibilityIncome <= eligibilityFloor) {
+      spForgivenessPct = 1.00;
+    } else if (eligibilityIncome <= eligibilityFloor + 250) {
+      spForgivenessPct = 0.90;
+    } else if (eligibilityIncome <= eligibilityFloor + 500) {
+      spForgivenessPct = 0.80;
+    } else if (eligibilityIncome <= eligibilityFloor + 750) {
+      spForgivenessPct = 0.70;
+    } else if (eligibilityIncome <= eligibilityFloor + 1_000) {
+      spForgivenessPct = 0.60;
+    } else if (eligibilityIncome <= eligibilityFloor + 1_250) {
+      spForgivenessPct = 0.50;
+    } else if (eligibilityIncome <= eligibilityFloor + 1_500) {
+      spForgivenessPct = 0.40;
+    } else if (eligibilityIncome <= eligibilityFloor + 1_750) {
+      spForgivenessPct = 0.30;
+    } else if (eligibilityIncome <= eligibilityFloor + 2_000) {
+      spForgivenessPct = 0.20;
+    } else if (eligibilityIncome <= eligibilityFloor + 2_250) {
+      spForgivenessPct = 0.10;
+    } else {
+      spReason = `Eligibility income > $${(eligibilityFloor + 2_250).toLocaleString("en-US")} (Sched SP ceiling)`;
+    }
+    const spCredit = preCreditTax * spForgivenessPct;
+    entries.push({
+      id: "pa-special-tax-forgiveness",
+      name: "PA Special Tax Forgiveness (Schedule SP)",
+      amount: spCredit,
+      refundable: false,
+      source: "PA 72 P.S. §7304 / Schedule SP TY2024 (10-step forgiveness table; floor $6,500/$13,000 + $9,500/dep)",
+      approximate: false,
+      ineligibilityReason: spReason,
+    });
+
+    // ── PA Working Family Tax Credit (Act 53 of 2023 / Act 64 of 2024) ──
+    // PA's piggyback on federal EITC. TY2024 rate per Act 64: 10% of
+    // federal EITC. Refundable. (PA Sched DC, line 7).
+    // Engine simplification: reads piggyback via separate calculateStateEitc
+    // pathway (PA is in the state-EITC piggyback set). Here we expose a
+    // PLACEHOLDER zero-value entry so the per-state credit display lists
+    // PA's WFC alongside Sched SP; the actual amount flows through state EITC.
+    entries.push({
+      id: "pa-working-family-tax-credit",
+      name: "PA Working Family Tax Credit",
+      amount: 0, // Computed via calculateStateEitc piggyback path
+      refundable: true,
+      source: "PA Act 64 of 2024 / Sched DC Line 7 (10% × federal EITC; computed via state-EITC piggyback path — see calculateStateEitc)",
+      approximate: false,
+      ineligibilityReason: "Computed via state-EITC piggyback path (see calculateStateEitc result)",
+    });
+  }
+
+  // ── VA credits ──────────────────────────────────────────────────────
+  if (code === "VA") {
+    const totalDependents =
+      Math.max(0, params.dependentsUnder17) + Math.max(0, params.otherDependents ?? 0);
+    const preCreditTax = Math.max(0, params.preCreditStateTaxLiability ?? 0);
+
+    // ── VA Low-Income Tax Credit (Va. Code §58.1-339.8) ──
+    // Schedule ADJ Line 17. Lesser of:
+    //   (a) VA tax due, OR
+    //   (b) $300 per personal/dependent exemption.
+    // Eligibility: VA AGI ≤ federal-poverty-line guideline for family size.
+    // TY2024 FPL (HHS 2023 guidelines for TY2024 returns):
+    //   1 person: $14,580; 2: $19,720; 3: $24,860; 4: $30,000;
+    //   each addl: +$5,140
+    // Engine sizing: filer (+spouse if MFJ) + dependents.
+    const familySize =
+      1 +
+      (isMfj || filingStatus === "qualifying_widow" ? 1 : 0) +
+      totalDependents;
+    const fpl =
+      familySize === 1 ? 14_580 :
+      familySize === 2 ? 19_720 :
+      familySize === 3 ? 24_860 :
+      familySize === 4 ? 30_000 :
+      30_000 + (familySize - 4) * 5_140;
+    let vaLitcCredit = 0;
+    let vaLitcReason: string | undefined;
+    if (agi > fpl) {
+      vaLitcReason = `VA AGI > $${fpl.toLocaleString("en-US")} (FPL for family size ${familySize})`;
+    } else {
+      // $300 per exemption (filer + spouse if MFJ + dependents)
+      const exemptions = 1 + (isMfj || filingStatus === "qualifying_widow" ? 1 : 0) + totalDependents;
+      vaLitcCredit = Math.min(preCreditTax, 300 * exemptions);
+    }
+    entries.push({
+      id: "va-low-income-tax-credit",
+      name: "VA Low-Income Tax Credit",
+      amount: vaLitcCredit,
+      refundable: false,
+      source: "VA Code §58.1-339.8 / Sched ADJ Line 17 TY2024 (lesser of VA tax or $300/exemption; AGI ≤ FPL)",
+      approximate: false,
+      ineligibilityReason: vaLitcReason,
+    });
+
+    // ── VA Credit for Tax Paid to Another State ──
+    // Va. Code §58.1-332. Nonrefundable. Computed inline via multi-state
+    // credit-for-tax-paid logic in calculateMultiStateTax; not a freestanding
+    // value here. Expose as informational entry.
+    entries.push({
+      id: "va-credit-tax-other-state",
+      name: "VA Credit for Tax Paid to Other State",
+      amount: 0, // Computed via calculateMultiStateTax residentCreditApplied path
+      refundable: false,
+      source: "VA Code §58.1-332 (computed via multi-state credit path — see multiState.residentCreditApplied)",
+      approximate: false,
+      ineligibilityReason: "Computed inline via multi-state credit path",
+    });
+  }
+
+  // ── GA credits ──────────────────────────────────────────────────────
+  if (code === "GA") {
+    const taxpayerAge = params.taxpayerAge ?? 0;
+    const spouseAge = params.spouseAge ?? 0;
+    const totalDependents =
+      Math.max(0, params.dependentsUnder17) + Math.max(0, params.otherDependents ?? 0);
+    const preCreditTax = Math.max(0, params.preCreditStateTaxLiability ?? 0);
+
+    // ── GA Low-Income Tax Credit (O.C.G.A. §48-7-29.18) ──
+    // Tiered credit by federal AGI band, $5-$26/exemption per band.
+    // TY2024 brackets (Form 500 instructions):
+    //   AGI < $6,000:  $26 / exemption
+    //   $6k-$8k:       $20
+    //   $8k-$10k:      $14
+    //   $10k-$15k:     $8
+    //   $15k-$20k:     $5
+    //   > $20k:        $0
+    // Nonrefundable. One credit per family-size exemption.
+    let gaLicPerExemption = 0;
+    if (agi < 6_000) gaLicPerExemption = 26;
+    else if (agi < 8_000) gaLicPerExemption = 20;
+    else if (agi < 10_000) gaLicPerExemption = 14;
+    else if (agi < 15_000) gaLicPerExemption = 8;
+    else if (agi < 20_000) gaLicPerExemption = 5;
+    const gaExemptions =
+      1 + (isMfj || filingStatus === "qualifying_widow" ? 1 : 0) + totalDependents;
+    const gaLicCredit = Math.min(preCreditTax, gaLicPerExemption * gaExemptions);
+    entries.push({
+      id: "ga-low-income-credit",
+      name: "GA Low-Income Tax Credit",
+      amount: gaLicCredit,
+      refundable: false,
+      source: "GA O.C.G.A. §48-7-29.18 / Form 500 TY2024 (tiered $5-$26/exemption by AGI band; > $20k = $0)",
+      approximate: false,
+      ineligibilityReason: agi >= 20_000 ? "GA AGI ≥ $20,000 (LIC ceiling)" : undefined,
+    });
+
+    // ── GA Retirement Income Exclusion (O.C.G.A. §48-7-27(a)(5)) ──
+    // Age 62-64: $35,000 exclusion (max)
+    // Age 65+:   $65,000 exclusion (max)
+    // Per qualifying taxpayer (so MFJ both 65+ = $130,000 combined exclusion).
+    // Applies to pension + IRA + interest/div + cap gains (mixed bag).
+    // Engine simplification: only retirement-income excluded (pension + IRA
+    // distribution), not interest/div/cap-gain — that conservative scope
+    // matches the engine's existing retirement-income aggregator. Exclusion
+    // is expressed as a CREDIT equivalent here: exclusion × top GA marginal
+    // rate (5.39% TY2024) — gives the actual tax savings.
+    let gaRetExclusion = 0;
+    let gaRetReason: string | undefined;
+    const retIncome = Math.max(0, params.retirementIncome ?? 0);
+    if (retIncome <= 0) {
+      gaRetReason = "No retirement income reported";
+    } else {
+      const tpExclusion =
+        taxpayerAge >= 65 ? 65_000 :
+        taxpayerAge >= 62 ? 35_000 : 0;
+      const spExclusion = (isMfj || filingStatus === "qualifying_widow")
+        ? (spouseAge >= 65 ? 65_000 : spouseAge >= 62 ? 35_000 : 0)
+        : 0;
+      const totalExclusion = tpExclusion + spExclusion;
+      const applied = Math.min(retIncome, totalExclusion);
+      gaRetExclusion = applied * 0.0539; // GA TY2024 flat rate
+      if (totalExclusion === 0) gaRetReason = "Taxpayer (or spouse if MFJ) must be 62+";
+    }
+    entries.push({
+      id: "ga-retirement-income-exclusion",
+      name: "GA Retirement Income Exclusion",
+      amount: gaRetExclusion,
+      refundable: false,
+      source: "GA O.C.G.A. §48-7-27(a)(5) TY2024 ($35k age 62-64 / $65k age 65+ per qualifying spouse; × 5.39% flat rate)",
+      approximate: true,
+      ineligibilityReason: gaRetReason,
+    });
+
+    // ── GA Disabled Person Home Purchase Credit ──
+    // O.C.G.A. §48-7-29.1. Up to $500 one-time credit for retrofitting a
+    // home for a disabled person. Nonrefundable.
+    const gaHomeCost = Math.max(0, params.gaDisabledHomePurchaseCost ?? 0);
+    const gaHomeCredit = Math.min(500, gaHomeCost);
+    entries.push({
+      id: "ga-disabled-home-purchase-credit",
+      name: "GA Disabled Person Home Purchase Credit",
+      amount: gaHomeCredit,
+      refundable: false,
+      source: "GA O.C.G.A. §48-7-29.1 TY2024 (one-time $500 cap for disabled-person retrofit)",
+      approximate: false,
+      ineligibilityReason: gaHomeCost <= 0 ? "No qualifying retrofit cost reported" : undefined,
+    });
+  }
+
+  // ── MI credits ──────────────────────────────────────────────────────
+  if (code === "MI") {
+    const taxpayerAge = params.taxpayerAge ?? 0;
+    const spouseAge = params.spouseAge ?? 0;
+
+    // ── MI Homestead Property Tax Credit (Form MI-1040CR) ──
+    // P.A. 281 of 1967. Formula:
+    //   Credit = 60% × (property tax − 3.5% × household resources)
+    //   Multiplier:
+    //     - Senior (65+) or disabled: 100% (engine: 100% senior)
+    //     - General: 60%
+    //   Caps:
+    //     - Total household resources ≤ $69,700 (TY2024; phases out from
+    //       $58,000-$69,700 in 10% increments)
+    //     - Taxable value of home ≤ $160,200 (TY2024)
+    //     - Max credit: $1,800
+    // Refundable. (MI residents only.)
+    const propertyTax = Math.max(0, params.propertyTaxPaid ?? 0);
+    const householdResources = Math.max(0, params.miHouseholdResources ?? agi);
+    let miHsCredit = 0;
+    let miHsReason: string | undefined;
+    const seniorOrDisabled =
+      taxpayerAge >= 65 ||
+      ((isMfj || filingStatus === "qualifying_widow") && spouseAge >= 65);
+    if (propertyTax <= 0) {
+      miHsReason = "No MI property tax paid";
+    } else if (householdResources > 69_700) {
+      miHsReason = "Household resources > $69,700 (TY2024 cap)";
+    } else {
+      const threshold = householdResources * 0.035;
+      const excess = Math.max(0, propertyTax - threshold);
+      const multiplier = seniorOrDisabled ? 1.00 : 0.60;
+      let preliminary = excess * multiplier;
+      // Phase-out: household resources $58,000-$69,700 phases out 10% per $1,300.
+      if (householdResources > 58_000) {
+        const phaseSteps = Math.ceil((householdResources - 58_000) / 1_300);
+        const phaseFraction = Math.max(0, 1 - phaseSteps * 0.10);
+        preliminary *= phaseFraction;
+      }
+      miHsCredit = Math.min(1_800, preliminary);
+    }
+    entries.push({
+      id: "mi-homestead-property-tax-credit",
+      name: "MI Homestead Property Tax Credit",
+      amount: miHsCredit,
+      refundable: true,
+      source: "MI Form MI-1040CR TY2024 (60%/100% × [property tax − 3.5% × household resources]; cap $1,800; phase $58k-$69.7k)",
+      approximate: false,
+      ineligibilityReason: miHsReason,
+    });
+
+    // ── MI Home Heating Credit (Form MI-1040CR-7) ──
+    // P.A. 422 of 2002. Refundable. Standard credit method:
+    //   Credit = (standard allowance × heating cost paid) capped
+    //   Standard allowance: $565 base + ~$200/exemption (TY2024 approximate)
+    //   Income test: household resources < ~$15,500 (1-2 exemptions);
+    //                phases to ~$28,500 at 8 exemptions
+    // Engine simplification (high CPA volume case): refund = min(heating cost,
+    // standard allowance × exemption count) when household resources ≤ $25k.
+    const heatingCost = Math.max(0, params.miHomeHeatingCost ?? 0);
+    const exemptions =
+      1 + (isMfj || filingStatus === "qualifying_widow" ? 1 : 0) +
+      Math.max(0, params.dependentsUnder17) + Math.max(0, params.otherDependents ?? 0);
+    let miHeatCredit = 0;
+    let miHeatReason: string | undefined;
+    const heatIncomeCap = 15_500 + (exemptions > 2 ? (exemptions - 2) * 2_000 : 0);
+    if (heatingCost <= 0) {
+      miHeatReason = "No home heating cost reported";
+    } else if (householdResources > heatIncomeCap) {
+      miHeatReason = `Household resources > $${heatIncomeCap.toLocaleString("en-US")} (HHC cap for ${exemptions} exemptions)`;
+    } else {
+      const standardAllowance = 565 + (exemptions - 1) * 200;
+      miHeatCredit = Math.min(heatingCost, standardAllowance);
+    }
+    entries.push({
+      id: "mi-home-heating-credit",
+      name: "MI Home Heating Credit",
+      amount: miHeatCredit,
+      refundable: true,
+      source: "MI Form MI-1040CR-7 TY2024 (standard allowance ≈ $565 + $200/exemption; income test by exemption count)",
+      approximate: true,
+      ineligibilityReason: miHeatReason,
     });
   }
 
