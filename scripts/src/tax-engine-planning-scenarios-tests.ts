@@ -410,6 +410,108 @@ section("SCENARIO 6 — Low-income retirement saver, OH, age 30");
 }
 
 // ============================================================================
+// SCENARIO 7 — FIRE-movement client, age 55
+// Single, FL, age 55. Transitioning out of W-2 to early retirement.
+// $50k W-2 (consulting wind-down).
+// H5: traditional_ira $400k, roth_ira $80k.
+// Expected: G1.50 §72(t) SEPP (age + IRA + low income); G1.4 Roth conv
+// (low marginal, age in range); G1.22 pre-RMD ladder (age 60-72 range
+// — actually starts at 60, so at 55 NO).
+// ============================================================================
+section("SCENARIO 7 — FIRE-movement client, FL, age 55");
+
+{
+  const inputs: TaxReturnInputs = {
+    client: {
+      filingStatus: "single",
+      state: "FL",
+      taxYear: 2024,
+      taxpayerAge: 55,
+      dependentsUnder17: 0,
+    } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    form1099s: [],
+    adjustments: [],
+    assetBalances: [
+      { assetType: "traditional_ira", balance: "400000", accountName: "Vanguard IRA", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+      { assetType: "roth_ira", balance: "80000", accountName: "Roth IRA", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+    taxYear: 2024,
+  };
+  const hits = runFull(inputs);
+  header(`Found: ${ids(hits).join(", ") || "(none)"}`);
+  checkSubset("S7", "fires G1.50 §72(t) SEPP (age 55 + IRA $400k + low income)",
+    ["G1.50"], ids(hits));
+  // G1.22 starts at age 60. Age 55 → suppressed.
+  checkNotFires("S7", "G1.22 pre-RMD ladder correctly suppressed (age < 60)",
+    "G1.22", hits);
+  // G1.27 inherited IRA: age < 60 + trad IRA > $50k → fires (heuristic).
+  // CPA-confirms inheritance status. Expected to fire.
+  checkSubset("S7", "fires G1.27 inherited IRA (age < 60 + trad IRA — CPA confirms)",
+    ["G1.27"], ids(hits));
+  // G1.4 Roth conversion: marginal 12% < 24% + age in range → fires.
+  checkSubset("S7", "fires G1.4 Roth conversion (low marginal + age range)",
+    ["G1.4"], ids(hits));
+  // Verify G1.50 estSavings
+  const seppHit = findHit(hits, "G1.50");
+  if (seppHit) {
+    checkInRange("S7", "G1.50 estSavings = $15,000 ($30k × 10% × 5 yrs)",
+      seppHit.estSavings, 14_900, 15_100);
+  }
+}
+
+// ============================================================================
+// SCENARIO 8 — Self-employed solo on ACA marketplace
+// Single, FL, age 40.
+// $80k 1099-NEC consulting.
+// No retirement plan yet.
+// Expected: G1.30 ACA PTC (AGI in range + SE income); G1.42 SEHI
+// (SE > $30k); G1.1 SEP-IRA; G1.13 Augusta; G1.36 R&D (SE > $100k? no,
+// $80k < $100k threshold for G1.36); G1.28 DB plan (no — under 45).
+// ============================================================================
+section("SCENARIO 8 — Self-employed solo on ACA, FL, age 40");
+
+{
+  const inputs: TaxReturnInputs = {
+    client: {
+      filingStatus: "single",
+      state: "FL",
+      taxYear: 2024,
+      taxpayerAge: 40,
+      dependentsUnder17: 0,
+    } as unknown as TaxReturnInputs["client"],
+    w2s: [],
+    form1099s: [
+      { taxYear: 2024, formType: "nec", payerName: "Solo Consulting", nonemployeeCompensation: 80000 } as unknown as TaxReturnInputs["form1099s"][number],
+    ],
+    adjustments: [],
+    assetBalances: [],
+    taxYear: 2024,
+  };
+  const hits = runFull(inputs);
+  header(`Found: ${ids(hits).join(", ") || "(none)"}`);
+  checkSubset("S8", "fires G1.30 ACA PTC (AGI in range + SE)", ["G1.30"], ids(hits));
+  checkSubset("S8", "fires G1.42 SEHI (SE > $30k)", ["G1.42"], ids(hits));
+  checkSubset("S8", "fires G1.1 SEP-IRA (SE > $30k)", ["G1.1"], ids(hits));
+  checkSubset("S8", "fires G1.13 Augusta Rule (SE > $50k)", ["G1.13"], ids(hits));
+  // G1.36 R&D: SE > $100k threshold; $80k under → suppressed.
+  checkNotFires("S8", "G1.36 R&D correctly suppressed (SE < $100k)",
+    "G1.36", hits);
+  // G1.28 DB plan: age < 45 → suppressed.
+  checkNotFires("S8", "G1.28 DB plan correctly suppressed (age < 45)",
+    "G1.28", hits);
+  // G1.50 §72(t): age < 50 → suppressed.
+  checkNotFires("S8", "G1.50 §72(t) SEPP correctly suppressed (age < 50)",
+    "G1.50", hits);
+  // Verify G1.42 SEHI estSavings
+  const sehiHit = findHit(hits, "G1.42");
+  if (sehiHit) {
+    checkInRange("S8", "G1.42 SEHI estSavings ≈ $2,640 ($12k × 22%)",
+      sehiHit.estSavings, 2_500, 2_800);
+  }
+}
+
+// ============================================================================
 // RESULTS
 // ============================================================================
 

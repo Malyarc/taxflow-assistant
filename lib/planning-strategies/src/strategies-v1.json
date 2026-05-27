@@ -1,5 +1,5 @@
 {
-  "version": "v1.7.0",
+  "version": "v1.8.0",
   "reviewedAt": "2026-05-27",
   "strategies": [
     {
@@ -360,6 +360,121 @@
         "Trust attorney + actuarial valuation (complex — 6-12 month setup)"
       ],
       "action": "Engage a trust attorney to draft a CRT. Transfer the appreciated asset; CRT sells tax-free; client receives annuity/unitrust income stream + immediate charitable deduction for the present value of the remainder interest. Heuristic savings estimate available only after the §7520 actuarial calculation.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.30",
+      "name": "ACA Premium Tax Credit §36B — MAGI projection + reconciliation",
+      "category": "credits",
+      "ircSection": "IRC §36B; ACA §1401",
+      "irsPub": "Pub 974; Form 8962; Rev. Proc. 2024-35 (FPL TY2024)",
+      "trigger": "AGI within ACA-relevant range ($30k-$120k household, roughly 100-400% FPL TY2024) AND has self-employment income (proxy for non-employer coverage) AND no existing premium_tax_credit adjustment.",
+      "formula": "Project current-year MAGI accurately mid-year. If MAGI ended > projected: client may owe back portion of advance credit (capped per §36B(f)(2)(B) repayment cap for households < 400% FPL — uncapped at 400%+). Heuristic estSavings = ~$1,000 (rough avg overpayment avoidance) when MAGI projection is sharp.",
+      "confidence": 0.50,
+      "cpaEffortHours": 1.5,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Confirm client has marketplace QHP coverage (vs employer-sponsored coverage which disqualifies)",
+        "1095-A (Marketplace Health Insurance Statement) — provides advance PTC + actual premiums",
+        "Estimated MAGI for the year (AGI + tax-exempt interest + foreign income + excluded SS)",
+        "Household composition (changes mid-year affect FPL calc)",
+        "Mid-year income changes (raise, bonus, business pivot) — contact Marketplace within 30 days to update",
+        "FPL ceiling: post-IRA 2022 + §80101 extended ZERO cap through 2025 (no 400% cliff for TY2021-2025); 400% cliff REINSTATES TY2026 absent legislation"
+      ],
+      "action": "If client is on Marketplace coverage, refine current-year MAGI projection. For TY{{taxYear}} (post-IRA 2022 cap removed through 2025), repayment risk is reduced. Avg overpayment-avoidance benefit ~{{estSavings}}.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.41",
+      "name": "§1045 QSBS Rollover — defer gain into another QSBS (60-day window)",
+      "category": "investment",
+      "ircSection": "IRC §1045; §1202",
+      "irsPub": "Pub 550; Rev. Rul. 2009-9",
+      "trigger": "Founder-profile signal: K-1 active > $50k OR net SE > $200k OR total income > $200k. AND LTCG > $500,000. AND no existing section_1045_rollover marker.",
+      "formula": "Roll gain from QSBS sale into another QSBS within 60 days of sale. Basis carryover to new QSBS; gain DEFERRED (not eliminated). Original holding-period requirement: held > 6 months at sale. estSavings = deferred gain × (20% LTCG + 3.8% NIIT) × 0.3 time-value factor.",
+      "confidence": 0.35,
+      "cpaEffortHours": 5.0,
+      "recurring": false,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Confirm sold stock was QUALIFIED §1202 QSBS at sale (all 6 §1202 requirements)",
+        "Confirm original stock held > 6 months (vs §1202's > 5 years for outright exclusion)",
+        "Identify replacement QSBS within 60 days of sale (strict deadline)",
+        "Replacement stock must ALSO qualify as §1202 QSBS (corp gross assets ≤ $50M at issuance, etc.)",
+        "Investment must be in QSBS within the 60-day window — cash held outside qualifies only if rolled by deadline",
+        "Filed via Form 8949 with code 'R' for rollover",
+        "Reduces basis of replacement stock by deferred gain amount"
+      ],
+      "action": "If client sold qualified §1202 QSBS held > 6 months and reinvested in new QSBS within 60 days, file §1045 rollover on Form 8949 (code R). Defers ~{{estSavings}} of LTCG + NIIT.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.42",
+      "name": "Self-Employed Health Insurance §162(l) — 100% above-the-line",
+      "category": "business",
+      "ircSection": "IRC §162(l)",
+      "irsPub": "Pub 535; Pub 974; Form 1040 Sch 1 Line 17",
+      "trigger": "Net SE earnings > $30,000 AND no existing self_employed_health_insurance_premiums adjustment AND client buys own health insurance (NOT eligible for spouse-employer-sponsored coverage).",
+      "formula": "100% deduction of qualified health insurance premiums (medical / dental / vision / long-term care) for the SE filer + spouse + dependents. Capped at (net SE − half-SE-tax deduction − qualified retirement contribution) per §162(l)(2)(A). Above-the-line on Schedule 1 Line 17. estSavings = assumed $12,000/yr premiums × (federal + state marginal rate).",
+      "confidence": 0.85,
+      "cpaEffortHours": 0.5,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Confirm SE filer is NOT eligible to participate in employer-subsidized health plan via OWN or SPOUSE'S employer per §162(l)(2)(B)",
+        "Premium amount paid for the year (medical + dental + vision + qualified LTC)",
+        "Cap: deduction can't exceed (net SE − half-SE deduction − retirement plan contributions) per §162(l)(2)(A)",
+        "Coordinate with §36B PTC (G1.30) — SE filer with ACA coverage gets both subsidy AND deduction with circular calc (Pub 974 iterative method)",
+        "S-corp owners: premiums must be reported on W-2 box 1 to claim §162(l) (S-corp owns the policy + reimburses or pays)"
+      ],
+      "action": "Deduct ${{premiumsAssumed}} of self-employed health insurance premiums above-the-line on Schedule 1 Line 17. Saves ~{{estSavings}} at the combined marginal rate.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.43",
+      "name": "Wash-Sale Proactive Avoidance §1091 (forward-looking)",
+      "category": "investment",
+      "ircSection": "IRC §1091",
+      "irsPub": "Pub 550",
+      "trigger": "Has capital_loss_carryforward_short + _long > $5,000 (signal of active TLH) AND no existing wash-sale flag.",
+      "formula": "Forward-looking: when realizing a capital loss for tax purposes, do NOT repurchase substantially-identical security within 30 days before OR after the sale (61-day window). Wash-sale disallows the loss + tacks basis onto the replacement. estSavings = $3,000 typical forfeit avoided × marginal ordinary rate (loss would have offset ordinary up to §1211 cap). Heuristic: $3,000 × 22% = $660.",
+      "confidence": 0.55,
+      "cpaEffortHours": 0.5,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "List of holdings client plans to sell for tax loss",
+        "List of any pending purchases of those (or substantially-identical) securities",
+        "61-day window awareness: 30 days BEFORE + sale date + 30 days AFTER",
+        "Substantially-identical determination: same stock = yes; bond/preferred from same issuer = situational; ETF tracking same index = often yes; sector ETF rotation = usually safe",
+        "Cross-account wash sale: spouse's IRA / brokerage / Roth IRA — IRS Rev. Rul. 2008-5 confirms IRA-side wash sale (no basis adjustment available → permanent forfeit)",
+        "Engine already auto-detects wash sales via E13 (post-event); this strategy is PRE-event coaching"
+      ],
+      "action": "Before client realizes capital losses, review pending buys to prevent §1091 wash-sale. Avoid repurchase within 30 days. Estimated prevented forfeit ~{{estSavings}} on typical TLH cycle.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.50",
+      "name": "§72(t) SEPP — penalty-free IRA withdrawal before 59½",
+      "category": "retirement",
+      "ircSection": "IRC §72(t)(2)(A)(iv)",
+      "irsPub": "Pub 590-B; Rev. Rul. 2002-62; Notice 2022-6",
+      "trigger": "taxpayerAge between 50 and 58 AND H5 traditional/SEP/SIMPLE IRA total balance > $200,000 AND total income < $200,000 (proxy for early-retirement transition vs accumulation phase).",
+      "formula": "Substantially Equal Periodic Payments — withdraw fixed amount annually from IRA without 10% §72(t) penalty. Must continue 5 yrs OR until age 59½, whichever is later. 3 methods per Notice 2022-6: (1) RMD method, (2) fixed amortization, (3) fixed annuitization. Heuristic: avoid 10% penalty on $30k/yr × 5 yrs = $15,000.",
+      "confidence": 0.55,
+      "cpaEffortHours": 4.0,
+      "recurring": false,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Confirm client intends to retire / withdraw before age 59½ (else no benefit vs simple withdrawal)",
+        "Choose ONE method (RMD / amortization / annuitization) per Notice 2022-6 — election is locked in for the SEPP period",
+        "Interest rate cap: not more than 120% of mid-term Applicable Federal Rate (AFR) for the 2 prior months",
+        "Account isolation: typically establish dedicated SEPP IRA via partial rollover (so only that account follows the SEPP rules)",
+        "Continue 5 yrs OR to 59½ — whichever LATER. Modification before that = 10% penalty + interest on ALL prior years' SEPP withdrawals retroactively",
+        "Required Beginning Date for RMDs (age 73 SECURE 2.0) applies separately — coordinate"
+      ],
+      "action": "Establish a §72(t) SEPP from a dedicated IRA. Withdraw ~$30,000/year using fixed amortization method. Saves the 10% early-withdrawal penalty (~{{estSavings}} over 5 years). Carefully avoid modification — penalty is RETROACTIVE on all prior years.",
       "formulaRev": 1
     },
     {

@@ -3827,6 +3827,352 @@ function detectAocVsLlc(args: {
   };
 }
 
+// ── G1.30 — ACA PTC §36B reconciliation (heuristic) ─────────────────────
+
+const G1_30_AGI_MIN = 30_000;
+const G1_30_AGI_MAX = 120_000;
+const G1_30_HEURISTIC_BENEFIT = 1_000;
+
+function detectAcaPtc(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { computed, adjustments } = args;
+  const agi = computed.adjustedGrossIncome;
+  if (agi < G1_30_AGI_MIN || agi > G1_30_AGI_MAX) return null;
+  // Proxy for marketplace coverage: client has SE income (less likely
+  // employer-sponsored). Engine has no PTC-specific marker yet.
+  const netSe = computed.detail.se.netSeEarnings;
+  if (netSe <= 0) return null;
+  // Suppress if a premium_tax_credit adjustment is already present.
+  const existingPtc = sumAdjustment(adjustments, "premium_tax_credit");
+  if (existingPtc !== 0) return null; // any signal client already reconciled
+
+  const estSavings = G1_30_HEURISTIC_BENEFIT;
+
+  const strategy = strategyById("G1.30");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    estSavings,
+    taxYear: computed.taxYear,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client AGI ${fmt(Math.round(agi))} is within the ACA Marketplace relevance range with SE income ` +
+      `(${fmt(Math.round(netSe))}) — likely buying coverage independently. Accurate mid-year MAGI ` +
+      `projection avoids advance-PTC overpayment that gets clawed back on Form 8962 reconciliation.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      agi: Math.round(agi),
+      netSeEarnings: Math.round(netSe),
+      agiMin: G1_30_AGI_MIN,
+      agiMax: G1_30_AGI_MAX,
+      heuristicBenefit: G1_30_HEURISTIC_BENEFIT,
+    },
+    assumptions: [
+      `HEURISTIC — engine cannot verify Marketplace coverage. Uses (AGI in range + SE income) as proxy. CPA confirms 1095-A presence.`,
+      `TY${computed.taxYear} threshold: 100-400% FPL household income. Post-IRA 2022 §80101 extended ZERO cap through TY2025 (no 400% cliff). 400% cliff REINSTATES TY2026 absent legislation.`,
+      `Heuristic estSavings $1,000 — typical overpayment avoidance. Real reconciliation can range from $0 (perfect projection) to several $k (large mid-year income change).`,
+      `Strategy is FORWARD-LOOKING — applies to projecting next year's MAGI accurately. Current-year reconciliation handled on Form 8962.`,
+      `Coordinates with G1.42 SE Health Insurance — both apply to the same premiums (Pub 974 circular calculation when both used).`,
+      `Engine doesn't yet model PTC directly — no H2 mutation. Heuristic informational only.`,
+    ],
+  };
+}
+
+// ── G1.41 — §1045 QSBS Rollover (heuristic) ──────────────────────────────
+
+const G1_41_MIN_FOUNDER_SIGNAL = 200_000;
+const G1_41_MIN_LTCG = 500_000;
+const G1_41_DEFERRAL_RATE = (0.20 + 0.038) * 0.3;
+
+function detectSection1045Rollover(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { computed, adjustments } = args;
+  // Founder profile signal: K-1 active income > $50k OR net SE > $200k OR
+  // total income > $200k (proxy for "could plausibly own QSBS").
+  const k1Active = computed.scheduleK1?.totalActiveOrdinaryIncome ?? 0;
+  const netSe = computed.detail.se.netSeEarnings;
+  const founderSignal = k1Active >= 50_000 || netSe >= G1_41_MIN_FOUNDER_SIGNAL ||
+                        computed.totalIncome >= G1_41_MIN_FOUNDER_SIGNAL;
+  if (!founderSignal) return null;
+  const ltcg = computed.form1099Summary?.longTermCapitalGains ?? 0;
+  if (ltcg < G1_41_MIN_LTCG) return null;
+  // Suppress if §1045 marker present.
+  const existing = sumAdjustment(adjustments, "section_1045_rollover_gain");
+  if (existing > 0) return null;
+
+  // Assume deferred gain ≈ LTCG amount (cap at $500k for conservativeness).
+  const deferredGain = Math.min(ltcg, 500_000);
+  const estSavings = Math.round(deferredGain * G1_41_DEFERRAL_RATE);
+  if (estSavings <= 0) return null;
+
+  const strategy = strategyById("G1.41");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = { estSavings };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client has founder-profile signals (K-1 active ${fmt(Math.round(k1Active))} / net SE ` +
+      `${fmt(Math.round(netSe))} / total income ${fmt(Math.round(computed.totalIncome))}) + LTCG ` +
+      `${fmt(Math.round(ltcg))}. If any of that LTCG came from §1202 QSBS held > 6 months AND ` +
+      `client reinvested in another QSBS within 60 days, §1045 defers up to ${fmt(deferredGain)} ` +
+      `of cap-gain tax.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      k1ActiveIncome: Math.round(k1Active),
+      netSeEarnings: Math.round(netSe),
+      totalIncome: Math.round(computed.totalIncome),
+      ltcg: Math.round(ltcg),
+      deferredGainAssumed: deferredGain,
+      deferralRate: G1_41_DEFERRAL_RATE,
+    },
+    assumptions: [
+      `HEURISTIC — engine cannot verify QSBS status of sold stock. CPA confirms all 6 §1202 requirements at original sale.`,
+      `Original stock must have been held > 6 MONTHS (vs §1202's > 5 years for outright exclusion).`,
+      `60-DAY DEADLINE from sale to reinvest in qualifying replacement QSBS.`,
+      `Replacement stock must ALSO meet all §1202 QSBS criteria (C-corp gross assets ≤ $50M at issuance + active T/B + qualified type, etc.).`,
+      `Basis CARRYS OVER to new QSBS — gain is DEFERRED, not eliminated.`,
+      `If replacement is held to satisfy original 5-year window combined with carryover holding period, can ultimately qualify for §1202 100% exclusion.`,
+      `Heuristic deferral value = (LTCG 20% + NIIT 3.8%) × 0.3 time-value factor.`,
+      `Filed via Form 8949 with code 'R' for rollover.`,
+    ],
+  };
+}
+
+// ── G1.42 — Self-Employed Health Insurance §162(l) (H2-wired) ────────────
+
+const G1_42_MIN_NET_SE = 30_000;
+const G1_42_ASSUMED_PREMIUMS = 12_000;
+
+function detectSelfEmployedHealthIns(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+  baselineInputs?: TaxReturnInputs;
+}): OpportunityHit | null {
+  const { computed, adjustments, baselineInputs } = args;
+  const netSe = computed.detail.se.netSeEarnings;
+  if (netSe < G1_42_MIN_NET_SE) return null;
+  // Suppress if already claimed.
+  const existing = sumAdjustment(adjustments, "self_employed_health_insurance_premiums");
+  if (existing > 0) return null;
+
+  // Cap at (net SE − half-SE) per §162(l)(2)(A). Heuristic assumes $12k
+  // premiums fits under this cap for most clients (it does whenever netSE
+  // > ~$13k).
+  const halfSe = computed.detail.se.deductibleHalf;
+  const cap = Math.max(0, netSe - halfSe);
+  const deductible = Math.min(G1_42_ASSUMED_PREMIUMS, cap);
+  if (deductible <= 0) return null;
+
+  const fedRate = federalMarginalRate(computed);
+  const stateRate = stateMarginalRate(computed);
+  const estSavings = Math.round(deductible * (fedRate + stateRate));
+
+  // H2: add self_employed_health_insurance_premiums adjustment. Engine
+  // already supports this via K5 (Form 7206) — it'll apply the cap.
+  const whatIf = runDetectorWhatIf({
+    baselineInputs,
+    scenarioId: "G1.42-sehi",
+    label: `SEHI premiums $${G1_42_ASSUMED_PREMIUMS.toLocaleString("en-US")}`,
+    mutations: [
+      { kind: "add_adjustment", adjustmentType: "self_employed_health_insurance_premiums", amount: G1_42_ASSUMED_PREMIUMS },
+    ],
+    semantics: "savings",
+    varyAmount: true,
+  });
+
+  const strategy = strategyById("G1.42");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    premiumsAssumed: G1_42_ASSUMED_PREMIUMS,
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Net SE earnings ${fmt(Math.round(netSe))} support a 100% above-the-line deduction of health ` +
+      `insurance premiums per §162(l). Cap: ${fmt(Math.round(cap))} (net SE − half-SE). Assumed ` +
+      `$12,000/year premiums = ${fmt(deductible)} deductible → ${fmt(estSavings)} tax savings at ` +
+      `the combined ${((fedRate + stateRate) * 100).toFixed(1)}% marginal rate.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      netSeEarnings: Math.round(netSe),
+      halfSeDeduction: Math.round(halfSe),
+      sectionLCap: Math.round(cap),
+      assumedPremiums: G1_42_ASSUMED_PREMIUMS,
+      deductible: Math.round(deductible),
+      federalMarginalRate: fedRate,
+      stateMarginalRate: stateRate,
+    },
+    assumptions: [
+      `IRC §162(l) deduction is 100% of qualified health insurance premiums for SE + spouse + dependents.`,
+      `Engine already supports this via the self_employed_health_insurance_premiums adjustment (K5 — Form 7206).`,
+      `Cap per §162(l)(2)(A): premiums can't exceed (net SE − half-SE − retirement plan contributions).`,
+      `DISQUALIFICATION: SE filer cannot be eligible to participate in employer-subsidized health plan via OWN or SPOUSE'S employer (§162(l)(2)(B)). CPA confirms.`,
+      `Heuristic assumes $12k/yr premiums (typical for single/family in 2024). CPA refines with actual amounts.`,
+      `S-corp owners: premiums must be reported on W-2 box 1 first (S-corp owns policy + pays/reimburses).`,
+      `Coordinates with G1.30 ACA PTC — Pub 974 iterative method for circular calc when both apply.`,
+      `H2 mutation models adding the deduction — engine applies the §162(l)(2)(A) cap automatically.`,
+    ],
+    whatIf,
+  };
+}
+
+// ── G1.43 — Wash-sale proactive avoidance (heuristic) ────────────────────
+
+const G1_43_MIN_CAP_LOSS_CF = 5_000;
+const G1_43_FORFEIT_PREVENTION = 3_000;
+
+function detectWashSaleAvoidance(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { computed, adjustments } = args;
+  const capLossCf = sumAdjustment(adjustments, "capital_loss_carryforward_short") +
+                    sumAdjustment(adjustments, "capital_loss_carryforward_long");
+  if (capLossCf < G1_43_MIN_CAP_LOSS_CF) return null;
+
+  const fedRate = federalMarginalRate(computed);
+  // estSavings = $3,000 (annual offset cap) × marginal ordinary rate
+  const estSavings = Math.round(G1_43_FORFEIT_PREVENTION * fedRate);
+  if (estSavings <= 0) return null;
+
+  const strategy = strategyById("G1.43");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = { estSavings };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client has ${fmt(Math.round(capLossCf))} of capital loss carryforward — signals active ` +
+      `tax-loss harvesting. Coaching client to avoid §1091 wash sales (no repurchase within 30 days ` +
+      `before/after sale) prevents forfeiting losses. Estimated annual benefit on $3k typical cycle ` +
+      `~${fmt(estSavings)}.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      capitalLossCarryforward: Math.round(capLossCf),
+      forfeitPreventionAmount: G1_43_FORFEIT_PREVENTION,
+      federalMarginalRate: fedRate,
+    },
+    assumptions: [
+      `FORWARD-LOOKING coaching — applies before client realizes losses, not after.`,
+      `Engine already detects POST-event wash sales via E13 (auto-detection on capital_transactions table).`,
+      `Wash-sale window: 30 days BEFORE + sale date + 30 days AFTER = 61-day exposure window.`,
+      `Substantially-identical determination: same stock = yes; bond/preferred from same issuer = situational; ETF tracking same index = often yes; sector-ETF rotation = usually safe.`,
+      `Cross-account wash sale: spouse's IRA / Roth IRA = IRS Rev. Rul. 2008-5 confirms IRA-side wash (no basis adjustment available → PERMANENT forfeit).`,
+      `Heuristic estSavings = $3,000 annual ordinary-offset cap × marginal rate. Real value scales with typical TLH cycle.`,
+    ],
+  };
+}
+
+// ── G1.50 — §72(t) SEPP early-retirement (heuristic) ─────────────────────
+
+const G1_50_MIN_AGE = 50;
+const G1_50_MAX_AGE = 58;
+const G1_50_MIN_TRAD_IRA = 200_000;
+const G1_50_MAX_TOTAL_INCOME = 200_000;
+const G1_50_ANNUAL_DRAW = 30_000;
+const G1_50_PENALTY_RATE = 0.10;
+const G1_50_DEFAULT_HORIZON = 5;
+
+function detectSection72tSepp(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+  assetBalances?: AssetBalanceFact[];
+}): OpportunityHit | null {
+  const { client, computed, assetBalances } = args;
+  const age = client.taxpayerAge;
+  if (age == null || age < G1_50_MIN_AGE || age > G1_50_MAX_AGE) return null;
+  if (computed.totalIncome > G1_50_MAX_TOTAL_INCOME) return null;
+  if (!assetBalances || assetBalances.length === 0) return null;
+  const tradTypes = new Set(["traditional_ira", "sep_ira", "simple_ira"]);
+  const tradBalance = assetBalances
+    .filter((a) => tradTypes.has(a.assetType))
+    .reduce((s, a) => s + toNum(a.balance), 0);
+  if (tradBalance < G1_50_MIN_TRAD_IRA) return null;
+
+  // estSavings = avoided 10% penalty on $30k/yr × 5 yrs
+  const estSavings = Math.round(G1_50_ANNUAL_DRAW * G1_50_PENALTY_RATE * G1_50_DEFAULT_HORIZON);
+
+  const strategy = strategyById("G1.50");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = { estSavings };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client age ${age} with ${fmt(Math.round(tradBalance))} of pre-tax IRA balance + total income ` +
+      `${fmt(Math.round(computed.totalIncome))} (modest — suggests possible early-retirement transition). ` +
+      `§72(t) SEPP allows penalty-free withdrawal from age ${G1_50_MIN_AGE} to 59½. Avoided 10% ` +
+      `penalty on ${fmt(G1_50_ANNUAL_DRAW)}/yr × ${G1_50_DEFAULT_HORIZON} yrs ~${fmt(estSavings)}.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      taxpayerAge: age,
+      tradIraBalance: Math.round(tradBalance),
+      totalIncome: Math.round(computed.totalIncome),
+      annualDrawAssumed: G1_50_ANNUAL_DRAW,
+      penaltyRate: G1_50_PENALTY_RATE,
+      horizonYears: G1_50_DEFAULT_HORIZON,
+    },
+    assumptions: [
+      `HEURISTIC — fires for age 50-58 + IRA > $200k + total income < $200k as proxy for early-retirement transition. CPA confirms intent.`,
+      `Must continue SEPP for 5 YEARS OR until age 59½ — WHICHEVER IS LATER. Modification before that = 10% penalty + interest RETROACTIVELY on ALL prior years' withdrawals.`,
+      `Three methods per Notice 2022-6: (1) RMD method, (2) fixed amortization, (3) fixed annuitization. Election is LOCKED IN.`,
+      `Interest rate cap: not more than 120% of mid-term AFR for the 2 prior months (Notice 2022-6).`,
+      `Best practice: establish a DEDICATED SEPP IRA via partial rollover so only that account follows SEPP rules — leaves other IRA balances flexible.`,
+      `Heuristic estSavings $15,000 = 10% × $30k/yr × 5 yrs. Real number scales with actual withdrawal amount + years to 59½.`,
+      `Coordinate with G1.22 pre-RMD Roth ladder — both apply in same age band; sequence matters.`,
+    ],
+  };
+}
+
 // ── Top-level evaluator ────────────────────────────────────────────────────
 
 export interface PlanningInputs {
@@ -3993,6 +4339,18 @@ export function evaluatePlanningOpportunities(args: PlanningInputs): Opportunity
   if (familyEmployment) hits.push(familyEmployment);
   const aocVsLlc = detectAocVsLlc({ client, computed, adjustments, baselineInputs });
   if (aocVsLlc) hits.push(aocVsLlc);
+  // Phase H — H1 catalog v1.8: G1.30 ACA PTC / G1.41 §1045 / G1.42 SEHI /
+  // G1.43 wash sale proactive / G1.50 §72(t) SEPP.
+  const acaPtc = detectAcaPtc({ computed, adjustments });
+  if (acaPtc) hits.push(acaPtc);
+  const section1045 = detectSection1045Rollover({ computed, adjustments });
+  if (section1045) hits.push(section1045);
+  const sehi = detectSelfEmployedHealthIns({ computed, adjustments, baselineInputs });
+  if (sehi) hits.push(sehi);
+  const washSale = detectWashSaleAvoidance({ computed, adjustments });
+  if (washSale) hits.push(washSale);
+  const sepp = detectSection72tSepp({ client, computed, assetBalances });
+  if (sepp) hits.push(sepp);
   hits.sort((a, b) => b.estSavings - a.estSavings);
   return hits;
 }

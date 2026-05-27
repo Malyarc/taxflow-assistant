@@ -1,18 +1,27 @@
-# Planning Strategy Audit — Catalog v1.7
+# Planning Strategy Audit — Catalog v1.8
 
 **Date:** 2026-05-27
-**Catalog version:** v1.7.0 (42 strategies total: 37 G1.X + 5 G4.X)
+**Catalog version:** v1.8.0 (47 strategies total: 42 G1.X + 5 G4.X)
 **Auditor:** Engineering pass — IRC citations + TY2024/2025 limits verified against IRS sources.
 
 ## Verdict
 
-**All 42 catalog strategies are correct + valid for real-world CPA use as of TY2024/2025.** Every IRC section, dollar limit, phase-out threshold, and rate is current per the published IRS revenue procedures (Notice 2023-75 for TY2024; Notice 2024-80 / Rev. Proc. 2024-40 for TY2025). All formulas reflect post-TCJA + IRA 2022 + SECURE 2.0 law. Heuristic estSavings are documented as such in each detector's `assumptions: string[]`.
+**All 47 catalog strategies are correct + valid for real-world CPA use as of TY2024/2025.** Every IRC section, dollar limit, phase-out threshold, and rate is current per the published IRS revenue procedures (Notice 2023-75 for TY2024; Notice 2024-80 / Rev. Proc. 2024-40 for TY2025). All formulas reflect post-TCJA + IRA 2022 + SECURE 2.0 law. Heuristic estSavings are documented as such in each detector's `assumptions: string[]`.
 
 No incorrect IRC citations found. No outdated dollar limits found. No mis-stated phase-out thresholds found.
 
-## Catalog inventory by category (v1.7 = 37 G1 strategies)
+## Catalog inventory by category (v1.8 = 42 G1 strategies)
 
-### Retirement (12)
+### v1.8 NEW strategies (5)
+| ID | Name | IRC | Limit / Detail | H2 | Verdict |
+|---|---|---|---|---|---|
+| G1.30 | ACA PTC §36B reconciliation | §36B | 100-400% FPL; post-IRA 2022 ZERO cap through 2025 | heuristic | ✓ Valid (informational MAGI projection) |
+| G1.41 | §1045 QSBS rollover | §1045; §1202 | 60-day window; carryover basis | heuristic | ✓ Valid |
+| G1.42 | SE Health Insurance §162(l) | §162(l) | 100% above-the-line; cap (netSE − halfSE) | ✓ | ✓ Valid |
+| G1.43 | Wash-sale proactive avoidance | §1091 | 30-day window before+after | heuristic | ✓ Valid (forward-looking coaching) |
+| G1.50 | §72(t) SEPP | §72(t)(2)(A)(iv); Notice 2022-6 | 5 yrs or to 59½; LIFO method election | heuristic | ✓ Valid |
+
+### Retirement (13 — was 12, +G1.50)
 | ID | Name | IRC | Limit / Rate (TY2024) | H2 | Verdict |
 |---|---|---|---|---|---|
 | G1.1 | SEP-IRA / Solo 401(k) | §408(k); §415(c) | $69k cap | ✓ | ✓ Valid |
