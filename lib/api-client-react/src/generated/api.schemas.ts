@@ -1133,6 +1133,10 @@ export const AdjustmentAdjustmentType = {
   qsbs_adjusted_basis: "qsbs_adjusted_basis",
   section_1031_realized_gain: "section_1031_realized_gain",
   section_1031_boot_received: "section_1031_boot_received",
+  iso_disqualifying_disposition_ordinary:
+    "iso_disqualifying_disposition_ordinary",
+  espp_disqualifying_disposition_ordinary:
+    "espp_disqualifying_disposition_ordinary",
 } as const;
 
 export interface Adjustment {
@@ -1209,6 +1213,10 @@ export const CreateAdjustmentBodyAdjustmentType = {
   qsbs_adjusted_basis: "qsbs_adjusted_basis",
   section_1031_realized_gain: "section_1031_realized_gain",
   section_1031_boot_received: "section_1031_boot_received",
+  iso_disqualifying_disposition_ordinary:
+    "iso_disqualifying_disposition_ordinary",
+  espp_disqualifying_disposition_ordinary:
+    "espp_disqualifying_disposition_ordinary",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -1281,6 +1289,10 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   qsbs_adjusted_basis: "qsbs_adjusted_basis",
   section_1031_realized_gain: "section_1031_realized_gain",
   section_1031_boot_received: "section_1031_boot_received",
+  iso_disqualifying_disposition_ordinary:
+    "iso_disqualifying_disposition_ordinary",
+  espp_disqualifying_disposition_ordinary:
+    "espp_disqualifying_disposition_ordinary",
 } as const;
 
 export interface UpdateAdjustmentBody {

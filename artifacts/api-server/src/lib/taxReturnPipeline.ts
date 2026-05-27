@@ -351,6 +351,9 @@ export async function recalculateAndUpsertTaxReturn(
     section1031BootReceived: String(result.section1031BootReceived),
     section1031RecognizedGain: String(result.section1031RecognizedGain),
     section1031DeferredGain: String(result.section1031DeferredGain),
+    // C6 — ESPP / ISO disqualifying disposition ordinary comp income
+    isoDisqualifyingDispositionOrdinary: String(result.isoDisqualifyingDispositionOrdinary),
+    esppDisqualifyingDispositionOrdinary: String(result.esppDisqualifyingDispositionOrdinary),
     socialSecurityBenefits: String(result.socialSecurityBenefits),
     socialSecurityTaxable: String(result.socialSecurityTaxable),
     feieTotalExclusion: String(result.feie.totalExclusion),

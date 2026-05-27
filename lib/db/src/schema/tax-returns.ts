@@ -157,6 +157,25 @@ export const taxReturnsTable = pgTable(
     /** C5 — Deferred gain = realized − recognized. Carries to replacement-property basis. */
     section1031DeferredGain: numeric("section_1031_deferred_gain", { precision: 14, scale: 2 }).notNull().default("0"),
     /**
+     * C6 — ISO disqualifying disposition ordinary-income recharacterization.
+     * Aggregated across all ISO sales this year that failed the dual
+     * 2yr-from-grant + 1yr-from-exercise holding tests (IRC §421(b)/§422).
+     * CPA computes per-grant from FMV-at-exercise less strike, capped at
+     * (sale price − strike) if a loss. Flows to ordinary income (Form 1040
+     * Line 1h "other earned income"). NOT subject to FICA per IRS Notice
+     * 2002-47.
+     */
+    isoDisqualifyingDispositionOrdinary: numeric("iso_disqualifying_disposition_ordinary", { precision: 14, scale: 2 }).notNull().default("0"),
+    /**
+     * C6 — §423 ESPP disqualifying disposition ordinary-income
+     * recharacterization. Aggregated across all ESPP sales this year that
+     * failed dual 2yr-from-grant + 1yr-from-purchase tests. CPA computes
+     * = FMV-at-purchase − purchase-price (full discount + interim
+     * appreciation). Flows to ordinary income. NOT subject to FICA per
+     * Rev Rul 71-52 (for §423-qualified plans).
+     */
+    esppDisqualifyingDispositionOrdinary: numeric("espp_disqualifying_disposition_ordinary", { precision: 14, scale: 2 }).notNull().default("0"),
+    /**
      * C4 — Form 1040-X amended-return support.
      *
      * Snapshot of the computed-return values at the moment the CPA

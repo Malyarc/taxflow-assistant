@@ -732,6 +732,18 @@ export interface ComputedTaxReturn {
   section1031RecognizedGain: number;
   /** C5 — Deferred gain = realized − recognized. Carries to replacement-property basis (informational; not tracked across years). */
   section1031DeferredGain: number;
+  /**
+   * C6 — ISO disqualifying-disposition ordinary income (IRC §421(b)/§422).
+   * Source: `iso_disqualifying_disposition_ordinary` adjustment(s). Flows to
+   * ordinary income. NOT FICA-taxed per IRS Notice 2002-47.
+   */
+  isoDisqualifyingDispositionOrdinary: number;
+  /**
+   * C6 — §423 ESPP disqualifying-disposition ordinary income.
+   * Source: `espp_disqualifying_disposition_ordinary` adjustment(s).
+   * Flows to ordinary income. NOT FICA-taxed (§423 special rule).
+   */
+  esppDisqualifyingDispositionOrdinary: number;
   // ── Phase 2 line items ─────────────────────────────────────────────────
   /** Capital loss deducted against ordinary income (Schedule D Line 21, $3k/$1.5k cap) */
   capitalLossDeducted: number;
@@ -1222,6 +1234,17 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // those eligibility tests are satisfied.
   const section1031RealizedGainAdj = sumByType("section_1031_realized_gain");
   const section1031BootReceivedAdj = sumByType("section_1031_boot_received");
+  // C6 — ISO + ESPP disqualifying-disposition ordinary income.
+  // Both are pure ordinary-income additions (no FICA, no special bucketing).
+  // CPA computes the recharacterized comp income per holding-test failure
+  // (Pub 525 + Form 3921/3922 instructions) and enters as a single
+  // aggregated adjustment per stock-type. The corresponding cost-basis
+  // upward adjustment on the related 1099-B is the CPA's responsibility
+  // (Form 8949 code "B" + column g) — engine does not auto-adjust the
+  // 1099-B side, since the engine processes per-transaction capital
+  // transactions independently of these adjustments.
+  const isoDisqualifyingDispositionOrdinaryAdj = sumByType("iso_disqualifying_disposition_ordinary");
+  const esppDisqualifyingDispositionOrdinaryAdj = sumByType("espp_disqualifying_disposition_ordinary");
   // Credits
   const dependentCareExpensesAdj = sumByType("dependent_care_expenses");
   const llcExpensesAdj = sumByType("qualified_education_expenses_llc");
@@ -1474,6 +1497,14 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const section1031RecognizedGain = Math.min(section1031RealizedGain, section1031BootReceived);
   const section1031DeferredGain = Math.max(0, section1031RealizedGain - section1031RecognizedGain);
 
+  // C6 — ISO + ESPP disqualifying-disposition ordinary income.
+  // Defensive floor at 0 (a legitimate disqualifying disposition can never
+  // have negative compensation income — if sale price < strike for ISO,
+  // ordinary income is capped at 0 per §422(c)(2) "Lesser of" rule which
+  // the CPA hand-applies before entering the adjustment).
+  const isoDisqualifyingDispositionOrdinary = Math.max(0, isoDisqualifyingDispositionOrdinaryAdj);
+  const esppDisqualifyingDispositionOrdinary = Math.max(0, esppDisqualifyingDispositionOrdinaryAdj);
+
   // K-1 net ST/LT capital gain (Box 8 / 9a) joins the cap-gain netting
   // alongside 1099-B-derived gains. Subtract prior-year loss carryforwards.
   // Home-sale taxable remainder (K6) and QSBS taxable remainder (K7) are
@@ -1612,7 +1643,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     k1OrdinaryDividends +
     k1Royalties +
     feieGrossForeignIncome -  // K9 — add gross foreign earned income
-    feieExclusion;            // K9 — subtract FEIE excluded portion
+    feieExclusion +           // K9 — subtract FEIE excluded portion
+    isoDisqualifyingDispositionOrdinary +    // C6 — ISO disqualifying disposition comp income
+    esppDisqualifyingDispositionOrdinary;    // C6 — §423 ESPP disqualifying disposition comp income
   const provisionalAgiForPal = Math.max(0, totalWages + ordinaryAdditionalIncomeBeforeRental);
 
   let rentalNetAppliedToAgi = 0;
@@ -2274,6 +2307,8 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     section1031BootReceived,
     section1031RecognizedGain,
     section1031DeferredGain,
+    isoDisqualifyingDispositionOrdinary,
+    esppDisqualifyingDispositionOrdinary,
     feie,
     nolDeduction,
     nolCarryforwardRemaining,

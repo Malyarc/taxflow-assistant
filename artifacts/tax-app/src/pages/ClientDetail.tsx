@@ -795,6 +795,39 @@ function Section1031Card({ taxReturn }: { taxReturn: { section1031RealizedGain?:
   );
 }
 
+// ─── C6 — ESPP / ISO disqualifying disposition summary ────────────────────
+function EsppIsoCard({ taxReturn }: { taxReturn: { isoDisqualifyingDispositionOrdinary?: string | number | null; esppDisqualifyingDispositionOrdinary?: string | number | null } | null | undefined }) {
+  const num = (v: string | number | null | undefined): number => v == null ? 0 : (typeof v === "number" ? v : Number(v));
+  const iso = num(taxReturn?.isoDisqualifyingDispositionOrdinary);
+  const espp = num(taxReturn?.esppDisqualifyingDispositionOrdinary);
+  if (iso <= 0 && espp <= 0) return null;
+  const fmt = (n: number): string => n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  return (
+    <Card className="print:hidden">
+      <CardHeader>
+        <CardTitle className="text-base">Stock Compensation — Disqualifying Dispositions</CardTitle>
+        <p className="text-xs text-muted-foreground mt-1">
+          Comp income recharacterized from ISO / §423 ESPP sales that failed the holding-period tests. Flows to ordinary income, NOT subject to FICA per IRS Notice 2002-47 (ISO) and Rev Rul 71-52 (ESPP). CPA handles the cap-gain side via Form 8949 with code &quot;B&quot; basis adjustment.
+        </p>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 gap-y-2 text-sm">
+          {iso > 0 ? <>
+            <span className="text-slate-600">ISO disqualifying — ordinary comp</span>
+            <span className="font-mono text-right">{fmt(iso)}</span>
+          </> : null}
+          {espp > 0 ? <>
+            <span className="text-slate-600">§423 ESPP disqualifying — ordinary comp</span>
+            <span className="font-mono text-right">{fmt(espp)}</span>
+          </> : null}
+          <span className="text-slate-600 font-medium">Total added to ordinary income</span>
+          <span className="font-mono text-right font-medium">{fmt(iso + espp)}</span>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── C4 — Form 1040-X (Amended Return) ────────────────────────────────────
 interface Form1040xLine {
   lineRef: string;
@@ -1460,6 +1493,7 @@ function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: nu
           </div>
 
           <Section1031Card taxReturn={taxReturn as unknown as Parameters<typeof Section1031Card>[0]["taxReturn"]} />
+          <EsppIsoCard taxReturn={taxReturn as unknown as Parameters<typeof EsppIsoCard>[0]["taxReturn"]} />
           <Form4868Card clientId={clientId} taxYear={taxYear} />
           <Form1040xCard clientId={clientId} taxYear={taxYear} />
         </div>
@@ -2401,6 +2435,8 @@ function AdjustmentsTab({ clientId }: { clientId: number }) {
     qsbs_adjusted_basis: "§1202 QSBS Adjusted Basis (for the 10× cap)",
     section_1031_realized_gain: "§1031 Like-Kind Exchange — Realized Gain (real property only; aggregated across exchanges)",
     section_1031_boot_received: "§1031 Like-Kind Exchange — Boot Received (cash + non-like-kind; drives recognition = min(realized, boot))",
+    iso_disqualifying_disposition_ordinary: "ISO Disqualifying Disposition — Ordinary Comp (IRC §421(b)/§422; not FICA-taxed; CPA hand-calcs min(FMV-at-exercise, sale-price) − strike)",
+    espp_disqualifying_disposition_ordinary: "§423 ESPP Disqualifying Disposition — Ordinary Comp (FMV-at-purchase − purchase-price; not FICA-taxed per Rev Rul 71-52)",
     // Schedule C
     schedule_c_expenses: "Schedule C Business Expenses",
     // Credit-driving expenses
