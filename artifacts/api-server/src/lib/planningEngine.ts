@@ -2463,6 +2463,476 @@ function detectBackdoorRoth(args: {
   };
 }
 
+// ── G1.27 — Inherited IRA 10-year rule (heuristic informational) ──────────
+
+const G1_27_MIN_TRAD_IRA = 50_000;
+const G1_27_MAX_AGE = 60;
+const G1_27_TIMING_BENEFIT = 0.05;
+
+function detectInheritedIra(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+  assetBalances?: AssetBalanceFact[];
+}): OpportunityHit | null {
+  const { client, computed, assetBalances } = args;
+  const age = client.taxpayerAge;
+  // Heuristic: typical inheritance-recipient profile is non-retiree age.
+  // Suppress for clients > 60 (likely their own retirement IRA).
+  if (age == null || age >= G1_27_MAX_AGE) return null;
+  if (!assetBalances || assetBalances.length === 0) return null;
+  const tradBalance = assetBalances
+    .filter((a) => a.assetType === "traditional_ira")
+    .reduce((s, a) => s + toNum(a.balance), 0);
+  if (tradBalance < G1_27_MIN_TRAD_IRA) return null;
+
+  const fedRate = federalMarginalRate(computed);
+  const stateRate = stateMarginalRate(computed);
+  const estSavings = Math.round(tradBalance * (fedRate + stateRate) * G1_27_TIMING_BENEFIT);
+  if (estSavings <= 0) return null;
+
+  const strategy = strategyById("G1.27");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = { estSavings };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client age ${age} has ${fmt(Math.round(tradBalance))} in traditional IRA balance. If this is ` +
+      `an INHERITED IRA from a non-spouse decedent who died after 2019-12-31, the 10-year distribution ` +
+      `rule applies (IRC §401(a)(9)(H)). Planning the year-by-year distribution timing avoids bracket ` +
+      `creep.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      taxpayerAge: age,
+      tradIraBalance: Math.round(tradBalance),
+      federalMarginalRate: fedRate,
+      stateMarginalRate: stateRate,
+      timingBenefitRate: G1_27_TIMING_BENEFIT,
+    },
+    assumptions: [
+      `Heuristic informational — engine cannot distinguish own vs inherited IRA. CPA confirms inheritance status from client.`,
+      `Triggers for clients age < 60 (typical inheritance-recipient profile). Older clients suppressed (likely own retirement IRA).`,
+      `Timing-benefit factor ${(G1_27_TIMING_BENEFIT * 100).toFixed(0)}% — empirical estimate of bracket-creep avoidance across the 10-year window.`,
+      `Spouse beneficiaries can treat as own / use lifetime stretch — strategy does NOT apply.`,
+      `Final Reg §1.401(a)(9)-5 (TY2024): if decedent died AFTER their Required Beginning Date (RBD), annual RMDs are required in years 1-9 IN ADDITION to year-10 full distribution.`,
+      `Pre-2020-01-01 deaths grandfathered into lifetime stretch — strategy applies only to post-2019 deaths.`,
+    ],
+  };
+}
+
+// ── G1.28 — Defined Benefit / Cash Balance Plan ──────────────────────────
+
+const G1_28_MIN_NET_SE = 300_000;
+const G1_28_MIN_AGE = 45;
+const G1_28_AGE_TIERED_MAX: Array<{ minAge: number; max: number }> = [
+  { minAge: 60, max: 300_000 },
+  { minAge: 55, max: 250_000 },
+  { minAge: 50, max: 200_000 },
+  { minAge: 45, max: 150_000 },
+];
+
+function detectDefinedBenefitPlan(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+  baselineInputs?: TaxReturnInputs;
+}): OpportunityHit | null {
+  const { client, computed, adjustments, baselineInputs } = args;
+  const age = client.taxpayerAge;
+  if (age == null || age < G1_28_MIN_AGE) return null;
+  const netSe = computed.detail.se.netSeEarnings;
+  if (netSe < G1_28_MIN_NET_SE) return null;
+  // If client already has a substantial SE retirement contribution (e.g.
+  // existing DB or aggressive SEP), suppress to avoid double-counting.
+  const existingRetirement = sumAdjustment(adjustments, "self_employed_retirement");
+  if (existingRetirement >= 69_000) return null;
+
+  const tier = G1_28_AGE_TIERED_MAX.find((t) => age >= t.minAge);
+  if (!tier) return null;
+  const contribution = Math.min(tier.max, Math.round(netSe * 0.5));
+
+  const fedRate = federalMarginalRate(computed);
+  const stateRate = stateMarginalRate(computed);
+  const estSavings = Math.round(contribution * (fedRate + stateRate));
+
+  // H2 mutation: add a "deduction" of the contribution amount. Same engine
+  // arithmetic as G1.1 SEP — above-the-line on Sched 1.
+  const whatIf = runDetectorWhatIf({
+    baselineInputs,
+    scenarioId: "G1.28-db-plan",
+    label: `DB plan contribution $${contribution.toLocaleString("en-US")}`,
+    mutations: [
+      { kind: "add_adjustment", adjustmentType: "deduction", amount: contribution },
+    ],
+    semantics: "savings",
+    varyAmount: true,
+  });
+
+  const strategy = strategyById("G1.28");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    contribution,
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client age ${age} with ${fmt(Math.round(netSe))} of net SE earnings is in the sweet spot for a ` +
+      `Defined Benefit (or Cash Balance) plan. Age-tiered DB max for this client: ${fmt(tier.max)}. ` +
+      `Estimated contribution ${fmt(contribution)} → tax savings ${fmt(estSavings)} at the combined ` +
+      `${((fedRate + stateRate) * 100).toFixed(1)}% marginal rate.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      taxpayerAge: age,
+      netSeEarnings: Math.round(netSe),
+      ageTierMax: tier.max,
+      contribution,
+      federalMarginalRate: fedRate,
+      stateMarginalRate: stateRate,
+      existingRetirementAdjustment: Math.round(existingRetirement),
+    },
+    assumptions: [
+      `Age-tiered DB contribution cap (heuristic): 45-49 = $150k; 50-54 = $200k; 55-59 = $250k; 60+ = $300k. Actual cap requires actuarial calc per §415(b).`,
+      `Contribution capped at netSE × 0.5 (avoids over-funding when net SE is borderline).`,
+      `H2 mutation models DB as a generic "deduction" adjustment — same arithmetic as SEP/Solo 401(k) (above-the-line on Sched 1 line 16).`,
+      `Setup + recurring cost: ~$5k setup + $3-5k/yr actuarial maintenance. Engine ignores this cost in estSavings (gross savings only).`,
+      `DB plans REQUIRE annual funding even in low-income years — clients with volatile SE income should consider Cash Balance (hybrid) instead.`,
+      `If client has W-2 employees, nondiscrimination testing applies — may require contributions for staff. Engine assumes solo.`,
+    ],
+    whatIf,
+  };
+}
+
+// ── G1.33 — EV Credit §30D / §25E ────────────────────────────────────────
+
+const G1_33_AGI_LIMITS: Record<string, number> = {
+  single: 150_000,
+  head_of_household: 225_000,
+  married_filing_jointly: 300_000,
+  qualifying_widow: 300_000,
+  married_filing_separately: 150_000,
+};
+const G1_33_NEW_EV_MAX_CREDIT = 7_500;
+
+function detectEvCredit(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+  baselineInputs?: TaxReturnInputs;
+}): OpportunityHit | null {
+  const { client, computed, adjustments, baselineInputs } = args;
+  const cap = G1_33_AGI_LIMITS[client.filingStatus] ?? G1_33_AGI_LIMITS.single;
+  if (computed.adjustedGrossIncome > cap) return null;
+  // Suppress when an existing credit-type adjustment >= $4,000 is present
+  // (likely already an EV credit on the return). Heuristic — engine doesn't
+  // have a dedicated EV credit adjustment type.
+  const existingCredits = sumAdjustment(adjustments, "credit");
+  if (existingCredits >= 4_000) return null;
+  // Skip near-zero-tax clients (credit non-refundable; can't use).
+  if (computed.federalTaxLiability < G1_33_NEW_EV_MAX_CREDIT) return null;
+
+  const estSavings = G1_33_NEW_EV_MAX_CREDIT;
+
+  const whatIf = runDetectorWhatIf({
+    baselineInputs,
+    scenarioId: "G1.33-ev-credit",
+    label: `EV credit $${G1_33_NEW_EV_MAX_CREDIT.toLocaleString("en-US")}`,
+    mutations: [
+      { kind: "add_adjustment", adjustmentType: "credit", amount: G1_33_NEW_EV_MAX_CREDIT },
+    ],
+    semantics: "savings",
+    varyAmount: false,
+  });
+
+  const strategy = strategyById("G1.33");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    estSavings,
+    taxYear: computed.taxYear,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `AGI ${fmt(Math.round(computed.adjustedGrossIncome))} is within the EV credit MAGI cap of ` +
+      `${fmt(cap)} for ${client.filingStatus}. If client buys a qualifying new EV this year, ` +
+      `claim up to ${fmt(estSavings)} via Form 8936.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      agi: Math.round(computed.adjustedGrossIncome),
+      magiCap: cap,
+      maxCredit: G1_33_NEW_EV_MAX_CREDIT,
+      federalTaxLiability: Math.round(computed.federalTaxLiability),
+    },
+    assumptions: [
+      `Max §30D new EV credit: $7,500 ($3,750 critical-minerals + $3,750 battery-components). Used EV §25E: $4,000 or 30% of price.`,
+      `MAGI cap (TY2024): $150k single / $300k MFJ / $225k HoH / $150k MFS per IRA 2022. Use prior-year OR current-year MAGI, whichever is lower.`,
+      `MSRP cap: $80k SUV/truck/van; $55k cars.`,
+      `Vehicle MUST be on the qualified list at fueleconomy.gov — manufacturer-specific eligibility (many Teslas, Fords, Chevy Bolt, etc. qualify; some don't due to battery sourcing).`,
+      `Point-of-sale transfer to dealer (TY2024+) lets client get the credit immediately rather than waiting for refund.`,
+      `Non-refundable — engine suppresses suggestion when federal tax < $7,500 (client can't use the full credit). No carryforward.`,
+      `Heuristic estSavings = max new EV credit. CPA scales down if client picks a vehicle with partial qualification or a used EV.`,
+    ],
+    whatIf,
+  };
+}
+
+// ── G1.34 — Residential Clean Energy §25D ─────────────────────────────────
+
+const G1_34_ASSUMED_INSTALL = 20_000;
+const G1_34_CREDIT_RATE: Record<number, number> = {
+  2024: 0.30,
+  2025: 0.30,
+  2026: 0.30,
+  2027: 0.30,
+  2028: 0.30,
+  2029: 0.30,
+  2030: 0.30,
+  2031: 0.30,
+  2032: 0.30,
+  2033: 0.26,
+  2034: 0.22,
+};
+const G1_34_MIN_AGI = 50_000;
+
+function detectResidentialCleanEnergy(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+  assetBalances?: AssetBalanceFact[];
+  baselineInputs?: TaxReturnInputs;
+}): OpportunityHit | null {
+  const { computed, adjustments, assetBalances, baselineInputs } = args;
+  if (computed.adjustedGrossIncome < G1_34_MIN_AGI) return null;
+  // Suppress if existing residential_clean_energy adjustment already present.
+  if (sumAdjustment(adjustments, "residential_clean_energy") > 0) return null;
+  // Heuristic owner-of-home detection: either H5 primary_residence asset OR
+  // mortgage_interest adjustment (proxy for owning home).
+  const hasResidence = (assetBalances ?? []).some((a) => a.assetType === "primary_residence");
+  const hasMortgage = sumAdjustment(adjustments, "mortgage_interest") > 0;
+  if (!hasResidence && !hasMortgage) return null;
+
+  const rate = G1_34_CREDIT_RATE[computed.taxYear] ?? 0.30;
+  const credit = Math.round(G1_34_ASSUMED_INSTALL * rate);
+  // Must have enough federal tax to use the (non-refundable) credit. Engine
+  // allows carryforward, so partial benefit is OK — but suppress for very
+  // low federal tax filers to avoid noise.
+  if (computed.federalTaxLiability < 1_000) return null;
+
+  const whatIf = runDetectorWhatIf({
+    baselineInputs,
+    scenarioId: "G1.34-clean-energy",
+    label: `§25D credit $${credit.toLocaleString("en-US")}`,
+    mutations: [
+      { kind: "add_adjustment", adjustmentType: "residential_clean_energy", amount: credit },
+    ],
+    semantics: "savings",
+    varyAmount: true,
+  });
+
+  const strategy = strategyById("G1.34");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = { estSavings: credit };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings: credit,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client owns a home (per H5 primary_residence or mortgage interest signal). TY${computed.taxYear} ` +
+      `§25D credit rate is ${(rate * 100).toFixed(0)}%. A typical $20k solar/battery install delivers ` +
+      `~${fmt(credit)} of federal credit + indefinite carryforward of any unused portion.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      agi: Math.round(computed.adjustedGrossIncome),
+      hasResidenceAsset: hasResidence,
+      hasMortgageInterest: hasMortgage,
+      assumedInstall: G1_34_ASSUMED_INSTALL,
+      creditRate: rate,
+      computedCredit: credit,
+      federalTaxLiability: Math.round(computed.federalTaxLiability),
+    },
+    assumptions: [
+      `Credit rate by tax year (IRA 2022 §13302): 30% through 2032; 26% in 2033; 22% in 2034; expires after 2034.`,
+      `Assumed install cost $20,000 (heuristic). Real installs range $15k-$40k depending on system size + battery storage.`,
+      `NO income cap — anyone with sufficient federal tax can use the credit (indefinite carryforward for unused portion).`,
+      `Qualifying equipment: solar PV, solar water heating, geothermal heat pump, small wind, fuel cell, battery storage ≥ 3 kWh.`,
+      `Heat pumps for primary residence go under §25C Energy Efficient Home Improvement Credit (separate $1,200/yr cap) — NOT §25D.`,
+      `Rental properties DO NOT qualify — primary or secondary residence only.`,
+      `H2 mutation adds the credit as a residential_clean_energy adjustment which the engine routes through the credit-ordering pipeline.`,
+    ],
+    whatIf,
+  };
+}
+
+// ── G1.39 — §1202 QSBS holding-period planning (heuristic informational) ──
+
+const G1_39_MIN_AGI = 500_000;
+const G1_39_ASSUMED_GAIN = 1_000_000;
+const G1_39_EXCLUSION_RATE = 0.20 + 0.038;
+
+function detectQsbsPlanning(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { computed, adjustments } = args;
+  if (computed.adjustedGrossIncome < G1_39_MIN_AGI) return null;
+  const k1Active = computed.scheduleK1?.totalActiveOrdinaryIncome ?? 0;
+  if (k1Active <= 0) return null;
+  // Suppress if QSBS adjustment is already present (engine already excluding).
+  if (sumAdjustment(adjustments, "qsbs_gross_gain") > 0) return null;
+
+  const estSavings = Math.round(G1_39_ASSUMED_GAIN * G1_39_EXCLUSION_RATE);
+
+  const strategy = strategyById("G1.39");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = { estSavings };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client AGI ${fmt(Math.round(computed.adjustedGrossIncome))} + K-1 active income ` +
+      `${fmt(Math.round(k1Active))} fits the founder / early-employee profile where §1202 QSBS ` +
+      `(100% exclusion on the GREATER of $10M or 10× basis) may apply if the stock meets the ` +
+      `qualified-small-business-stock criteria.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      agi: Math.round(computed.adjustedGrossIncome),
+      k1ActiveIncome: Math.round(k1Active),
+      assumedQualifyingGain: G1_39_ASSUMED_GAIN,
+      exclusionRate: G1_39_EXCLUSION_RATE,
+    },
+    assumptions: [
+      `HEURISTIC INFORMATIONAL — engine cannot verify §1202 eligibility from current data. CPA confirms all 6 §1202 requirements.`,
+      `Assumed $1M qualifying gain × (20% LTCG + 3.8% NIIT) = $238k savings. Real upside scales linearly to the $10M cap (or 10× basis if higher).`,
+      `100% exclusion applies to original-issuance C-corp stock acquired AFTER 2010-09-27. Earlier acquisitions get 50% or 75%.`,
+      `Corp gross assets must have been ≤ $50M IMMEDIATELY BEFORE AND AFTER stock issuance — most VC-funded startups qualify; most large companies don't.`,
+      `Qualified trade/business EXCLUDES: professional services (law, accounting, consulting, health), financial services, hotels, restaurants, farming, mining, banking.`,
+      `Holding period > 5 years required. Planning: don't sell early. §1045 rollover allows deferral into another QSBS within 60 days.`,
+      `Pre-issuance + retro CPA review essential — many post-hoc §1202 claims fail audit.`,
+    ],
+  };
+}
+
+// ── G1.45 — §121 Primary residence sale exclusion ────────────────────────
+
+const G1_45_MIN_EMBEDDED_GAIN = 100_000;
+const G1_45_LTCG_RATE = 0.20;
+
+function detectSection121HomeSale(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+  assetBalances?: AssetBalanceFact[];
+}): OpportunityHit | null {
+  const { client, computed, adjustments, assetBalances } = args;
+  if (!assetBalances || assetBalances.length === 0) return null;
+  const residence = assetBalances.find((a) => a.assetType === "primary_residence");
+  if (!residence) return null;
+  const fmv = toNum(residence.balance);
+  const basis = toNum(residence.costBasis);
+  if (fmv <= 0 || basis < 0) return null;
+  const embeddedGain = fmv - basis;
+  if (embeddedGain < G1_45_MIN_EMBEDDED_GAIN) return null;
+  // Suppress if a home-sale adjustment already exists this year.
+  if (sumAdjustment(adjustments, "home_sale_gross_gain_primary_residence") > 0) return null;
+
+  const exclusionCap = client.filingStatus === "married_filing_jointly" ||
+                       client.filingStatus === "qualifying_widow"
+    ? 500_000
+    : 250_000;
+  const excludedAmount = Math.min(embeddedGain, exclusionCap);
+  // Saved tax = excluded × (LTCG + NIIT if AGI above NIIT threshold)
+  const niitThreshold = NIIT_THRESHOLDS[client.filingStatus] ?? NIIT_THRESHOLDS.single;
+  const niitApplies = computed.adjustedGrossIncome > niitThreshold;
+  const rate = G1_45_LTCG_RATE + (niitApplies ? 0.038 : 0);
+  const estSavings = Math.round(excludedAmount * rate);
+
+  const strategy = strategyById("G1.45");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    embeddedGain: Math.round(embeddedGain),
+    exclusionCap,
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Primary residence FMV ${fmt(fmv)} vs cost basis ${fmt(basis)} = ${fmt(embeddedGain)} of ` +
+      `embedded gain. On future sale, §121 excludes up to ${fmt(exclusionCap)} ` +
+      `(${client.filingStatus === "married_filing_jointly" || client.filingStatus === "qualifying_widow" ? "MFJ" : "single/HoH/MFS"}). ` +
+      `Estimated tax saved on a sale today: ${fmt(estSavings)} ` +
+      `(${(rate * 100).toFixed(1)}% × ${fmt(excludedAmount)} excluded).`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      fmv: Math.round(fmv),
+      costBasis: Math.round(basis),
+      embeddedGain: Math.round(embeddedGain),
+      exclusionCap,
+      excludedAmount: Math.round(excludedAmount),
+      niitApplies,
+      effectiveRate: rate,
+    },
+    assumptions: [
+      `§121 exclusion: $250k single/HoH/MFS; $500k MFJ/QSS.`,
+      `2-of-last-5-years use AND ownership test required (IRC §121(a)). Engine assumes CPA will verify before sale.`,
+      `Heuristic estSavings uses LTCG rate ${(G1_45_LTCG_RATE * 100).toFixed(0)}% + 3.8% NIIT if AGI > threshold. Real rate could be 15% (lower bracket) or 0% (zero-LTCG-bracket).`,
+      `Embedded gain = FMV − costBasis from H5 primary_residence asset. Cost basis should include purchase price + capital improvements + selling costs.`,
+      `Depreciation recapture (§1250) on prior rental periods is NOT excluded by §121 — applies as ordinary income up to recapture amount.`,
+      `Nonqualified-use period (post-2008 rental periods) reduces the exclusion ratio per IRC §121(b)(5).`,
+      `Only one §121 exclusion every 2 years — check whether client used it on a prior sale.`,
+      `Not an annual recurring opportunity — informational planning. CPA tracks until sale.`,
+    ],
+  };
+}
+
 // ── Top-level evaluator ────────────────────────────────────────────────────
 
 export interface PlanningInputs {
@@ -2589,6 +3059,20 @@ export function evaluatePlanningOpportunities(args: PlanningInputs): Opportunity
   if (qoz) hits.push(qoz);
   const backdoorRoth = detectBackdoorRoth({ client, computed, adjustments, assetBalances });
   if (backdoorRoth) hits.push(backdoorRoth);
+  // Phase H — H1 catalog v1.5: G1.27 inherited IRA / G1.28 DB plan /
+  // G1.33 EV credit / G1.34 §25D / G1.39 QSBS / G1.45 §121 home sale.
+  const inheritedIra = detectInheritedIra({ client, computed, assetBalances });
+  if (inheritedIra) hits.push(inheritedIra);
+  const dbPlan = detectDefinedBenefitPlan({ client, computed, adjustments, baselineInputs });
+  if (dbPlan) hits.push(dbPlan);
+  const evCredit = detectEvCredit({ client, computed, adjustments, baselineInputs });
+  if (evCredit) hits.push(evCredit);
+  const cleanEnergy = detectResidentialCleanEnergy({ computed, adjustments, assetBalances, baselineInputs });
+  if (cleanEnergy) hits.push(cleanEnergy);
+  const qsbs = detectQsbsPlanning({ computed, adjustments });
+  if (qsbs) hits.push(qsbs);
+  const homeSale = detectSection121HomeSale({ client, computed, adjustments, assetBalances });
+  if (homeSale) hits.push(homeSale);
   hits.sort((a, b) => b.estSavings - a.estSavings);
   return hits;
 }

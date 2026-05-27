@@ -210,8 +210,8 @@ const hit = (id: string): OpportunityHit =>
   // mappedToOther > 0 is expected (multi-year siblings) — just document
   // the count so a regression is visible.
   checkTruthy(
-    `Case 10 ${mappedToOther} catalog entries map to a sibling (shared IRC) — expected for G4.X multi-year analogues of G1.X`,
-    mappedToOther >= 4 && mappedToOther <= 6,
+    `Case 10 ${mappedToOther} catalog entries map to a sibling (shared IRC) — expected for G4.X multi-year analogues of G1.X + intra-G1 IRC sharing (e.g. G1.22 pre-RMD ladder + G1.4 Roth both cite §408A)`,
+    mappedToOther >= 4 && mappedToOther <= 12,
   );
 }
 

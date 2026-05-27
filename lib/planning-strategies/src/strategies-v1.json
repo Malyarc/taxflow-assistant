@@ -1,5 +1,5 @@
 {
-  "version": "v1.4.0",
+  "version": "v1.5.0",
   "reviewedAt": "2026-05-27",
   "strategies": [
     {
@@ -360,6 +360,140 @@
         "Trust attorney + actuarial valuation (complex — 6-12 month setup)"
       ],
       "action": "Engage a trust attorney to draft a CRT. Transfer the appreciated asset; CRT sells tax-free; client receives annuity/unitrust income stream + immediate charitable deduction for the present value of the remainder interest. Heuristic savings estimate available only after the §7520 actuarial calculation.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.27",
+      "name": "Inherited IRA — 10-year distribution rule (SECURE 1.0)",
+      "category": "retirement",
+      "ircSection": "IRC §401(a)(9)(H); SECURE Act §401",
+      "irsPub": "Pub 590-B; Final Reg. §1.401(a)(9)-5 (TY2024)",
+      "trigger": "H5 traditional_ira balance > $50,000 AND taxpayerAge < 60 (likely inheritance-recipient profile). CPA confirms inheritance + decedent's relationship.",
+      "formula": "10-year distribution timing: spread distributions across low-income years instead of bunching. estSavings = balance × marginal × 0.05 (heuristic timing benefit of ~5% by avoiding bracket creep). Annual RMDs also required years 1-9 if decedent died after their RBD (Required Beginning Date) per Final Reg §1.401(a)(9)-5.",
+      "confidence": 0.40,
+      "cpaEffortHours": 3.0,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Is this an inherited IRA from a NON-SPOUSE decedent who died after 2019-12-31? (Spouse beneficiaries can still treat as own / use lifetime stretch.)",
+        "Date of decedent's death (drives the 10-year clock start)",
+        "Whether decedent was already taking RMDs at death (RBD) — drives whether year 1-9 RMDs are required IN ADDITION to the year-10 full distribution",
+        "Beneficiary's expected income trajectory through year 10 (bracket arbitrage window)",
+        "Whether the IRA is segregated or commingled (commingling disqualifies inherited treatment)"
+      ],
+      "action": "If this is an inherited IRA from a non-spouse decedent post-2019, plan distribution timing across the 10-year window. Front-load distributions in lowest-bracket years; potentially convert pre-RMD years to Roth via this 10-year window. Estimated timing benefit ~{{estSavings}}.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.28",
+      "name": "Defined Benefit / Cash Balance Plan (for high-income SE)",
+      "category": "retirement",
+      "ircSection": "IRC §401(a); §415(b); §404(o)",
+      "irsPub": "Pub 560; Pub 4334; Rev. Proc. 2024-32",
+      "trigger": "Net SE earnings >= $300,000 AND taxpayerAge >= 45 AND no existing self-employed-retirement contribution >= $69k (signal client isn't already at DB-style cap).",
+      "formula": "DB/CB plans allow age-actuarial contributions far above §415(c) DC cap. Heuristic by age band: 45-49 = $150k; 50-54 = $200k; 55-59 = $250k; 60+ = $300k. estSavings = min(contribution, netSE × 0.5) × (federal + state marginal rate). Plan also stackable with a Solo 401(k) for incremental defined-contribution side.",
+      "confidence": 0.80,
+      "cpaEffortHours": 8.0,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Engagement with a third-party actuary to design the DB/CB plan (~$3-5k setup; ~$2-3k/yr maintenance)",
+        "Plan sponsor election: DB (defined benefit), CB (cash balance hybrid), or DB+401(k) combined",
+        "Funding commitment: DB plans REQUIRE annual funding even in low-income years (vs DC plans which are discretionary). Plan to fund consistently.",
+        "Census of all employees (if any) — DB plans must satisfy nondiscrimination + may require contributions for staff",
+        "Form 5500 + actuarial certification filing each year"
+      ],
+      "action": "For high-income SE clients age 45+, design a Defined Benefit (or Cash Balance) plan with an actuary. Annual contribution by age band ~{{contribution}}; tax savings ~{{estSavings}}. Setup cost ~$5k; recurring CPA + actuary ~$3-5k/yr — pays back ~100x.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.33",
+      "name": "Clean Vehicle Credit §30D (new EV) / §25E (used EV)",
+      "category": "credits",
+      "ircSection": "IRC §30D; §25E; IRA 2022 §13401",
+      "irsPub": "Form 8936; Notice 2024-50; Rev. Proc. 2024-26",
+      "trigger": "AGI <= $300,000 MFJ / $150,000 single (eligibility cap) AND no existing EV credit on the return.",
+      "formula": "§30D New EV credit: up to $7,500 ($3,750 critical-minerals + $3,750 battery components). §25E Used EV: up to $4,000 or 30% of price (max $25k vehicle). MAGI limits — point-of-sale transfer to dealer also available 2024+.",
+      "confidence": 0.50,
+      "cpaEffortHours": 0.5,
+      "recurring": false,
+      "validUntil": "2032-12-31",
+      "prerequisiteData": [
+        "Confirm vehicle is on the qualified list at fueleconomy.gov (manufacturer-specific; many EVs DO NOT qualify due to battery/critical-mineral sourcing rules)",
+        "MAGI test: $150k single / $300k MFJ / $225k HoH for §30D (use prior or current year, whichever is lower)",
+        "MSRP cap: $80k SUV/truck/van; $55k cars",
+        "Point-of-sale dealer transfer (TY2024+) or claim on Form 8936",
+        "Used EV: vehicle 2+ model years old; price <= $25k; sold by a dealer (not private party)"
+      ],
+      "action": "Client is income-eligible for the Clean Vehicle Credit. If purchasing a qualifying EV, save ~{{estSavings}} on TY{{taxYear}} return via Form 8936. Recommend confirming vehicle eligibility BEFORE purchase + transferring credit at point-of-sale.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.34",
+      "name": "Residential Clean Energy Credit §25D (solar / battery / geothermal)",
+      "category": "credits",
+      "ircSection": "IRC §25D; IRA 2022 §13302",
+      "irsPub": "Form 5695; Pub 17 Chapter 32; Notice 2013-70",
+      "trigger": "Client owns home (H5 primary_residence OR mortgage_interest adjustment) AND no existing residential_clean_energy adjustment AND AGI > $50k (sufficient tax liability to use the non-refundable credit, though carryforward exists).",
+      "formula": "30% credit on qualified residential solar / battery / geothermal / small-wind / fuel-cell installations through 2032 (phases to 26% in 2033, 22% in 2034, expires after 2034). estSavings = $20,000 assumed install × 30% = $6,000. Indefinite carryforward of unused credit. NO income cap.",
+      "confidence": 0.55,
+      "cpaEffortHours": 1.0,
+      "recurring": false,
+      "validUntil": "2032-12-31",
+      "prerequisiteData": [
+        "Confirm equipment installed at primary or secondary RESIDENCE (no rental property)",
+        "Manufacturer certification + invoice (Notice 2013-70 documentation)",
+        "Battery storage: 3+ kWh capacity required for §25D",
+        "Geothermal: ENERGY STAR certified",
+        "Solar PV: includes structural mounting + permitting; CPA confirms labor + installation included in basis",
+        "Form 5695 + receipts; depreciation NOT taken (residence)"
+      ],
+      "action": "If client is considering solar / battery / geothermal install at primary residence, claim 30% credit (~{{estSavings}} on a $20k install) via Form 5695. Through 2032 at 30% — phases down 2033-2034. Indefinite carryforward of unused credit.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.39",
+      "name": "§1202 QSBS — qualified small business stock 5-year hold",
+      "category": "investment",
+      "ircSection": "IRC §1202; §1045",
+      "irsPub": "Pub 550; Form 8949 (code Q); Rev. Rul. 2009-9",
+      "trigger": "AGI > $500,000 AND has K-1 active ordinary income (proxy for closely-held business owner / founder profile) AND no existing qsbs_gross_gain adjustment.",
+      "formula": "Original-issuance C-corp stock in a qualified small business (gross assets ≤ $50M at issuance), held > 5 years: exclude greater of $10M OR 10× basis from gain. 100% exclusion for stock acquired after 2010-09-27. Heuristic estSavings = $1M assumed qualifying gain × (20% LTCG + 3.8% NIIT) = $238k (one-time, on eventual sale).",
+      "confidence": 0.30,
+      "cpaEffortHours": 4.0,
+      "recurring": false,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Confirm stock is C-corp (NOT LLC, S-corp, or partnership)",
+        "Confirm corp gross assets were ≤ $50M IMMEDIATELY BEFORE AND AFTER stock issuance",
+        "Confirm stock acquired by original issuance (NOT secondary purchase)",
+        "Confirm holding period > 5 years (planning: don't sell early)",
+        "Confirm corp's trade/business is QUALIFIED (excludes professional services, hotels, restaurants, farming, mining, banking)",
+        "Date acquired: 100% exclusion for post-2010-09-27 acquisitions; 75% for 2010-02-18 to 2010-09-27; 50% for pre-2010-02-18"
+      ],
+      "action": "If client holds C-corp stock that meets §1202 qualified-small-business criteria, plan to hold > 5 years to exclude up to $10M (or 10× basis, whichever greater) on sale. Estimated heuristic savings on $1M assumed qualifying gain ~{{estSavings}} (LTCG + NIIT avoided).",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.45",
+      "name": "§121 Primary residence sale exclusion ($250k/$500k)",
+      "category": "investment",
+      "ircSection": "IRC §121",
+      "irsPub": "Pub 523",
+      "trigger": "H5 primary_residence asset with embedded gain (balance − costBasis) > $100,000 AND no existing home_sale_gross_gain_primary_residence adjustment (signal client isn't already selling this year).",
+      "formula": "Exclude up to $250,000 single / $500,000 MFJ on gain from sale of primary residence (must have owned + lived there 2 of last 5 years). estSavings = min(embeddedGain, exclusionCap) × 0.20 (LTCG rate avoided). Plus 3.8% NIIT on the avoided portion.",
+      "confidence": 0.60,
+      "cpaEffortHours": 1.5,
+      "recurring": false,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Cost basis of home (purchase price + capital improvements + selling costs)",
+        "Date moved in + date plans to sell (2-of-last-5-years use-test)",
+        "Whether client has used §121 in the prior 2 years (only one §121 exclusion every 2 years)",
+        "Whether the home was ever a rental (depreciation recapture under §1250 NOT excluded by §121)",
+        "Whether nonqualified-use period applies (post-2008 rental periods reduce exclusion ratio)"
+      ],
+      "action": "Client has ~{{embeddedGain}} of embedded gain on primary residence. On future sale, §121 excludes up to {{exclusionCap}} — estimated tax saved ~{{estSavings}}. Plan to satisfy 2-of-last-5-years use test before sale.",
       "formulaRev": 1
     },
     {
