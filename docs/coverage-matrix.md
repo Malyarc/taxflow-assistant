@@ -1,7 +1,8 @@
 # TaxFlow Assistant — Coverage Matrix
 
-**Status as of 2026-05-26.** Inventory of what the calc engine models vs.
-what's not yet covered. This is the source of truth for "do we handle X?".
+**Status as of 2026-05-27 (Phase H sub-gap closure).** Inventory of what
+the calc engine models vs. what's not yet covered. This is the source of
+truth for "do we handle X?".
 
 Read this before planning state or federal coverage work. When you add a
 new feature, **update this doc in the same commit**.
@@ -38,7 +39,7 @@ Source files referenced:
 | **Form 8889** (HSA) | ✅ | E4 — employer contrib, §4973(g) excise |
 | **Form 7206** (SEHI) | ✅ | K5 — net SE − ½ SE cap |
 | **Form 1116** (FTC) | ✅ | BP7 — including form-limit binding |
-| **Form 8606** (nondeductible IRA basis) | ❌ | TODO — H6 in Phase H |
+| **Form 8606** (nondeductible IRA basis) | ✅ | H6 — Part I §408(d)(2) pro-rata (basis recovery on Roth conversion) + Part III (Roth distribution basis recovery per Treas. Reg. §1.408A-6 Q&A 8 — qualified-distribution shortcut + 10% §72(t) penalty under 59½). pdfkit substitute PDF. |
 | **Form 4868** (extension) | ✅ | C8 — pdfkit substitute (Pub 1167); live JSON preview + PDF download |
 | **Form 1040-X** (amended) | ✅ | C4 — snapshot-based diff (col a / b / c); Part III explanation textarea |
 | **Form 8824** (§1031 like-kind) | partial | C5 — engine computes recognized/deferred from adjustment inputs; PDF deferred (sub-gap: no Form 8824 PDF builder yet) |
@@ -71,7 +72,7 @@ Source files referenced:
 
 ### Known federal gaps (not modeled)
 
-- Form 8606 nondeductible IRA basis (required for backdoor Roth) — H6
+<!-- Form 8606 shipped 2026-05-27 (H6 Part I + Part III) — line above. -->
 - §1202 sub-multipliers for pre-2010-09-27 acquisitions (75% / 50%)
 - §1091(d) auto-flip ST→LT on wash-sale replacement (covered as a sub-gap in the deep audit; partial wash NOT modeled either)
 - AMT line 2i MACRS-vs-ADS depreciation diff; line 2e state-refund recapture; AMT NOL

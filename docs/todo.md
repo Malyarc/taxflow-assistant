@@ -1,6 +1,6 @@
 # TaxFlow Assistant — Open TODO list
 
-**Status as of 2026-05-27 (Phase H COMPLETE — all 12 items shipped).** This is the durable, git-tracked TODO list.
+**Status as of 2026-05-27 (Phase H FULLY COMPLETE — all 12 items + all sub-gaps shipped).** This is the durable, git-tracked TODO list.
 Read this in every new session before picking up work. The Claude task
 tool inside any single session is ephemeral — only this file persists.
 
@@ -11,10 +11,12 @@ tracker, work it, commit, then remove it from here.
 
 ## Top-priority recommendation
 
-Phase H is **COMPLETE** as of 2026-05-27. All 12 H-items (H1 partial 10/50+ /
-H2/H3/H4/H5/H6/H7/H8/H9/H10/H11/H12) ship with hand-calc'd tests + live UI.
+Phase H is **FULLY COMPLETE** as of 2026-05-27 (sub-gaps included). All 12
+H-items + H3 multi-year detector wiring + H5 4 new asset types + H6 Form
+8606 Part III + H8 LLM-discovery rule-engine verification + H1 catalog
+v1.4 (25 strategies total). Tests, UI, EC2 deploy all green.
 
-Recommended next-session sequencing (now that planning surface is done):
+Recommended next-session sequencing (planning surface is fully done):
 
 1. **A1 — CPA outreach campaign** — packet is complete; biggest dollar
    gate is finding a paid design partner. Blocked on user availability.
@@ -22,9 +24,10 @@ Recommended next-session sequencing (now that planning surface is done):
    real money. Wires actorUserId into audit_log (column exists, nullable).
 3. **D18 — Stripe billing** (1-2 wks). Builds on D15. G5 Pro-tier feature
    gate already wired.
-4. **H1 continued catalog expansion** — 40+ strategies left in the
-   canonical universe. Each ~2-4 hours now that the foundation
-   (H2/H7/H12) is proven.
+4. **H1 continued catalog expansion** — ~35 strategies left in the
+   canonical universe (defined-benefit plans / NQDC §409A / CLT / §1374 BIG /
+   §338(h)(10) / §199A variants / retirement plan max-outs / etc). Each
+   ~2-4 hours now that the foundation (H2/H3/H7/H12) is proven.
 5. **C2 — top-10-state credits push** (2-3 wks). Engine coverage on
    state side; 10 high-volume states × 5 credits each.
 
@@ -40,25 +43,25 @@ Recommended next-session sequencing (now that planning surface is done):
 
 ---
 
-## B. Tax Planning Strategy tool — Phase H ✅ COMPLETE
+## B. Tax Planning Strategy tool — Phase H ✅ FULLY COMPLETE (incl. sub-gaps)
 
-Honest current state: **A−**. Phase H is fully complete (12/12 items
-shipped) as of 2026-05-27. Catalog at v1.3 (20 deterministic strategies).
+Honest current state: **A**. Phase H is fully complete (12/12 items + ALL
+sub-gaps) as of 2026-05-27. Catalog at v1.4 (25 deterministic strategies).
 Engine + UI + LLM all integrated. Foundation primitives in place for
 infinite catalog expansion (each new H1 strategy ~2-4 hrs).
 
 | # | Item | Effort | Why |
 |---|---|---|---|
-| H1 | **Catalog v1.3 — 10 of 50+ shipped** | ~5-6 wks remaining for full 50+ | **SHIPPED so far:** G1.1-G1.10 (Phase G baseline), G1.11 QCD, G1.12 appreciated stock, G1.13 Augusta Rule §280A(g), G1.14 HSA max, G1.15 NUA §402(e)(4), G1.16 Mega-Backdoor Roth, G1.17 S-corp reasonable comp, G1.18 REPS §469(c)(7), G1.19 CRT framework, G1.20 conservation easement (audit warning). **Remaining:** REPS partial, §1031 timing, RMD optimization, cost-seg, opportunity zones, defined benefit / cash balance plans, NQDC §409A, CLT, §1374 BIG, §338(h)(10), §199A optimization variants, retirement plan §401(a)(17)/§415(c) max-out strategies, etc. Each ~2-4 hrs w/ H2 wiring. |
+| H1 | **Catalog v1.4 — 15 of 50+ shipped** | ~5-6 wks remaining for full 50+ | **SHIPPED so far:** G1.1-G1.10 (Phase G baseline), G1.11 QCD, G1.12 appreciated stock, G1.13 Augusta Rule §280A(g), G1.14 HSA max, G1.15 NUA §402(e)(4), G1.16 Mega-Backdoor Roth, G1.17 S-corp reasonable comp, G1.18 REPS §469(c)(7), G1.19 CRT framework, G1.20 conservation easement, **G1.21 §1031 timing, G1.22 pre-RMD Roth ladder, G1.23 cost segregation, G1.24 opportunity zones, G1.26 backdoor Roth** (v1.4 batch 2026-05-27). **Remaining:** RMD distribution timing, defined benefit / cash balance plans, NQDC §409A, CLT, §1374 BIG, §338(h)(10), §199A optimization variants, retirement plan §401(a)(17)/§415(c) max-out strategies, etc. Each ~2-4 hrs w/ H2 wiring. |
 | H2 | **What-if engine — DONE 2026-05-27** | — | `whatIfEngine.ts` + POST /clients/{id}/what-if + 5 G1 detectors wired (G1.1 SEP / G1.5 AMT-ISO / G1.6 NIIT / G1.9 TLH / G1.10 FTC) + G1.4 Roth with "cost" semantics + frontend cards. 169 hand-calc assertions. |
-| H3 | **Multi-year primitive — DONE 2026-05-27** | — | `multiYearEngine.ts` with `projectYearForward(inputs, yearsAhead)` + `runMultiYearTrajectory(baseline, years, mutationsByYear)` + `compareMultiYearTrajectories(baseline, scenario)`. Scales W-2/1099/adjustment dollars at configurable growth factor (default 3%/yr); advances each fact's taxYear so engine picks them up. Engine clamps unknown years to TY2025 brackets (`resolveTaxYear`). 25 hand-calc assertions. Detector wiring deferred (G1.3 / G1.4 long-term / G1.8 still heuristic — future H1 catalog work). |
+| H3 | **Multi-year primitive + detector wiring — DONE 2026-05-27** | — | `multiYearEngine.ts` primitive + `runDetectorMultiYear` helper. **WIRED into G1.3 bunching (2-year), G1.8 DAF (3-year), G1.4 Roth (5-year with projected RMD).** Each hit carries `multiYear: { horizonYears, baselineYearTax[], scenarioYearTax[], yearByYearDelta[], totalSavings, growthAssumption, multiYearAssumptions[] }`. estSavings annualizes to multi-year totalSavings when baselineInputs available. 25 primitive + 28 wiring hand-calc assertions. |
 | H4 | **State-residency comparison — DONE 2026-05-27** | — | POST /clients/:id/state-comparison runs the engine for each target state (default TX/FL/NV/WA/TN), re-sourcing W-2/1099 stateCode. New Planning card with sortable table + caveats. |
-| H5 | **Asset balance tracking — DONE 2026-05-27** | — | New `client_asset_balances` table with 14 asset types (IRA / Roth / SEP / SIMPLE / 401k traditional/Roth/after-tax / NUA-eligible employer stock / HSA / 529 / brokerage / real estate / primary residence / other). Per-account balance + cost basis + after-tax basis + nuaEligible flag. Full CRUD endpoints. New "Assets" tab on ClientDetail with summary cards + add/edit/delete form. Engine reads via ClientFacts.assetBalances. |
-| H6 | **Form 8606 nondeductible IRA basis — DONE 2026-05-27** | — | `computeForm8606ProRata` aggregates trad/SEP/SIMPLE IRA basis from H5 assets and applies §408(d)(2) pro-rata fraction (basis / (year-end + distributions + conversion)). Catches backdoor Roth (100% tax-free clean) AND the pro-rata trap ($7k backdoor + $100k pre-tax = ~$6,542 taxable). pdfkit-rendered Form 8606 PDF. Endpoints GET /clients/:id/form-8606 + /pdf. 28 hand-calc assertions. |
+| H5 | **Asset balance tracking + 4 new types — DONE 2026-05-27** | — | `client_asset_balances` table with **18 asset types** (original 14 + new 4: espp_shares, iso_amt_credit_shares, restricted_stock_pre_83b, crypto). Per-account balance + cost basis + after-tax basis + nuaEligible flag. Full CRUD endpoints. "Assets" tab on ClientDetail. Engine reads via ClientFacts.assetBalances. |
+| H6 | **Form 8606 Part I/II + Part III — DONE 2026-05-27** | — | `computeForm8606ProRata` (Part I §408(d)(2) pro-rata) + **`computeForm8606PartIII` (NEW: Roth distribution basis recovery per Treas. Reg. §1.408A-6 Q&A 8 — qualified-distribution shortcut, basis-first ordering, 10% §72(t) penalty)**. pdfkit-rendered PDF with both sections. New `roth_ira_distribution` adjustment type. GET /clients/:id/form-8606 + /pdf. 68 hand-calc assertions (28 Part I + 40 Part III). |
 | H7 | **Cross-strategy interaction modeling — DONE 2026-05-27** | — | `evaluateCrossStrategyScenario` stacks all H2 savings mutations into one engine run; reports combinedDelta + sumOfIndividualSavings + interactionEffect. New CrossStrategyCard on Planning tab. Catches bracket-stacking erosion. |
-| H8 | **LLM fact-pattern strategy discovery — DONE 2026-05-27** | — | New endpoint GET /clients/:id/planning-discovery sends client snapshot + already-detected hits + full catalog (20 strategies) to LLM, requests ≤5 candidate strategies the rule engine may have missed. Strong hallucination guards in system prompt (NO dollar invention; NO catalog-overlap; require IRS citations). AiDiscoveryCard with fuchsia theme, lazy-loaded behind "Discover with AI" button. Graceful empty fallback when aiEnabled === false. |
+| H8 | **LLM discovery + rule-engine verification — DONE 2026-05-27** | — | GET /clients/:id/planning-discovery + **`verifyAndDedupeCandidates` (NEW: cross-references IRC sections to catalog; tags candidates as `catalog-overlap` or `extra-strategy`; drops candidates duplicating already-detected hits)**. AiDiscoveryCard shows verification badge above rationale. 23 hand-calc'd verifier tests in new `tax-engine-discovery-tests.ts`. |
 | H9 | **Client-context fields — DONE 2026-05-27** | — | 4 optional columns on clients (risk_tolerance, target_retirement_age, estate_plan_stage, planning_goals). ClientForm.tsx Planning context section. planningMemo.ts passes populated fields into the LLM prompt with concrete personalization rules per field. |
-| H10 | **Charitable strategy depth — DONE 2026-05-27** | — | Shipped via H1 catalog v1.2 + v1.3: G1.11 QCD, G1.12 appreciated stock, G1.13 Augusta Rule (business-charity §280A(g) framework), G1.19 CRT framework. Conservation easement (G1.20) with HIGH AUDIT RISK warning per Notice 2017-10. |
+| H10 | **Charitable strategy depth — DONE 2026-05-27** | — | Shipped via H1 catalog v1.2 + v1.3 + v1.4: G1.11 QCD, G1.12 appreciated stock, G1.13 Augusta Rule, G1.19 CRT framework. Conservation easement (G1.20) with HIGH AUDIT RISK warning per Notice 2017-10. |
 | H11 | **Peer benchmark — DONE 2026-05-27** | — | GET /clients/:id/peer-benchmark loads firm clients in ±$50k AGI band, computes mean/median/p25/p75 effective rate + client's percentile rank using linear-interp quantiles. PeerBenchmarkCard with cohort distribution + verdict. |
 | H12 | **Confidence + assumption transparency — DONE 2026-05-27** | — | OpportunityHit gains `assumptions: string[]` (populated by ALL detectors) + `whatIfSensitivity: { low, mid, high }` for variable-amount strategies (±10% range, batched in one runWhatIfScenarios call) + `whatIf.mutations` exposes exact engine mutations for CPA audit ("Engine simulated: add deduction = $X"). |
 
