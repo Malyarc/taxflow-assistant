@@ -13,10 +13,11 @@ tracker, work it, commit, then remove it from here.
 
 If I were sequencing for maximum customer impact, I would do (in order):
 
-1. **H1 — expand catalog 10 → 50+ rules** (2 months calendar, ~25% eng).
-   The Phase H foundation (H2 verified deltas, H7 cross-strategy, H12
-   transparency) is now complete; new strategies plug in with real
-   savings immediately. Highest customer-perceived-value upgrade.
+1. **H1 — continue catalog expansion** (~6 wks remaining; 4 of 50+
+   shipped 2026-05-27). NUA, Mega-Backdoor Roth, S-corp reasonable comp,
+   Defined-benefit/cash-balance plans, REPS election, Cost segregation,
+   Opportunity zones, NQDC §409A, CRT/CLT, §1374 BIG, §338(h)(10),
+   conservation easements. Each ~2-4 hours w/ H2 wiring.
 2. **H3 — multi-year scenario modeling** (1-2 wks). Unlocks G1.3 bunching,
    G1.4 Roth conversion long-term, G1.8 DAF as H2-verified. Without H3
    these are heuristic-only.
@@ -47,7 +48,7 @@ single-year detectors. Catalog still ~7% of canonical planning universe
 
 | # | Item | Effort | Why |
 |---|---|---|---|
-| H1 | **Expand catalog 10 → 50+ rules** | 2 months | Add Augusta Rule, NUA, REPS election, §1031 timing, mega-backdoor Roth, RMD optimization, cost segregation, opportunity zones, defined benefit / cash balance plans, S-corp reasonable comp, NQDC §409A, CRT/CLT, QCD, §1374 BIG, §338(h)(10), conservation easements, etc. With H2 verified per-rule, each ships with real deltas. |
+| H1 | **Expand catalog (4 of 50+ shipped 2026-05-27)** | ~6 wks remaining | **DONE so far:** G1.11 QCD, G1.12 appreciated stock, G1.13 Augusta Rule §280A(g), G1.14 HSA maximization. Catalog now at v1.2 (14 deterministic strategies). **Remaining:** NUA, mega-backdoor Roth, REPS election, §1031 timing, RMD optimization, cost-seg, opportunity zones, defined benefit / cash balance plans, S-corp reasonable comp, NQDC §409A, CRT/CLT, §1374 BIG, §338(h)(10), conservation easements. Each ~2-4 hrs w/ H2 wiring. |
 | H2 | **What-if engine — DONE 2026-05-27** | — | `whatIfEngine.ts` + POST /clients/{id}/what-if + 5 G1 detectors wired (G1.1 SEP / G1.5 AMT-ISO / G1.6 NIIT / G1.9 TLH / G1.10 FTC) + G1.4 Roth with "cost" semantics + frontend cards + 124 hand-calc assertions. Remaining sub-gap: G1.3/G1.7/G1.8 + 5 G4 detectors are multi-year-shaped — defer to H3. |
 | H3 | **Multi-year scenario modeling** | 1-2 wks | For strategies that span years (Roth ladder, bunching cycles, NUA), simulate 3-5 years forward with wage growth + bracket indexing. Builds on H2. **Highest unlock after H1** — completes the H2 promise for the deferred G1 rules. |
 | H4 | **State-residency comparison — DONE 2026-05-27** | — | POST /clients/:id/state-comparison runs the engine for each target state (default TX/FL/NV/WA/TN), re-sourcing W-2/1099 stateCode. New Planning card with sortable table + caveats. Live-verified: CA filer correctly returns -$55,782 savings to any no-state-tax target. |
