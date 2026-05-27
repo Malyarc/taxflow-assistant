@@ -1,5 +1,5 @@
 {
-  "version": "v1.9.0",
+  "version": "v1.10.0",
   "reviewedAt": "2026-05-27",
   "strategies": [
     {
@@ -360,6 +360,130 @@
         "Trust attorney + actuarial valuation (complex — 6-12 month setup)"
       ],
       "action": "Engage a trust attorney to draft a CRT. Transfer the appreciated asset; CRT sells tax-free; client receives annuity/unitrust income stream + immediate charitable deduction for the present value of the remainder interest. Heuristic savings estimate available only after the §7520 actuarial calculation.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.57",
+      "name": "NQDC §409A — Nonqualified Deferred Compensation election",
+      "category": "retirement",
+      "ircSection": "IRC §409A",
+      "irsPub": "Pub 525; §409A regulations (Reg §1.409A)",
+      "trigger": "W-2 wages > $400,000 (executive comp range) AND age between 40 and 55 (transition-to-retirement window) AND no existing NQDC adjustment marker.",
+      "formula": "Defer current-year compensation beyond §401(a)(17) qualified plan limits via employer NQDC plan. Distribution at separation / fixed date / specified events per §409A(a)(2). Bracket arbitrage: defer at peak career marginal rate (35-37%); distribute in retirement at lower rate (22-24%). estSavings = $100,000 assumed deferral × (37% current − 22% retirement) = $15,000/yr.",
+      "confidence": 0.45,
+      "cpaEffortHours": 4.0,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Confirm employer offers an NQDC plan (most Fortune 500 + many startups do)",
+        "Initial election timing: must elect BEFORE start of service year per §409A(a)(4)(B). New-participant election within 30 days of plan eligibility.",
+        "Distribution events allowed (§409A(a)(2)): separation from service, death, disability, change in control, hardship, OR specified date/year",
+        "Distribution election locked in at deferral time — modification per §409A(a)(4)(C) requires 12-month delay + 5-year postponement",
+        "Violation penalty: immediate income recognition + 20% additional tax + interest at AFR + 1% per quarter (§409A(a)(1)(B))",
+        "Diversification + investment elections within NQDC plan (employer-tracked, NOT actually invested by employee)",
+        "Credit risk: NQDC is an unsecured promise — at risk if employer bankrupts. Diversify with other retirement vehicles.",
+        "Coordinate with golden-parachute payments under §280G (change-in-control deferrals)"
+      ],
+      "action": "If employer offers NQDC, elect to defer ~{{deferralAmount}} of next year's compensation. Distribute at separation in retirement at projected lower rate. Estimated annual bracket-arbitrage benefit ~{{estSavings}}. CRITICAL: elect BEFORE the year of service starts.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.58",
+      "name": "State residency change — relocate to no-tax state",
+      "category": "state",
+      "ircSection": "State law (CA Rev & Tax Code §17014; NY Tax Law §605; etc.)",
+      "irsPub": "FTB Publication 1031 (CA); NY TSB-M-22(1)I; state DOR guidance",
+      "trigger": "Resident state in [CA, NY, NJ, HI, OR, MA, CT, MD] (high-tax states) AND AGI > $500,000 AND state tax liability > $30,000 (material savings opportunity).",
+      "formula": "Move domicile + statutory residence to no-tax state (TX, FL, NV, WA, TN, SD, AK, WY, NH partial). Heuristic: state tax saved = current state tax × 0.50 (assumed 50% effective relocation savings, accounting for partial-year + multi-state apportionment in transition year). HIGH-leverage for $500k+ AGI HNW filers but multi-year domicile establishment required.",
+      "confidence": 0.55,
+      "cpaEffortHours": 8.0,
+      "recurring": false,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Domicile vs residency tests vary by state. CA Rev & Tax Code §17014: 183-day test PLUS facts-and-circumstances domicile test.",
+        "Physical relocation + intent (driver's license, voter registration, primary residence purchase, doctor/dentist relocation, social ties)",
+        "Severance from former state (sell home or convert to investment, end memberships, close professional licenses where possible)",
+        "Note: NY 'statutory residence' test = (183+ days) AND (permanent place of abode) — even non-domiciliaries can be taxed",
+        "Trust + estate planning coordination — change trustee state, situs",
+        "Income sourcing: wages where earned, business income where business operated, rental income where property located (vs residence-based tax)",
+        "Audit risk: CA + NY known for aggressive residency challenges; document EVERYTHING (calendar, receipts, utility bills, family activity)",
+        "Mid-year move = part-year resident in both states (G1.E12 / Phase E covers part-year residency math)"
+      ],
+      "action": "Relocate domicile + residency from {{currentState}} to a no-tax state (TX, FL, NV, WA, TN, SD, AK, WY). Establish all facts of domicile + 183+ days in new state. Estimated annual state tax savings ~{{estSavings}}.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.59",
+      "name": "Coverdell Education Savings Account §530",
+      "category": "credits",
+      "ircSection": "IRC §530",
+      "irsPub": "Pub 970 Chapter 7; Rev. Proc. 2023-34 §3.20",
+      "trigger": "AGI within phase-out ($95k-$110k single / $190k-$220k MFJ TY2024) AND dependentsUnder17 > 0 (qualifying child) AND no existing coverdell ESA adjustment.",
+      "formula": "Contribute up to $2,000/yr per qualified child under 18 (or special needs to age 21). Tax-FREE growth + qualified K-12 + post-secondary education distributions. Distinct from §529 (which is K-12 limited to $10k/yr withdrawal). Heuristic estSavings (PV) = $2,000 × (1.07^15 − 1) × 0.22 / 1.05^15 = $686 per child.",
+      "confidence": 0.55,
+      "cpaEffortHours": 0.5,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Beneficiary under 18 (or special needs to age 21)",
+        "Contribution cap $2,000/yr per BENEFICIARY (not per contributor) — aggregate of all contributors",
+        "AGI phase-out TY2024: $95k-$110k single / $190k-$220k MFJ (Rev. Proc. 2023-34 §3.20)",
+        "Contribution deadline: April 15 of next year (same as IRA)",
+        "Distribution must be QUALIFIED education expense for K-12 OR post-secondary",
+        "Non-qualified withdrawals: earnings portion taxable + 10% penalty",
+        "Coordinate with §529 — both allowed; choose based on K-12 vs college focus",
+        "Rollover from Coverdell to §529 allowed (one-way per Rev. Proc. 2017-24)"
+      ],
+      "action": "Contribute $2,000/yr to a Coverdell ESA per qualifying child under 18. Tax-free K-12 + college growth. Long-term PV per child ~{{estSavings}} over 15-year horizon.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.60",
+      "name": "§41(h) R&D Credit Payroll-Tax Election (small biz)",
+      "category": "credits",
+      "ircSection": "IRC §41(h); IRA 2022 §13902 ($500k cap)",
+      "irsPub": "Form 6765; Notice 2017-23; §3.04 IRA 2022 guidance",
+      "trigger": "Net SE between $100,000 and $5,000,000 (small biz gross-receipts proxy per §41(h)(3)(B)) AND has R&D activity signal (heuristic — tech/engineering SE) AND no existing R&D payroll election.",
+      "formula": "Election allows qualified small business to apply R&D credit against EMPLOYER's payroll tax (FICA + Medicare side) up to $500k/yr (IRA 2022 doubled from $250k). Beneficial for pre-revenue startups with no income tax liability to absorb the credit. estSavings = $5,000 typical first-year benefit (small biz with $50k QREs × 6% ASC = $3k credit; payroll-tax monetization).",
+      "confidence": 0.40,
+      "cpaEffortHours": 3.0,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "ELIGIBILITY (§41(h)(3)): qualified small business — gross receipts < $5M AND in business < 5 years (gross receipts must be < $5M in any of the 5 prior years to count)",
+        "Compute R&D credit per §41 (Alternative Simplified Method = 14% of current QRE − 50% of 3-yr avg, or 6% for first-time)",
+        "Election made on Form 6765 attached to timely-filed (incl extensions) return",
+        "Election applied to Form 8974 (Qualified Small Business Payroll Tax Credit for Increasing Research Activities) + Form 941 quarterly",
+        "Election is ANNUAL — re-elect each year",
+        "Coordinates with G1.36 (income-tax-side R&D credit): if income tax exists, take that side first; if not, payroll election fills the gap",
+        "Wages for §41 are W-2 wages PAID by the qualified small business — sole-prop SE earnings don't fund this (W-2 employee wages required)"
+      ],
+      "action": "If client is pre-revenue startup with R&D activity, file Form 6765 election (§41(h)) to apply R&D credit against employer payroll tax via Form 8974. Up to $500k/yr cap; typical first-year monetization ~{{estSavings}}.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.61",
+      "name": "§221 Student Loan Interest Deduction",
+      "category": "credits",
+      "ircSection": "IRC §221",
+      "irsPub": "Pub 970 Chapter 4; Form 1040 Sch 1 Line 21; Rev. Proc. 2023-34 §3.21",
+      "trigger": "AGI within phase-out ($80k-$95k single / $165k-$195k MFJ TY2024) AND no existing student_loan_interest adjustment.",
+      "formula": "Above-the-line deduction up to $2,500/yr of interest paid on qualified student loan. Phase-out: $80k-$95k single / $165k-$195k MFJ TY2024. Cannot claim if MFS, claimed as dependent, or interest paid on related-party loan. estSavings = min(actual interest paid, $2,500) × marginal rate. Typical $2,500 × 22% = $550.",
+      "confidence": 0.85,
+      "cpaEffortHours": 0.25,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Actual interest paid on qualified student loan in the tax year (Form 1098-E from servicer)",
+        "Loan must be qualified: incurred SOLELY to pay qualified higher education expenses for taxpayer / spouse / dependent",
+        "Eligible institutions: accredited post-secondary",
+        "AGI phase-out TY2024: $80k-$95k single / $165k-$195k MFJ (Rev. Proc. 2023-34 §3.21)",
+        "MFS — DISQUALIFIED (cannot claim)",
+        "Dependent of another taxpayer — DISQUALIFIED",
+        "Related-party loans (from family member) — DISQUALIFIED",
+        "Phase-out reduction: ratable based on (AGI − floor) / $15k single or $30k MFJ"
+      ],
+      "action": "Deduct up to $2,500 of student loan interest paid this year on Schedule 1 Line 21. Above-the-line — reduces AGI. Saves ~{{estSavings}}.",
       "formulaRev": 1
     },
     {

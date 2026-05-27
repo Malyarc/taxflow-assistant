@@ -1535,9 +1535,16 @@ function buildSeFilerInputs(): TaxReturnInputs {
 }
 
 // ── Case D9: H7 omitted when 0 stackable hits ────────────────────────────
-// Pure-W-2 client with no SE, no investment — should produce no H2 hits.
+// Pure-W-2 client with no SE / no investment / AGI ABOVE generic-credit
+// caps (so G1.33 EV credit and G1.61 student loan both suppress) — only
+// heuristic strategies remain. Cross-strategy needs >=2 stackable (H2
+// "savings" semantics) hits; heuristic-only → undefined.
 {
-  const inputs = baseInputs(); // $80k W-2 single FL, nothing else
+  const inputs: TaxReturnInputs = {
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 45, dependentsUnder17: 0 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 250000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    form1099s: [], adjustments: [], taxYear: 2024,
+  };
   const computed = computeTaxReturnPure(inputs);
   const hits = evaluatePlanningOpportunities({
     client: inputs.client,
@@ -1549,8 +1556,10 @@ function buildSeFilerInputs(): TaxReturnInputs {
     hits,
     baselineInputs: inputs,
   });
-  // Either no hits or all heuristic-only; in either case, < 2 stackable.
-  checkTruthy("Case D9 cross-strategy undefined for pure-W-2 client", xstrat == null);
+  // High-AGI pure-W-2: G1.33 + G1.61 suppressed (AGI > caps), G1.26
+  // backdoor Roth fires (heuristic) — only 1 stackable max.
+  checkTruthy("Case D9 cross-strategy undefined for high-AGI pure-W-2 client (< 2 stackable)",
+    xstrat == null);
 }
 
 // ── Print results ─────────────────────────────────────────────────────────

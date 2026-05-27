@@ -587,6 +587,68 @@ section("SCENARIO 9 — HNW family with kids + side SE + brokerage, CA MFJ");
 }
 
 // ============================================================================
+// SCENARIO 10 — High-income tech executive in CA
+// Single, CA, age 48.
+// $600k W-2 (base + RSU vest).
+// $150k LTCG (sale of vested RSUs).
+// H5: 401k_traditional $400k.
+// Expected: G1.57 NQDC §409A (age + W-2 > $400k), G1.58 state residency
+// (CA + AGI > $500k), G1.26 backdoor Roth (AGI > $161k), G1.5 AMT-ISO
+// not triggered (no iso_bargain), G1.4 Roth not triggered (high bracket).
+// ============================================================================
+section("SCENARIO 10 — High-income tech executive, CA, age 48");
+
+{
+  const inputs: TaxReturnInputs = {
+    client: {
+      filingStatus: "single",
+      state: "CA",
+      taxYear: 2024,
+      taxpayerAge: 48,
+      dependentsUnder17: 0,
+    } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 600000, stateCode: "CA" } as unknown as TaxReturnInputs["w2s"][number]],
+    form1099s: [
+      { taxYear: 2024, formType: "b", payerName: "Schwab", longTermGainLoss: 150000 } as unknown as TaxReturnInputs["form1099s"][number],
+    ],
+    adjustments: [],
+    assetBalances: [
+      { assetType: "401k_traditional", balance: "400000", accountName: "401k", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+    taxYear: 2024,
+  };
+  const hits = runFull(inputs);
+  header(`Found: ${ids(hits).join(", ") || "(none)"}`);
+  checkSubset("S10", "fires G1.57 NQDC §409A (W-2 > $400k + age 40-55)",
+    ["G1.57"], ids(hits));
+  checkSubset("S10", "fires G1.58 state residency change (CA + AGI > $500k)",
+    ["G1.58"], ids(hits));
+  checkSubset("S10", "fires G1.26 backdoor Roth (single AGI > $161k)",
+    ["G1.26"], ids(hits));
+  checkSubset("S10", "fires G1.56 specific-share-ID (LTCG > $5k)",
+    ["G1.56"], ids(hits));
+  // Should NOT fire:
+  checkNotFires("S10", "G1.31 Saver's Credit suppressed (high AGI)",
+    "G1.31", hits);
+  checkNotFires("S10", "G1.4 Roth conversion suppressed (high marginal rate)",
+    "G1.4", hits);
+  checkNotFires("S10", "G1.61 student loan suppressed (AGI > $95k single cap)",
+    "G1.61", hits);
+  // Verify G1.57 estSavings
+  const nqdcHit = findHit(hits, "G1.57");
+  if (nqdcHit) {
+    checkInRange("S10", "G1.57 estSavings = $15,000",
+      nqdcHit.estSavings, 14_995, 15_005);
+  }
+  // Verify G1.58 estSavings is meaningful (CA state tax × 50%)
+  const stateHit = findHit(hits, "G1.58");
+  if (stateHit) {
+    checkInRange("S10", "G1.58 estSavings in $20k-$50k range",
+      stateHit.estSavings, 20_000, 50_000);
+  }
+}
+
+// ============================================================================
 // RESULTS
 // ============================================================================
 

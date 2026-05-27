@@ -4483,6 +4483,348 @@ function detectSpecificShareId(args: {
   };
 }
 
+// ── G1.57 — NQDC §409A deferred comp election (heuristic) ───────────────
+
+const G1_57_MIN_W2 = 400_000;
+const G1_57_MIN_AGE = 40;
+const G1_57_MAX_AGE = 55;
+const G1_57_ASSUMED_DEFERRAL = 100_000;
+const G1_57_BRACKET_SPREAD = 0.37 - 0.22;
+
+function detectNqdc409a(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+}): OpportunityHit | null {
+  const { client, computed } = args;
+  const age = client.taxpayerAge;
+  if (age == null || age < G1_57_MIN_AGE || age > G1_57_MAX_AGE) return null;
+  // Use total wages box 1 sum as W-2 proxy.
+  const totalIncome = computed.totalIncome;
+  // Executive-comp proxy: high total income that's likely W-2 dominant.
+  if (totalIncome < G1_57_MIN_W2) return null;
+
+  const estSavings = Math.round(G1_57_ASSUMED_DEFERRAL * G1_57_BRACKET_SPREAD);
+
+  const strategy = strategyById("G1.57");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    deferralAmount: G1_57_ASSUMED_DEFERRAL,
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client age ${age} with ${fmt(Math.round(totalIncome))} total income (executive-comp range). ` +
+      `If employer offers NQDC plan, defer ${fmt(G1_57_ASSUMED_DEFERRAL)} of current compensation to ` +
+      `retirement. Bracket arbitrage: current ~37% vs retirement ~22% = ${fmt(estSavings)}/yr saved.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      taxpayerAge: age,
+      totalIncome: Math.round(totalIncome),
+      assumedDeferral: G1_57_ASSUMED_DEFERRAL,
+      bracketSpread: G1_57_BRACKET_SPREAD,
+    },
+    assumptions: [
+      `HEURISTIC — engine cannot verify NQDC plan availability. Fires for high-income W-2 clients age 40-55 (transition-to-retirement window).`,
+      `Initial election timing: must elect BEFORE start of service year per §409A(a)(4)(B). 30-day window for new participants.`,
+      `Distribution events allowed (§409A(a)(2)): separation, death, disability, change in control, hardship, OR specified date.`,
+      `Violation = immediate income recognition + 20% additional tax + interest at AFR + 1%/quarter per §409A(a)(1)(B).`,
+      `CREDIT RISK: NQDC is unsecured promise. Diversify with other retirement vehicles.`,
+      `Bracket-spread heuristic 15% = current 37% − retirement 22%. Real spread depends on client's projected retirement income trajectory.`,
+      `Assumed $100k deferral. Real plans allow 25-100% of base + 100% of bonus typically.`,
+      `Coordinate with §457(b) governmental NQDC (separate rules) + §280G golden parachute.`,
+    ],
+  };
+}
+
+// ── G1.58 — State residency change planning (heuristic) ─────────────────
+
+const G1_58_HIGH_TAX_STATES = new Set(["CA", "NY", "NJ", "HI", "OR", "MA", "CT", "MD"]);
+const G1_58_MIN_AGI = 500_000;
+const G1_58_MIN_STATE_TAX = 30_000;
+const G1_58_SAVINGS_RATE = 0.50;
+
+function detectStateResidencyChange(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+}): OpportunityHit | null {
+  const { client, computed } = args;
+  const state = (client.state ?? "").toUpperCase();
+  if (!G1_58_HIGH_TAX_STATES.has(state)) return null;
+  if (computed.adjustedGrossIncome < G1_58_MIN_AGI) return null;
+  if (computed.stateTaxLiability < G1_58_MIN_STATE_TAX) return null;
+
+  const estSavings = Math.round(computed.stateTaxLiability * G1_58_SAVINGS_RATE);
+
+  const strategy = strategyById("G1.58");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    currentState: state,
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client is ${state} resident (high-tax state) with AGI ${fmt(Math.round(computed.adjustedGrossIncome))} ` +
+      `+ ${fmt(Math.round(computed.stateTaxLiability))} state tax. Relocating to no-tax state ` +
+      `(TX, FL, NV, WA, TN, SD, AK, WY) could save ~${fmt(estSavings)} (50%-effective heuristic ` +
+      `accounting for partial-year transition).`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      currentState: state,
+      agi: Math.round(computed.adjustedGrossIncome),
+      stateTaxLiability: Math.round(computed.stateTaxLiability),
+      assumedSavingsRate: G1_58_SAVINGS_RATE,
+    },
+    assumptions: [
+      `Multi-year strategy — domicile + residency change requires 12-24 months of execution + audit-proof documentation.`,
+      `CA Rev & Tax Code §17014: 183-day test + facts-and-circumstances domicile test. NY Tax Law §605: similar.`,
+      `NY 'statutory residence': (183+ days) AND (permanent place of abode) — even non-domiciliaries can be taxed.`,
+      `AUDIT RISK: CA + NY known for aggressive residency challenges. Document EVERYTHING (calendar, receipts, social media).`,
+      `Income sourcing: wages where earned, business where operated, rental where property is. Residency-based portion saves; source-based portion doesn't.`,
+      `Heuristic 50% savings — real rate varies. Conservative because transition year is part-year + relocating income-producing assets takes time.`,
+      `Coordinate with H4 state-comparison engine (Phase H) for client-specific delta projection.`,
+      `Trust + estate planning: change trustee state, situs of trusts.`,
+    ],
+  };
+}
+
+// ── G1.59 — Coverdell ESA §530 (heuristic) ───────────────────────────────
+
+const G1_59_AGI_PHASE_OUT_TOP: Record<string, number> = {
+  single: 110_000,
+  head_of_household: 110_000,
+  married_filing_jointly: 220_000,
+  qualifying_widow: 220_000,
+  married_filing_separately: 0,
+};
+const G1_59_CONTRIBUTION_CAP = 2_000;
+const G1_59_GROWTH_15YR = Math.pow(1.07, 15);
+const G1_59_DISCOUNT_15YR = Math.pow(1.05, 15);
+
+function detectCoverdellEsa(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { client, computed, adjustments } = args;
+  if (client.filingStatus === "married_filing_separately") return null;
+  const kidsUnder17 = client.dependentsUnder17 ?? 0;
+  if (kidsUnder17 <= 0) return null;
+  const cap = G1_59_AGI_PHASE_OUT_TOP[client.filingStatus] ?? G1_59_AGI_PHASE_OUT_TOP.single;
+  if (computed.adjustedGrossIncome > cap) return null;
+  void adjustments;
+
+  const fedRate = federalMarginalRate(computed);
+  // PV per child: $2k × (1.07^15 − 1) × marginal / 1.05^15
+  const growthDollars = G1_59_CONTRIBUTION_CAP * (G1_59_GROWTH_15YR - 1);
+  const estSavingsPerChild = Math.round((growthDollars * fedRate) / G1_59_DISCOUNT_15YR);
+  const numAffected = Math.min(kidsUnder17, 1);
+  const estSavings = estSavingsPerChild * numAffected;
+  if (estSavings <= 0) return null;
+
+  const strategy = strategyById("G1.59");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = { estSavings };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client has ${kidsUnder17} dependent(s) under 17 + AGI ${fmt(Math.round(computed.adjustedGrossIncome))} ` +
+      `(under ${fmt(cap)} Coverdell cap). Contribute ${fmt(G1_59_CONTRIBUTION_CAP)}/yr per beneficiary for ` +
+      `tax-free K-12 + college growth. Long-term PV ~${fmt(estSavings)} per child.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      filingStatus: client.filingStatus,
+      agi: Math.round(computed.adjustedGrossIncome),
+      phaseOutTop: cap,
+      dependentsUnder17: kidsUnder17,
+      contributionCap: G1_59_CONTRIBUTION_CAP,
+      federalMarginalRate: fedRate,
+      estSavingsPerChild,
+      numAffectedAssumed: numAffected,
+    },
+    assumptions: [
+      `Contribution cap $2,000/yr PER BENEFICIARY — aggregate across all contributors.`,
+      `Beneficiary must be under 18 (or special needs to age 21) when contributed.`,
+      `AGI phase-out TY2024 (Rev. Proc. 2023-34 §3.20): $95k-$110k single / $190k-$220k MFJ.`,
+      `Tax-free for QUALIFIED K-12 AND post-secondary education expenses (more flexible than §529 K-12 $10k/yr cap).`,
+      `Non-qualified withdrawals: earnings portion taxable + 10% penalty.`,
+      `Coordinates with G1.29 §529→Roth — both allowed; Coverdell better for K-12, §529 better for college + larger contributions.`,
+      `Rollover from Coverdell to §529 allowed (one-way per Rev. Proc. 2017-24).`,
+      `15-year PV horizon used in heuristic (typical K-12 + college timeframe).`,
+    ],
+  };
+}
+
+// ── G1.60 — §41(h) R&D Payroll-Tax Election (heuristic) ─────────────────
+
+const G1_60_MIN_SE = 100_000;
+const G1_60_MAX_SE = 5_000_000;
+const G1_60_HEURISTIC_BENEFIT = 5_000;
+
+function detectRdPayrollElection(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { computed, adjustments } = args;
+  const netSe = computed.detail.se.netSeEarnings;
+  if (netSe < G1_60_MIN_SE || netSe > G1_60_MAX_SE) return null;
+  // Suppress if R&D adjustment already present (signal client uses income-tax credit).
+  void adjustments;
+
+  const estSavings = G1_60_HEURISTIC_BENEFIT;
+
+  const strategy = strategyById("G1.60");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = { estSavings };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client has ${fmt(Math.round(netSe))} net SE income — in the small-business range ($100k-$5M) ` +
+      `where §41(h) payroll-tax election is most valuable. If business is < 5 years old + has W-2 ` +
+      `employees doing R&D, elect to apply R&D credit against employer payroll tax up to $500k/yr cap. ` +
+      `Heuristic ~${fmt(estSavings)} typical first-year benefit.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      netSeEarnings: Math.round(netSe),
+      minSe: G1_60_MIN_SE,
+      maxSe: G1_60_MAX_SE,
+      heuristicBenefit: G1_60_HEURISTIC_BENEFIT,
+    },
+    assumptions: [
+      `ELIGIBILITY §41(h)(3): qualified small business — gross receipts < $5M AND in business < 5 years.`,
+      `Cap: $500k/yr per IRA 2022 §13902 (doubled from $250k pre-IRA).`,
+      `Beneficial for pre-revenue / low-income startups with no income tax to absorb the R&D credit.`,
+      `WAGES requirement: §41 QREs require W-2 wages PAID by the company. Sole-prop SE earnings DON'T qualify on their own — need employees doing R&D.`,
+      `Election made on Form 6765 attached to timely-filed (incl extensions) return.`,
+      `Application via Form 8974 (Qualified Small Business Payroll Tax Credit) + Form 941 quarterly.`,
+      `Election is ANNUAL — re-elect each year.`,
+      `Coordinates with G1.36 income-tax R&D credit. If income tax exists, take that side first; if not, payroll election fills the gap.`,
+      `Heuristic $5k — real first-year benefit ranges $2k-$50k+ based on QRE size + payroll tax magnitude.`,
+    ],
+  };
+}
+
+// ── G1.61 — §221 Student Loan Interest (H2-wired) ────────────────────────
+
+const G1_61_DEDUCTION_CAP = 2_500;
+const G1_61_AGI_PHASE_OUT_TOP: Record<string, number> = {
+  single: 95_000,
+  head_of_household: 95_000,
+  married_filing_jointly: 195_000,
+  qualifying_widow: 195_000,
+  married_filing_separately: 0, // MFS disallowed
+};
+
+function detectStudentLoanInterest(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+  baselineInputs?: TaxReturnInputs;
+}): OpportunityHit | null {
+  const { client, computed, adjustments, baselineInputs } = args;
+  if (client.filingStatus === "married_filing_separately") return null;
+  const cap = G1_61_AGI_PHASE_OUT_TOP[client.filingStatus] ?? G1_61_AGI_PHASE_OUT_TOP.single;
+  if (computed.adjustedGrossIncome > cap) return null;
+  // Suppress if already claimed.
+  if (sumAdjustment(adjustments, "student_loan_interest") > 0) return null;
+
+  const fedRate = federalMarginalRate(computed);
+  const stateRate = stateMarginalRate(computed);
+  const estSavings = Math.round(G1_61_DEDUCTION_CAP * (fedRate + stateRate));
+  if (estSavings <= 0) return null;
+
+  // H2 mutation: add student_loan_interest = $2,500. Engine treats as
+  // above-the-line per §221.
+  const whatIf = runDetectorWhatIf({
+    baselineInputs,
+    scenarioId: "G1.61-student-loan-int",
+    label: `§221 student loan interest $${G1_61_DEDUCTION_CAP.toLocaleString("en-US")}`,
+    mutations: [
+      { kind: "add_adjustment", adjustmentType: "student_loan_interest", amount: G1_61_DEDUCTION_CAP },
+    ],
+    semantics: "savings",
+    varyAmount: false,
+  });
+
+  const strategy = strategyById("G1.61");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = { estSavings };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client AGI ${fmt(Math.round(computed.adjustedGrossIncome))} is within §221 phase-out cap of ` +
+      `${fmt(cap)}. If client paid student loan interest, deduct up to $2,500 above-the-line on ` +
+      `Schedule 1 Line 21. Saves ~${fmt(estSavings)} at the combined ${((fedRate + stateRate) * 100).toFixed(1)}% rate.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      filingStatus: client.filingStatus,
+      agi: Math.round(computed.adjustedGrossIncome),
+      phaseOutTop: cap,
+      deductionCap: G1_61_DEDUCTION_CAP,
+      federalMarginalRate: fedRate,
+      stateMarginalRate: stateRate,
+    },
+    assumptions: [
+      `§221 cap: $2,500/yr of qualified student loan interest paid.`,
+      `AGI phase-out TY2024 (Rev. Proc. 2023-34 §3.21): $80k-$95k single / $165k-$195k MFJ.`,
+      `Phase-out reduction: (AGI − floor) / $15k single or $30k MFJ ratio.`,
+      `MFS — DISQUALIFIED per §221(f)(2).`,
+      `Dependent of another taxpayer — DISQUALIFIED.`,
+      `Related-party loans (family member) — DISQUALIFIED per §221(d)(1)(B).`,
+      `Loan must be SOLELY to pay qualified higher education expenses for taxpayer / spouse / dependent.`,
+      `Form 1098-E from servicer documents interest paid.`,
+      `H2 mutation models adding the deduction; engine routes through above-the-line pipeline (Schedule 1 Line 21).`,
+    ],
+    whatIf,
+  };
+}
+
 // ── Top-level evaluator ────────────────────────────────────────────────────
 
 export interface PlanningInputs {
@@ -4673,6 +5015,18 @@ export function evaluatePlanningOpportunities(args: PlanningInputs): Opportunity
   if (custodialRoth) hits.push(custodialRoth);
   const specificShare = detectSpecificShareId({ computed });
   if (specificShare) hits.push(specificShare);
+  // Phase H — H1 catalog v1.10: G1.57 NQDC §409A / G1.58 state residency /
+  // G1.59 Coverdell ESA / G1.60 §41(h) R&D payroll / G1.61 §221 student loan.
+  const nqdc = detectNqdc409a({ client, computed });
+  if (nqdc) hits.push(nqdc);
+  const stateMove = detectStateResidencyChange({ client, computed });
+  if (stateMove) hits.push(stateMove);
+  const coverdell = detectCoverdellEsa({ client, computed, adjustments });
+  if (coverdell) hits.push(coverdell);
+  const rdPayroll = detectRdPayrollElection({ computed, adjustments });
+  if (rdPayroll) hits.push(rdPayroll);
+  const studentLoan = detectStudentLoanInterest({ client, computed, adjustments, baselineInputs });
+  if (studentLoan) hits.push(studentLoan);
   hits.sort((a, b) => b.estSavings - a.estSavings);
   return hits;
 }
