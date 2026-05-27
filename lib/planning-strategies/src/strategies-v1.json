@@ -1,5 +1,5 @@
 {
-  "version": "v1.3.0",
+  "version": "v1.4.0",
   "reviewedAt": "2026-05-27",
   "strategies": [
     {
@@ -360,6 +360,112 @@
         "Trust attorney + actuarial valuation (complex — 6-12 month setup)"
       ],
       "action": "Engage a trust attorney to draft a CRT. Transfer the appreciated asset; CRT sells tax-free; client receives annuity/unitrust income stream + immediate charitable deduction for the present value of the remainder interest. Heuristic savings estimate available only after the §7520 actuarial calculation.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.21",
+      "name": "§1031 like-kind exchange — defer cap gains on real estate",
+      "category": "investment",
+      "ircSection": "IRC §1031",
+      "irsPub": "Pub 544; Form 8824 instructions",
+      "trigger": "Schedule E rental gross income > $100k AND total income > $200k AND no existing section_1031_realized_gain adjustment",
+      "formula": "Defer ordinary gain via like-kind exchange: identify replacement within 45 days, close within 180 days. estSavings = (assumed avg replacement gain $250k) × LTCG rate (~20%) + 3.8% NIIT × proxy 0.5 (timing value of deferral).",
+      "confidence": 0.65,
+      "cpaEffortHours": 6.0,
+      "recurring": false,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Specific property being sold + estimated FMV + adjusted basis",
+        "Qualified Intermediary engagement (cannot touch the sale proceeds)",
+        "Identification of up to 3 replacement properties within 45 days of closing",
+        "Funding to complete the replacement closing within 180 days"
+      ],
+      "action": "If client has a planned real estate sale, structure as a §1031 like-kind exchange via a Qualified Intermediary. Identify replacement within 45 days, close within 180 days. Estimated tax deferral on a $250k gain ~{{estSavings}}.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.22",
+      "name": "Pre-RMD Roth conversion ladder (age 60-72)",
+      "category": "retirement",
+      "ircSection": "IRC §408A; §401(a)(9) (SECURE 2.0 age 73)",
+      "irsPub": "Pub 590-B; Notice 2024-35",
+      "trigger": "taxpayerAge between 60 and 72 AND H5 traditional/SEP/SIMPLE IRA total balance > $500k AND federal marginal rate < 32%",
+      "formula": "Convert ~bracket headroom each year for years 60-72; reduces RMD base + future taxable distributions at potentially higher rates. estSavings = avg annual conversion × spread between current and projected RMD-age marginal rate × number of conversion years.",
+      "confidence": 0.70,
+      "cpaEffortHours": 4.0,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Confirm projected income trajectory through age 73 (SS, pensions, RMDs)",
+        "Estimated future marginal rate at RMD age (Pub 590-B life-expectancy table drives RMD %)",
+        "Cash flow for the conversion tax (paid from non-IRA assets to maximize Roth growth)",
+        "State residency plans through age 73 (state-tax arbitrage possible)"
+      ],
+      "action": "Execute an N-year Roth conversion ladder: convert ~{{annualConversion}}/year until age 73 to keep marginal rate ≤ {{topRate}}. Reduces RMD base by ~{{totalConversion}}; projected lifetime tax savings ~{{estSavings}}.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.23",
+      "name": "Cost segregation study — accelerated depreciation on real estate",
+      "category": "business",
+      "ircSection": "IRC §168(e); Rev. Proc. 87-56",
+      "irsPub": "Pub 946; IRS Cost Segregation Audit Techniques Guide",
+      "trigger": "Schedule E rental gross income > $100k AND no prior cost-segregation signal AND federal marginal rate ≥ 24%",
+      "formula": "Segregate 5/7/15-year personal property + land improvements from 27.5/39-year building basis. Accelerates ~20-30% of basis. With TY2025 60% bonus depreciation: estSavings ≈ rental_gross × 0.25 × 0.60 × marginal_rate (one-time, but recurring as new properties acquired).",
+      "confidence": 0.75,
+      "cpaEffortHours": 8.0,
+      "recurring": false,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Most recent purchase price + closing date of each property",
+        "Engineering-based cost segregation study (qualified provider — Marshall & Stevens / KBKG / etc.)",
+        "Form 3115 (Change in Accounting Method) if applying to prior-year property — §481(a) catch-up adjustment",
+        "Confirm property is non-residential (39yr) or residential rental (27.5yr) and basis breakdown"
+      ],
+      "action": "Engage a qualified cost-seg engineer for a study on each major property. Reclassify ~25% of basis to 5/7/15-year buckets eligible for accelerated + bonus depreciation. TY{{taxYear}} bonus rate is {{bonusPct}}%. Estimated first-year benefit ~{{estSavings}}.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.24",
+      "name": "Qualified Opportunity Zone investment — defer + reduce cap gains",
+      "category": "investment",
+      "ircSection": "IRC §1400Z-2",
+      "irsPub": "Notice 2018-48; Reg. §1.1400Z2(a)-1",
+      "trigger": "Capital gains (LTCG + STCG) > $100,000 AND post-TCJA (TY2024+) AND no existing QOZ designation",
+      "formula": "Invest realized capital gain in a Qualified Opportunity Fund within 180 days. Deferred until earlier of sale or 2026-12-31. After 10 years held, the QOF investment's own appreciation is permanently tax-free. estSavings = deferred_gain × (LTCG rate + NIIT) × time-value-of-deferral proxy 0.3 + (long-term appreciation × LTCG × 1.0 if held 10+ years).",
+      "confidence": 0.60,
+      "cpaEffortHours": 5.0,
+      "recurring": false,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Date and amount of the eligible gain — 180-day clock starts at the sale date",
+        "QOF selection (publicly available registry; private QOF or self-organized)",
+        "Confirm QOF invests ≥ 90% of assets in a Qualified Opportunity Zone (audited semi-annually)",
+        "10-year holding plan — premature sale loses the basis step-up",
+        "Note: original deferral elimination date is 2026-12-31 (statutory); no further deferral possible past that"
+      ],
+      "action": "Within 180 days of a capital gain, roll {{deferredGain}} into a Qualified Opportunity Fund. Defers ~{{estSavings}} of current tax + locks in 10-year tax-free appreciation. Confirm QOF compliance + plan the 10-year hold.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.26",
+      "name": "Backdoor Roth IRA — for income above direct-Roth phase-out",
+      "category": "retirement",
+      "ircSection": "IRC §408A; §408(d)(2)",
+      "irsPub": "Pub 590-A; Notice 2023-75",
+      "trigger": "AGI > Roth IRA contribution phase-out top (TY2024 $161k single / $240k MFJ) AND no existing nondeductible IRA contribution AND no/low pre-tax IRA balance (avoids pro-rata trap)",
+      "formula": "Annual loop: contribute $7k (50+: $8k) nondeductible to traditional IRA → immediately convert to Roth (Form 8606 required). With ZERO pre-tax IRA balance: 100% tax-free. With pre-tax balance: pro-rata trap (see H6 Form 8606). estSavings = $7k × growth × future_rate (long-term).",
+      "confidence": 0.85,
+      "cpaEffortHours": 1.0,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Confirm $0 balance in all pre-tax IRAs (traditional / SEP / SIMPLE) at year-end — otherwise §408(d)(2) pro-rata applies and most of the conversion is taxable",
+        "Form 8606 filing for both the nondeductible contribution AND the conversion (Part I + Part II)",
+        "If client has pre-tax IRA balance, consider rolling it to 401(k) first (employer plans escape §408(d)(2) aggregation)",
+        "Contribution deadline: April 15 of next year for the prior tax year"
+      ],
+      "action": "Contribute {{contributionAmount}} nondeductible to a Traditional IRA, then immediately convert to Roth (Form 8606). If pre-tax IRA balance > $0, address pro-rata trap first (roll to 401(k) or accept tax cost). Long-term Roth-growth benefit ~{{estSavings}}.",
       "formulaRev": 1
     },
     {

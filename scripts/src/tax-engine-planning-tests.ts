@@ -1834,6 +1834,230 @@ header("H3.G1.4-2 — no baselineInputs → multiYear undefined, estSavings = he
   }
 }
 
+section("H1 catalog v1.4 — 5 new detectors (G1.21 / G1.22 / G1.23 / G1.24 / G1.26)");
+
+// ── G1.21 §1031 like-kind exchange timing ────────────────────────────────
+// Positive: rental gross > $100k AND total income > $200k.
+//   $250k assumed gain × (0.20 + 0.038) × 0.5 = $29,750 estSavings.
+header("G1.21+1 — Rental $150k + W-2 $200k: fires with $29,750");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 200000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [
+      { adjustmentType: "schedule_e_rental_income", amount: 150000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  const hit = findHit(hits, "G1.21");
+  checkTruthy("G1.21+1", "fires (rental + high income)", hit != null, true);
+  if (hit) {
+    check("G1.21+1", "estSavings = $29,750", hit.estSavings, 29750, 5,
+      "250000 × (0.20 + 0.038) × 0.5");
+  }
+}
+
+// Negative: too little rental
+header("G1.21-2 — Rental $50k: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 300000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [
+      { adjustmentType: "schedule_e_rental_income", amount: 50000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  checkTruthy("G1.21-2", "no fire when rental < $100k", findHit(hits, "G1.21") == null, true);
+}
+
+// Negative: §1031 already in use
+header("G1.21-3 — Already has §1031 adjustment: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 300000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [
+      { adjustmentType: "schedule_e_rental_income", amount: 200000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+      { adjustmentType: "section_1031_realized_gain", amount: 50000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  checkTruthy("G1.21-3", "no fire when §1031 already used", findHit(hits, "G1.21") == null, true);
+}
+
+// ── G1.22 Pre-RMD Roth conversion ladder ────────────────────────────────
+//
+// Positive setup: single, age 65, FL, $50k W-2.
+//   AGI $50k → taxable = $50k - $14,600 std ded = $35,400 → 12% bracket.
+//   Headroom to top of 12% ($47,150) = $11,750 → annualConversion =
+//     max($20k, min($11,750, $100k)) = $20k.
+//   ladderYears = 73 - 65 = 8. totalConversion = min($600k, $160k) = $160k.
+//   estSavings = $160k × 0.04 = $6,400.
+header("H1v1.4 G1.22+1 — Age 65, $600k trad IRA, single FL: estSavings $6,400");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 65 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    assetBalances: [
+      { assetType: "traditional_ira", balance: "600000", accountName: "Vanguard IRA", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  const hit = findHit(hits, "G1.22");
+  checkTruthy("G1.22+1", "fires for age 60-72 with > $500k trad IRA", hit != null, true);
+  if (hit) {
+    check("G1.22+1", "estSavings = $6,400 ($160k × 4%)", hit.estSavings, 6400, 100);
+    check("G1.22+1", "ladderYears = 8 (73 - 65)", Number(hit.inputs.ladderYears), 8);
+  }
+}
+
+// Negative: age 75 (past RMD age)
+header("G1.22-2 — Age 75: suppressed (above max)");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 75 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    assetBalances: [
+      { assetType: "traditional_ira", balance: "600000", accountName: "x", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  checkTruthy("G1.22-2", "no fire when age > 72", findHit(hits, "G1.22") == null, true);
+}
+
+// Negative: small IRA balance
+header("G1.22-3 — $100k trad IRA (under $500k threshold): suppressed");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 65 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    assetBalances: [
+      { assetType: "traditional_ira", balance: "100000", accountName: "x", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  checkTruthy("G1.22-3", "no fire when trad IRA < $500k", findHit(hits, "G1.22") == null, true);
+}
+
+// ── G1.23 Cost segregation study ────────────────────────────────────────
+// Positive: rental gross $200k + W-2 $120k. Rental adjustment pushes
+// total taxable into 35% bracket (AGI $120k + $200k = $320k; taxable
+// $305,400 → 35%). estSavings = $200k × 0.25 × 0.60 × 0.35 = $10,500.
+// (Heuristic naturally scales to actual marginal — confirms detector
+// reads the right marginal-rate post-rental income.)
+header("H1v1.4 G1.23+1 — Rental $200k + W-2 $120k → 35% marginal: estSavings $10,500");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 120000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [
+      { adjustmentType: "schedule_e_rental_income", amount: 200000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  const hit = findHit(hits, "G1.23");
+  checkTruthy("G1.23+1", "fires (rental + 24%+ marginal)", hit != null, true);
+  if (hit) {
+    check("G1.23+1", "estSavings = $10,500 at 35% marginal", hit.estSavings, 10500, 200,
+      "200000 × 0.25 × 0.60 × 0.35");
+  }
+}
+
+// Negative: rental below threshold (under $100k floor)
+header("G1.23-2 — Rental $50k (below $100k floor): suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 300000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [
+      { adjustmentType: "schedule_e_rental_income", amount: 50000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  checkTruthy("G1.23-2", "no fire when rental < $100k", findHit(hits, "G1.23") == null, true);
+}
+
+// ── G1.24 Opportunity Zone ──────────────────────────────────────────────
+// Positive: LTCG $200k via 1099-B longTermGainLoss field.
+//   200k × (0.20 + 0.038) × 0.3 = $14,280
+header("H1v1.4 G1.24+1 — LTCG $200k: estSavings $14,280");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 200000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    form1099s: [
+      { taxYear: 2024, formType: "b", payerName: "Brokerage", longTermGainLoss: 200000 } as unknown as TaxReturnInputs["form1099s"][number],
+    ],
+  });
+  const hit = findHit(hits, "G1.24");
+  checkTruthy("G1.24+1", "fires when total cap gains > $100k", hit != null, true);
+  if (hit) {
+    check("G1.24+1", "estSavings = $14,280", hit.estSavings, 14280, 50,
+      "200000 × 0.238 × 0.3");
+  }
+}
+
+// Negative: small gains
+header("G1.24-2 — LTCG $50k: suppressed (below $100k threshold)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 100000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    form1099s: [
+      { taxYear: 2024, formType: "b", payerName: "Brokerage", longTermGainLoss: 50000 } as unknown as TaxReturnInputs["form1099s"][number],
+    ],
+  });
+  checkTruthy("G1.24-2", "no fire when gains < $100k", findHit(hits, "G1.24") == null, true);
+}
+
+// ── G1.26 Backdoor Roth IRA ─────────────────────────────────────────────
+// Positive: single AGI > $161k (phase-out top), age 45, NO pre-tax IRA.
+//   Contribution $7k. growth=1.07^20=3.8697, discount=1.05^20=2.6533.
+//   taxFreeGrowth = 7000 × (3.8697-1) = 7000 × 2.8697 = 20,088
+//   estSavings = (20088 × 0.32) / 2.6533 = 6428 / 2.6533 = $2,422 (rounded)
+header("H1v1.4 G1.26+1 — Single AGI $200k, no pre-tax IRA: estSavings $2,422");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 45 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 200000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    // No traditional IRA → no pro-rata trap
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  const hit = findHit(hits, "G1.26");
+  checkTruthy("G1.26+1", "fires for AGI above phase-out top", hit != null, true);
+  if (hit) {
+    check("G1.26+1", "contribAmount = $7,000 (under 50)", Number(hit.inputs.contribAmount), 7000);
+    check("G1.26+1", "estSavings ≈ $2,422", hit.estSavings, 2422, 5);
+    check("G1.26+1", "proRataTrap = 0 (no pre-tax)", Number(hit.inputs.preTaxIraBalance), 0);
+  }
+}
+
+// Negative: AGI below phase-out top
+header("G1.26-2 — Single AGI $120k (below $161k phase-out): suppressed");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 45 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 120000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  checkTruthy("G1.26-2", "no fire when AGI below phaseout", findHit(hits, "G1.26") == null, true);
+}
+
+// Pro-rata trap: pre-tax IRA balance triggers louder warning + lower confidence
+header("G1.26+3 — Single AGI $200k WITH $50k trad IRA: lower confidence + warning");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 55 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 200000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    assetBalances: [
+      { assetType: "traditional_ira", balance: "50000", accountName: "x", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  const hit = findHit(hits, "G1.26");
+  checkTruthy("G1.26+3", "fires (with warning) when pre-tax balance > $1k",
+    hit != null, true);
+  if (hit) {
+    // Age 50+ → catchup $8k
+    check("G1.26+3", "contribAmount = $8,000 (50+)", Number(hit.inputs.contribAmount), 8000);
+    // Confidence dropped from 0.85 to 0.55 (0.85 - 0.30 = 0.55)
+    checkTruthy("G1.26+3", "confidence < 0.85 due to pro-rata trap",
+      hit.confidence < 0.85, true);
+    checkTruthy("G1.26+3", "proRataTrap = true",
+      Boolean(hit.inputs.proRataTrap), true);
+  }
+}
+
 // ============================================================================
 // RESULTS
 // ============================================================================

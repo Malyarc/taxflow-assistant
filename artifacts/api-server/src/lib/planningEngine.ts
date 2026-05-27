@@ -2089,6 +2089,380 @@ function detectConservationEasement(args: {
   };
 }
 
+// ── G1.21 — §1031 like-kind exchange timing ──────────────────────────────
+
+function detectSection1031Timing(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { computed, adjustments } = args;
+  // Skip if client already used §1031 this year (recognized via the adjustment).
+  if (sumAdjustment(adjustments, "section_1031_realized_gain") > 0) return null;
+  // Trigger: meaningful rental income AND high total income (so the tax
+  // hit on a future sale would be material).
+  const rentalRelated = Math.abs(computed.scheduleERentalGrossNet ?? 0);
+  if (rentalRelated < 100_000) return null;
+  if (computed.totalIncome < 200_000) return null;
+
+  // Heuristic: assume avg replacement gain ~$250k, deferral worth
+  // (LTCG 0.20 + NIIT 0.038) × 0.5 (time-value proxy).
+  const ASSUMED_GAIN = 250_000;
+  const DEFERRAL_RATE = (0.20 + 0.038) * 0.5;
+  const estSavings = Math.round(ASSUMED_GAIN * DEFERRAL_RATE);
+
+  const strategy = strategyById("G1.21");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = { estSavings };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client has ${fmt(Math.round(rentalRelated))} of rental activity at total income ` +
+      `${fmt(Math.round(computed.totalIncome))}. On a future sale, structuring as a §1031 ` +
+      `like-kind exchange via a Qualified Intermediary can defer ordinary cap gain — ` +
+      `estimated benefit on a hypothetical $250k gain ~${fmt(estSavings)}.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      rentalGrossNet: Math.round(rentalRelated),
+      totalIncome: Math.round(computed.totalIncome),
+      assumedGain: ASSUMED_GAIN,
+      deferralRate: DEFERRAL_RATE,
+    },
+    assumptions: [
+      `Heuristic — assumes hypothetical $250k replacement gain. Real value depends on the specific property sale + replacement.`,
+      `Deferral value modeled as (20% LTCG + 3.8% NIIT) × 0.5 time-value factor.`,
+      `Strict timelines: 45 days to identify replacement, 180 days to close (IRC §1031(a)(3)).`,
+      `Engine does NOT model §1031 itself here — fires as a heuristic prompt. C5 engine support computes recognized/deferred from section_1031_realized_gain + section_1031_boot_received adjustments when the CPA enters them.`,
+      `Post-TCJA: §1031 limited to REAL property only. Personal property exchanges no longer qualify.`,
+    ],
+  };
+}
+
+// ── G1.22 — Pre-RMD Roth conversion ladder (age 60-72) ───────────────────
+
+const G1_22_LADDER_MIN_AGE = 60;
+const G1_22_LADDER_MAX_AGE = 72;
+const G1_22_MIN_TRAD_IRA_BALANCE = 500_000;
+const G1_22_MAX_MARGINAL = 0.32;
+
+function detectPreRmdRothLadder(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+  assetBalances?: AssetBalanceFact[];
+}): OpportunityHit | null {
+  const { client, computed, assetBalances } = args;
+  const age = client.taxpayerAge;
+  if (age == null) return null;
+  if (age < G1_22_LADDER_MIN_AGE || age > G1_22_LADDER_MAX_AGE) return null;
+
+  const fedRate = federalMarginalRate(computed);
+  if (fedRate >= G1_22_MAX_MARGINAL) return null;
+
+  // H5: aggregate traditional + SEP + SIMPLE IRA balances.
+  if (!assetBalances || assetBalances.length === 0) return null;
+  const tradTypes = new Set(["traditional_ira", "sep_ira", "simple_ira"]);
+  const tradBalance = assetBalances
+    .filter((a) => tradTypes.has(a.assetType))
+    .reduce((s, a) => s + toNum(a.balance), 0);
+  if (tradBalance < G1_22_MIN_TRAD_IRA_BALANCE) return null;
+
+  // Heuristic: convert ~bracket headroom each year for (73 − age) years.
+  const { breakdown } = calculateFederalTaxWithBreakdown(
+    computed.taxableIncome,
+    computed.filingStatus,
+    computed.taxYear,
+  );
+  if (breakdown.length === 0) return null;
+  const currentBracket = breakdown[breakdown.length - 1];
+  const headroom = Number.isFinite(currentBracket.bracketMax)
+    ? Math.max(0, currentBracket.bracketMax - computed.taxableIncome)
+    : 0;
+  const annualConversion = Math.max(20_000, Math.min(headroom, 100_000));
+  const ladderYears = 73 - age;
+  const totalConversion = Math.min(tradBalance, annualConversion * ladderYears);
+  // Future RMD-age rate proxy: top of current bracket + 1 (move up one
+  // bracket). Conservative spread: 4%.
+  const RMD_RATE_SPREAD = 0.04;
+  const estSavings = Math.round(totalConversion * RMD_RATE_SPREAD);
+  if (estSavings <= 0) return null;
+
+  const strategy = strategyById("G1.22");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    annualConversion: Math.round(annualConversion),
+    topRate: `${Math.round(fedRate * 100)}%`,
+    totalConversion: Math.round(totalConversion),
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client age ${age} with ${fmt(Math.round(tradBalance))} of pre-tax IRA balance at a ` +
+      `${(fedRate * 100).toFixed(0)}% marginal rate has ${ladderYears} years until RMD age 73. ` +
+      `A Roth conversion ladder of ~${fmt(Math.round(annualConversion))}/year ` +
+      `reduces the RMD base by ~${fmt(Math.round(totalConversion))}.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      taxpayerAge: age,
+      tradIraBalance: Math.round(tradBalance),
+      federalMarginalRate: fedRate,
+      bracketHeadroom: Math.round(headroom),
+      annualConversion: Math.round(annualConversion),
+      ladderYears,
+      totalConversion: Math.round(totalConversion),
+      assumedRateSpread: RMD_RATE_SPREAD,
+    },
+    assumptions: [
+      `Pre-RMD Roth conversion ladder reduces FUTURE RMD income at projected higher tax rates.`,
+      `Heuristic spread of 4% (one bracket up) between current rate and projected RMD-age rate.`,
+      `Annual conversion sized to fill current bracket OR $20k-$100k range — CPA refines based on tax-cost cash flow.`,
+      `SECURE 2.0 raised RMD age to 73 (TY2023) and to 75 (TY2033+) per IRC §401(a)(9). Engine uses age 73.`,
+      `Conversion tax should be paid from NON-IRA funds to maximize Roth balance growth (IRA dollars used for tax = double-tax effect).`,
+      `H6 Form 8606 §408(d)(2) pro-rata rule applies if client has any after-tax IRA basis.`,
+    ],
+  };
+}
+
+// ── G1.23 — Cost segregation study ───────────────────────────────────────
+
+const G1_23_MIN_RENTAL_GROSS = 100_000;
+const G1_23_MIN_MARGINAL = 0.24;
+const G1_23_ACCELERATED_FRACTION = 0.25;
+const G1_23_BONUS_RATE: Record<number, number> = {
+  2024: 0.60,
+  2025: 0.40,
+};
+
+function detectCostSegregation(args: {
+  computed: ComputedTaxReturn;
+}): OpportunityHit | null {
+  const { computed } = args;
+  const rentalGross = Math.abs(computed.scheduleERentalGrossNet ?? 0);
+  if (rentalGross < G1_23_MIN_RENTAL_GROSS) return null;
+  const fedRate = federalMarginalRate(computed);
+  if (fedRate < G1_23_MIN_MARGINAL) return null;
+  const bonusRate = G1_23_BONUS_RATE[computed.taxYear] ?? 0.40;
+
+  // estSavings = rentalGross × 0.25 (accelerated portion) × bonus × marginal
+  const acceleratedBasis = rentalGross * G1_23_ACCELERATED_FRACTION;
+  const yearOneBonusDep = acceleratedBasis * bonusRate;
+  const estSavings = Math.round(yearOneBonusDep * fedRate);
+  if (estSavings <= 0) return null;
+
+  const strategy = strategyById("G1.23");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    taxYear: computed.taxYear,
+    bonusPct: Math.round(bonusRate * 100),
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Rental activity gross/net ${fmt(Math.round(rentalGross))} at ${(fedRate * 100).toFixed(0)}% ` +
+      `marginal rate. A cost-segregation study can reclassify ~25% of property basis to 5/7/15-year ` +
+      `buckets eligible for ${Math.round(bonusRate * 100)}% bonus depreciation in TY${computed.taxYear}.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      rentalGross: Math.round(rentalGross),
+      federalMarginalRate: fedRate,
+      acceleratedFraction: G1_23_ACCELERATED_FRACTION,
+      bonusRate,
+      acceleratedBasis: Math.round(acceleratedBasis),
+      yearOneBonusDep: Math.round(yearOneBonusDep),
+    },
+    assumptions: [
+      `Heuristic — ~25% of property basis assumed reclassifiable to short-life buckets via cost-seg study. Real % varies (15-30% typical).`,
+      `TY${computed.taxYear} bonus depreciation rate: ${Math.round(bonusRate * 100)}% (phased down from 100% TY2022 per TCJA).`,
+      `Requires engineering-based cost-seg study from a qualified provider (Marshall & Stevens, KBKG, etc.).`,
+      `For PRIOR-year properties, Form 3115 §481(a) catch-up adjustment recoups missed depreciation in one year (no need to amend).`,
+      `Recapture: short-life property recaptures as ordinary income on sale — but typically client benefits from 5-10 years of accelerated deduction first.`,
+      `H2 verification deferred — engine doesn't model per-property cost-seg breakdown.`,
+    ],
+  };
+}
+
+// ── G1.24 — Qualified Opportunity Zone investment ────────────────────────
+
+const G1_24_MIN_CAP_GAINS = 100_000;
+
+function detectOpportunityZone(args: {
+  computed: ComputedTaxReturn;
+}): OpportunityHit | null {
+  const { computed } = args;
+  const ltcg = computed.form1099Summary?.longTermCapitalGains ?? 0;
+  const stcg = computed.form1099Summary?.shortTermCapitalGains ?? 0;
+  const totalGains = ltcg + stcg;
+  if (totalGains < G1_24_MIN_CAP_GAINS) return null;
+
+  // Heuristic: defer ALL eligible gains. Value = deferred_amount × (LTCG +
+  // NIIT) × time-value 0.3 + long-term tax-free upside (assume 5x growth
+  // over 10 yrs, taxable at LTCG ≈ 30% × gain × 0 = 0 after step-up,
+  // discounted at 5%). Simplified to deferral-side only for MVP.
+  const DEFERRAL_VALUE = (0.20 + 0.038) * 0.3;
+  const estSavings = Math.round(totalGains * DEFERRAL_VALUE);
+  if (estSavings <= 0) return null;
+
+  const strategy = strategyById("G1.24");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    deferredGain: Math.round(totalGains),
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client has ${fmt(Math.round(totalGains))} of realized capital gains this year. Rolling the ` +
+      `gain into a Qualified Opportunity Fund within 180 days defers tax until 2026-12-31 + provides ` +
+      `tax-free QOF appreciation after 10-year hold (IRC §1400Z-2).`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      longTermCapitalGains: Math.round(ltcg),
+      shortTermCapitalGains: Math.round(stcg),
+      totalGains: Math.round(totalGains),
+      deferralValueRate: DEFERRAL_VALUE,
+    },
+    assumptions: [
+      `Heuristic deferral value = (LTCG 0.20 + NIIT 0.038) × 0.3 time-value factor.`,
+      `Long-term appreciation upside (step-up after 10 years) NOT modeled — varies wildly by QOF performance.`,
+      `STRICT 180-day window from realization date to QOF investment.`,
+      `Original deferral elimination date is 2026-12-31 (statutory). Investments made now defer until that date; new deferrals beyond are not currently available without legislation.`,
+      `QOF must invest ≥ 90% of assets in a Qualified Opportunity Zone (audited semi-annually).`,
+      `H2 verification deferred — engine doesn't model QOF deferral or 10-year basis step-up.`,
+    ],
+  };
+}
+
+// ── G1.26 — Backdoor Roth IRA (high-income filer) ────────────────────────
+
+const G1_26_ROTH_PHASEOUT_TOP: Record<string, number> = {
+  single: 161_000,
+  head_of_household: 161_000,
+  married_filing_jointly: 240_000,
+  qualifying_widow: 240_000,
+  married_filing_separately: 10_000,
+};
+const G1_26_IRA_CAP_BASE = 7_000;
+const G1_26_IRA_CAP_CATCHUP = 8_000;
+
+function detectBackdoorRoth(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+  assetBalances?: AssetBalanceFact[];
+}): OpportunityHit | null {
+  const { client, computed, adjustments, assetBalances } = args;
+  // AGI must exceed direct-Roth contribution phase-out top.
+  const phaseOutTop = G1_26_ROTH_PHASEOUT_TOP[client.filingStatus] ?? G1_26_ROTH_PHASEOUT_TOP.single;
+  if (computed.adjustedGrossIncome <= phaseOutTop) return null;
+
+  // Skip if client already has a nondeductible IRA contribution this year
+  // (indicates the strategy is already in motion).
+  if (sumAdjustment(adjustments, "nondeductible_ira_contribution") > 0) return null;
+
+  // Check pro-rata trap: if pre-tax IRA balance > nominal cutoff, flag
+  // but still fire (with louder caveat). H5 traditional/SEP/SIMPLE balance.
+  const tradTypes = new Set(["traditional_ira", "sep_ira", "simple_ira"]);
+  const preTaxBalance = (assetBalances ?? [])
+    .filter((a) => tradTypes.has(a.assetType))
+    .reduce((s, a) => s + toNum(a.balance), 0);
+  const proRataTrap = preTaxBalance > 1_000;
+
+  const age = client.taxpayerAge ?? 0;
+  const contribAmount = age >= 50 ? G1_26_IRA_CAP_CATCHUP : G1_26_IRA_CAP_BASE;
+  // Long-term benefit similar to G1.16: 7%/yr growth × 20 yrs × 32%
+  // future rate, discounted at 5%. PV = contrib × (1.07^20 - 1) × 0.32 / 1.05^20.
+  const growth = Math.pow(1.07, 20);
+  const discount = Math.pow(1.05, 20);
+  const taxFreeGrowth = contribAmount * (growth - 1);
+  const estSavings = Math.round((taxFreeGrowth * 0.32) / discount);
+
+  const strategy = strategyById("G1.26");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    contributionAmount: contribAmount,
+    estSavings,
+  };
+  const proRataWarning = proRataTrap
+    ? ` ⚠ Pre-tax IRA balance of ${fmt(Math.round(preTaxBalance))} triggers §408(d)(2) pro-rata trap (see H6 Form 8606) — most of the conversion would be taxable. Consider rolling pre-tax to 401(k) first.`
+    : "";
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: proRataTrap ? Math.max(0.4, strategy.confidence - 0.3) : strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `AGI ${fmt(Math.round(computed.adjustedGrossIncome))} exceeds the direct-Roth phase-out top ` +
+      `${fmt(phaseOutTop)} for ${client.filingStatus}. A backdoor Roth (nondeductible IRA + immediate ` +
+      `conversion) lets the client add ${fmt(contribAmount)} of after-tax dollars per year.` +
+      proRataWarning,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      agi: Math.round(computed.adjustedGrossIncome),
+      phaseOutTop,
+      taxpayerAge: age,
+      contribAmount,
+      preTaxIraBalance: Math.round(preTaxBalance),
+      proRataTrap,
+      growthAssumption: 0.07,
+      futureRateAssumption: 0.32,
+      discountRate: 0.05,
+      horizonYears: 20,
+    },
+    assumptions: [
+      `IRA contribution cap TY2024: $7k base / $8k age 50+ (IRC §219(b); Notice 2023-75).`,
+      `Roth direct-contribution phase-out top: $${phaseOutTop.toLocaleString("en-US")} for filing status ${client.filingStatus} (Pub 590-A TY2024).`,
+      proRataTrap
+        ? `⚠ Client has $${Math.round(preTaxBalance).toLocaleString("en-US")} pre-tax IRA balance — §408(d)(2) pro-rata trap applies. Most of the conversion would be taxable. Consider rolling pre-tax to 401(k) first (employer plans escape aggregation).`
+        : `Pre-tax IRA balance is $0 (or nominal) — clean backdoor Roth with 100% tax-free conversion per §408(d)(2).`,
+      `Long-term benefit assumed at 7%/yr growth × 20 yrs × 32% future rate, discounted at 5%/yr.`,
+      `Form 8606 REQUIRED for both the nondeductible contribution (Part I) AND the conversion (Part II).`,
+      `Annual recurring — repeat each year while AGI remains above the phase-out.`,
+    ],
+  };
+}
+
 // ── Top-level evaluator ────────────────────────────────────────────────────
 
 export interface PlanningInputs {
@@ -2203,6 +2577,18 @@ export function evaluatePlanningOpportunities(args: PlanningInputs): Opportunity
   if (crt) hits.push(crt);
   const consEasement = detectConservationEasement({ computed, adjustments });
   if (consEasement) hits.push(consEasement);
+  // Phase H — H1 catalog v1.4: §1031 timing, pre-RMD Roth ladder,
+  // cost-segregation, opportunity zones, backdoor Roth.
+  const sec1031 = detectSection1031Timing({ computed, adjustments });
+  if (sec1031) hits.push(sec1031);
+  const preRmd = detectPreRmdRothLadder({ client, computed, assetBalances });
+  if (preRmd) hits.push(preRmd);
+  const costSeg = detectCostSegregation({ computed });
+  if (costSeg) hits.push(costSeg);
+  const qoz = detectOpportunityZone({ computed });
+  if (qoz) hits.push(qoz);
+  const backdoorRoth = detectBackdoorRoth({ client, computed, adjustments, assetBalances });
+  if (backdoorRoth) hits.push(backdoorRoth);
   hits.sort((a, b) => b.estSavings - a.estSavings);
   return hits;
 }
