@@ -649,6 +649,62 @@ section("SCENARIO 10 — High-income tech executive, CA, age 48");
 }
 
 // ============================================================================
+// SCENARIO 11 — Retiree with diversified accounts
+// Single, FL, age 68 (post-RMD age 73 still 5 years away).
+// $40k Social Security + $30k 1099-R retirement income.
+// $10k charitable_cash.
+// H5: traditional_ira $400k, roth_ira $150k, brokerage_taxable $250k.
+// Expected: G1.63 Lot Rotation (age 60+ + diversified accounts),
+// G1.11 QCD (age > 70.5 — no, only 68, NO), G1.27 inherited IRA (age < 60
+// — no, 68, NO).
+// ============================================================================
+section("SCENARIO 11 — Retiree with diversified accounts, FL, age 68");
+
+{
+  const inputs: TaxReturnInputs = {
+    client: {
+      filingStatus: "single",
+      state: "FL",
+      taxYear: 2024,
+      taxpayerAge: 68,
+      dependentsUnder17: 0,
+    } as unknown as TaxReturnInputs["client"],
+    w2s: [],
+    form1099s: [
+      { taxYear: 2024, formType: "r", payerName: "Fidelity", taxableAmount: 30000 } as unknown as TaxReturnInputs["form1099s"][number],
+      { taxYear: 2024, formType: "ssa", payerName: "SSA", taxableAmount: 40000 } as unknown as TaxReturnInputs["form1099s"][number],
+    ],
+    adjustments: [
+      { adjustmentType: "charitable_cash", amount: 10000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+    assetBalances: [
+      { assetType: "traditional_ira", balance: "400000", accountName: "Vanguard IRA", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+      { assetType: "roth_ira", balance: "150000", accountName: "Roth IRA", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+      { assetType: "brokerage_taxable", balance: "250000", accountName: "Schwab", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+    taxYear: 2024,
+  };
+  const hits = runFull(inputs);
+  header(`Found: ${ids(hits).join(", ") || "(none)"}`);
+  checkSubset("S11", "fires G1.63 Lot Rotation (age 60+ + diversified)",
+    ["G1.63"], ids(hits));
+  // QCD (G1.11) requires age 71+. Age 68 → suppressed (engine conservative).
+  checkNotFires("S11", "G1.11 QCD correctly suppressed (engine fires age 71+)",
+    "G1.11", hits);
+  // Inherited IRA (G1.27) requires age < 60. Age 68 → suppressed.
+  checkNotFires("S11", "G1.27 inherited IRA suppressed (age >= 60)",
+    "G1.27", hits);
+  // §72(t) SEPP (G1.50) age 50-58. Age 68 → suppressed.
+  checkNotFires("S11", "G1.50 §72(t) SEPP suppressed (age > 58)",
+    "G1.50", hits);
+  // Verify G1.63 estSavings
+  const lotHit = findHit(hits, "G1.63");
+  if (lotHit) {
+    checkInRange("S11", "G1.63 estSavings = $4,000", lotHit.estSavings, 3_995, 4_005);
+  }
+}
+
+// ============================================================================
 // RESULTS
 // ============================================================================
 

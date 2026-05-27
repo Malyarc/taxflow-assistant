@@ -4825,6 +4825,339 @@ function detectStudentLoanInterest(args: {
   };
 }
 
+// ── G1.62 — §263A Inventory Method Choice (heuristic) ───────────────────
+
+const G1_62_MIN_NET_SE = 100_000;
+const G1_62_HEURISTIC_BENEFIT = 10_000;
+
+function detectSection263aInventory(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { computed, adjustments } = args;
+  const netSe = computed.detail.se.netSeEarnings;
+  if (netSe < G1_62_MIN_NET_SE) return null;
+  void adjustments;
+
+  const fedRate = federalMarginalRate(computed);
+  const stateRate = stateMarginalRate(computed);
+  const estSavings = Math.round(G1_62_HEURISTIC_BENEFIT * (fedRate + stateRate));
+
+  const strategy = strategyById("G1.62");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = { estSavings };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client has ${fmt(Math.round(netSe))} net SE income — if business carries inventory ` +
+      `(retail/wholesale/manufacturing) and gross receipts avg < $30M over prior 3 yrs, can elect ` +
+      `§263A(i) small-biz cash method via Form 3115 + skip UNICAP indirect cost capitalization. ` +
+      `Heuristic ~${fmt(estSavings)} from acceleration + admin simplification.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      netSeEarnings: Math.round(netSe),
+      heuristicBenefit: G1_62_HEURISTIC_BENEFIT,
+      federalMarginalRate: fedRate,
+      stateMarginalRate: stateRate,
+    },
+    assumptions: [
+      `HEURISTIC — engine cannot verify whether business actually carries inventory. CPA confirms.`,
+      `§263A(i) small-biz exception: gross receipts < $30M (TY2024 indexed; was $25M pre-2018, now $30M per Rev. Proc. 2023-34 §3.32).`,
+      `Cash method election bypasses UNICAP indirect cost capitalization — significant admin simplification.`,
+      `Method change requires Form 3115 (Change in Accounting Method) with §481(a) catch-up adjustment.`,
+      `§481(a) adjustment spread over 4 yrs (or 1 yr if favorable — usually a NET DECREASE in income).`,
+      `Method choice generally LOCKED IN — opt out requires another Form 3115 with valid business purpose.`,
+      `Heuristic estSavings $10k × marginal — actual depends on inventory volume + indirect cost mix.`,
+    ],
+  };
+}
+
+// ── G1.63 — Lot Rotation withdrawal sequence (heuristic) ────────────────
+
+const G1_63_MIN_AGE = 60;
+const G1_63_ANNUAL_OPTIMIZATION = 4_000;
+
+function detectLotRotation(args: {
+  client: ClientFacts;
+  assetBalances?: AssetBalanceFact[];
+}): OpportunityHit | null {
+  const { client, assetBalances } = args;
+  const age = client.taxpayerAge;
+  if (age == null || age < G1_63_MIN_AGE) return null;
+  if (!assetBalances || assetBalances.length === 0) return null;
+
+  // Need diversified account types — trad-deferred + Roth + taxable.
+  const tradTypes = new Set(["traditional_ira", "sep_ira", "simple_ira", "401k_traditional"]);
+  const rothTypes = new Set(["roth_ira", "401k_roth"]);
+  const taxableTypes = new Set(["brokerage_taxable"]);
+  const hasTrad = assetBalances.some((a) => tradTypes.has(a.assetType) && toNum(a.balance) > 0);
+  const hasRoth = assetBalances.some((a) => rothTypes.has(a.assetType) && toNum(a.balance) > 0);
+  const hasTaxable = assetBalances.some((a) => taxableTypes.has(a.assetType) && toNum(a.balance) > 0);
+  if (!(hasTrad && hasRoth && hasTaxable)) return null;
+
+  const estSavings = G1_63_ANNUAL_OPTIMIZATION;
+
+  const strategy = strategyById("G1.63");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = { estSavings };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client age ${age} with diversified retirement accounts (traditional + Roth + taxable brokerage). ` +
+      `Optimal withdrawal sequence — taxable FIRST (LTCG-favored), tax-deferred NEXT (ordinary), Roth ` +
+      `LAST (tax-free + no RMD + estate-favored) — preserves tax-advantaged growth longer. Annual ` +
+      `benefit ~${fmt(estSavings)}.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      taxpayerAge: age,
+      hasTraditional: hasTrad,
+      hasRoth: hasRoth,
+      hasTaxable: hasTaxable,
+      annualOptimization: G1_63_ANNUAL_OPTIMIZATION,
+    },
+    assumptions: [
+      `Optimal sequence: (1) taxable brokerage first (LTCG-favored, basis-step-up at death), (2) tax-deferred trad IRA/401(k) (marginal rate), (3) Roth LAST (tax-free + no RMD + estate-tax-free).`,
+      `RMD age 73 (SECURE 2.0) — pushed to 75 for taxpayers born 1960+ TY2033+ per §401(a)(9)(C)(v).`,
+      `HSA before age 65 — qualified medical tax-free (G1.14 max applies); after 65 ordinary withdrawal OK.`,
+      `Roth has NO required minimum distribution during owner's lifetime (§401(a)(9)(B) post-death rules apply).`,
+      `Non-spouse inherited Roth post-2019: 10-yr rule applies (G1.27).`,
+      `Charitable intent: integrate QCD (G1.11) for age 70½+ — reduces RMD impact.`,
+      `Pre-RMD years: Roth conversion ladder (G1.22) coordinates with this sequence.`,
+      `Heuristic 2% rate optimization per year × $20k typical annual withdrawal × 10-yr horizon.`,
+    ],
+  };
+}
+
+// ── G1.64 — §168(k) Bonus Depreciation Election OUT (heuristic) ─────────
+
+const G1_64_MIN_BONUS_DEP = 5_000;
+const G1_64_MAX_TAXABLE = 50_000;
+const G1_64_BRACKET_SPREAD = 0.24 - 0.12;
+const G1_64_TYPICAL_BONUS = 20_000;
+
+function detectBonusDepreciationOptOut(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { computed, adjustments } = args;
+  if (computed.taxableIncome > G1_64_MAX_TAXABLE) return null;
+  const bonusDep = sumAdjustment(adjustments, "bonus_depreciation_basis");
+  if (bonusDep < G1_64_MIN_BONUS_DEP) return null;
+
+  const estSavings = Math.round(G1_64_TYPICAL_BONUS * G1_64_BRACKET_SPREAD);
+
+  const strategy = strategyById("G1.64");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    taxYear: computed.taxYear,
+    bonusDep: Math.round(bonusDep),
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client has ${fmt(Math.round(bonusDep))} of §168(k) bonus depreciation in TY${computed.taxYear} ` +
+      `with low taxable income ${fmt(Math.round(computed.taxableIncome))}. Electing OUT preserves the ` +
+      `deduction for higher-bracket future years via regular MACRS. Bracket-arbitrage benefit ` +
+      `~${fmt(estSavings)} ($20k typical × (24% future − 12% current)).`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      bonusDepreciationBasis: Math.round(bonusDep),
+      taxableIncome: Math.round(computed.taxableIncome),
+      bracketSpreadAssumed: G1_64_BRACKET_SPREAD,
+      typicalBonus: G1_64_TYPICAL_BONUS,
+    },
+    assumptions: [
+      `§168(k)(7) annual election OUT of bonus depreciation. By ASSET CLASS — applies to ALL bonus-eligible property in same class.`,
+      `Bonus rate schedule: TY2022 = 100%; TY2023 = 80%; TY2024 = 60%; TY2025 = 40%; TY2026 = 20%; TY2027+ = 0%.`,
+      `Property recovers under regular MACRS instead — 5/7/15/27.5/39 yr typical (no bonus).`,
+      `Election made via statement attached to Form 4562. IRREVOCABLE once filed without IRS consent.`,
+      `Income PROJECTION required — election worthless if future bracket isn't actually higher.`,
+      `Coordinate with §179 (separate decision — §179 is asset-by-asset, NOT class-wide).`,
+      `Bracket spread heuristic 12% = (24% future − 12% current). Real spread varies by client trajectory.`,
+      `Heuristic $20k typical bonus dep × spread.`,
+    ],
+  };
+}
+
+// ── G1.65 — Adoption Credit §23 (heuristic) ─────────────────────────────
+
+const G1_65_AGI_PHASE_OUT_TOP_2024 = 292_150;
+const G1_65_MAX_CREDIT_2024 = 16_810;
+const G1_65_HEURISTIC_AVG = 5_000;
+
+function detectAdoptionCredit(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { client, computed, adjustments } = args;
+  if (client.filingStatus === "married_filing_separately") return null;
+  const kidsUnder17 = client.dependentsUnder17 ?? 0;
+  if (kidsUnder17 < 1) return null;
+  if (computed.adjustedGrossIncome > G1_65_AGI_PHASE_OUT_TOP_2024) return null;
+  void adjustments;
+
+  // Heuristic estSavings = $5k (typical with strong CPA-confirm caveat).
+  // Capped at federal tax liability (non-refundable but 5-yr carryforward).
+  const cappedSavings = Math.min(G1_65_HEURISTIC_AVG, Math.round(computed.federalTaxLiability));
+  if (cappedSavings <= 0) return null;
+
+  const strategy = strategyById("G1.65");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    maxCredit: G1_65_MAX_CREDIT_2024,
+    estSavings: cappedSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings: cappedSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client has ${kidsUnder17} dependent(s) under 17 + AGI ${fmt(Math.round(computed.adjustedGrossIncome))} ` +
+      `(under ${fmt(G1_65_AGI_PHASE_OUT_TOP_2024)} cap). IF client adopted (or in adoption process), ` +
+      `claim Adoption Credit on Form 8839 — up to ${fmt(G1_65_MAX_CREDIT_2024)}/child. Heuristic typical ` +
+      `~${fmt(cappedSavings)} (capped at federal tax liability; CPA confirms actual adoption).`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      filingStatus: client.filingStatus,
+      dependentsUnder17: kidsUnder17,
+      agi: Math.round(computed.adjustedGrossIncome),
+      agiPhaseOutTop: G1_65_AGI_PHASE_OUT_TOP_2024,
+      maxCreditPerChild: G1_65_MAX_CREDIT_2024,
+      federalTaxLiability: Math.round(computed.federalTaxLiability),
+      heuristicTypicalCredit: G1_65_HEURISTIC_AVG,
+      cappedSavings,
+    },
+    assumptions: [
+      `HEURISTIC — engine cannot verify actual adoption status. Fires too broadly for any family with kids — CPA MUST CONFIRM.`,
+      `TY2024 max credit: $16,810 per child (Notice 2023-75).`,
+      `AGI phase-out TY2024: $252,150-$292,150 (Rev. Proc. 2023-34 §3.16).`,
+      `Special needs adoption: full $16,810 credit regardless of expenses per §23(a)(3) — state determines special-needs status.`,
+      `Non-refundable — capped at federal tax liability (engine reports capped value); 5-yr carryforward per §23(c).`,
+      `MFS — DISQUALIFIED.`,
+      `Foreign adoption — credit allowed only in year adoption FINALIZED per Reg §1.23-1.`,
+      `Heuristic $5,000 typical — wide range. Real value depends on actual expenses + special-needs status.`,
+    ],
+  };
+}
+
+// ── G1.66 — Rollover-IRA → 401(k) §408(d)(2) pro-rata fix (heuristic) ───
+
+const G1_66_MIN_TRAD_IRA = 1_000;
+const G1_66_BACKDOOR_PHASE_OUT: Record<string, number> = {
+  single: 161_000,
+  head_of_household: 161_000,
+  married_filing_jointly: 240_000,
+  qualifying_widow: 240_000,
+  married_filing_separately: 10_000,
+};
+const G1_66_BACKDOOR_AMOUNT = 7_000;
+
+function detectRolloverIraTo401k(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+  assetBalances?: AssetBalanceFact[];
+}): OpportunityHit | null {
+  const { client, computed, assetBalances } = args;
+  if (!assetBalances || assetBalances.length === 0) return null;
+  const tradTypes = new Set(["traditional_ira", "sep_ira", "simple_ira"]);
+  const tradBalance = assetBalances
+    .filter((a) => tradTypes.has(a.assetType))
+    .reduce((s, a) => s + toNum(a.balance), 0);
+  if (tradBalance < G1_66_MIN_TRAD_IRA) return null;
+  // Only matters for backdoor Roth candidates (AGI > phase-out top).
+  const phaseOutTop = G1_66_BACKDOOR_PHASE_OUT[client.filingStatus] ?? G1_66_BACKDOOR_PHASE_OUT.single;
+  if (computed.adjustedGrossIncome <= phaseOutTop) return null;
+
+  const fedRate = federalMarginalRate(computed);
+  // Without fix: $7k backdoor + $100k pre-tax IRA → ratio = 100/107 = 0.935.
+  // Taxable portion of $7k conversion = $7,000 × 0.935 = $6,542.
+  // estSavings = $6,542 × marginal (avoided tax from cleaning the trap).
+  const taxableProRata = G1_66_BACKDOOR_AMOUNT * (tradBalance / (tradBalance + G1_66_BACKDOOR_AMOUNT));
+  const estSavings = Math.round(taxableProRata * fedRate);
+  if (estSavings <= 0) return null;
+
+  const strategy = strategyById("G1.66");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    rolloverAmount: Math.round(tradBalance),
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client AGI ${fmt(Math.round(computed.adjustedGrossIncome))} > ${fmt(phaseOutTop)} (Roth phase-out top — ` +
+      `backdoor Roth candidate) BUT has ${fmt(Math.round(tradBalance))} of pre-tax trad/SEP/SIMPLE IRA ` +
+      `triggering §408(d)(2) pro-rata trap. Roll pre-tax IRA into current 401(k) plan BEFORE year-end ` +
+      `to clean the trap. Each year's backdoor Roth saves ~${fmt(estSavings)}.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      tradIraBalance: Math.round(tradBalance),
+      agi: Math.round(computed.adjustedGrossIncome),
+      phaseOutTop,
+      filingStatus: client.filingStatus,
+      backdoorAmount: G1_66_BACKDOOR_AMOUNT,
+      proRataTaxablePortion: Math.round(taxableProRata),
+      federalMarginalRate: fedRate,
+    },
+    assumptions: [
+      `§408(d)(2) IRA aggregation INCLUDES all trad/SEP/SIMPLE IRAs at year-end but EXCLUDES 401(k) and other employer plans.`,
+      `Strategy requires CURRENT EMPLOYER 401(k) plan that ACCEPTS incoming rollovers — most do, but plan-specific.`,
+      `AFTER-TAX IRA basis CANNOT be rolled to 401(k) — leave that portion in IRA for clean backdoor Roth conversion.`,
+      `Roll IRA → 401(k) BEFORE year-end so it's not in the §408(d)(2) Dec-31 aggregation.`,
+      `Direct trustee-to-trustee transfer recommended — avoids 60-day rollover window risk + automatic 20% withholding.`,
+      `Coordinates with G1.26 backdoor Roth — clean execution requires pre-tax IRA = $0.`,
+      `Future flexibility: 401(k) balance can be rolled back to IRA after leaving employer.`,
+      `NOT applicable: clients with no 401(k) (use Solo 401(k) if self-employed — G1.1) or sole-prop without plan.`,
+      `Heuristic estSavings = pro-rata taxable × marginal — varies by IRA balance + AGI bracket.`,
+    ],
+  };
+}
+
 // ── Top-level evaluator ────────────────────────────────────────────────────
 
 export interface PlanningInputs {
@@ -5027,6 +5360,18 @@ export function evaluatePlanningOpportunities(args: PlanningInputs): Opportunity
   if (rdPayroll) hits.push(rdPayroll);
   const studentLoan = detectStudentLoanInterest({ client, computed, adjustments, baselineInputs });
   if (studentLoan) hits.push(studentLoan);
+  // Phase H — H1 catalog v1.11: G1.62 §263A / G1.63 lot rotation /
+  // G1.64 §168(k) opt-out / G1.65 adoption credit / G1.66 IRA→401k fix.
+  const section263a = detectSection263aInventory({ computed, adjustments });
+  if (section263a) hits.push(section263a);
+  const lotRotation = detectLotRotation({ client, assetBalances });
+  if (lotRotation) hits.push(lotRotation);
+  const bonusOptOut = detectBonusDepreciationOptOut({ computed, adjustments });
+  if (bonusOptOut) hits.push(bonusOptOut);
+  const adoption = detectAdoptionCredit({ client, computed, adjustments });
+  if (adoption) hits.push(adoption);
+  const iraToK = detectRolloverIraTo401k({ client, computed, assetBalances });
+  if (iraToK) hits.push(iraToK);
   hits.sort((a, b) => b.estSavings - a.estSavings);
   return hits;
 }

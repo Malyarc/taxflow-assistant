@@ -1,5 +1,5 @@
 {
-  "version": "v1.10.0",
+  "version": "v1.11.0",
   "reviewedAt": "2026-05-27",
   "strategies": [
     {
@@ -360,6 +360,126 @@
         "Trust attorney + actuarial valuation (complex — 6-12 month setup)"
       ],
       "action": "Engage a trust attorney to draft a CRT. Transfer the appreciated asset; CRT sells tax-free; client receives annuity/unitrust income stream + immediate charitable deduction for the present value of the remainder interest. Heuristic savings estimate available only after the §7520 actuarial calculation.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.62",
+      "name": "§263A Inventory Method Choice — small-biz cash method",
+      "category": "business",
+      "ircSection": "IRC §263A; §263A(i)",
+      "irsPub": "Pub 538; Rev. Proc. 2023-34 §3.32",
+      "trigger": "Net SE > $100,000 (inventory-business proxy) AND no existing inventory_method signal. Heuristic — engine cannot verify whether business actually carries inventory.",
+      "formula": "Small business exception §263A(i): gross receipts < $30M (TY2024 indexed) avg over prior 3 yrs can elect cash method + skip UNICAP indirect cost capitalization. Accelerates COGS deduction (no opening inventory addback) and saves admin cost. estSavings = ~$10,000 typical acceleration × marginal rate.",
+      "confidence": 0.40,
+      "cpaEffortHours": 6.0,
+      "recurring": false,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Confirm 3-yr average gross receipts < $30M ($30M indexed per Rev. Proc. 2023-34 §3.32 — was $25M pre-2018, $26M, $27M, $29M, now $30M for TY2024)",
+        "Confirm business actually carries inventory (vs pure service)",
+        "Current accounting method: cash vs accrual (Form 3115 required to change)",
+        "Form 3115 (Change in Accounting Method) — §481(a) catch-up adjustment spread over 4 yrs (or 1 yr if favorable)",
+        "Note: small-biz cash-method election bypasses §263A UNICAP indirect cost capitalization — significant admin simplification",
+        "Method choice is generally LOCKED IN — opt out requires Form 3115 again with valid business purpose"
+      ],
+      "action": "If business has gross receipts < $30M (3-yr avg), elect cash method via Form 3115 + skip §263A UNICAP. Saves ~{{estSavings}} from acceleration + administrative simplification.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.63",
+      "name": "Lot Rotation — tax-efficient retirement withdrawal sequence",
+      "category": "retirement",
+      "ircSection": "General planning — §72(t); §401(a)(9); §408A(d); §1(h)",
+      "irsPub": "Pub 590-B; Pub 575",
+      "trigger": "Age >= 60 AND has H5 mix of (traditional_ira OR 401k_traditional) AND (roth_ira OR 401k_roth) AND (brokerage_taxable) — retiree with diversified account types.",
+      "formula": "Optimal withdrawal sequence for retirees: (1) taxable brokerage first (LTCG-favored at sale + step-up at death) → (2) tax-deferred trad IRA / 401(k) (ordinary tax at marginal) → (3) Roth IRA / Roth 401(k) LAST (tax-free + no RMD § estate-tax-free to heirs). Sequence preserves tax-advantaged growth longer. estSavings = $20,000/yr × 10 yr × 2% rate optimization = $4,000/yr.",
+      "confidence": 0.55,
+      "cpaEffortHours": 3.0,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Confirm projected total retirement annual spend",
+        "Compute RMD age (73 SECURE 2.0; pushed to 75 in TY2033)",
+        "Each account balance + projected growth rate + tax character (ordinary vs LTCG vs tax-free)",
+        "Tax bracket projection by withdrawal year",
+        "Health-care needs (HSA before age 65 — qualified medical tax-free)",
+        "Charitable intent — QCD (G1.11) integrates with this sequence post-70.5",
+        "Estate planning — Roth IRA preserved for heirs as stretch-eligible (10-yr rule post-SECURE 1.0 for non-spouse)",
+        "Roth conversion timing — pre-RMD-age conversion ladder (G1.22) coordinates with this sequence"
+      ],
+      "action": "Coordinate retirement withdrawals: deplete taxable brokerage FIRST (LTCG-favored), then tax-deferred (trad IRA/401k), reserve Roth for LAST (tax-free + no RMD + estate-favored). Annual benefit ~{{estSavings}}.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.64",
+      "name": "§168(k) Bonus Depreciation Election OUT (low-income year)",
+      "category": "business",
+      "ircSection": "IRC §168(k)(7)",
+      "irsPub": "Pub 946; Form 4562",
+      "trigger": "Has bonus_depreciation_basis adjustment > 0 AND taxable income < $50,000 (low-income year proxy). Election-out preserves the deduction for higher-bracket future years.",
+      "formula": "§168(k)(7) annual election OUT of bonus depreciation. Property recovers under regular MACRS instead (5/7/27.5/39 yr). Useful when current marginal rate is LOW (12%) and projected future rate HIGHER (22-24%). estSavings = $20,000 bonus dep × (24% future − 12% current) = $2,400 bracket arbitrage.",
+      "confidence": 0.55,
+      "cpaEffortHours": 1.5,
+      "recurring": false,
+      "validUntil": "2027-12-31",
+      "prerequisiteData": [
+        "Verify client has §168(k) bonus-eligible property placed in service this year",
+        "TY2024 bonus rate: 60% (phasing down from 100% pre-2023)",
+        "TY2025 bonus rate: 40%; TY2026: 20%; TY2027+: 0%",
+        "Election OUT is by ASSET CLASS — applies to ALL bonus-eligible property in that class for the year",
+        "Form 4562 + statement attached to return (irrevocable once filed without IRS consent)",
+        "Income projection for future years (election worthless if future bracket isn't actually higher)",
+        "Coordinate with §179 expense election (separate decision — §179 is asset-by-asset)"
+      ],
+      "action": "Elect OUT of §168(k) bonus depreciation for TY{{taxYear}} via Form 4562 statement. Defer ${{bonusDep}} of deduction to higher-bracket future years. Bracket-arbitrage benefit ~{{estSavings}}.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.65",
+      "name": "Adoption Credit §23",
+      "category": "credits",
+      "ircSection": "IRC §23",
+      "irsPub": "Pub 17; Form 8839; Notice 2023-75; Rev. Proc. 2023-34 §3.16",
+      "trigger": "dependentsUnder17 >= 1 AND AGI < $292,150 (TY2024 phase-out top) AND no existing adoption_credit adjustment. CPA confirms actual adoption — engine cannot verify.",
+      "formula": "TY2024: up to $16,810 per child credit for qualified adoption expenses (Notice 2023-75). AGI phase-out: $252,150-$292,150. Special-needs adoption: full $16,810 credit regardless of expenses (§23(a)(3)). Non-refundable but 5-year carryforward (§23(c)). estSavings = $5,000 typical (most parents NOT adopting — strong CPA-confirm caveat).",
+      "confidence": 0.25,
+      "cpaEffortHours": 1.0,
+      "recurring": false,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Confirm actual adoption occurred (or in process) — engine cannot verify; CPA confirms.",
+        "Qualified adoption expenses (Form 8839): adoption fees, attorney fees, court costs, travel — for adoption of a child under 18 or disabled adult",
+        "Special needs adoption: state-determined; full $16,810 credit even without expenses",
+        "AGI phase-out TY2024: $252,150-$292,150 (Rev. Proc. 2023-34 §3.16)",
+        "Non-refundable — capped at federal tax liability; 5-yr carryforward",
+        "MFS — disallowed (must file joint with spouse)",
+        "Foreign adoption — credit allowed only in year adoption finalized (Reg §1.23-1)"
+      ],
+      "action": "If client adopted (or is in process), claim Adoption Credit on Form 8839. Up to {{maxCredit}}/child. Heuristic typical $5,000 — but CPA confirms actual adoption + expenses.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.66",
+      "name": "Rollover-IRA → 401(k) — fix §408(d)(2) pro-rata trap for backdoor Roth",
+      "category": "retirement",
+      "ircSection": "IRC §402(c); §408(d)(2); §401(k)",
+      "irsPub": "Pub 590-A; Pub 590-B; Notice 2014-54",
+      "trigger": "H5 traditional_ira balance > $1,000 AND AGI > Roth IRA contribution phase-out top (TY2024 $161k single / $240k MFJ) — backdoor Roth candidate (G1.26) with pro-rata trap.",
+      "formula": "§408(d)(2) IRA aggregation includes ALL trad/SEP/SIMPLE IRAs at year-end but EXCLUDES 401(k) and other employer plans. Roll pre-tax IRA → current employer 401(k) BEFORE year-end, so backdoor Roth conversion is clean (100% tax-free). Without this, $7k backdoor + $100k pre-tax IRA → ~$6,542 taxable per §408(d)(2). estSavings = $7k × ratio × marginal = $1,540 at 22% on $100k trap.",
+      "confidence": 0.55,
+      "cpaEffortHours": 2.0,
+      "recurring": false,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Confirm 401(k) plan ACCEPTS incoming rollovers (most do, but plan-specific)",
+        "Verify plan-specific paperwork: rollover form, custodian-to-custodian direct transfer (recommended)",
+        "Determine pre-tax IRA balance to roll (Note: AFTER-TAX IRA basis CANNOT be rolled into 401(k); leave that portion for backdoor Roth conversion)",
+        "Time before backdoor Roth: roll IRA → 401(k) BEFORE year-end so it's not in the §408(d)(2) Dec-31 aggregation",
+        "Coordinate with G1.26 backdoor Roth (clean execution requires pre-tax IRA = $0)",
+        "Future-state consideration: 401(k) balance can be rolled back to IRA after leaving employer (round-trip flexibility)",
+        "NOT applicable if client has no 401(k) plan or self-employed (Solo 401(k) is an option then — see G1.1)"
+      ],
+      "action": "Roll {{rolloverAmount}} of pre-tax traditional IRA into current employer 401(k) BEFORE year-end. Cleans the §408(d)(2) aggregation for backdoor Roth (G1.26). Per-year backdoor Roth savings ~{{estSavings}}.",
       "formulaRev": 1
     },
     {

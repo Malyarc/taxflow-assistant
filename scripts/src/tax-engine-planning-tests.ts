@@ -3405,6 +3405,219 @@ header("G1.61-4 — Already claiming student_loan_interest: suppressed");
     findHit(hits, "G1.61") == null, true);
 }
 
+section("H1 catalog v1.11 — 5 new detectors (G1.62 / G1.63 / G1.64 / G1.65 / G1.66)");
+
+// ── G1.62 §263A Inventory Method ───────────────────────────────────────
+// Hand-calc: single FL, $150k 1099-NEC.
+//   netSE = $138,525 > $100k threshold ✓.
+//   Taxable ~$117k → 24% bracket. estSavings = $10k × 0.24 = $2,400.
+header("H1v1.11 G1.62+1 — Single SE $150k: estSavings $2,400");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "Solo", nonemployeeCompensation: 150000 } as unknown as TaxReturnInputs["form1099s"][number]],
+  });
+  const hit = findHit(hits, "G1.62");
+  checkTruthy("G1.62+1", "fires for SE > $100k", hit != null, true);
+  if (hit) {
+    check("G1.62+1", "estSavings = $2,400 ($10k × 24% marginal)",
+      hit.estSavings, 2400, 50);
+  }
+}
+
+// Negative: SE too low
+header("G1.62-2 — SE $50k: suppressed (below $100k floor)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "x", nonemployeeCompensation: 50000 } as unknown as TaxReturnInputs["form1099s"][number]],
+  });
+  checkTruthy("G1.62-2", "no fire SE < $100k", findHit(hits, "G1.62") == null, true);
+}
+
+// ── G1.63 Lot Rotation ──────────────────────────────────────────────────
+// Hand-calc: single FL, age 65, mix of trad IRA + Roth + brokerage.
+//   Age >= 60 ✓. All 3 account types present ✓. estSavings = $4,000 fixed.
+header("H1v1.11 G1.63+1 — Age 65 + diversified accounts: estSavings $4,000");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 65 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 30000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    assetBalances: [
+      { assetType: "traditional_ira", balance: "300000", accountName: "Trad IRA", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+      { assetType: "roth_ira", balance: "100000", accountName: "Roth IRA", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+      { assetType: "brokerage_taxable", balance: "200000", accountName: "Schwab", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  const hit = findHit(hits, "G1.63");
+  checkTruthy("G1.63+1", "fires (age 60+ + diversified accounts)", hit != null, true);
+  if (hit) {
+    check("G1.63+1", "estSavings = $4,000", hit.estSavings, 4000);
+  }
+}
+
+// Negative: too young
+header("G1.63-2 — Age 50: suppressed (under 60)");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 50 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 30000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    assetBalances: [
+      { assetType: "traditional_ira", balance: "300000", accountName: "x", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+      { assetType: "roth_ira", balance: "100000", accountName: "x", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+      { assetType: "brokerage_taxable", balance: "200000", accountName: "x", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  checkTruthy("G1.63-2", "no fire age < 60", findHit(hits, "G1.63") == null, true);
+}
+
+// Negative: missing one account type
+header("G1.63-3 — Age 65 but no taxable brokerage: suppressed");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 65 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 30000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    assetBalances: [
+      { assetType: "traditional_ira", balance: "300000", accountName: "x", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+      { assetType: "roth_ira", balance: "100000", accountName: "x", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  checkTruthy("G1.63-3", "no fire missing brokerage", findHit(hits, "G1.63") == null, true);
+}
+
+// ── G1.64 §168(k) Opt-Out ───────────────────────────────────────────────
+// Hand-calc: single FL, $40k W-2 + $20k bonus_depreciation_basis.
+//   Taxable = $40k - $14,600 = $25,400 (under $50k threshold) ✓.
+//   bonus_dep = $20k > $5k threshold ✓.
+//   estSavings = $20k × (0.24 - 0.12) = $2,400.
+header("H1v1.11 G1.64+1 — Low income + $20k bonus dep: estSavings $2,400");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 40000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [
+      { adjustmentType: "bonus_depreciation_basis", amount: 20000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  const hit = findHit(hits, "G1.64");
+  checkTruthy("G1.64+1", "fires (low income + bonus dep)", hit != null, true);
+  if (hit) {
+    check("G1.64+1", "estSavings = $2,400 ($20k × 12% bracket spread)",
+      hit.estSavings, 2400);
+  }
+}
+
+// Negative: no bonus depreciation
+header("G1.64-2 — No bonus depreciation: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 40000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  checkTruthy("G1.64-2", "no fire without bonus dep", findHit(hits, "G1.64") == null, true);
+}
+
+// Negative: high taxable income
+header("G1.64-3 — High income + bonus dep: suppressed (no bracket arbitrage)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 150000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [
+      { adjustmentType: "bonus_depreciation_basis", amount: 20000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  checkTruthy("G1.64-3", "no fire high income", findHit(hits, "G1.64") == null, true);
+}
+
+// ── G1.65 Adoption Credit ──────────────────────────────────────────────
+// Hand-calc: MFJ FL, age 35, $150k W-2, 2 dependents under 17.
+//   AGI $150k < $292k cap ✓. kidsUnder17 = 2 ≥ 1 ✓.
+//   Taxable = $150k - $29,200 - kids? = $120,800 → 22% bracket.
+//   Federal tax = ~$17k. cappedSavings = min($5,000, $17k) = $5,000.
+header("H1v1.11 G1.65+1 — MFJ AGI $150k + 2 kids: estSavings $5,000");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024, taxpayerAge: 35, dependentsUnder17: 2 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 150000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  const hit = findHit(hits, "G1.65");
+  checkTruthy("G1.65+1", "fires (kids + AGI under $292k cap)", hit != null, true);
+  if (hit) {
+    check("G1.65+1", "estSavings = $5,000 (heuristic typical)",
+      hit.estSavings, 5000);
+  }
+}
+
+// Negative: AGI over phase-out
+header("G1.65-2 — AGI $300k: suppressed (over $292k cap)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024, dependentsUnder17: 2 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 300000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  checkTruthy("G1.65-2", "no fire AGI > $292k", findHit(hits, "G1.65") == null, true);
+}
+
+// Negative: MFS disallowed
+header("G1.65-3 — MFS: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "married_filing_separately", state: "FL", taxYear: 2024, dependentsUnder17: 2 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 100000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  checkTruthy("G1.65-3", "no fire MFS", findHit(hits, "G1.65") == null, true);
+}
+
+// ── G1.66 Rollover-IRA → 401(k) §408(d)(2) fix ─────────────────────────
+// Hand-calc: single FL, $200k W-2 (AGI > $161k single phase-out top), H5
+// traditional_ira $100k.
+//   tradBalance $100k > $1k threshold ✓.
+//   AGI $200k > $161k single ✓.
+//   Taxable ≈ $185,400. Single 2024 24% bracket: $103,350-$191,950.
+//   → marginal = 24% (NOT 32% — that starts at $243,725).
+//   taxableProRata = $7k × ($100k / ($100k + $7k)) = $7k × 0.9346 = $6,542.
+//   estSavings = $6,542 × 0.24 = $1,570.
+header("H1v1.11 G1.66+1 — Single $200k + $100k trad IRA: estSavings ~$1,570");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 40 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 200000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    assetBalances: [
+      { assetType: "traditional_ira", balance: "100000", accountName: "x", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  const hit = findHit(hits, "G1.66");
+  checkTruthy("G1.66+1", "fires (AGI > phase-out + trad IRA > $1k)", hit != null, true);
+  if (hit) {
+    check("G1.66+1", "estSavings ≈ $1,570 ($6,542 × 24% marginal)",
+      hit.estSavings, 1570, 50);
+  }
+}
+
+// Negative: AGI below phase-out (no backdoor needed)
+header("G1.66-2 — AGI $100k + $100k trad IRA: suppressed (direct Roth possible)");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 100000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    assetBalances: [
+      { assetType: "traditional_ira", balance: "100000", accountName: "x", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  checkTruthy("G1.66-2", "no fire AGI below phase-out", findHit(hits, "G1.66") == null, true);
+}
+
+// Negative: no trad IRA balance
+header("G1.66-3 — High AGI but no trad IRA: suppressed (clean backdoor possible already)");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 200000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  checkTruthy("G1.66-3", "no fire without trad IRA", findHit(hits, "G1.66") == null, true);
+}
+
 // ============================================================================
 // RESULTS
 // ============================================================================

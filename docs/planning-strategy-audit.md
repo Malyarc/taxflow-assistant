@@ -1,16 +1,25 @@
-# Planning Strategy Audit — Catalog v1.10
+# Planning Strategy Audit — Catalog v1.11
 
 **Date:** 2026-05-27
-**Catalog version:** v1.10.0 (57 strategies total: 52 G1.X + 5 G4.X)
+**Catalog version:** v1.11.0 (62 strategies total: 57 G1.X + 5 G4.X)
 **Auditor:** Engineering pass — IRC citations + TY2024/2025 limits verified against IRS sources.
 
 ## Verdict
 
-**All 57 catalog strategies are correct + valid for real-world CPA use as of TY2024/2025.** Every IRC section, dollar limit, phase-out threshold, and rate is current per the published IRS revenue procedures (Notice 2023-75 for TY2024; Notice 2024-80 / Rev. Proc. 2024-40 for TY2025). All formulas reflect post-TCJA + IRA 2022 + SECURE 2.0 law. Heuristic estSavings are documented as such in each detector's `assumptions: string[]`.
+**All 62 catalog strategies are correct + valid for real-world CPA use as of TY2024/2025.** Every IRC section, dollar limit, phase-out threshold, and rate is current per the published IRS revenue procedures (Notice 2023-75 for TY2024; Notice 2024-80 / Rev. Proc. 2024-40 for TY2025). All formulas reflect post-TCJA + IRA 2022 + SECURE 2.0 law. Heuristic estSavings are documented as such in each detector's `assumptions: string[]`.
 
 No incorrect IRC citations found. No outdated dollar limits found. No mis-stated phase-out thresholds found.
 
 ## Catalog inventory by category (v1.9 = 47 G1 strategies)
+
+### v1.11 NEW strategies (5)
+| ID | Name | IRC | Limit / Detail | H2 | Verdict |
+|---|---|---|---|---|---|
+| G1.62 | §263A Inventory Method Choice | §263A(i) | < $30M gross receipts 3-yr avg | heuristic | ✓ Valid |
+| G1.63 | Lot Rotation withdrawal sequence | §72(t)/§401(a)(9)/§408A(d) | Taxable→deferred→Roth order | heuristic | ✓ Valid |
+| G1.64 | §168(k) Bonus Depreciation OPT-OUT | §168(k)(7) | Annual class-wide election | heuristic | ✓ Valid |
+| G1.65 | Adoption Credit §23 | §23 | $16,810 cap TY2024; phase-out $252-$292k | heuristic | ✓ Valid |
+| G1.66 | Rollover-IRA → 401(k) pro-rata fix | §402(c); §408(d)(2) | Companion to G1.26 backdoor Roth | heuristic | ✓ Valid |
 
 ### v1.10 NEW strategies (5)
 | ID | Name | IRC | Limit / Detail | H2 | Verdict |
