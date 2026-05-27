@@ -48,6 +48,7 @@ import {
   calculateMultiStateTax,
   calculateStateEitc,
   calculateStateCtc,
+  calculateStateAdditionalCredits,
   getStateRetirementExemption,
   calculatePassiveActivityLossAllowance,
   calculateMacrsDepreciation,
@@ -2055,6 +2056,11 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     ? {
         formerState: client.formerState,
         residencyChangeDate: client.residencyChangeDate,
+        // C11 — Opt-in via `part_year_use_w2_source` adjustment marker
+        // (amount > 0 = enabled). When enabled, wages are sourced per
+        // W-2 stateCode (NY IT-203 / CA 540NR pattern) rather than
+        // pure pro-rata by days.
+        useW2SourceAllocation: sumByType("part_year_use_w2_source") > 0,
       }
     : undefined;
 
@@ -2368,9 +2374,32 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // level. Add to state refund alongside state EITC and CTCs.
   const nycSchoolTaxCreditRefundable = multiState.localTax?.nycSchoolTaxCredit ?? 0;
 
-  const stateRefundOrOwed = totalStateWithheld - stateTaxLiability + stateEitc.credit + mnCtcRefundable + nycEitcRefundableExcess + stateCtcRefundable + nycSchoolTaxCreditRefundable;
+  // C2 — State Additional Credits (NY/CA/IL non-EITC/CTC credits).
+  // Refundable portion adds to state refund; nonRefundable reduces
+  // state tax liability (capped at 0).
+  const stateAdditionalCredits = calculateStateAdditionalCredits({
+    state: stateUpper,
+    taxYear: calc.taxYear,
+    agi: calc.adjustedGrossIncome,
+    filingStatus: client.filingStatus,
+    dependentsUnder17: client.dependentsUnder17 ?? 0,
+    federalCdccApplied: dependentCareCredit.appliedCredit,
+    propertyTaxPaid: sumByType("state_property_tax"),
+    k12QualifiedExpenses: sumByType("k12_education_expenses"),
+    monthsRented: sumByType("ca_renter_months"),
+    collegeTuitionExpenses: sumByType("college_tuition_qualified"),
+  });
+  const stateAdditionalRefundable = stateAdditionalCredits.totalRefundable;
+  const stateAdditionalNonRefundable = stateAdditionalCredits.totalNonRefundable;
+  // Reduce state tax by nonrefundable (capped at 0).
+  const stateTaxLiabilityAfterAdditional = Math.max(
+    0,
+    stateTaxLiability - stateAdditionalNonRefundable,
+  );
 
-  const totalTaxBurden = totalFederalLiabilityWithRepayment + stateTaxLiability - stateEitc.credit - stateCtcRefundable - nycSchoolTaxCreditRefundable;
+  const stateRefundOrOwed = totalStateWithheld - stateTaxLiabilityAfterAdditional + stateEitc.credit + mnCtcRefundable + nycEitcRefundableExcess + stateCtcRefundable + nycSchoolTaxCreditRefundable + stateAdditionalRefundable;
+
+  const totalTaxBurden = totalFederalLiabilityWithRepayment + stateTaxLiabilityAfterAdditional - stateEitc.credit - stateCtcRefundable - nycSchoolTaxCreditRefundable - stateAdditionalRefundable;
   const effectiveRate = calc.totalIncome > 0 ? totalTaxBurden / calc.totalIncome : 0;
 
   // ── Compute state retirement exemption (for transparency in result) ──

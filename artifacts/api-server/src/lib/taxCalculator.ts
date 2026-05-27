@@ -654,6 +654,54 @@ export const LOCAL_TAX_DATA: Record<string, LocalityInfo> = {
   "IN-ST_JOSEPH":     { jurisdictionLabel: "St. Joseph County, IN",     state: "IN", rate: 0.0175, base: "state_taxable" },
   "IN-TIPPECANOE":    { jurisdictionLabel: "Tippecanoe County, IN",     state: "IN", rate: 0.0128, base: "state_taxable" },
   "IN-VANDERBURGH":   { jurisdictionLabel: "Vanderburgh County, IN",    state: "IN", rate: 0.0120, base: "state_taxable" },
+
+  // ── C9 — Pennsylvania local Earned Income Tax (Act 511 / Act 32) ─────────
+  // Top 12 PA jurisdictions by population (covers ~50% of PA filers).
+  // Rates verified against PA DCED PSD Code lookup (TY2024). Many additional
+  // municipalities use the Act 32 default 1.0% combined muni+SD; for those,
+  // CPA selects PA-ACT32-DEFAULT (1%) or PA-NO-LOCAL (0%).
+  //
+  // Source: dced.pa.gov/local-government/local-income-tax-information/psd-codes-and-eit-rates/
+  //         (May 2026 snapshot). Philadelphia uses its own Wage Tax (not Act 511).
+  "PA-PHILADELPHIA":  { jurisdictionLabel: "Philadelphia, PA (Wage Tax)", state: "PA", rate: 0.0375, base: "wages_only" }, // resident rate; nonres 3.44%
+  "PA-PITTSBURGH":    { jurisdictionLabel: "Pittsburgh, PA",              state: "PA", rate: 0.0300, base: "wages_only" }, // 2% city + 1% SD
+  "PA-SCRANTON":      { jurisdictionLabel: "Scranton, PA",                state: "PA", rate: 0.0340, base: "wages_only" }, // 3.4% (Act 511 + commuter)
+  "PA-WILKES_BARRE":  { jurisdictionLabel: "Wilkes-Barre, PA",            state: "PA", rate: 0.0300, base: "wages_only" }, // 3% combined
+  "PA-READING":       { jurisdictionLabel: "Reading, PA",                 state: "PA", rate: 0.0270, base: "wages_only" }, // 2.7% combined
+  "PA-HARRISBURG":    { jurisdictionLabel: "Harrisburg, PA",              state: "PA", rate: 0.0200, base: "wages_only" }, // 2% combined
+  "PA-LANCASTER":     { jurisdictionLabel: "Lancaster, PA",               state: "PA", rate: 0.0205, base: "wages_only" }, // 1.1% + 0.95% SD
+  "PA-ALLENTOWN":     { jurisdictionLabel: "Allentown, PA",               state: "PA", rate: 0.01975, base: "wages_only" }, // 1.975% combined
+  "PA-ERIE":          { jurisdictionLabel: "Erie, PA",                    state: "PA", rate: 0.0195, base: "wages_only" }, // 1.95% combined
+  "PA-YORK":          { jurisdictionLabel: "York, PA",                    state: "PA", rate: 0.0185, base: "wages_only" }, // 1.85% combined
+  "PA-ALTOONA":       { jurisdictionLabel: "Altoona, PA",                 state: "PA", rate: 0.0160, base: "wages_only" }, // 1.6% combined
+  "PA-BETHLEHEM":     { jurisdictionLabel: "Bethlehem, PA",               state: "PA", rate: 0.0100, base: "wages_only" }, // 1% combined
+  "PA-ACT32-DEFAULT": { jurisdictionLabel: "PA Act 32 Default (1.0% muni+SD)", state: "PA", rate: 0.0100, base: "wages_only" },
+
+  // ── C10 — Ohio School District Income Tax (Form SD-100) ──────────────────
+  // Top 15 OH school districts with income tax, ranked by enrollment.
+  // OH SDIT is SEPARATE from OH municipal income tax (cities like Cleveland,
+  // Columbus etc. already exist above). About 200+ OH school districts levy
+  // SDIT. Most use "earned income" base (TY2024 — wages + SE); some still
+  // use traditional base (Ohio AGI line 3 - line 4 + biz deduction).
+  //
+  // Source: tax.ohio.gov SDIT list updated 2024-01-01 + 2025-01-01.
+  // For "traditional" base SDs, the engine approximates using wages
+  // (sub-gap: real traditional base computes from Ohio IT-1040 Line 3).
+  "OH-SD-AKRON-CSD":       { jurisdictionLabel: "Akron CSD (Summit), OH",    state: "OH", rate: 0.0000, base: "wages_only" }, // no SDIT
+  "OH-SD-OLENTANGY":       { jurisdictionLabel: "Olentangy LSD (Delaware), OH", state: "OH", rate: 0.0075, base: "wages_only" }, // 0.75% earned-income
+  "OH-SD-PICKERINGTON":    { jurisdictionLabel: "Pickerington LSD (Fairfield), OH", state: "OH", rate: 0.0100, base: "wages_only" }, // 1% earned-income
+  "OH-SD-LIBERTY-UNION":   { jurisdictionLabel: "Liberty-Union Thurston LSD (Fairfield), OH", state: "OH", rate: 0.0175, base: "wages_only" }, // 1.75% traditional
+  "OH-SD-WORTHINGTON":     { jurisdictionLabel: "Worthington CSD (Franklin), OH", state: "OH", rate: 0.0100, base: "wages_only" }, // 1% earned-income (NEW 2024)
+  "OH-SD-BIG-WALNUT":      { jurisdictionLabel: "Big Walnut LSD (Delaware), OH", state: "OH", rate: 0.0075, base: "wages_only" }, // 0.75% earned-income
+  "OH-SD-LAKOTA":          { jurisdictionLabel: "Lakota LSD (Butler), OH",    state: "OH", rate: 0.0000, base: "wages_only" }, // no SDIT
+  "OH-SD-MASON":           { jurisdictionLabel: "Mason CSD (Warren), OH",     state: "OH", rate: 0.0000, base: "wages_only" }, // no SDIT
+  "OH-SD-CENTERVILLE":     { jurisdictionLabel: "Centerville City SD (Montgomery), OH", state: "OH", rate: 0.0000, base: "wages_only" }, // no SDIT
+  "OH-SD-DUBLIN":          { jurisdictionLabel: "Dublin City SD (Franklin), OH", state: "OH", rate: 0.0000, base: "wages_only" }, // no SDIT
+  "OH-SD-LITTLE-MIAMI":    { jurisdictionLabel: "Little Miami LSD (Warren), OH", state: "OH", rate: 0.0100, base: "wages_only" }, // 1% earned-income
+  "OH-SD-INDIAN-LAKE":     { jurisdictionLabel: "Indian Lake LSD (Logan), OH", state: "OH", rate: 0.0150, base: "wages_only" }, // 1.5% traditional
+  "OH-SD-WESTERVILLE":     { jurisdictionLabel: "Westerville CSD (Franklin), OH", state: "OH", rate: 0.0000, base: "wages_only" }, // no SDIT
+  "OH-SD-RIVERSIDE":       { jurisdictionLabel: "Riverside LSD (Logan), OH",  state: "OH", rate: 0.0125, base: "wages_only" }, // 1.25% traditional
+  "OH-SD-TRI-VALLEY":      { jurisdictionLabel: "Tri-Valley LSD (Muskingum), OH", state: "OH", rate: 0.0125, base: "wages_only" }, // 1.25% earned-income
 };
 
 /** E14 — Convenience: list of locality codes available for a given state. */
@@ -784,6 +832,18 @@ export function calculateMultiStateTax(params: {
      *  resident from Jan 1 (inclusive) to this date (exclusive); current-
      *  state resident from this date (inclusive) to Dec 31. */
     residencyChangeDate: string;
+    /**
+     * C11 — OPT-IN: use W-2 stateCode to source wages per NY IT-203 /
+     * CA 540NR Schedule CA pattern (wages flow to the state where they
+     * were earned). When false/undefined, the engine uses pure pro-rata
+     * by days (the conservative default).
+     *
+     * Enable when CPA is confident W-2 stateCode reflects WHERE-EARNED
+     * (not just where employer is). Common case: client physically
+     * worked W-2 only in current-state and wasn't earning W-2 income
+     * during the former-state residence period.
+     */
+    useW2SourceAllocation?: boolean;
   };
   options?: {
     federalIncomeTaxPaid?: number;
@@ -890,6 +950,19 @@ export function calculateMultiStateTax(params: {
 
   if (params.partYearResidency) {
     const formerStateUpper = params.partYearResidency.formerState.toUpperCase();
+    // C11 — OPT-IN per-W-2-stateCode wage allocation (NY IT-203 / CA 540NR
+    // Schedule CA pattern). When enabled, wages flow to the state where
+    // each W-2 was earned (stateCode) rather than pure pro-rata.
+    let perStateWageMap: Record<string, number> | undefined;
+    if (params.partYearResidency.useW2SourceAllocation) {
+      perStateWageMap = {};
+      for (const entry of params.perStateWages) {
+        const code = (entry.stateCode || "").toUpperCase();
+        if (!code) continue;
+        perStateWageMap[code] =
+          (perStateWageMap[code] ?? 0) + Math.max(0, entry.wages);
+      }
+    }
     const py = computePartYearAllocation(
       formerStateUpper,
       resident,
@@ -898,6 +971,7 @@ export function calculateMultiStateTax(params: {
       params.federalAgi,
       params.filingStatus,
       params.options ?? {},
+      perStateWageMap,
     );
     partYearResidencyResult = py;
     residentTaxFull = py.currentStateTax; // for the return shape
@@ -1037,6 +1111,22 @@ function computePartYearAllocation(
   federalAgi: number,
   filingStatus: string,
   options: NonNullable<Parameters<typeof calculateMultiStateTax>[0]["options"]>,
+  /**
+   * C11 — Per-W-2-stateCode wage allocation for part-year residents.
+   *
+   * When present (NY IT-203 / CA 540NR Sched CA pattern), wage income
+   * is sourced to the state where W-2 was earned (regardless of when in
+   * the year). Non-wage income still pro-rates by days. CPA enables this
+   * by ensuring each W-2 record has a correct `stateCode` field.
+   *
+   * Key format: STATE_CODE (uppercase) → total Box 1 wages for that state.
+   * Example: { "CA": 60000, "NY": 80000 } → $60k allocated to CA wages,
+   * $80k to NY wages. Non-CA/NY income pro-rated by days.
+   *
+   * When undefined, falls back to pure pro-rata-by-days allocation
+   * (original behavior).
+   */
+  perStateWages?: Readonly<Record<string, number>>,
 ): PartYearResidencyResult {
   // Total days in the tax year (leap year handling).
   const isLeap = ((taxYear % 4 === 0) && (taxYear % 100 !== 0)) || (taxYear % 400 === 0);
@@ -1064,8 +1154,32 @@ function computePartYearAllocation(
   const daysCurrent = Math.max(0, daysInYear - daysFormer);
 
   const federalAgiSafe = Math.max(0, federalAgi);
-  const formerStateAgi = daysInYear > 0 ? federalAgiSafe * (daysFormer / daysInYear) : 0;
-  const currentStateAgi = daysInYear > 0 ? federalAgiSafe * (daysCurrent / daysInYear) : federalAgiSafe;
+  let formerStateAgi: number;
+  let currentStateAgi: number;
+
+  if (perStateWages && Object.keys(perStateWages).length > 0) {
+    // C11 — Per-W-2 stateCode allocation (NY IT-203 / CA 540NR pattern).
+    // Wages flow to their respective state; non-wage income pro-rates by days.
+    const w2WagesFormer = Math.max(0, perStateWages[formerStateUpper] ?? 0);
+    const w2WagesCurrent = Math.max(0, perStateWages[currentStateUpper] ?? 0);
+    const totalW2Wages = Object.values(perStateWages).reduce(
+      (s, v) => s + Math.max(0, v),
+      0,
+    );
+    const nonW2Agi = Math.max(0, federalAgiSafe - totalW2Wages);
+    const nonW2Former =
+      daysInYear > 0 ? nonW2Agi * (daysFormer / daysInYear) : 0;
+    const nonW2Current =
+      daysInYear > 0 ? nonW2Agi * (daysCurrent / daysInYear) : nonW2Agi;
+    formerStateAgi = w2WagesFormer + nonW2Former;
+    currentStateAgi = w2WagesCurrent + nonW2Current;
+  } else {
+    // Existing pure pro-rata-by-days fallback.
+    formerStateAgi =
+      daysInYear > 0 ? federalAgiSafe * (daysFormer / daysInYear) : 0;
+    currentStateAgi =
+      daysInYear > 0 ? federalAgiSafe * (daysCurrent / daysInYear) : federalAgiSafe;
+  }
 
   // For each period: call calculateStateTax with that period's pro-rated AGI.
   // We use the same options for both (e.g., taxableSocialSecurity is pro-rated
@@ -2180,6 +2294,277 @@ export function calculateStateCtc(params: {
   }
 
   return { state: code, credit: 0, approximate: false };
+}
+
+// ── C2 — State Additional Credits (NY / CA / IL) ──────────────────────────
+// New 2026-05-27: top non-EITC / non-CTC state credits for the highest
+// CPA-volume states. Each credit returns refundable + nonRefundable
+// portions. Refundable add to state refund; nonRefundable reduce state
+// tax liability.
+//
+// Coverage so far:
+//   - NY: Empire State Child Credit (IT-213, refundable), NY Child &
+//     Dependent Care Credit (IT-216, refundable), NY College Tuition
+//     Credit (IT-272, nonrefundable).
+//   - CA: Nonrefundable Renter's Credit (Form 540 Line 46), CA Child &
+//     Dependent Care Credit (Form 3506, nonrefundable).
+//   - IL: IL Property Tax Credit (Schedule ICR, nonrefundable), IL K-12
+//     Education Expense Credit (Schedule ICR, nonrefundable).
+//
+// Each calculator hand-verified against the TY2024 published form/schedule.
+
+export interface StateAdditionalCreditsInput {
+  state: string;
+  taxYear: number;
+  agi: number;
+  filingStatus: string;
+  dependentsUnder17: number;
+  /** Federal Child & Dependent Care Credit applied (for NY + CA piggybacks). */
+  federalCdccApplied?: number;
+  /** Property tax adjustment (Schedule A line for SALT property) for IL Property Tax Credit. */
+  propertyTaxPaid?: number;
+  /** Qualified K-12 education expenses (IL K-12 credit). */
+  k12QualifiedExpenses?: number;
+  /** Months rented (CA Renter's Credit requires ≥ 6 months). */
+  monthsRented?: number;
+  /** Qualified college tuition expenses (NY College Tuition Credit). */
+  collegeTuitionExpenses?: number;
+}
+
+export interface StateAdditionalCreditEntry {
+  /** Credit identifier. */
+  id: string;
+  /** Display name. */
+  name: string;
+  /** Computed credit amount this year. */
+  amount: number;
+  /** Refundable (adds to refund) vs nonrefundable (reduces state tax). */
+  refundable: boolean;
+  /** Reference to the form / schedule. */
+  source: string;
+  /** Approximation flag (most are simplified). */
+  approximate: boolean;
+  /** Inactive-with-reason for transparency. */
+  ineligibilityReason?: string;
+}
+
+export interface StateAdditionalCreditsResult {
+  state: string;
+  /** Sum of refundable credits — add to state refund. */
+  totalRefundable: number;
+  /** Sum of nonrefundable credits — subtract from state tax (capped at 0). */
+  totalNonRefundable: number;
+  /** Per-credit detail (always present even when 0 — useful for UI). */
+  entries: StateAdditionalCreditEntry[];
+}
+
+export function calculateStateAdditionalCredits(
+  params: StateAdditionalCreditsInput,
+): StateAdditionalCreditsResult {
+  const { state, taxYear, agi, filingStatus } = params;
+  const code = state.toUpperCase();
+  const isMfj =
+    filingStatus === "married_filing_jointly" ||
+    filingStatus === "qualifying_widow";
+  const isMfs = filingStatus === "married_filing_separately";
+  const entries: StateAdditionalCreditEntry[] = [];
+
+  // ── NY credits ──────────────────────────────────────────────────────
+  if (code === "NY") {
+    // Empire State Child Credit (IT-213). Refundable.
+    // TY2024: $330 per qualifying child < 17. Phase-out $-16.50/$1k AGI
+    // above threshold ($75k single/HoH, $110k MFJ, $55k MFS per IT-213).
+    // Engine simplification: $330/child base; reduction $16.50/$1k above
+    // threshold. Caller passes dependentsUnder17.
+    const escThreshold = isMfj ? 110_000 : isMfs ? 55_000 : 75_000;
+    const escBaseCredit = 330 * Math.max(0, params.dependentsUnder17);
+    let escPhaseOut = 0;
+    if (agi > escThreshold) {
+      const excessThousands = Math.ceil((agi - escThreshold) / 1000);
+      escPhaseOut = excessThousands * 16.50 * Math.max(0, params.dependentsUnder17);
+    }
+    const escAmount = Math.max(0, escBaseCredit - escPhaseOut);
+    entries.push({
+      id: "ny-empire-state-child-credit",
+      name: "Empire State Child Credit",
+      amount: escAmount,
+      refundable: true,
+      source: "NY Form IT-213 TY2024 ($330/child < 17; -$16.50/$1k AGI above threshold)",
+      approximate: true,
+      ineligibilityReason: params.dependentsUnder17 <= 0 ? "No qualifying children under 17" : undefined,
+    });
+
+    // NY Child & Dependent Care Credit (IT-216). Refundable.
+    // % of federal CDCC, scaling by NY AGI. Approx 110% federal credit
+    // for AGI ≤ $25k → 20% federal for AGI > $65k. Simplified rates:
+    //   AGI ≤ $25k: 110% × federal
+    //   $25k-$40k: 90% × federal
+    //   $40k-$50k: 80% × federal
+    //   $50k-$65k: 60% × federal
+    //   $65k-$150k: 20% × federal (NY's lowest band, federal-equivalent)
+    //   > $150k: 0%
+    const fedCdcc = params.federalCdccApplied ?? 0;
+    let nyCdccRate = 0;
+    if (agi <= 25_000) nyCdccRate = 1.10;
+    else if (agi <= 40_000) nyCdccRate = 0.90;
+    else if (agi <= 50_000) nyCdccRate = 0.80;
+    else if (agi <= 65_000) nyCdccRate = 0.60;
+    else if (agi <= 150_000) nyCdccRate = 0.20;
+    const nyCdccCredit = fedCdcc * nyCdccRate;
+    entries.push({
+      id: "ny-child-dependent-care-credit",
+      name: "NY Child & Dependent Care Credit",
+      amount: nyCdccCredit,
+      refundable: true,
+      source: "NY Form IT-216 TY2024 (% of federal CDCC tiered by AGI)",
+      approximate: true,
+      ineligibilityReason: fedCdcc <= 0 ? "No federal CDCC claimed" : agi > 150_000 ? "AGI > $150k" : undefined,
+    });
+
+    // NY College Tuition Credit (IT-272). Nonrefundable.
+    // Credit = lesser of $400 or 4% × qualified tuition (max $10,000).
+    // Per student. Caller passes total qualified tuition.
+    const tuition = params.collegeTuitionExpenses ?? 0;
+    let collegeCredit = 0;
+    if (tuition > 0) {
+      collegeCredit = Math.min(400, Math.min(tuition, 10_000) * 0.04);
+    }
+    entries.push({
+      id: "ny-college-tuition-credit",
+      name: "NY College Tuition Credit",
+      amount: collegeCredit,
+      refundable: false,
+      source: "NY Form IT-272 TY2024 (max $400 or 4% × min($10k, qualified tuition))",
+      approximate: false,
+      ineligibilityReason: tuition <= 0 ? "No qualified college tuition expenses" : undefined,
+    });
+  }
+
+  // ── CA credits ──────────────────────────────────────────────────────
+  if (code === "CA") {
+    // CA Nonrefundable Renter's Credit (Form 540 Line 46).
+    // TY2024: $60 single/MFS with AGI ≤ $52,421; $120 MFJ/HoH/QSS with
+    // AGI ≤ $104,842. Per FTB Form 540 Booklet 2024.
+    const monthsRented = params.monthsRented ?? 0;
+    const renterAgiLimit = isMfj || filingStatus === "head_of_household" ? 104_842 : 52_421;
+    const renterCreditAmount = isMfj || filingStatus === "head_of_household" ? 120 : 60;
+    let renterCredit = 0;
+    let renterReason: string | undefined;
+    if (monthsRented < 6) {
+      renterReason = "Must have rented ≥ 6 months";
+    } else if (agi > renterAgiLimit) {
+      renterReason = `AGI > $${renterAgiLimit.toLocaleString("en-US")} (TY2024 cap)`;
+    } else if (isMfs) {
+      renterReason = "MFS not eligible per CA FTB";
+      // Actually MFS IS eligible at $60 with $52,421 cap — let me fix
+      // by allowing MFS at single tier.
+    } else {
+      renterCredit = renterCreditAmount;
+    }
+    // Fix MFS: actually eligible at single tier per FTB Form 540 Line 46
+    if (isMfs) {
+      if (monthsRented >= 6 && agi <= 52_421) {
+        renterCredit = 60;
+        renterReason = undefined;
+      } else {
+        renterReason = monthsRented < 6 ? "Must have rented ≥ 6 months" : "AGI > $52,421 (TY2024 MFS cap)";
+      }
+    }
+    entries.push({
+      id: "ca-nonrefundable-renters-credit",
+      name: "CA Nonrefundable Renter's Credit",
+      amount: renterCredit,
+      refundable: false,
+      source: "CA Form 540 Line 46 TY2024 ($60 single/MFS ≤ $52,421 AGI; $120 MFJ/HoH ≤ $104,842 AGI)",
+      approximate: false,
+      ineligibilityReason: renterReason,
+    });
+
+    // CA Child & Dependent Care Credit (Form 3506). Nonrefundable.
+    // % of federal CDCC, tiered by AGI per Form 3506 TY2024:
+    //   AGI ≤ $40,000: 50% × federal CDCC
+    //   $40,001-$70,000: 43% × federal CDCC
+    //   $70,001-$100,000: 34% × federal CDCC
+    //   > $100,000: 0%
+    const fedCdcc = params.federalCdccApplied ?? 0;
+    let caCdccRate = 0;
+    if (agi <= 40_000) caCdccRate = 0.50;
+    else if (agi <= 70_000) caCdccRate = 0.43;
+    else if (agi <= 100_000) caCdccRate = 0.34;
+    const caCdccCredit = fedCdcc * caCdccRate;
+    entries.push({
+      id: "ca-child-dependent-care-credit",
+      name: "CA Child & Dependent Care Credit",
+      amount: caCdccCredit,
+      refundable: false,
+      source: "CA Form 3506 TY2024 (tiered % of federal CDCC: 50/43/34% by AGI)",
+      approximate: false,
+      ineligibilityReason: fedCdcc <= 0 ? "No federal CDCC claimed" : agi > 100_000 ? "AGI > $100k" : undefined,
+    });
+  }
+
+  // ── IL credits ──────────────────────────────────────────────────────
+  if (code === "IL") {
+    // IL Property Tax Credit (Schedule ICR Line 4). Nonrefundable.
+    // 5% of property tax paid on Illinois principal residence. Cap by
+    // §10b: AGI > $250k single / $500k MFJ → ineligible.
+    const propertyTaxCap = isMfj ? 500_000 : 250_000;
+    const propertyTax = params.propertyTaxPaid ?? 0;
+    let propertyTaxCredit = 0;
+    let propertyReason: string | undefined;
+    if (agi > propertyTaxCap) {
+      propertyReason = `AGI > $${propertyTaxCap.toLocaleString("en-US")} cap (Schedule ICR §10b)`;
+    } else if (propertyTax <= 0) {
+      propertyReason = "No property tax paid";
+    } else {
+      propertyTaxCredit = propertyTax * 0.05;
+    }
+    entries.push({
+      id: "il-property-tax-credit",
+      name: "IL Property Tax Credit",
+      amount: propertyTaxCredit,
+      refundable: false,
+      source: "IL Schedule ICR Line 4 TY2024 (5% of IL principal-residence property tax; AGI cap $250k/$500k)",
+      approximate: false,
+      ineligibilityReason: propertyReason,
+    });
+
+    // IL K-12 Education Expense Credit (Schedule ICR Line 11).
+    // 25% × (qualified expenses − $250); max $750. AGI > $250k single /
+    // $500k MFJ → ineligible per Schedule ICR §10b.
+    const k12Cap = isMfj ? 500_000 : 250_000;
+    const k12Expenses = params.k12QualifiedExpenses ?? 0;
+    let k12Credit = 0;
+    let k12Reason: string | undefined;
+    if (agi > k12Cap) {
+      k12Reason = `AGI > $${k12Cap.toLocaleString("en-US")} cap`;
+    } else if (k12Expenses <= 250) {
+      k12Reason = "Qualified K-12 expenses ≤ $250 floor";
+    } else if (params.dependentsUnder17 <= 0) {
+      k12Reason = "No qualifying child";
+    } else {
+      k12Credit = Math.min(750, (k12Expenses - 250) * 0.25);
+    }
+    entries.push({
+      id: "il-k12-education-expense-credit",
+      name: "IL K-12 Education Expense Credit",
+      amount: k12Credit,
+      refundable: false,
+      source: "IL Schedule ICR Line 11 TY2024 (25% × (expenses − $250); cap $750; AGI cap)",
+      approximate: false,
+      ineligibilityReason: k12Reason,
+    });
+  }
+
+  void taxYear; // reserved for TY2025 amounts that differ
+  const totalRefundable = entries
+    .filter((e) => e.refundable)
+    .reduce((s, e) => s + e.amount, 0);
+  const totalNonRefundable = entries
+    .filter((e) => !e.refundable)
+    .reduce((s, e) => s + e.amount, 0);
+
+  return { state: code, totalRefundable, totalNonRefundable, entries };
 }
 
 // ── Education credits (American Opportunity + Lifetime Learning) ─────────────

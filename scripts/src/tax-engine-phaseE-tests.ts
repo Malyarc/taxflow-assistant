@@ -1544,16 +1544,21 @@ header("E14 NYC regression — NYC PIT still computes via brackets after general
     r.localTax?.jurisdiction === "NYC", true);
 }
 
-// --- E14 catalog sanity: 24 MD + 10 OH + 10 IN = 44 flat-rate localities ---
-header("E14 catalog — 44 flat-rate localities registered");
+// --- E14 catalog sanity: 24 MD + 10 OH cities + 15 OH SDs (C10) + 10 IN +
+// --- 13 PA (C9) = 72 flat-rate localities ---
+header("E14 catalog — 72 flat-rate localities registered (post-C9/C10)");
 {
   const allCodes = Object.keys(LOCAL_TAX_DATA);
   const mdCount = allCodes.filter((c) => c.startsWith("MD-")).length;
-  const ohCount = allCodes.filter((c) => c.startsWith("OH-")).length;
+  const ohCityCount = allCodes.filter((c) => c.startsWith("OH-") && !c.startsWith("OH-SD-")).length;
+  const ohSdCount = allCodes.filter((c) => c.startsWith("OH-SD-")).length;
   const inCount = allCodes.filter((c) => c.startsWith("IN-")).length;
+  const paCount = allCodes.filter((c) => c.startsWith("PA-")).length;
   check("E14 cat", "MD county count", mdCount, 24, 0, "All 24 MD jurisdictions");
-  check("E14 cat", "OH city count", ohCount, 10, 0, "10 major OH cities");
+  check("E14 cat", "OH city count", ohCityCount, 10, 0, "10 major OH cities");
+  check("E14 cat", "OH SD count (C10)", ohSdCount, 15, 0, "15 OH school districts");
   check("E14 cat", "IN county count", inCount, 10, 0, "10 IN counties");
+  check("E14 cat", "PA muni count (C9)", paCount, 13, 0, "13 PA municipalities");
 }
 
 // --- E14 direct calculateFlatRateLocalTax call (unit test) ---

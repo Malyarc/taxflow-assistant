@@ -1,8 +1,23 @@
 # TaxFlow Assistant — Coverage Matrix
 
-**Status as of 2026-05-27 (Phase H sub-gap closure).** Inventory of what
-the calc engine models vs. what's not yet covered. This is the source of
-truth for "do we handle X?".
+**Status as of 2026-05-27 (Phase H sub-gap closure + C-batch v2 shipped).**
+Inventory of what the calc engine models vs. what's not yet covered.
+This is the source of truth for "do we handle X?".
+
+**C-batch v2 (2026-05-27):**
+- **C2** Top-state credits — Ship NY/CA/IL × 2-3 credits each via new
+  `calculateStateAdditionalCredits` (7 credits, refundable + nonrefundable
+  flowing through pipeline). NY Empire State Child Credit, NY Child &
+  Dependent Care, NY College Tuition, CA Renter's Credit, CA Child &
+  Dependent Care, IL Property Tax Credit, IL K-12 Education Expense.
+- **C9** PA local EIT — 13 PA municipalities including Philadelphia,
+  Pittsburgh, Allentown, Erie, Reading, Scranton + Act 32 default.
+- **C10** Ohio School District Income Tax — 15 OH SDs with mix of
+  earned-income + traditional bases.
+- **C11** Per-state part-year residency — OPT-IN per-W-2-stateCode
+  wage allocation (NY IT-203 / CA 540NR Sched CA pattern) via
+  `part_year_use_w2_source` adjustment marker. Pure pro-rata default
+  preserved.
 
 Read this before planning state or federal coverage work. When you add a
 new feature, **update this doc in the same commit**.

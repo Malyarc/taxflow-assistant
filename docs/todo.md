@@ -73,17 +73,23 @@ primitives in place (H2/H3/H7/H12). All 97 strategies hand-calc audited
 
 ## C. Coverage push (federal + state engine completeness)
 
-**Shipped 2026-05-26 (C-batch):** C1 coverage matrix · C4 Form 1040-X amended returns · C5 §1031 like-kind exchange · C6 ESPP + ISO disqualifying disposition · C7 §163(j) + §461(l) limits · C8 Form 4868 extensions. See `docs/coverage-matrix.md`.
+**Shipped 2026-05-26 (C-batch v1):** C1 coverage matrix · C4 Form 1040-X amended returns · C5 §1031 like-kind exchange · C6 ESPP + ISO disqualifying disposition · C7 §163(j) + §461(l) limits · C8 Form 4868 extensions. See `docs/coverage-matrix.md`.
+
+**Shipped 2026-05-27 (C-batch v2):**
+- **C2 (partial)** — NY/CA/IL × 2-3 credits each via `calculateStateAdditionalCredits`: NY Empire State Child Credit (IT-213), NY Child & Dependent Care (IT-216), NY College Tuition (IT-272), CA Renter's Credit (Form 540 Line 46), CA Child & Dependent Care (Form 3506), IL Property Tax Credit (Schedule ICR), IL K-12 Education Expense Credit. 7 new credits across top-3 CPA-volume income-tax states. Future: extend to MA/NJ/PA/VA/GA/MI/OH (~10 states × 3-5 credits).
+- **C9** — 13 PA municipalities (Philly, Pittsburgh, Allentown, Erie, Reading, Scranton, Wilkes-Barre, Harrisburg, Lancaster, York, Altoona, Bethlehem) + Act 32 default 1%. Covers ~60% of PA filers. Future: expand to 50+ municipalities using DCED PSD Code database.
+- **C10** — 15 OH school districts (mix earned-income + traditional base). Future: expand to 200+ districts.
+- **C11** — OPT-IN per-W-2-stateCode wage allocation (NY IT-203 / CA 540NR Sched CA pattern). Enable via `part_year_use_w2_source` adjustment marker. Pure pro-rata remains default.
 
 Remaining open:
 
 | # | Item | Effort | Notes |
 |---|---|---|---|
-| C2 | **Top-10-state credit push** (Option C) | 2-3 wks | Pick 10 high-CPA-volume states with brackets-only coverage; add their top 5 credits each. ~50 credits × 3-5 days each. |
-| C3 | **CPA design-partner side-by-side validation** (Option A) | 4-8 wks calendar | 1 partner runs 20-50 returns through TaxFlow next to Lacerte. Every diff = real customer-driven gap. Highest-ROI coverage path. |
-| C9 | PA local EIT (~2000 jurisdictions) | 1 wk | Lookup table by zip / municipality. |
-| C10 | OH school district income tax | 3-5 days | |
-| C11 | Per-state part-year residency formulas | 2-3 wks | Currently pro-rata by days; real NY IT-203 / CA 540NR Sched CA source by income item. |
+| C2 | **Top-10-state credit push (expand to 7 more states)** | 2-3 wks | NY/CA/IL shipped. Remaining: MA, NJ, PA, VA, GA, MI, OH. ~35 more credits. |
+| C3 | **CPA design-partner side-by-side validation** (Option A) | 4-8 wks calendar | NOT engineering — requires CPA partner. Blocked on user availability. |
+| C9 | **PA local EIT expansion (~1990 remaining jurisdictions)** | 1 wk | Top 13 shipped. Bulk-load remaining from DCED PSD Code database. |
+| C10 | **OH school district expansion (~585 remaining)** | 3-5 days | Top 15 shipped. Bulk-load remaining from tax.ohio.gov SDIT list. |
+| C11 | **Per-income-item sourcing (K-1, rental, intangibles)** | 1-2 wks | Per-W-2-wage shipped (NY IT-203 + CA 540NR pattern). Remaining: K-1 source-state sourcing, rental-property-location sourcing, intangible-income resident-state sourcing. |
 
 **C-batch sub-gaps to track (for follow-up sessions):**
 

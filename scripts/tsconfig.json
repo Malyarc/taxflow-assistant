@@ -52,6 +52,9 @@
     "src/tax-engine-discovery-tests.ts",
     "src/tax-engine-planning-scenarios-tests.ts",
     "src/h-deep-audit-2026-05-27.ts",
+    "src/tax-engine-c2-state-credits-tests.ts",
+    "src/tax-engine-c9-c10-local-tax-tests.ts",
+    "src/tax-engine-c11-part-year-w2-tests.ts",
     "src/seed-dummy-clients.ts"
   ]
 }
