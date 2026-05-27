@@ -176,6 +176,30 @@ export const taxReturnsTable = pgTable(
      */
     esppDisqualifyingDispositionOrdinary: numeric("espp_disqualifying_disposition_ordinary", { precision: 14, scale: 2 }).notNull().default("0"),
     /**
+     * C7 — §163(j) business-interest-expense gross (CPA-entered, before limit).
+     * Source: `section_163j_business_interest_expense` adjustment(s).
+     */
+    section163jBusinessInterestExpense: numeric("section_163j_business_interest_expense", { precision: 14, scale: 2 }).notNull().default("0"),
+    /**
+     * C7 — §163(j) allowed business interest deduction this year.
+     * = min(gross + prior-year carryforward, 30% × ATI + biz interest income + floor-plan).
+     * Subtracted from ordinary income.
+     */
+    section163jAllowedDeduction: numeric("section_163j_allowed_deduction", { precision: 14, scale: 2 }).notNull().default("0"),
+    /**
+     * C7 — §163(j) disallowed business interest carried to next year
+     * (IRC §163(j)(2) — indefinite carryforward, no time limit, no AGI test).
+     */
+    section163jDisallowedCarryforward: numeric("section_163j_disallowed_carryforward", { precision: 14, scale: 2 }).notNull().default("0"),
+    /**
+     * C7 — §461(l) excess business loss disallowed and added back (TCJA).
+     * TY2024 threshold: $305,000 single / $610,000 MFJ. CPA pre-computes
+     * the excess and enters via `section_461l_excess_loss_addback`
+     * adjustment. Disallowed amount carries forward as NOL the following
+     * year (CPA enters via `nol_carryforward` next year).
+     */
+    section461lExcessLossAddback: numeric("section_461l_excess_loss_addback", { precision: 14, scale: 2 }).notNull().default("0"),
+    /**
      * C4 — Form 1040-X amended-return support.
      *
      * Snapshot of the computed-return values at the moment the CPA

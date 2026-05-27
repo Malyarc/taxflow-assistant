@@ -1137,6 +1137,14 @@ export const AdjustmentAdjustmentType = {
     "iso_disqualifying_disposition_ordinary",
   espp_disqualifying_disposition_ordinary:
     "espp_disqualifying_disposition_ordinary",
+  section_163j_business_interest_expense:
+    "section_163j_business_interest_expense",
+  section_163j_business_interest_income:
+    "section_163j_business_interest_income",
+  section_163j_carryforward_from_prior: "section_163j_carryforward_from_prior",
+  section_163j_floor_plan_financing_interest:
+    "section_163j_floor_plan_financing_interest",
+  section_461l_excess_loss_addback: "section_461l_excess_loss_addback",
 } as const;
 
 export interface Adjustment {
@@ -1217,6 +1225,14 @@ export const CreateAdjustmentBodyAdjustmentType = {
     "iso_disqualifying_disposition_ordinary",
   espp_disqualifying_disposition_ordinary:
     "espp_disqualifying_disposition_ordinary",
+  section_163j_business_interest_expense:
+    "section_163j_business_interest_expense",
+  section_163j_business_interest_income:
+    "section_163j_business_interest_income",
+  section_163j_carryforward_from_prior: "section_163j_carryforward_from_prior",
+  section_163j_floor_plan_financing_interest:
+    "section_163j_floor_plan_financing_interest",
+  section_461l_excess_loss_addback: "section_461l_excess_loss_addback",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -1293,6 +1309,14 @@ export const UpdateAdjustmentBodyAdjustmentType = {
     "iso_disqualifying_disposition_ordinary",
   espp_disqualifying_disposition_ordinary:
     "espp_disqualifying_disposition_ordinary",
+  section_163j_business_interest_expense:
+    "section_163j_business_interest_expense",
+  section_163j_business_interest_income:
+    "section_163j_business_interest_income",
+  section_163j_carryforward_from_prior: "section_163j_carryforward_from_prior",
+  section_163j_floor_plan_financing_interest:
+    "section_163j_floor_plan_financing_interest",
+  section_461l_excess_loss_addback: "section_461l_excess_loss_addback",
 } as const;
 
 export interface UpdateAdjustmentBody {

@@ -354,6 +354,11 @@ export async function recalculateAndUpsertTaxReturn(
     // C6 — ESPP / ISO disqualifying disposition ordinary comp income
     isoDisqualifyingDispositionOrdinary: String(result.isoDisqualifyingDispositionOrdinary),
     esppDisqualifyingDispositionOrdinary: String(result.esppDisqualifyingDispositionOrdinary),
+    // C7 — §163(j) business interest limit + §461(l) excess loss
+    section163jBusinessInterestExpense: String(result.section163jBusinessInterestExpense),
+    section163jAllowedDeduction: String(result.section163jAllowedDeduction),
+    section163jDisallowedCarryforward: String(result.section163jDisallowedCarryforward),
+    section461lExcessLossAddback: String(result.section461lExcessLossAddback),
     socialSecurityBenefits: String(result.socialSecurityBenefits),
     socialSecurityTaxable: String(result.socialSecurityTaxable),
     feieTotalExclusion: String(result.feie.totalExclusion),

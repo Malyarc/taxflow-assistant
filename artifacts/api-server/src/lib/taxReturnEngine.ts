@@ -744,6 +744,21 @@ export interface ComputedTaxReturn {
    * Flows to ordinary income. NOT FICA-taxed (§423 special rule).
    */
   esppDisqualifyingDispositionOrdinary: number;
+  /** C7 — §163(j) gross business interest expense entered by CPA. */
+  section163jBusinessInterestExpense: number;
+  /**
+   * C7 — §163(j) allowed deduction this year (after 30% × ATI cap).
+   * Subtracted from ordinary income (acts as a business deduction).
+   */
+  section163jAllowedDeduction: number;
+  /** C7 — §163(j) disallowed amount carried to next year (indefinite). */
+  section163jDisallowedCarryforward: number;
+  /**
+   * C7 — §461(l) excess business loss addback (TCJA). Positive value
+   * added to ordinary income (reverses a prior over-deduction).
+   * CPA-supplied.
+   */
+  section461lExcessLossAddback: number;
   // ── Phase 2 line items ─────────────────────────────────────────────────
   /** Capital loss deducted against ordinary income (Schedule D Line 21, $3k/$1.5k cap) */
   capitalLossDeducted: number;
@@ -1245,6 +1260,37 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // transactions independently of these adjustments.
   const isoDisqualifyingDispositionOrdinaryAdj = sumByType("iso_disqualifying_disposition_ordinary");
   const esppDisqualifyingDispositionOrdinaryAdj = sumByType("espp_disqualifying_disposition_ordinary");
+  // C7 — §163(j) business interest limit (post-TCJA: 30% × ATI cap).
+  //
+  // Engine model: CPA enters the gross business interest expense + any
+  // prior-year carryforward + any biz interest income that increases the
+  // allowance. Engine applies the 30% × ATI cap and surfaces the allowed
+  // deduction (subtracted from ordinary income) + disallowed carryforward.
+  //
+  // ATI proxy: we approximate ATI ≈ AGI minus net cap gains, before the
+  // §163(j) deduction itself. Real ATI (per §163(j)(8)) is taxable income
+  // without §163(j), NOL, or §199A QBI — plus addbacks for depreciation /
+  // amortization / depletion (pre-2022 only; post-2022 reversed). The
+  // engine doesn't track depreciation separately at this layer, so AGI
+  // less LTCG/QDIV is a workable proxy at moderate-to-high incomes.
+  // Tracked sub-gap. Real-property-trade-or-business election and the
+  // small-business gross-receipts exception ($30M TY2024) are the CPA's
+  // responsibility — engine assumes §163(j) applies if the CPA enters
+  // any business interest expense.
+  const section163jBusinessInterestExpenseAdj = sumByType("section_163j_business_interest_expense");
+  const section163jBusinessInterestIncomeAdj = sumByType("section_163j_business_interest_income");
+  const section163jCarryforwardFromPriorAdj = sumByType("section_163j_carryforward_from_prior");
+  const section163jFloorPlanInterestAdj = sumByType("section_163j_floor_plan_financing_interest");
+  // C7 — §461(l) excess business loss addback (TCJA, TY2024 thresholds
+  // $305k single / $610k MFJ). CPA computes the aggregate net business
+  // loss (Sched C + Sched E + K-1 active losses after §469 PAL), subtracts
+  // the threshold, and enters the positive excess here. Engine adds it
+  // back to ordinary income (reversing the over-deduction). Disallowed
+  // carries forward as an NOL — CPA enters via `nol_carryforward` next
+  // year. Engine does NOT compute the aggregate biz-loss itself in this
+  // MVP because the loss-aggregation crosses Sched C / E / K-1 buckets
+  // that the engine processes in separate stages.
+  const section461lExcessLossAddbackAdj = sumByType("section_461l_excess_loss_addback");
   // Credits
   const dependentCareExpensesAdj = sumByType("dependent_care_expenses");
   const llcExpensesAdj = sumByType("qualified_education_expenses_llc");
@@ -1505,6 +1551,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const isoDisqualifyingDispositionOrdinary = Math.max(0, isoDisqualifyingDispositionOrdinaryAdj);
   const esppDisqualifyingDispositionOrdinary = Math.max(0, esppDisqualifyingDispositionOrdinaryAdj);
 
+  // C7 — §461(l) excess business loss addback (CPA-supplied).
+  const section461lExcessLossAddback = Math.max(0, section461lExcessLossAddbackAdj);
+
   // K-1 net ST/LT capital gain (Box 8 / 9a) joins the cap-gain netting
   // alongside 1099-B-derived gains. Subtract prior-year loss carryforwards.
   // Home-sale taxable remainder (K6) and QSBS taxable remainder (K7) are
@@ -1622,6 +1671,57 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const taxableUnemploymentAndRefund =
     form1099Summary.unemploymentCompensationOnly + taxableStateRefund;
 
+  // ── C7 — §163(j) business interest limit (computed before ATI sum) ────
+  // ATI proxy = AGI-like total before §163(j) deduction itself. We use a
+  // simplification: ATI ≈ all ordinary income components except the §163(j)
+  // gross expense (which the CPA hasn't yet decided how much of). For most
+  // high-income filers this is close to taxable income before §163(j).
+  // Tracked sub-gap: ATI for §163(j)(8) is technically taxable income
+  // before §163(j) / NOL / §199A QBI, plus depreciation addback for
+  // pre-2022 years. Our proxy ignores those add-backs.
+  const ati163jProxy = Math.max(
+    0,
+    totalWages +
+      additionalIncome +
+      additionalIncomeAdjustments +
+      investmentIncomeFromAdj +
+      netSeIncome +
+      form1099Summary.interestIncome +
+      form1099Summary.ordinaryDividends +
+      form1099Summary.retirementIncome +
+      taxableUnemploymentAndRefund +
+      form1099Summary.paymentCardIncome +
+      form1099Summary.miscIncome +
+      ltcgPreferential +
+      qualifiedDividends +
+      stcgInOrdinary -
+      capitalLossDeducted +
+      k1ActiveOrdinary +
+      k1PassiveAppliedToAgi +
+      k1InterestIncome +
+      k1OrdinaryDividends +
+      k1Royalties +
+      feieGrossForeignIncome -
+      feieExclusion +
+      isoDisqualifyingDispositionOrdinary +
+      esppDisqualifyingDispositionOrdinary,
+  );
+  const section163jGross = Math.max(0, section163jBusinessInterestExpenseAdj);
+  const section163jCarryforwardFromPrior = Math.max(0, section163jCarryforwardFromPriorAdj);
+  const section163jBusinessInterestIncome = Math.max(0, section163jBusinessInterestIncomeAdj);
+  const section163jFloorPlanInterest = Math.max(0, section163jFloorPlanInterestAdj);
+  // §163(j)(1): allowance = (biz interest income) + (floor plan financing
+  // interest) + (30% × ATI). Items NOT subject to the 30% cap are added
+  // directly. Items subject (gross interest + carryforward) cap at 30% ATI.
+  const cappedPortion = section163jGross + section163jCarryforwardFromPrior;
+  const cappedAllowance = 0.30 * ati163jProxy;
+  const cappedAllowed = Math.min(cappedPortion, cappedAllowance);
+  const section163jAllowedDeduction =
+    cappedAllowed + section163jBusinessInterestIncome + section163jFloorPlanInterest;
+  const section163jDisallowedCarryforward = Math.max(0, cappedPortion - cappedAllowed);
+  // Track gross for transparency (the CPA-entered input).
+  const section163jBusinessInterestExpense = section163jGross;
+
   const ordinaryAdditionalIncomeBeforeRental =
     additionalIncome +
     additionalIncomeAdjustments +
@@ -1645,7 +1745,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     feieGrossForeignIncome -  // K9 — add gross foreign earned income
     feieExclusion +           // K9 — subtract FEIE excluded portion
     isoDisqualifyingDispositionOrdinary +    // C6 — ISO disqualifying disposition comp income
-    esppDisqualifyingDispositionOrdinary;    // C6 — §423 ESPP disqualifying disposition comp income
+    esppDisqualifyingDispositionOrdinary +   // C6 — §423 ESPP disqualifying disposition comp income
+    section461lExcessLossAddback -           // C7 — §461(l) excess business loss addback (positive add)
+    section163jAllowedDeduction;             // C7 — §163(j) allowed business interest (deduction)
   const provisionalAgiForPal = Math.max(0, totalWages + ordinaryAdditionalIncomeBeforeRental);
 
   let rentalNetAppliedToAgi = 0;
@@ -2309,6 +2411,10 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     section1031DeferredGain,
     isoDisqualifyingDispositionOrdinary,
     esppDisqualifyingDispositionOrdinary,
+    section163jBusinessInterestExpense,
+    section163jAllowedDeduction,
+    section163jDisallowedCarryforward,
+    section461lExcessLossAddback,
     feie,
     nolDeduction,
     nolCarryforwardRemaining,

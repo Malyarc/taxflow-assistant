@@ -795,6 +795,43 @@ function Section1031Card({ taxReturn }: { taxReturn: { section1031RealizedGain?:
   );
 }
 
+// ─── C7 — §163(j) + §461(l) business-limit summary ───────────────────────
+function Section163j461lCard({ taxReturn }: { taxReturn: { section163jBusinessInterestExpense?: string | number | null; section163jAllowedDeduction?: string | number | null; section163jDisallowedCarryforward?: string | number | null; section461lExcessLossAddback?: string | number | null } | null | undefined }) {
+  const num = (v: string | number | null | undefined): number => v == null ? 0 : (typeof v === "number" ? v : Number(v));
+  const gross = num(taxReturn?.section163jBusinessInterestExpense);
+  const allowed = num(taxReturn?.section163jAllowedDeduction);
+  const cf = num(taxReturn?.section163jDisallowedCarryforward);
+  const lossAddback = num(taxReturn?.section461lExcessLossAddback);
+  if (gross <= 0 && allowed <= 0 && cf <= 0 && lossAddback <= 0) return null;
+  const fmt = (n: number): string => n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  return (
+    <Card className="print:hidden">
+      <CardHeader>
+        <CardTitle className="text-base">Business-Income Limits — §163(j) + §461(l)</CardTitle>
+        <p className="text-xs text-muted-foreground mt-1">
+          §163(j) — engine applies the 30%-of-ATI cap on business interest expense (ATI proxy = pre-§163(j) ordinary income). Disallowed amount carries forward indefinitely. CPA confirms small-business gross-receipts exception (≤$30M for TY2024) or real-property-trade election is NOT invoked. §461(l) — CPA pre-computes the aggregate excess business loss above $305k single / $610k MFJ.
+        </p>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 gap-y-2 text-sm">
+          {gross > 0 || allowed > 0 ? <>
+            <span className="text-slate-600">§163(j) gross business interest (CPA-entered)</span>
+            <span className="font-mono text-right">{fmt(gross)}</span>
+            <span className="text-emerald-700 font-medium">§163(j) allowed deduction this year</span>
+            <span className="font-mono text-right text-emerald-700 font-medium">{fmt(allowed)}</span>
+            <span className="text-amber-700">§163(j) disallowed → carries to next year (indefinite)</span>
+            <span className="font-mono text-right text-amber-700">{fmt(cf)}</span>
+          </> : null}
+          {lossAddback > 0 ? <>
+            <span className="text-red-700 font-medium">§461(l) excess business loss addback</span>
+            <span className="font-mono text-right text-red-700 font-medium">{fmt(lossAddback)}</span>
+          </> : null}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── C6 — ESPP / ISO disqualifying disposition summary ────────────────────
 function EsppIsoCard({ taxReturn }: { taxReturn: { isoDisqualifyingDispositionOrdinary?: string | number | null; esppDisqualifyingDispositionOrdinary?: string | number | null } | null | undefined }) {
   const num = (v: string | number | null | undefined): number => v == null ? 0 : (typeof v === "number" ? v : Number(v));
@@ -1494,6 +1531,7 @@ function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: nu
 
           <Section1031Card taxReturn={taxReturn as unknown as Parameters<typeof Section1031Card>[0]["taxReturn"]} />
           <EsppIsoCard taxReturn={taxReturn as unknown as Parameters<typeof EsppIsoCard>[0]["taxReturn"]} />
+          <Section163j461lCard taxReturn={taxReturn as unknown as Parameters<typeof Section163j461lCard>[0]["taxReturn"]} />
           <Form4868Card clientId={clientId} taxYear={taxYear} />
           <Form1040xCard clientId={clientId} taxYear={taxYear} />
         </div>
@@ -2437,6 +2475,11 @@ function AdjustmentsTab({ clientId }: { clientId: number }) {
     section_1031_boot_received: "§1031 Like-Kind Exchange — Boot Received (cash + non-like-kind; drives recognition = min(realized, boot))",
     iso_disqualifying_disposition_ordinary: "ISO Disqualifying Disposition — Ordinary Comp (IRC §421(b)/§422; not FICA-taxed; CPA hand-calcs min(FMV-at-exercise, sale-price) − strike)",
     espp_disqualifying_disposition_ordinary: "§423 ESPP Disqualifying Disposition — Ordinary Comp (FMV-at-purchase − purchase-price; not FICA-taxed per Rev Rul 71-52)",
+    section_163j_business_interest_expense: "§163(j) Business Interest Expense — Gross (engine applies 30%-of-ATI cap)",
+    section_163j_business_interest_income: "§163(j) Business Interest Income (adds to allowance dollar-for-dollar)",
+    section_163j_carryforward_from_prior: "§163(j) Carryforward from Prior Year (stacks on gross, subject to same 30% cap)",
+    section_163j_floor_plan_financing_interest: "§163(j) Floor Plan Financing Interest (100% allowed; never capped)",
+    section_461l_excess_loss_addback: "§461(l) Excess Business Loss Addback (TY2024 thresholds $305k/$610k; CPA pre-computes)",
     // Schedule C
     schedule_c_expenses: "Schedule C Business Expenses",
     // Credit-driving expenses
