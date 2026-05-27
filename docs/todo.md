@@ -1,6 +1,6 @@
 # TaxFlow Assistant — Open TODO list
 
-**Status as of 2026-05-26 (post-C-batch).** This is the durable, git-tracked TODO list.
+**Status as of 2026-05-27 (post-H2 MVP).** This is the durable, git-tracked TODO list.
 Read this in every new session before picking up work. The Claude task
 tool inside any single session is ephemeral — only this file persists.
 
@@ -13,13 +13,16 @@ tracker, work it, commit, then remove it from here.
 
 If I were sequencing for maximum customer impact, I would do (in order):
 
-1. **H2 — what-if engine** (1-2 wks). Single biggest planning-accuracy
-   unlock. Every existing rule becomes credible immediately. Foundation
-   for H3 / H7 / H10 / H12.
-2. **Coverage matrix doc** (1 day). One-day investment that gives you
-   the data to prioritize all subsequent state work.
-3. **H5 — asset balance tracking** (2-3 wks). Unlocks the next tier of
-   planning strategies (RMD, NUA, Roth conversion sizing).
+1. **Expand H2 wiring to remaining G1 detectors** (3-5 days). G1.1 SEP
+   shipped 2026-05-27; G1.4 Roth / G1.6 NIIT / G1.9 TLH / G1.10 FTC need
+   strategy-specific mutation models (Roth costs today / benefits future;
+   NIIT mutates investment income not AGI; FTC unlocks Form 1116). G1.3
+   bunching + G1.7 QBI + G1.8 DAF are multi-year strategies — defer to H3.
+2. **H5 — asset balance tracking** (2-3 wks). Unlocks RMD / NUA / mega-
+   backdoor Roth / Roth conversion sizing.
+3. **H1 — expand catalog 10 → 50+ rules** (2 months calendar, ~25% eng).
+   With H2 verified per-rule, new strategies ship with real deltas
+   immediately.
 4. **D15 — multi-tenancy auth** (2-3 wks). Required before charging.
 5. **CPA design-partner validation** (4-8 wks calendar, ~25% engineering).
 
@@ -37,14 +40,15 @@ If I were sequencing for maximum customer impact, I would do (in order):
 
 ## B. Tax Planning Strategy tool — accuracy + smartness upgrades (Phase H)
 
-Honest current state: B-. 10 G1 rules + 5 G4 detectors ≈ 7% of the
-canonical planning universe (~200 strategies). Savings are heuristic
-estimates, not actual engine re-runs.
+Honest current state: B. H2 what-if MVP shipped 2026-05-27 — G1.1 SEP
+has engine-verified deltas; the other 9 G1 + 5 G4 detectors still ship
+heuristic estSavings. Catalog is ~7% of the canonical planning
+universe (~200 strategies).
 
 | # | Item | Effort | Why |
 |---|---|---|---|
 | H1 | **Expand catalog 10 → 50+ rules** | 2 months | Add Augusta Rule, NUA, REPS election, §1031 timing, mega-backdoor Roth, RMD optimization, cost segregation, opportunity zones, defined benefit / cash balance plans, S-corp reasonable comp, NQDC §409A, CRT/CLT, QCD, §1374 BIG, §338(h)(10), conservation easements, etc. |
-| H2 | **What-if engine** | 1-2 wks | **HIGHEST-IMPACT.** Run `computeTaxReturnPure` twice (current + with strategy) → report actual federal+state tax delta. No more heuristic ranges. Foundation for all other H tasks. |
+| H2 | **What-if engine — MVP shipped 2026-05-27** | — | Pure `whatIfEngine.ts` + POST /clients/{id}/what-if endpoint + G1.1 SEP wired with engine-verified delta + frontend display. **Sub-gap:** wire remaining 9 G1 + 5 G4 detectors. G1.4 / G1.6 / G1.9 / G1.10 need strategy-specific mutation models (~3-5 days); G1.3 / G1.7 / G1.8 are multi-year — defer to H3. |
 | H3 | **Multi-year scenario modeling** | 1-2 wks | For strategies that span years (Roth ladder, bunching cycles, NUA), simulate 3-5 years forward with wage growth + bracket indexing. Builds on H2. |
 | H4 | **State-residency change analysis** | 1-2 wks | "Stay in CA: $45k state tax. Move to TX: $0. Multi-year delta with caveats." Huge for HNW CA/NY/NJ clients. |
 | H5 | **Asset balance tracking** | 2-3 wks | Schema + UI for IRA / Roth / SEP / 401(k) (with employer-stock breakdown for NUA) / HSA / 529 / brokerage cost basis / real estate FMV. Unlocks RMD / Roth conversion / NUA / mega-backdoor Roth / estate planning. |
