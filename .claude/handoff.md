@@ -61,15 +61,17 @@ session's "deferred" list. This session shipped:
 - **H1 catalog v1.8 — 5 more new strategies**: G1.30 ACA PTC §36B,
   G1.41 §1045 QSBS Rollover, G1.42 SE Health Insurance §162(l),
   G1.43 Wash-sale §1091 proactive, G1.50 §72(t) SEPP.
-- **H1 catalog v1.9 — 5 more new strategies** (52 total — honest count
-  now 42 of ~90 in canonical universe, ~40 remaining): G1.52
-  Estimated Tax Safe Harbor §6654 (heuristic; universal frequency for
-  quarterly filers), G1.53 Kiddie Tax §1(g) minimization (heuristic;
-  HNW families with UGMA/UTMA kids), G1.54 §183 Hobby Loss
-  qualification (heuristic; SE audit defense for borderline business),
-  G1.55 Custodial Roth IRA (heuristic; G1.49 family-employment
-  companion, 50-yr PV growth), G1.56 Specific-Share-ID lot selection
-  (heuristic; universal for brokerage clients with partial sales).
+- **H1 catalog v1.9 — 5 more new strategies**: G1.52 Estimated Tax
+  Safe Harbor §6654, G1.53 Kiddie Tax §1(g) min, G1.54 §183 hobby
+  loss, G1.55 Custodial Roth IRA, G1.56 specific-share ID.
+- **H1 catalog v1.10 — 5 more new strategies** (57 total — honest count
+  now 47 of ~90 in canonical universe, ~35 remaining): G1.57 NQDC
+  §409A deferred comp (heuristic, tech execs $400k+), G1.58 State
+  Residency Change (heuristic, high-tax state + AGI > $500k), G1.59
+  Coverdell ESA §530 (heuristic, family education), G1.60 §41(h) R&D
+  Payroll-Tax Election (heuristic, small biz < $5M < 5 yrs), G1.61
+  §221 Student Loan Interest Deduction (H2-wired, $2,500 above-the-line
+  + phase-out gate).
 - **Scenarios file extended (+ S9)**: HNW family with kids + side SE
   + brokerage activity (MFJ CA). Now 9 archetypes / 60 assertions.
 - **Scenarios file extended (S7 + S8)**: FIRE-movement client age 55
