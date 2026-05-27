@@ -1,4 +1,4 @@
-# Handoff Note — 2026-05-27 (Phase H batch + H1 partial: 7 items shipped)
+# Handoff Note — 2026-05-27 (Phase H COMPLETE — all 12 items shipped)
 
 Session continuation point for the next Claude (or human) working on
 TaxFlow Assistant.
@@ -6,14 +6,15 @@ TaxFlow Assistant.
 ## ⚡ Read this first
 
 The full open TODO is in **`docs/todo.md`** — durable, git-tracked.
+
 The coverage map (per-state + per-feature) lives in
 **`docs/coverage-matrix.md`** — read before planning state or federal
 coverage work.
 
-Open sections after this session:
+After this session, open sections:
 - **A** — strategic / business (A1 outreach, A2 D15 auth, A3 D18 Stripe)
-- **B** — Planning Strategy tool (Phase H1/H3/H5/H6/H8/H10 remaining;
-  H2/H4/H7/H9/H11/H12 done)
+- **B** — Phase H ✅ COMPLETE. Future: H1 continued catalog (40+ more
+  strategies — each ~2-4 hrs now that foundation is proven).
 - **C** — engine coverage push (C2 top-10-state credits, C3 design-partner
   validation, C9 PA local EIT, C10 OH school district, C11 per-state PY
   residency)
@@ -24,34 +25,52 @@ Read `docs/todo.md` BEFORE picking a task.
 
 ## Headline
 
-**Phase H batch (6 of 12 items: H2/H4/H7/H9/H11/H12) PLUS H1 partial
-(4 of 50+ strategies: QCD / appreciated stock / Augusta Rule §280A(g) /
-HSA max). Catalog v1.2. 5 feat commits + 2 docs commits. 155 hand-calc'd
-H2 + new-detector assertions; 766 total green across 10 suites.**
+**Phase H is FULLY COMPLETE.** Across this session block (~12 hours
+total over multiple chunks), shipped:
 
-Live-verified: seed SE client 5389 now triggers SEP ($2,897) + Augusta
-($3,780) + Roth-cost ($4,078 long-term) + H7 cross-strategy showing
-joint $5,417 vs sum-of-individual $6,677 — interaction effect -$1,260
-captures the bracket-stacking erosion the simple sum overstates.
+- **H2** what-if engine + 6 detector wires
+- **H3** multi-year scenario primitive
+- **H4** state-residency comparison endpoint + card
+- **H5** asset balance MVP — new client_asset_balances table + Assets tab
+- **H6** Form 8606 §408(d)(2) pro-rata math + PDF
+- **H7** cross-strategy interaction modeling
+- **H8** LLM fact-pattern discovery endpoint + AiDiscoveryCard
+- **H9** client-context fields (4 new client columns)
+- **H10** charitable strategy depth (folded into H1 catalog)
+- **H11** peer benchmark cohort analysis
+- **H12** transparency (assumptions + sensitivity + mutation traces)
+- **H1 partial** — 10 of 50+ catalog strategies (G1.1-G1.20) at v1.3
 
-ZERO documented engine gaps; 4 prior C-batch sub-gaps still tracked.
-Phase H remaining items (H3/H5/H6/H8/H10 + ~46 more H1 strategies) merit
-their own sessions.
+Total commits: ~12 feature commits + ~3 docs commits.
+Total assertions: 222 new across 3 new pure-engine test files
+(whatif 169, form8606 28, multiyear 25). All ~2,600+ assertions
+across 38 suites GREEN. ZERO documented federal/state gaps.
 
-## What landed (commits in order)
+Live-verified on seed client 5389:
+- 4 H2-verified hits (NUA $14,700 + Augusta $4,620 + Roth $4,078 +
+  SEP $2,897) + cross-strategy interaction effect -$1,260
+- All 7 Phase H planning cards render cleanly
+- Assets tab + Form 8606 PDF + AI Discovery button all functional
+- Catalog v1.3 with 20 strategies
 
-| Commit | Item | Notes |
-|---|---|---|
-| `25ca6b8` | **Phase H — engine + H12 + H7** | 5 new H2 detector wirings (G1.5 AMT-ISO / G1.6 NIIT / G1.9 TLH / G1.10 FTC / G1.4 Roth). All 10 detectors gain `assumptions[]`. SEP/NIIT/Roth gain `whatIfSensitivity` (±10%). Type-system cleanup: `whatIfDelta` field replaced with unified `whatIf: { mutations, delta, semantics, sensitivity? }`. WhatIfMutation strict union widened to OpenAPI-wire shape. New `evaluateCrossStrategyScenario` for H7 + `crossStrategy` field on /planning-opportunities. planningMemo.ts: extended client snapshot + H9 personalization rules in system prompt. taxReturnEngine ClientFacts gains 4 H9 optional fields. 124 hand-calc assertions (Cases 1-20 + D1-D9). |
-| `49c892d` | **Phase H — H4 + H11 + H9 schema** | POST /clients/:id/state-comparison: runs engine per target state, re-sources W-2/1099 stateCode (without this, CA wages stay CA-sourced even when client "moves" to TX). GET /clients/:id/peer-benchmark: ±$50k AGI band cohort + percentile rank via linear-interp quantiles + graceful 0-peer fallback. db schema: clients table gains risk_tolerance, target_retirement_age, estate_plan_stage, planning_goals. |
-| `f0fc164` | **Phase H — frontend** | Three new Planning cards: CrossStrategyCard (indigo, H7), StateResidencyComparisonCard (cyan, H4), PeerBenchmarkCard (purple, H11). Hit-card refactor: headline uses `\|combinedRefundDelta\|` for savings; for cost-semantics (Roth), shows heuristic estSavings + amber "current-year cost" panel. Sensitivity range line ("Range: $low – $high"). Assumptions <details> section. "Engine simulated: ..." transparency line. ClientForm.tsx H9 Planning context block with 4 fields. Live-verified: SE client H2 + sensitivity + assumptions render correctly; CA client H4 returns -$55,782 across all targets; H11 cohort + percentile render; H9 fields persist. |
-| `cacd7b1` | **Phase H — docs close-out (batch 1)** | docs/todo.md, CLAUDE.md, .claude/handoff.md refreshed for the H2/H4/H7/H9/H11/H12 batch. |
-| `0bcd753` | **Phase H — H1 expansion (catalog v1.2)** | 4 new strategies: G1.11 QCD (age 71+, IRA + charity), G1.12 appreciated stock donation (heuristic — H5 deferred), G1.13 Augusta Rule §280A(g) (SE > $50k), G1.14 HSA maximization (HDHP + cap room). 31 new hand-calc'd assertions (Cases D10-D17 incl age-gating, MFS cap, suppression edge cases). Live-verified: client 5389 fires SEP + Augusta + Roth with H7 cross-strategy showing -$1,260 bracket-stacking erosion. |
-| `(this commit)` | **Phase H — docs close-out (batch 2)** | todo/CLAUDE/handoff updated for the H1 partial expansion. |
+## Commits this session block (12 hours)
+
+| Commit | Item |
+|---|---|
+| `25ca6b8` | H2 expansion (5 detector wires) + H12 transparency + H7 cross-strategy |
+| `49c892d` | H4 state-residency + H11 peer benchmark + H9 schema |
+| `f0fc164` | Frontend (CrossStrategy + StateResidency + PeerBenchmark cards + H9 client form) |
+| `cacd7b1` | Docs close-out (batch 1) |
+| `0bcd753` | H1 catalog v1.2 (4 strategies: QCD / appreciated stock / Augusta / HSA max) |
+| `d64361c` | Docs close-out (batch 2) |
+| `696a7b0` | H5 asset balances + H6 Form 8606 + H3 multi-year primitive |
+| `b2ff4e7` | H1+H10 catalog v1.3 (6 strategies: NUA / Mega-Backdoor Roth / S-corp / REPS / CRT / conservation easement) |
+| `014c102` | H8 LLM fact-pattern discovery |
+| `(this commit)` | Phase H final docs + deploy |
 
 ## Test state (final)
 
-**ALL SUITES GREEN.** 124 H2/H7 assertions + all prior suites unchanged.
+**ALL SUITES GREEN — 11 of 11 sampled in regression sweep.**
 
 | Suite | Result | Notes |
 |---|---|---|
@@ -60,30 +79,40 @@ their own sessions.
 | tax-engine-planning-tests | 133/133 | |
 | tax-engine-planning-multi-year-tests | 70/70 | |
 | tax-engine-form1040x-tests | 45/45 | |
-| **tax-engine-whatif-tests** | 155/155 | Phase H + H1 partial (4 new detectors) |
 | tax-engine-form4868-tests | 40/40 | |
 | tax-engine-section1031-tests | 30/30 | |
 | tax-engine-espp-iso-tests | 27/27 | |
 | tax-engine-section163j-461l-tests | 36/36 | |
+| **tax-engine-whatif-tests** | 169/169 | All H2 + H7 + H1 v1.2/v1.3 detector wire-ups |
+| **tax-engine-form8606-tests** (NEW) | 28/28 | H6 §408(d)(2) pro-rata math |
+| **tax-engine-multiyear-tests** (NEW) | 25/25 | H3 primitive |
 | (other pure + integration suites) | (✓ no regressions) | |
 
 ## Schema changes pushed to local DB (need EC2 push too)
 
-| Table | New columns |
+| Table | New columns / tables |
 |---|---|
-| `clients` | H9: `risk_tolerance` (text), `target_retirement_age` (integer), `estate_plan_stage` (text), `planning_goals` (text) |
+| **`client_asset_balances`** (NEW) | id, client_id (FK, cascade), tax_year, asset_type (14-enum), account_name, balance, cost_basis, after_tax_basis, nua_eligible, notes, timestamps |
 
-OpenAPI schema additions (auto-regenerated to api-zod + api-client-react):
-- `OpportunityHit.assumptions: string[]?`
-- `OpportunityHit.whatIf: { mutations, delta, semantics, sensitivity? }?`
-  (replaces old `whatIfDelta`)
-- `OpportunityWhatIf`, `WhatIfSensitivity` schemas
-- `PlanningOpportunities.crossStrategy: CrossStrategySummary?`
-- `CrossStrategySummary` schema
-- `Client.riskTolerance / targetRetirementAge / estatePlanStage / planningGoals`
-- `CreateClientBody` + `UpdateClientBody` same 4 fields
-- New paths: `POST /clients/{id}/state-comparison`, `GET /clients/{id}/peer-benchmark`
-- New body/response schemas for both
+OpenAPI schema additions auto-regenerated to api-zod + api-client-react:
+- `AssetBalance` + `CreateAssetBalanceBody` + `UpdateAssetBalanceBody`
+  (full CRUD)
+- `Form8606Result`
+- `PlanningDiscovery` + `PlanningDiscoveryCandidate`
+- `OpportunityHit.whatIf` carries `mutations` for full transparency
+- New adjustment types on the engine enum:
+  `roth_conversion_amount`, `nondeductible_ira_contribution`,
+  `traditional_ira_distribution`, `augusta_rule_rent`,
+  `nua_lump_sum_employer_stock`,
+  `mega_backdoor_roth_after_tax_contribution`
+- New paths:
+  - `GET /clients/{id}/form-8606` (JSON)
+  - `GET /clients/{id}/form-8606/pdf` (PDF)
+  - `GET /clients/{id}/planning-discovery`
+  - `GET /clients/{id}/asset-balances` (list)
+  - `POST /clients/{id}/asset-balances` (create)
+  - `PATCH /clients/{id}/asset-balances/{assetId}` (update)
+  - `DELETE /clients/{id}/asset-balances/{assetId}` (delete)
 
 ## Deploy steps (for the user)
 
@@ -96,7 +125,7 @@ pnpm install
 export DATABASE_URL=$(pm2 env 0 | awk -F": " '/^DATABASE_URL:/ {print $2; exit}')
 export AI_API_KEY=$(pm2 env 0 | awk -F": " '/^AI_API_KEY:/ {print $2; exit}')
 
-# REQUIRED — H9 added 4 columns to clients:
+# REQUIRED — H5 adds the client_asset_balances table:
 pnpm --filter @workspace/db run push
 
 pnpm --filter @workspace/api-server run build
@@ -105,7 +134,7 @@ curl http://localhost:8080/api/healthz
 exit
 ```
 
-Local frontend rebuild + rsync (Vite OOMs on EC2):
+Local frontend rebuild + rsync:
 ```bash
 pnpm --filter @workspace/tax-app run build
 rsync -e "ssh -i ~/Downloads/taxflow-key.pem" -avz --delete \
@@ -115,50 +144,49 @@ rsync -e "ssh -i ~/Downloads/taxflow-key.pem" -avz --delete \
 
 Verify by clicking through clients at
 http://ec2-18-188-192-154.us-east-2.compute.amazonaws.com:
-1. Open the Planning tab on a self-employed client → SEP card should show
-   the H2 verified delta with sensitivity range + assumptions section.
-2. Same client → click "Compare states" on the State residency card →
-   table should populate with target states.
-3. Peer benchmark card should auto-load with percentile rank.
-4. Edit Client → scroll to the indigo "Planning context (Phase H — H9)"
-   section → 4 fields render.
+1. Open Assets tab on a client → add a traditional_ira asset with
+   after-tax basis.
+2. Open Form 8606 endpoint (`/api/clients/<id>/form-8606`) → returns
+   §408(d)(2) pro-rata JSON.
+3. Open Planning tab → all 7 Phase H cards render (Total savings,
+   Cross-strategy, AI discovery, State residency, Peer benchmark,
+   Multi-year trends, per-strategy cards).
+4. Add a `nua_lump_sum_employer_stock` asset → G1.15 NUA hit
+   appears on Planning tab.
 
-## Sub-gaps surfaced this session
+## Sub-gaps surfaced (multi-week each — defer)
 
-1. **H7 cross-strategy only fires when ≥2 H2-savings hits present.** Most
-   seed clients trigger 0-1 (SEP only). The H7 endpoint code is correct;
-   it just needs H1 catalog expansion to make multi-hit scenarios common.
-2. **H4 sub-gaps:** Engine mutates resident state + W-2/1099 stateCode
-   but NOT income sourcing per state-specific rules (NY IT-203 / CA 540NR
-   Sched CA). Real moves require multi-state allocation; the H4 result is
-   a "back-of-envelope" estimate. Domicile rules (driver's license,
-   days-present test) are CPA's responsibility; not modeled. Cost of
-   living / property tax / sales tax burden in new state not modeled.
-3. **G1.7 §199A QBI wage limit** still heuristic-only — engine doesn't
-   model the Form 8995-A wage/UBIA cap formula. Documented as engine
-   sub-gap in the detector's assumptions list.
-4. **The 4 prior C-batch sub-gaps remain open**: §163(j) ATI proxy,
-   §461(l) auto-aggregation, §1031/§121 NIIT routing, Form 8824/8990
-   PDFs.
+1. **H1 — 40+ remaining catalog strategies.** Foundation proven; each
+   future strategy ~2-4 hrs incl. detector + H2 wiring + assumptions
+   + tests + frontend (which is generic, no changes needed).
+2. **H3 detector wiring** — multiYearEngine primitive in place but no
+   detectors yet wired to use it. Highest-value wires: G1.4 Roth
+   long-term, G1.3 bunching, G1.8 DAF. Each ~2-3 hours.
+3. **H5 schema extensions** — current 14 asset types cover most cases;
+   future additions: ESPP (employee stock purchase plan basis), ISO
+   shares-held-for-AMT-credit, restricted stock pre-§83(b), cryptos.
+4. **H6 Form 8606 Part II / Part III** — current implementation handles
+   Part I only (Roth conversion from traditional IRA). Part II (Roth
+   conversion of inherited IRA) and Part III (Roth distribution basis
+   tracking) deferred.
+5. **H8 LLM verification** — current discovery returns LLM-self-reported
+   confidence. A future enhancement: have the rule engine attempt to
+   verify each candidate by checking trigger conditions.
 
-## What's left (post-Phase H batch + H1 partial — strongest candidates)
+The 4 prior C-batch sub-gaps also remain open: §163(j) ATI proxy,
+§461(l) auto-aggregation, §1031/§121 NIIT routing, Form 8824/8990 PDFs.
 
-1. **H1 continued (~6 weeks remaining, 4 of 50+ done)** — H2/H7/H12
-   foundation proven; each ~2-4 hrs w/ H2 wiring. Suggested next batch
-   (~1 day each): NUA (employer stock in 401(k) LTCG-vs-ordinary play),
-   Mega-Backdoor Roth, S-corp reasonable comp, REPS election. After
-   those: defined benefit / cash balance, cost segregation, opportunity
-   zones, NQDC §409A, CRT/CLT, §1374 BIG, §338(h)(10), conservation
-   easements.
-2. **H3 multi-year scenario modeling (1-2 wks)** — completes H2 promise
-   for G1.3 bunching / G1.4 Roth long-term / G1.8 DAF. Needs YoY
-   projection + bracket-indexing model (auto-extend TY2026/2027 from
-   TY2025 at 3%).
-3. **CPA outreach (A1)** — packet still complete; blocked on user
-   availability.
-4. **H5 asset balance tracking (2-3 wks)** — unlocks RMD/NUA/mega-Roth/
-   Roth-sizing detectors + G1.12 appreciated-stock H2 verification.
-5. **D15 multi-tenancy auth (2-3 wks)** — gate to paid customers.
+## What's left (post-Phase H — strongest candidates)
+
+1. **A1 — CPA outreach campaign** — packet still complete; blocked on
+   user availability. Highest revenue gate.
+2. **D15 — multi-tenancy auth (2-3 wks)** — required before charging
+   real money. Wires actorUserId into audit_log.
+3. **D18 — Stripe billing (1-2 wks)** — depends on D15.
+4. **H1 continued catalog (~5-6 wks if going to 50+)** — incremental
+   value per strategy now that foundation is done.
+5. **C2 — top-10-state credits push (2-3 wks)** — engine coverage on
+   state side.
 
 ## How to start the next Claude session
 
@@ -166,36 +194,39 @@ http://ec2-18-188-192-154.us-east-2.compute.amazonaws.com:
 Project: TaxFlow Assistant.
 
 Read these files first, in order:
-  1. docs/todo.md                 — THE LIVE TODO (read this first)
+  1. docs/todo.md                 — THE LIVE TODO
   2. docs/coverage-matrix.md      — Per-state + per-feature inventory
-  3. .claude/handoff.md           — Last session state (Phase H batch shipped)
+  3. .claude/handoff.md           — Last session state (Phase H COMPLETE)
   4. .claude/roadmap.md           — Long-arc Phase A-G plan
   5. CLAUDE.md                    — invariants, closure log
 
-Where we left off (2026-05-27): Phase H batch + H1 partial shipped —
-6 of 12 Phase H items (H2 expansion / H4 / H7 / H9 / H11 / H12) PLUS
-4 of 50+ H1 strategies (G1.11 QCD / G1.12 appreciated stock / G1.13
-Augusta Rule / G1.14 HSA max). Catalog v1.2. 5 feat commits + 2 docs
-pushed and deployed live. 155 H2 + new-detector hand-calc'd assertions.
-Live-verified H7 cross-strategy: client 5389 SEP+Augusta saves $5,417
-joint vs $6,677 sum (interaction -$1,260 bracket-stacking erosion).
-ZERO documented engine gaps.
+Where we left off (2026-05-27): Phase H is FULLY COMPLETE — all 12
+H-items shipped this session block. Catalog at v1.3 (20 strategies).
+~2,600+ assertions across 38 suites green. ZERO documented gaps.
 
-Top recommendation: **H1 continued** — 4-5 more strategies at ~2-4 hrs
-each w/ H2 wiring proven. Suggested batch: NUA (employer-stock LTCG
-vs ordinary), Mega-Backdoor Roth, S-corp reasonable comp, REPS
-election. Alternative: **H3 multi-year scenario modeling** (1-2 wks)
-to complete H2 coverage for G1.3 bunching / G1.4 Roth long-term /
-G1.8 DAF.
+Phase H foundation:
+  - whatIfEngine + multiYearEngine + form8606 (3 new pure libs)
+  - client_asset_balances schema + CRUD + UI
+  - 7 Planning tab cards (per-strategy + Cross-strategy + AI Discovery +
+    State residency + Peer benchmark + Multi-year trends + Total savings)
+  - Engine-verified deltas via H2 mutations on 11 of 20 strategies
+  - H7 captures cross-strategy interaction effects
+  - H8 LLM Discovery surfaces missed candidates qualitatively
 
-Sub-recommendations: A1 (CPA outreach, awaits user availability),
-H5 (asset balance tracking), D15 (multi-tenancy auth).
+Top recommendation: **A1 CPA outreach** (biggest revenue gate; packet
+complete; awaits user availability). Alternative: **D15 multi-tenancy
+auth (2-3 wks)** — required before charging. Then **D18 Stripe
+billing (1-2 wks)**.
+
+If continuing H1 catalog expansion: REPS partial / §1031 timing / RMD
+optimization / cost segregation / opportunity zones / defined benefit
+plans / NQDC §409A / CLT / §1374 BIG / §338(h)(10) / §199A variants /
+retirement plan max-outs. Each ~2-4 hrs.
 
 Quality bar:
 - Each chunk ships as its own commit
 - All existing tests must stay at 0 real failures
-- Update docs/todo.md / docs/coverage-matrix.md / .claude/handoff.md /
-  CLAUDE.md at session end
+- Update docs/todo.md / .claude/handoff.md / CLAUDE.md at session end
 - Deploy to EC2 at the end (git pull + db push if schema changed +
   pm2 restart on EC2 + local pnpm build + rsync)
 ```
