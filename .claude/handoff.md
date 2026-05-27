@@ -55,11 +55,18 @@ session's "deferred" list. This session shipped:
 - **H1 catalog v1.6 — 6 more new strategies**: G1.29 §529→Roth SECURE 2.0,
   G1.31 Saver's Credit §25B, G1.32 DCFSA vs §21, G1.36 R&D Credit §41,
   G1.37 §25C heat pump, G1.40 §1244 ordinary loss.
-- **H1 catalog v1.7 — 5 more new strategies** (42 total): G1.46 Spousal
-  IRA §219(c) (H2-wired), G1.47 §453 Installment Sale (heuristic),
-  G1.48 §83(b) election timing (heuristic informational), G1.49 Family
-  Employment of Children §3121(b)(3)(A) (H2-wired), G1.51 AOC vs LLC §25A
-  (H2-wired).
+- **H1 catalog v1.7 — 5 more new strategies**: G1.46 Spousal IRA,
+  G1.47 §453 installment, G1.48 §83(b), G1.49 family employment, G1.51
+  AOC vs LLC.
+- **H1 catalog v1.8 — 5 more new strategies** (47 total — past the 40
+  mark; honest count now 37 of ~92 in canonical universe): G1.30 ACA
+  PTC §36B (heuristic informational), G1.41 §1045 QSBS Rollover
+  (heuristic, founder profile + LTCG > $500k), G1.42 SE Health Insurance
+  §162(l) (H2-wired, 100% above-the-line), G1.43 Wash-sale §1091
+  proactive avoidance (heuristic coaching), G1.50 §72(t) SEPP early
+  retirement (heuristic, FIRE-movement clients age 50-58).
+- **Scenarios file extended (S7 + S8)**: FIRE-movement client age 55
+  + SE solo on ACA age 40. Now 8 archetypes / 47 assertions total.
 - **NEW validation audit (docs/planning-strategy-audit.md)** — all 42
   strategies verified: IRC + TY2024/2025 limits + phase-outs + formula
   correctness. Cross-referenced against Notice 2023-75 / 2024-80 / Rev.
