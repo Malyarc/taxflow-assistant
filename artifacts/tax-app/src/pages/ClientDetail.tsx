@@ -3815,9 +3815,18 @@ function PlanningTab({ clientId }: { clientId: number }) {
                     </div>
                     <div className="text-right">
                       <div className="text-2xl font-semibold text-emerald-700">
-                        {fmt(Number(hit.estSavings))}
+                        {fmt(
+                          hit.whatIfDelta
+                            ? Math.abs(Number(hit.whatIfDelta.combinedTaxDelta))
+                            : Number(hit.estSavings),
+                        )}
                       </div>
-                      <span className={`mt-1 inline-flex px-2 py-0.5 rounded text-xs font-medium ${confidenceBadgeColor(Number(hit.confidence))}`}>
+                      {hit.whatIfDelta ? (
+                        <div className="mt-1 inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-800 ring-1 ring-emerald-200" title="Computed by running an actual what-if scenario through the tax engine — not a heuristic estimate.">
+                          Engine-verified (H2)
+                        </div>
+                      ) : null}
+                      <span className={`mt-1 ml-1 inline-flex px-2 py-0.5 rounded text-xs font-medium ${confidenceBadgeColor(Number(hit.confidence))}`}>
                         {Math.round(Number(hit.confidence) * 100)}% confidence
                       </span>
                     </div>
@@ -3826,6 +3835,53 @@ function PlanningTab({ clientId }: { clientId: number }) {
                 <CardContent className="space-y-3 text-sm">
                   <p className="text-muted-foreground">{hit.rationale}</p>
                   <p className="font-medium">{hit.action}</p>
+                  {hit.whatIfDelta ? (
+                    <div className="rounded border border-emerald-200 bg-emerald-50/40 p-3 text-xs">
+                      <div className="mb-2 font-medium text-emerald-900">
+                        What-if engine delta (vs current return)
+                      </div>
+                      <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-emerald-900">
+                        <dt className="text-emerald-700">Federal tax</dt>
+                        <dd className="text-right tabular-nums">
+                          {Number(hit.whatIfDelta.federalTaxLiability) <= 0
+                            ? `-${fmt(Math.abs(Number(hit.whatIfDelta.federalTaxLiability)))}`
+                            : `+${fmt(Math.abs(Number(hit.whatIfDelta.federalTaxLiability)))}`}
+                        </dd>
+                        <dt className="text-emerald-700">State tax</dt>
+                        <dd className="text-right tabular-nums">
+                          {Number(hit.whatIfDelta.stateTaxLiability) <= 0
+                            ? `-${fmt(Math.abs(Number(hit.whatIfDelta.stateTaxLiability)))}`
+                            : `+${fmt(Math.abs(Number(hit.whatIfDelta.stateTaxLiability)))}`}
+                        </dd>
+                        <dt className="text-emerald-700">AGI change</dt>
+                        <dd className="text-right tabular-nums">
+                          {Number(hit.whatIfDelta.adjustedGrossIncome) <= 0
+                            ? `-${fmt(Math.abs(Number(hit.whatIfDelta.adjustedGrossIncome)))}`
+                            : `+${fmt(Math.abs(Number(hit.whatIfDelta.adjustedGrossIncome)))}`}
+                        </dd>
+                        {Number(hit.whatIfDelta.niitTax) !== 0 ? (
+                          <>
+                            <dt className="text-emerald-700">NIIT change</dt>
+                            <dd className="text-right tabular-nums">
+                              {Number(hit.whatIfDelta.niitTax) <= 0
+                                ? `-${fmt(Math.abs(Number(hit.whatIfDelta.niitTax)))}`
+                                : `+${fmt(Math.abs(Number(hit.whatIfDelta.niitTax)))}`}
+                            </dd>
+                          </>
+                        ) : null}
+                        {Number(hit.whatIfDelta.amtTax) !== 0 ? (
+                          <>
+                            <dt className="text-emerald-700">AMT change</dt>
+                            <dd className="text-right tabular-nums">
+                              {Number(hit.whatIfDelta.amtTax) <= 0
+                                ? `-${fmt(Math.abs(Number(hit.whatIfDelta.amtTax)))}`
+                                : `+${fmt(Math.abs(Number(hit.whatIfDelta.amtTax)))}`}
+                            </dd>
+                          </>
+                        ) : null}
+                      </dl>
+                    </div>
+                  ) : null}
                   {Array.isArray(hit.prerequisiteData) && hit.prerequisiteData.length > 0 ? (
                     <div className="rounded border border-amber-200 bg-amber-50 p-3 text-xs">
                       <div className="font-medium text-amber-900 mb-1">Still need from client:</div>
