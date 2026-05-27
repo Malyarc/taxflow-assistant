@@ -7,6 +7,8 @@ import {
   GetPlanningClientEmailParams,
   GetPlanningMissingDataParams,
   GetPlanningMultiYearParams,
+  RunWhatIfScenarioParams,
+  RunWhatIfScenarioBody,
 } from "@workspace/api-zod";
 import { CATALOG_V1, type OpportunityHit } from "@workspace/planning-strategies";
 import {
@@ -23,7 +25,12 @@ import {
   generateClientOutreachEmail,
   inferMissingData,
 } from "../lib/planningMemo";
-import { computeTaxReturn } from "../lib/taxReturnPipeline";
+import { computeTaxReturn, loadTaxReturnInputs } from "../lib/taxReturnPipeline";
+import {
+  runWhatIfScenario,
+  type WhatIfMutation,
+  type WhatIfScenario,
+} from "../lib/whatIfEngine";
 import type { AdjustmentFact, ClientFacts } from "../lib/taxReturnEngine";
 import { logger } from "../lib/logger";
 import { config } from "../lib/config";
@@ -317,6 +324,120 @@ router.get("/planning-hit-list", async (req, res): Promise<void> => {
   } catch (err) {
     logger.error({ err }, "Planning hit list failed");
     res.status(500).json({ error: "Planning hit list failed" });
+  }
+});
+
+// ── Phase H — H2 what-if scenario endpoint ─────────────────────────────────
+
+/**
+ * Validate that each mutation has the fields required for its `kind`. The
+ * OpenAPI schema can't express per-kind requirements (we kept it as a flat
+ * object so codegen would produce a single zod schema), so the per-kind
+ * check happens here. Returns a typed WhatIfMutation[] or throws with a
+ * descriptive message for HTTP 400.
+ */
+function coerceWhatIfMutations(
+  raw: ReadonlyArray<{
+    kind: "set_adjustment" | "add_adjustment" | "remove_adjustment" | "set_client_field";
+    adjustmentType?: string;
+    amount?: number;
+    field?: string;
+    value?: unknown;
+  }>,
+): WhatIfMutation[] {
+  return raw.map((m, i) => {
+    switch (m.kind) {
+      case "set_adjustment":
+      case "add_adjustment":
+        if (m.adjustmentType == null || m.amount == null) {
+          throw new Error(`mutation[${i}] (${m.kind}) requires adjustmentType + amount`);
+        }
+        return { kind: m.kind, adjustmentType: m.adjustmentType, amount: m.amount };
+      case "remove_adjustment":
+        if (m.adjustmentType == null) {
+          throw new Error(`mutation[${i}] (remove_adjustment) requires adjustmentType`);
+        }
+        return { kind: "remove_adjustment", adjustmentType: m.adjustmentType };
+      case "set_client_field":
+        if (m.field == null) {
+          throw new Error(`mutation[${i}] (set_client_field) requires field`);
+        }
+        return {
+          kind: "set_client_field",
+          field: m.field as keyof ClientFacts,
+          value: m.value ?? null,
+        };
+      default: {
+        const exhaustive: never = m.kind;
+        throw new Error(`mutation[${i}] unsupported kind: ${exhaustive as string}`);
+      }
+    }
+  });
+}
+
+router.post("/clients/:clientId/what-if", async (req, res): Promise<void> => {
+  const params = RunWhatIfScenarioParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const body = RunWhatIfScenarioBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+
+  let mutations: WhatIfMutation[];
+  try {
+    mutations = coerceWhatIfMutations(body.data.mutations);
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message });
+    return;
+  }
+
+  try {
+    const loaded = await loadTaxReturnInputs(params.data.clientId);
+    if (!loaded) {
+      res.status(404).json({ error: "Client not found" });
+      return;
+    }
+
+    const scenario: WhatIfScenario = {
+      scenarioId: body.data.scenarioId ?? undefined,
+      label: body.data.label,
+      mutations,
+    };
+    const result = runWhatIfScenario(loaded.inputs, scenario);
+
+    res.json({
+      clientId: params.data.clientId,
+      taxYear: result.baseline.taxYear,
+      scenarioId: result.scenarioId,
+      label: result.label,
+      mutations: result.mutations,
+      delta: result.delta,
+      baseline: {
+        adjustedGrossIncome: result.baseline.adjustedGrossIncome,
+        taxableIncome: result.baseline.taxableIncome,
+        federalTaxLiability: result.baseline.federalTaxLiability,
+        stateTaxLiability: result.baseline.stateTaxLiability,
+        federalRefundOrOwed: result.baseline.federalRefundOrOwed,
+        stateRefundOrOwed: result.baseline.stateRefundOrOwed,
+        effectiveTaxRate: result.baseline.effectiveTaxRate,
+      },
+      scenario: {
+        adjustedGrossIncome: result.scenario.adjustedGrossIncome,
+        taxableIncome: result.scenario.taxableIncome,
+        federalTaxLiability: result.scenario.federalTaxLiability,
+        stateTaxLiability: result.scenario.stateTaxLiability,
+        federalRefundOrOwed: result.scenario.federalRefundOrOwed,
+        stateRefundOrOwed: result.scenario.stateRefundOrOwed,
+        effectiveTaxRate: result.scenario.effectiveTaxRate,
+      },
+    });
+  } catch (err) {
+    logger.error({ err, clientId: params.data.clientId }, "What-if scenario failed");
+    res.status(500).json({ error: "What-if scenario failed" });
   }
 });
 

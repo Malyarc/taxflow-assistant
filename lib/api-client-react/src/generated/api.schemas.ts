@@ -1766,6 +1766,93 @@ export interface PlanningMultiYear {
   yearsCovered: number[];
 }
 
+export type WhatIfMutationKind =
+  (typeof WhatIfMutationKind)[keyof typeof WhatIfMutationKind];
+
+export const WhatIfMutationKind = {
+  set_adjustment: "set_adjustment",
+  add_adjustment: "add_adjustment",
+  remove_adjustment: "remove_adjustment",
+  set_client_field: "set_client_field",
+} as const;
+
+/**
+ * A single change to apply to the baseline TaxReturnInputs. Discriminated by `kind`. The server validates per-kind required fields and rejects invalid combinations with HTTP 400.
+
+ */
+export interface WhatIfMutation {
+  kind: WhatIfMutationKind;
+  /** Required for set/add/remove_adjustment. The engine adjustment_type enum value. */
+  adjustmentType?: string;
+  /** Required for set_adjustment and add_adjustment. The dollar amount. */
+  amount?: number;
+  /** Required for set_client_field. The ClientFacts key to override (e.g. filingStatus, state). */
+  field?: string;
+  /** Required for set_client_field. The replacement value (string, number, boolean, or null). */
+  value?: unknown;
+}
+
+export interface WhatIfScenarioBody {
+  /**
+   * Optional stable identifier (e.g. "G1.1-sep-14800") echoed back in the response.
+   * @nullable
+   */
+  scenarioId?: string | null;
+  label: string;
+  mutations: WhatIfMutation[];
+}
+
+/**
+ * Field-level scenario−baseline deltas. Positive on a tax field means the scenario INCREASED that tax. combinedTaxDelta is the headline planning number (federal + state tax liability delta); negative = scenario reduces tax = savings.
+
+ */
+export interface WhatIfDelta {
+  adjustedGrossIncome: number;
+  taxableIncome: number;
+  standardDeduction: number;
+  itemizedDeductions: number;
+  qbiDeduction: number;
+  federalTaxLiability: number;
+  stateTaxLiability: number;
+  selfEmploymentTax: number;
+  niitTax: number;
+  amtTax: number;
+  additionalMedicareTax: number;
+  eitc: number;
+  additionalChildTaxCredit: number;
+  federalRefundOrOwed: number;
+  stateRefundOrOwed: number;
+  effectiveTaxRate: number;
+  combinedTaxDelta: number;
+  combinedRefundDelta: number;
+}
+
+/**
+ * Side-by-side baseline + scenario summary of the most-relevant 1040 fields. Frontend renders this as a 2-column comparison.
+
+ */
+export interface WhatIfSummary {
+  adjustedGrossIncome: number;
+  taxableIncome: number;
+  federalTaxLiability: number;
+  stateTaxLiability: number;
+  federalRefundOrOwed: number;
+  stateRefundOrOwed: number;
+  effectiveTaxRate: number;
+}
+
+export interface WhatIfResponse {
+  clientId: number;
+  taxYear: number;
+  /** @nullable */
+  scenarioId: string | null;
+  label: string;
+  mutations: WhatIfMutation[];
+  delta: WhatIfDelta;
+  baseline: WhatIfSummary;
+  scenario: WhatIfSummary;
+}
+
 export type GetPlanningHitListParams = {
   category?: GetPlanningHitListCategory;
   minAgi?: number;

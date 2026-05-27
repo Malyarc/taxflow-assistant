@@ -731,6 +731,50 @@ paths:
         "404":
           description: Client not found
 
+  /clients/{clientId}/what-if:
+    post:
+      operationId: runWhatIfScenario
+      tags: [planning]
+      summary: Run a what-if scenario against the client's current return (Phase H — H2)
+      description: >
+        Loads the client's current TaxReturnInputs (same source as the
+        persisted return), applies the requested mutations, re-runs
+        computeTaxReturnPure, and returns the federal+state tax delta
+        vs the baseline. Pure — does not write to the DB.
+
+        Generalizes the C4 amendment-diff pattern. Foundation primitive
+        for Phase H planning quantification — turns every G1/G4 rule
+        into actual delta-dollar values.
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WhatIfScenarioBody"
+      responses:
+        "200":
+          description: What-if result with baseline + scenario summaries + delta
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WhatIfResponse"
+        "400":
+          description: Invalid mutation in request body
+        "402":
+          description: Pro tier disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProTierRequired"
+        "404":
+          description: Client not found
+
   # ── Adjustments ───────────────────────────────────────────────────────────
   /clients/{clientId}/adjustments:
     get:
@@ -2746,3 +2790,132 @@ components:
           type: array
           items:
             type: integer
+
+    # ── What-if scenario (Phase H — H2) ──────────────────────────────────────
+    WhatIfMutation:
+      description: >
+        A single change to apply to the baseline TaxReturnInputs. Discriminated
+        by `kind`. The server validates per-kind required fields and rejects
+        invalid combinations with HTTP 400.
+      type: object
+      required: [kind]
+      properties:
+        kind:
+          type: string
+          enum: [set_adjustment, add_adjustment, remove_adjustment, set_client_field]
+        adjustmentType:
+          description: Required for set/add/remove_adjustment. The engine adjustment_type enum value.
+          type: string
+        amount:
+          description: Required for set_adjustment and add_adjustment. The dollar amount.
+          type: number
+        field:
+          description: Required for set_client_field. The ClientFacts key to override (e.g. filingStatus, state).
+          type: string
+        value:
+          description: Required for set_client_field. The replacement value (string, number, boolean, or null).
+
+    WhatIfScenarioBody:
+      type: object
+      required: [label, mutations]
+      properties:
+        scenarioId:
+          description: Optional stable identifier (e.g. "G1.1-sep-14800") echoed back in the response.
+          type: ["string", "null"]
+        label:
+          type: string
+        mutations:
+          type: array
+          items:
+            $ref: "#/components/schemas/WhatIfMutation"
+
+    WhatIfDelta:
+      description: >
+        Field-level scenario−baseline deltas. Positive on a tax field means
+        the scenario INCREASED that tax. combinedTaxDelta is the headline
+        planning number (federal + state tax liability delta); negative =
+        scenario reduces tax = savings.
+      type: object
+      required:
+        - adjustedGrossIncome
+        - taxableIncome
+        - standardDeduction
+        - itemizedDeductions
+        - qbiDeduction
+        - federalTaxLiability
+        - stateTaxLiability
+        - selfEmploymentTax
+        - niitTax
+        - amtTax
+        - additionalMedicareTax
+        - eitc
+        - additionalChildTaxCredit
+        - federalRefundOrOwed
+        - stateRefundOrOwed
+        - effectiveTaxRate
+        - combinedTaxDelta
+        - combinedRefundDelta
+      properties:
+        adjustedGrossIncome: { type: number }
+        taxableIncome: { type: number }
+        standardDeduction: { type: number }
+        itemizedDeductions: { type: number }
+        qbiDeduction: { type: number }
+        federalTaxLiability: { type: number }
+        stateTaxLiability: { type: number }
+        selfEmploymentTax: { type: number }
+        niitTax: { type: number }
+        amtTax: { type: number }
+        additionalMedicareTax: { type: number }
+        eitc: { type: number }
+        additionalChildTaxCredit: { type: number }
+        federalRefundOrOwed: { type: number }
+        stateRefundOrOwed: { type: number }
+        effectiveTaxRate: { type: number }
+        combinedTaxDelta: { type: number }
+        combinedRefundDelta: { type: number }
+
+    WhatIfSummary:
+      description: >
+        Side-by-side baseline + scenario summary of the most-relevant 1040
+        fields. Frontend renders this as a 2-column comparison.
+      type: object
+      required:
+        - adjustedGrossIncome
+        - taxableIncome
+        - federalTaxLiability
+        - stateTaxLiability
+        - federalRefundOrOwed
+        - stateRefundOrOwed
+        - effectiveTaxRate
+      properties:
+        adjustedGrossIncome: { type: number }
+        taxableIncome: { type: number }
+        federalTaxLiability: { type: number }
+        stateTaxLiability: { type: number }
+        federalRefundOrOwed: { type: number }
+        stateRefundOrOwed: { type: number }
+        effectiveTaxRate: { type: number }
+
+    WhatIfResponse:
+      type: object
+      required: [clientId, taxYear, scenarioId, label, mutations, delta, baseline, scenario]
+      properties:
+        clientId:
+          type: integer
+        taxYear:
+          type: integer
+        scenarioId:
+          type: ["string", "null"]
+        label:
+          type: string
+        mutations:
+          type: array
+          items:
+            $ref: "#/components/schemas/WhatIfMutation"
+        delta:
+          $ref: "#/components/schemas/WhatIfDelta"
+        baseline:
+          $ref: "#/components/schemas/WhatIfSummary"
+        scenario:
+          $ref: "#/components/schemas/WhatIfSummary"

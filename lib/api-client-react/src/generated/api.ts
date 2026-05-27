@@ -55,6 +55,8 @@ import type {
   UpdateW2DataBody,
   UploadDocumentBody,
   W2Data,
+  WhatIfResponse,
+  WhatIfScenarioBody,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -2663,6 +2665,96 @@ export function useGetPlanningMultiYear<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Loads the client's current TaxReturnInputs (same source as the persisted return), applies the requested mutations, re-runs computeTaxReturnPure, and returns the federal+state tax delta vs the baseline. Pure — does not write to the DB.
+Generalizes the C4 amendment-diff pattern. Foundation primitive for Phase H planning quantification — turns every G1/G4 rule into actual delta-dollar values.
+
+ * @summary Run a what-if scenario against the client's current return (Phase H — H2)
+ */
+export const getRunWhatIfScenarioUrl = (clientId: number) => {
+  return `/api/clients/${clientId}/what-if`;
+};
+
+export const runWhatIfScenario = async (
+  clientId: number,
+  whatIfScenarioBody: WhatIfScenarioBody,
+  options?: RequestInit,
+): Promise<WhatIfResponse> => {
+  return customFetch<WhatIfResponse>(getRunWhatIfScenarioUrl(clientId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(whatIfScenarioBody),
+  });
+};
+
+export const getRunWhatIfScenarioMutationOptions = <
+  TError = ErrorType<void | ProTierRequired>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runWhatIfScenario>>,
+    TError,
+    { clientId: number; data: BodyType<WhatIfScenarioBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof runWhatIfScenario>>,
+  TError,
+  { clientId: number; data: BodyType<WhatIfScenarioBody> },
+  TContext
+> => {
+  const mutationKey = ["runWhatIfScenario"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof runWhatIfScenario>>,
+    { clientId: number; data: BodyType<WhatIfScenarioBody> }
+  > = (props) => {
+    const { clientId, data } = props ?? {};
+
+    return runWhatIfScenario(clientId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RunWhatIfScenarioMutationResult = NonNullable<
+  Awaited<ReturnType<typeof runWhatIfScenario>>
+>;
+export type RunWhatIfScenarioMutationBody = BodyType<WhatIfScenarioBody>;
+export type RunWhatIfScenarioMutationError = ErrorType<void | ProTierRequired>;
+
+/**
+ * @summary Run a what-if scenario against the client's current return (Phase H — H2)
+ */
+export const useRunWhatIfScenario = <
+  TError = ErrorType<void | ProTierRequired>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runWhatIfScenario>>,
+    TError,
+    { clientId: number; data: BodyType<WhatIfScenarioBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof runWhatIfScenario>>,
+  TError,
+  { clientId: number; data: BodyType<WhatIfScenarioBody> },
+  TContext
+> => {
+  return useMutation(getRunWhatIfScenarioMutationOptions(options));
+};
 
 /**
  * @summary List CPA adjustments for a client

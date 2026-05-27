@@ -1665,6 +1665,159 @@ export const GetPlanningMultiYearResponse = zod.object({
 });
 
 /**
+ * Loads the client's current TaxReturnInputs (same source as the persisted return), applies the requested mutations, re-runs computeTaxReturnPure, and returns the federal+state tax delta vs the baseline. Pure — does not write to the DB.
+Generalizes the C4 amendment-diff pattern. Foundation primitive for Phase H planning quantification — turns every G1/G4 rule into actual delta-dollar values.
+
+ * @summary Run a what-if scenario against the client's current return (Phase H — H2)
+ */
+export const RunWhatIfScenarioParams = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const RunWhatIfScenarioBody = zod.object({
+  scenarioId: zod
+    .string()
+    .nullish()
+    .describe(
+      'Optional stable identifier (e.g. \"G1.1-sep-14800\") echoed back in the response.',
+    ),
+  label: zod.string(),
+  mutations: zod.array(
+    zod
+      .object({
+        kind: zod.enum([
+          "set_adjustment",
+          "add_adjustment",
+          "remove_adjustment",
+          "set_client_field",
+        ]),
+        adjustmentType: zod
+          .string()
+          .optional()
+          .describe(
+            "Required for set\/add\/remove_adjustment. The engine adjustment_type enum value.",
+          ),
+        amount: zod
+          .number()
+          .optional()
+          .describe(
+            "Required for set_adjustment and add_adjustment. The dollar amount.",
+          ),
+        field: zod
+          .string()
+          .optional()
+          .describe(
+            "Required for set_client_field. The ClientFacts key to override (e.g. filingStatus, state).",
+          ),
+        value: zod
+          .unknown()
+          .optional()
+          .describe(
+            "Required for set_client_field. The replacement value (string, number, boolean, or null).",
+          ),
+      })
+      .describe(
+        "A single change to apply to the baseline TaxReturnInputs. Discriminated by `kind`. The server validates per-kind required fields and rejects invalid combinations with HTTP 400.\n",
+      ),
+  ),
+});
+
+export const RunWhatIfScenarioResponse = zod.object({
+  clientId: zod.number(),
+  taxYear: zod.number(),
+  scenarioId: zod.string().nullable(),
+  label: zod.string(),
+  mutations: zod.array(
+    zod
+      .object({
+        kind: zod.enum([
+          "set_adjustment",
+          "add_adjustment",
+          "remove_adjustment",
+          "set_client_field",
+        ]),
+        adjustmentType: zod
+          .string()
+          .optional()
+          .describe(
+            "Required for set\/add\/remove_adjustment. The engine adjustment_type enum value.",
+          ),
+        amount: zod
+          .number()
+          .optional()
+          .describe(
+            "Required for set_adjustment and add_adjustment. The dollar amount.",
+          ),
+        field: zod
+          .string()
+          .optional()
+          .describe(
+            "Required for set_client_field. The ClientFacts key to override (e.g. filingStatus, state).",
+          ),
+        value: zod
+          .unknown()
+          .optional()
+          .describe(
+            "Required for set_client_field. The replacement value (string, number, boolean, or null).",
+          ),
+      })
+      .describe(
+        "A single change to apply to the baseline TaxReturnInputs. Discriminated by `kind`. The server validates per-kind required fields and rejects invalid combinations with HTTP 400.\n",
+      ),
+  ),
+  delta: zod
+    .object({
+      adjustedGrossIncome: zod.number(),
+      taxableIncome: zod.number(),
+      standardDeduction: zod.number(),
+      itemizedDeductions: zod.number(),
+      qbiDeduction: zod.number(),
+      federalTaxLiability: zod.number(),
+      stateTaxLiability: zod.number(),
+      selfEmploymentTax: zod.number(),
+      niitTax: zod.number(),
+      amtTax: zod.number(),
+      additionalMedicareTax: zod.number(),
+      eitc: zod.number(),
+      additionalChildTaxCredit: zod.number(),
+      federalRefundOrOwed: zod.number(),
+      stateRefundOrOwed: zod.number(),
+      effectiveTaxRate: zod.number(),
+      combinedTaxDelta: zod.number(),
+      combinedRefundDelta: zod.number(),
+    })
+    .describe(
+      "Field-level scenario−baseline deltas. Positive on a tax field means the scenario INCREASED that tax. combinedTaxDelta is the headline planning number (federal + state tax liability delta); negative = scenario reduces tax = savings.\n",
+    ),
+  baseline: zod
+    .object({
+      adjustedGrossIncome: zod.number(),
+      taxableIncome: zod.number(),
+      federalTaxLiability: zod.number(),
+      stateTaxLiability: zod.number(),
+      federalRefundOrOwed: zod.number(),
+      stateRefundOrOwed: zod.number(),
+      effectiveTaxRate: zod.number(),
+    })
+    .describe(
+      "Side-by-side baseline + scenario summary of the most-relevant 1040 fields. Frontend renders this as a 2-column comparison.\n",
+    ),
+  scenario: zod
+    .object({
+      adjustedGrossIncome: zod.number(),
+      taxableIncome: zod.number(),
+      federalTaxLiability: zod.number(),
+      stateTaxLiability: zod.number(),
+      federalRefundOrOwed: zod.number(),
+      stateRefundOrOwed: zod.number(),
+      effectiveTaxRate: zod.number(),
+    })
+    .describe(
+      "Side-by-side baseline + scenario summary of the most-relevant 1040 fields. Frontend renders this as a 2-column comparison.\n",
+    ),
+});
+
+/**
  * @summary List CPA adjustments for a client
  */
 export const ListAdjustmentsParams = zod.object({

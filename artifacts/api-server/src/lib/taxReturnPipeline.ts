@@ -65,7 +65,11 @@ export type {
 export async function computeTaxReturn(
   clientId: number,
   overrides: RecalcOverrides = {},
-): Promise<{ result: ComputedTaxReturn; client: typeof clientsTable.$inferSelect } | null> {
+): Promise<{
+  result: ComputedTaxReturn;
+  client: typeof clientsTable.$inferSelect;
+  inputs: TaxReturnInputs;
+} | null> {
   const [client] = await db
     .select()
     .from(clientsTable)
@@ -163,7 +167,7 @@ export async function computeTaxReturn(
   }
 
   // Drizzle rows satisfy the engine's Fact types via structural typing.
-  const result = computeTaxReturnPure({
+  const inputs: TaxReturnInputs = {
     client: { ...(client as ClientFacts), priorYearItemized: priorYearItemizedDerived } as ClientFacts,
     w2s: w2Records as W2Fact[],
     form1099s: form1099Records as Form1099Fact[],
@@ -173,10 +177,30 @@ export async function computeTaxReturn(
     scheduleK1: scheduleK1 as ScheduleK1Fact[],
     taxYear,
     overrides,
-    existingItemizedFallback: existing?.itemizedDeductions,
-  });
+    existingItemizedFallback: existing?.itemizedDeductions ?? undefined,
+  };
+  const result = computeTaxReturnPure(inputs);
 
-  return { result, client };
+  return { result, client, inputs };
+}
+
+/**
+ * H2 — Load just the assembled TaxReturnInputs for a client, without running
+ * the engine. Used by the what-if endpoint: it needs the baseline inputs to
+ * apply mutations against, then runs the engine itself via
+ * runWhatIfScenario / runWhatIfScenarios.
+ *
+ * Same data path as `computeTaxReturn`: prior-year carryforwards are
+ * synthesized, prior-year-itemized derived, and tax year resolved identically
+ * so the baseline matches the persisted return exactly.
+ */
+export async function loadTaxReturnInputs(
+  clientId: number,
+  overrides: RecalcOverrides = {},
+): Promise<{ inputs: TaxReturnInputs; client: typeof clientsTable.$inferSelect } | null> {
+  const compute = await computeTaxReturn(clientId, overrides);
+  if (!compute) return null;
+  return { inputs: compute.inputs, client: compute.client };
 }
 
 /**
