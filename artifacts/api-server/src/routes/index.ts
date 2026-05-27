@@ -11,6 +11,7 @@ import auditLogRouter from "./audit-log";
 import rentalPropertiesRouter from "./rental-properties";
 import capitalTransactionsRouter from "./capital-transactions";
 import scheduleK1Router from "./schedule-k1";
+import assetBalancesRouter from "./asset-balances";
 import planningRouter from "./planning";
 import settingsRouter from "./settings";
 
@@ -29,6 +30,7 @@ router.use(auditLogRouter);
 router.use(rentalPropertiesRouter);
 router.use(capitalTransactionsRouter);
 router.use(scheduleK1Router);
+router.use(assetBalancesRouter);
 router.use(planningRouter);
 
 export default router;

@@ -37,7 +37,9 @@ export type AuditEntityType =
   // with adjustments-table rows of the same id. Now distinct.
   | "capital_transaction"
   | "rental_property"
-  | "schedule_k1";
+  | "schedule_k1"
+  // Phase H — H5 client asset balances.
+  | "asset_balance";
 
 export interface AuditWriteParams {
   clientId: number;

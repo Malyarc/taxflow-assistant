@@ -321,6 +321,21 @@ export interface ScheduleK1Fact {
 }
 
 /**
+ * Phase H — H5. Per-account asset balance fact (IRA / Roth / 401(k) / HSA /
+ * employer stock / etc.). Used by H6 Form 8606 + H1 NUA / Mega-Backdoor
+ * Roth detectors. Drizzle row satisfies via structural typing.
+ */
+export interface AssetBalanceFact {
+  taxYear: number;
+  assetType: string;
+  accountName: string;
+  balance?: Numish;
+  costBasis?: Numish;
+  afterTaxBasis?: Numish;
+  nuaEligible?: boolean | null;
+}
+
+/**
  * Complete inputs for the pure engine. The adapter (DB-backed) constructs
  * these by loading the relevant rows; Haven (or tests) build them by hand.
  */
@@ -335,6 +350,8 @@ export interface TaxReturnInputs {
   capitalTransactions?: CapitalTransactionFact[];
   /** Optional Schedule K-1 rows (partnership + S-corp pass-through). */
   scheduleK1?: ScheduleK1Fact[];
+  /** Phase H — H5. Optional per-account asset balances. Used by H6 + H1 detectors. */
+  assetBalances?: AssetBalanceFact[];
   /** The resolved tax year. Engine does NOT re-resolve from client.taxYear. */
   taxYear: number;
   overrides?: RecalcOverrides;

@@ -1181,6 +1181,13 @@ export const AdjustmentAdjustmentType = {
   section_163j_floor_plan_financing_interest:
     "section_163j_floor_plan_financing_interest",
   section_461l_excess_loss_addback: "section_461l_excess_loss_addback",
+  roth_conversion_amount: "roth_conversion_amount",
+  nondeductible_ira_contribution: "nondeductible_ira_contribution",
+  traditional_ira_distribution: "traditional_ira_distribution",
+  augusta_rule_rent: "augusta_rule_rent",
+  nua_lump_sum_employer_stock: "nua_lump_sum_employer_stock",
+  mega_backdoor_roth_after_tax_contribution:
+    "mega_backdoor_roth_after_tax_contribution",
 } as const;
 
 export interface Adjustment {
@@ -1269,6 +1276,13 @@ export const CreateAdjustmentBodyAdjustmentType = {
   section_163j_floor_plan_financing_interest:
     "section_163j_floor_plan_financing_interest",
   section_461l_excess_loss_addback: "section_461l_excess_loss_addback",
+  roth_conversion_amount: "roth_conversion_amount",
+  nondeductible_ira_contribution: "nondeductible_ira_contribution",
+  traditional_ira_distribution: "traditional_ira_distribution",
+  augusta_rule_rent: "augusta_rule_rent",
+  nua_lump_sum_employer_stock: "nua_lump_sum_employer_stock",
+  mega_backdoor_roth_after_tax_contribution:
+    "mega_backdoor_roth_after_tax_contribution",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -1353,6 +1367,13 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   section_163j_floor_plan_financing_interest:
     "section_163j_floor_plan_financing_interest",
   section_461l_excess_loss_addback: "section_461l_excess_loss_addback",
+  roth_conversion_amount: "roth_conversion_amount",
+  nondeductible_ira_contribution: "nondeductible_ira_contribution",
+  traditional_ira_distribution: "traditional_ira_distribution",
+  augusta_rule_rent: "augusta_rule_rent",
+  nua_lump_sum_employer_stock: "nua_lump_sum_employer_stock",
+  mega_backdoor_roth_after_tax_contribution:
+    "mega_backdoor_roth_after_tax_contribution",
 } as const;
 
 export interface UpdateAdjustmentBody {
@@ -1451,6 +1472,144 @@ export interface UpdateRentalPropertyBody {
   isActiveParticipant?: boolean;
   rentalIncome?: number;
   totalExpenses?: number;
+  /** @nullable */
+  notes?: string | null;
+}
+
+export interface Form8606Result {
+  taxYear: number;
+  /** Form 8606 Line 2 — basis carried in from prior year. */
+  priorBasis: number;
+  /** Form 8606 Line 1 — nondeductible contribution this year. */
+  nondeductibleContribution: number;
+  /** Form 8606 Line 3 — total basis available this year (Line 1 + Line 2). */
+  totalBasisAvailable: number;
+  /** Form 8606 Line 4 — distributions + conversions during the year. */
+  distributionsAndConversions: number;
+  /** Form 8606 Line 6 — Dec 31 aggregate balance. */
+  yearEndBalance: number;
+  /** Form 8606 Line 7 — distributions only (not conversions). */
+  otherDistributions: number;
+  /** Form 8606 Line 8 — Roth conversion this year. */
+  conversionAmount: number;
+  /** Form 8606 Line 10 — pro-rata fraction (0.0-1.0). basis / (year-end + distributions + conversions). */
+  proRataFraction: number;
+  /** Form 8606 Line 11 — tax-free portion of the Roth conversion (basis recovered). */
+  excludedAmount: number;
+  /** Form 8606 Line 17+18 — taxable amount of the Roth conversion. Flows to Form 1040 Line 4b. */
+  taxableAmount: number;
+  /** Form 8606 Line 14 — basis remaining for next year's Form 8606. */
+  basisCarryforward: number;
+  /** Pro-rata fraction as a percentage (0-100), for display. */
+  excludedFractionPct: number;
+}
+
+export type AssetBalanceAssetType =
+  (typeof AssetBalanceAssetType)[keyof typeof AssetBalanceAssetType];
+
+export const AssetBalanceAssetType = {
+  traditional_ira: "traditional_ira",
+  roth_ira: "roth_ira",
+  sep_ira: "sep_ira",
+  simple_ira: "simple_ira",
+  "401k_traditional": "401k_traditional",
+  "401k_roth": "401k_roth",
+  "401k_after_tax": "401k_after_tax",
+  employer_stock_in_401k: "employer_stock_in_401k",
+  hsa: "hsa",
+  NUMBER_529: 529,
+  brokerage_taxable: "brokerage_taxable",
+  real_estate: "real_estate",
+  primary_residence: "primary_residence",
+  other: "other",
+} as const;
+
+export interface AssetBalance {
+  id: number;
+  clientId: number;
+  taxYear: number;
+  assetType: AssetBalanceAssetType;
+  accountName: string;
+  balance: number;
+  /** @nullable */
+  costBasis?: number | null;
+  /**
+   * Phase H — H6. After-tax basis for IRA / 401(k) — drives Form 8606 §408(d)(2) pro-rata on Roth conversions.
+   * @nullable
+   */
+  afterTaxBasis?: number | null;
+  /** For employer_stock_in_401k — whether the plan permits a lump-sum NUA distribution. */
+  nuaEligible: boolean;
+  /** @nullable */
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CreateAssetBalanceBodyAssetType =
+  (typeof CreateAssetBalanceBodyAssetType)[keyof typeof CreateAssetBalanceBodyAssetType];
+
+export const CreateAssetBalanceBodyAssetType = {
+  traditional_ira: "traditional_ira",
+  roth_ira: "roth_ira",
+  sep_ira: "sep_ira",
+  simple_ira: "simple_ira",
+  "401k_traditional": "401k_traditional",
+  "401k_roth": "401k_roth",
+  "401k_after_tax": "401k_after_tax",
+  employer_stock_in_401k: "employer_stock_in_401k",
+  hsa: "hsa",
+  NUMBER_529: 529,
+  brokerage_taxable: "brokerage_taxable",
+  real_estate: "real_estate",
+  primary_residence: "primary_residence",
+  other: "other",
+} as const;
+
+export interface CreateAssetBalanceBody {
+  taxYear: number;
+  assetType: CreateAssetBalanceBodyAssetType;
+  accountName: string;
+  balance?: number;
+  /** @nullable */
+  costBasis?: number | null;
+  /** @nullable */
+  afterTaxBasis?: number | null;
+  nuaEligible?: boolean;
+  /** @nullable */
+  notes?: string | null;
+}
+
+export type UpdateAssetBalanceBodyAssetType =
+  (typeof UpdateAssetBalanceBodyAssetType)[keyof typeof UpdateAssetBalanceBodyAssetType];
+
+export const UpdateAssetBalanceBodyAssetType = {
+  traditional_ira: "traditional_ira",
+  roth_ira: "roth_ira",
+  sep_ira: "sep_ira",
+  simple_ira: "simple_ira",
+  "401k_traditional": "401k_traditional",
+  "401k_roth": "401k_roth",
+  "401k_after_tax": "401k_after_tax",
+  employer_stock_in_401k: "employer_stock_in_401k",
+  hsa: "hsa",
+  NUMBER_529: 529,
+  brokerage_taxable: "brokerage_taxable",
+  real_estate: "real_estate",
+  primary_residence: "primary_residence",
+  other: "other",
+} as const;
+
+export interface UpdateAssetBalanceBody {
+  taxYear?: number;
+  assetType?: UpdateAssetBalanceBodyAssetType;
+  accountName?: string;
+  balance?: number;
+  /** @nullable */
+  costBasis?: number | null;
+  /** @nullable */
+  afterTaxBasis?: number | null;
+  nuaEligible?: boolean;
   /** @nullable */
   notes?: string | null;
 }

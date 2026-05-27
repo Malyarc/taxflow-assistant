@@ -23,6 +23,7 @@ import {
   rentalPropertiesTable,
   capitalTransactionsTable,
   scheduleK1DataTable,
+  assetBalancesTable,
 } from "@workspace/db";
 import {
   computeTaxReturnPure,
@@ -36,6 +37,7 @@ import {
   type RentalPropertyFact,
   type CapitalTransactionFact,
   type ScheduleK1Fact,
+  type AssetBalanceFact,
   type TaxReturnInputs,
 } from "./taxReturnEngine";
 import { logger } from "./logger";
@@ -52,6 +54,7 @@ export type {
   RentalPropertyFact,
   CapitalTransactionFact,
   ScheduleK1Fact,
+  AssetBalanceFact,
   TaxReturnInputs,
 };
 
@@ -97,6 +100,7 @@ export async function computeTaxReturn(
     rentalProperties,
     capitalTransactions,
     scheduleK1,
+    assetBalances,
   ] = await Promise.all([
     db.select().from(w2DataTable).where(
       and(eq(w2DataTable.clientId, clientId), eq(w2DataTable.taxYear, taxYear)),
@@ -123,6 +127,14 @@ export async function computeTaxReturn(
       and(
         eq(scheduleK1DataTable.clientId, clientId),
         eq(scheduleK1DataTable.taxYear, taxYear),
+      ),
+    ),
+    // Phase H — H5. Asset balances for this tax year. Used by H6 (Form 8606
+    // IRA basis), H1 NUA / Mega-Backdoor Roth detectors.
+    db.select().from(assetBalancesTable).where(
+      and(
+        eq(assetBalancesTable.clientId, clientId),
+        eq(assetBalancesTable.taxYear, taxYear),
       ),
     ),
   ]);
@@ -175,6 +187,7 @@ export async function computeTaxReturn(
     rentalProperties: rentalProperties as RentalPropertyFact[],
     capitalTransactions: capitalTransactions as CapitalTransactionFact[],
     scheduleK1: scheduleK1 as ScheduleK1Fact[],
+    assetBalances: assetBalances as AssetBalanceFact[],
     taxYear,
     overrides,
     existingItemizedFallback: existing?.itemizedDeductions ?? undefined,

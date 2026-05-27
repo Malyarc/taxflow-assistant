@@ -48,7 +48,7 @@ import type {
   UpdateAdjustmentBodyAdjustmentType,
   CreateForm1099DataBodyFormType,
 } from "@workspace/api-client-react";
-import { useQueryClient, useQuery } from "@tanstack/react-query";
+import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { useState, useRef, useEffect } from "react";
 import * as React from "react";
 import { Button } from "@/components/ui/button";
@@ -2683,13 +2683,14 @@ export default function ClientDetail() {
       </div>
 
       <Tabs defaultValue="documents">
-        <TabsList className={`grid ${proTierEnabled ? "grid-cols-10" : "grid-cols-9"} w-full max-w-6xl`}>
+        <TabsList className={`grid ${proTierEnabled ? "grid-cols-11" : "grid-cols-10"} w-full max-w-7xl`}>
           <TabsTrigger value="documents">Documents</TabsTrigger>
           <TabsTrigger value="w2data">W-2 Data</TabsTrigger>
           <TabsTrigger value="form1099">1099 Forms</TabsTrigger>
           <TabsTrigger value="schedD">Schedule D</TabsTrigger>
           <TabsTrigger value="rentals">Rentals</TabsTrigger>
           <TabsTrigger value="k1">K-1s</TabsTrigger>
+          <TabsTrigger value="assets">Assets</TabsTrigger>
           <TabsTrigger value="calculator">Tax Calculator</TabsTrigger>
           <TabsTrigger value="compare">Year Compare</TabsTrigger>
           <TabsTrigger value="adjustments">Adjustments</TabsTrigger>
@@ -2713,6 +2714,9 @@ export default function ClientDetail() {
         </TabsContent>
         <TabsContent value="k1" className="mt-6">
           <ScheduleK1Tab clientId={clientId} taxYear={client.taxYear ?? 2024} />
+        </TabsContent>
+        <TabsContent value="assets" className="mt-6">
+          <AssetBalancesTab clientId={clientId} taxYear={client.taxYear ?? 2024} />
         </TabsContent>
         <TabsContent value="calculator" className="mt-6">
           <TaxCalculatorTab clientId={clientId} taxYear={client.taxYear ?? 2024} />
@@ -3282,6 +3286,313 @@ interface ScheduleK1Row {
   basisAtYearEnd: number | null;
   atRiskAmount: number | null;
   notes: string | null;
+}
+
+// ── Phase H — H5 Asset balances tab ───────────────────────────────────────
+
+const ASSET_TYPES = [
+  { value: "traditional_ira", label: "Traditional IRA" },
+  { value: "roth_ira", label: "Roth IRA" },
+  { value: "sep_ira", label: "SEP-IRA" },
+  { value: "simple_ira", label: "SIMPLE IRA" },
+  { value: "401k_traditional", label: "401(k) — Traditional" },
+  { value: "401k_roth", label: "401(k) — Roth" },
+  { value: "401k_after_tax", label: "401(k) — After-tax (Mega-Backdoor)" },
+  { value: "employer_stock_in_401k", label: "Employer stock in 401(k) (NUA-eligible)" },
+  { value: "hsa", label: "HSA" },
+  { value: "529", label: "529 college savings" },
+  { value: "brokerage_taxable", label: "Brokerage (taxable)" },
+  { value: "real_estate", label: "Real estate (investment)" },
+  { value: "primary_residence", label: "Primary residence" },
+  { value: "other", label: "Other" },
+];
+
+type AssetBalanceRow = {
+  id: number;
+  clientId: number;
+  taxYear: number;
+  assetType: string;
+  accountName: string;
+  balance: number;
+  costBasis: number | null;
+  afterTaxBasis: number | null;
+  nuaEligible: boolean;
+  notes: string | null;
+};
+
+function AssetBalancesTab({ clientId, taxYear }: { clientId: number; taxYear: number }) {
+  const qc = useQueryClient();
+  const { data: rows = [], isLoading } = useQuery<AssetBalanceRow[]>({
+    queryKey: ["asset-balances", clientId],
+    queryFn: async () => {
+      const r = await fetch(`/api/clients/${clientId}/asset-balances`);
+      if (!r.ok) throw new Error("Failed to load");
+      return r.json();
+    },
+  });
+  const [editingId, setEditingId] = React.useState<number | null>(null);
+  const [draft, setDraft] = React.useState<Partial<AssetBalanceRow>>({
+    taxYear,
+    assetType: "traditional_ira",
+    accountName: "",
+    balance: 0,
+    costBasis: null,
+    afterTaxBasis: null,
+    nuaEligible: false,
+    notes: null,
+  });
+
+  const reset = () => {
+    setEditingId(null);
+    setDraft({
+      taxYear,
+      assetType: "traditional_ira",
+      accountName: "",
+      balance: 0,
+      costBasis: null,
+      afterTaxBasis: null,
+      nuaEligible: false,
+      notes: null,
+    });
+  };
+
+  const saveMut = useMutation({
+    mutationFn: async (body: Partial<AssetBalanceRow>) => {
+      const url = editingId
+        ? `/api/clients/${clientId}/asset-balances/${editingId}`
+        : `/api/clients/${clientId}/asset-balances`;
+      const method = editingId ? "PATCH" : "POST";
+      const r = await fetch(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      return r.json();
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["asset-balances", clientId] });
+      qc.invalidateQueries({ queryKey: ["tax-return", clientId] });
+      reset();
+      toast({ title: editingId ? "Asset updated" : "Asset added" });
+    },
+    onError: (e: unknown) => toast({ title: "Save failed", description: String(e), variant: "destructive" }),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: async (id: number) => {
+      const r = await fetch(`/api/clients/${clientId}/asset-balances/${id}`, { method: "DELETE" });
+      if (!r.ok) throw new Error(await r.text());
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["asset-balances", clientId] });
+      qc.invalidateQueries({ queryKey: ["tax-return", clientId] });
+      toast({ title: "Asset deleted" });
+    },
+  });
+
+  const totalBy = (predicate: (r: AssetBalanceRow) => boolean): number =>
+    rows.filter(predicate).reduce((s, r) => s + Number(r.balance ?? 0), 0);
+
+  const traditionalIra = totalBy((r) => r.assetType === "traditional_ira");
+  const rothIra = totalBy((r) => r.assetType === "roth_ira");
+  const k401Traditional = totalBy((r) => r.assetType === "401k_traditional");
+  const k401Roth = totalBy((r) => r.assetType === "401k_roth");
+  const employerStock = totalBy((r) => r.assetType === "employer_stock_in_401k");
+  const hsa = totalBy((r) => r.assetType === "hsa");
+  const totalRetirement = traditionalIra + rothIra + k401Traditional + k401Roth + employerStock;
+  const traditionalIraBasis = rows
+    .filter((r) => r.assetType === "traditional_ira")
+    .reduce((s, r) => s + Number(r.afterTaxBasis ?? 0), 0);
+
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>Asset balances (Phase H — H5)</CardTitle>
+          <div className="text-xs text-muted-foreground mt-1">
+            Track IRA / Roth / 401(k) / HSA / 529 / brokerage / real estate. Drives
+            H6 Form 8606 §408(d)(2) pro-rata math and unlocks NUA, Mega-Backdoor
+            Roth, RMD planning strategies.
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm mb-4">
+            <div>
+              <div className="text-xs text-muted-foreground">Total retirement</div>
+              <div className="text-lg font-semibold">{fmt(totalRetirement)}</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Traditional IRA (basis)</div>
+              <div className="text-lg font-semibold">{fmt(traditionalIra)} <span className="text-xs text-amber-700">({fmt(traditionalIraBasis)} after-tax)</span></div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">HSA</div>
+              <div className="text-lg font-semibold">{fmt(hsa)}</div>
+            </div>
+            <div>
+              <div className="text-xs text-muted-foreground">Employer stock (NUA)</div>
+              <div className="text-lg font-semibold">{fmt(employerStock)}</div>
+            </div>
+          </div>
+
+          {isLoading ? (
+            <Skeleton className="h-20 w-full" />
+          ) : rows.length === 0 ? (
+            <div className="rounded border border-dashed p-6 text-center text-sm text-muted-foreground">
+              No assets tracked yet. Add the client's retirement + investment
+              accounts below — Form 8606 pro-rata, NUA strategy, and
+              Mega-Backdoor Roth all require this data.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="bg-slate-100 text-slate-700">
+                  <tr>
+                    <th className="text-left px-3 py-2">Account</th>
+                    <th className="text-left px-3 py-2">Type</th>
+                    <th className="text-right px-3 py-2">Balance</th>
+                    <th className="text-right px-3 py-2">Cost basis</th>
+                    <th className="text-right px-3 py-2">After-tax basis</th>
+                    <th className="text-center px-3 py-2">NUA?</th>
+                    <th className="text-left px-3 py-2">Notes</th>
+                    <th className="px-3 py-2"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r) => {
+                    const typeLabel = ASSET_TYPES.find((t) => t.value === r.assetType)?.label ?? r.assetType;
+                    return (
+                      <tr key={r.id} className="border-t border-slate-200">
+                        <td className="px-3 py-2 font-medium">{r.accountName}</td>
+                        <td className="px-3 py-2 text-slate-700">{typeLabel}</td>
+                        <td className="text-right tabular-nums px-3 py-2">{fmt(Number(r.balance ?? 0))}</td>
+                        <td className="text-right tabular-nums px-3 py-2">{r.costBasis != null ? fmt(Number(r.costBasis)) : "—"}</td>
+                        <td className="text-right tabular-nums px-3 py-2">{r.afterTaxBasis != null ? fmt(Number(r.afterTaxBasis)) : "—"}</td>
+                        <td className="text-center px-3 py-2">{r.nuaEligible ? "✓" : ""}</td>
+                        <td className="px-3 py-2 text-slate-500 max-w-xs truncate">{r.notes ?? ""}</td>
+                        <td className="px-3 py-2 whitespace-nowrap">
+                          <Button size="sm" variant="ghost" onClick={() => {
+                            setEditingId(r.id);
+                            setDraft({ ...r });
+                          }}>Edit</Button>
+                          <Button size="sm" variant="ghost" className="text-red-700" onClick={() => {
+                            if (confirm(`Delete ${r.accountName}?`)) deleteMut.mutate(r.id);
+                          }}>Delete</Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{editingId ? "Edit asset" : "Add asset"}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label htmlFor="asset-type">Asset type</Label>
+              <select
+                id="asset-type"
+                value={draft.assetType ?? "traditional_ira"}
+                onChange={(e) => setDraft((d) => ({ ...d, assetType: e.target.value }))}
+                className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
+              >
+                {ASSET_TYPES.map((t) => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="account-name">Account name</Label>
+              <Input
+                id="account-name"
+                placeholder="e.g. Vanguard IRA"
+                value={draft.accountName ?? ""}
+                onChange={(e) => setDraft((d) => ({ ...d, accountName: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="balance">Balance (FMV at year-end)</Label>
+              <Input
+                id="balance"
+                type="number"
+                value={Number(draft.balance ?? 0)}
+                onChange={(e) => setDraft((d) => ({ ...d, balance: Number(e.target.value) || 0 }))}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="cost-basis">Cost basis (optional)</Label>
+              <Input
+                id="cost-basis"
+                type="number"
+                placeholder="Brokerage / employer stock / real estate"
+                value={draft.costBasis ?? ""}
+                onChange={(e) => setDraft((d) => ({ ...d, costBasis: e.target.value === "" ? null : Number(e.target.value) }))}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="after-tax-basis">After-tax basis (IRA / 401(k) only)</Label>
+              <Input
+                id="after-tax-basis"
+                type="number"
+                placeholder="Form 8606 pro-rata input"
+                value={draft.afterTaxBasis ?? ""}
+                onChange={(e) => setDraft((d) => ({ ...d, afterTaxBasis: e.target.value === "" ? null : Number(e.target.value) }))}
+              />
+            </div>
+            <div className="space-y-1 flex items-end gap-2">
+              <input
+                id="nua-eligible"
+                type="checkbox"
+                checked={draft.nuaEligible ?? false}
+                onChange={(e) => setDraft((d) => ({ ...d, nuaEligible: e.target.checked }))}
+                className="h-4 w-4 mb-2"
+              />
+              <Label htmlFor="nua-eligible" className="cursor-pointer mb-2">
+                NUA-eligible plan distribution? (employer stock only)
+              </Label>
+            </div>
+            <div className="space-y-1 col-span-2">
+              <Label htmlFor="asset-notes">Notes</Label>
+              <Textarea
+                id="asset-notes"
+                value={draft.notes ?? ""}
+                onChange={(e) => setDraft((d) => ({ ...d, notes: e.target.value || null }))}
+                rows={2}
+                placeholder="Optional CPA notes (institution, restrictions, beneficiary, etc.)"
+              />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              onClick={() => {
+                if (!draft.accountName || !draft.assetType) {
+                  toast({ title: "Missing fields", variant: "destructive" });
+                  return;
+                }
+                saveMut.mutate(draft);
+              }}
+              disabled={saveMut.isPending}
+            >
+              {editingId ? "Save changes" : "Add asset"}
+            </Button>
+            {editingId ? (
+              <Button variant="outline" onClick={reset}>
+                Cancel
+              </Button>
+            ) : null}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
 }
 
 function ScheduleK1Tab({ clientId, taxYear }: { clientId: number; taxYear: number }) {

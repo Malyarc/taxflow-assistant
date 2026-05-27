@@ -19,10 +19,12 @@ import type {
 import type {
   Adjustment,
   ApproveExtractionBody,
+  AssetBalance,
   CalculateTaxReturnBody,
   CapitalTransaction,
   Client,
   CreateAdjustmentBody,
+  CreateAssetBalanceBody,
   CreateCapitalTransactionBody,
   CreateClientBody,
   CreateForm1099DataBody,
@@ -31,6 +33,7 @@ import type {
   CreateW2DataBody,
   DashboardSummary,
   Form1099Data,
+  Form8606Result,
   GetPeerBenchmarkParams,
   GetPlanningHitListParams,
   HealthStatus,
@@ -50,6 +53,7 @@ import type {
   TaxDocument,
   TaxReturn,
   UpdateAdjustmentBody,
+  UpdateAssetBalanceBody,
   UpdateCapitalTransactionBody,
   UpdateClientBody,
   UpdateForm1099DataBody,
@@ -3359,6 +3363,547 @@ export const useDeleteAdjustment = <
   TContext
 > => {
   return useMutation(getDeleteAdjustmentMutationOptions(options));
+};
+
+/**
+ * Reads the client's traditional IRA balance + after-tax basis from H5 asset records, plus any `roth_conversion_amount` adjustment and `nondeductible_ira_contribution` adjustment for the tax year. Returns the structured pro-rata fields. Returns 200 even when no conversion happened — engine returns zero-conversion result.
+
+ * @summary Compute Form 8606 §408(d)(2) pro-rata split (Phase H — H6)
+ */
+export const getGetForm8606Url = (clientId: number) => {
+  return `/api/clients/${clientId}/form-8606`;
+};
+
+export const getForm8606 = async (
+  clientId: number,
+  options?: RequestInit,
+): Promise<Form8606Result> => {
+  return customFetch<Form8606Result>(getGetForm8606Url(clientId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetForm8606QueryKey = (clientId: number) => {
+  return [`/api/clients/${clientId}/form-8606`] as const;
+};
+
+export const getGetForm8606QueryOptions = <
+  TData = Awaited<ReturnType<typeof getForm8606>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getForm8606>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetForm8606QueryKey(clientId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getForm8606>>> = ({
+    signal,
+  }) => getForm8606(clientId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!clientId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getForm8606>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetForm8606QueryResult = NonNullable<
+  Awaited<ReturnType<typeof getForm8606>>
+>;
+export type GetForm8606QueryError = ErrorType<void>;
+
+/**
+ * @summary Compute Form 8606 §408(d)(2) pro-rata split (Phase H — H6)
+ */
+
+export function useGetForm8606<
+  TData = Awaited<ReturnType<typeof getForm8606>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getForm8606>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetForm8606QueryOptions(clientId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Download Form 8606 as a substitute PDF (Phase H — H6)
+ */
+export const getGetForm8606PdfUrl = (clientId: number) => {
+  return `/api/clients/${clientId}/form-8606/pdf`;
+};
+
+export const getForm8606Pdf = async (
+  clientId: number,
+  options?: RequestInit,
+): Promise<Blob> => {
+  return customFetch<Blob>(getGetForm8606PdfUrl(clientId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetForm8606PdfQueryKey = (clientId: number) => {
+  return [`/api/clients/${clientId}/form-8606/pdf`] as const;
+};
+
+export const getGetForm8606PdfQueryOptions = <
+  TData = Awaited<ReturnType<typeof getForm8606Pdf>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getForm8606Pdf>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetForm8606PdfQueryKey(clientId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getForm8606Pdf>>> = ({
+    signal,
+  }) => getForm8606Pdf(clientId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!clientId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getForm8606Pdf>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetForm8606PdfQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getForm8606Pdf>>
+>;
+export type GetForm8606PdfQueryError = ErrorType<void>;
+
+/**
+ * @summary Download Form 8606 as a substitute PDF (Phase H — H6)
+ */
+
+export function useGetForm8606Pdf<
+  TData = Awaited<ReturnType<typeof getForm8606Pdf>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getForm8606Pdf>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetForm8606PdfQueryOptions(clientId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary List all asset balances for a client (Phase H — H5)
+ */
+export const getListAssetBalancesUrl = (clientId: number) => {
+  return `/api/clients/${clientId}/asset-balances`;
+};
+
+export const listAssetBalances = async (
+  clientId: number,
+  options?: RequestInit,
+): Promise<AssetBalance[]> => {
+  return customFetch<AssetBalance[]>(getListAssetBalancesUrl(clientId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListAssetBalancesQueryKey = (clientId: number) => {
+  return [`/api/clients/${clientId}/asset-balances`] as const;
+};
+
+export const getListAssetBalancesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listAssetBalances>>,
+  TError = ErrorType<unknown>,
+>(
+  clientId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listAssetBalances>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListAssetBalancesQueryKey(clientId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listAssetBalances>>
+  > = ({ signal }) =>
+    listAssetBalances(clientId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!clientId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listAssetBalances>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListAssetBalancesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listAssetBalances>>
+>;
+export type ListAssetBalancesQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List all asset balances for a client (Phase H — H5)
+ */
+
+export function useListAssetBalances<
+  TData = Awaited<ReturnType<typeof listAssetBalances>>,
+  TError = ErrorType<unknown>,
+>(
+  clientId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listAssetBalances>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListAssetBalancesQueryOptions(clientId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Create an asset balance record
+ */
+export const getCreateAssetBalanceUrl = (clientId: number) => {
+  return `/api/clients/${clientId}/asset-balances`;
+};
+
+export const createAssetBalance = async (
+  clientId: number,
+  createAssetBalanceBody: CreateAssetBalanceBody,
+  options?: RequestInit,
+): Promise<AssetBalance> => {
+  return customFetch<AssetBalance>(getCreateAssetBalanceUrl(clientId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createAssetBalanceBody),
+  });
+};
+
+export const getCreateAssetBalanceMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createAssetBalance>>,
+    TError,
+    { clientId: number; data: BodyType<CreateAssetBalanceBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createAssetBalance>>,
+  TError,
+  { clientId: number; data: BodyType<CreateAssetBalanceBody> },
+  TContext
+> => {
+  const mutationKey = ["createAssetBalance"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createAssetBalance>>,
+    { clientId: number; data: BodyType<CreateAssetBalanceBody> }
+  > = (props) => {
+    const { clientId, data } = props ?? {};
+
+    return createAssetBalance(clientId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateAssetBalanceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createAssetBalance>>
+>;
+export type CreateAssetBalanceMutationBody = BodyType<CreateAssetBalanceBody>;
+export type CreateAssetBalanceMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Create an asset balance record
+ */
+export const useCreateAssetBalance = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createAssetBalance>>,
+    TError,
+    { clientId: number; data: BodyType<CreateAssetBalanceBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createAssetBalance>>,
+  TError,
+  { clientId: number; data: BodyType<CreateAssetBalanceBody> },
+  TContext
+> => {
+  return useMutation(getCreateAssetBalanceMutationOptions(options));
+};
+
+/**
+ * @summary Update an asset balance
+ */
+export const getUpdateAssetBalanceUrl = (clientId: number, assetId: number) => {
+  return `/api/clients/${clientId}/asset-balances/${assetId}`;
+};
+
+export const updateAssetBalance = async (
+  clientId: number,
+  assetId: number,
+  updateAssetBalanceBody: UpdateAssetBalanceBody,
+  options?: RequestInit,
+): Promise<AssetBalance> => {
+  return customFetch<AssetBalance>(
+    getUpdateAssetBalanceUrl(clientId, assetId),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(updateAssetBalanceBody),
+    },
+  );
+};
+
+export const getUpdateAssetBalanceMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateAssetBalance>>,
+    TError,
+    {
+      clientId: number;
+      assetId: number;
+      data: BodyType<UpdateAssetBalanceBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateAssetBalance>>,
+  TError,
+  { clientId: number; assetId: number; data: BodyType<UpdateAssetBalanceBody> },
+  TContext
+> => {
+  const mutationKey = ["updateAssetBalance"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateAssetBalance>>,
+    {
+      clientId: number;
+      assetId: number;
+      data: BodyType<UpdateAssetBalanceBody>;
+    }
+  > = (props) => {
+    const { clientId, assetId, data } = props ?? {};
+
+    return updateAssetBalance(clientId, assetId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateAssetBalanceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateAssetBalance>>
+>;
+export type UpdateAssetBalanceMutationBody = BodyType<UpdateAssetBalanceBody>;
+export type UpdateAssetBalanceMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Update an asset balance
+ */
+export const useUpdateAssetBalance = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateAssetBalance>>,
+    TError,
+    {
+      clientId: number;
+      assetId: number;
+      data: BodyType<UpdateAssetBalanceBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateAssetBalance>>,
+  TError,
+  { clientId: number; assetId: number; data: BodyType<UpdateAssetBalanceBody> },
+  TContext
+> => {
+  return useMutation(getUpdateAssetBalanceMutationOptions(options));
+};
+
+/**
+ * @summary Delete an asset balance
+ */
+export const getDeleteAssetBalanceUrl = (clientId: number, assetId: number) => {
+  return `/api/clients/${clientId}/asset-balances/${assetId}`;
+};
+
+export const deleteAssetBalance = async (
+  clientId: number,
+  assetId: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteAssetBalanceUrl(clientId, assetId), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteAssetBalanceMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteAssetBalance>>,
+    TError,
+    { clientId: number; assetId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteAssetBalance>>,
+  TError,
+  { clientId: number; assetId: number },
+  TContext
+> => {
+  const mutationKey = ["deleteAssetBalance"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteAssetBalance>>,
+    { clientId: number; assetId: number }
+  > = (props) => {
+    const { clientId, assetId } = props ?? {};
+
+    return deleteAssetBalance(clientId, assetId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteAssetBalanceMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteAssetBalance>>
+>;
+
+export type DeleteAssetBalanceMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Delete an asset balance
+ */
+export const useDeleteAssetBalance = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteAssetBalance>>,
+    TError,
+    { clientId: number; assetId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteAssetBalance>>,
+  TError,
+  { clientId: number; assetId: number },
+  TContext
+> => {
+  return useMutation(getDeleteAssetBalanceMutationOptions(options));
 };
 
 /**

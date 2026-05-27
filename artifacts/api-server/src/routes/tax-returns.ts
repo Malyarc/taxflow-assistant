@@ -12,6 +12,7 @@ import { recalculateAndUpsertTaxReturn, computeTaxReturn } from "../lib/taxRetur
 import { buildTaxReturnPdf } from "../lib/pdfExport";
 import { buildIrsForm1040Pdf } from "../lib/irsForm1040Pdf";
 import { calculateForm4868, buildForm4868Pdf, type Form4868Input } from "../lib/form4868";
+import { computeForm8606ProRata, buildForm8606Pdf } from "../lib/form8606";
 import {
   captureFiledSnapshot,
   computeAmendmentDiff,
@@ -241,6 +242,92 @@ router.get("/clients/:clientId/tax-return/form-4868/pdf", async (req, res): Prom
   } catch (err) {
     logger.error({ err }, "Failed to build Form 4868 PDF");
     res.status(500).json({ error: "Failed to build Form 4868 PDF" });
+  }
+});
+
+// ── Phase H — H6 — Form 8606 (nondeductible IRA basis) ────────────────────
+
+/**
+ * Compute Form 8606 inputs from the client's tax-return data:
+ *   - Roth conversion amount from `roth_conversion_amount` adjustment
+ *     (also flows through engine as additional_income; this just exposes it)
+ *   - Nondeductible contribution from `nondeductible_ira_contribution`
+ *     adjustment
+ *   - Year-end traditional IRA balance + after-tax basis from H5 asset
+ *     balances (sum across all traditional_ira, sep_ira, simple_ira types)
+ */
+async function loadForm8606Inputs(clientId: number) {
+  const { db, adjustmentsTable, assetBalancesTable } = await import("@workspace/db");
+  const [adjustments, assets] = await Promise.all([
+    db.select().from(adjustmentsTable).where(eq(adjustmentsTable.clientId, clientId)),
+    db.select().from(assetBalancesTable).where(eq(assetBalancesTable.clientId, clientId)),
+  ]);
+  const num = (v: string | number | null | undefined): number => {
+    if (v == null) return 0;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const sumAdj = (type: string): number =>
+    adjustments
+      .filter((a) => a.adjustmentType === type && a.isApplied !== false)
+      .reduce((s, a) => s + num(a.amount), 0);
+  const tradAssetTypes = new Set(["traditional_ira", "sep_ira", "simple_ira"]);
+  const tradAssets = assets.filter((a) => tradAssetTypes.has(a.assetType));
+  const totalTraditionalIraBalance = tradAssets.reduce((s, a) => s + num(a.balance), 0);
+  const totalAfterTaxBasis = tradAssets.reduce((s, a) => s + num(a.afterTaxBasis), 0);
+  return {
+    conversionAmount: sumAdj("roth_conversion_amount"),
+    nondeductibleContribution: sumAdj("nondeductible_ira_contribution"),
+    totalTraditionalIraBalance,
+    totalAfterTaxBasis,
+    otherDistributions: sumAdj("traditional_ira_distribution"),
+  };
+}
+
+router.get("/clients/:clientId/form-8606", async (req, res): Promise<void> => {
+  const params = GetTaxReturnParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const computed = await computeTaxReturn(params.data.clientId);
+  if (!computed) {
+    res.status(404).json({ error: "Client not found" });
+    return;
+  }
+  const inputs = await loadForm8606Inputs(params.data.clientId);
+  const result = computeForm8606ProRata(inputs);
+  res.json({ taxYear: computed.result.taxYear, ...result });
+});
+
+router.get("/clients/:clientId/form-8606/pdf", async (req, res): Promise<void> => {
+  const params = GetTaxReturnParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const computed = await computeTaxReturn(params.data.clientId);
+  if (!computed) {
+    res.status(404).json({ error: "Client not found" });
+    return;
+  }
+  try {
+    const inputs = await loadForm8606Inputs(params.data.clientId);
+    const result = computeForm8606ProRata(inputs);
+    const pdf = await buildForm8606Pdf({
+      client: computed.client,
+      taxYear: computed.result.taxYear,
+      result,
+    });
+    const fileName = `form-8606-${computed.client.firstName}-${computed.client.lastName}-${computed.result.taxYear}.pdf`;
+    setSecureDownloadHeaders(res, {
+      fileName, contentType: "application/pdf", disposition: "attachment",
+      length: pdf.length, fallbackExt: ".pdf",
+    });
+    res.send(pdf);
+  } catch (err) {
+    logger.error({ err }, "Failed to build Form 8606 PDF");
+    res.status(500).json({ error: "Failed to build Form 8606 PDF" });
   }
 });
 

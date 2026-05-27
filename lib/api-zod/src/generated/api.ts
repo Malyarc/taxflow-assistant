@@ -2446,6 +2446,12 @@ export const ListAdjustmentsResponseItem = zod.object({
     "section_163j_carryforward_from_prior",
     "section_163j_floor_plan_financing_interest",
     "section_461l_excess_loss_addback",
+    "roth_conversion_amount",
+    "nondeductible_ira_contribution",
+    "traditional_ira_distribution",
+    "augusta_rule_rent",
+    "nua_lump_sum_employer_stock",
+    "mega_backdoor_roth_after_tax_contribution",
   ]),
   amount: zod.number(),
   description: zod.string(),
@@ -2527,6 +2533,12 @@ export const CreateAdjustmentBody = zod.object({
     "section_163j_carryforward_from_prior",
     "section_163j_floor_plan_financing_interest",
     "section_461l_excess_loss_addback",
+    "roth_conversion_amount",
+    "nondeductible_ira_contribution",
+    "traditional_ira_distribution",
+    "augusta_rule_rent",
+    "nua_lump_sum_employer_stock",
+    "mega_backdoor_roth_after_tax_contribution",
   ]),
   amount: zod.number(),
   description: zod.string(),
@@ -2607,6 +2619,12 @@ export const UpdateAdjustmentBody = zod.object({
       "section_163j_carryforward_from_prior",
       "section_163j_floor_plan_financing_interest",
       "section_461l_excess_loss_addback",
+      "roth_conversion_amount",
+      "nondeductible_ira_contribution",
+      "traditional_ira_distribution",
+      "augusta_rule_rent",
+      "nua_lump_sum_employer_stock",
+      "mega_backdoor_roth_after_tax_contribution",
     ])
     .optional(),
   amount: zod.number().optional(),
@@ -2681,6 +2699,12 @@ export const UpdateAdjustmentResponse = zod.object({
     "section_163j_carryforward_from_prior",
     "section_163j_floor_plan_financing_interest",
     "section_461l_excess_loss_addback",
+    "roth_conversion_amount",
+    "nondeductible_ira_contribution",
+    "traditional_ira_distribution",
+    "augusta_rule_rent",
+    "nua_lump_sum_employer_stock",
+    "mega_backdoor_roth_after_tax_contribution",
   ]),
   amount: zod.number(),
   description: zod.string(),
@@ -2696,6 +2720,237 @@ export const UpdateAdjustmentResponse = zod.object({
 export const DeleteAdjustmentParams = zod.object({
   clientId: zod.coerce.number(),
   adjustmentId: zod.coerce.number(),
+});
+
+/**
+ * Reads the client's traditional IRA balance + after-tax basis from H5 asset records, plus any `roth_conversion_amount` adjustment and `nondeductible_ira_contribution` adjustment for the tax year. Returns the structured pro-rata fields. Returns 200 even when no conversion happened — engine returns zero-conversion result.
+
+ * @summary Compute Form 8606 §408(d)(2) pro-rata split (Phase H — H6)
+ */
+export const GetForm8606Params = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const GetForm8606Response = zod.object({
+  taxYear: zod.number(),
+  priorBasis: zod
+    .number()
+    .describe("Form 8606 Line 2 — basis carried in from prior year."),
+  nondeductibleContribution: zod
+    .number()
+    .describe("Form 8606 Line 1 — nondeductible contribution this year."),
+  totalBasisAvailable: zod
+    .number()
+    .describe(
+      "Form 8606 Line 3 — total basis available this year (Line 1 + Line 2).",
+    ),
+  distributionsAndConversions: zod
+    .number()
+    .describe(
+      "Form 8606 Line 4 — distributions + conversions during the year.",
+    ),
+  yearEndBalance: zod
+    .number()
+    .describe("Form 8606 Line 6 — Dec 31 aggregate balance."),
+  otherDistributions: zod
+    .number()
+    .describe("Form 8606 Line 7 — distributions only (not conversions)."),
+  conversionAmount: zod
+    .number()
+    .describe("Form 8606 Line 8 — Roth conversion this year."),
+  proRataFraction: zod
+    .number()
+    .describe(
+      "Form 8606 Line 10 — pro-rata fraction (0.0-1.0). basis \/ (year-end + distributions + conversions).",
+    ),
+  excludedAmount: zod
+    .number()
+    .describe(
+      "Form 8606 Line 11 — tax-free portion of the Roth conversion (basis recovered).",
+    ),
+  taxableAmount: zod
+    .number()
+    .describe(
+      "Form 8606 Line 17+18 — taxable amount of the Roth conversion. Flows to Form 1040 Line 4b.",
+    ),
+  basisCarryforward: zod
+    .number()
+    .describe("Form 8606 Line 14 — basis remaining for next year's Form 8606."),
+  excludedFractionPct: zod
+    .number()
+    .describe("Pro-rata fraction as a percentage (0-100), for display."),
+});
+
+/**
+ * @summary Download Form 8606 as a substitute PDF (Phase H — H6)
+ */
+export const GetForm8606PdfParams = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+/**
+ * @summary List all asset balances for a client (Phase H — H5)
+ */
+export const ListAssetBalancesParams = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const ListAssetBalancesResponseItem = zod.object({
+  id: zod.number(),
+  clientId: zod.number(),
+  taxYear: zod.number(),
+  assetType: zod.union([
+    zod.literal("traditional_ira"),
+    zod.literal("roth_ira"),
+    zod.literal("sep_ira"),
+    zod.literal("simple_ira"),
+    zod.literal("401k_traditional"),
+    zod.literal("401k_roth"),
+    zod.literal("401k_after_tax"),
+    zod.literal("employer_stock_in_401k"),
+    zod.literal("hsa"),
+    zod.literal(529),
+    zod.literal("brokerage_taxable"),
+    zod.literal("real_estate"),
+    zod.literal("primary_residence"),
+    zod.literal("other"),
+  ]),
+  accountName: zod.string(),
+  balance: zod.number(),
+  costBasis: zod.number().nullish(),
+  afterTaxBasis: zod
+    .number()
+    .nullish()
+    .describe(
+      "Phase H — H6. After-tax basis for IRA \/ 401(k) — drives Form 8606 §408(d)(2) pro-rata on Roth conversions.",
+    ),
+  nuaEligible: zod
+    .boolean()
+    .describe(
+      "For employer_stock_in_401k — whether the plan permits a lump-sum NUA distribution.",
+    ),
+  notes: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+export const ListAssetBalancesResponse = zod.array(
+  ListAssetBalancesResponseItem,
+);
+
+/**
+ * @summary Create an asset balance record
+ */
+export const CreateAssetBalanceParams = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const CreateAssetBalanceBody = zod.object({
+  taxYear: zod.number(),
+  assetType: zod.union([
+    zod.literal("traditional_ira"),
+    zod.literal("roth_ira"),
+    zod.literal("sep_ira"),
+    zod.literal("simple_ira"),
+    zod.literal("401k_traditional"),
+    zod.literal("401k_roth"),
+    zod.literal("401k_after_tax"),
+    zod.literal("employer_stock_in_401k"),
+    zod.literal("hsa"),
+    zod.literal(529),
+    zod.literal("brokerage_taxable"),
+    zod.literal("real_estate"),
+    zod.literal("primary_residence"),
+    zod.literal("other"),
+  ]),
+  accountName: zod.string(),
+  balance: zod.number().optional(),
+  costBasis: zod.number().nullish(),
+  afterTaxBasis: zod.number().nullish(),
+  nuaEligible: zod.boolean().optional(),
+  notes: zod.string().nullish(),
+});
+
+/**
+ * @summary Update an asset balance
+ */
+export const UpdateAssetBalanceParams = zod.object({
+  clientId: zod.coerce.number(),
+  assetId: zod.coerce.number(),
+});
+
+export const UpdateAssetBalanceBody = zod.object({
+  taxYear: zod.number().optional(),
+  assetType: zod
+    .union([
+      zod.literal("traditional_ira"),
+      zod.literal("roth_ira"),
+      zod.literal("sep_ira"),
+      zod.literal("simple_ira"),
+      zod.literal("401k_traditional"),
+      zod.literal("401k_roth"),
+      zod.literal("401k_after_tax"),
+      zod.literal("employer_stock_in_401k"),
+      zod.literal("hsa"),
+      zod.literal(529),
+      zod.literal("brokerage_taxable"),
+      zod.literal("real_estate"),
+      zod.literal("primary_residence"),
+      zod.literal("other"),
+    ])
+    .optional(),
+  accountName: zod.string().optional(),
+  balance: zod.number().optional(),
+  costBasis: zod.number().nullish(),
+  afterTaxBasis: zod.number().nullish(),
+  nuaEligible: zod.boolean().optional(),
+  notes: zod.string().nullish(),
+});
+
+export const UpdateAssetBalanceResponse = zod.object({
+  id: zod.number(),
+  clientId: zod.number(),
+  taxYear: zod.number(),
+  assetType: zod.union([
+    zod.literal("traditional_ira"),
+    zod.literal("roth_ira"),
+    zod.literal("sep_ira"),
+    zod.literal("simple_ira"),
+    zod.literal("401k_traditional"),
+    zod.literal("401k_roth"),
+    zod.literal("401k_after_tax"),
+    zod.literal("employer_stock_in_401k"),
+    zod.literal("hsa"),
+    zod.literal(529),
+    zod.literal("brokerage_taxable"),
+    zod.literal("real_estate"),
+    zod.literal("primary_residence"),
+    zod.literal("other"),
+  ]),
+  accountName: zod.string(),
+  balance: zod.number(),
+  costBasis: zod.number().nullish(),
+  afterTaxBasis: zod
+    .number()
+    .nullish()
+    .describe(
+      "Phase H — H6. After-tax basis for IRA \/ 401(k) — drives Form 8606 §408(d)(2) pro-rata on Roth conversions.",
+    ),
+  nuaEligible: zod
+    .boolean()
+    .describe(
+      "For employer_stock_in_401k — whether the plan permits a lump-sum NUA distribution.",
+    ),
+  notes: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Delete an asset balance
+ */
+export const DeleteAssetBalanceParams = zod.object({
+  clientId: zod.coerce.number(),
+  assetId: zod.coerce.number(),
 });
 
 /**
