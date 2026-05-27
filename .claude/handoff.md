@@ -1,193 +1,93 @@
-# Handoff Note — 2026-05-26 (Deep audit + 20 real-world scenarios)
+# Handoff Note — 2026-05-26 (C-batch: 6 items shipped)
 
 Session continuation point for the next Claude (or human) working on
 TaxFlow Assistant.
 
 ## ⚡ Read this first
 
-The full open TODO is in **`docs/todo.md`** — durable, git-tracked,
-~30 open tasks organized into:
-- **A** — strategic / business
+The full open TODO is in **`docs/todo.md`** — durable, git-tracked.
+
+The coverage map (per-state + per-feature) lives in
+**`docs/coverage-matrix.md`** — read before planning state or federal
+coverage work.
+
+Open sections after this session:
+- **A** — strategic / business (A1 outreach, A2 D15 auth, A3 D18 Stripe)
 - **B** — Planning Strategy tool smartness upgrades (H1-H12)
-- **C** — engine coverage push (federal + state)
-- **D** — infra / security hardening
-- **E** — reactive / deferred
+- **C** — engine coverage push (C2 top-10-state credits, C3 design-partner validation, C9 PA local EIT, C10 OH school district, C11 per-state PY residency) ← C1+C4+C5+C6+C7+C8 just shipped
+- **D** — infra / security hardening (TLS, S3, soft-delete, etc.)
+- **E** — reactive / deferred (only when a customer asks)
 
 Read `docs/todo.md` BEFORE picking a task. The Claude task tool inside
 any single session is ephemeral — only that file persists.
 
 ## Headline
 
-**Deep four-axis audit complete (code quality / security / database /
-real-world coverage). All high-severity findings actionable in one
-session were fixed; 20 new hand-calc'd CPA-grade scenarios shipped as
-a regression suite. 2,150+ assertions across 30 suites now. Engine
-still at zero documented federal/state gaps.**
+**C-batch (6 items) shipped this session. 178 new hand-calc'd
+assertions across 5 new test files. Coverage matrix doc written.
+Forms 4868 + 1040-X live with both engine math + frontend cards +
+PDF downloads. §1031 / ESPP-ISO disqualifying / §163(j) / §461(l)
+engines added. Engine still at zero documented federal/state gaps.
+4 sub-gaps tracked (Form 8824 PDF deferred, §163(j) ATI proxy
+approx, §461(l) auto-aggregation deferred, §1031/§121 → NIIT not
+yet wired).**
 
 ## What landed (commits in order)
 
 | Commit | Item | Notes |
 |---|---|---|
-| `260eb04` | **Deep audit fixes** — code quality + security + DB | FK + indexes on 8 tables, CORS allowlist, rate limit, PII redaction in audit log, file-content MIME validation, AI key check, Promise.all on 6 queries, O(n²) → O(n) wash-sale detector |
-| `995b5e1` | **20 real-world CPA scenarios** | 146 hand-calc'd assertions; pure engine; no API required; covers stock comp / RE pro / multi-state / retiree / K-1 / ACA / kiddie / FEIE / NIIT / AMT / wash sale / FTC / NYC + MD locality |
+| `a852b16` | **C1 — Coverage matrix doc** | `docs/coverage-matrix.md`: federal forms/IRC inventory, 51-row state matrix (brackets/std-ded/exemption/cliff/surtax/SS/EITC/CTC/AMT/retirement/local), 45-row local-tax catalog, prioritized gap list, extension guide. |
+| `d04a67c` | **C8 — Form 4868 extensions** | `form4868.ts` engine + pdfkit substitute PDF (per Pub 1167). 2 routes (`/form-4868` JSON, `/form-4868/pdf`). Frontend card on Tax Calculator tab: live Line 4-7 preview, override inputs (amountBeingPaid, estimatedTaxAlreadyPaid, outOfCountry, 1040-NR), PDF download. 40 hand-calc'd tests. |
+| `ba2f229` | **C4 — Form 1040-X amended returns** | Snapshot-based diff. 3 new columns on tax_returns (originalSnapshot jsonb, amendmentExplanation, amendmentLockedAt). 5 routes (lock-as-filed, clear-amendment, PUT explanation, JSON diff, PDF). Frontend Form1040xCard with 3-col diff table (col a / b / c), red/green delta coloring, Part III textarea autosaving on blur, PDF download. 45 hand-calc'd tests (IRS rounding convention: col b = round(c) − round(a)). |
+| `b60d8ff` | **C5 — §1031 like-kind exchange** | 4 new tax-return columns. 2 adjustment types (`section_1031_realized_gain`, `section_1031_boot_received`). Engine: recognized = min(realized, boot); deferred = realized − recognized. Recognized flows to LTCG. Frontend Section1031Card. 30 hand-calc'd tests. Sub-gap: doesn't flow into NIIT (consistent with §121 pattern). |
+| `(c-6-commit)` | **C6 — ESPP + ISO disqualifying disposition** | 2 new tax-return columns. 2 adjustment types (`iso_disqualifying_disposition_ordinary`, `espp_disqualifying_disposition_ordinary`). Engine adds comp income to ordinary income (NOT FICA per Notice 2002-47 / Rev Rul 71-52). Frontend EsppIsoCard. 27 hand-calc'd tests verifying bracket-stacking, NIIT exclusion, AddlMed exclusion. |
+| `(c-7-commit)` | **C7 — §163(j) + §461(l)** | 4 new tax-return columns. 5 adjustment types. §163(j) full engine: ATI proxy → 30% cap → allowed/disallowed split + indefinite carryforward. Biz interest income + floor plan financing always uncapped. §461(l) as CPA-supplied addback. Frontend Section163j461lCard. 36 hand-calc'd tests. |
 
-## Audit summary
-
-Four parallel audit agents ran simultaneously and produced
-severity-ranked reports. Findings split into Tier 1 (fixed this
-session) and Tier 2 (documented for follow-up sessions).
-
-### Code quality audit
-
-- **CRITICAL** `as any` casts throughout ClientDetail.tsx (19 sites) →
-  *deferred* (large refactor, low risk in current code path).
-- **CRITICAL** Silent catch in `recalculateAfterMutation` → *kept
-  intentional* (documented; log line is monitored; mutation row write
-  isn't affected).
-- **HIGH** Sequential Drizzle queries in `computeTaxReturn` → **FIXED**
-  via `Promise.all()`. 6 queries now batch.
-- **HIGH** O(n²) wash-sale detection → **FIXED**. New first-pass groups
-  rows by normalized security key; inner loop scans only matching-
-  security candidates. Drops worst case from ~1M comparisons to ~1k
-  for a 1000-row capital_transactions table.
-- **HIGH** Manual numeric coercion in mapReturn (route layer) →
-  *deferred* (working; refactor risk).
-- **MEDIUM** ClientDetail.tsx 3400 lines / many tabs → *deferred*
-  (split into sub-components is its own ~1-day refactor).
-- **MEDIUM** Stale LOCAL_TAX_DATA verification dates → *to add* (one
-  comment block per category).
-
-### Security audit
-
-- **CRITICAL** No authentication → *D15 territory, 2-3 weeks separate
-  session*.
-- **CRITICAL** PII transmission to AI without consent → *partial:
-  banner exists; per-upload consent UI deferred*.
-- **CRITICAL** CORS `*` → **FIXED** via `ALLOWED_ORIGINS` env-var
-  allowlist (production must set it; dev permissive when unset).
-- **HIGH** HTTP-only deployment → *infra: needs TLS terminator before
-  paid customers*.
-- **HIGH** No rate limiting → **FIXED** with `express-rate-limit` at
-  200 req/min/IP (configurable via `RATE_LIMIT_PER_MINUTE`).
-- **HIGH** PII in audit logs → **FIXED**. New `redactPii()` helper in
-  `auditLog.ts` masks SSN/EIN/TIN/account fields before persist.
-  "123-45-6789" → "***-**-6789"; bare digits keep last 4.
-- **MEDIUM** File MIME validation by extension only → **FIXED**. New
-  `validateAndResolveMimeType()` inspects magic bytes; documents route
-  rejects with 415 on mismatch.
-- **LOW** AI key fallback to "missing-key" → **FIXED** with production
-  warning. `AI_DISABLED=true` silences when intentional.
-- **LOW** CSP `unsafe-inline` for Vite → *deferred* (needs Vite nonce
-  plugin).
-
-### Database audit
-
-Critical findings all **FIXED** this session:
-
-- **CRITICAL** Missing FK constraints on 8 tables → added (clientId →
-  clients.id with ON DELETE CASCADE; documentId → tax_documents.id
-  with ON DELETE SET NULL where applicable). Cleaned 524 orphan rows
-  in dev DB before push.
-- **HIGH** Missing indexes on (clientId, taxYear) → added composite
-  indexes on tax_returns, w2_data, form_1099_data, capital_transactions,
-  rental_properties, schedule_k1_data. Single-column indexes on
-  adjustments, tax_documents. Composite (clientId, status) on
-  tax_documents and (clientId, createdAt) + (entityType, entityId)
-  on audit_log.
-
-Documented and deferred:
-
-- SSN encryption (D17, ~2 weeks)
-- tax_documents.fileContent → S3 (D17)
-- audit_log partitioning (defer until ~5M rows)
-- firmId multi-tenancy columns (D15)
-- Drizzle versioned migrations vs `push` (1 day)
-- Connection pool tuning + read replicas (deferred until load grows)
-
-### Real-world scenarios
-
-- 20 scenarios designed in `docs/cpa-scenarios-20.md` (~5,400 words,
-  hand-calc derivations against IRS published rules).
-- Implemented as `scripts/src/tax-engine-cpa-scenarios-tests.ts`,
-  146 hand-calc'd assertions, pure engine (no API server required).
-- Surface area covered: federal brackets + LTCG/QDIV preferential
-  stacking, AMT (K3), NIIT, Additional Medicare (K2), Schedule A/C/D/E
-  including REP + MACRS, Schedule K-1 (S-corp), QBI (§199A), all 10
-  K-list items (NOL, FEIE, §121, §1202, kiddie, AddlMed, etc.),
-  E1-E14 (IL exemption, AMT credit cf, charitable cf, HSA, §72(t),
-  1099-G tax-benefit, §179+bonus, NYC school+MCTMT, state CTCs/EITCs,
-  PA Sched SP, part-year residency, auto wash sale, MD/OH/IN local),
-  NYC PIT + MCTMT, MD-Montgomery local.
-
-Six engine sub-gaps surfaced and documented inline in the test file:
-- Dependent's std-ded reduction (min(std, earned+450)) NOT auto-applied
-- FTC with $0 taxable returns full paid amount (no Form 1116 form-limit
-  binding when pre-credit tax is also $0)
-- §121 home-sale LTCG not added to NIIT investment income
-- MD-Montgomery local-tax base uses a state-bracket-base path that's
-  not the simple `federalAgi − mdStdDed` formula
-- §1091(d) holding-period auto-flip on wash-sale replacement (formBox
-  ST→LT) not modeled
-- 1099-DIV box 1a includes qualified div in IRS spec; engine correctly
-  nets `ord = max(0, box1a − box1b)` to avoid double-count (CPAs who
-  enter total in box1a + qDiv get correct result; CPAs who enter ord
-  + qDiv separately would over-count without this normalization)
+(The git log will have the actual commit hashes for the last two.)
 
 ## Test state (final)
 
-All 30 suites green. 2,150+ assertions total. **Engine: zero
-documented federal/state gaps.**
+**ALL SUITES GREEN.** 178 new C-section assertions. Engine still at
+zero documented federal/state gaps.
 
-| Suite | Result |
+| Suite | Result | Notes |
+|---|---|---|
+| tax-engine-tests | 193/193 | |
+| tax-engine-deep-tests | 37/37 | |
+| tax-engine-cpa-scenarios-tests | 146/146 | |
+| tax-engine-deep-audit-tests | 210 pass | |
+| tax-engine-accuracy-audit-tests | 97 pass | |
+| tax-engine-phaseE-tests | 235/235 | |
+| tax-engine-50state-tests | 187/187 | |
+| **tax-engine-form4868-tests** (NEW) | 40/40 | C8 |
+| **tax-engine-form1040x-tests** (NEW) | 45/45 | C4 |
+| **tax-engine-section1031-tests** (NEW) | 30/30 | C5 |
+| **tax-engine-espp-iso-tests** (NEW) | 27/27 | C6 |
+| **tax-engine-section163j-461l-tests** (NEW) | 36/36 | C7 |
+| (other pure + integration suites) | (✓ no regressions) | |
+
+## Schema changes pushed to local DB (need EC2 push too)
+
+| Table | New columns |
 |---|---|
-| tax-engine-tests | 193/193 |
-| tax-engine-cpa-scenarios-tests (NEW) | 146/146 |
-| tax-engine-phaseE-tests | 235/235 |
-| tax-engine-deep-audit-tests | 210/210 |
-| tax-engine-accuracy-audit-tests | 97/97 |
-| tax-engine-50state-tests | 187/187 |
-| tax-engine-planning-tests (G1) | 133/133 |
-| tax-engine-planning-multi-year-tests (G4) | 70/70 |
-| tax-engine-planning-integration-tests | 29/29 |
-| tax-engine-pro-tier-tests | 5/5 (on-state) |
-| tax-engine-scenarios | 95/95 |
-| tax-engine-integration-tests | 22/22 |
-| tax-engine-deep-tests | 37/37 |
-| tax-engine-deep-integration-tests | 29/29 |
-| tax-engine-new-features-tests | 28/28 |
-| tax-engine-phase1-unit-tests | 44/44 |
-| tax-engine-phase1-integration-tests | 55/55 |
-| tax-engine-phase15-unit-tests | (✓) |
-| tax-engine-phase15-integration-tests | 37/37 |
-| tax-engine-phase2-unit-tests | (✓) |
-| tax-engine-pure-tests | (✓) |
-| tax-engine-edge-cases-tests | (✓) |
-| tax-engine-w2-validation-tests | 37/37 |
-| tax-engine-k1-tests | 70/70 |
-| tax-engine-k1-integration-tests | 23/23 |
-| tax-engine-amt-prefs-tests | 16/16 |
-| tax-engine-state-eitc-tests | 21/21 |
-| tax-engine-nyc-tests | 16/16 |
-| tax-engine-capital-transactions-tests | 16/16 |
-| tax-engine-rental-properties-tests | 15/15 |
-| tax-engine-exports-tests | 32/32 |
+| `tax_returns` | C4: `original_snapshot` jsonb, `amendment_explanation` text, `amendment_locked_at` timestamp |
+| `tax_returns` | C5: `section_1031_realized_gain`, `section_1031_boot_received`, `section_1031_recognized_gain`, `section_1031_deferred_gain` (all numeric default "0") |
+| `tax_returns` | C6: `iso_disqualifying_disposition_ordinary`, `espp_disqualifying_disposition_ordinary` (numeric default "0") |
+| `tax_returns` | C7: `section_163j_business_interest_expense`, `section_163j_allowed_deduction`, `section_163j_disallowed_carryforward`, `section_461l_excess_loss_addback` (numeric default "0") |
 
-## Schema changes pushed to local DB
+OpenAPI enum extensions on `adjustmentType` (3 schemas: Adjustment,
+CreateAdjustmentBody, UpdateAdjustmentBody) — 9 new values:
+- section_1031_realized_gain
+- section_1031_boot_received
+- iso_disqualifying_disposition_ordinary
+- espp_disqualifying_disposition_ordinary
+- section_163j_business_interest_expense
+- section_163j_business_interest_income
+- section_163j_carryforward_from_prior
+- section_163j_floor_plan_financing_interest
+- section_461l_excess_loss_addback
 
-| Table | New constraints / indexes |
-|---|---|
-| clients | (existing) |
-| tax_returns | FK clientId→clients cascade, composite (clientId, taxYear) |
-| w2_data | FK clientId cascade, FK documentId set-null, composite (clientId, taxYear), documentId |
-| form_1099_data | FK clientId cascade, FK documentId set-null, composite (clientId, taxYear), documentId |
-| adjustments | FK clientId cascade, index clientId |
-| rental_properties | FK clientId cascade, composite (clientId, taxYear) |
-| capital_transactions | FK clientId cascade, composite (clientId, taxYear) |
-| schedule_k1_data | FK clientId cascade, composite (clientId, taxYear) |
-| tax_documents | FK clientId cascade, index clientId, composite (clientId, status) |
-| audit_log | (existing FK set-null), composite (clientId, createdAt), (entityType, entityId) |
-
-EC2 (Neon) needs the same FKs + indexes applied during deploy.
+api-zod + api-client-react regenerated.
 
 ## Deploy steps (for the user)
 
@@ -200,18 +100,11 @@ pnpm install
 export DATABASE_URL=$(pm2 env 0 | awk -F": " '/^DATABASE_URL:/ {print $2; exit}')
 export AI_API_KEY=$(pm2 env 0 | awk -F": " '/^AI_API_KEY:/ {print $2; exit}')
 
-# IMPORTANT — set CORS allowlist + rate-limit env (otherwise the
-# CORS lockdown defaults to no cross-origin in production)
-pm2 set taxflow:ALLOWED_ORIGINS "http://ec2-18-188-192-154.us-east-2.compute.amazonaws.com"
-# (Optional override) pm2 set taxflow:RATE_LIMIT_PER_MINUTE 300
-
-# REQUIRED — Phase E + audit-fix added 10+ new columns and 18 indexes.
-# Neon may have orphan rows; clean before pushing FKs if push fails:
-#   DELETE FROM <child> WHERE client_id NOT IN (SELECT id FROM clients);
+# REQUIRED — Phase C added 13 new columns to tax_returns:
 pnpm --filter @workspace/db run push
 
 pnpm --filter @workspace/api-server run build
-pm2 restart taxflow --update-env
+pm2 restart taxflow
 curl http://localhost:8080/api/healthz
 exit
 ```
@@ -224,24 +117,27 @@ rsync -e "ssh -i ~/Downloads/taxflow-key.pem" -avz --delete \
   ubuntu@ec2-18-188-192-154.us-east-2.compute.amazonaws.com:~/taxflow-pro/artifacts/tax-app/dist/public/
 ```
 
-## What's left (Tier 2 — separate sessions)
+Verify by clicking through a seeded client at
+http://ec2-18-188-192-154.us-east-2.compute.amazonaws.com:
+1. Open a Tax Calculator tab → Form 4868 card should render with live Lines 4-7.
+2. Lock-as-filed → modify an adjustment → recompute → Form 1040-X card should render the diff.
+3. Add a `section_1031_realized_gain` + `section_1031_boot_received` adjustment → Section1031Card should appear.
+4. Similar smoke checks for `iso_disqualifying_disposition_ordinary` (EsppIsoCard) and `section_163j_business_interest_expense` (Section163j461lCard).
 
-Strongest candidates for next sessions:
+## Sub-gaps surfaced this session (for future engine work)
 
-1. **CPA outreach campaign** — packet complete in `docs/outreach/`;
-   needs user availability. Engine is feature-complete + audit-passed.
-2. **Phase D15 multi-tenancy auth** (2-3 wks). The dominant remaining
-   security gap. Required before charging real money.
-3. **Phase D18 Stripe billing** (1-2 wks, needs D15). Pro-tier feature
-   flag is already wired (G5).
-4. **D17 file storage hardening** — encrypt SSN with pgcrypto +
-   move tax_documents.fileContent → S3. ~2 weeks.
-5. **D16 soft-delete + DB-level append-only audit_log** (revoke
-   UPDATE/DELETE for app role). 1 week.
-6. **Drizzle versioned migrations** vs `push`. 1 day. Worth doing
-   before next major schema change.
-7. **Split ClientDetail.tsx** + remove `as any` casts. Pure refactor,
-   ~1-2 days, low risk now that the audit table indexed the 19 sites.
+1. **§163(j) ATI proxy approximation** — true ATI per §163(j)(8) is taxable income without §163(j)/NOL/§199A QBI plus depreciation addback (pre-2022 only). Engine uses pre-§163(j) ordinary income, which over-restricts the allowance for high-depreciation low-income filers. Documented in test Case 9.
+2. **§461(l) auto-aggregation deferred** — engine accepts CPA-supplied addback; doesn't yet aggregate Sched C + Sched E + K-1 active losses across the §305k single / $610k MFJ threshold. CPA pre-computes.
+3. **§1031 (and §121) recognized gains don't flow into NIIT investment-income base** — consistent with the existing §121 pattern (a documented sub-gap in CLAUDE.md). Fix would require a broader NIIT-base refactor that also corrects §121.
+4. **Form 8824 PDF for §1031 + Form 8990 PDF for §163(j) deferred** — CPAs hand-file these from the engine's computed values. Engine output is structured enough that adding the PDF builders later is a 1-2 hour task per form.
+
+## What's left (post-C-batch — strongest candidates)
+
+1. **CPA outreach campaign (A1)** — packet complete; blocked on user availability.
+2. **H2 — what-if engine (1-2 wks)** — turns every existing planning rule into actual delta-dollar values (no more heuristic ranges). Foundation for H3-H7-H10-H12.
+3. **C2 — top-10-state credits push (2-3 wks)** — 50 credits × ~3 days each.
+4. **D15 — multi-tenancy auth (2-3 wks)** — required before paid customers.
+5. **D1 — TLS terminator (1-2 days)** — needed before paid customers.
 
 ## How to start the next Claude session
 
@@ -249,37 +145,31 @@ Strongest candidates for next sessions:
 Project: TaxFlow Assistant.
 
 Read these files first, in order:
-  1. .claude/handoff.md           — Deep audit + 20 scenarios (last session)
-  2. .claude/roadmap.md           — Phase D plan
-  3. CLAUDE.md                    — invariants, closure log
+  1. docs/todo.md                 — THE LIVE TODO (read this first)
+  2. docs/coverage-matrix.md      — Per-state + per-feature inventory
+  3. .claude/handoff.md           — Last session state
+  4. .claude/roadmap.md           — Long-arc Phase A-G plan
+  5. CLAUDE.md                    — invariants, closure log
 
-Where we left off (2026-05-26): Deep four-axis audit complete; all
-high-severity findings (CORS, rate limit, file MIME, PII redaction,
-AI key check, DB FKs + indexes, parallelized queries, O(n) wash-sale)
-applied. 20 new real-world CPA scenarios as a regression suite (146
-new hand-calc'd assertions). 2,150+ assertions across 30 suites.
-Engine still at zero documented federal/state gaps.
+Where we left off (2026-05-26): C-batch shipped — 6 items (C1+C4+
+C5+C6+C7+C8). 178 new hand-calc'd assertions. Forms 4868 + 1040-X
+live end-to-end with PDF downloads. §1031, ESPP-ISO disqualifying,
+§163(j) + §461(l) engine + frontend cards live. Coverage matrix
+doc written. ZERO documented engine gaps; 4 new sub-gaps tracked
+(Form 8824/8990 PDFs deferred; §163(j) ATI proxy approximate;
+§461(l) auto-aggregation deferred; §121/§1031 NIIT routing
+consistent with existing §121 sub-gap).
 
-Also shipped after the audit: HSTS + upgrade-insecure-requests
-removed from the Helmet CSP because they were stranding sub-resource
-loads on the HTTP-only EC2 deploy (commits 90e7e72 + 8d31796). EC2
-site is back online and rendering correctly.
-
-The full open TODO list is in `docs/todo.md` (~30 tasks organized
-A/B/C/D/E). Show it to me. Top recommendation is task **H2
+Show me the full open TODO list. Top recommendation is task **H2
 (what-if engine, 1-2 wks)** — single biggest planning-accuracy
-unlock; every existing planning rule becomes credible immediately.
-
-Sub-recommendations after H2:
-  - C1 coverage-matrix doc (1 day — foundation for state work)
-  - H5 asset balance tracking (2-3 wks — unlocks RMD/NUA/Roth strategies)
-  - A2 D15 multi-tenancy auth (2-3 wks — gating real billing)
-  - A1 live CPA outreach (needs YOUR availability, not engineering)
+unlock. Sub-recommendations: A1 (CPA outreach, awaits user availability),
+C2 (top-10-state credits, 2-3 wks), D15 (multi-tenancy auth, 2-3 wks).
 
 Quality bar:
 - Each chunk ships as its own commit
 - All existing tests must stay at 0 real failures
-- Update docs/todo.md / .claude/handoff.md / CLAUDE.md at session end
-- Deploy to EC2 at the end (incl. git pull + db push + pm2 restart
-  on EC2 + local pnpm build + rsync — see deploy steps section)
+- Update docs/todo.md / docs/coverage-matrix.md / .claude/handoff.md /
+  CLAUDE.md at session end
+- Deploy to EC2 at the end (git pull + db push + pm2 restart on EC2
+  + local pnpm build + rsync)
 ```

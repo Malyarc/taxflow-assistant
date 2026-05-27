@@ -39,17 +39,17 @@ Source files referenced:
 | **Form 7206** (SEHI) | ✅ | K5 — net SE − ½ SE cap |
 | **Form 1116** (FTC) | ✅ | BP7 — including form-limit binding |
 | **Form 8606** (nondeductible IRA basis) | ❌ | TODO — H6 in Phase H |
-| **Form 4868** (extension) | ❌ | **C8 — shipping this session** |
-| **Form 1040-X** (amended) | ❌ | **C4 — shipping this session** |
-| **Form 8824** (§1031 like-kind) | ❌ | **C5 — shipping this session** |
-| **Form 8990** (§163(j)) | ❌ | **C7 — shipping this session** |
-| **Form 461** (§461(l)) | ❌ | **C7 — shipping this session** |
+| **Form 4868** (extension) | ✅ | C8 — pdfkit substitute (Pub 1167); live JSON preview + PDF download |
+| **Form 1040-X** (amended) | ✅ | C4 — snapshot-based diff (col a / b / c); Part III explanation textarea |
+| **Form 8824** (§1031 like-kind) | partial | C5 — engine computes recognized/deferred from adjustment inputs; PDF deferred (sub-gap: no Form 8824 PDF builder yet) |
+| **Form 8990** (§163(j)) | partial | C7 — engine computes 30%-of-ATI cap with indefinite carryforward; PDF deferred |
+| **Form 461** (§461(l)) | partial | C7 — engine accepts CPA-supplied addback (loss-aggregation across Sched C/E/K-1 is the CPA's responsibility for now) |
 | **Form 1041 / 1065 / 1120 / 1120-S** | ❌ | Out of scope (Phase 4 Option A) |
 | **Form 706 / 709** | ❌ | Out of scope (estate/gift) |
 
 ### IRC sections explicitly modeled
 
-§55-§59 (AMT, including K3 LTCG-preferential MIN, line 2g/2k), §72(t) (early-withdrawal penalty, E5), §85 (unemployment), §111 (1099-G tax-benefit rule, E6), §121 (home-sale exclusion, K6), §163(j) ❌, §168(k) (bonus depreciation, E7), §170 (charitable + §170(d)(1) 5-year cf, E3), §172 (NOL + post-TCJA 80% limit, K4), §179 (E7), §199A (simplified 20%; **no wage/UBIA cap, no SSTB**), §408(d)(2) (backdoor Roth pro-rata) ❌, §409A (NQDC) ❌, §461(l) ❌, §469 (PAL — rental bucket + K-1 bucket separate, $25k allowance + REP exception), §1031 ❌, §1091 + §1091(d) basis adjustment (wash sale + E13 auto-detection), §1202 (QSBS, assumes 100% post-2010-09-27), §1211/§1212 (cap-loss limit + $3k offset + carryforward), §1374 ❌, §1411 (NIIT), §911 (FEIE, K9), §4973(g) (HSA excess excise, E4)
+§55-§59 (AMT, including K3 LTCG-preferential MIN, line 2g/2k), §72(t) (early-withdrawal penalty, E5), §85 (unemployment), §111 (1099-G tax-benefit rule, E6), §121 (home-sale exclusion, K6), §163(j) (C7 — 30%-of-ATI cap with indefinite carryforward), §168(k) (bonus depreciation, E7), §170 (charitable + §170(d)(1) 5-year cf, E3), §172 (NOL + post-TCJA 80% limit, K4), §179 (E7), §199A (simplified 20%; **no wage/UBIA cap, no SSTB**), §408(d)(2) (backdoor Roth pro-rata) ❌, §409A (NQDC) ❌, §421(b)/§422 (C6 — ISO disqualifying disposition ordinary comp), §423 (C6 — ESPP disqualifying disposition ordinary comp), §461(l) (C7 — CPA-supplied addback), §469 (PAL — rental bucket + K-1 bucket separate, $25k allowance + REP exception), §1031 (C5 — like-kind exchange recognized/deferred gain), §1091 + §1091(d) basis adjustment (wash sale + E13 auto-detection), §1202 (QSBS, assumes 100% post-2010-09-27), §1211/§1212 (cap-loss limit + $3k offset + carryforward), §1374 ❌, §1411 (NIIT — sub-gap: §121/§1031 recognized gains don't yet flow into NIIT investment-income base), §911 (FEIE, K9), §4973(g) (HSA excess excise, E4)
 
 ### Credits modeled (in IRS order)
 
@@ -71,10 +71,6 @@ Source files referenced:
 
 ### Known federal gaps (not modeled)
 
-- §163(j) business interest expense limit — **C7 this session**
-- §461(l) excess business loss limit — **C7 this session**
-- §1031 like-kind exchange basis carryover — **C5 this session**
-- ESPP qualifying/disqualifying disposition; ISO disqualifying disposition (ISO bargain is modeled for AMT pref only) — **C6 this session**
 - Form 8606 nondeductible IRA basis (required for backdoor Roth) — H6
 - §1202 sub-multipliers for pre-2010-09-27 acquisitions (75% / 50%)
 - §1091(d) auto-flip ST→LT on wash-sale replacement (covered as a sub-gap in the deep audit; partial wash NOT modeled either)
@@ -82,8 +78,12 @@ Source files referenced:
 - K-1 §199A wage/UBIA limits + SSTB phase-out (engine applies flat 20%)
 - K-1 guaranteed payments (Box 4)
 - K-1 basis / at-risk limits (stored but not enforced)
-- Carryforwards modeled: NOL, AMT credit, charitable cash, capital-loss ST/LT, §469 PAL (rental + K-1 separate). **Not modeled:** SEHI cf, FTC cf, §163(j) cf
+- Carryforwards modeled: NOL, AMT credit, charitable cash, capital-loss ST/LT, §469 PAL (rental + K-1 separate), §163(j) disallowed business interest (C7, indefinite). **Not modeled:** SEHI cf, FTC cf
 - Treaty positions; sourcing for FTC by category
+- **§1031 / §121 recognized gains don't flow into NIIT investment-income base** (sub-gap; consistent with the existing §121 pattern). Fix requires NIIT-base refactor.
+- **§163(j) ATI proxy** ≈ pre-§163(j) ordinary income (not the strict §163(j)(8) "taxable income without §163(j)/NOL/QBI + depreciation addback" — over-restricts the allowance for high-depreciation low-income filers).
+- **§461(l) loss-aggregation** is CPA-supplied (engine doesn't auto-aggregate across Sched C / E / K-1 buckets to compute the excess).
+- **Form 8824 PDF** for §1031 reporting deferred; **Form 8990 PDF** for §163(j) deferred. CPAs hand-file these forms.
 
 ---
 

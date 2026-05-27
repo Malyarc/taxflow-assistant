@@ -1,6 +1,6 @@
 # TaxFlow Assistant — Open TODO list
 
-**Status as of 2026-05-26.** This is the durable, git-tracked TODO list.
+**Status as of 2026-05-26 (post-C-batch).** This is the durable, git-tracked TODO list.
 Read this in every new session before picking up work. The Claude task
 tool inside any single session is ephemeral — only this file persists.
 
@@ -60,19 +60,24 @@ estimates, not actual engine re-runs.
 
 ## C. Coverage push (federal + state engine completeness)
 
+**Shipped 2026-05-26 (C-batch):** C1 coverage matrix · C4 Form 1040-X amended returns · C5 §1031 like-kind exchange · C6 ESPP + ISO disqualifying disposition · C7 §163(j) + §461(l) limits · C8 Form 4868 extensions. See `docs/coverage-matrix.md`.
+
+Remaining open:
+
 | # | Item | Effort | Notes |
 |---|---|---|---|
-| C1 | **Coverage matrix doc** (Option B) | 1 day | `docs/coverage-matrix.md` — per-state × per-feature inventory of what we model vs the canonical list. Foundation for all other C-tasks. |
 | C2 | **Top-10-state credit push** (Option C) | 2-3 wks | Pick 10 high-CPA-volume states with brackets-only coverage; add their top 5 credits each. ~50 credits × 3-5 days each. |
 | C3 | **CPA design-partner side-by-side validation** (Option A) | 4-8 wks calendar | 1 partner runs 20-50 returns through TaxFlow next to Lacerte. Every diff = real customer-driven gap. Highest-ROI coverage path. |
-| C4 | Form 1040-X amended returns | 1 wk | CPAs need this constantly. |
-| C5 | §1031 like-kind exchange | 1 wk | Real estate clients. 45/180-day windows, boot, basis carryover. |
-| C6 | ESPP + ISO disqualifying disposition | 1 wk | ISO disqualifying = ordinary income, NOT AMT pref. Tech CPAs need this. |
-| C7 | §163(j) + §461(l) limits | 1 wk | Increasingly common for high-income SE + K-1 clients. |
-| C8 | Form 4868 extensions | 3-5 days | |
 | C9 | PA local EIT (~2000 jurisdictions) | 1 wk | Lookup table by zip / municipality. |
 | C10 | OH school district income tax | 3-5 days | |
 | C11 | Per-state part-year residency formulas | 2-3 wks | Currently pro-rata by days; real NY IT-203 / CA 540NR Sched CA source by income item. |
+
+**C-batch sub-gaps to track (for follow-up sessions):**
+
+- §163(j) ATI proxy is approximate; over-restricts for high-depreciation low-income filers. True ATI per §163(j)(8) needs depreciation addback + pre-§163(j)/NOL/QBI taxable-income base.
+- §461(l) loss-aggregation is CPA-supplied; engine doesn't auto-aggregate across Sched C / E / K-1 buckets.
+- §1031 / §121 recognized gains don't flow into NIIT investment-income base. Consistent with the existing §121 pattern; fix requires broader NIIT-base refactor.
+- Form 8824 PDF for §1031 reporting and Form 8990 PDF for §163(j) NOT yet rendered; CPAs hand-file from the engine's computed values.
 
 ---
 
