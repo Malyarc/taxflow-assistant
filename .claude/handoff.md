@@ -1,4 +1,4 @@
-# Handoff Note — 2026-05-27 (Phase H sub-gap closure — ALL DONE)
+# Handoff Note — 2026-05-27 (Phase H sub-gap closure + H1 catalog v1.5 — ALL DONE)
 
 Session continuation point for the next Claude (or human) working on
 TaxFlow Assistant.
@@ -44,15 +44,22 @@ session's "deferred" list. This session shipped:
   tags as `catalog-overlap` (needs review) or `extra-strategy`
   (qualitative only); drops duplicates of already-detected hits.
   AiDiscoveryCard shows verification badge above rationale.
-- **H1 catalog v1.4 — 5 new strategies** (25 total): G1.21 §1031 timing,
+- **H1 catalog v1.4 — 5 new strategies**: G1.21 §1031 timing,
   G1.22 pre-RMD Roth ladder, G1.23 cost segregation, G1.24 opportunity
   zones, G1.26 backdoor Roth IRA.
+- **H1 catalog v1.5 — 6 more new strategies** (31 total — first session
+  to push past 20): G1.27 inherited IRA 10-year rule (heuristic
+  informational, SECURE 1.0), G1.28 defined benefit / cash balance plan
+  (H2-wired, age-tiered $150k-$300k cap), G1.33 Clean Vehicle Credit
+  §30D/§25E (H2-wired $7,500 with MAGI gate), G1.34 Residential Clean
+  Energy §25D (H2-wired 30% × $20k install through 2032), G1.39 §1202
+  QSBS (heuristic informational, $238k for K-1 + AGI > $500k), G1.45
+  §121 home sale exclusion (heuristic, $250k single/$500k MFJ).
 
-Total: 5 feature commits + 1 close-out commit.
-Total new assertions: 115 hand-calc'd across 4 test files (28 H3-wiring
-in planning-tests, 40 H6-PartIII in form8606-tests, 23 H8-verifier in
-NEW discovery-tests, 24 H1-v1.4 in planning-tests). All other 23 suites
-still GREEN. ZERO documented federal/state gaps.
+Total: 7 feature commits + 2 close-out commits.
+Total new assertions: 141 hand-calc'd across 4 test files (28 H3-wiring
++ 40 H6-PartIII + 23 H8-verifier + 24 H1-v1.4 + 26 H1-v1.5). All
+other 23 suites still GREEN. ZERO documented federal/state gaps.
 
 Live-verified end-to-end on seed clients via curl + browser:
 - Client 5429 (G1.4 Roth): multiYear horizon=5 totalSavings=$5,658
