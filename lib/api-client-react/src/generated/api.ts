@@ -31,8 +31,10 @@ import type {
   CreateW2DataBody,
   DashboardSummary,
   Form1099Data,
+  GetPeerBenchmarkParams,
   GetPlanningHitListParams,
   HealthStatus,
+  PeerBenchmarkResponse,
   PlanningHitList,
   PlanningMemo,
   PlanningMissingData,
@@ -43,6 +45,8 @@ import type {
   RentalProperty,
   ScheduleK1,
   Settings,
+  StateComparisonBody,
+  StateComparisonResponse,
   TaxDocument,
   TaxReturn,
   UpdateAdjustmentBody,
@@ -2665,6 +2669,230 @@ export function useGetPlanningMultiYear<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Loads all firm clients within an AGI band around the target client and computes cohort statistics: mean / median / p25 / p75 effective tax rate. Returns the client's own effective rate + percentile rank within the cohort, so CPAs can flag clients paying significantly more (or less) than peers.
+Default AGI band: ±$50,000 around target AGI. Override via query.
+
+ * @summary Compare client's effective tax rate to firm-wide peers (Phase H — H11)
+ */
+export const getGetPeerBenchmarkUrl = (
+  clientId: number,
+  params?: GetPeerBenchmarkParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/clients/${clientId}/peer-benchmark?${stringifiedParams}`
+    : `/api/clients/${clientId}/peer-benchmark`;
+};
+
+export const getPeerBenchmark = async (
+  clientId: number,
+  params?: GetPeerBenchmarkParams,
+  options?: RequestInit,
+): Promise<PeerBenchmarkResponse> => {
+  return customFetch<PeerBenchmarkResponse>(
+    getGetPeerBenchmarkUrl(clientId, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetPeerBenchmarkQueryKey = (
+  clientId: number,
+  params?: GetPeerBenchmarkParams,
+) => {
+  return [
+    `/api/clients/${clientId}/peer-benchmark`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetPeerBenchmarkQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPeerBenchmark>>,
+  TError = ErrorType<ProTierRequired | void>,
+>(
+  clientId: number,
+  params?: GetPeerBenchmarkParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPeerBenchmark>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetPeerBenchmarkQueryKey(clientId, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getPeerBenchmark>>
+  > = ({ signal }) =>
+    getPeerBenchmark(clientId, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!clientId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPeerBenchmark>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetPeerBenchmarkQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getPeerBenchmark>>
+>;
+export type GetPeerBenchmarkQueryError = ErrorType<ProTierRequired | void>;
+
+/**
+ * @summary Compare client's effective tax rate to firm-wide peers (Phase H — H11)
+ */
+
+export function useGetPeerBenchmark<
+  TData = Awaited<ReturnType<typeof getPeerBenchmark>>,
+  TError = ErrorType<ProTierRequired | void>,
+>(
+  clientId: number,
+  params?: GetPeerBenchmarkParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPeerBenchmark>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetPeerBenchmarkQueryOptions(
+    clientId,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Runs the H2 what-if engine for each target state by mutating `client.state` and recomputing. Returns a sorted list of `{ state, deltaFederal, deltaState, deltaCombined }` highlighting the tax impact of moving. Default target states are zero-income-tax jurisdictions (TX/FL/NV/WA/TN). Excludes the client's current state from the comparison automatically.
+Important caveats CPAs must communicate:
+  * Engine mutates the resident state but does NOT model income
+    sourcing (e.g., W-2 wages remain tied to the original work state).
+    Real moves require multi-state allocation per state rules.
+  * Domicile rules vary — establishing residency in a new state
+    requires more than tax filing (driver's license, voter
+    registration, days-present test, etc.).
+  * Does NOT model real estate, cost of living, or the new state's
+    sales / property tax burden.
+
+ * @summary Compare client's tax burden across alternate resident states (Phase H — H4)
+ */
+export const getRunStateComparisonUrl = (clientId: number) => {
+  return `/api/clients/${clientId}/state-comparison`;
+};
+
+export const runStateComparison = async (
+  clientId: number,
+  stateComparisonBody?: StateComparisonBody,
+  options?: RequestInit,
+): Promise<StateComparisonResponse> => {
+  return customFetch<StateComparisonResponse>(
+    getRunStateComparisonUrl(clientId),
+    {
+      ...options,
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(stateComparisonBody),
+    },
+  );
+};
+
+export const getRunStateComparisonMutationOptions = <
+  TError = ErrorType<ProTierRequired | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runStateComparison>>,
+    TError,
+    { clientId: number; data: BodyType<StateComparisonBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof runStateComparison>>,
+  TError,
+  { clientId: number; data: BodyType<StateComparisonBody> },
+  TContext
+> => {
+  const mutationKey = ["runStateComparison"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof runStateComparison>>,
+    { clientId: number; data: BodyType<StateComparisonBody> }
+  > = (props) => {
+    const { clientId, data } = props ?? {};
+
+    return runStateComparison(clientId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RunStateComparisonMutationResult = NonNullable<
+  Awaited<ReturnType<typeof runStateComparison>>
+>;
+export type RunStateComparisonMutationBody = BodyType<StateComparisonBody>;
+export type RunStateComparisonMutationError = ErrorType<ProTierRequired | void>;
+
+/**
+ * @summary Compare client's tax burden across alternate resident states (Phase H — H4)
+ */
+export const useRunStateComparison = <
+  TError = ErrorType<ProTierRequired | void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runStateComparison>>,
+    TError,
+    { clientId: number; data: BodyType<StateComparisonBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof runStateComparison>>,
+  TError,
+  { clientId: number; data: BodyType<StateComparisonBody> },
+  TContext
+> => {
+  return useMutation(getRunStateComparisonMutationOptions(options));
+};
 
 /**
  * Loads the client's current TaxReturnInputs (same source as the persisted return), applies the requested mutations, re-runs computeTaxReturnPure, and returns the federal+state tax delta vs the baseline. Pure — does not write to the DB.

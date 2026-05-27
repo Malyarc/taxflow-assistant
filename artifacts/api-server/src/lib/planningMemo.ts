@@ -35,6 +35,22 @@ YOUR JOB: write a one-page markdown planning memo addressed to the CPA. Sections
   4. ## Caveats             (note that all numbers are deterministic engine output; CPA validates;
                              flag any opportunities with confidence < 0.7 as "review carefully")
 
+PHASE H — H9 PERSONALIZATION:
+  - The client snapshot MAY include riskTolerance, targetRetirementAge,
+    estatePlanStage, and planningGoals. When present, weave them naturally
+    into the Executive summary and Recommended actions:
+      * riskTolerance "conservative" → de-emphasize aggressive moves (Roth-large,
+        illiquid investments); favor steady contributions and credits.
+      * riskTolerance "aggressive" → flag opportunities that lock in current
+        rates / convert future tax-deferred to tax-free (Roth, NUA, bunching).
+      * targetRetirementAge → assess runway for strategies needing years
+        (Roth conversion ladder, RMD pre-planning, bunching cycles).
+      * estatePlanStage "none" or "will_only" → mention establishing a trust
+        if estate-planning opportunities exist.
+      * planningGoals (free text) → reference the goal directly when it
+        aligns with a recommendation (e.g. "supports your 529 funding goal").
+  - When the snapshot OMITS these fields, do NOT mention them or invent them.
+
 HARD CONSTRAINTS:
   - DO NOT invent, calculate, or modify any dollar amount, percentage, or threshold.
   - DO NOT add opportunities that aren't in the supplied list.
@@ -73,8 +89,26 @@ DO NOT invent questions outside the prerequisiteData lists.
 DO NOT include IRS jargon.
 Output ONLY the bulleted list. No preamble.`;
 
-function clientSnapshotForLlm(client: { firstName: string; lastName: string; filingStatus: string; state: string }, computed: ComputedTaxReturn): Record<string, unknown> {
-  return {
+/**
+ * Phase H — H9. Extended client snapshot that includes the planning-
+ * context fields (risk tolerance, retirement age, estate plan stage,
+ * planning goals). The AI memo uses these to personalize recommendations.
+ * Fields are optional — absent when the CPA hasn't gathered them yet.
+ */
+type ClientForLlm = {
+  firstName: string;
+  lastName: string;
+  filingStatus: string;
+  state: string;
+  taxpayerAge?: number | null;
+  riskTolerance?: string | null;
+  targetRetirementAge?: number | null;
+  estatePlanStage?: string | null;
+  planningGoals?: string | null;
+};
+
+function clientSnapshotForLlm(client: ClientForLlm, computed: ComputedTaxReturn): Record<string, unknown> {
+  const snapshot: Record<string, unknown> = {
     name: `${client.firstName} ${client.lastName}`,
     filingStatus: client.filingStatus,
     state: client.state,
@@ -87,6 +121,17 @@ function clientSnapshotForLlm(client: { firstName: string; lastName: string; fil
     niitTax: Math.round(computed.niitTax),
     selfEmploymentTax: Math.round(computed.selfEmploymentTax),
   };
+  // H9 — only include client-context fields when populated. Keeps the
+  // payload small and avoids prompting the LLM with "riskTolerance: null"
+  // (which can lead to it mentioning unknown context).
+  if (client.taxpayerAge != null) snapshot.taxpayerAge = client.taxpayerAge;
+  if (client.riskTolerance) snapshot.riskTolerance = client.riskTolerance;
+  if (client.targetRetirementAge != null) snapshot.targetRetirementAge = client.targetRetirementAge;
+  if (client.estatePlanStage) snapshot.estatePlanStage = client.estatePlanStage;
+  if (client.planningGoals && client.planningGoals.trim().length > 0) {
+    snapshot.planningGoals = client.planningGoals;
+  }
+  return snapshot;
 }
 
 async function chat(systemPrompt: string, userPayload: object, maxTokens = 1200): Promise<string> {
@@ -102,7 +147,7 @@ async function chat(systemPrompt: string, userPayload: object, maxTokens = 1200)
 }
 
 export interface PlanningMemoInput {
-  client: { firstName: string; lastName: string; filingStatus: string; state: string };
+  client: ClientForLlm;
   computed: ComputedTaxReturn;
   hits: OpportunityHit[];
 }

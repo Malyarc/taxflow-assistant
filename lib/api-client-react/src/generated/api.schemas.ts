@@ -146,6 +146,26 @@ match the locality's parent state.
    * @nullable
    */
   residencyChangeDate?: string | null;
+  /**
+   * Phase H — H9. "conservative" | "moderate" | "aggressive". Drives planning recommendations (Roth conversion sizing, charitable bunching frequency, etc.).
+   * @nullable
+   */
+  riskTolerance?: string | null;
+  /**
+   * Phase H — H9. Target retirement age (integer years). Used for time-horizon-sensitive recommendations.
+   * @nullable
+   */
+  targetRetirementAge?: number | null;
+  /**
+   * Phase H — H9. "none" | "will_only" | "trust_in_place" | "complex". Drives estate-tax / gifting strategy recommendations.
+   * @nullable
+   */
+  estatePlanStage?: string | null;
+  /**
+   * Phase H — H9. Free-text client-specific planning goals (e.g., "buy a house in 2 years"). Passed to AI memo synthesis.
+   * @nullable
+   */
+  planningGoals?: string | null;
   /** @nullable */
   notes?: string | null;
   createdAt: string;
@@ -231,6 +251,14 @@ export interface CreateClientBody {
    */
   residencyChangeDate?: string | null;
   /** @nullable */
+  riskTolerance?: string | null;
+  /** @nullable */
+  targetRetirementAge?: number | null;
+  /** @nullable */
+  estatePlanStage?: string | null;
+  /** @nullable */
+  planningGoals?: string | null;
+  /** @nullable */
   notes?: string | null;
 }
 
@@ -312,6 +340,14 @@ export interface UpdateClientBody {
    * @nullable
    */
   residencyChangeDate?: string | null;
+  /** @nullable */
+  riskTolerance?: string | null;
+  /** @nullable */
+  targetRetirementAge?: number | null;
+  /** @nullable */
+  estatePlanStage?: string | null;
+  /** @nullable */
+  planningGoals?: string | null;
   /** @nullable */
   notes?: string | null;
 }
@@ -1693,6 +1729,32 @@ export const OpportunityHitCategory = {
 
 export type OpportunityHitInputs = { [key: string]: unknown };
 
+export type WhatIfMutationKind =
+  (typeof WhatIfMutationKind)[keyof typeof WhatIfMutationKind];
+
+export const WhatIfMutationKind = {
+  set_adjustment: "set_adjustment",
+  add_adjustment: "add_adjustment",
+  remove_adjustment: "remove_adjustment",
+  set_client_field: "set_client_field",
+} as const;
+
+/**
+ * A single change to apply to the baseline TaxReturnInputs. Discriminated by `kind`. The server validates per-kind required fields and rejects invalid combinations with HTTP 400.
+
+ */
+export interface WhatIfMutation {
+  kind: WhatIfMutationKind;
+  /** Required for set/add/remove_adjustment. The engine adjustment_type enum value. */
+  adjustmentType?: string;
+  /** Required for set_adjustment and add_adjustment. The dollar amount. */
+  amount?: number;
+  /** Required for set_client_field. The ClientFacts key to override (e.g. filingStatus, state). */
+  field?: string;
+  /** Required for set_client_field. The replacement value (string, number, boolean, or null). */
+  value?: unknown;
+}
+
 /**
  * Field-level scenario−baseline deltas. Positive on a tax field means the scenario INCREASED that tax. combinedTaxDelta is the headline planning number (federal + state tax liability delta); negative = scenario reduces tax = savings.
 
@@ -1718,6 +1780,38 @@ export interface WhatIfDelta {
   combinedRefundDelta: number;
 }
 
+/**
+ * Whether `delta.combinedTaxDelta` represents the strategy's *savings* (negative = good) or its *current-year cost* (positive = price of the strategy, with long-term benefit captured in `estSavings`).
+
+ */
+export type OpportunityWhatIfSemantics =
+  (typeof OpportunityWhatIfSemantics)[keyof typeof OpportunityWhatIfSemantics];
+
+export const OpportunityWhatIfSemantics = {
+  savings: "savings",
+  cost: "cost",
+} as const;
+
+export interface WhatIfSensitivity {
+  /** Result at 90% of the recommended mutation amount. */
+  low: number;
+  /** Result at 100%. Matches `|whatIf.delta.combinedTaxDelta|`. */
+  mid: number;
+  /** Result at 110% of the recommended mutation amount. */
+  high: number;
+}
+
+export interface OpportunityWhatIf {
+  /** Exact mutations the engine ran. Transparent for CPA audit. */
+  mutations: WhatIfMutation[];
+  delta: WhatIfDelta;
+  /** Whether `delta.combinedTaxDelta` represents the strategy's *savings* (negative = good) or its *current-year cost* (positive = price of the strategy, with long-term benefit captured in `estSavings`).
+   */
+  semantics: OpportunityWhatIfSemantics;
+  /** ±10% sensitivity range. Omitted for fixed-amount strategies. */
+  sensitivity?: WhatIfSensitivity;
+}
+
 export interface OpportunityHit {
   strategyId: string;
   name: string;
@@ -1731,9 +1825,24 @@ export interface OpportunityHit {
   prerequisiteData: string[];
   citation: string;
   inputs: OpportunityHitInputs;
-  /** Phase H — H2. Engine-verified per-field delta for this strategy, computed by running an actual what-if scenario through the pure tax engine. When present, prefer this over the heuristic `estSavings`. Absent when the detector's strategy doesn't yet have a clean single-year mutation expressible to the engine.
+  /** Phase H — H12. Plain-English assumptions / approximations the detector made when computing this opportunity. Each entry is one short statement. Rendered as a bulleted "Assumptions" section under the opportunity card.
    */
-  whatIfDelta?: WhatIfDelta;
+  assumptions?: string[];
+  /** Phase H — H2 + H12. Engine-verified what-if data when the detector has a clean single-year mutation. Includes the exact mutations the engine ran, the resulting per-field delta, sign semantics, and an optional ±10% sensitivity range. Absent for detectors with no clean single-year mutation (G1.3 bunching, G1.8 DAF — multi-year; G1.7 §199A wage limit — engine doesn't model the limit yet).
+   */
+  whatIf?: OpportunityWhatIf;
+}
+
+export interface CrossStrategySummary {
+  /** Strategy IDs (G1.x) whose mutations were stacked. */
+  stackedStrategyIds: string[];
+  /** Engine delta from applying all stacked mutations together. */
+  combinedDelta: WhatIfDelta;
+  /** Sum of |combinedRefundDelta| across each stacked hit's individual H2 result. */
+  sumOfIndividualSavings: number;
+  /** Joint savings minus sum-of-individual-savings. NEGATIVE = stacking ERODES savings (most common — bracket stacking, double-counting relief). POSITIVE = compounding benefit (rare). ZERO = perfectly additive (rare).
+   */
+  interactionEffect: number;
 }
 
 export interface PlanningOpportunities {
@@ -1742,6 +1851,9 @@ export interface PlanningOpportunities {
   catalogVersion: string;
   hits: OpportunityHit[];
   totalEstSavings: number;
+  /** Phase H — H7. Joint engine effect of stacking ALL "savings" strategies together. Present only when ≥2 H2-wired hits fire (single-hit case has no interaction to report). The `interactionEffect` field surfaces bracket-stacking or cliff-escape effects that the simple sum of individual deltas misses.
+   */
+  crossStrategy?: CrossStrategySummary;
 }
 
 export interface PlanningHitListEntry {
@@ -1794,32 +1906,6 @@ export interface PlanningMultiYear {
   yearsCovered: number[];
 }
 
-export type WhatIfMutationKind =
-  (typeof WhatIfMutationKind)[keyof typeof WhatIfMutationKind];
-
-export const WhatIfMutationKind = {
-  set_adjustment: "set_adjustment",
-  add_adjustment: "add_adjustment",
-  remove_adjustment: "remove_adjustment",
-  set_client_field: "set_client_field",
-} as const;
-
-/**
- * A single change to apply to the baseline TaxReturnInputs. Discriminated by `kind`. The server validates per-kind required fields and rejects invalid combinations with HTTP 400.
-
- */
-export interface WhatIfMutation {
-  kind: WhatIfMutationKind;
-  /** Required for set/add/remove_adjustment. The engine adjustment_type enum value. */
-  adjustmentType?: string;
-  /** Required for set_adjustment and add_adjustment. The dollar amount. */
-  amount?: number;
-  /** Required for set_client_field. The ClientFacts key to override (e.g. filingStatus, state). */
-  field?: string;
-  /** Required for set_client_field. The replacement value (string, number, boolean, or null). */
-  value?: unknown;
-}
-
 export interface WhatIfScenarioBody {
   /**
    * Optional stable identifier (e.g. "G1.1-sep-14800") echoed back in the response.
@@ -1842,6 +1928,66 @@ export interface WhatIfSummary {
   federalRefundOrOwed: number;
   stateRefundOrOwed: number;
   effectiveTaxRate: number;
+}
+
+export interface PeerBenchmarkCohort {
+  /** Number of peer clients in the cohort (excluding the target client). */
+  size: number;
+  /** Lower AGI bound of the cohort band. */
+  agiMin: number;
+  /** Upper AGI bound of the cohort band. */
+  agiMax: number;
+  effectiveRateMean: number;
+  effectiveRateMedian: number;
+  /** 25th percentile effective tax rate in the cohort. */
+  effectiveRateP25: number;
+  /** 75th percentile effective tax rate in the cohort. */
+  effectiveRateP75: number;
+  /** Client's rank in the cohort (0-100). 50 = exactly median. >50 = paying MORE than median peer (planning opportunity). <50 = paying LESS than median peer (already optimized or below expected exposure).
+   */
+  clientPercentileRank: number;
+}
+
+export interface PeerBenchmarkResponse {
+  clientId: number;
+  taxYear: number;
+  clientAgi: number;
+  /** Client's own effective tax rate (totalTaxBurden / totalIncome). */
+  clientEffectiveRate: number;
+  cohort: PeerBenchmarkCohort;
+}
+
+export interface StateComparisonBody {
+  /** Two-letter state codes to compare. Defaults to zero-income-tax states (TX, FL, NV, WA, TN) when omitted. The client's current state is automatically excluded.
+   */
+  targetStates?: string[];
+}
+
+export interface StateComparisonResult {
+  state: string;
+  /** Federal tax liability delta (scenario − baseline). Usually positive (lower SALT deduction increases federal tax). */
+  deltaFederal: number;
+  /** State tax liability delta. Usually negative (target is lower-tax state). */
+  deltaState: number;
+  /** Combined federal + state delta. NEGATIVE = move saves money. */
+  deltaCombined: number;
+  /** Federal tax liability if client lived in target state. */
+  scenarioFederal: number;
+  /** State tax liability in target state. */
+  scenarioState: number;
+}
+
+export interface StateComparisonResponse {
+  clientId: number;
+  taxYear: number;
+  /** Client's current resident state. */
+  baselineState: string;
+  /** Current federal tax liability. */
+  baselineFederal: number;
+  /** Current state tax liability. */
+  baselineState_tax: number;
+  /** One per target state, sorted by deltaCombined ascending (biggest savings first). */
+  results: StateComparisonResult[];
 }
 
 export interface WhatIfResponse {
@@ -1876,3 +2022,10 @@ export const GetPlanningHitListCategory = {
   investment: "investment",
   credits: "credits",
 } as const;
+
+export type GetPeerBenchmarkParams = {
+  /**
+   * AGI band width in dollars (default $50,000 → ±$50k around target).
+   */
+  bandWidth?: number;
+};

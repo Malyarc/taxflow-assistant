@@ -1,7 +1,16 @@
 import rawCatalog from "./strategies-v1.json" with { type: "json" };
 import { validateCatalog } from "./validateCatalog";
 
-export type { PlanningStrategy, PlanningStrategyCatalog, OpportunityHit, StrategyCategory, WhatIfDelta } from "./types";
+export type {
+  PlanningStrategy,
+  PlanningStrategyCatalog,
+  OpportunityHit,
+  StrategyCategory,
+  WhatIfDelta,
+  WhatIfMutation,
+  WhatIfSensitivity,
+  OpportunityWhatIf,
+} from "./types";
 export { validateCatalog } from "./validateCatalog";
 
 /**

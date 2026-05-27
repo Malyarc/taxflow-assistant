@@ -156,6 +156,16 @@ export interface ClientFacts {
   residencyChangedInYear?: boolean | null;
   formerState?: string | null;
   residencyChangeDate?: string | null;
+  /**
+   * Phase H — H9. Client-context fields that personalize planning
+   * recommendations. The tax engine itself doesn't use these (calculation
+   * is identical regardless), but the planning layer reads them and the
+   * AI memo synthesis passes them as prompt context.
+   */
+  riskTolerance?: string | null;
+  targetRetirementAge?: number | null;
+  estatePlanStage?: string | null;
+  planningGoals?: string | null;
 }
 
 export interface W2Fact {

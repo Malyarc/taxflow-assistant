@@ -24,7 +24,10 @@ import {
   type ComputedTaxReturn,
   type TaxReturnInputs,
 } from "../../artifacts/api-server/src/lib/taxReturnEngine";
-import { evaluatePlanningOpportunities } from "../../artifacts/api-server/src/lib/planningEngine";
+import {
+  evaluatePlanningOpportunities,
+  evaluateCrossStrategyScenario,
+} from "../../artifacts/api-server/src/lib/planningEngine";
 
 const PASS: string[] = [];
 const FAIL: string[] = [];
@@ -529,32 +532,54 @@ function buildSeFilerInputs(): TaxReturnInputs {
   });
   const sepWith = hitsWith.find((h) => h.strategyId === "G1.1");
   checkTruthy("Case D1 SEP hit fires", sepWith != null);
-  checkTruthy("Case D1 whatIfDelta attached", sepWith?.whatIfDelta != null);
-  if (sepWith?.whatIfDelta) {
+  checkTruthy("Case D1 whatIf attached", sepWith?.whatIf != null);
+  checkTruthy("Case D1 whatIf.mutations populated", (sepWith?.whatIf?.mutations?.length ?? 0) === 1);
+  checkExact("Case D1 whatIf.semantics = savings", sepWith?.whatIf?.semantics, "savings");
+  if (sepWith?.whatIf) {
     check(
-      "Case D1 whatIfDelta.federalTaxLiability ≈ −$4,503 (hand-calc)",
-      sepWith.whatIfDelta.federalTaxLiability,
+      "Case D1 whatIf.delta.federalTaxLiability ≈ −$4,503 (hand-calc)",
+      sepWith.whatIf.delta.federalTaxLiability,
       -4503,
       2,
     );
     check(
-      "Case D1 whatIfDelta.combinedTaxDelta = federal (FL no state tax)",
-      sepWith.whatIfDelta.combinedTaxDelta,
-      sepWith.whatIfDelta.federalTaxLiability,
+      "Case D1 whatIf.delta.combinedTaxDelta = federal (FL no state tax)",
+      sepWith.whatIf.delta.combinedTaxDelta,
+      sepWith.whatIf.delta.federalTaxLiability,
     );
-    // Heuristic estSavings is reported as a positive savings number; whatIfDelta
+    // Heuristic estSavings is reported as a positive savings number; whatIf.delta
     // is the engine arithmetic so combinedTaxDelta is negative (tax reduced).
     check(
       "Case D1 estSavings ≈ |combinedTaxDelta| (heuristic matches engine in 22% bracket)",
       sepWith.estSavings,
-      Math.abs(sepWith.whatIfDelta.combinedTaxDelta),
+      Math.abs(sepWith.whatIf.delta.combinedTaxDelta),
       5,
     );
+    // H12 sensitivity range — should be present for SEP (variable amount)
+    checkTruthy("Case D1 sensitivity range present", sepWith.whatIf.sensitivity != null);
+    if (sepWith.whatIf.sensitivity) {
+      checkTruthy(
+        "Case D1 sensitivity low < mid < high",
+        sepWith.whatIf.sensitivity.low < sepWith.whatIf.sensitivity.mid &&
+          sepWith.whatIf.sensitivity.mid < sepWith.whatIf.sensitivity.high,
+      );
+      // Mid should equal |combinedRefundDelta| (the customer-facing magnitude;
+      // see runDetectorWhatIf comment for why we use refundDelta not taxDelta).
+      check(
+        "Case D1 sensitivity.mid = |combinedRefundDelta|",
+        sepWith.whatIf.sensitivity.mid,
+        Math.abs(Math.round(sepWith.whatIf.delta.combinedRefundDelta)),
+        1,
+      );
+    }
   }
+  // H12 assumptions list populated (5 entries from detectSepIra)
+  checkTruthy("Case D1 assumptions populated", Array.isArray(sepWith?.assumptions) && (sepWith?.assumptions?.length ?? 0) >= 3);
 }
 
-// Case D2: NO baselineInputs supplied → whatIfDelta undefined. Confirms the
+// Case D2: NO baselineInputs supplied → whatIf undefined. Confirms the
 // planning-hit-list path (which skips H2 for perf) still works.
+// Assumptions array is still populated (no I/O dependency).
 {
   const inputs = buildSeFilerInputs();
   const computed = computeTaxReturnPure(inputs);
@@ -565,8 +590,457 @@ function buildSeFilerInputs(): TaxReturnInputs {
   });
   const sepWithout = hitsWithout.find((h) => h.strategyId === "G1.1");
   checkTruthy("Case D2 SEP hit fires without baselineInputs", sepWithout != null);
-  checkTruthy("Case D2 whatIfDelta absent when baselineInputs omitted", sepWithout?.whatIfDelta == null);
+  checkTruthy("Case D2 whatIf absent when baselineInputs omitted", sepWithout?.whatIf == null);
+  checkTruthy("Case D2 assumptions still populated (no I/O dep)", Array.isArray(sepWithout?.assumptions));
   check("Case D2 estSavings still computed via heuristic", sepWithout!.estSavings, 4503, 5);
+}
+
+// ── Case D3: NIIT cliff detector (G1.6) — H2 wire-up ──────────────────────
+// Build a single FL client with AGI ~$205k just above NIIT threshold ($200k
+// single) with investment income $10k.
+//
+// Hand-calc:
+//   - W-2 $200k + $5k 1099-INT interest → AGI $205,000.
+//   - Excess above NIIT threshold: $5,000.
+//   - Baseline NIIT: min($5k NII, $5k excess) × 3.8% = $190.
+//   - Federal marginal at $205k single TY2024: 32% (190,400 vs 191,950
+//     means a slice still in 24%; let me recompute):
+//       Taxable = 205,000 − 14,600 = 190,400. 24% bracket goes 100,525-191,950.
+//       So baseline is at 24% marginal.
+//   - H2 mutation: add $5,000 `deduction` → AGI 200,000 → NIIT 0 (excess goes
+//     from $5k to $0).
+//     Taxable = 200,000 − 14,600 = 185,400 (down $5k from baseline).
+//     Federal tax delta = -$5,000 × 24% = -$1,200.
+//     NIIT delta = -$190.
+//     Combined fed tax delta = -$1,200 + -$190 = -$1,390.
+//   - H2 reports MUCH MORE savings than the heuristic ($190 NIIT only).
+//     This is correct — the strategy IS adding a tax-deferred contribution.
+{
+  const niitInputs = baseInputs({
+    w2s: [{
+      id: 1, clientId: 1, taxYear: 2024, documentId: null,
+      employerName: "Big Co", employerEin: null,
+      wagesBox1: "200000", federalWithholdingBox2: "0",
+      socialSecurityWagesBox3: "168600", socialSecurityTaxBox4: "0",
+      medicareWagesBox5: "200000", medicareTaxBox6: "0",
+      socialSecurityTipsBox7: "0", allocatedTipsBox8: "0",
+      dependentCareBenefitsBox10: "0", nonqualifiedPlansBox11: "0",
+      box12aCode: null, box12aAmount: "0", box12bCode: null, box12bAmount: "0",
+      box12cCode: null, box12cAmount: "0", box12dCode: null, box12dAmount: "0",
+      statutoryEmployeeBox13: false, retirementPlanBox13: false, thirdPartySickPayBox13: false,
+      box14Description: null, box14Amount: "0",
+      stateBox15: "FL", stateWagesBox16: "200000", stateTaxBox17: "0",
+      localWagesBox18: "0", localTaxBox19: "0", localityNameBox20: null,
+      spouse: null, createdAt: new Date(), updatedAt: new Date(),
+    } as unknown as TaxReturnInputs["w2s"][number]],
+    form1099s: [{
+      id: 10, clientId: 1, taxYear: 2024, documentId: null,
+      formType: "int",
+      payerName: "Vanguard", payerEin: null, payerAddress: null,
+      recipientName: null, recipientTin: null, recipientAddress: null,
+      interestIncome: "5000",
+      federalTaxWithheld: "0", stateTaxWithheld: "0", stateCode: null,
+      spouse: null, createdAt: new Date(), updatedAt: new Date(),
+    } as unknown as TaxReturnInputs["form1099s"][number]],
+  });
+  const computed = computeTaxReturnPure(niitInputs);
+  const hits = evaluatePlanningOpportunities({
+    client: niitInputs.client,
+    computed,
+    adjustments: niitInputs.adjustments,
+    baselineInputs: niitInputs,
+  });
+  const niitHit = hits.find((h) => h.strategyId === "G1.6");
+  checkTruthy("Case D3 NIIT hit fires", niitHit != null);
+  if (niitHit) {
+    checkTruthy("Case D3 NIIT whatIf attached", niitHit.whatIf != null);
+    checkExact("Case D3 NIIT semantics = savings", niitHit.whatIf?.semantics, "savings");
+    if (niitHit.whatIf) {
+      check(
+        "Case D3 NIIT combinedTaxDelta ≈ -$1,390 (NIIT + ordinary 24%)",
+        niitHit.whatIf.delta.combinedTaxDelta,
+        -1390,
+        5,
+      );
+      check(
+        "Case D3 NIIT niitTax delta = -$190 (eliminates NIIT)",
+        niitHit.whatIf.delta.niitTax,
+        -190,
+        2,
+      );
+      check(
+        "Case D3 NIIT AGI delta = -$5,000",
+        niitHit.whatIf.delta.adjustedGrossIncome,
+        -5000,
+        1,
+      );
+    }
+    checkTruthy("Case D3 NIIT assumptions populated", Array.isArray(niitHit.assumptions));
+  }
+}
+
+// ── Case D4: Tax-loss harvesting (G1.9) — H2 wire-up ──────────────────────
+// Single FL filer with $80k W-2 and $5k LTCG (so detector fires — has cap
+// market activity). Harvest the $3,000 cap.
+//
+// Hand-calc:
+//   - Baseline: $80k W-2 + $5k LTCG.
+//     AGI = $85,000 (LTCG is in AGI per CLAUDE.md invariant 1).
+//     Taxable = 85,000 − 14,600 = 70,400. But ordinary portion =
+//     70,400 − 5,000 LTCG = 65,400 (LTCG taxed at preferential).
+//     Federal tax: ordinary $9,441 + LTCG 0% (below $47,025 threshold...
+//     wait single LTCG 0% threshold TY2024 is $47,025 taxable. 65,400 is
+//     above, so LTCG is at 15%: 5,000 × 15% = $750. Total $10,191.
+//   - H2 mutation: add `capital_loss_carryforward_short` of $3,000.
+//     The harvested loss offsets first LTCG, then if any left, ordinary
+//     via the $3k cap. Actually short-term loss offsets short-term first,
+//     then long-term, then ordinary up to $3k.
+//     Engine behavior: the $3k STCG loss reduces total net cap gain by
+//     $3k. So net cap gain = 5,000 LTCG − 3,000 ST loss carryforward =
+//     $2,000 (still treated as LTCG since LTCG > ST loss).
+//     Taxable income = 80,000 + 2,000 − 14,600 = 67,400.
+//     Federal tax: ordinary on 67,400 − 2,000 LTCG = 65,400; tax = $9,441.
+//     LTCG at 15% on $2,000 = $300.
+//     Total fed tax = $9,741.
+//   - Federal tax delta = 9,741 − 10,191 = -$450.
+//
+// Note: this DIFFERS from the heuristic ($3,000 × 22% = $660). The H2 is
+// more accurate — the loss first offsets LTCG (taxed at 15%, not 22%), so
+// the real savings is 3,000 × 15% = $450.
+{
+  const tlhInputs = baseInputs({
+    form1099s: [{
+      id: 20, clientId: 1, taxYear: 2024, documentId: null,
+      formType: "b",
+      payerName: "Fidelity", payerEin: null, payerAddress: null,
+      recipientName: null, recipientTin: null, recipientAddress: null,
+      longTermGainLoss: "5000", shortTermGainLoss: "0",
+      proceeds: "10000", costBasis: "5000",
+      federalTaxWithheld: "0", stateTaxWithheld: "0", stateCode: null,
+      spouse: null, createdAt: new Date(), updatedAt: new Date(),
+    } as unknown as TaxReturnInputs["form1099s"][number]],
+  });
+  const computed = computeTaxReturnPure(tlhInputs);
+  const hits = evaluatePlanningOpportunities({
+    client: tlhInputs.client,
+    computed,
+    adjustments: tlhInputs.adjustments,
+    baselineInputs: tlhInputs,
+  });
+  const tlhHit = hits.find((h) => h.strategyId === "G1.9");
+  checkTruthy("Case D4 TLH hit fires", tlhHit != null);
+  if (tlhHit) {
+    checkTruthy("Case D4 TLH whatIf attached", tlhHit.whatIf != null);
+    checkExact("Case D4 TLH semantics = savings", tlhHit.whatIf?.semantics, "savings");
+    if (tlhHit.whatIf) {
+      // H2-verified federal delta should be NEGATIVE (savings) — actual value
+      // depends on whether loss offsets LTCG (15%) or ordinary (22%).
+      checkTruthy(
+        "Case D4 TLH combinedTaxDelta < 0 (savings)",
+        tlhHit.whatIf.delta.combinedTaxDelta < 0,
+      );
+      // Heuristic was $3k × 22% = $660; H2 is the actual engine number.
+      // Should be within a reasonable range (say -$200 to -$800).
+      checkTruthy(
+        "Case D4 TLH savings within plausible $200-$800 range",
+        Math.abs(tlhHit.whatIf.delta.combinedTaxDelta) >= 200 &&
+          Math.abs(tlhHit.whatIf.delta.combinedTaxDelta) <= 800,
+      );
+    }
+    checkTruthy(
+      "Case D4 TLH no sensitivity (fixed $3k cap)",
+      tlhHit.whatIf?.sensitivity == null,
+    );
+  }
+}
+
+// ── Case D5: FTC unclaimed (G1.10) — H2 wire-up ──────────────────────────
+// G1.10 fires when Form 1116 has been attempted (`foreign_source_taxable_income`
+// adjustment present) but the limit binds the credit below paid. Setup:
+// $100k W-2 single FL + $5,000 foreign tax paid + $5,000 fst supplied.
+//
+// Hand-calc:
+//   - Baseline: AGI $100k, std ded $14,600, taxable $85,400.
+//     Federal tax (pre-credit) = $13,841.
+//     Form 1116 limit = (fst / tti) × pre_credit_tax = (5,000 / 85,400) ×
+//     13,841 ≈ $810. Engine claims min($5,000 paid, $810 limit) = $810.
+//     Net fed tax = 13,841 − 810 = $13,031.
+//     recoverable = 5,000 − 810 = $4,190 → G1.10 fires.
+//   - H2 mutation: set fst to max(85,400, 25,000) = $85,400.
+//     New limit = (85,400 / 85,400) × 13,841 = $13,841 → bound at paid $5,000.
+//     Full FTC claimed. Net fed tax = 13,841 − 5,000 = $8,841.
+//   - Federal tax delta = 8,841 − 13,031 = -$4,190.
+{
+  const ftcInputs = baseInputs({
+    w2s: [{
+      id: 1, clientId: 1, taxYear: 2024, documentId: null,
+      employerName: "Big Co", employerEin: null,
+      wagesBox1: "100000", federalWithholdingBox2: "0",
+      socialSecurityWagesBox3: "100000", socialSecurityTaxBox4: "0",
+      medicareWagesBox5: "100000", medicareTaxBox6: "0",
+      socialSecurityTipsBox7: "0", allocatedTipsBox8: "0",
+      dependentCareBenefitsBox10: "0", nonqualifiedPlansBox11: "0",
+      box12aCode: null, box12aAmount: "0", box12bCode: null, box12bAmount: "0",
+      box12cCode: null, box12cAmount: "0", box12dCode: null, box12dAmount: "0",
+      statutoryEmployeeBox13: false, retirementPlanBox13: false, thirdPartySickPayBox13: false,
+      box14Description: null, box14Amount: "0",
+      stateBox15: "FL", stateWagesBox16: "100000", stateTaxBox17: "0",
+      localWagesBox18: "0", localTaxBox19: "0", localityNameBox20: null,
+      spouse: null, createdAt: new Date(), updatedAt: new Date(),
+    } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [
+      adj("foreign_tax_paid", 5000, 5001),
+      // Small foreign source income → Form 1116 limit binds well below paid.
+      adj("foreign_source_taxable_income", 5000, 5002),
+    ],
+  });
+  const computed = computeTaxReturnPure(ftcInputs);
+  const hits = evaluatePlanningOpportunities({
+    client: ftcInputs.client,
+    computed,
+    adjustments: ftcInputs.adjustments,
+    baselineInputs: ftcInputs,
+  });
+  const ftcHit = hits.find((h) => h.strategyId === "G1.10");
+  checkTruthy("Case D5 FTC hit fires", ftcHit != null);
+  if (ftcHit) {
+    checkTruthy("Case D5 FTC whatIf attached", ftcHit.whatIf != null);
+    if (ftcHit.whatIf) {
+      // For credit-based strategies, federalTaxLiability is pre-credit and
+      // doesn't change. The savings show in combinedRefundDelta (post-credit).
+      // Hand-calc: FTC goes from $810 to $5,000, refund delta = +$4,190.
+      check(
+        "Case D5 FTC combinedTaxDelta ≈ 0 (pre-credit unchanged)",
+        ftcHit.whatIf.delta.combinedTaxDelta,
+        0,
+        5,
+      );
+      checkTruthy(
+        "Case D5 FTC combinedRefundDelta > 0 (savings via credit)",
+        ftcHit.whatIf.delta.combinedRefundDelta > 0,
+      );
+      checkTruthy(
+        "Case D5 FTC refund savings within $3,500-$4,500 range (hand-calc +$4,190)",
+        ftcHit.whatIf.delta.combinedRefundDelta >= 3500 &&
+          ftcHit.whatIf.delta.combinedRefundDelta <= 4500,
+      );
+    }
+    checkTruthy("Case D5 FTC no sensitivity (fixed gap)", ftcHit.whatIf?.sensitivity == null);
+  }
+}
+
+// ── Case D6: Roth conversion (G1.4) — H2 wire-up with "cost" semantics ─────
+// Single FL $50k W-2 client (12% bracket; has bracket headroom to top of
+// 12% at $47,150 taxable). Strategy: convert IRA up to top of bracket.
+//
+// Hand-calc:
+//   - Baseline AGI $50k, std ded $14,600, taxable $35,400.
+//     Federal tax: 10%×11,600 + 12%×(35,400−11,600) = 1,160 + 2,856 = $4,016.
+//     Marginal rate at $35,400 = 12% (in the 12% bracket).
+//   - Bracket top for 12% single TY2024 = $47,150 taxable.
+//     Headroom = 47,150 − 35,400 = $11,750.
+//   - H2 mutation: add `additional_income` of $11,750.
+//     New AGI = 61,750. Taxable = 47,150 (exactly fills 12% bracket).
+//     Federal tax: 1,160 + 12%×(47,150−11,600) = 1,160 + 4,266 = $5,426.
+//   - Federal tax delta = 5,426 − 4,016 = +$1,410 (COST).
+//   - This is the CURRENT-YEAR COST. The semantic is "cost", not "savings".
+//   - Heuristic estSavings = 11,750 × (32% − 12%) = $2,350 — the long-term
+//     net benefit. Both pieces of info matter.
+{
+  const rothInputs = baseInputs({
+    w2s: [{
+      id: 1, clientId: 1, taxYear: 2024, documentId: null,
+      employerName: "Acme", employerEin: null,
+      wagesBox1: "50000", federalWithholdingBox2: "0",
+      socialSecurityWagesBox3: "50000", socialSecurityTaxBox4: "0",
+      medicareWagesBox5: "50000", medicareTaxBox6: "0",
+      socialSecurityTipsBox7: "0", allocatedTipsBox8: "0",
+      dependentCareBenefitsBox10: "0", nonqualifiedPlansBox11: "0",
+      box12aCode: null, box12aAmount: "0", box12bCode: null, box12bAmount: "0",
+      box12cCode: null, box12cAmount: "0", box12dCode: null, box12dAmount: "0",
+      statutoryEmployeeBox13: false, retirementPlanBox13: false, thirdPartySickPayBox13: false,
+      box14Description: null, box14Amount: "0",
+      stateBox15: "FL", stateWagesBox16: "50000", stateTaxBox17: "0",
+      localWagesBox18: "0", localTaxBox19: "0", localityNameBox20: null,
+      spouse: null, createdAt: new Date(), updatedAt: new Date(),
+    } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  const computed = computeTaxReturnPure(rothInputs);
+  const hits = evaluatePlanningOpportunities({
+    client: rothInputs.client,
+    computed,
+    adjustments: rothInputs.adjustments,
+    baselineInputs: rothInputs,
+  });
+  const rothHit = hits.find((h) => h.strategyId === "G1.4");
+  checkTruthy("Case D6 Roth hit fires", rothHit != null);
+  if (rothHit) {
+    checkTruthy("Case D6 Roth whatIf attached", rothHit.whatIf != null);
+    checkExact("Case D6 Roth semantics = cost", rothHit.whatIf?.semantics, "cost");
+    if (rothHit.whatIf) {
+      check(
+        "Case D6 Roth combinedTaxDelta ≈ +$1,410 (CURRENT-YEAR COST)",
+        rothHit.whatIf.delta.combinedTaxDelta,
+        1410,
+        10,
+      );
+      // estSavings is long-term net benefit; should be ~$2,350
+      check(
+        "Case D6 Roth estSavings ≈ +$2,350 (long-term spread benefit)",
+        rothHit.estSavings,
+        2350,
+        10,
+      );
+      // Sensitivity should be present (variable conversion amount)
+      checkTruthy(
+        "Case D6 Roth sensitivity present",
+        rothHit.whatIf.sensitivity != null,
+      );
+    }
+  }
+}
+
+// ── Case D7: Hit-list path skips H2 — backward compat for all detectors ────
+// Confirm that when baselineInputs is omitted, NONE of the H2-wired
+// detectors crash; they all return hits with `whatIf` undefined and
+// `assumptions` populated. This is the /planning-hit-list endpoint behavior.
+{
+  // Use a high-income client likely to fire multiple detectors
+  const heavyInputs = baseInputs({
+    w2s: [{
+      id: 1, clientId: 1, taxYear: 2024, documentId: null,
+      employerName: "Big Co", employerEin: null,
+      wagesBox1: "205000", federalWithholdingBox2: "0",
+      socialSecurityWagesBox3: "168600", socialSecurityTaxBox4: "0",
+      medicareWagesBox5: "205000", medicareTaxBox6: "0",
+      socialSecurityTipsBox7: "0", allocatedTipsBox8: "0",
+      dependentCareBenefitsBox10: "0", nonqualifiedPlansBox11: "0",
+      box12aCode: null, box12aAmount: "0", box12bCode: null, box12bAmount: "0",
+      box12cCode: null, box12cAmount: "0", box12dCode: null, box12dAmount: "0",
+      statutoryEmployeeBox13: false, retirementPlanBox13: false, thirdPartySickPayBox13: false,
+      box14Description: null, box14Amount: "0",
+      stateBox15: "FL", stateWagesBox16: "205000", stateTaxBox17: "0",
+      localWagesBox18: "0", localTaxBox19: "0", localityNameBox20: null,
+      spouse: null, createdAt: new Date(), updatedAt: new Date(),
+    } as unknown as TaxReturnInputs["w2s"][number]],
+    form1099s: [{
+      id: 30, clientId: 1, taxYear: 2024, documentId: null,
+      formType: "int",
+      payerName: "Vanguard", payerEin: null, payerAddress: null,
+      interestIncome: "5000",
+      federalTaxWithheld: "0", stateTaxWithheld: "0", stateCode: null,
+      spouse: null, createdAt: new Date(), updatedAt: new Date(),
+    } as unknown as TaxReturnInputs["form1099s"][number]],
+  });
+  const computed = computeTaxReturnPure(heavyInputs);
+  const hits = evaluatePlanningOpportunities({
+    client: heavyInputs.client,
+    computed,
+    adjustments: heavyInputs.adjustments,
+    // baselineInputs intentionally omitted
+  });
+  let allOk = true;
+  for (const h of hits) {
+    if (h.whatIf != null) {
+      allOk = false;
+      break;
+    }
+  }
+  checkTruthy("Case D7 all hits omit whatIf when baselineInputs absent", allOk);
+  checkTruthy("Case D7 at least one hit still fires (heuristic path)", hits.length > 0);
+}
+
+// ── Case D8: H7 cross-strategy combined scenario ──────────────────────────
+// Build a high-AGI SE filer with foreign tax + investment income. Multiple
+// detectors should fire (SEP, possibly NIIT, possibly FTC). Verify the
+// cross-strategy aggregator:
+//   - Fires when ≥2 stackable hits present
+//   - Returns combinedDelta from joint scenario
+//   - sumOfIndividualSavings = sum of each hit's |combinedRefundDelta|
+//   - interactionEffect = jointSavings - sumOfIndividualSavings
+//     (typically negative due to bracket-stacking erosion)
+{
+  const heavyInputs = baseInputs({
+    form1099s: [
+      {
+        id: 1, clientId: 1, taxYear: 2024, documentId: null,
+        formType: "nec",
+        payerName: "Client A", payerEin: null, payerAddress: null,
+        nonemployeeCompensation: "200000",
+        federalTaxWithheld: "0", stateTaxWithheld: "0", stateCode: null,
+        spouse: null, createdAt: new Date(), updatedAt: new Date(),
+      } as unknown as TaxReturnInputs["form1099s"][number],
+      {
+        id: 2, clientId: 1, taxYear: 2024, documentId: null,
+        formType: "int",
+        payerName: "Vanguard", payerEin: null, payerAddress: null,
+        interestIncome: "8000",
+        federalTaxWithheld: "0", stateTaxWithheld: "0", stateCode: null,
+        spouse: null, createdAt: new Date(), updatedAt: new Date(),
+      } as unknown as TaxReturnInputs["form1099s"][number],
+    ],
+    w2s: [],
+  });
+  const computed = computeTaxReturnPure(heavyInputs);
+  const hits = evaluatePlanningOpportunities({
+    client: heavyInputs.client,
+    computed,
+    adjustments: heavyInputs.adjustments,
+    baselineInputs: heavyInputs,
+  });
+  const stackable = hits.filter((h) => h.whatIf?.semantics === "savings");
+  // For this scenario expect at least SEP (G1.1) to fire; may or may not
+  // fire NIIT depending on whether AGI is in the cliff band.
+  checkTruthy("Case D8 at least one savings hit fires", stackable.length >= 1);
+
+  const xstrat = evaluateCrossStrategyScenario({
+    hits,
+    baselineInputs: heavyInputs,
+  });
+  if (stackable.length >= 2) {
+    checkTruthy("Case D8 cross-strategy returned for >= 2 stackable hits", xstrat != null);
+    if (xstrat) {
+      check(
+        "Case D8 stackedStrategyIds length matches stackable count",
+        xstrat.stackedStrategyIds.length,
+        stackable.length,
+      );
+      checkTruthy(
+        "Case D8 sumOfIndividualSavings > 0",
+        xstrat.sumOfIndividualSavings > 0,
+      );
+      // Joint savings (|combinedDelta.combinedRefundDelta|) should be in
+      // a plausible neighborhood of the sum — interaction effect should
+      // be a modest fraction (not larger than the sum itself).
+      const jointSavings = Math.abs(Math.round(xstrat.combinedDelta.combinedRefundDelta));
+      checkTruthy("Case D8 joint savings > 0", jointSavings > 0);
+      checkTruthy(
+        "Case D8 interactionEffect = jointSavings - sumOfIndividualSavings",
+        xstrat.interactionEffect === jointSavings - xstrat.sumOfIndividualSavings,
+      );
+    }
+  } else {
+    checkTruthy("Case D8 cross-strategy undefined when < 2 stackable", xstrat == null);
+  }
+}
+
+// ── Case D9: H7 omitted when 0 stackable hits ────────────────────────────
+// Pure-W-2 client with no SE, no investment — should produce no H2 hits.
+{
+  const inputs = baseInputs(); // $80k W-2 single FL, nothing else
+  const computed = computeTaxReturnPure(inputs);
+  const hits = evaluatePlanningOpportunities({
+    client: inputs.client,
+    computed,
+    adjustments: inputs.adjustments,
+    baselineInputs: inputs,
+  });
+  const xstrat = evaluateCrossStrategyScenario({
+    hits,
+    baselineInputs: inputs,
+  });
+  // Either no hits or all heuristic-only; in either case, < 2 stackable.
+  checkTruthy("Case D9 cross-strategy undefined for pure-W-2 client", xstrat == null);
 }
 
 // ── Print results ─────────────────────────────────────────────────────────

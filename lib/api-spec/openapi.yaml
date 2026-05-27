@@ -731,6 +731,96 @@ paths:
         "404":
           description: Client not found
 
+  /clients/{clientId}/peer-benchmark:
+    get:
+      operationId: getPeerBenchmark
+      tags: [planning]
+      summary: Compare client's effective tax rate to firm-wide peers (Phase H — H11)
+      description: >
+        Loads all firm clients within an AGI band around the target client
+        and computes cohort statistics: mean / median / p25 / p75 effective
+        tax rate. Returns the client's own effective rate + percentile rank
+        within the cohort, so CPAs can flag clients paying significantly
+        more (or less) than peers.
+
+        Default AGI band: ±$50,000 around target AGI. Override via query.
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: bandWidth
+          in: query
+          description: AGI band width in dollars (default $50,000 → ±$50k around target).
+          schema:
+            type: number
+      responses:
+        "200":
+          description: Peer benchmark statistics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PeerBenchmarkResponse"
+        "402":
+          description: Pro tier disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProTierRequired"
+        "404":
+          description: Client not found
+
+  /clients/{clientId}/state-comparison:
+    post:
+      operationId: runStateComparison
+      tags: [planning]
+      summary: Compare client's tax burden across alternate resident states (Phase H — H4)
+      description: >
+        Runs the H2 what-if engine for each target state by mutating
+        `client.state` and recomputing. Returns a sorted list of
+        `{ state, deltaFederal, deltaState, deltaCombined }` highlighting
+        the tax impact of moving. Default target states are zero-income-tax
+        jurisdictions (TX/FL/NV/WA/TN). Excludes the client's current state
+        from the comparison automatically.
+
+        Important caveats CPAs must communicate:
+          * Engine mutates the resident state but does NOT model income
+            sourcing (e.g., W-2 wages remain tied to the original work state).
+            Real moves require multi-state allocation per state rules.
+          * Domicile rules vary — establishing residency in a new state
+            requires more than tax filing (driver's license, voter
+            registration, days-present test, etc.).
+          * Does NOT model real estate, cost of living, or the new state's
+            sales / property tax burden.
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StateComparisonBody"
+      responses:
+        "200":
+          description: State-comparison table
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StateComparisonResponse"
+        "402":
+          description: Pro tier disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProTierRequired"
+        "404":
+          description: Client not found
+
   /clients/{clientId}/what-if:
     post:
       operationId: runWhatIfScenario
@@ -1320,6 +1410,18 @@ components:
         residencyChangeDate:
           type: ["string", "null"]
           description: E12 — ISO date (YYYY-MM-DD) when residency changed. Filer was former-state resident from Jan 1 to this date (exclusive); current-state resident from this date (inclusive) to Dec 31.
+        riskTolerance:
+          type: ["string", "null"]
+          description: "Phase H — H9. \"conservative\" | \"moderate\" | \"aggressive\". Drives planning recommendations (Roth conversion sizing, charitable bunching frequency, etc.)."
+        targetRetirementAge:
+          type: ["integer", "null"]
+          description: Phase H — H9. Target retirement age (integer years). Used for time-horizon-sensitive recommendations.
+        estatePlanStage:
+          type: ["string", "null"]
+          description: "Phase H — H9. \"none\" | \"will_only\" | \"trust_in_place\" | \"complex\". Drives estate-tax / gifting strategy recommendations."
+        planningGoals:
+          type: ["string", "null"]
+          description: Phase H — H9. Free-text client-specific planning goals (e.g., "buy a house in 2 years"). Passed to AI memo synthesis.
         notes:
           type: ["string", "null"]
         createdAt:
@@ -1405,6 +1507,14 @@ components:
         residencyChangeDate:
           type: ["string", "null"]
           description: E12 — ISO date (YYYY-MM-DD) when residency changed.
+        riskTolerance:
+          type: ["string", "null"]
+        targetRetirementAge:
+          type: ["integer", "null"]
+        estatePlanStage:
+          type: ["string", "null"]
+        planningGoals:
+          type: ["string", "null"]
         notes:
           type: ["string", "null"]
 
@@ -1483,6 +1593,14 @@ components:
         residencyChangeDate:
           type: ["string", "null"]
           description: E12 — ISO date (YYYY-MM-DD) when residency changed.
+        riskTolerance:
+          type: ["string", "null"]
+        targetRetirementAge:
+          type: ["integer", "null"]
+        estatePlanStage:
+          type: ["string", "null"]
+        planningGoals:
+          type: ["string", "null"]
         notes:
           type: ["string", "null"]
 
@@ -2641,7 +2759,7 @@ components:
         averageRefund:
           type: ["number", "null"]
 
-    # ── Planning opportunities (Phase G) ─────────────────────────────────────
+    # ── Planning opportunities (Phase G + H) ─────────────────────────────────
     OpportunityHit:
       type: object
       required: [strategyId, name, category, estSavings, confidence, cpaEffortHours, recurring, rationale, action, prerequisiteData, citation, inputs]
@@ -2674,15 +2792,64 @@ components:
         inputs:
           type: object
           additionalProperties: true
-        whatIfDelta:
+        assumptions:
           description: >
-            Phase H — H2. Engine-verified per-field delta for this strategy,
-            computed by running an actual what-if scenario through the pure
-            tax engine. When present, prefer this over the heuristic
-            `estSavings`. Absent when the detector's strategy doesn't yet
-            have a clean single-year mutation expressible to the engine.
+            Phase H — H12. Plain-English assumptions / approximations the
+            detector made when computing this opportunity. Each entry is
+            one short statement. Rendered as a bulleted "Assumptions"
+            section under the opportunity card.
+          type: array
+          items:
+            type: string
+        whatIf:
+          description: >
+            Phase H — H2 + H12. Engine-verified what-if data when the
+            detector has a clean single-year mutation. Includes the exact
+            mutations the engine ran, the resulting per-field delta,
+            sign semantics, and an optional ±10% sensitivity range.
+            Absent for detectors with no clean single-year mutation
+            (G1.3 bunching, G1.8 DAF — multi-year; G1.7 §199A wage limit
+            — engine doesn't model the limit yet).
           allOf:
-            - $ref: "#/components/schemas/WhatIfDelta"
+            - $ref: "#/components/schemas/OpportunityWhatIf"
+
+    OpportunityWhatIf:
+      type: object
+      required: [mutations, delta, semantics]
+      properties:
+        mutations:
+          description: Exact mutations the engine ran. Transparent for CPA audit.
+          type: array
+          items:
+            $ref: "#/components/schemas/WhatIfMutation"
+        delta:
+          $ref: "#/components/schemas/WhatIfDelta"
+        semantics:
+          description: >
+            Whether `delta.combinedTaxDelta` represents the strategy's
+            *savings* (negative = good) or its *current-year cost*
+            (positive = price of the strategy, with long-term benefit
+            captured in `estSavings`).
+          type: string
+          enum: [savings, cost]
+        sensitivity:
+          description: ±10% sensitivity range. Omitted for fixed-amount strategies.
+          allOf:
+            - $ref: "#/components/schemas/WhatIfSensitivity"
+
+    WhatIfSensitivity:
+      type: object
+      required: [low, mid, high]
+      properties:
+        low:
+          description: Result at 90% of the recommended mutation amount.
+          type: number
+        mid:
+          description: Result at 100%. Matches `|whatIf.delta.combinedTaxDelta|`.
+          type: number
+        high:
+          description: Result at 110% of the recommended mutation amount.
+          type: number
 
     PlanningOpportunities:
       type: object
@@ -2699,6 +2866,40 @@ components:
           items:
             $ref: "#/components/schemas/OpportunityHit"
         totalEstSavings:
+          type: number
+        crossStrategy:
+          description: >
+            Phase H — H7. Joint engine effect of stacking ALL "savings"
+            strategies together. Present only when ≥2 H2-wired hits fire
+            (single-hit case has no interaction to report). The
+            `interactionEffect` field surfaces bracket-stacking or
+            cliff-escape effects that the simple sum of individual
+            deltas misses.
+          allOf:
+            - $ref: "#/components/schemas/CrossStrategySummary"
+
+    CrossStrategySummary:
+      type: object
+      required: [stackedStrategyIds, combinedDelta, sumOfIndividualSavings, interactionEffect]
+      properties:
+        stackedStrategyIds:
+          description: Strategy IDs (G1.x) whose mutations were stacked.
+          type: array
+          items:
+            type: string
+        combinedDelta:
+          description: Engine delta from applying all stacked mutations together.
+          allOf:
+            - $ref: "#/components/schemas/WhatIfDelta"
+        sumOfIndividualSavings:
+          description: Sum of |combinedRefundDelta| across each stacked hit's individual H2 result.
+          type: number
+        interactionEffect:
+          description: >
+            Joint savings minus sum-of-individual-savings. NEGATIVE = stacking
+            ERODES savings (most common — bracket stacking, double-counting
+            relief). POSITIVE = compounding benefit (rare). ZERO = perfectly
+            additive (rare).
           type: number
 
     PlanningHitListEntry:
@@ -2905,6 +3106,110 @@ components:
         federalRefundOrOwed: { type: number }
         stateRefundOrOwed: { type: number }
         effectiveTaxRate: { type: number }
+
+    PeerBenchmarkResponse:
+      type: object
+      required: [clientId, taxYear, clientAgi, clientEffectiveRate, cohort]
+      properties:
+        clientId:
+          type: integer
+        taxYear:
+          type: integer
+        clientAgi:
+          type: number
+        clientEffectiveRate:
+          description: Client's own effective tax rate (totalTaxBurden / totalIncome).
+          type: number
+        cohort:
+          $ref: "#/components/schemas/PeerBenchmarkCohort"
+
+    PeerBenchmarkCohort:
+      type: object
+      required: [size, agiMin, agiMax, effectiveRateMean, effectiveRateMedian, effectiveRateP25, effectiveRateP75, clientPercentileRank]
+      properties:
+        size:
+          description: Number of peer clients in the cohort (excluding the target client).
+          type: integer
+        agiMin:
+          description: Lower AGI bound of the cohort band.
+          type: number
+        agiMax:
+          description: Upper AGI bound of the cohort band.
+          type: number
+        effectiveRateMean:
+          type: number
+        effectiveRateMedian:
+          type: number
+        effectiveRateP25:
+          description: 25th percentile effective tax rate in the cohort.
+          type: number
+        effectiveRateP75:
+          description: 75th percentile effective tax rate in the cohort.
+          type: number
+        clientPercentileRank:
+          description: >
+            Client's rank in the cohort (0-100). 50 = exactly median.
+            >50 = paying MORE than median peer (planning opportunity).
+            <50 = paying LESS than median peer (already optimized or below
+            expected exposure).
+          type: number
+
+    StateComparisonBody:
+      type: object
+      properties:
+        targetStates:
+          description: >
+            Two-letter state codes to compare. Defaults to zero-income-tax
+            states (TX, FL, NV, WA, TN) when omitted. The client's current
+            state is automatically excluded.
+          type: array
+          items:
+            type: string
+
+    StateComparisonResult:
+      type: object
+      required: [state, deltaFederal, deltaState, deltaCombined, scenarioFederal, scenarioState]
+      properties:
+        state:
+          type: string
+        deltaFederal:
+          description: Federal tax liability delta (scenario − baseline). Usually positive (lower SALT deduction increases federal tax).
+          type: number
+        deltaState:
+          description: State tax liability delta. Usually negative (target is lower-tax state).
+          type: number
+        deltaCombined:
+          description: Combined federal + state delta. NEGATIVE = move saves money.
+          type: number
+        scenarioFederal:
+          description: Federal tax liability if client lived in target state.
+          type: number
+        scenarioState:
+          description: State tax liability in target state.
+          type: number
+
+    StateComparisonResponse:
+      type: object
+      required: [clientId, taxYear, baselineState, baselineFederal, baselineState_tax, results]
+      properties:
+        clientId:
+          type: integer
+        taxYear:
+          type: integer
+        baselineState:
+          description: Client's current resident state.
+          type: string
+        baselineFederal:
+          description: Current federal tax liability.
+          type: number
+        baselineState_tax:
+          description: Current state tax liability.
+          type: number
+        results:
+          description: One per target state, sorted by deltaCombined ascending (biggest savings first).
+          type: array
+          items:
+            $ref: "#/components/schemas/StateComparisonResult"
 
     WhatIfResponse:
       type: object

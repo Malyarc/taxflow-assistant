@@ -76,15 +76,14 @@ export interface PlanningStrategyCatalog {
 }
 
 /**
- * H2 — When present on an OpportunityHit, the engine has computed the
- * strategy's effect by running an actual what-if scenario through the pure
- * tax engine (no heuristic). `combinedTaxDelta` < 0 means the strategy
- * reduces tax (savings). Same shape as the WhatIfDelta returned by the
- * /clients/{id}/what-if endpoint; documented in the OpenAPI schema.
+ * H2 — Engine-verified per-field delta (scenario − baseline) for a tax
+ * planning what-if scenario. Same shape as the delta returned by the
+ * POST /clients/{id}/what-if endpoint; documented in OpenAPI.
  *
- * When this field is undefined, the OpportunityHit.estSavings is a
- * heuristic estimate (marginal-rate-times-something), not a verified
- * engine-computed delta. The frontend distinguishes the two visually.
+ * `combinedTaxDelta` is the headline planning number (federal + state
+ * tax liability delta). NEGATIVE = scenario reduces tax = savings;
+ * POSITIVE = scenario increases tax = cost (e.g., a Roth conversion
+ * adds taxable income today in exchange for long-term benefit).
  */
 export interface WhatIfDelta {
   adjustedGrossIncome: number;
@@ -107,6 +106,69 @@ export interface WhatIfDelta {
   combinedTaxDelta: number;
   /** Federal + state refund delta. Positive = larger combined refund. */
   combinedRefundDelta: number;
+}
+
+/**
+ * H2 — One mutation applied to the baseline TaxReturnInputs to model a
+ * planning strategy. Discriminated by `kind`. Mirrors the OpenAPI
+ * WhatIfMutation schema.
+ */
+export interface WhatIfMutation {
+  kind: "set_adjustment" | "add_adjustment" | "remove_adjustment" | "set_client_field";
+  adjustmentType?: string;
+  amount?: number;
+  field?: string;
+  value?: unknown;
+}
+
+/**
+ * H12 — Sensitivity range from running the strategy's mutation at ±10%
+ * of the recommended amount. Useful for variable-amount strategies (SEP
+ * contribution, Roth conversion, NIIT defer amount). All values are
+ * `|combinedTaxDelta|` rounded to whole dollars.
+ *
+ * Fixed-amount strategies (TLH $3k cap, FTC unclaimed-fixed-gap) omit
+ * this field — the result wouldn't vary meaningfully.
+ */
+export interface WhatIfSensitivity {
+  /** Result at 90% of the recommended mutation amount. */
+  low: number;
+  /** Result at 100% (the recommended amount). Matches |whatIf.delta.combinedTaxDelta|. */
+  mid: number;
+  /** Result at 110% of the recommended mutation amount. */
+  high: number;
+}
+
+/**
+ * H2 + H12 — Engine-verified data attached to an OpportunityHit by
+ * detectors that have a clean single-year mutation model. The frontend
+ * shows the delta as the headline number when `semantics === "savings"`
+ * and as a "current-year cost" sub-callout when `semantics === "cost"`.
+ *
+ * Absent on detectors with no clean single-year mutation (e.g.,
+ * G1.3 bunching, G1.8 DAF — multi-year strategies; G1.7 §199A
+ * wage/UBIA — engine doesn't model the limit yet).
+ */
+export interface OpportunityWhatIf {
+  /** Exact mutations the engine ran. Transparent for audit. */
+  mutations: WhatIfMutation[];
+  /** Per-field scenario−baseline delta from the pure engine. */
+  delta: WhatIfDelta;
+  /**
+   * Whether `delta.combinedTaxDelta` represents the strategy's *savings*
+   * (negative = good for the client) or its *current-year cost*
+   * (positive = the price of doing the strategy, which has a long-term
+   * benefit captured in `OpportunityHit.estSavings`).
+   *
+   * - "savings": SEP / NIIT / TLH / FTC / AMT-ISO. Headline shows
+   *   `|delta.combinedTaxDelta|` in emerald.
+   * - "cost": Roth conversion. Headline stays on `estSavings` (the
+   *   heuristic long-term benefit); delta is shown as a clearly-labeled
+   *   "current-year tax cost" sub-callout.
+   */
+  semantics: "savings" | "cost";
+  /** H12 — ±10% sensitivity range. Omitted for fixed-amount strategies. */
+  sensitivity?: WhatIfSensitivity;
 }
 
 /**
@@ -138,11 +200,22 @@ export interface OpportunityHit {
   /** Detector-supplied diagnostic numbers (transparent to CPA review). */
   inputs: Record<string, number | string | boolean | null>;
   /**
-   * H2 — Engine-verified per-field delta for this strategy, computed by
-   * running an actual what-if scenario. When present, callers should
-   * prefer `whatIfDelta.combinedTaxDelta` (negated) over `estSavings` for
-   * display. Absent for detectors whose strategy doesn't have a clean
-   * single-year mutation (e.g., G1.3 bunching, G1.7 §199A wage limit).
+   * H12 — Plain-English assumptions / approximations the detector made
+   * when computing this opportunity. Each entry is one short statement.
+   * Rendered as a bulleted "Assumptions" section under the opportunity
+   * card so CPAs can audit the math.
+   *
+   * Examples:
+   *  - "TY2024 §415(c) annual additions cap $69,000 per Notice 2023-75"
+   *  - "Future marginal rate assumed at 32% (Phase G plan baseline)"
+   *  - "Mutation: cap-loss carryforward of $3,000 (IRC §1211 annual cap)"
    */
-  whatIfDelta?: WhatIfDelta;
+  assumptions?: string[];
+  /**
+   * H2 + H12 — Engine-verified what-if data when the detector has a
+   * clean single-year mutation. Replaces the deprecated `whatIfDelta`
+   * field with a unified `{ mutations, delta, semantics, sensitivity? }`
+   * shape. Absent for detectors with no clean mutation.
+   */
+  whatIf?: OpportunityWhatIf;
 }

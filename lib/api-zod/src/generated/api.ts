@@ -155,6 +155,30 @@ export const ListClientsResponseItem = zod.object({
     .describe(
       "E12 — ISO date (YYYY-MM-DD) when residency changed. Filer was former-state resident from Jan 1 to this date (exclusive); current-state resident from this date (inclusive) to Dec 31.",
     ),
+  riskTolerance: zod
+    .string()
+    .nullish()
+    .describe(
+      'Phase H — H9. \"conservative\" | \"moderate\" | \"aggressive\". Drives planning recommendations (Roth conversion sizing, charitable bunching frequency, etc.).',
+    ),
+  targetRetirementAge: zod
+    .number()
+    .nullish()
+    .describe(
+      "Phase H — H9. Target retirement age (integer years). Used for time-horizon-sensitive recommendations.",
+    ),
+  estatePlanStage: zod
+    .string()
+    .nullish()
+    .describe(
+      'Phase H — H9. \"none\" | \"will_only\" | \"trust_in_place\" | \"complex\". Drives estate-tax \/ gifting strategy recommendations.',
+    ),
+  planningGoals: zod
+    .string()
+    .nullish()
+    .describe(
+      'Phase H — H9. Free-text client-specific planning goals (e.g., \"buy a house in 2 years\"). Passed to AI memo synthesis.',
+    ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -243,6 +267,10 @@ export const CreateClientBody = zod.object({
     .string()
     .nullish()
     .describe("E12 — ISO date (YYYY-MM-DD) when residency changed."),
+  riskTolerance: zod.string().nullish(),
+  targetRetirementAge: zod.number().nullish(),
+  estatePlanStage: zod.string().nullish(),
+  planningGoals: zod.string().nullish(),
   notes: zod.string().nullish(),
 });
 
@@ -378,6 +406,30 @@ export const GetClientResponse = zod.object({
     .describe(
       "E12 — ISO date (YYYY-MM-DD) when residency changed. Filer was former-state resident from Jan 1 to this date (exclusive); current-state resident from this date (inclusive) to Dec 31.",
     ),
+  riskTolerance: zod
+    .string()
+    .nullish()
+    .describe(
+      'Phase H — H9. \"conservative\" | \"moderate\" | \"aggressive\". Drives planning recommendations (Roth conversion sizing, charitable bunching frequency, etc.).',
+    ),
+  targetRetirementAge: zod
+    .number()
+    .nullish()
+    .describe(
+      "Phase H — H9. Target retirement age (integer years). Used for time-horizon-sensitive recommendations.",
+    ),
+  estatePlanStage: zod
+    .string()
+    .nullish()
+    .describe(
+      'Phase H — H9. \"none\" | \"will_only\" | \"trust_in_place\" | \"complex\". Drives estate-tax \/ gifting strategy recommendations.',
+    ),
+  planningGoals: zod
+    .string()
+    .nullish()
+    .describe(
+      'Phase H — H9. Free-text client-specific planning goals (e.g., \"buy a house in 2 years\"). Passed to AI memo synthesis.',
+    ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -471,6 +523,10 @@ export const UpdateClientBody = zod.object({
     .string()
     .nullish()
     .describe("E12 — ISO date (YYYY-MM-DD) when residency changed."),
+  riskTolerance: zod.string().nullish(),
+  targetRetirementAge: zod.number().nullish(),
+  estatePlanStage: zod.string().nullish(),
+  planningGoals: zod.string().nullish(),
   notes: zod.string().nullish(),
 });
 
@@ -598,6 +654,30 @@ export const UpdateClientResponse = zod.object({
     .nullish()
     .describe(
       "E12 — ISO date (YYYY-MM-DD) when residency changed. Filer was former-state resident from Jan 1 to this date (exclusive); current-state resident from this date (inclusive) to Dec 31.",
+    ),
+  riskTolerance: zod
+    .string()
+    .nullish()
+    .describe(
+      'Phase H — H9. \"conservative\" | \"moderate\" | \"aggressive\". Drives planning recommendations (Roth conversion sizing, charitable bunching frequency, etc.).',
+    ),
+  targetRetirementAge: zod
+    .number()
+    .nullish()
+    .describe(
+      "Phase H — H9. Target retirement age (integer years). Used for time-horizon-sensitive recommendations.",
+    ),
+  estatePlanStage: zod
+    .string()
+    .nullish()
+    .describe(
+      'Phase H — H9. \"none\" | \"will_only\" | \"trust_in_place\" | \"complex\". Drives estate-tax \/ gifting strategy recommendations.',
+    ),
+  planningGoals: zod
+    .string()
+    .nullish()
+    .describe(
+      'Phase H — H9. Free-text client-specific planning goals (e.g., \"buy a house in 2 years\"). Passed to AI memo synthesis.',
     ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
@@ -1524,33 +1604,111 @@ export const GetPlanningHitListResponse = zod.object({
           prerequisiteData: zod.array(zod.string()),
           citation: zod.string(),
           inputs: zod.record(zod.string(), zod.unknown()),
-          whatIfDelta: zod
-            .object({
-              adjustedGrossIncome: zod.number(),
-              taxableIncome: zod.number(),
-              standardDeduction: zod.number(),
-              itemizedDeductions: zod.number(),
-              qbiDeduction: zod.number(),
-              federalTaxLiability: zod.number(),
-              stateTaxLiability: zod.number(),
-              selfEmploymentTax: zod.number(),
-              niitTax: zod.number(),
-              amtTax: zod.number(),
-              additionalMedicareTax: zod.number(),
-              eitc: zod.number(),
-              additionalChildTaxCredit: zod.number(),
-              federalRefundOrOwed: zod.number(),
-              stateRefundOrOwed: zod.number(),
-              effectiveTaxRate: zod.number(),
-              combinedTaxDelta: zod.number(),
-              combinedRefundDelta: zod.number(),
-            })
-            .describe(
-              "Field-level scenario−baseline deltas. Positive on a tax field means the scenario INCREASED that tax. combinedTaxDelta is the headline planning number (federal + state tax liability delta); negative = scenario reduces tax = savings.\n",
-            )
+          assumptions: zod
+            .array(zod.string())
             .optional()
             .describe(
-              "Phase H — H2. Engine-verified per-field delta for this strategy, computed by running an actual what-if scenario through the pure tax engine. When present, prefer this over the heuristic `estSavings`. Absent when the detector's strategy doesn't yet have a clean single-year mutation expressible to the engine.\n",
+              'Phase H — H12. Plain-English assumptions \/ approximations the detector made when computing this opportunity. Each entry is one short statement. Rendered as a bulleted \"Assumptions\" section under the opportunity card.\n',
+            ),
+          whatIf: zod
+            .object({
+              mutations: zod
+                .array(
+                  zod
+                    .object({
+                      kind: zod.enum([
+                        "set_adjustment",
+                        "add_adjustment",
+                        "remove_adjustment",
+                        "set_client_field",
+                      ]),
+                      adjustmentType: zod
+                        .string()
+                        .optional()
+                        .describe(
+                          "Required for set\/add\/remove_adjustment. The engine adjustment_type enum value.",
+                        ),
+                      amount: zod
+                        .number()
+                        .optional()
+                        .describe(
+                          "Required for set_adjustment and add_adjustment. The dollar amount.",
+                        ),
+                      field: zod
+                        .string()
+                        .optional()
+                        .describe(
+                          "Required for set_client_field. The ClientFacts key to override (e.g. filingStatus, state).",
+                        ),
+                      value: zod
+                        .unknown()
+                        .optional()
+                        .describe(
+                          "Required for set_client_field. The replacement value (string, number, boolean, or null).",
+                        ),
+                    })
+                    .describe(
+                      "A single change to apply to the baseline TaxReturnInputs. Discriminated by `kind`. The server validates per-kind required fields and rejects invalid combinations with HTTP 400.\n",
+                    ),
+                )
+                .describe(
+                  "Exact mutations the engine ran. Transparent for CPA audit.",
+                ),
+              delta: zod
+                .object({
+                  adjustedGrossIncome: zod.number(),
+                  taxableIncome: zod.number(),
+                  standardDeduction: zod.number(),
+                  itemizedDeductions: zod.number(),
+                  qbiDeduction: zod.number(),
+                  federalTaxLiability: zod.number(),
+                  stateTaxLiability: zod.number(),
+                  selfEmploymentTax: zod.number(),
+                  niitTax: zod.number(),
+                  amtTax: zod.number(),
+                  additionalMedicareTax: zod.number(),
+                  eitc: zod.number(),
+                  additionalChildTaxCredit: zod.number(),
+                  federalRefundOrOwed: zod.number(),
+                  stateRefundOrOwed: zod.number(),
+                  effectiveTaxRate: zod.number(),
+                  combinedTaxDelta: zod.number(),
+                  combinedRefundDelta: zod.number(),
+                })
+                .describe(
+                  "Field-level scenario−baseline deltas. Positive on a tax field means the scenario INCREASED that tax. combinedTaxDelta is the headline planning number (federal + state tax liability delta); negative = scenario reduces tax = savings.\n",
+                ),
+              semantics: zod
+                .enum(["savings", "cost"])
+                .describe(
+                  "Whether `delta.combinedTaxDelta` represents the strategy's \*savings\* (negative = good) or its \*current-year cost\* (positive = price of the strategy, with long-term benefit captured in `estSavings`).\n",
+                ),
+              sensitivity: zod
+                .object({
+                  low: zod
+                    .number()
+                    .describe(
+                      "Result at 90% of the recommended mutation amount.",
+                    ),
+                  mid: zod
+                    .number()
+                    .describe(
+                      "Result at 100%. Matches `|whatIf.delta.combinedTaxDelta|`.",
+                    ),
+                  high: zod
+                    .number()
+                    .describe(
+                      "Result at 110% of the recommended mutation amount.",
+                    ),
+                })
+                .optional()
+                .describe(
+                  "±10% sensitivity range. Omitted for fixed-amount strategies.",
+                ),
+            })
+            .optional()
+            .describe(
+              "Phase H — H2 + H12. Engine-verified what-if data when the detector has a clean single-year mutation. Includes the exact mutations the engine ran, the resulting per-field delta, sign semantics, and an optional ±10% sensitivity range. Absent for detectors with no clean single-year mutation (G1.3 bunching, G1.8 DAF — multi-year; G1.7 §199A wage limit — engine doesn't model the limit yet).\n",
             ),
         }),
       ),
@@ -1635,7 +1793,117 @@ export const GetPlanningOpportunitiesResponse = zod.object({
       prerequisiteData: zod.array(zod.string()),
       citation: zod.string(),
       inputs: zod.record(zod.string(), zod.unknown()),
-      whatIfDelta: zod
+      assumptions: zod
+        .array(zod.string())
+        .optional()
+        .describe(
+          'Phase H — H12. Plain-English assumptions \/ approximations the detector made when computing this opportunity. Each entry is one short statement. Rendered as a bulleted \"Assumptions\" section under the opportunity card.\n',
+        ),
+      whatIf: zod
+        .object({
+          mutations: zod
+            .array(
+              zod
+                .object({
+                  kind: zod.enum([
+                    "set_adjustment",
+                    "add_adjustment",
+                    "remove_adjustment",
+                    "set_client_field",
+                  ]),
+                  adjustmentType: zod
+                    .string()
+                    .optional()
+                    .describe(
+                      "Required for set\/add\/remove_adjustment. The engine adjustment_type enum value.",
+                    ),
+                  amount: zod
+                    .number()
+                    .optional()
+                    .describe(
+                      "Required for set_adjustment and add_adjustment. The dollar amount.",
+                    ),
+                  field: zod
+                    .string()
+                    .optional()
+                    .describe(
+                      "Required for set_client_field. The ClientFacts key to override (e.g. filingStatus, state).",
+                    ),
+                  value: zod
+                    .unknown()
+                    .optional()
+                    .describe(
+                      "Required for set_client_field. The replacement value (string, number, boolean, or null).",
+                    ),
+                })
+                .describe(
+                  "A single change to apply to the baseline TaxReturnInputs. Discriminated by `kind`. The server validates per-kind required fields and rejects invalid combinations with HTTP 400.\n",
+                ),
+            )
+            .describe(
+              "Exact mutations the engine ran. Transparent for CPA audit.",
+            ),
+          delta: zod
+            .object({
+              adjustedGrossIncome: zod.number(),
+              taxableIncome: zod.number(),
+              standardDeduction: zod.number(),
+              itemizedDeductions: zod.number(),
+              qbiDeduction: zod.number(),
+              federalTaxLiability: zod.number(),
+              stateTaxLiability: zod.number(),
+              selfEmploymentTax: zod.number(),
+              niitTax: zod.number(),
+              amtTax: zod.number(),
+              additionalMedicareTax: zod.number(),
+              eitc: zod.number(),
+              additionalChildTaxCredit: zod.number(),
+              federalRefundOrOwed: zod.number(),
+              stateRefundOrOwed: zod.number(),
+              effectiveTaxRate: zod.number(),
+              combinedTaxDelta: zod.number(),
+              combinedRefundDelta: zod.number(),
+            })
+            .describe(
+              "Field-level scenario−baseline deltas. Positive on a tax field means the scenario INCREASED that tax. combinedTaxDelta is the headline planning number (federal + state tax liability delta); negative = scenario reduces tax = savings.\n",
+            ),
+          semantics: zod
+            .enum(["savings", "cost"])
+            .describe(
+              "Whether `delta.combinedTaxDelta` represents the strategy's \*savings\* (negative = good) or its \*current-year cost\* (positive = price of the strategy, with long-term benefit captured in `estSavings`).\n",
+            ),
+          sensitivity: zod
+            .object({
+              low: zod
+                .number()
+                .describe("Result at 90% of the recommended mutation amount."),
+              mid: zod
+                .number()
+                .describe(
+                  "Result at 100%. Matches `|whatIf.delta.combinedTaxDelta|`.",
+                ),
+              high: zod
+                .number()
+                .describe("Result at 110% of the recommended mutation amount."),
+            })
+            .optional()
+            .describe(
+              "±10% sensitivity range. Omitted for fixed-amount strategies.",
+            ),
+        })
+        .optional()
+        .describe(
+          "Phase H — H2 + H12. Engine-verified what-if data when the detector has a clean single-year mutation. Includes the exact mutations the engine ran, the resulting per-field delta, sign semantics, and an optional ±10% sensitivity range. Absent for detectors with no clean single-year mutation (G1.3 bunching, G1.8 DAF — multi-year; G1.7 §199A wage limit — engine doesn't model the limit yet).\n",
+        ),
+    }),
+  ),
+  totalEstSavings: zod.number(),
+  crossStrategy: zod
+    .object({
+      stackedStrategyIds: zod
+        .array(zod.string())
+        .describe("Strategy IDs (G1.x) whose mutations were stacked."),
+      combinedDelta: zod
         .object({
           adjustedGrossIncome: zod.number(),
           taxableIncome: zod.number(),
@@ -1659,13 +1927,22 @@ export const GetPlanningOpportunitiesResponse = zod.object({
         .describe(
           "Field-level scenario−baseline deltas. Positive on a tax field means the scenario INCREASED that tax. combinedTaxDelta is the headline planning number (federal + state tax liability delta); negative = scenario reduces tax = savings.\n",
         )
-        .optional()
+        .describe("Engine delta from applying all stacked mutations together."),
+      sumOfIndividualSavings: zod
+        .number()
         .describe(
-          "Phase H — H2. Engine-verified per-field delta for this strategy, computed by running an actual what-if scenario through the pure tax engine. When present, prefer this over the heuristic `estSavings`. Absent when the detector's strategy doesn't yet have a clean single-year mutation expressible to the engine.\n",
+          "Sum of |combinedRefundDelta| across each stacked hit's individual H2 result.",
         ),
-    }),
-  ),
-  totalEstSavings: zod.number(),
+      interactionEffect: zod
+        .number()
+        .describe(
+          "Joint savings minus sum-of-individual-savings. NEGATIVE = stacking ERODES savings (most common — bracket stacking, double-counting relief). POSITIVE = compounding benefit (rare). ZERO = perfectly additive (rare).\n",
+        ),
+    })
+    .optional()
+    .describe(
+      'Phase H — H7. Joint engine effect of stacking ALL \"savings\" strategies together. Present only when ≥2 H2-wired hits fire (single-hit case has no interaction to report). The `interactionEffect` field surfaces bracket-stacking or cliff-escape effects that the simple sum of individual deltas misses.\n',
+    ),
 });
 
 /**
@@ -1706,33 +1983,111 @@ export const GetPlanningMultiYearResponse = zod.object({
         prerequisiteData: zod.array(zod.string()),
         citation: zod.string(),
         inputs: zod.record(zod.string(), zod.unknown()),
-        whatIfDelta: zod
-          .object({
-            adjustedGrossIncome: zod.number(),
-            taxableIncome: zod.number(),
-            standardDeduction: zod.number(),
-            itemizedDeductions: zod.number(),
-            qbiDeduction: zod.number(),
-            federalTaxLiability: zod.number(),
-            stateTaxLiability: zod.number(),
-            selfEmploymentTax: zod.number(),
-            niitTax: zod.number(),
-            amtTax: zod.number(),
-            additionalMedicareTax: zod.number(),
-            eitc: zod.number(),
-            additionalChildTaxCredit: zod.number(),
-            federalRefundOrOwed: zod.number(),
-            stateRefundOrOwed: zod.number(),
-            effectiveTaxRate: zod.number(),
-            combinedTaxDelta: zod.number(),
-            combinedRefundDelta: zod.number(),
-          })
-          .describe(
-            "Field-level scenario−baseline deltas. Positive on a tax field means the scenario INCREASED that tax. combinedTaxDelta is the headline planning number (federal + state tax liability delta); negative = scenario reduces tax = savings.\n",
-          )
+        assumptions: zod
+          .array(zod.string())
           .optional()
           .describe(
-            "Phase H — H2. Engine-verified per-field delta for this strategy, computed by running an actual what-if scenario through the pure tax engine. When present, prefer this over the heuristic `estSavings`. Absent when the detector's strategy doesn't yet have a clean single-year mutation expressible to the engine.\n",
+            'Phase H — H12. Plain-English assumptions \/ approximations the detector made when computing this opportunity. Each entry is one short statement. Rendered as a bulleted \"Assumptions\" section under the opportunity card.\n',
+          ),
+        whatIf: zod
+          .object({
+            mutations: zod
+              .array(
+                zod
+                  .object({
+                    kind: zod.enum([
+                      "set_adjustment",
+                      "add_adjustment",
+                      "remove_adjustment",
+                      "set_client_field",
+                    ]),
+                    adjustmentType: zod
+                      .string()
+                      .optional()
+                      .describe(
+                        "Required for set\/add\/remove_adjustment. The engine adjustment_type enum value.",
+                      ),
+                    amount: zod
+                      .number()
+                      .optional()
+                      .describe(
+                        "Required for set_adjustment and add_adjustment. The dollar amount.",
+                      ),
+                    field: zod
+                      .string()
+                      .optional()
+                      .describe(
+                        "Required for set_client_field. The ClientFacts key to override (e.g. filingStatus, state).",
+                      ),
+                    value: zod
+                      .unknown()
+                      .optional()
+                      .describe(
+                        "Required for set_client_field. The replacement value (string, number, boolean, or null).",
+                      ),
+                  })
+                  .describe(
+                    "A single change to apply to the baseline TaxReturnInputs. Discriminated by `kind`. The server validates per-kind required fields and rejects invalid combinations with HTTP 400.\n",
+                  ),
+              )
+              .describe(
+                "Exact mutations the engine ran. Transparent for CPA audit.",
+              ),
+            delta: zod
+              .object({
+                adjustedGrossIncome: zod.number(),
+                taxableIncome: zod.number(),
+                standardDeduction: zod.number(),
+                itemizedDeductions: zod.number(),
+                qbiDeduction: zod.number(),
+                federalTaxLiability: zod.number(),
+                stateTaxLiability: zod.number(),
+                selfEmploymentTax: zod.number(),
+                niitTax: zod.number(),
+                amtTax: zod.number(),
+                additionalMedicareTax: zod.number(),
+                eitc: zod.number(),
+                additionalChildTaxCredit: zod.number(),
+                federalRefundOrOwed: zod.number(),
+                stateRefundOrOwed: zod.number(),
+                effectiveTaxRate: zod.number(),
+                combinedTaxDelta: zod.number(),
+                combinedRefundDelta: zod.number(),
+              })
+              .describe(
+                "Field-level scenario−baseline deltas. Positive on a tax field means the scenario INCREASED that tax. combinedTaxDelta is the headline planning number (federal + state tax liability delta); negative = scenario reduces tax = savings.\n",
+              ),
+            semantics: zod
+              .enum(["savings", "cost"])
+              .describe(
+                "Whether `delta.combinedTaxDelta` represents the strategy's \*savings\* (negative = good) or its \*current-year cost\* (positive = price of the strategy, with long-term benefit captured in `estSavings`).\n",
+              ),
+            sensitivity: zod
+              .object({
+                low: zod
+                  .number()
+                  .describe(
+                    "Result at 90% of the recommended mutation amount.",
+                  ),
+                mid: zod
+                  .number()
+                  .describe(
+                    "Result at 100%. Matches `|whatIf.delta.combinedTaxDelta|`.",
+                  ),
+                high: zod
+                  .number()
+                  .describe(
+                    "Result at 110% of the recommended mutation amount.",
+                  ),
+              })
+              .optional()
+              .describe(
+                "±10% sensitivity range. Omitted for fixed-amount strategies.",
+              ),
+          })
+          .optional()
+          .describe(
+            "Phase H — H2 + H12. Engine-verified what-if data when the detector has a clean single-year mutation. Includes the exact mutations the engine ran, the resulting per-field delta, sign semantics, and an optional ±10% sensitivity range. Absent for detectors with no clean single-year mutation (G1.3 bunching, G1.8 DAF — multi-year; G1.7 §199A wage limit — engine doesn't model the limit yet).\n",
           ),
       }),
     )
@@ -1746,6 +2101,123 @@ export const GetPlanningMultiYearResponse = zod.object({
   yearsCovered: zod
     .array(zod.number())
     .describe("The tax years included in the history, most recent first."),
+});
+
+/**
+ * Loads all firm clients within an AGI band around the target client and computes cohort statistics: mean / median / p25 / p75 effective tax rate. Returns the client's own effective rate + percentile rank within the cohort, so CPAs can flag clients paying significantly more (or less) than peers.
+Default AGI band: ±$50,000 around target AGI. Override via query.
+
+ * @summary Compare client's effective tax rate to firm-wide peers (Phase H — H11)
+ */
+export const GetPeerBenchmarkParams = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const GetPeerBenchmarkQueryParams = zod.object({
+  bandWidth: zod.coerce
+    .number()
+    .optional()
+    .describe(
+      "AGI band width in dollars (default $50,000 → ±$50k around target).",
+    ),
+});
+
+export const GetPeerBenchmarkResponse = zod.object({
+  clientId: zod.number(),
+  taxYear: zod.number(),
+  clientAgi: zod.number(),
+  clientEffectiveRate: zod
+    .number()
+    .describe(
+      "Client's own effective tax rate (totalTaxBurden \/ totalIncome).",
+    ),
+  cohort: zod.object({
+    size: zod
+      .number()
+      .describe(
+        "Number of peer clients in the cohort (excluding the target client).",
+      ),
+    agiMin: zod.number().describe("Lower AGI bound of the cohort band."),
+    agiMax: zod.number().describe("Upper AGI bound of the cohort band."),
+    effectiveRateMean: zod.number(),
+    effectiveRateMedian: zod.number(),
+    effectiveRateP25: zod
+      .number()
+      .describe("25th percentile effective tax rate in the cohort."),
+    effectiveRateP75: zod
+      .number()
+      .describe("75th percentile effective tax rate in the cohort."),
+    clientPercentileRank: zod
+      .number()
+      .describe(
+        "Client's rank in the cohort (0-100). 50 = exactly median. >50 = paying MORE than median peer (planning opportunity). <50 = paying LESS than median peer (already optimized or below expected exposure).\n",
+      ),
+  }),
+});
+
+/**
+ * Runs the H2 what-if engine for each target state by mutating `client.state` and recomputing. Returns a sorted list of `{ state, deltaFederal, deltaState, deltaCombined }` highlighting the tax impact of moving. Default target states are zero-income-tax jurisdictions (TX/FL/NV/WA/TN). Excludes the client's current state from the comparison automatically.
+Important caveats CPAs must communicate:
+  * Engine mutates the resident state but does NOT model income
+    sourcing (e.g., W-2 wages remain tied to the original work state).
+    Real moves require multi-state allocation per state rules.
+  * Domicile rules vary — establishing residency in a new state
+    requires more than tax filing (driver's license, voter
+    registration, days-present test, etc.).
+  * Does NOT model real estate, cost of living, or the new state's
+    sales / property tax burden.
+
+ * @summary Compare client's tax burden across alternate resident states (Phase H — H4)
+ */
+export const RunStateComparisonParams = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const RunStateComparisonBody = zod.object({
+  targetStates: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      "Two-letter state codes to compare. Defaults to zero-income-tax states (TX, FL, NV, WA, TN) when omitted. The client's current state is automatically excluded.\n",
+    ),
+});
+
+export const RunStateComparisonResponse = zod.object({
+  clientId: zod.number(),
+  taxYear: zod.number(),
+  baselineState: zod.string().describe("Client's current resident state."),
+  baselineFederal: zod.number().describe("Current federal tax liability."),
+  baselineState_tax: zod.number().describe("Current state tax liability."),
+  results: zod
+    .array(
+      zod.object({
+        state: zod.string(),
+        deltaFederal: zod
+          .number()
+          .describe(
+            "Federal tax liability delta (scenario − baseline). Usually positive (lower SALT deduction increases federal tax).",
+          ),
+        deltaState: zod
+          .number()
+          .describe(
+            "State tax liability delta. Usually negative (target is lower-tax state).",
+          ),
+        deltaCombined: zod
+          .number()
+          .describe(
+            "Combined federal + state delta. NEGATIVE = move saves money.",
+          ),
+        scenarioFederal: zod
+          .number()
+          .describe("Federal tax liability if client lived in target state."),
+        scenarioState: zod
+          .number()
+          .describe("State tax liability in target state."),
+      }),
+    )
+    .describe(
+      "One per target state, sorted by deltaCombined ascending (biggest savings first).",
+    ),
 });
 
 /**
@@ -2733,6 +3205,30 @@ export const GetRecentClientsResponseItem = zod.object({
     .nullish()
     .describe(
       "E12 — ISO date (YYYY-MM-DD) when residency changed. Filer was former-state resident from Jan 1 to this date (exclusive); current-state resident from this date (inclusive) to Dec 31.",
+    ),
+  riskTolerance: zod
+    .string()
+    .nullish()
+    .describe(
+      'Phase H — H9. \"conservative\" | \"moderate\" | \"aggressive\". Drives planning recommendations (Roth conversion sizing, charitable bunching frequency, etc.).',
+    ),
+  targetRetirementAge: zod
+    .number()
+    .nullish()
+    .describe(
+      "Phase H — H9. Target retirement age (integer years). Used for time-horizon-sensitive recommendations.",
+    ),
+  estatePlanStage: zod
+    .string()
+    .nullish()
+    .describe(
+      'Phase H — H9. \"none\" | \"will_only\" | \"trust_in_place\" | \"complex\". Drives estate-tax \/ gifting strategy recommendations.',
+    ),
+  planningGoals: zod
+    .string()
+    .nullish()
+    .describe(
+      'Phase H — H9. Free-text client-specific planning goals (e.g., \"buy a house in 2 years\"). Passed to AI memo synthesis.',
     ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),

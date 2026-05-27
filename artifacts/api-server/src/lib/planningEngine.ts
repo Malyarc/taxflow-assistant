@@ -21,8 +21,10 @@
 import {
   CATALOG_V1,
   type OpportunityHit,
+  type OpportunityWhatIf,
   type PlanningStrategy,
-  type WhatIfDelta,
+  type WhatIfMutation,
+  type WhatIfSensitivity,
 } from "@workspace/planning-strategies";
 import type {
   ComputedTaxReturn,
@@ -35,26 +37,87 @@ import {
   calculateStateTaxWithBreakdown,
   getFederalStandardDeduction,
 } from "./taxCalculator";
-import { runWhatIfScenario, type WhatIfMutation } from "./whatIfEngine";
+import { runWhatIfScenarios } from "./whatIfEngine";
 
 /**
- * H2 — Run a what-if scenario against the supplied baseline inputs and
- * return the WhatIfDelta. Helper so detectors don't have to repeat the
- * runWhatIfScenario boilerplate.
+ * H2 + H12 — Run the detector's mutation through the pure engine and
+ * (optionally) compute a ±10% sensitivity range in one batched call.
  *
- * Returns null when baselineInputs is undefined (the caller didn't opt
- * into H2 verification — e.g., the planning-hit-list endpoint, which
- * runs N×detectors and skips H2 to keep latency bounded).
+ * Returns `{ whatIf, sensitivity }` where:
+ *   - `whatIf` is the OpportunityWhatIf to attach to the OpportunityHit
+ *     when the detector wants engine verification. Includes the exact
+ *     mutations the engine ran (transparent for CPA audit), the delta,
+ *     and the semantic interpretation (savings vs cost).
+ *   - `sensitivity` is included on `whatIf` only when `varyAmount` is
+ *     true AND the mutations array contains exactly one mutation with
+ *     a numeric `amount` field (so we know what to scale ±10%).
+ *
+ * When `baselineInputs` is undefined (the caller opted out of H2 — e.g.
+ * the planning-hit-list endpoint), this returns `undefined` so the
+ * detector emits its heuristic OpportunityHit unchanged.
  */
-function computeWhatIfDelta(
-  baselineInputs: TaxReturnInputs | undefined,
-  scenarioId: string,
-  label: string,
-  mutations: WhatIfMutation[],
-): WhatIfDelta | undefined {
+function runDetectorWhatIf(args: {
+  baselineInputs: TaxReturnInputs | undefined;
+  scenarioId: string;
+  label: string;
+  mutations: WhatIfMutation[];
+  semantics: "savings" | "cost";
+  /**
+   * H12 sensitivity — when true AND the mutations array has exactly one
+   * entry with a numeric `amount`, also run scenarios at 90% / 110% of
+   * that amount and return the sensitivity range. Skip for fixed-amount
+   * strategies (TLH $3k cap, FTC unclaimed gap) where ±10% doesn't
+   * change the result.
+   */
+  varyAmount: boolean;
+}): OpportunityWhatIf | undefined {
+  const { baselineInputs, scenarioId, label, mutations, semantics, varyAmount } = args;
   if (!baselineInputs) return undefined;
-  const result = runWhatIfScenario(baselineInputs, { scenarioId, label, mutations });
-  return result.delta;
+
+  // Find the single scalable mutation (the one whose amount we vary).
+  // If varyAmount is true but there isn't exactly one amount-bearing
+  // mutation, we still run the mid scenario but omit sensitivity.
+  const amountBearing = mutations
+    .map((m, i) => ({ m, i }))
+    .filter((x) => typeof x.m.amount === "number" && Number.isFinite(x.m.amount));
+  const canVary = varyAmount && amountBearing.length === 1 && (amountBearing[0].m.amount ?? 0) > 0;
+
+  if (!canVary) {
+    const result = runWhatIfScenarios(baselineInputs, [
+      { scenarioId, label, mutations },
+    ]);
+    return {
+      mutations,
+      delta: result[0].delta,
+      semantics,
+    };
+  }
+
+  const scaleIdx = amountBearing[0].i;
+  const midAmount = amountBearing[0].m.amount as number;
+  const scaledMutations = (factor: number): WhatIfMutation[] =>
+    mutations.map((m, i) => (i === scaleIdx ? { ...m, amount: midAmount * factor } : m));
+
+  const results = runWhatIfScenarios(baselineInputs, [
+    { scenarioId: `${scenarioId}-90`, label: `${label} (-10%)`, mutations: scaledMutations(0.9) },
+    { scenarioId, label, mutations },
+    { scenarioId: `${scenarioId}-110`, label: `${label} (+10%)`, mutations: scaledMutations(1.1) },
+  ]);
+  // Sensitivity magnitude uses combinedRefundDelta (post-credit) rather than
+  // combinedTaxDelta (pre-credit), so credit-based strategies (FTC) report
+  // accurately. For deduction strategies (SEP / NIIT), the two are equal in
+  // magnitude (opposite sign).
+  const sensitivity: WhatIfSensitivity = {
+    low: Math.round(Math.abs(results[0].delta.combinedRefundDelta)),
+    mid: Math.round(Math.abs(results[1].delta.combinedRefundDelta)),
+    high: Math.round(Math.abs(results[2].delta.combinedRefundDelta)),
+  };
+  return {
+    mutations,
+    delta: results[1].delta,
+    semantics,
+    sensitivity,
+  };
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -187,12 +250,16 @@ function detectSepIra(args: {
   // as a generic `deduction` adjustment. Re-running the engine picks
   // up cascade effects the heuristic misses (NIIT cliff escape, AMT
   // shift, QBI base change, EITC phase-in/out, state-tax recomputation).
-  const whatIfDelta = computeWhatIfDelta(
+  const whatIf = runDetectorWhatIf({
     baselineInputs,
-    "G1.1-sep-contribution",
-    `SEP-IRA contribution $${Math.round(contribution).toLocaleString("en-US")}`,
-    [{ kind: "add_adjustment", adjustmentType: "deduction", amount: Math.round(contribution) }],
-  );
+    scenarioId: "G1.1-sep-contribution",
+    label: `SEP-IRA contribution $${Math.round(contribution).toLocaleString("en-US")}`,
+    mutations: [
+      { kind: "add_adjustment", adjustmentType: "deduction", amount: Math.round(contribution) },
+    ],
+    semantics: "savings",
+    varyAmount: true,
+  });
 
   const strategy = strategyById("G1.1");
   const contributionRounded = Math.round(contribution);
@@ -227,7 +294,13 @@ function detectSepIra(args: {
       stateMarginalRate: stateRate,
       contribution: Math.round(contribution),
     },
-    whatIfDelta,
+    assumptions: [
+      `Contribution = 20% × (net SE earnings − ½ SE tax) per IRS Pub 560.`,
+      `Capped at §415(c) annual additions limit (${fmt(sepCap)} for TY${computed.taxYear}; Notice 2023-75 / 2024-80).`,
+      `Above-the-line deduction on Schedule 1 Line 16 — modeled as a generic engine "deduction" adjustment (same arithmetic effect on AGI).`,
+      `Sensitivity range computed at ±10% of the recommended contribution.`,
+    ],
+    whatIf,
   };
 }
 
@@ -303,6 +376,13 @@ function detectPtetElection(args: {
       recoverableSalt: Math.round(recoverable),
       federalMarginalRate: fedRate,
     },
+    assumptions: [
+      `Resident state ${state} has enacted a PTET regime (AICPA state tracker, as of Phase G).`,
+      `SALT cap binds at ${fmt(saltCap)} (TCJA $10k single/MFJ; $5k MFS — IRC §164(b)(6)).`,
+      `Heuristic estSavings = (saltUncapped − saltCap) × federal marginal rate (recoverable SALT at entity level).`,
+      `Engine does NOT model the PTET election as a first-class adjustment type — H2 verification deferred (would require multi-mutation: remove personal SALT + add PTE-level deduction + PTE-state-tax credit). Tracked as H1 catalog work.`,
+      `Assumes active K-1 income (passive doesn't qualify the same way under most PTET regimes).`,
+    ],
   };
 }
 
@@ -317,8 +397,9 @@ function sumAdjustment(adjustments: AdjustmentFact[], type: string): number {
 function detectForeignTaxCreditGap(args: {
   computed: ComputedTaxReturn;
   adjustments: AdjustmentFact[];
+  baselineInputs?: TaxReturnInputs;
 }): OpportunityHit | null {
-  const { computed, adjustments } = args;
+  const { computed, adjustments, baselineInputs } = args;
   const foreignTaxPaid = sumAdjustment(adjustments, "foreign_tax_paid");
   if (foreignTaxPaid <= 0) return null;
   const claimed = computed.foreignTaxCredit?.credit ?? 0;
@@ -328,6 +409,32 @@ function detectForeignTaxCreditGap(args: {
   if (claimed >= foreignTaxPaid * 0.95) return null;
   const recoverable = foreignTaxPaid - claimed;
   if (recoverable <= 0) return null;
+
+  // H2: mutation = SET `foreign_source_taxable_income` to a value large
+  // enough that the Form 1116 ratio doesn't bind (so the engine claims the
+  // full foreign tax paid). `set_adjustment` replaces any existing
+  // foreign_source_taxable_income entries to guarantee the value (avoids
+  // summing with a small existing one). Value chosen: max(taxableIncome,
+  // foreignTaxPaid × 5) — guarantees the binding limit becomes foreignTaxPaid
+  // rather than the ratio. Fixed-amount strategy — no meaningful sensitivity.
+  const fstUnlockAmount = Math.max(
+    computed.taxableIncome,
+    foreignTaxPaid * 5,
+  );
+  const whatIf = runDetectorWhatIf({
+    baselineInputs,
+    scenarioId: "G1.10-ftc-unclaimed",
+    label: `Unlock Form 1116 ($${Math.round(recoverable).toLocaleString("en-US")} recoverable)`,
+    mutations: [
+      {
+        kind: "set_adjustment",
+        adjustmentType: "foreign_source_taxable_income",
+        amount: Math.round(fstUnlockAmount),
+      },
+    ],
+    semantics: "savings",
+    varyAmount: false, // sensitivity meaningless — result binds at foreignTaxPaid
+  });
 
   const strategy = strategyById("G1.10");
   const fmt = (n: number) =>
@@ -354,6 +461,13 @@ function detectForeignTaxCreditGap(args: {
       currentlyClaimed: Math.round(claimed),
       recoverable: Math.round(recoverable),
     },
+    assumptions: [
+      `Without Form 1116, engine uses simplified $300/$600 limit (Pub 514) → caps FTC below foreign tax paid.`,
+      `H2 mutation provides foreign-source taxable income large enough that the Form 1116 ratio binds at the foreign tax paid (not the income-share limit).`,
+      `Assumes the client's foreign income is taxable in both jurisdictions and qualifies for FTC (Pub 514 — passive vs general category not modeled).`,
+      `No sensitivity range — recoverable amount is determined by the existing foreignTaxPaid - claimed gap.`,
+    ],
+    whatIf,
   };
 }
 
@@ -411,6 +525,12 @@ function detectBunching(args: {
       charitableCash: Math.round(charitableCash),
       federalMarginalRate: fedRate,
     },
+    assumptions: [
+      `Bunching is a MULTI-YEAR strategy (alternate itemize / standard each year) — single-year H2 mutation can't capture the multi-year cycle.`,
+      `Heuristic estSavings = stdDed × 0.25 × marginal rate, approximating the average annual benefit of the alternating cycle.`,
+      `Fires within ±15% of std-ded threshold where bunching has the highest leverage.`,
+      `H2 verification deferred — needs H3 multi-year scenario modeling (Phase H roadmap).`,
+    ],
   };
 }
 
@@ -459,6 +579,12 @@ function detectCharitableDaf(args: {
       charitableCash: Math.round(charitableCash),
       federalMarginalRate: fedRate,
     },
+    assumptions: [
+      `Donor-Advised Fund bunching is a MULTI-YEAR strategy (front-load 2-3 years of giving into one tax year, take std-ded in the off years).`,
+      `Heuristic estSavings = charitable × 2 × marginal rate × 0.2 — the 2× reflects bunching cycle, 0.2 the recovery above std-ded floor in the bunch year (AICPA playbook).`,
+      `Fires at $5k+ charitable AND 32%+ marginal rate — the threshold where DAF logistics + tax benefit exceed implementation friction.`,
+      `H2 verification deferred — needs H3 multi-year scenario modeling.`,
+    ],
   };
 }
 
@@ -472,8 +598,9 @@ const G1_4_MAX_AGE = 72;
 function detectRothConversion(args: {
   client: ClientFacts;
   computed: ComputedTaxReturn;
+  baselineInputs?: TaxReturnInputs;
 }): OpportunityHit | null {
-  const { client, computed } = args;
+  const { client, computed, baselineInputs } = args;
   const fedRate = federalMarginalRate(computed);
   // Only fire when there's a meaningful spread vs the assumed future rate.
   if (fedRate >= G1_4_MAX_MARGINAL) return null;
@@ -499,6 +626,27 @@ function detectRothConversion(args: {
   const spread = G1_4_EXPECTED_FUTURE_RATE - fedRate;
   const estSavings = conversion * spread;
   if (estSavings <= 0) return null;
+
+  // H2: mutation = add `additional_income` of conversion. Engine effect:
+  // current-year tax UP by conversion × marginal rate (this is the COST
+  // of doing the strategy, not the savings). The savings is long-term
+  // (heuristic estSavings = conversion × (futureRate − currentRate)).
+  // Semantics = "cost" — frontend renders this as a current-year cost
+  // sub-callout, not a savings headline.
+  const whatIf = runDetectorWhatIf({
+    baselineInputs,
+    scenarioId: "G1.4-roth-conversion",
+    label: `Roth conversion $${Math.round(conversion).toLocaleString("en-US")}`,
+    mutations: [
+      {
+        kind: "add_adjustment",
+        adjustmentType: "additional_income",
+        amount: Math.round(conversion),
+      },
+    ],
+    semantics: "cost",
+    varyAmount: true,
+  });
 
   const strategy = strategyById("G1.4");
   const fmt = (n: number) =>
@@ -531,6 +679,15 @@ function detectRothConversion(args: {
       assumedFutureRate: G1_4_EXPECTED_FUTURE_RATE,
       taxpayerAge: age ?? null,
     },
+    assumptions: [
+      `Conversion amount = headroom to top of current marginal bracket (locks in current rate).`,
+      `Future marginal rate assumed at ${(G1_4_EXPECTED_FUTURE_RATE * 100).toFixed(0)}% (Phase G plan baseline — CPA judgment call to refine).`,
+      `H2 delta represents the CURRENT-YEAR TAX COST of the conversion. Long-term net benefit (heuristic estSavings) = conversion × (futureRate − currentRate).`,
+      `Engine modeled as added "additional_income" — same arithmetic effect as 1099-R taxable distribution from traditional IRA.`,
+      `Pro-rata rule for after-tax basis (§408(d)(2)) NOT modeled — assumes 100% pre-tax IRA balance (requires Form 8606 — H6).`,
+      `Sensitivity range computed at ±10% of the conversion amount.`,
+    ],
+    whatIf,
   };
 }
 
@@ -539,8 +696,9 @@ function detectRothConversion(args: {
 function detectAmtIsoTiming(args: {
   computed: ComputedTaxReturn;
   adjustments: AdjustmentFact[];
+  baselineInputs?: TaxReturnInputs;
 }): OpportunityHit | null {
-  const { computed, adjustments } = args;
+  const { computed, adjustments, baselineInputs } = args;
   if (computed.amtTax <= 0) return null;
   const isoBargain = sumAdjustment(adjustments, "amt_iso_bargain_element");
   if (isoBargain <= 0) return null;
@@ -549,6 +707,23 @@ function detectAmtIsoTiming(args: {
   // spreading exercises across years (so AMT exemption covers more of it)
   // or doing a same-year disqualifying sale (converts AMT-preference to
   // ordinary W-2 income). estSavings = amtTax (the upper bound).
+
+  // H2: mutation = remove the ISO bargain element. Models the
+  // "disqualifying sale" route (the bargain becomes ordinary income on
+  // the W-2 side instead of an AMT preference). For the "spread
+  // exercises" route we approximate by removing the bargain entirely;
+  // in reality the CPA chooses how much to spread.
+  const whatIf = runDetectorWhatIf({
+    baselineInputs,
+    scenarioId: "G1.5-amt-iso-defer",
+    label: `Defer ISO bargain $${Math.round(isoBargain).toLocaleString("en-US")}`,
+    mutations: [
+      { kind: "remove_adjustment", adjustmentType: "amt_iso_bargain_element" },
+    ],
+    semantics: "savings",
+    varyAmount: false, // mutation is a removal, no amount to scale
+  });
+
   const strategy = strategyById("G1.5");
   const fmt = (n: number) =>
     n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
@@ -572,6 +747,14 @@ function detectAmtIsoTiming(args: {
       amtTax: Math.round(computed.amtTax),
       isoBargainElement: Math.round(isoBargain),
     },
+    assumptions: [
+      `H2 mutation removes the ISO bargain element entirely (models a same-year disqualifying disposition — bargain becomes W-2 ordinary income).`,
+      `Real-world choice: spread exercises across multiple years (partial removal) — engine result is the upper bound.`,
+      `Disqualifying sale converts AMT preference to ordinary W-2 income — Pub 525 + Form 3921 instructions.`,
+      `Excludes the §53 minimum-tax credit recovery (deferring AMT generates a credit usable in future years when regular tax binds — that future-year benefit is not captured here).`,
+      `No sensitivity — mutation is binary (defer all or none).`,
+    ],
+    whatIf,
   };
 }
 
@@ -590,8 +773,9 @@ const G1_6_BAND = 10000;
 function detectNiitCliff(args: {
   client: ClientFacts;
   computed: ComputedTaxReturn;
+  baselineInputs?: TaxReturnInputs;
 }): OpportunityHit | null {
-  const { client, computed } = args;
+  const { client, computed, baselineInputs } = args;
   const threshold = NIIT_THRESHOLDS[client.filingStatus] ?? NIIT_THRESHOLDS.single;
   const agi = computed.adjustedGrossIncome;
   // Symmetric band per spec. "Below threshold" case still fires (as an early
@@ -606,6 +790,30 @@ function detectNiitCliff(args: {
   // Round up; estSavings = current NIIT (the upper bound recoverable by
   // dropping AGI below the threshold).
   if (niitTax <= 0) return null;
+
+  // H2: mutation = add `deduction` of `excess` (the amount AGI exceeds
+  // threshold by). This drops AGI below the NIIT threshold (eliminating
+  // NIIT) AND saves ordinary tax on the deduction. The H2 delta captures
+  // BOTH effects — usually a much larger savings than the heuristic
+  // (which only counted the NIIT). Represents a real strategy: an
+  // additional 401(k) / HSA / SEP contribution of `excess` dollars.
+  const excess = Math.max(0, agi - threshold);
+  const whatIf = excess > 0
+    ? runDetectorWhatIf({
+        baselineInputs,
+        scenarioId: "G1.6-niit-defer",
+        label: `Defer $${Math.round(excess).toLocaleString("en-US")} of AGI below NIIT threshold`,
+        mutations: [
+          {
+            kind: "add_adjustment",
+            adjustmentType: "deduction",
+            amount: Math.round(excess),
+          },
+        ],
+        semantics: "savings",
+        varyAmount: true,
+      })
+    : undefined;
 
   const strategy = strategyById("G1.6");
   const fmt = (n: number) =>
@@ -637,6 +845,14 @@ function detectNiitCliff(args: {
       netInvestmentIncome: Math.round(nii),
       niitTax: Math.round(niitTax),
     },
+    assumptions: [
+      `NIIT threshold ${fmt(threshold)} for filing status "${client.filingStatus}" (IRC §1411).`,
+      `H2 mutation adds a deduction equal to the AGI excess above threshold — models a 401(k) / HSA / SEP contribution that also reduces AGI.`,
+      `whatIf.delta.combinedTaxDelta therefore captures BOTH (a) the NIIT eliminated AND (b) the ordinary-tax savings on the deduction. Usually larger than heuristic estSavings (NIIT-only).`,
+      `Assumes investment income stays above the new excess (so NIIT cap still binds on excess, not NII).`,
+      `Sensitivity range computed at ±10% of the defer amount.`,
+    ],
+    whatIf,
   };
 }
 
@@ -674,8 +890,9 @@ const QBI_THRESHOLDS: Record<number, Record<string, { threshold: number; top: nu
 
 function detectQbiPhaseIn(args: {
   computed: ComputedTaxReturn;
+  client: ClientFacts;
 }): OpportunityHit | null {
-  const { computed } = args;
+  const { computed, client } = args;
   const k1Active = computed.scheduleK1?.totalActiveOrdinaryIncome ?? 0;
   const qbi = computed.detail.qbi?.qbiAmount ?? 0;
   // Only fires for K-1 / pass-through clients with QBI income.
@@ -725,6 +942,12 @@ function detectQbiPhaseIn(args: {
       phaseInTop: tier.top,
       federalMarginalRate: fedRate,
     },
+    assumptions: [
+      `§199A wage/UBIA limit (Form 8995-A) is NOT modeled by the engine — it applies the simplified flat 20% × QBI.`,
+      `Heuristic: assumes ~50% of QBI is at risk of erosion in the phase-in band; recoverable savings ≈ lost_qbi × 20% × marginal rate.`,
+      `H2 verification deferred — would require the engine to model the wage-cap formula (Form 8995-A worksheet 12B). Engine sub-gap tracked in CLAUDE.md.`,
+      `Phase-in band thresholds: TY${computed.taxYear}, ${client.filingStatus === "married_filing_jointly" || client.filingStatus === "qualifying_widow" ? "MFJ/QSS" : "single/HoH/MFS"} per Rev. Proc. 2023-34 / 2024-40.`,
+    ],
   };
 }
 
@@ -736,8 +959,9 @@ const G1_9_MAX_OFFSET_MFS = 1500;
 function detectTaxLossHarvesting(args: {
   client: ClientFacts;
   computed: ComputedTaxReturn;
+  baselineInputs?: TaxReturnInputs;
 }): OpportunityHit | null {
-  const { client, computed } = args;
+  const { client, computed, baselineInputs } = args;
   const maxOffset = client.filingStatus === "married_filing_separately"
     ? G1_9_MAX_OFFSET_MFS
     : G1_9_MAX_OFFSET;
@@ -757,6 +981,26 @@ function detectTaxLossHarvesting(args: {
   // captured in the headline number — surfaced in the rationale).
   const estSavings = maxOffset * fedRate;
   if (estSavings <= 0) return null;
+
+  // H2: mutation = add `capital_loss_carryforward_short` of `maxOffset`
+  // ($3k single/HoH/MFJ; $1.5k MFS). Engine applies the IRC §1211 annual
+  // cap, offsetting against ordinary income. Fixed-amount strategy: no
+  // sensitivity (excess harvest carries forward indefinitely, but the
+  // current-year benefit is capped at maxOffset).
+  const whatIf = runDetectorWhatIf({
+    baselineInputs,
+    scenarioId: "G1.9-tlh-3k",
+    label: `Harvest $${maxOffset.toLocaleString("en-US")} of capital losses`,
+    mutations: [
+      {
+        kind: "add_adjustment",
+        adjustmentType: "capital_loss_carryforward_short",
+        amount: maxOffset,
+      },
+    ],
+    semantics: "savings",
+    varyAmount: false, // fixed cap, sensitivity wouldn't reflect strategy variability
+  });
 
   const strategy = strategyById("G1.9");
   const fmt = (n: number) =>
@@ -786,6 +1030,14 @@ function detectTaxLossHarvesting(args: {
       netCapitalGainLoss: Math.round(netCap),
       federalMarginalRate: fedRate,
     },
+    assumptions: [
+      `IRC §1211 annual cap on net capital loss against ordinary income: $${maxOffset.toLocaleString("en-US")} (${client.filingStatus === "married_filing_separately" ? "MFS" : "single/HoH/MFJ"}).`,
+      `H2 mutation harvests a ST capital loss carryforward up to the cap — represents realized loss offsetting ordinary income.`,
+      `Excess harvested losses (beyond annual cap) carry forward indefinitely — multi-year benefit NOT captured in single-year delta.`,
+      `Wash-sale rule (IRC §1091) must be respected — sell + don't repurchase substantially identical security within 30 days either side.`,
+      `No sensitivity — strategy benefit is capped at the IRC §1211 annual offset.`,
+    ],
+    whatIf,
   };
 }
 
@@ -856,31 +1108,106 @@ export function planningScore(args: {
  */
 export function evaluatePlanningOpportunities(args: PlanningInputs): OpportunityHit[] {
   const hits: OpportunityHit[] = [];
-  const sepIra = detectSepIra({
-    client: args.client,
-    computed: args.computed,
-    adjustments: args.adjustments,
-    baselineInputs: args.baselineInputs,
-  });
+  const { client, computed, adjustments, baselineInputs } = args;
+
+  const sepIra = detectSepIra({ client, computed, adjustments, baselineInputs });
   if (sepIra) hits.push(sepIra);
-  const ptet = detectPtetElection({ client: args.client, computed: args.computed });
+  const ptet = detectPtetElection({ client, computed });
   if (ptet) hits.push(ptet);
-  const ftc = detectForeignTaxCreditGap({ computed: args.computed, adjustments: args.adjustments });
+  const ftc = detectForeignTaxCreditGap({ computed, adjustments, baselineInputs });
   if (ftc) hits.push(ftc);
-  const bunching = detectBunching({ computed: args.computed, adjustments: args.adjustments });
+  const bunching = detectBunching({ computed, adjustments });
   if (bunching) hits.push(bunching);
-  const daf = detectCharitableDaf({ computed: args.computed, adjustments: args.adjustments });
+  const daf = detectCharitableDaf({ computed, adjustments });
   if (daf) hits.push(daf);
-  const roth = detectRothConversion({ client: args.client, computed: args.computed });
+  const roth = detectRothConversion({ client, computed, baselineInputs });
   if (roth) hits.push(roth);
-  const amtIso = detectAmtIsoTiming({ computed: args.computed, adjustments: args.adjustments });
+  const amtIso = detectAmtIsoTiming({ computed, adjustments, baselineInputs });
   if (amtIso) hits.push(amtIso);
-  const niit = detectNiitCliff({ client: args.client, computed: args.computed });
+  const niit = detectNiitCliff({ client, computed, baselineInputs });
   if (niit) hits.push(niit);
-  const qbi = detectQbiPhaseIn({ computed: args.computed });
+  const qbi = detectQbiPhaseIn({ computed, client });
   if (qbi) hits.push(qbi);
-  const tlh = detectTaxLossHarvesting({ client: args.client, computed: args.computed });
+  const tlh = detectTaxLossHarvesting({ client, computed, baselineInputs });
   if (tlh) hits.push(tlh);
   hits.sort((a, b) => b.estSavings - a.estSavings);
   return hits;
+}
+
+// ── Phase H — H7 cross-strategy interaction modeling ──────────────────────
+
+/**
+ * H7 — Combined effect of stacking all H2-wired "savings" strategies.
+ *
+ * Returns the joint engine delta (mutations applied together) and the
+ * `interactionEffect` — the difference between the joint savings and the
+ * sum of individual savings. NEGATIVE interactionEffect means bracket-
+ * stacking eroded the savings (most common); POSITIVE means strategies
+ * compound (less common, but possible — e.g. when one strategy moves the
+ * client into a state where another credit suddenly applies).
+ *
+ * Only "savings" strategies are stacked. "Cost" strategies (Roth) and
+ * heuristic-only strategies (G1.3 bunching, G1.8 DAF, G1.7 §199A) are
+ * skipped because their mutations don't represent free tax savings.
+ *
+ * Returns undefined when fewer than 2 stackable strategies are present
+ * (a single strategy's combined-effect equals its individual delta —
+ * no insight gained).
+ */
+export interface CrossStrategySummary {
+  stackedStrategyIds: string[];
+  /** Engine-verified delta from applying ALL stacked mutations together. */
+  combinedDelta: import("@workspace/planning-strategies").WhatIfDelta;
+  /** Simple sum of |combinedRefundDelta| across each stacked hit's individual H2 result. */
+  sumOfIndividualSavings: number;
+  /**
+   * Joint savings (|combinedDelta.combinedRefundDelta|) minus the sum of
+   * individual savings. Negative = bracket stacking erodes savings. Zero
+   * = strategies are perfectly additive (rare). Positive = compounding
+   * benefit (rare).
+   */
+  interactionEffect: number;
+}
+
+export function evaluateCrossStrategyScenario(args: {
+  hits: OpportunityHit[];
+  baselineInputs: TaxReturnInputs;
+}): CrossStrategySummary | undefined {
+  const { hits, baselineInputs } = args;
+  // Collect "savings" hits with whatIf data (skip "cost" + heuristic-only).
+  const stackable = hits.filter(
+    (h) => h.whatIf != null && h.whatIf.semantics === "savings",
+  );
+  if (stackable.length < 2) return undefined;
+
+  // Flatten all mutations from stackable hits into one combined scenario.
+  // Mutation order matches detector order in evaluatePlanningOpportunities,
+  // which is sorted by estSavings desc.
+  const allMutations: WhatIfMutation[] = [];
+  for (const h of stackable) {
+    if (h.whatIf) {
+      allMutations.push(...h.whatIf.mutations);
+    }
+  }
+  const combinedScenario = runWhatIfScenarios(baselineInputs, [
+    {
+      scenarioId: "H7-combined-all-strategies",
+      label: `All ${stackable.length} strategies stacked`,
+      mutations: allMutations,
+    },
+  ])[0];
+
+  const sumOfIndividualSavings = stackable.reduce(
+    (s, h) => s + Math.abs(h.whatIf!.delta.combinedRefundDelta),
+    0,
+  );
+  const combinedSavings = Math.abs(combinedScenario.delta.combinedRefundDelta);
+  const interactionEffect = combinedSavings - sumOfIndividualSavings;
+
+  return {
+    stackedStrategyIds: stackable.map((h) => h.strategyId),
+    combinedDelta: combinedScenario.delta,
+    sumOfIndividualSavings: Math.round(sumOfIndividualSavings),
+    interactionEffect: Math.round(interactionEffect),
+  };
 }

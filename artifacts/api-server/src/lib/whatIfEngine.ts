@@ -33,47 +33,28 @@ import {
   type ClientFacts,
   type AdjustmentFact,
 } from "./taxReturnEngine";
-import type { WhatIfDelta } from "@workspace/planning-strategies";
+import type { WhatIfDelta, WhatIfMutation } from "@workspace/planning-strategies";
 
-// Re-export the canonical type so other api-server modules can `import { WhatIfDelta }`
-// from whatIfEngine alongside the runner. The OpenAPI spec is the source of
-// truth for the shape; the type definition lives in @workspace/planning-strategies
-// because the OpportunityHit on the API wire references it.
-export type { WhatIfDelta };
+// Re-export the canonical types from `@workspace/planning-strategies` so other
+// api-server modules can `import { WhatIfDelta, WhatIfMutation }` from
+// whatIfEngine alongside the runner. The OpenAPI spec is the source of truth
+// for these shapes; the definitions live in `@workspace/planning-strategies`
+// because OpportunityHit on the API wire references them — putting them there
+// avoids a circular dep between this module and planning-strategies.
+export type { WhatIfDelta, WhatIfMutation };
 
 // ── Mutations ──────────────────────────────────────────────────────────────
 
 /**
- * A single change to apply to the baseline inputs. Discriminated by `kind`.
+ * The OpenAPI / planning-strategies `WhatIfMutation` is a flat object with
+ * `kind` + optional `adjustmentType` / `amount` / `field` / `value`. We
+ * validate per-kind required fields at the runtime boundary (the
+ * `applyWhatIfMutations` switch + the route handler's coerceWhatIfMutations).
  *
- * Invariant: add new kinds at the bottom; never repurpose an existing kind.
- * Doing so would invalidate any historical scenario records (and frontend
- * exhaustiveness checks).
+ * Internal detectors construct strict mutations by passing all required
+ * fields; the type system can't enforce per-kind requirements with the loose
+ * shape, so we lean on tests + the switch to catch invalid combinations.
  */
-export type WhatIfMutation =
-  | {
-      /** Replace ALL existing adjustments of this type with a single new entry. */
-      kind: "set_adjustment";
-      adjustmentType: string;
-      amount: number;
-    }
-  | {
-      /** Add a new adjustment row alongside existing ones (engine sums them). */
-      kind: "add_adjustment";
-      adjustmentType: string;
-      amount: number;
-    }
-  | {
-      /** Remove every adjustment of this type. */
-      kind: "remove_adjustment";
-      adjustmentType: string;
-    }
-  | {
-      /** Override a top-level field on ClientFacts (e.g., filingStatus). */
-      kind: "set_client_field";
-      field: keyof ClientFacts;
-      value: unknown;
-    };
 
 /**
  * A scenario — a labeled set of mutations describing one planning strategy.
@@ -142,6 +123,9 @@ export function applyWhatIfMutations(
   for (const m of mutations) {
     switch (m.kind) {
       case "set_adjustment": {
+        if (m.adjustmentType == null || m.amount == null) {
+          throw new Error("set_adjustment requires adjustmentType + amount");
+        }
         adjustments = adjustments.filter((a) => a.adjustmentType !== m.adjustmentType);
         adjustments.push({
           adjustmentType: m.adjustmentType,
@@ -151,6 +135,9 @@ export function applyWhatIfMutations(
         break;
       }
       case "add_adjustment": {
+        if (m.adjustmentType == null || m.amount == null) {
+          throw new Error("add_adjustment requires adjustmentType + amount");
+        }
         adjustments.push({
           adjustmentType: m.adjustmentType,
           amount: String(m.amount),
@@ -159,18 +146,23 @@ export function applyWhatIfMutations(
         break;
       }
       case "remove_adjustment": {
+        if (m.adjustmentType == null) {
+          throw new Error("remove_adjustment requires adjustmentType");
+        }
         adjustments = adjustments.filter((a) => a.adjustmentType !== m.adjustmentType);
         break;
       }
       case "set_client_field": {
+        if (m.field == null) {
+          throw new Error("set_client_field requires field");
+        }
         const c = ensureClientClone();
-        c[String(m.field)] = m.value;
+        c[String(m.field)] = m.value ?? null;
         break;
       }
       default: {
-        const exhaustive: never = m;
         throw new Error(
-          `whatIfEngine: unsupported mutation kind ${(exhaustive as { kind?: string }).kind}`,
+          `whatIfEngine: unsupported mutation kind ${(m as { kind?: string }).kind}`,
         );
       }
     }
