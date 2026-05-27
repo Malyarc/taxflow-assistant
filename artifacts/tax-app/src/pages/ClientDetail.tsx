@@ -757,6 +757,251 @@ interface BreakdownResponse {
   };
 }
 
+// ─── C4 — Form 1040-X (Amended Return) ────────────────────────────────────
+interface Form1040xLine {
+  lineRef: string;
+  label: string;
+  original: number;
+  amended: number;
+  netChange: number;
+}
+interface Form1040xResult {
+  taxYear: number;
+  lockedAt: string | null;
+  explanation: string;
+  lines: Form1040xLine[];
+  netFederalRefundChange: number;
+  netStateRefundChange: number;
+}
+
+function fmtAmendCol(n: number): string {
+  if (!Number.isFinite(n)) return "—";
+  if (n === 0) return "$0";
+  const abs = Math.abs(n).toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  });
+  return n < 0 ? `(${abs})` : abs;
+}
+
+function Form1040xCard({ clientId, taxYear }: { clientId: number; taxYear: number }) {
+  const qc = useQueryClient();
+  // Pull the raw tax-return row to check amendment fields. We use a
+  // custom queryFn because the OpenAPI-typed `useGetTaxReturn` doesn't
+  // surface the new C4 columns.
+  const returnRow = useQuery<{
+    id?: number;
+    originalSnapshot?: unknown;
+    amendmentLockedAt?: string | null;
+    amendmentExplanation?: string | null;
+  }>({
+    queryKey: ["tax-return-row-c4", clientId, taxYear],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${clientId}/tax-return?taxYear=${taxYear}`);
+      if (!res.ok) throw new Error("tax-return fetch failed");
+      return res.json();
+    },
+    retry: false,
+  });
+
+  const hasAmendment =
+    returnRow.data?.originalSnapshot != null && returnRow.data.originalSnapshot !== undefined;
+
+  const formQuery = useQuery<Form1040xResult>({
+    queryKey: ["form-1040x", clientId, taxYear, returnRow.data?.id],
+    enabled: hasAmendment,
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${clientId}/tax-return/form-1040x?taxYear=${taxYear}`);
+      if (!res.ok) throw new Error("form-1040x fetch failed");
+      return res.json();
+    },
+    retry: false,
+  });
+
+  const [explanationDraft, setExplanationDraft] = useState("");
+  const [explanationInit, setExplanationInit] = useState(false);
+
+  // Initialize explanation textarea from server data when query first loads
+  useEffect(() => {
+    if (formQuery.data && !explanationInit) {
+      setExplanationDraft(formQuery.data.explanation ?? "");
+      setExplanationInit(true);
+    }
+  }, [formQuery.data, explanationInit]);
+
+  async function handleLockAsFiled() {
+    if (!confirm("Lock the current return as 'originally filed'? You'll be able to modify inputs and generate Form 1040-X showing the diff. Use 'Clear amendment baseline' to remove later.")) {
+      return;
+    }
+    const res = await fetch(`/api/clients/${clientId}/tax-return/lock-as-filed?taxYear=${taxYear}`, { method: "POST" });
+    if (!res.ok) {
+      toast({ title: "Lock failed", description: await res.text(), variant: "destructive" });
+      return;
+    }
+    toast({ title: "Locked as filed", description: "Modify any inputs, then come back to generate Form 1040-X." });
+    qc.invalidateQueries({ queryKey: ["tax-return-row-c4", clientId, taxYear] });
+  }
+
+  async function handleClearAmendment() {
+    if (!confirm("Clear the amendment baseline? Form 1040-X data will be lost. Use this only after the amendment has been filed with the IRS.")) {
+      return;
+    }
+    const res = await fetch(`/api/clients/${clientId}/tax-return/clear-amendment?taxYear=${taxYear}`, { method: "POST" });
+    if (!res.ok) {
+      toast({ title: "Clear failed", description: await res.text(), variant: "destructive" });
+      return;
+    }
+    toast({ title: "Amendment baseline cleared" });
+    setExplanationDraft("");
+    setExplanationInit(false);
+    qc.invalidateQueries({ queryKey: ["tax-return-row-c4", clientId, taxYear] });
+  }
+
+  async function saveExplanation() {
+    const res = await fetch(`/api/clients/${clientId}/tax-return/amendment-explanation?taxYear=${taxYear}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ explanation: explanationDraft }),
+    });
+    if (!res.ok) {
+      toast({ title: "Save failed", description: await res.text(), variant: "destructive" });
+    }
+  }
+
+  function handleDownloadPdf() {
+    const link = document.createElement("a");
+    link.href = `/api/clients/${clientId}/tax-return/form-1040x/pdf?taxYear=${taxYear}`;
+    link.download = "";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  if (returnRow.isLoading) {
+    return (
+      <Card className="print:hidden">
+        <CardContent className="py-6"><Skeleton className="h-20" /></CardContent>
+      </Card>
+    );
+  }
+
+  if (!hasAmendment) {
+    return (
+      <Card className="print:hidden">
+        <CardHeader>
+          <CardTitle className="text-base">Form 1040-X — Amended Return</CardTitle>
+          <p className="text-xs text-muted-foreground mt-1">
+            Use this when you need to amend a previously-filed return. Click <strong>Lock as filed</strong> to snapshot the current values, then modify any inputs (W-2s, 1099s, adjustments) and recompute — Form 1040-X will show the diff.
+          </p>
+        </CardHeader>
+        <CardContent>
+          <Button onClick={handleLockAsFiled} variant="outline">
+            Lock current return as &quot;originally filed&quot;
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const form = formQuery.data;
+  return (
+    <Card className="print:hidden border-amber-300">
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-base">Form 1040-X — Amendment in progress</CardTitle>
+          <Badge variant="outline" className="text-amber-700 border-amber-300">Amending</Badge>
+        </div>
+        <p className="text-xs text-muted-foreground mt-1">
+          Original return snapshot captured {returnRow.data?.amendmentLockedAt ? new Date(returnRow.data.amendmentLockedAt).toLocaleString("en-US") : "—"}. The Tax Calculator above now shows AMENDED values; the diff column (b) below is calculated against the snapshot.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {formQuery.error ? (
+          <p className="text-xs text-red-600">
+            Form 1040-X load failed: {String((formQuery.error as Error).message)}
+          </p>
+        ) : null}
+
+        {form ? (
+          <>
+            <div className="rounded-md border bg-amber-50 border-amber-200 p-4">
+              <p className="text-sm font-semibold text-amber-900 mb-2">
+                {form.netFederalRefundChange >= 0 ? "Additional refund due" : "Additional tax owed"}: {fmtAmendCol(Math.abs(form.netFederalRefundChange))}
+              </p>
+              {form.netStateRefundChange !== 0 ? (
+                <p className="text-xs text-amber-700">
+                  State change: {fmtAmendCol(form.netStateRefundChange)} ({form.netStateRefundChange >= 0 ? "refund" : "owed"})
+                </p>
+              ) : (
+                <p className="text-xs text-amber-700">No state-level change.</p>
+              )}
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left py-2 pr-2 font-semibold w-12">Line</th>
+                    <th className="text-left py-2 pr-2 font-semibold">Description</th>
+                    <th className="text-right py-2 pr-2 font-semibold w-24">(a) Original</th>
+                    <th className="text-right py-2 pr-2 font-semibold w-24">(b) Change</th>
+                    <th className="text-right py-2 pr-2 font-semibold w-24">(c) Corrected</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {form.lines.map((l) => {
+                    const isHeadline = l.lineRef === "10" || l.lineRef === "16" || l.lineRef === "20";
+                    return (
+                      <tr key={l.lineRef} className={isHeadline ? "border-t bg-slate-50 font-semibold" : "border-b border-slate-100"}>
+                        <td className="py-1.5 pr-2 text-slate-500">{l.lineRef}</td>
+                        <td className="py-1.5 pr-2">{l.label}</td>
+                        <td className="py-1.5 pr-2 font-mono text-right">{fmtAmendCol(l.original)}</td>
+                        <td className={`py-1.5 pr-2 font-mono text-right ${l.netChange > 0 ? "text-red-700" : l.netChange < 0 ? "text-emerald-700" : ""}`}>
+                          {fmtAmendCol(l.netChange)}
+                        </td>
+                        <td className="py-1.5 pr-2 font-mono text-right">{fmtAmendCol(l.amended)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div>
+              <Label htmlFor="form1040x-explanation">Part III — Explanation of changes (required by IRS)</Label>
+              <Textarea
+                id="form1040x-explanation"
+                value={explanationDraft}
+                onChange={(e) => setExplanationDraft(e.target.value)}
+                onBlur={saveExplanation}
+                placeholder="e.g., 'Corrected 1099-DIV from ACME Corp received after original filing. Increased qualified dividends by $X. No other changes.'"
+                rows={4}
+                maxLength={5000}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Autosaves on blur. Max 5000 characters.
+              </p>
+            </div>
+
+            <div className="flex gap-2 flex-wrap">
+              <Button onClick={handleDownloadPdf} disabled={!form}>
+                Download Form 1040-X (PDF)
+              </Button>
+              <Button onClick={handleClearAmendment} variant="outline">
+                Clear amendment baseline
+              </Button>
+            </div>
+          </>
+        ) : (
+          <Skeleton className="h-40" />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── C8 — Form 4868 (Extension) ───────────────────────────────────────────
 // Lives under the Tax Calculator tab. Live preview of Lines 4-7 via the
 // JSON endpoint; PDF download via the sibling /pdf endpoint.
@@ -1177,6 +1422,7 @@ function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: nu
           </div>
 
           <Form4868Card clientId={clientId} taxYear={taxYear} />
+          <Form1040xCard clientId={clientId} taxYear={taxYear} />
         </div>
       ) : (
         <Card>

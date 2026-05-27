@@ -13,6 +13,12 @@ import { buildTaxReturnPdf } from "../lib/pdfExport";
 import { buildIrsForm1040Pdf } from "../lib/irsForm1040Pdf";
 import { calculateForm4868, buildForm4868Pdf, type Form4868Input } from "../lib/form4868";
 import {
+  captureFiledSnapshot,
+  computeAmendmentDiff,
+  buildForm1040xPdf,
+  type FiledSnapshot,
+} from "../lib/form1040x";
+import {
   buildTaxReturnCsvExport,
   buildTaxReturnJsonExport,
   buildTaxReturnSummaryText,
@@ -235,6 +241,178 @@ router.get("/clients/:clientId/tax-return/form-4868/pdf", async (req, res): Prom
   } catch (err) {
     logger.error({ err }, "Failed to build Form 4868 PDF");
     res.status(500).json({ error: "Failed to build Form 4868 PDF" });
+  }
+});
+
+// ── C4 — Form 1040-X (Amended return) ───────────────────────────────────
+// POST /lock-as-filed → snapshot current row → originalSnapshot column.
+// POST /clear-amendment → reset snapshot, explanation, lockedAt.
+// PUT  /amendment-explanation → update Part III text.
+// GET  /form-1040x → JSON diff for live UI.
+// GET  /form-1040x/pdf → substitute PDF.
+async function loadCurrentTaxReturnRow(clientId: number, taxYear?: number) {
+  const conditions = taxYear != null
+    ? and(eq(taxReturnsTable.clientId, clientId), eq(taxReturnsTable.taxYear, taxYear))
+    : eq(taxReturnsTable.clientId, clientId);
+  const rows = await db
+    .select()
+    .from(taxReturnsTable)
+    .where(conditions)
+    .orderBy(desc(taxReturnsTable.taxYear));
+  return rows[0] ?? null;
+}
+
+function parseTaxYearQuery(req: import("express").Request): number | undefined {
+  const yearRaw = req.query.taxYear;
+  return typeof yearRaw === "string" && Number.isFinite(Number(yearRaw)) ? Number(yearRaw) : undefined;
+}
+
+router.post("/clients/:clientId/tax-return/lock-as-filed", async (req, res): Promise<void> => {
+  const params = GetTaxReturnParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const taxYear = parseTaxYearQuery(req);
+  const row = await loadCurrentTaxReturnRow(params.data.clientId, taxYear);
+  if (!row) {
+    res.status(404).json({ error: "No computed tax return found to snapshot" });
+    return;
+  }
+  const snapshot = captureFiledSnapshot(row);
+  const lockedAt = new Date();
+  await db
+    .update(taxReturnsTable)
+    .set({
+      originalSnapshot: snapshot,
+      amendmentLockedAt: lockedAt,
+      // Preserve existing explanation if set (could be a re-lock); default to "" for new locks.
+      amendmentExplanation: row.amendmentExplanation ?? "",
+    })
+    .where(eq(taxReturnsTable.id, row.id));
+  res.json({ ok: true, snapshot, lockedAt: lockedAt.toISOString() });
+});
+
+router.post("/clients/:clientId/tax-return/clear-amendment", async (req, res): Promise<void> => {
+  const params = GetTaxReturnParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const taxYear = parseTaxYearQuery(req);
+  const row = await loadCurrentTaxReturnRow(params.data.clientId, taxYear);
+  if (!row) {
+    res.status(404).json({ error: "No computed tax return found" });
+    return;
+  }
+  await db
+    .update(taxReturnsTable)
+    .set({
+      originalSnapshot: null,
+      amendmentExplanation: null,
+      amendmentLockedAt: null,
+    })
+    .where(eq(taxReturnsTable.id, row.id));
+  res.json({ ok: true });
+});
+
+router.put("/clients/:clientId/tax-return/amendment-explanation", async (req, res): Promise<void> => {
+  const params = GetTaxReturnParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const taxYear = parseTaxYearQuery(req);
+  const explanation = typeof req.body?.explanation === "string" ? req.body.explanation : "";
+  if (explanation.length > 5000) {
+    res.status(400).json({ error: "explanation too long (max 5000 chars)" });
+    return;
+  }
+  const row = await loadCurrentTaxReturnRow(params.data.clientId, taxYear);
+  if (!row) {
+    res.status(404).json({ error: "No computed tax return found" });
+    return;
+  }
+  if (row.originalSnapshot == null) {
+    res.status(400).json({ error: "Lock as filed before setting explanation" });
+    return;
+  }
+  await db
+    .update(taxReturnsTable)
+    .set({ amendmentExplanation: explanation })
+    .where(eq(taxReturnsTable.id, row.id));
+  res.json({ ok: true });
+});
+
+router.get("/clients/:clientId/tax-return/form-1040x", async (req, res): Promise<void> => {
+  const params = GetTaxReturnParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const taxYear = parseTaxYearQuery(req);
+  const row = await loadCurrentTaxReturnRow(params.data.clientId, taxYear);
+  if (!row) {
+    res.status(404).json({ error: "No computed tax return found" });
+    return;
+  }
+  if (row.originalSnapshot == null) {
+    res.status(409).json({
+      error: "No amendment in progress",
+      code: "NO_AMENDMENT_BASELINE",
+      hint: "POST /tax-return/lock-as-filed first.",
+    });
+    return;
+  }
+  const snapshot = row.originalSnapshot as unknown as FiledSnapshot;
+  const form = computeAmendmentDiff({
+    current: row,
+    snapshot,
+    explanation: row.amendmentExplanation ?? "",
+    lockedAt: row.amendmentLockedAt?.toISOString() ?? null,
+  });
+  res.json(form);
+});
+
+router.get("/clients/:clientId/tax-return/form-1040x/pdf", async (req, res): Promise<void> => {
+  const params = GetTaxReturnParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const taxYear = parseTaxYearQuery(req);
+  const [client] = await db.select().from(clientsTable).where(eq(clientsTable.id, params.data.clientId));
+  if (!client) {
+    res.status(404).json({ error: "Client not found" });
+    return;
+  }
+  const row = await loadCurrentTaxReturnRow(params.data.clientId, taxYear);
+  if (!row) {
+    res.status(404).json({ error: "No computed tax return found" });
+    return;
+  }
+  if (row.originalSnapshot == null) {
+    res.status(409).json({ error: "No amendment baseline; POST /lock-as-filed first" });
+    return;
+  }
+  try {
+    const snapshot = row.originalSnapshot as unknown as FiledSnapshot;
+    const form = computeAmendmentDiff({
+      current: row,
+      snapshot,
+      explanation: row.amendmentExplanation ?? "",
+      lockedAt: row.amendmentLockedAt?.toISOString() ?? null,
+    });
+    const pdf = await buildForm1040xPdf({ client, ret: row, form });
+    const fileName = `form-1040x-${client.firstName}-${client.lastName}-${row.taxYear}.pdf`;
+    setSecureDownloadHeaders(res, {
+      fileName, contentType: "application/pdf", disposition: "attachment",
+      length: pdf.length, fallbackExt: ".pdf",
+    });
+    res.send(pdf);
+  } catch (err) {
+    logger.error({ err }, "Failed to build Form 1040-X PDF");
+    res.status(500).json({ error: "Failed to build Form 1040-X PDF" });
   }
 });
 

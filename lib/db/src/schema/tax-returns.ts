@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, numeric, timestamp, unique, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, numeric, timestamp, unique, index, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { clientsTable } from "./clients";
@@ -144,6 +144,25 @@ export const taxReturnsTable = pgTable(
     daysFormerStateResident: integer("days_former_state_resident").notNull().default(0),
     /** E12 — Days resident in currentState (changeDate to Dec 31). 0 when full-year. */
     daysCurrentStateResident: integer("days_current_state_resident").notNull().default(0),
+    /**
+     * C4 — Form 1040-X amended-return support.
+     *
+     * Snapshot of the computed-return values at the moment the CPA
+     * marked the original as "filed" (via /lock-as-filed). When
+     * non-null, the tax_returns row is treated as the AMENDED state
+     * (col c of Form 1040-X); this column is col a; the difference
+     * is col b. When NULL, no amendment is in progress.
+     *
+     * Stored as a JSONB snapshot of the relevant computed fields so
+     * future schema changes to tax_returns don't invalidate frozen
+     * "originally filed" values. Shape is documented in
+     * `lib/form1040x.ts` (FiledSnapshot type).
+     */
+    originalSnapshot: jsonb("original_snapshot"),
+    /** C4 — Form 1040-X Part III explanation. */
+    amendmentExplanation: text("amendment_explanation"),
+    /** C4 — Timestamp the original snapshot was captured. Null when no amendment in progress. */
+    amendmentLockedAt: timestamp("amendment_locked_at", { withTimezone: true }),
     notes: text("notes"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
