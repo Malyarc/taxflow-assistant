@@ -64,14 +64,18 @@ session's "deferred" list. This session shipped:
 - **H1 catalog v1.9 — 5 more new strategies**: G1.52 Estimated Tax
   Safe Harbor §6654, G1.53 Kiddie Tax §1(g) min, G1.54 §183 hobby
   loss, G1.55 Custodial Roth IRA, G1.56 specific-share ID.
-- **H1 catalog v1.10 — 5 more new strategies** (57 total — honest count
-  now 47 of ~90 in canonical universe, ~35 remaining): G1.57 NQDC
-  §409A deferred comp (heuristic, tech execs $400k+), G1.58 State
-  Residency Change (heuristic, high-tax state + AGI > $500k), G1.59
-  Coverdell ESA §530 (heuristic, family education), G1.60 §41(h) R&D
-  Payroll-Tax Election (heuristic, small biz < $5M < 5 yrs), G1.61
-  §221 Student Loan Interest Deduction (H2-wired, $2,500 above-the-line
-  + phase-out gate).
+- **H1 catalog v1.10 — 5 more new strategies**: G1.57 NQDC §409A,
+  G1.58 State Residency Change, G1.59 Coverdell ESA §530, G1.60
+  §41(h) R&D Payroll-Tax, G1.61 §221 Student Loan Interest (H2-wired).
+- **H1 catalog v1.11 — 5 more new strategies** (62 total — honest
+  count now 52 of ~90 in canonical universe, ~30 remaining): G1.62
+  §263A Inventory Method Choice (heuristic, retailers/wholesalers
+  TCJA $30M cash-method), G1.63 Lot Rotation withdrawal sequence
+  (heuristic, retiree with diversified accounts), G1.64 §168(k) Bonus
+  Depreciation Election OUT (heuristic, low-income year bracket
+  arbitrage), G1.65 Adoption Credit §23 (heuristic, $16,810 cap
+  per child), G1.66 Rollover-IRA → 401(k) §408(d)(2) fix (heuristic,
+  G1.26 backdoor Roth pro-rata trap mitigation).
 - **Scenarios file extended (+ S9)**: HNW family with kids + side SE
   + brokerage activity (MFJ CA). Now 9 archetypes / 60 assertions.
 - **Scenarios file extended (S7 + S8)**: FIRE-movement client age 55
