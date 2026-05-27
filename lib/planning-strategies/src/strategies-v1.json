@@ -1,5 +1,5 @@
 {
-  "version": "v1.6.0",
+  "version": "v1.7.0",
   "reviewedAt": "2026-05-27",
   "strategies": [
     {
@@ -360,6 +360,120 @@
         "Trust attorney + actuarial valuation (complex — 6-12 month setup)"
       ],
       "action": "Engage a trust attorney to draft a CRT. Transfer the appreciated asset; CRT sells tax-free; client receives annuity/unitrust income stream + immediate charitable deduction for the present value of the remainder interest. Heuristic savings estimate available only after the §7520 actuarial calculation.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.46",
+      "name": "Spousal IRA — non-working spouse contribution §219(c)",
+      "category": "retirement",
+      "ircSection": "IRC §219(c)",
+      "irsPub": "Pub 590-A; Notice 2023-75 (TY2024 cap)",
+      "trigger": "Filing status MFJ AND total earned income (W-2 + net SE) > $7,000 AND no existing spouse_ira_contribution adjustment. Heuristic: applies when CPA confirms one spouse has $0 earned income (engine cannot verify per-spouse split).",
+      "formula": "Non-working spouse contributes up to $7,000 ($8,000 50+) to traditional IRA using working spouse's earned income. Deductible above-the-line (subject to retirement-plan coverage phase-out per §219(g)). estSavings = $7,000 × (federal + state marginal rate).",
+      "confidence": 0.65,
+      "cpaEffortHours": 0.5,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Confirm filing status MFJ (single + MFS NOT eligible)",
+        "Confirm non-working spouse's earned income for the year ($0 to claim full spousal benefit)",
+        "Working spouse's earned income must equal or exceed total IRA contributions (working + spousal)",
+        "If working spouse is covered by a retirement plan, deduction phases out for MFJ at $230k-$240k (TY2024) for the SPOUSAL contribution (different from active-participant phase-out at $123k-$143k)",
+        "Spousal Roth IRA option also available (subject to direct-Roth phase-out)"
+      ],
+      "action": "If client is MFJ and one spouse has limited / no earned income, contribute up to $7,000 ($8k 50+) to a spousal Traditional or Roth IRA. Traditional saves ~{{estSavings}} on current return; Roth gives tax-free future growth.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.47",
+      "name": "§453 Installment Sale — defer large gain over years",
+      "category": "investment",
+      "ircSection": "IRC §453",
+      "irsPub": "Pub 537; Form 6252",
+      "trigger": "H5 real_estate OR primary_residence asset with embedded gain (balance − costBasis) > $250,000 AND AGI > $250,000 (good candidate for bracket-smoothing) AND no existing installment_sale election.",
+      "formula": "Recognize gain pro-rata as payments received: gross_profit / contract_price × payment_each_year. Smoothes a large one-year gain across multiple years → lower blended marginal rate + potential NIIT avoidance. estSavings = gain × 5% timing-benefit factor (conservative; assumes ~20% NIIT/marginal differential applied to ~25% of gain spread across 5 yrs).",
+      "confidence": 0.55,
+      "cpaEffortHours": 4.0,
+      "recurring": false,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Confirm sale of property type qualifies (real property + most personal property OK; PUBLICLY-TRADED SECURITIES + DEALER DISPOSITIONS do NOT qualify per §453(b)(2))",
+        "Confirm at least one payment received AFTER close of taxable year (Form 6252 required)",
+        "Estimate gross profit, contract price, gross profit ratio for each tax year",
+        "Depreciation recapture (§1250) is RECOGNIZED IN YEAR OF SALE — only excess flows through installment method",
+        "If interest is imputed (§483 / §1274), interest portion is ordinary income separately",
+        "Election to OPT OUT exists — file by due date of return if buyer-credit concern"
+      ],
+      "action": "Structure the sale as an installment with payments over {{plannedYears}} years. Recognize ~{{annualGain}}/year instead of {{totalGain}} in a single year. Heuristic timing benefit ~{{estSavings}}.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.48",
+      "name": "§83(b) election timing — pre-vest income recognition",
+      "category": "timing",
+      "ircSection": "IRC §83(b)",
+      "irsPub": "Pub 525; Form 8949 (eventual sale)",
+      "trigger": "H5 restricted_stock_pre_83b asset (NEW asset type — implies client received restricted stock + did NOT make §83(b) election). Engine flags the strategy for FUTURE grants (current grant past the 30-day deadline).",
+      "formula": "WITHOUT §83(b): include FMV at each vest as ordinary W-2 income. WITH §83(b) filed within 30 days of grant: include FMV at GRANT (typically much lower) as ordinary income now; subsequent appreciation = capital gain. estSavings = balance × 30% assumed appreciation × (37% ordinary − 20% LTCG) = balance × 5.1%.",
+      "confidence": 0.55,
+      "cpaEffortHours": 2.0,
+      "recurring": false,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Strict 30-DAY DEADLINE from GRANT date (NOT vest date) — see Reg. §1.83-2(a)",
+        "Election form filed with IRS service center (NO electronic filing) + copy to employer + attach to next return",
+        "Election is IRREVOCABLE — risk: if equity becomes worthless before vest, the tax paid on FMV-at-grant is LOST (no refund)",
+        "Best fit: early-stage startup founders (FMV at grant = very low or $0) with strong upside expectation",
+        "Worst fit: late-stage pre-IPO grants where FMV is already high — pay big tax now without certainty of future gain"
+      ],
+      "action": "For NEW restricted stock grants (NOT current — past the deadline), evaluate §83(b) within 30 days. Likely benefit on grants with low FMV-at-grant + high upside ~{{estSavings}}. CAUTION: irrevocable + risk of paying tax on worthless equity.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.49",
+      "name": "Family Employment of Children §3121(b)(3)(A) (FICA-exempt wages)",
+      "category": "business",
+      "ircSection": "IRC §3121(b)(3)(A); §3306(c)(5); §162",
+      "irsPub": "Pub 15; Pub 334; Rev. Rul. 73-393",
+      "trigger": "Has self-employment income > $50,000 (sole prop / single-member LLC proxy) AND dependentsUnder17 > 0 (proxy for kids who could work) AND no existing family_employment marker.",
+      "formula": "Sole prop (or husband-wife partnership) can pay child under 18 wages that are EXEMPT from FICA + FUTA (until 21). Wages deductible to business; child's standard deduction shields $14,600 (TY2024) from federal income tax. estSavings = $14,600 × (parent marginal + 7.65% SE FICA × 2 employer+employee) per child × 1 child assumed.",
+      "confidence": 0.70,
+      "cpaEffortHours": 3.0,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Business MUST be SOLE PROP or husband-wife PARTNERSHIP — S-CORP or C-CORP wages to children ARE subject to FICA",
+        "Child must actually PERFORM real work + receive reasonable wages (no sham employment)",
+        "Document: timesheets, job description, W-2 issued, payroll records",
+        "Child under 18: FICA + Medicare exempt; under 21: FUTA exempt (§3306(c)(5))",
+        "Child's standard deduction $14,600 TY2024 shields wages from federal income tax",
+        "Child can also fund Roth IRA up to earned income (powerful long-term)",
+        "State income tax + state SUTA may still apply — check state law"
+      ],
+      "action": "Hire eligible child(ren) under 18 to perform real work in sole-prop business. Pay up to $14,600/child = FICA-exempt + parent deducts at marginal rate. Estimated savings ~{{estSavings}}. Document carefully.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.51",
+      "name": "AOC vs LLC choice §25A (use AOC for undergrads when available)",
+      "category": "credits",
+      "ircSection": "IRC §25A",
+      "irsPub": "Form 8863; Pub 970 Chapter 3",
+      "trigger": "Has qualified_education_expenses_llc > 0 AND no qualified_education_expenses_aoc AND AGI within phase-out ($90k single / $180k MFJ ceiling). Suggests client may be using LLC for an undergrad student who's AOC-eligible.",
+      "formula": "AOC: $2,500 max per student (100% of first $2k + 25% of next $2k); 4 yrs post-secondary; 40% refundable. LLC: $2,000 max per RETURN (20% of first $10k); unlimited yrs; non-refundable. SWITCHING from LLC to AOC for an undergrad student picks up $500 extra credit (assuming same $4k qualified expenses). estSavings = $500.",
+      "confidence": 0.60,
+      "cpaEffortHours": 0.5,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Student must be enrolled at least half-time, working toward degree, in first 4 years of post-secondary education (AOC requirements)",
+        "Has not claimed AOC for this student in 4 prior tax years",
+        "Has not been convicted of a felony drug offense",
+        "Form 1098-T from eligible educational institution",
+        "Phase-out: AOC $80k-$90k single / $160k-$180k MFJ (TY2024); LLC has identical phase-out",
+        "Each student can only get ONE of AOC or LLC per year (NOT both)"
+      ],
+      "action": "If client's LLC-claimed student is an undergrad (first 4 yrs), switch to American Opportunity Credit on Form 8863. Saves ~{{estSavings}} ($2,500 AOC vs $2,000 LLC ceiling) per eligible student per year for up to 4 yrs.",
       "formulaRev": 1
     },
     {

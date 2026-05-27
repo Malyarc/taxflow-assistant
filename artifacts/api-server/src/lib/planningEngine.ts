@@ -3406,6 +3406,427 @@ function detectSection1244(args: {
   };
 }
 
+// ── G1.46 — Spousal IRA §219(c) ──────────────────────────────────────────
+
+const G1_46_IRA_CAP_BASE = 7_000;
+const G1_46_IRA_CAP_CATCHUP = 8_000;
+const G1_46_MIN_EARNED_INCOME = 7_000;
+
+function detectSpousalIra(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+  baselineInputs?: TaxReturnInputs;
+}): OpportunityHit | null {
+  const { client, computed, adjustments, baselineInputs } = args;
+  if (client.filingStatus !== "married_filing_jointly" &&
+      client.filingStatus !== "qualifying_widow") return null;
+
+  // Heuristic: total earnings (W-2 + net SE) > $7k. Engine can't verify
+  // per-spouse split — CPA confirms one spouse has $0 earned income.
+  const totalEarnings = computed.totalIncome - (computed.form1099Summary?.retirementIncome ?? 0)
+                       - (computed.form1099Summary?.unemploymentCompensation ?? 0);
+  if (totalEarnings < G1_46_MIN_EARNED_INCOME) return null;
+
+  // Suppress if any spouse_ira_contribution marker already on return.
+  // Use existing ira_contribution_traditional as proxy — if client already
+  // contributed $7k+, may already be doing this.
+  const existingIra = sumAdjustment(adjustments, "ira_contribution_traditional");
+  if (existingIra >= G1_46_IRA_CAP_BASE * 2) return null; // both spouses already maxed
+
+  const age = client.taxpayerAge ?? 0;
+  const contribution = age >= 50 ? G1_46_IRA_CAP_CATCHUP : G1_46_IRA_CAP_BASE;
+
+  const fedRate = federalMarginalRate(computed);
+  const stateRate = stateMarginalRate(computed);
+  const estSavings = Math.round(contribution * (fedRate + stateRate));
+  if (estSavings <= 0) return null;
+
+  // H2 mutation: add ira_contribution_traditional = $7k. Engine treats
+  // as above-the-line deduction (subject to §219(g) coverage phase-out
+  // which engine doesn't fully model — caveat in assumptions).
+  const whatIf = runDetectorWhatIf({
+    baselineInputs,
+    scenarioId: "G1.46-spousal-ira",
+    label: `Spousal IRA $${contribution.toLocaleString("en-US")}`,
+    mutations: [
+      { kind: "add_adjustment", adjustmentType: "ira_contribution_traditional", amount: contribution },
+    ],
+    semantics: "savings",
+    varyAmount: true,
+  });
+
+  const strategy = strategyById("G1.46");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = { estSavings };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `MFJ client with ${fmt(Math.round(totalEarnings))} total earned income. If one spouse has ` +
+      `$0 (or limited) earned income, the working spouse's earnings support a ${fmt(contribution)} ` +
+      `Spousal IRA contribution. Above-the-line deductible — saves ~${fmt(estSavings)} at the ` +
+      `combined ${((fedRate + stateRate) * 100).toFixed(1)}% marginal rate.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      filingStatus: client.filingStatus,
+      taxpayerAge: age,
+      totalEarnings: Math.round(totalEarnings),
+      existingIraContribution: Math.round(existingIra),
+      contribution,
+      federalMarginalRate: fedRate,
+      stateMarginalRate: stateRate,
+    },
+    assumptions: [
+      `§219(c) allows non-working spouse on MFJ return to contribute up to the IRA cap based on working spouse's earned income.`,
+      `TY2024 cap: $7,000 base / $8,000 age 50+ (Notice 2023-75).`,
+      `Heuristic — engine CANNOT verify per-spouse earned income split. CPA confirms.`,
+      `§219(g) phase-out applies when working spouse is covered by retirement plan at work: MFJ $230k-$240k for the SPOUSAL contribution (different from active-participant phase-out $123k-$143k). Engine doesn't model this — CPA verifies.`,
+      `Spousal Roth IRA option available — subject to direct-Roth phase-out (G1.26 covers backdoor when over phase-out).`,
+      `H2 mutation models as above-the-line "deduction" — actual engine treatment of ira_contribution_traditional already handles this.`,
+    ],
+    whatIf,
+  };
+}
+
+// ── G1.47 — §453 Installment Sale ────────────────────────────────────────
+
+const G1_47_MIN_EMBEDDED_GAIN = 250_000;
+const G1_47_MIN_AGI = 250_000;
+const G1_47_TIMING_BENEFIT_FACTOR = 0.05;
+const G1_47_DEFAULT_INSTALLMENT_YEARS = 5;
+
+function detectInstallmentSale(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+  assetBalances?: AssetBalanceFact[];
+}): OpportunityHit | null {
+  const { computed, adjustments, assetBalances } = args;
+  if (computed.adjustedGrossIncome < G1_47_MIN_AGI) return null;
+  if (!assetBalances || assetBalances.length === 0) return null;
+  // Look for real_estate or primary_residence with embedded gain > threshold.
+  const candidate = assetBalances.find((a) => {
+    if (a.assetType !== "real_estate" && a.assetType !== "primary_residence") return false;
+    const bal = toNum(a.balance);
+    const basis = toNum(a.costBasis);
+    return bal > 0 && (bal - basis) > G1_47_MIN_EMBEDDED_GAIN;
+  });
+  if (!candidate) return null;
+  void adjustments;
+
+  const fmv = toNum(candidate.balance);
+  const basis = toNum(candidate.costBasis);
+  const embeddedGain = fmv - basis;
+  const estSavings = Math.round(embeddedGain * G1_47_TIMING_BENEFIT_FACTOR);
+  if (estSavings <= 0) return null;
+
+  const annualGain = Math.round(embeddedGain / G1_47_DEFAULT_INSTALLMENT_YEARS);
+
+  const strategy = strategyById("G1.47");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    plannedYears: G1_47_DEFAULT_INSTALLMENT_YEARS,
+    annualGain,
+    totalGain: Math.round(embeddedGain),
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `H5 property (${candidate.accountName}) has FMV ${fmt(fmv)} vs basis ${fmt(basis)} = ` +
+      `${fmt(Math.round(embeddedGain))} embedded gain. AGI ${fmt(Math.round(computed.adjustedGrossIncome))} ` +
+      `is high enough that single-year recognition would hit peak brackets. Installment sale spreads ` +
+      `the gain over ${G1_47_DEFAULT_INSTALLMENT_YEARS} years for blended-rate smoothing.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      assetType: candidate.assetType,
+      assetName: candidate.accountName,
+      fmv: Math.round(fmv),
+      costBasis: Math.round(basis),
+      embeddedGain: Math.round(embeddedGain),
+      agi: Math.round(computed.adjustedGrossIncome),
+      installmentYears: G1_47_DEFAULT_INSTALLMENT_YEARS,
+      timingBenefitFactor: G1_47_TIMING_BENEFIT_FACTOR,
+      annualGain,
+    },
+    assumptions: [
+      `Heuristic timing-benefit 5% — conservative estimate. Actual savings depend on the bracket arbitrage achievable across the installment years (could be 2-15% of gain).`,
+      `5-year planning horizon assumed. Real installment can be 2-30+ years per contract.`,
+      `Publicly traded securities + dealer dispositions do NOT qualify per §453(b)(2).`,
+      `Depreciation recapture (§1250) RECOGNIZED IN YEAR OF SALE — only excess flows through installment method.`,
+      `Imputed interest (§483 / §1274) on long-term notes — interest portion separately ordinary.`,
+      `Election to opt OUT exists — file by due date if all-cash recognition preferred (e.g., low-bracket year, buyer credit concern).`,
+      `H2 verification deferred — multi-year scenario, requires H3 wiring of installment-payment stream which the engine doesn't model.`,
+    ],
+  };
+}
+
+// ── G1.48 — §83(b) election timing (informational) ───────────────────────
+
+const G1_48_ASSUMED_APPRECIATION = 0.30;
+const G1_48_RATE_SPREAD = 0.37 - 0.20;
+
+function detectSection83b(args: {
+  computed: ComputedTaxReturn;
+  assetBalances?: AssetBalanceFact[];
+}): OpportunityHit | null {
+  const { computed, assetBalances } = args;
+  if (!assetBalances || assetBalances.length === 0) return null;
+  const preElection = assetBalances.find((a) => a.assetType === "restricted_stock_pre_83b");
+  if (!preElection) return null;
+  void computed;
+
+  const balance = toNum(preElection.balance);
+  if (balance <= 0) return null;
+  // estSavings = balance × assumed appreciation × rate spread (ordinary - LTCG)
+  const estSavings = Math.round(balance * G1_48_ASSUMED_APPRECIATION * G1_48_RATE_SPREAD);
+  if (estSavings <= 0) return null;
+
+  const strategy = strategyById("G1.48");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = { estSavings };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client holds ${fmt(balance)} of restricted stock where NO §83(b) election was made at grant. ` +
+      `For FUTURE grants (current is past the 30-day deadline), filing §83(b) within 30 days locks in ` +
+      `FMV-at-grant as ordinary income — subsequent appreciation becomes capital gain. Estimated ` +
+      `value of properly electing on future grants ~${fmt(estSavings)}.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      restrictedStockBalance: Math.round(balance),
+      assumedAppreciationPct: G1_48_ASSUMED_APPRECIATION,
+      rateSpread: G1_48_RATE_SPREAD,
+    },
+    assumptions: [
+      `H5 restricted_stock_pre_83b asset type implies client received restricted stock WITHOUT making §83(b) election (past the 30-day deadline).`,
+      `Strategy is FORWARD-LOOKING — applies to NEW grants, not the existing balance.`,
+      `Strict 30-DAY deadline from GRANT (not vest) per Reg. §1.83-2(a).`,
+      `Heuristic: assumes 30% appreciation between grant + vest. Real spread varies wildly (0%-1000%+).`,
+      `Rate spread ${(G1_48_RATE_SPREAD * 100).toFixed(0)}% = peak ordinary 37% − LTCG 20%.`,
+      `Election is IRREVOCABLE — risk of paying tax on FMV-at-grant if equity becomes worthless before vest.`,
+      `Best fit: early-stage startup grants with low FMV-at-grant + strong upside expectation.`,
+      `Worst fit: late-stage pre-IPO grants where FMV is already high — pay big tax now without certainty.`,
+    ],
+  };
+}
+
+// ── G1.49 — Family Employment of Children §3121(b)(3)(A) ─────────────────
+
+const G1_49_MIN_NET_SE = 50_000;
+const G1_49_CHILD_STD_DED_2024 = 14_600;
+const G1_49_SE_FICA_RATE = 0.153; // both employer + employee = 15.3% on SE
+const G1_49_DEFAULT_NUM_CHILDREN = 1;
+
+function detectFamilyEmployment(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+  baselineInputs?: TaxReturnInputs;
+}): OpportunityHit | null {
+  const { client, computed, adjustments, baselineInputs } = args;
+  const netSe = computed.detail.se.netSeEarnings;
+  if (netSe < G1_49_MIN_NET_SE) return null;
+  // Need children under 17 (engine field). dependentsUnder17 is a count.
+  const kidsUnder17 = client.dependentsUnder17 ?? 0;
+  if (kidsUnder17 <= 0) return null;
+  // Suppress if existing family_employment marker. Use generic "deduction"
+  // with a magic amount as a proxy.
+  const existingFamEmp = adjustments.find((a) =>
+    (a.adjustmentType ?? "").toLowerCase().includes("family_employment"),
+  );
+  if (existingFamEmp) return null;
+
+  const numChildren = Math.min(kidsUnder17, G1_49_DEFAULT_NUM_CHILDREN);
+  const wagesPerChild = G1_49_CHILD_STD_DED_2024;
+  const totalWages = wagesPerChild * numChildren;
+
+  const fedRate = federalMarginalRate(computed);
+  const stateRate = stateMarginalRate(computed);
+  // Savings = parent's marginal (income + SE FICA) on the deductible wages,
+  // minus child's federal income tax (0 if at/under std ded).
+  const estSavings = Math.round(totalWages * (fedRate + stateRate + G1_49_SE_FICA_RATE));
+
+  // H2 mutation: add a deduction of $14,600 (wages to child). Engine treats
+  // as Schedule C expense / above-the-line reducing AGI.
+  const whatIf = runDetectorWhatIf({
+    baselineInputs,
+    scenarioId: "G1.49-family-employment",
+    label: `Family wages $${totalWages.toLocaleString("en-US")} to child(ren) under 18`,
+    mutations: [
+      { kind: "add_adjustment", adjustmentType: "deduction", amount: totalWages },
+    ],
+    semantics: "savings",
+    varyAmount: true,
+  });
+
+  const strategy = strategyById("G1.49");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    wagesPerChild,
+    numChildren,
+    totalWages,
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Sole prop with ${fmt(Math.round(netSe))} net SE income + ${kidsUnder17} dependent(s) under 17. ` +
+      `Employing child(ren) under 18 in the business shields wages from FICA per §3121(b)(3)(A) ` +
+      `AND the child's standard deduction (${fmt(G1_49_CHILD_STD_DED_2024)}) shields the wages from ` +
+      `federal income tax. Net savings ~${fmt(estSavings)} per year per child.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      netSeEarnings: Math.round(netSe),
+      dependentsUnder17: kidsUnder17,
+      numChildrenAssumed: numChildren,
+      wagesPerChild,
+      totalWages,
+      federalMarginalRate: fedRate,
+      stateMarginalRate: stateRate,
+      seFicaRate: G1_49_SE_FICA_RATE,
+    },
+    assumptions: [
+      `STRICT requirement: business MUST be sole prop or husband-wife partnership. S-corp / C-corp wages to children ARE FICA-subject.`,
+      `Child must actually perform real work + receive reasonable wages (no sham employment). IRS scrutinizes — document carefully (timesheets, job description, W-2, payroll records).`,
+      `Child under 18: FICA + Medicare exempt (§3121(b)(3)(A)). Under 21: also FUTA exempt (§3306(c)(5)).`,
+      `TY2024 child standard deduction: $14,600 — shields wages from federal income tax up to that amount.`,
+      `Wages above std ded taxed at child's marginal rate (likely 10-12%) — still much lower than parent's marginal.`,
+      `BONUS: child can fund Roth IRA up to earned income — powerful long-term tax-free growth.`,
+      `State income tax + state SUTA may still apply — varies by state.`,
+      `Engine heuristic: 1 child × $14,600 wages. Multiple children scale linearly up to the dependentsUnder17 count.`,
+      `H2 mutation models wages as a "deduction" — reduces parent's AGI by $14,600 (above-the-line equivalent).`,
+    ],
+    whatIf,
+  };
+}
+
+// ── G1.51 — AOC vs LLC choice §25A ───────────────────────────────────────
+
+const G1_51_AOC_MAX = 2_500;
+const G1_51_LLC_MAX = 2_000;
+const G1_51_AGI_PHASE_OUT_TOP: Record<string, number> = {
+  single: 90_000,
+  head_of_household: 90_000,
+  married_filing_jointly: 180_000,
+  qualifying_widow: 180_000,
+  married_filing_separately: 0, // MFS cannot claim
+};
+
+function detectAocVsLlc(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+  baselineInputs?: TaxReturnInputs;
+}): OpportunityHit | null {
+  const { client, computed, adjustments, baselineInputs } = args;
+  if (client.filingStatus === "married_filing_separately") return null;
+  const phaseOut = G1_51_AGI_PHASE_OUT_TOP[client.filingStatus] ?? G1_51_AGI_PHASE_OUT_TOP.single;
+  if (computed.adjustedGrossIncome > phaseOut) return null;
+
+  const llcExpenses = sumAdjustment(adjustments, "qualified_education_expenses_llc");
+  const aocExpenses = sumAdjustment(adjustments, "qualified_education_expenses_aoc");
+  if (llcExpenses <= 0) return null;
+  if (aocExpenses > 0) return null; // already claiming AOC
+
+  // Switching from LLC to AOC picks up the extra $500.
+  const extraCredit = G1_51_AOC_MAX - G1_51_LLC_MAX;
+  const estSavings = extraCredit;
+
+  // H2 mutation: swap LLC expense → AOC expense. Use same expense amount.
+  const swapAmount = Math.min(llcExpenses, 4_000); // AOC counts up to $4k
+  const whatIf = runDetectorWhatIf({
+    baselineInputs,
+    scenarioId: "G1.51-aoc-swap",
+    label: `Switch LLC → AOC ($${swapAmount.toLocaleString("en-US")} expenses)`,
+    mutations: [
+      { kind: "set_adjustment", adjustmentType: "qualified_education_expenses_llc", amount: 0 },
+      { kind: "set_adjustment", adjustmentType: "qualified_education_expenses_aoc", amount: swapAmount },
+    ],
+    semantics: "savings",
+    varyAmount: false,
+  });
+
+  const strategy = strategyById("G1.51");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  void fmt;
+  const vars: Record<string, number | string> = { estSavings };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client is claiming Lifetime Learning Credit (${fmt(Math.round(llcExpenses))} expenses, max ` +
+      `$2,000 credit). If the student is an undergrad in first 4 years of post-secondary AND ` +
+      `enrolled at least half-time, switching to American Opportunity Credit picks up $500 extra ` +
+      `(AOC max $2,500 vs LLC max $2,000).`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      filingStatus: client.filingStatus,
+      agi: Math.round(computed.adjustedGrossIncome),
+      phaseOutTop: phaseOut,
+      llcExpenses: Math.round(llcExpenses),
+      aocExpenses: Math.round(aocExpenses),
+      aocMax: G1_51_AOC_MAX,
+      llcMax: G1_51_LLC_MAX,
+      extraCredit,
+    },
+    assumptions: [
+      `AOC: 100% of first $2k + 25% of next $2k = max $2,500 per STUDENT. 4 yrs post-secondary. 40% refundable.`,
+      `LLC: 20% of first $10k = max $2,000 per RETURN (NOT per student). Unlimited years. Non-refundable.`,
+      `Cannot claim BOTH for same student in same year.`,
+      `AOC requires: enrolled at least half-time, working toward degree/credential, in first 4 years of post-secondary, no felony drug conviction.`,
+      `Phase-out: AOC + LLC have identical phase-out: $80k-$90k single / $160k-$180k MFJ (TY2024).`,
+      `MFS cannot claim either credit.`,
+      `Strategy saves $500/yr for up to 4 yrs per AOC-eligible student = $2,000 lifetime per student.`,
+      `H2 mutation swaps the qualifying expense from LLC to AOC — engine recomputes credit via credit-ordering pipeline.`,
+    ],
+    whatIf,
+  };
+}
+
 // ── Top-level evaluator ────────────────────────────────────────────────────
 
 export interface PlanningInputs {
@@ -3560,6 +3981,18 @@ export function evaluatePlanningOpportunities(args: PlanningInputs): Opportunity
   if (energy25c) hits.push(energy25c);
   const section1244 = detectSection1244({ client, computed, adjustments });
   if (section1244) hits.push(section1244);
+  // Phase H — H1 catalog v1.7: G1.46 spousal IRA / G1.47 §453 installment /
+  // G1.48 §83(b) / G1.49 family employment / G1.51 AOC vs LLC.
+  const spousalIra = detectSpousalIra({ client, computed, adjustments, baselineInputs });
+  if (spousalIra) hits.push(spousalIra);
+  const installmentSale = detectInstallmentSale({ computed, adjustments, assetBalances });
+  if (installmentSale) hits.push(installmentSale);
+  const section83b = detectSection83b({ computed, assetBalances });
+  if (section83b) hits.push(section83b);
+  const familyEmployment = detectFamilyEmployment({ client, computed, adjustments, baselineInputs });
+  if (familyEmployment) hits.push(familyEmployment);
+  const aocVsLlc = detectAocVsLlc({ client, computed, adjustments, baselineInputs });
+  if (aocVsLlc) hits.push(aocVsLlc);
   hits.sort((a, b) => b.estSavings - a.estSavings);
   return hits;
 }

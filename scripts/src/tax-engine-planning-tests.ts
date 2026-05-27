@@ -2597,6 +2597,194 @@ header("G1.40-3 — $10k cap loss CF (below $25k floor): suppressed");
   checkTruthy("G1.40-3", "no fire cap loss < $25k", findHit(hits, "G1.40") == null, true);
 }
 
+section("H1 catalog v1.7 — 5 new detectors (G1.46 / G1.47 / G1.48 / G1.49 / G1.51)");
+
+// ── G1.46 Spousal IRA ──────────────────────────────────────────────────
+// Hand-calc: MFJ FL, age 45, $90k W-2 (one spouse non-working assumed).
+//   totalEarnings = $90,000 (proxy = totalIncome).
+//   Above $7k floor ✓; below $14k existing-iras threshold ✓.
+//   contribution = $7,000 (under 50).
+//   AGI = $90,000. Taxable = $90k - $29,200 = $60,800. 12% bracket.
+//   estSavings = $7,000 × 0.12 + 0 (FL) = $840.
+header("H1v1.7 G1.46+1 — MFJ AGI $90k: estSavings $840 (12% × $7k)");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024, taxpayerAge: 45 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 90000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  const hit = findHit(hits, "G1.46");
+  checkTruthy("G1.46+1", "fires for MFJ", hit != null, true);
+  if (hit) {
+    check("G1.46+1", "contribution = $7,000 (under 50)", Number(hit.inputs.contribution), 7000);
+    check("G1.46+1", "estSavings = $840", hit.estSavings, 840, 10);
+  }
+}
+
+// Negative: single (not eligible)
+header("G1.46-2 — Single: suppressed (MFJ only)");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 45 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 90000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  checkTruthy("G1.46-2", "no fire single", findHit(hits, "G1.46") == null, true);
+}
+
+// ── G1.47 §453 Installment Sale ────────────────────────────────────────
+// Hand-calc: MFJ, AGI $300k, H5 real_estate FMV $800k basis $400k.
+//   embeddedGain = $400k. > $250k threshold ✓.
+//   AGI > $250k threshold ✓.
+//   estSavings = $400k × 0.05 = $20,000.
+header("H1v1.7 G1.47+1 — H5 real_estate $400k embedded gain: estSavings $20,000");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024, taxpayerAge: 50 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 300000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    assetBalances: [
+      { assetType: "real_estate", balance: "800000", costBasis: "400000", accountName: "Rental", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  const hit = findHit(hits, "G1.47");
+  checkTruthy("G1.47+1", "fires for real_estate w/ gain > $250k", hit != null, true);
+  if (hit) {
+    check("G1.47+1", "embeddedGain = $400,000", Number(hit.inputs.embeddedGain), 400000);
+    check("G1.47+1", "estSavings = $20,000 ($400k × 5%)", hit.estSavings, 20000, 50);
+  }
+}
+
+// Negative: AGI too low
+header("G1.47-2 — AGI $100k: suppressed (below $250k floor)");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024, taxpayerAge: 50 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 100000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    assetBalances: [
+      { assetType: "real_estate", balance: "800000", costBasis: "400000", accountName: "x", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  checkTruthy("G1.47-2", "no fire AGI < $250k", findHit(hits, "G1.47") == null, true);
+}
+
+// ── G1.48 §83(b) election (informational) ──────────────────────────────
+// Hand-calc: H5 restricted_stock_pre_83b balance $200k.
+//   estSavings = $200k × 0.30 × (0.37 - 0.20) = $200k × 0.30 × 0.17 = $10,200.
+header("H1v1.7 G1.48+1 — H5 restricted_stock_pre_83b $200k: estSavings $10,200");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "CA", taxYear: 2024, taxpayerAge: 35 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 200000, stateCode: "CA" } as unknown as TaxReturnInputs["w2s"][number]],
+    assetBalances: [
+      { assetType: "restricted_stock_pre_83b", balance: "200000", costBasis: "0", accountName: "Startup RSU", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  const hit = findHit(hits, "G1.48");
+  checkTruthy("G1.48+1", "fires for restricted_stock_pre_83b asset", hit != null, true);
+  if (hit) {
+    check("G1.48+1", "estSavings = $10,200 ($200k × 0.30 × 0.17)", hit.estSavings, 10200, 5);
+  }
+}
+
+// Negative: no restricted stock asset
+header("G1.48-2 — No restricted_stock_pre_83b asset: suppressed");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "CA", taxYear: 2024, taxpayerAge: 35 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 200000, stateCode: "CA" } as unknown as TaxReturnInputs["w2s"][number]],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  checkTruthy("G1.48-2", "no fire without restricted stock asset",
+    findHit(hits, "G1.48") == null, true);
+}
+
+// ── G1.49 Family Employment of Children ────────────────────────────────
+// Hand-calc: single, FL, age 40, $100k 1099-NEC, 1 dependent under 17.
+//   netSE = $100k × 0.9235 = $92,350. > $50k ✓.
+//   dependentsUnder17 = 1. ✓
+//   numChildren = min(1, 1) = 1. wages = $14,600.
+//   AGI after SE adjustments: ~$92,350 - $7k half-SE = $85,350.
+//   Taxable = $85,350 - $14,600 = $70,750. 22% bracket.
+//   estSavings = $14,600 × (0.22 + 0 + 0.153) = $14,600 × 0.373 = $5,446.
+header("H1v1.7 G1.49+1 — Single SE $100k + 1 kid under 17: estSavings ~$5,446");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 40, dependentsUnder17: 1 } as unknown as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "x", nonemployeeCompensation: 100000 } as unknown as TaxReturnInputs["form1099s"][number]],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  const hit = findHit(hits, "G1.49");
+  checkTruthy("G1.49+1", "fires for SE + 1 dependent under 17", hit != null, true);
+  if (hit) {
+    check("G1.49+1", "totalWages = $14,600", Number(hit.inputs.totalWages), 14600);
+    check("G1.49+1", "estSavings ≈ $5,446", hit.estSavings, 5446, 200);
+  }
+}
+
+// Negative: no kids
+header("G1.49-2 — No dependents under 17: suppressed");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 40, dependentsUnder17: 0 } as unknown as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "x", nonemployeeCompensation: 100000 } as unknown as TaxReturnInputs["form1099s"][number]],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  checkTruthy("G1.49-2", "no fire without kids", findHit(hits, "G1.49") == null, true);
+}
+
+// Negative: low SE
+header("G1.49-3 — SE $30k (below $50k floor): suppressed");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 40, dependentsUnder17: 1 } as unknown as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "x", nonemployeeCompensation: 30000 } as unknown as TaxReturnInputs["form1099s"][number]],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  checkTruthy("G1.49-3", "no fire SE < $50k", findHit(hits, "G1.49") == null, true);
+}
+
+// ── G1.51 AOC vs LLC ────────────────────────────────────────────────────
+// Hand-calc: single, AGI $60k, LLC expenses $4k, no AOC.
+//   Not MFS ✓. AGI $60k < $90k single phase-out top ✓.
+//   estSavings = $2,500 - $2,000 = $500.
+header("H1v1.7 G1.51+1 — Single AGI $60k LLC $4k: estSavings $500 (switch to AOC)");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 40 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 60000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [
+      { adjustmentType: "qualified_education_expenses_llc", amount: 4000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  const hit = findHit(hits, "G1.51");
+  checkTruthy("G1.51+1", "fires for LLC + no AOC + AGI under cap", hit != null, true);
+  if (hit) {
+    check("G1.51+1", "estSavings = $500 (AOC $2,500 − LLC $2,000)", hit.estSavings, 500);
+  }
+}
+
+// Negative: AGI over phase-out
+header("G1.51-2 — Single AGI $100k LLC $4k: suppressed (over $90k cap)");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 40 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 100000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [
+      { adjustmentType: "qualified_education_expenses_llc", amount: 4000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  checkTruthy("G1.51-2", "no fire AGI > $90k", findHit(hits, "G1.51") == null, true);
+}
+
+// Negative: already claiming AOC
+header("G1.51-3 — Already claiming AOC: suppressed");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 40 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 60000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [
+      { adjustmentType: "qualified_education_expenses_llc", amount: 4000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+      { adjustmentType: "qualified_education_expenses_aoc", amount: 4000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  checkTruthy("G1.51-3", "no fire when AOC already on return",
+    findHit(hits, "G1.51") == null, true);
+}
+
 // ============================================================================
 // RESULTS
 // ============================================================================
