@@ -25,12 +25,15 @@ import {
   useGetPlanningClientEmail,
   useGetPlanningMissingData,
   useGetPlanningMultiYear,
+  useRunStateComparison,
+  useGetPeerBenchmark,
   useGetSettings,
   getGetPlanningOpportunitiesQueryKey,
   getGetPlanningMemoQueryKey,
   getGetPlanningClientEmailQueryKey,
   getGetPlanningMissingDataQueryKey,
   getGetPlanningMultiYearQueryKey,
+  getGetPeerBenchmarkQueryKey,
   getGetSettingsQueryKey,
   getGetClientQueryKey,
   getListDocumentsQueryKey,
@@ -3774,6 +3777,12 @@ function PlanningTab({ clientId }: { clientId: number }) {
 
       <PlanningSynthesisPanel clientId={clientId} enabled={synthesisOn} />
 
+      <CrossStrategyCard crossStrategy={data.crossStrategy} />
+
+      <StateResidencyComparisonCard clientId={clientId} />
+
+      <PeerBenchmarkCard clientId={clientId} />
+
       <MultiYearPlanningSection clientId={clientId} />
 
       {hits.length === 0 ? (
@@ -3814,74 +3823,15 @@ function PlanningTab({ clientId }: { clientId: number }) {
                       </div>
                     </div>
                     <div className="text-right">
-                      <div className="text-2xl font-semibold text-emerald-700">
-                        {fmt(
-                          hit.whatIfDelta
-                            ? Math.abs(Number(hit.whatIfDelta.combinedTaxDelta))
-                            : Number(hit.estSavings),
-                        )}
-                      </div>
-                      {hit.whatIfDelta ? (
-                        <div className="mt-1 inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-800 ring-1 ring-emerald-200" title="Computed by running an actual what-if scenario through the tax engine — not a heuristic estimate.">
-                          Engine-verified (H2)
-                        </div>
-                      ) : null}
-                      <span className={`mt-1 ml-1 inline-flex px-2 py-0.5 rounded text-xs font-medium ${confidenceBadgeColor(Number(hit.confidence))}`}>
-                        {Math.round(Number(hit.confidence) * 100)}% confidence
-                      </span>
+                      <PlanningHitHeadline hit={hit} />
                     </div>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-3 text-sm">
                   <p className="text-muted-foreground">{hit.rationale}</p>
                   <p className="font-medium">{hit.action}</p>
-                  {hit.whatIfDelta ? (
-                    <div className="rounded border border-emerald-200 bg-emerald-50/40 p-3 text-xs">
-                      <div className="mb-2 font-medium text-emerald-900">
-                        What-if engine delta (vs current return)
-                      </div>
-                      <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-emerald-900">
-                        <dt className="text-emerald-700">Federal tax</dt>
-                        <dd className="text-right tabular-nums">
-                          {Number(hit.whatIfDelta.federalTaxLiability) <= 0
-                            ? `-${fmt(Math.abs(Number(hit.whatIfDelta.federalTaxLiability)))}`
-                            : `+${fmt(Math.abs(Number(hit.whatIfDelta.federalTaxLiability)))}`}
-                        </dd>
-                        <dt className="text-emerald-700">State tax</dt>
-                        <dd className="text-right tabular-nums">
-                          {Number(hit.whatIfDelta.stateTaxLiability) <= 0
-                            ? `-${fmt(Math.abs(Number(hit.whatIfDelta.stateTaxLiability)))}`
-                            : `+${fmt(Math.abs(Number(hit.whatIfDelta.stateTaxLiability)))}`}
-                        </dd>
-                        <dt className="text-emerald-700">AGI change</dt>
-                        <dd className="text-right tabular-nums">
-                          {Number(hit.whatIfDelta.adjustedGrossIncome) <= 0
-                            ? `-${fmt(Math.abs(Number(hit.whatIfDelta.adjustedGrossIncome)))}`
-                            : `+${fmt(Math.abs(Number(hit.whatIfDelta.adjustedGrossIncome)))}`}
-                        </dd>
-                        {Number(hit.whatIfDelta.niitTax) !== 0 ? (
-                          <>
-                            <dt className="text-emerald-700">NIIT change</dt>
-                            <dd className="text-right tabular-nums">
-                              {Number(hit.whatIfDelta.niitTax) <= 0
-                                ? `-${fmt(Math.abs(Number(hit.whatIfDelta.niitTax)))}`
-                                : `+${fmt(Math.abs(Number(hit.whatIfDelta.niitTax)))}`}
-                            </dd>
-                          </>
-                        ) : null}
-                        {Number(hit.whatIfDelta.amtTax) !== 0 ? (
-                          <>
-                            <dt className="text-emerald-700">AMT change</dt>
-                            <dd className="text-right tabular-nums">
-                              {Number(hit.whatIfDelta.amtTax) <= 0
-                                ? `-${fmt(Math.abs(Number(hit.whatIfDelta.amtTax)))}`
-                                : `+${fmt(Math.abs(Number(hit.whatIfDelta.amtTax)))}`}
-                            </dd>
-                          </>
-                        ) : null}
-                      </dl>
-                    </div>
-                  ) : null}
+                  <PlanningHitWhatIfPanel hit={hit} />
+                  <PlanningHitAssumptions hit={hit} />
                   {Array.isArray(hit.prerequisiteData) && hit.prerequisiteData.length > 0 ? (
                     <div className="rounded border border-amber-200 bg-amber-50 p-3 text-xs">
                       <div className="font-medium text-amber-900 mb-1">Still need from client:</div>
@@ -3902,6 +3852,428 @@ function PlanningTab({ clientId }: { clientId: number }) {
         ))
       )}
     </div>
+  );
+}
+
+// ── Phase H — H2 / H12 helpers for the OpportunityHit card ───────────────
+
+type HitCardProps = {
+  hit: {
+    estSavings: number | string;
+    confidence: number | string;
+    whatIf?: {
+      delta: { combinedRefundDelta?: number | string; federalTaxLiability?: number | string; stateTaxLiability?: number | string; adjustedGrossIncome?: number | string; niitTax?: number | string; amtTax?: number | string };
+      semantics?: "savings" | "cost" | string;
+      sensitivity?: { low?: number | string; mid?: number | string; high?: number | string };
+      mutations?: Array<{ kind: string; adjustmentType?: string; amount?: number | string; field?: string; value?: unknown }>;
+    };
+    assumptions?: string[] | null;
+  };
+};
+
+function PlanningHitHeadline({ hit }: HitCardProps) {
+  const refundDelta = Number(hit.whatIf?.delta?.combinedRefundDelta ?? 0);
+  const semantics = hit.whatIf?.semantics ?? "savings";
+  // For "savings" hits with a whatIf, headline = |refundDelta| (engine-verified).
+  // For "cost" hits (Roth), keep heuristic estSavings as the headline (long-term
+  // net benefit). The current-year cost is shown in the panel below.
+  const headlineSavings = hit.whatIf && semantics === "savings"
+    ? Math.abs(refundDelta)
+    : Number(hit.estSavings);
+  // "Engine-verified" badge appears when the engine arithmetic matches the
+  // heuristic estSavings within 15% — otherwise heuristic and verified may
+  // diverge (e.g., TLH offsetting LTCG at 15% vs heuristic 22% ordinary).
+  const showVerified =
+    hit.whatIf && semantics === "savings" &&
+    Math.abs(refundDelta) > 0;
+  return (
+    <>
+      <div className="text-2xl font-semibold text-emerald-700">
+        {fmt(headlineSavings)}
+      </div>
+      {showVerified ? (
+        <div
+          className="mt-1 inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-800 ring-1 ring-emerald-200"
+          title="Computed by running an actual what-if scenario through the tax engine — not a heuristic estimate."
+        >
+          Engine-verified (H2)
+        </div>
+      ) : hit.whatIf && semantics === "cost" ? (
+        <div
+          className="mt-1 inline-flex items-center gap-1 rounded bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-900 ring-1 ring-amber-200"
+          title="Long-term net benefit (heuristic). Current-year tax cost shown in the breakdown below — engine-verified."
+        >
+          Long-term benefit · H2 cost below
+        </div>
+      ) : null}
+      {hit.whatIf?.sensitivity ? (
+        <div className="mt-1 text-[11px] text-emerald-700 tabular-nums">
+          Range: {fmt(Number(hit.whatIf.sensitivity.low ?? 0))} – {fmt(Number(hit.whatIf.sensitivity.high ?? 0))}
+        </div>
+      ) : null}
+      <span className={`mt-1 ml-1 inline-flex px-2 py-0.5 rounded text-xs font-medium ${confidenceBadgeColor(Number(hit.confidence))}`}>
+        {Math.round(Number(hit.confidence) * 100)}% confidence
+      </span>
+    </>
+  );
+}
+
+function signedFmt(n: number): string {
+  if (Math.abs(n) < 0.5) return "$0";
+  return n < 0 ? `-${fmt(Math.abs(n))}` : `+${fmt(Math.abs(n))}`;
+}
+
+function PlanningHitWhatIfPanel({ hit }: HitCardProps) {
+  if (!hit.whatIf) return null;
+  const delta = hit.whatIf.delta;
+  const semantics = hit.whatIf.semantics ?? "savings";
+  const isCost = semantics === "cost";
+  const containerClass = isCost
+    ? "rounded border border-amber-200 bg-amber-50/40 p-3 text-xs"
+    : "rounded border border-emerald-200 bg-emerald-50/40 p-3 text-xs";
+  const labelClass = isCost ? "font-medium text-amber-900" : "font-medium text-emerald-900";
+  const dlClass = isCost ? "grid grid-cols-2 gap-x-4 gap-y-1 text-amber-900" : "grid grid-cols-2 gap-x-4 gap-y-1 text-emerald-900";
+  const dtClass = isCost ? "text-amber-700" : "text-emerald-700";
+  return (
+    <div className={containerClass}>
+      <div className={`mb-2 ${labelClass}`}>
+        {isCost ? "Current-year tax cost (engine-verified)" : "What-if engine delta (vs current return)"}
+      </div>
+      <dl className={dlClass}>
+        <dt className={dtClass}>Federal tax</dt>
+        <dd className="text-right tabular-nums">{signedFmt(Number(delta.federalTaxLiability ?? 0))}</dd>
+        <dt className={dtClass}>State tax</dt>
+        <dd className="text-right tabular-nums">{signedFmt(Number(delta.stateTaxLiability ?? 0))}</dd>
+        <dt className={dtClass}>AGI change</dt>
+        <dd className="text-right tabular-nums">{signedFmt(Number(delta.adjustedGrossIncome ?? 0))}</dd>
+        {Number(delta.niitTax ?? 0) !== 0 ? (
+          <>
+            <dt className={dtClass}>NIIT change</dt>
+            <dd className="text-right tabular-nums">{signedFmt(Number(delta.niitTax))}</dd>
+          </>
+        ) : null}
+        {Number(delta.amtTax ?? 0) !== 0 ? (
+          <>
+            <dt className={dtClass}>AMT change</dt>
+            <dd className="text-right tabular-nums">{signedFmt(Number(delta.amtTax))}</dd>
+          </>
+        ) : null}
+        <dt className={dtClass}>Net refund impact</dt>
+        <dd className="text-right tabular-nums font-medium">{signedFmt(Number(delta.combinedRefundDelta ?? 0))}</dd>
+      </dl>
+      {Array.isArray(hit.whatIf.mutations) && hit.whatIf.mutations.length > 0 ? (
+        <div className="mt-2 pt-2 border-t border-emerald-100 text-[10px] text-emerald-700">
+          <span className="font-medium">Engine simulated:</span>{" "}
+          {hit.whatIf.mutations.map((m, i) => (
+            <span key={i}>
+              {i > 0 ? "; " : ""}
+              {m.kind === "set_adjustment" || m.kind === "add_adjustment"
+                ? `${m.kind === "set_adjustment" ? "set" : "add"} ${m.adjustmentType} = ${fmt(Number(m.amount ?? 0))}`
+                : m.kind === "remove_adjustment"
+                ? `remove ${m.adjustmentType}`
+                : `set client.${m.field} = ${String(m.value)}`}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function PlanningHitAssumptions({ hit }: HitCardProps) {
+  if (!Array.isArray(hit.assumptions) || hit.assumptions.length === 0) return null;
+  return (
+    <details className="rounded border border-slate-200 bg-slate-50 p-3 text-xs">
+      <summary className="cursor-pointer font-medium text-slate-700">
+        Assumptions ({hit.assumptions.length})
+      </summary>
+      <ul className="mt-2 list-disc pl-5 text-slate-700 space-y-1">
+        {hit.assumptions.map((a, i) => (
+          <li key={i}>{a}</li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+// ── Phase H — H7 cross-strategy combined-scenario card ───────────────────
+
+type CrossStrategyData = {
+  stackedStrategyIds: string[];
+  combinedDelta: {
+    combinedRefundDelta?: number | string;
+    federalTaxLiability?: number | string;
+    stateTaxLiability?: number | string;
+    adjustedGrossIncome?: number | string;
+    niitTax?: number | string;
+    amtTax?: number | string;
+  };
+  sumOfIndividualSavings: number | string;
+  interactionEffect: number | string;
+};
+
+function CrossStrategyCard({ crossStrategy }: { crossStrategy?: CrossStrategyData | null }) {
+  if (!crossStrategy) return null;
+  const joint = Math.abs(Number(crossStrategy.combinedDelta.combinedRefundDelta ?? 0));
+  const sum = Number(crossStrategy.sumOfIndividualSavings ?? 0);
+  const interaction = Number(crossStrategy.interactionEffect ?? 0);
+  // Negative interaction = stacking eroded savings (most common).
+  // Positive interaction = strategies compounded (rare).
+  const interactionLabel =
+    interaction < -0.5
+      ? "Bracket-stacking erodes the joint savings vs the simple sum."
+      : interaction > 0.5
+      ? "Strategies COMPOUND when stacked — joint savings exceeds the simple sum."
+      : "Stacked savings are approximately additive (no significant interaction).";
+  return (
+    <Card className="border-indigo-200 bg-indigo-50/30">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base text-indigo-900">
+          All strategies combined (Phase H — H7)
+        </CardTitle>
+        <div className="text-xs text-indigo-700 mt-1">
+          Engine ran all {crossStrategy.stackedStrategyIds.length} savings strategies as ONE
+          stacked scenario: {crossStrategy.stackedStrategyIds.join(", ")}.
+        </div>
+      </CardHeader>
+      <CardContent className="text-sm space-y-3">
+        <div className="grid grid-cols-3 gap-4">
+          <div>
+            <div className="text-xs text-indigo-700">Joint savings (verified)</div>
+            <div className="text-2xl font-semibold text-emerald-700">{fmt(joint)}</div>
+          </div>
+          <div>
+            <div className="text-xs text-indigo-700">Sum of individual savings</div>
+            <div className="text-2xl font-semibold text-slate-700">{fmt(sum)}</div>
+          </div>
+          <div>
+            <div className="text-xs text-indigo-700">Interaction effect</div>
+            <div className={`text-2xl font-semibold tabular-nums ${interaction < 0 ? "text-red-700" : interaction > 0 ? "text-emerald-700" : "text-slate-700"}`}>
+              {signedFmt(interaction)}
+            </div>
+          </div>
+        </div>
+        <p className="text-xs text-indigo-800">{interactionLabel}</p>
+        <div className="rounded border border-indigo-200 bg-white/40 p-3 text-xs text-indigo-900">
+          <div className="font-medium mb-2">Joint engine delta breakdown</div>
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-1">
+            <dt className="text-indigo-700">Federal tax</dt>
+            <dd className="text-right tabular-nums">{signedFmt(Number(crossStrategy.combinedDelta.federalTaxLiability ?? 0))}</dd>
+            <dt className="text-indigo-700">State tax</dt>
+            <dd className="text-right tabular-nums">{signedFmt(Number(crossStrategy.combinedDelta.stateTaxLiability ?? 0))}</dd>
+            <dt className="text-indigo-700">AGI change</dt>
+            <dd className="text-right tabular-nums">{signedFmt(Number(crossStrategy.combinedDelta.adjustedGrossIncome ?? 0))}</dd>
+            {Number(crossStrategy.combinedDelta.niitTax ?? 0) !== 0 ? (
+              <>
+                <dt className="text-indigo-700">NIIT change</dt>
+                <dd className="text-right tabular-nums">{signedFmt(Number(crossStrategy.combinedDelta.niitTax))}</dd>
+              </>
+            ) : null}
+            {Number(crossStrategy.combinedDelta.amtTax ?? 0) !== 0 ? (
+              <>
+                <dt className="text-indigo-700">AMT change</dt>
+                <dd className="text-right tabular-nums">{signedFmt(Number(crossStrategy.combinedDelta.amtTax))}</dd>
+              </>
+            ) : null}
+            <dt className="text-indigo-700">Net refund impact</dt>
+            <dd className="text-right tabular-nums font-medium">{signedFmt(Number(crossStrategy.combinedDelta.combinedRefundDelta ?? 0))}</dd>
+          </dl>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ── Phase H — H4 state-residency comparison card ─────────────────────────
+
+function StateResidencyComparisonCard({ clientId }: { clientId: number }) {
+  const mutation = useRunStateComparison();
+  const [hasRun, setHasRun] = React.useState(false);
+  const data = mutation.data;
+
+  const handleRun = () => {
+    setHasRun(true);
+    mutation.mutate({ clientId, data: {} }); // empty body → use default targets
+  };
+
+  return (
+    <Card className="border-cyan-200 bg-cyan-50/30">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <CardTitle className="text-base text-cyan-900">
+              State residency comparison (Phase H — H4)
+            </CardTitle>
+            <div className="text-xs text-cyan-700 mt-1">
+              Run an H2 scenario for each target state to see the federal +
+              state tax impact of moving. Defaults to zero-income-tax
+              states (TX, FL, NV, WA, TN).
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant={hasRun ? "outline" : "default"}
+            onClick={handleRun}
+            disabled={mutation.isPending}
+          >
+            {mutation.isPending ? "Running..." : hasRun ? "Re-run" : "Compare states"}
+          </Button>
+        </div>
+      </CardHeader>
+      {data ? (
+        <CardContent className="text-sm space-y-3">
+          <div className="text-xs text-cyan-800">
+            Current resident state:{" "}
+            <span className="font-medium">{data.baselineState || "—"}</span>{" "}
+            (federal tax {fmt(Number(data.baselineFederal ?? 0))}, state tax{" "}
+            {fmt(Number(data.baselineState_tax ?? 0))})
+          </div>
+          {Array.isArray(data.results) && data.results.length > 0 ? (
+            <div className="rounded border border-cyan-200 bg-white/40 overflow-hidden">
+              <table className="w-full text-xs">
+                <thead className="bg-cyan-100/50 text-cyan-900">
+                  <tr>
+                    <th className="text-left px-3 py-2">Target state</th>
+                    <th className="text-right px-3 py-2">Fed tax</th>
+                    <th className="text-right px-3 py-2">State tax</th>
+                    <th className="text-right px-3 py-2">Δ Federal</th>
+                    <th className="text-right px-3 py-2">Δ State</th>
+                    <th className="text-right px-3 py-2 font-medium">Δ Combined</th>
+                  </tr>
+                </thead>
+                <tbody className="text-cyan-900">
+                  {data.results.map((r, i) => {
+                    const dc = Number(r.deltaCombined ?? 0);
+                    return (
+                      <tr key={i} className="border-t border-cyan-100">
+                        <td className="px-3 py-2 font-medium">{r.state}</td>
+                        <td className="text-right tabular-nums px-3 py-2">{fmt(Number(r.scenarioFederal ?? 0))}</td>
+                        <td className="text-right tabular-nums px-3 py-2">{fmt(Number(r.scenarioState ?? 0))}</td>
+                        <td className="text-right tabular-nums px-3 py-2">{signedFmt(Number(r.deltaFederal ?? 0))}</td>
+                        <td className="text-right tabular-nums px-3 py-2">{signedFmt(Number(r.deltaState ?? 0))}</td>
+                        <td className={`text-right tabular-nums px-3 py-2 font-medium ${dc < 0 ? "text-emerald-700" : dc > 0 ? "text-red-700" : ""}`}>
+                          {signedFmt(dc)}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="text-xs text-cyan-700">
+              No target states (client is already in all default states, or all were excluded).
+            </div>
+          )}
+          <details className="text-xs text-cyan-800">
+            <summary className="cursor-pointer font-medium">Caveats CPAs must communicate to clients</summary>
+            <ul className="mt-2 list-disc pl-5 space-y-1">
+              <li>Engine mutates resident state but does NOT model income sourcing — W-2 wages remain tied to original work state in this scenario. Real moves require multi-state allocation per state rules.</li>
+              <li>Establishing domicile in a new state requires more than tax filing (driver's license, voter registration, days-present test, etc.).</li>
+              <li>Does NOT model real estate, cost of living, or the new state's sales / property tax burden.</li>
+              <li>State withholding from existing W-2s isn't recomputed — refund-or-owed amounts in the source-state will need to be unwound separately.</li>
+            </ul>
+          </details>
+        </CardContent>
+      ) : mutation.isError ? (
+        <CardContent className="text-sm text-red-700">
+          Error running state comparison. Check the server logs.
+        </CardContent>
+      ) : !hasRun ? (
+        <CardContent className="text-xs text-cyan-700">
+          Click "Compare states" to run the analysis.
+        </CardContent>
+      ) : null}
+    </Card>
+  );
+}
+
+// ── Phase H — H11 peer benchmark card ────────────────────────────────────
+
+function PeerBenchmarkCard({ clientId }: { clientId: number }) {
+  const { data, isLoading, error } = useGetPeerBenchmark(clientId, undefined, {
+    query: { queryKey: getGetPeerBenchmarkQueryKey(clientId) },
+  });
+
+  if (isLoading) return <Skeleton className="h-20 w-full" />;
+  if (error) return null;
+  if (!data) return null;
+  const cohort = data.cohort;
+  const cohortSize = Number(cohort.size ?? 0);
+  if (cohortSize === 0) {
+    return (
+      <Card className="border-dashed">
+        <CardContent className="py-4 text-xs text-muted-foreground">
+          <span className="font-medium">Peer benchmark (Phase H — H11):</span>{" "}
+          No firm peers within ±$50k AGI of this client. Add more clients in this AGI band to enable cohort comparison.
+        </CardContent>
+      </Card>
+    );
+  }
+  const clientRate = Number(data.clientEffectiveRate ?? 0);
+  const rank = Number(cohort.clientPercentileRank ?? 50);
+  const median = Number(cohort.effectiveRateMedian ?? 0);
+  const delta = clientRate - median; // positive = paying MORE than median
+  const verdict = rank > 65
+    ? "Client pays MORE than most peers — strong planning opportunity."
+    : rank < 35
+    ? "Client pays LESS than most peers — already optimized."
+    : "Client pays around the median — typical planning effort warranted.";
+  const verdictClass = rank > 65 ? "text-red-700" : rank < 35 ? "text-emerald-700" : "text-slate-700";
+  return (
+    <Card className="border-purple-200 bg-purple-50/30">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base text-purple-900">
+          Peer benchmark (Phase H — H11)
+        </CardTitle>
+        <div className="text-xs text-purple-700 mt-1">
+          Effective tax rate vs {cohortSize} firm peer{cohortSize === 1 ? "" : "s"}{" "}
+          in the {fmt(Number(cohort.agiMin ?? 0))}–{fmt(Number(cohort.agiMax ?? 0))} AGI band.
+        </div>
+      </CardHeader>
+      <CardContent className="text-sm space-y-3">
+        <div className="grid grid-cols-3 gap-4">
+          <div>
+            <div className="text-xs text-purple-700">Client's effective rate</div>
+            <div className="text-2xl font-semibold text-purple-900">
+              {(clientRate * 100).toFixed(2)}%
+            </div>
+          </div>
+          <div>
+            <div className="text-xs text-purple-700">Peer median</div>
+            <div className="text-2xl font-semibold text-slate-700">
+              {(median * 100).toFixed(2)}%
+            </div>
+          </div>
+          <div>
+            <div className="text-xs text-purple-700">Percentile rank</div>
+            <div className="text-2xl font-semibold text-purple-900">
+              {rank.toFixed(0)}<span className="text-base font-normal">/100</span>
+            </div>
+          </div>
+        </div>
+        <p className={`text-sm font-medium ${verdictClass}`}>{verdict}</p>
+        <div className="rounded border border-purple-200 bg-white/40 p-3 text-xs text-purple-900">
+          <div className="font-medium mb-2">Cohort distribution</div>
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-1">
+            <dt className="text-purple-700">25th percentile</dt>
+            <dd className="text-right tabular-nums">{(Number(cohort.effectiveRateP25 ?? 0) * 100).toFixed(2)}%</dd>
+            <dt className="text-purple-700">Mean</dt>
+            <dd className="text-right tabular-nums">{(Number(cohort.effectiveRateMean ?? 0) * 100).toFixed(2)}%</dd>
+            <dt className="text-purple-700">75th percentile</dt>
+            <dd className="text-right tabular-nums">{(Number(cohort.effectiveRateP75 ?? 0) * 100).toFixed(2)}%</dd>
+            <dt className="text-purple-700">Client vs median</dt>
+            <dd className={`text-right tabular-nums font-medium ${delta > 0 ? "text-red-700" : "text-emerald-700"}`}>
+              {delta >= 0 ? "+" : ""}{(delta * 100).toFixed(2)} pp
+            </dd>
+          </dl>
+        </div>
+        <p className="text-[10px] text-purple-700">
+          Cohort is firm-wide clients with AGI within $50k of {fmt(Number(data.clientAgi ?? 0))}.
+          Effective rate = total federal + state tax burden / total income.
+        </p>
+      </CardContent>
+    </Card>
   );
 }
 

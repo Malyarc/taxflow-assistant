@@ -72,6 +72,11 @@ interface FormState {
   residencyChangedInYear: boolean;
   formerState: string; // 2-letter state code, "" = none
   residencyChangeDate: string; // YYYY-MM-DD, "" = none
+  // H9 — Client-context fields (planning personalization)
+  riskTolerance: string; // "" | "conservative" | "moderate" | "aggressive"
+  targetRetirementAge: string; // integer years as string; "" = unknown
+  estatePlanStage: string; // "" | "none" | "will_only" | "trust_in_place" | "complex"
+  planningGoals: string;
   notes: string;
 }
 
@@ -106,6 +111,10 @@ const defaultForm: FormState = {
   residencyChangedInYear: false,
   formerState: "",
   residencyChangeDate: "",
+  riskTolerance: "",
+  targetRetirementAge: "",
+  estatePlanStage: "",
+  planningGoals: "",
   notes: "",
 };
 
@@ -172,6 +181,13 @@ export default function ClientForm({ editId }: Props) {
         residencyChangedInYear: (existing as { residencyChangedInYear?: boolean }).residencyChangedInYear ?? false,
         formerState: (existing as { formerState?: string | null }).formerState ?? "",
         residencyChangeDate: (existing as { residencyChangeDate?: string | null }).residencyChangeDate ?? "",
+        riskTolerance: (existing as { riskTolerance?: string | null }).riskTolerance ?? "",
+        targetRetirementAge:
+          (existing as { targetRetirementAge?: number | null }).targetRetirementAge != null
+            ? String((existing as { targetRetirementAge?: number | null }).targetRetirementAge)
+            : "",
+        estatePlanStage: (existing as { estatePlanStage?: string | null }).estatePlanStage ?? "",
+        planningGoals: (existing as { planningGoals?: string | null }).planningGoals ?? "",
         notes: existing.notes || "",
       });
     }
@@ -226,6 +242,10 @@ export default function ClientForm({ editId }: Props) {
       residencyChangedInYear: Boolean(form.residencyChangedInYear),
       formerState: form.formerState === "" ? null : form.formerState,
       residencyChangeDate: form.residencyChangeDate === "" ? null : form.residencyChangeDate,
+      riskTolerance: form.riskTolerance === "" ? null : form.riskTolerance,
+      targetRetirementAge: form.targetRetirementAge === "" ? null : Number(form.targetRetirementAge),
+      estatePlanStage: form.estatePlanStage === "" ? null : form.estatePlanStage,
+      planningGoals: form.planningGoals === "" ? null : form.planningGoals,
     };
     if (isEdit) {
       updateClient.mutate(
@@ -700,6 +720,69 @@ export default function ClientForm({ editId }: Props) {
                     Real estate professional (§469(c)(7))
                     <p className="text-xs text-muted-foreground mt-1">750+ hours/year AND &gt; 50% of total work time → no passive loss limit.</p>
                   </Label>
+                </div>
+              </div>
+            </div>
+
+            {/* Phase H — H9 client-context fields for planning personalization */}
+            <div className="space-y-3 rounded border border-indigo-200 bg-indigo-50/30 p-4">
+              <div className="text-sm font-medium text-indigo-900">
+                Planning context (Phase H — H9)
+              </div>
+              <p className="text-xs text-indigo-700">
+                Optional fields that personalize the AI planning memo. Leave blank if not gathered yet.
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="riskTolerance">Risk tolerance</Label>
+                  <select
+                    id="riskTolerance"
+                    value={form.riskTolerance}
+                    onChange={(e) => set("riskTolerance", e.target.value)}
+                    className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
+                  >
+                    <option value="">— Unknown —</option>
+                    <option value="conservative">Conservative</option>
+                    <option value="moderate">Moderate</option>
+                    <option value="aggressive">Aggressive</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="targetRetirementAge">Target retirement age</Label>
+                  <Input
+                    id="targetRetirementAge"
+                    type="number"
+                    min="40"
+                    max="90"
+                    placeholder="e.g. 65"
+                    value={form.targetRetirementAge}
+                    onChange={(e) => set("targetRetirementAge", e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2 col-span-2">
+                  <Label htmlFor="estatePlanStage">Estate plan stage</Label>
+                  <select
+                    id="estatePlanStage"
+                    value={form.estatePlanStage}
+                    onChange={(e) => set("estatePlanStage", e.target.value)}
+                    className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm"
+                  >
+                    <option value="">— Unknown —</option>
+                    <option value="none">None</option>
+                    <option value="will_only">Will only</option>
+                    <option value="trust_in_place">Trust in place</option>
+                    <option value="complex">Complex (multi-entity)</option>
+                  </select>
+                </div>
+                <div className="space-y-2 col-span-2">
+                  <Label htmlFor="planningGoals">Planning goals (free text)</Label>
+                  <Textarea
+                    id="planningGoals"
+                    value={form.planningGoals}
+                    onChange={(e) => set("planningGoals", e.target.value)}
+                    rows={3}
+                    placeholder={`e.g. "Early retirement at 55", "Fund kid's college via 529", "Buy a house in 2 years"`}
+                  />
                 </div>
               </div>
             </div>
