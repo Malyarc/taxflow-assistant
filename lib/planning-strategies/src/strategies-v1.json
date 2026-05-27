@@ -1,6 +1,6 @@
 {
-  "version": "v1.1.0",
-  "reviewedAt": "2026-05-26",
+  "version": "v1.2.0",
+  "reviewedAt": "2026-05-27",
   "strategies": [
     {
       "id": "G1.1",
@@ -193,6 +193,86 @@
         "Foreign-source taxable income for the actual Form 1116 limit"
       ],
       "action": "Claim foreign taxes paid as a Foreign Tax Credit on Form 1116 instead of (or in addition to) an itemized deduction. Estimated additional savings ~{{estSavings}}.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.11",
+      "name": "Qualified Charitable Distribution (QCD) for age 70½+",
+      "category": "charitable",
+      "ircSection": "IRC §408(d)(8)",
+      "irsPub": "Pub 590-B; Notice 2023-12 (TY2024 $105k cap)",
+      "trigger": "taxpayerAge >= 70.5 AND 1099-R retirementIncome > 0 AND charitable_cash adjustment > 0",
+      "formula": "Direct trustee-to-charity transfer (max $105k TY2024 / $108k TY2025); excluded from AGI. Savings = AGI reduction × marginal rate + NIIT/IRMAA/SS-taxability spill-overs that the engine captures via H2.",
+      "confidence": 0.95,
+      "cpaEffortHours": 1.0,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Confirm IRA owner is age 70½+ on the distribution date (Form 8606 / DOB)",
+        "Confirm charity is a 501(c)(3) public charity (NOT a private foundation or DAF)",
+        "Transfer must go DIRECT from IRA custodian to charity — not through the client"
+      ],
+      "action": "For up to {{qcdAmount}} of TY{{taxYear}} charitable giving, direct the IRA custodian to make a Qualified Charitable Distribution. Reduces AGI by ~{{qcdAmount}}; engine-verified federal+state savings ~{{estSavings}}.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.12",
+      "name": "Donate appreciated stock instead of cash",
+      "category": "charitable",
+      "ircSection": "IRC §170(e); §1011",
+      "irsPub": "Pub 526; Form 8283",
+      "trigger": "charitable_cash > $5,000 AND long-term capital gains > 0",
+      "formula": "Donating appreciated stock (held >1 year) at FMV: same deduction, BUT avoids cap-gains tax on the unrealized appreciation. estSavings = min(charitable_cash, LTCG) × LTCG_rate × assumed_unrealized_gain_pct.",
+      "confidence": 0.80,
+      "cpaEffortHours": 0.5,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Lots of appreciated stock with >1 year holding period",
+        "Cost basis of donated lots (for Form 8283)",
+        "Confirm charity accepts in-kind stock transfers"
+      ],
+      "action": "Instead of donating {{donationAmount}} in cash, transfer the same FMV of long-held appreciated stock. Get the same charitable deduction AND avoid ~{{estSavings}} of capital-gains tax on the unrealized appreciation.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.13",
+      "name": "Augusta Rule — rent home to your business §280A(g)",
+      "category": "business",
+      "ircSection": "IRC §280A(g)",
+      "irsPub": "Pub 535; §280A regulations",
+      "trigger": "Self-employment / S-corp / partnership income > $50,000 AND no existing augusta_rule_rent adjustment",
+      "formula": "Rent personal residence to business for ≤14 days/yr at fair rental rate. Business deducts; homeowner excludes from income per §280A(g) safe harbor. estSavings = (14 × dailyRate) × federal+state marginal rate. Default dailyRate $1,500.",
+      "confidence": 0.70,
+      "cpaEffortHours": 2.0,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Document fair market rental rate for area (Airbnb / venue comps)",
+        "Calendar legitimate business purpose for each rental day (board meetings, client events)",
+        "Strict 14-day annual limit — track via written rental agreement"
+      ],
+      "action": "Rent your residence to your business for up to 14 days at ~{{dailyRate}}/day = ~{{rentAmount}} total. Business deducts; you exclude under §280A(g). Estimated savings ~{{estSavings}}.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.14",
+      "name": "Maximize HSA contribution (triple-tax benefit)",
+      "category": "retirement",
+      "ircSection": "IRC §223",
+      "irsPub": "Pub 969; Notice 2023-22 (TY2024 limits)",
+      "trigger": "hsaIsFamilyCoverage flag set (proxy for HDHP) AND current hsa_contribution < §223 cap (incl age-55+ catch-up)",
+      "formula": "Triple-tax-advantaged: (1) above-the-line deduction now, (2) tax-free growth, (3) tax-free qualified medical withdrawals. estSavings = (cap - current) × (federal + state marginal rate).",
+      "confidence": 0.95,
+      "cpaEffortHours": 0.5,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Confirm HDHP enrollment for the full year (or pro-rate per last-month rule)",
+        "Existing employer HSA contribution (W-2 Box 12 code W) — counts against the cap",
+        "Whether spouse is also HSA-eligible (separate caps if both have HDHP)"
+      ],
+      "action": "Max the HSA: contribute the remaining ~{{contributionGap}} by April 15 of next year to reach the {{cap}} cap. Estimated savings ~{{estSavings}}.",
       "formulaRev": 1
     },
     {

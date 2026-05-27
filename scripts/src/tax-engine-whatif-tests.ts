@@ -1024,6 +1024,293 @@ function buildSeFilerInputs(): TaxReturnInputs {
   }
 }
 
+// ── Case D10: G1.11 QCD detector (Phase H — H1 expansion) ────────────────
+// Age 72 client with $30k IRA distribution + $20k charitable cash. QCD
+// directs up to min($20k cash, $105k cap, $30k retirement) = $20k of the
+// distribution direct-to-charity.
+//
+// Hand-calc:
+//   Single FL filer, age 72, $80k W-2 + $30k 1099-R retirement +
+//   $20k charitable_cash.
+//   Baseline AGI = $80k + $30k = $110k (charitable is itemized deduction,
+//     not above-the-line, so AGI is gross-of-charity).
+//   Std ded $14,600 vs itemized $20k → engine picks itemized ($20k).
+//   Taxable = $110k - $20k = $90k. Federal tax = 10%×11600 + 12%×35550 +
+//     22%×(90000-47150) = 1160 + 4266 + 9427 = $14,853.
+//
+//   H2 mutation: SET charitable_cash to 0 (all $20k goes through QCD)
+//                ADD deduction = $20k (the above-the-line QCD exclusion).
+//   New AGI = $110k - $20k = $90k. Itemized = $0 (charitable_cash now 0).
+//   Engine picks std ded $14,600. Taxable = $90k - $14,600 = $75,400.
+//   Federal tax = 1160 + 4266 + 22%×(75400-47150) = 1160 + 4266 + 6215 =
+//     $11,641.
+//   Federal tax delta = 11641 - 14853 = -$3,212.
+//
+//   Note: this is BETTER than the simple-itemize case ($20k itemized
+//   only saves $20k × 22% = $4,400 vs std-ded would've been $14,600 ×
+//   22% = $3,212). The engine sees that QCD lets the client take BOTH
+//   the QCD exclusion AND the std-ded — a net win when itemized barely
+//   exceeds std-ded.
+//
+//   For this client: QCD saves the spread of (charitable × marginal) -
+//   (max(0, itemized - stdDed) × marginal) = $4,400 - $1,188 ≈ $3,212.
+//
+//   IMPORTANT: TY2024 std-ded for age 65+ single = $14,600 + $1,950 elderly
+//   bonus = $16,550. So in the scenario (no itemized), engine uses $16,550
+//   std ded → taxable = $90k - $16,550 = $73,450 → tax = $11,212.
+//   Federal tax delta = $11,212 - $14,853 = -$3,641. Engine is right; raw
+//   hand-calc missed the elderly bonus.
+{
+  const qcdInputs = baseInputs();
+  (qcdInputs.client as { taxpayerAge: number }).taxpayerAge = 72;
+  qcdInputs.form1099s = [
+    {
+      id: 1, clientId: 1, taxYear: 2024, documentId: null,
+      formType: "r",
+      payerName: "Vanguard IRA", payerEin: null, payerAddress: null,
+      grossDistribution: "30000", taxableAmount: "30000",
+      distributionCode: "7", // normal distribution
+      federalTaxWithheld: "0", stateTaxWithheld: "0", stateCode: null,
+      spouse: null, createdAt: new Date(), updatedAt: new Date(),
+    } as unknown as TaxReturnInputs["form1099s"][number],
+  ];
+  qcdInputs.adjustments = [adj("charitable_cash", 20000, 10001)];
+  const computed = computeTaxReturnPure(qcdInputs);
+  const hits = evaluatePlanningOpportunities({
+    client: qcdInputs.client,
+    computed,
+    adjustments: qcdInputs.adjustments,
+    baselineInputs: qcdInputs,
+  });
+  const qcdHit = hits.find((h) => h.strategyId === "G1.11");
+  checkTruthy("Case D10 QCD hit fires (age 72 + ret income + charity)", qcdHit != null);
+  if (qcdHit) {
+    checkExact("Case D10 QCD semantics = savings", qcdHit.whatIf?.semantics, "savings");
+    checkTruthy("Case D10 QCD whatIf attached", qcdHit.whatIf != null);
+    if (qcdHit.whatIf) {
+      // Federal delta is the engine-verified savings. Should be roughly
+      // -$3,212 per hand-calc but engine details (rounding, exact bracket
+      // edges) may differ slightly.
+      checkTruthy(
+        "Case D10 QCD federal tax delta < 0 (savings)",
+        qcdHit.whatIf.delta.federalTaxLiability < 0,
+      );
+      // Engine produces -$3,641 (matches hand-calc with elderly $1,950 bonus
+      // applied to std ded — see comment above the case).
+      check(
+        "Case D10 QCD combined refund delta ≈ +$3,641 (hand-calc with elderly std-ded bonus)",
+        qcdHit.whatIf.delta.combinedRefundDelta,
+        3641,
+        10,
+      );
+      // Two mutations recorded
+      check("Case D10 QCD records 2 mutations", qcdHit.whatIf.mutations.length, 2);
+    }
+    checkTruthy("Case D10 QCD assumptions populated", (qcdHit.assumptions?.length ?? 0) >= 5);
+  }
+}
+
+// ── Case D11: QCD detector age-gating (suppresses < 71) ───────────────────
+// Same fixture but age 65 → QCD detector should NOT fire.
+{
+  const inputs = baseInputs();
+  (inputs.client as { taxpayerAge: number }).taxpayerAge = 65;
+  inputs.form1099s = [
+    {
+      id: 1, clientId: 1, taxYear: 2024, documentId: null,
+      formType: "r",
+      payerName: "Vanguard IRA", payerEin: null, payerAddress: null,
+      grossDistribution: "30000", taxableAmount: "30000",
+      distributionCode: "7",
+      federalTaxWithheld: "0", stateTaxWithheld: "0", stateCode: null,
+      spouse: null, createdAt: new Date(), updatedAt: new Date(),
+    } as unknown as TaxReturnInputs["form1099s"][number],
+  ];
+  inputs.adjustments = [adj("charitable_cash", 20000, 11001)];
+  const computed = computeTaxReturnPure(inputs);
+  const hits = evaluatePlanningOpportunities({
+    client: inputs.client,
+    computed,
+    adjustments: inputs.adjustments,
+    baselineInputs: inputs,
+  });
+  checkTruthy(
+    "Case D11 QCD suppressed for age < 71",
+    hits.find((h) => h.strategyId === "G1.11") == null,
+  );
+}
+
+// ── Case D12: G1.12 Appreciated stock detector (heuristic only) ──────────
+// Single FL client with $20k charitable + $30k LTCG → strategy fires.
+// Heuristic: donationAmount = min(20k, 30k) = $20k. Unrealized 30% × LTCG
+// 15% = 4.5% × $20k = $900.
+{
+  const inputs = baseInputs();
+  inputs.adjustments = [adj("charitable_cash", 20000, 12001)];
+  inputs.form1099s = [{
+    id: 1, clientId: 1, taxYear: 2024, documentId: null,
+    formType: "b",
+    payerName: "Fidelity", payerEin: null, payerAddress: null,
+    longTermGainLoss: "30000", shortTermGainLoss: "0",
+    proceeds: "60000", costBasis: "30000",
+    federalTaxWithheld: "0", stateTaxWithheld: "0", stateCode: null,
+    spouse: null, createdAt: new Date(), updatedAt: new Date(),
+  } as unknown as TaxReturnInputs["form1099s"][number]];
+  const computed = computeTaxReturnPure(inputs);
+  const hits = evaluatePlanningOpportunities({
+    client: inputs.client,
+    computed,
+    adjustments: inputs.adjustments,
+    baselineInputs: inputs,
+  });
+  const apprHit = hits.find((h) => h.strategyId === "G1.12");
+  checkTruthy("Case D12 appreciated stock hit fires", apprHit != null);
+  if (apprHit) {
+    // Hand-calc: 20000 × 0.30 × 0.15 = $900
+    check("Case D12 estSavings ≈ $900 (heuristic)", apprHit.estSavings, 900, 1);
+    // No H2 wire (deferred to H5)
+    checkTruthy("Case D12 no whatIf (deferred to H5)", apprHit.whatIf == null);
+    checkTruthy("Case D12 assumptions explain H5 dependency", (apprHit.assumptions ?? []).some((a) => a.includes("H5")));
+  }
+}
+
+// ── Case D13: G1.13 Augusta Rule detector ────────────────────────────────
+// SE filer with $120k income (above $50k threshold) → strategy fires.
+// Mutation: add $21k deduction. At ~22% marginal in FL (no state):
+// expected savings = $21,000 × 22% = $4,620.
+{
+  const inputs = baseInputs();
+  inputs.w2s = [];
+  inputs.form1099s = [{
+    id: 1, clientId: 1, taxYear: 2024, documentId: null,
+    formType: "nec",
+    payerName: "Client A", payerEin: null, payerAddress: null,
+    nonemployeeCompensation: "120000",
+    federalTaxWithheld: "0", stateTaxWithheld: "0", stateCode: null,
+    spouse: null, createdAt: new Date(), updatedAt: new Date(),
+  } as unknown as TaxReturnInputs["form1099s"][number]];
+  const computed = computeTaxReturnPure(inputs);
+  const hits = evaluatePlanningOpportunities({
+    client: inputs.client,
+    computed,
+    adjustments: inputs.adjustments,
+    baselineInputs: inputs,
+  });
+  const augustaHit = hits.find((h) => h.strategyId === "G1.13");
+  checkTruthy("Case D13 Augusta Rule hit fires (SE > $50k)", augustaHit != null);
+  if (augustaHit) {
+    checkTruthy("Case D13 whatIf attached", augustaHit.whatIf != null);
+    if (augustaHit.whatIf) {
+      checkTruthy(
+        "Case D13 Augusta savings > 0",
+        Math.abs(augustaHit.whatIf.delta.combinedRefundDelta) > 0,
+      );
+      // Marginal rate on $120k SE income (after half-SE deduction) is ~22%.
+      // Expected: ~$21,000 × 22% ≈ $4,620.
+      checkTruthy(
+        "Case D13 Augusta savings within $3,500-$5,500 range",
+        Math.abs(augustaHit.whatIf.delta.combinedRefundDelta) >= 3500 &&
+          Math.abs(augustaHit.whatIf.delta.combinedRefundDelta) <= 5500,
+      );
+      // Sensitivity should be present (variable-amount strategy)
+      checkTruthy(
+        "Case D13 Augusta sensitivity present",
+        augustaHit.whatIf.sensitivity != null,
+      );
+    }
+  }
+}
+
+// ── Case D14: G1.13 Augusta suppressed when SE income below threshold ────
+{
+  const inputs = baseInputs(); // $80k W-2, no SE
+  const computed = computeTaxReturnPure(inputs);
+  const hits = evaluatePlanningOpportunities({
+    client: inputs.client,
+    computed,
+    adjustments: inputs.adjustments,
+    baselineInputs: inputs,
+  });
+  checkTruthy(
+    "Case D14 Augusta suppressed for pure-W-2 client",
+    hits.find((h) => h.strategyId === "G1.13") == null,
+  );
+}
+
+// ── Case D15: G1.14 HSA max detector ─────────────────────────────────────
+// Family HDHP, $80k W-2, age 52 (no catch-up), zero existing HSA contribution.
+// Cap = $8,300 (TY2024 family). Mutation adds $8,300 above-the-line.
+// Expected savings ≈ $8,300 × 22% = $1,826.
+{
+  const inputs = baseInputs();
+  (inputs.client as { hsaIsFamilyCoverage: boolean }).hsaIsFamilyCoverage = true;
+  (inputs.client as { taxpayerAge: number }).taxpayerAge = 52;
+  const computed = computeTaxReturnPure(inputs);
+  const hits = evaluatePlanningOpportunities({
+    client: inputs.client,
+    computed,
+    adjustments: inputs.adjustments,
+    baselineInputs: inputs,
+  });
+  const hsaHit = hits.find((h) => h.strategyId === "G1.14");
+  checkTruthy("Case D15 HSA max hit fires (family HDHP, no contribution)", hsaHit != null);
+  if (hsaHit) {
+    checkTruthy("Case D15 HSA whatIf attached", hsaHit.whatIf != null);
+    if (hsaHit.whatIf) {
+      // Hand-calc: $8,300 × 22% = $1,826
+      check(
+        "Case D15 HSA combined tax delta ≈ -$1,826",
+        hsaHit.whatIf.delta.combinedTaxDelta,
+        -1826,
+        15,
+      );
+      check("Case D15 HSA AGI delta = -$8,300", hsaHit.whatIf.delta.adjustedGrossIncome, -8300, 1);
+      checkTruthy("Case D15 HSA sensitivity present", hsaHit.whatIf.sensitivity != null);
+    }
+  }
+}
+
+// ── Case D16: G1.14 HSA max suppressed when at cap ───────────────────────
+{
+  const inputs = baseInputs();
+  (inputs.client as { hsaIsFamilyCoverage: boolean }).hsaIsFamilyCoverage = true;
+  inputs.adjustments = [adj("hsa_contribution", 8300, 16001)]; // already at family cap
+  const computed = computeTaxReturnPure(inputs);
+  const hits = evaluatePlanningOpportunities({
+    client: inputs.client,
+    computed,
+    adjustments: inputs.adjustments,
+    baselineInputs: inputs,
+  });
+  checkTruthy(
+    "Case D16 HSA suppressed when at cap",
+    hits.find((h) => h.strategyId === "G1.14") == null,
+  );
+}
+
+// ── Case D17: G1.14 HSA catch-up adds $1,000 for age 55+ ─────────────────
+{
+  const inputs = baseInputs();
+  (inputs.client as { hsaIsFamilyCoverage: boolean }).hsaIsFamilyCoverage = true;
+  (inputs.client as { taxpayerAge: number }).taxpayerAge = 60;
+  const computed = computeTaxReturnPure(inputs);
+  const hits = evaluatePlanningOpportunities({
+    client: inputs.client,
+    computed,
+    adjustments: inputs.adjustments,
+    baselineInputs: inputs,
+  });
+  const hsaHit = hits.find((h) => h.strategyId === "G1.14");
+  checkTruthy("Case D17 HSA hit fires (age 60 catch-up)", hsaHit != null);
+  if (hsaHit) {
+    // Cap should be $8,300 + $1,000 catch-up = $9,300
+    check("Case D17 HSA cap = $9,300 (family + age-55 catch-up)", Number(hsaHit.inputs.cap), 9300, 1);
+    if (hsaHit.whatIf) {
+      check("Case D17 HSA AGI delta = -$9,300", hsaHit.whatIf.delta.adjustedGrossIncome, -9300, 1);
+    }
+  }
+}
+
 // ── Case D9: H7 omitted when 0 stackable hits ────────────────────────────
 // Pure-W-2 client with no SE, no investment — should produce no H2 hits.
 {

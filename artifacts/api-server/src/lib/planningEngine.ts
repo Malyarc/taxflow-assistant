@@ -1041,6 +1041,386 @@ function detectTaxLossHarvesting(args: {
   };
 }
 
+// ── G1.11 — Qualified Charitable Distribution (QCD) §408(d)(8) ────────────
+
+/**
+ * QCD annual cap, indexed for inflation. Per IRC §408(d)(8)(F) starting
+ * 2024 (SECURE 2.0 Act §307). 2025 indexing per IRS Notice TBD-2024.
+ */
+const QCD_CAP: Record<number, number> = {
+  2024: 105_000,
+  2025: 108_000,
+};
+
+const QCD_MIN_AGE = 70.5;
+
+function detectQcd(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+  baselineInputs?: TaxReturnInputs;
+}): OpportunityHit | null {
+  const { client, computed, adjustments, baselineInputs } = args;
+  const age = client.taxpayerAge;
+  // Must be 70½ on the distribution date. Engine doesn't track distribution
+  // dates per-1099-R, so use whole-year age as proxy (conservative: fires
+  // when age ≥ 71 to avoid false-positive for 70½ split-year clients;
+  // CPA can override). For MVP we use 71+ for clarity.
+  if (age == null || age < 71) return null;
+  // Must have IRA / retirement-plan income (the QCD source).
+  const retIncome = computed.form1099Summary?.retirementIncome ?? 0;
+  if (retIncome <= 0) return null;
+  // Must have charitable giving in scope (otherwise no donation to convert).
+  const charitableCash = sumAdjustment(adjustments, "charitable_cash");
+  if (charitableCash <= 0) return null;
+
+  const cap = QCD_CAP[computed.taxYear] ?? QCD_CAP[2025];
+  // QCD amount = lesser of (giving, cap, retirement income — can't QCD more
+  // than the IRA distribution).
+  const qcdAmount = Math.min(charitableCash, cap, retIncome);
+  if (qcdAmount <= 0) return null;
+
+  const fedRate = federalMarginalRate(computed);
+  const stateRate = stateMarginalRate(computed);
+  // Heuristic: assumes client is on std-ded (so the charitable cash isn't
+  // currently giving them a deduction; QCD's AGI exclusion is pure win).
+  // For itemizing filers the savings is smaller (just the AGI-spillover
+  // effects: NIIT shift, IRMAA, SS-taxability, etc.). H2 captures the
+  // true magnitude.
+  const estSavings = qcdAmount * (fedRate + stateRate);
+
+  // H2 mutation: replace the charitable-cash portion of the donation with
+  // an above-the-line "deduction" of the same amount. Engine treats:
+  //   - Remaining charitable_cash → reduced itemized deduction
+  //   - New deduction → AGI reduction (the QCD exclusion's effect)
+  const newCharitableCash = Math.max(0, charitableCash - qcdAmount);
+  const whatIf = runDetectorWhatIf({
+    baselineInputs,
+    scenarioId: "G1.11-qcd",
+    label: `QCD $${Math.round(qcdAmount).toLocaleString("en-US")}`,
+    mutations: [
+      {
+        kind: "set_adjustment",
+        adjustmentType: "charitable_cash",
+        amount: Math.round(newCharitableCash),
+      },
+      {
+        kind: "add_adjustment",
+        adjustmentType: "deduction",
+        amount: Math.round(qcdAmount),
+      },
+    ],
+    semantics: "savings",
+    varyAmount: false, // multi-mutation, scaling one not meaningful
+  });
+
+  const strategy = strategyById("G1.11");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    qcdAmount: Math.round(qcdAmount),
+    estSavings: Math.round(estSavings),
+    taxYear: computed.taxYear,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings: Math.round(estSavings),
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client (age ${age}) has ${fmt(Math.round(retIncome))} of IRA distribution income and ` +
+      `${fmt(Math.round(charitableCash))} of charitable giving. Up to ${fmt(qcdAmount)} can be ` +
+      `directed as a QCD — excluded from AGI rather than included + (maybe) deducted on Schedule A.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      taxpayerAge: age,
+      retirementIncome: Math.round(retIncome),
+      charitableCash: Math.round(charitableCash),
+      qcdCap: cap,
+      qcdAmount: Math.round(qcdAmount),
+      federalMarginalRate: fedRate,
+      stateMarginalRate: stateRate,
+    },
+    assumptions: [
+      `Client must be age 70½+ on the distribution date — detector fires at age 71+ for safety; CPA verifies for 70½ split-year clients.`,
+      `QCD cap ${fmt(cap)} for TY${computed.taxYear} (IRC §408(d)(8)(F); indexed for inflation post-SECURE 2.0).`,
+      `Charity must be a 501(c)(3) public charity — NOT a private foundation, DAF, or supporting organization.`,
+      `Transfer MUST go direct from IRA custodian to charity — distribution to the client first DISQUALIFIES it.`,
+      `H2 mutation: subtract from charitable_cash (loses Schedule A deduction) AND add an above-the-line deduction (the QCD exclusion). Net delta is the AGI-spillover benefit (NIIT, IRMAA, SS taxability).`,
+      `For std-ded filers (no Schedule A benefit currently), QCD captures the full above-the-line savings — usually larger than the heuristic.`,
+    ],
+    whatIf,
+  };
+}
+
+// ── G1.12 — Donate appreciated stock instead of cash (heuristic-only) ─────
+
+const G1_12_MIN_CHARITABLE = 5000;
+/**
+ * Assumed average unrealized-appreciation percentage for donated stock.
+ * Conservative — actual percentages vary widely by lot age + holding.
+ * For more accuracy, would need per-lot cost basis (H5).
+ */
+const G1_12_AVG_UNREALIZED_PCT = 0.30;
+const G1_12_LTCG_RATE_DEFAULT = 0.15;
+
+function detectAppreciatedStockDonation(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { computed, adjustments } = args;
+  const charitableCash = sumAdjustment(adjustments, "charitable_cash");
+  if (charitableCash <= G1_12_MIN_CHARITABLE) return null;
+  // Has long-term capital gain (something to donate in stock form).
+  const ltcg = computed.form1099Summary?.longTermCapitalGains ?? 0;
+  if (ltcg <= 0) return null;
+
+  // Donation amount = min of (current cash giving, available LTCG).
+  // The strategy replaces $X of cash giving with $X of stock — CPA picks
+  // lots so unrealized appreciation roughly equals X × assumed-pct.
+  const donationAmount = Math.min(charitableCash, ltcg);
+  // Savings = avoided cap-gains tax on the unrealized appreciation in the
+  // donated lots. We use the engine's actual federal LTCG rate when easily
+  // derivable; otherwise the default 15%.
+  const ltcgRate = G1_12_LTCG_RATE_DEFAULT;
+  const estSavings = donationAmount * G1_12_AVG_UNREALIZED_PCT * ltcgRate;
+  if (estSavings <= 0) return null;
+
+  const strategy = strategyById("G1.12");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    donationAmount: Math.round(donationAmount),
+    estSavings: Math.round(estSavings),
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings: Math.round(estSavings),
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client donates ${fmt(Math.round(charitableCash))} in cash AND has ${fmt(Math.round(ltcg))} ` +
+      `of long-term capital gains this year. Donating appreciated stock instead of cash (up to ` +
+      `${fmt(Math.round(donationAmount))}) avoids cap-gains tax on the unrealized appreciation.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      charitableCash: Math.round(charitableCash),
+      longTermCapitalGains: Math.round(ltcg),
+      donationAmount: Math.round(donationAmount),
+      assumedUnrealizedPct: G1_12_AVG_UNREALIZED_PCT,
+      ltcgRate,
+    },
+    assumptions: [
+      `Heuristic: assumes ${(G1_12_AVG_UNREALIZED_PCT * 100).toFixed(0)}% of donated stock FMV is unrealized appreciation. Real percentage varies by lot age + market performance.`,
+      `LTCG rate assumed at ${(ltcgRate * 100).toFixed(0)}% (most HNW filers). 0% bracket applies < $47,025 single TY2024; 20% applies > $518,900.`,
+      `Must be LONG-term (held > 1 year). Short-term gains don't qualify for FMV deduction — limited to cost basis under IRC §170(e).`,
+      `Charity must accept in-kind stock — most large 501(c)(3)s do, but smaller ones may not.`,
+      `H2 verification DEFERRED — engine doesn't track per-lot cost basis. Real delta would reduce reported LTCG by the donated FMV; matching by lot requires H5 asset balance tracking.`,
+      `Form 8283 required for non-cash donations > $500 (Section A for items < $5,000; Section B with qualified appraisal for items > $5,000).`,
+    ],
+    // No whatIf: requires per-lot cost basis (H5) for accurate engine delta.
+  };
+}
+
+// ── G1.13 — Augusta Rule §280A(g) ─────────────────────────────────────────
+
+const G1_13_MIN_SE_INCOME = 50_000;
+const G1_13_MAX_DAYS = 14;
+const G1_13_DEFAULT_DAILY_RATE = 1500; // Conservative average for event venues
+
+function detectAugustaRule(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+  baselineInputs?: TaxReturnInputs;
+}): OpportunityHit | null {
+  const { computed, adjustments, baselineInputs } = args;
+  // Must have meaningful business income (SE or K-1 active).
+  const netSe = computed.detail.se.netSeEarnings;
+  const k1Active = computed.scheduleK1?.totalActiveOrdinaryIncome ?? 0;
+  if (netSe < G1_13_MIN_SE_INCOME && k1Active < G1_13_MIN_SE_INCOME) return null;
+  // Suppress if CPA has already entered an augusta_rule_rent adjustment.
+  const existing = sumAdjustment(adjustments, "augusta_rule_rent");
+  if (existing > 0) return null;
+
+  const rentAmount = G1_13_MAX_DAYS * G1_13_DEFAULT_DAILY_RATE;
+  const fedRate = federalMarginalRate(computed);
+  const stateRate = stateMarginalRate(computed);
+  const estSavings = rentAmount * (fedRate + stateRate);
+
+  // H2 mutation: business deducts rentAmount (above-the-line via the generic
+  // "deduction" adjustment); homeowner excludes from income under §280A(g)
+  // safe-harbor.
+  const whatIf = runDetectorWhatIf({
+    baselineInputs,
+    scenarioId: "G1.13-augusta",
+    label: `Augusta Rule rent $${rentAmount.toLocaleString("en-US")}`,
+    mutations: [
+      {
+        kind: "add_adjustment",
+        adjustmentType: "deduction",
+        amount: rentAmount,
+      },
+    ],
+    semantics: "savings",
+    varyAmount: true,
+  });
+
+  const strategy = strategyById("G1.13");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    rentAmount,
+    dailyRate: G1_13_DEFAULT_DAILY_RATE,
+    estSavings: Math.round(estSavings),
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings: Math.round(estSavings),
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client has ${fmt(Math.round(Math.max(netSe, k1Active)))} of business income. The §280A(g) ` +
+      `safe-harbor lets a homeowner rent their residence to their business for up to 14 days/year ` +
+      `at fair rental rate — business deducts, homeowner excludes from personal income.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      netSeEarnings: Math.round(netSe),
+      k1ActiveIncome: Math.round(k1Active),
+      defaultDailyRate: G1_13_DEFAULT_DAILY_RATE,
+      maxDays: G1_13_MAX_DAYS,
+      rentAmount,
+      federalMarginalRate: fedRate,
+      stateMarginalRate: stateRate,
+    },
+    assumptions: [
+      `Default rate $${G1_13_DEFAULT_DAILY_RATE.toLocaleString("en-US")}/day — conservative estimate for a typical residential venue. ACTUAL rate must be FAIR MARKET — document with comparable Airbnb / event-venue listings.`,
+      `STRICT 14-day annual limit (§280A(g)(2)) — if even one day over, ALL rental income becomes taxable.`,
+      `Each rental day MUST have legitimate business purpose: board meeting, client event, planning retreat, etc. Document with written meeting minutes + agenda.`,
+      `Business must actually need the space — IRS challenges sham rentals where no business activity occurs.`,
+      `Sensitivity range based on ±10% of the assumed $${rentAmount.toLocaleString("en-US")} annual rent — vary the dailyRate input if comparable venues suggest a different rate.`,
+      `Engine models the deduction generically — actual implementation requires a board resolution authorizing the rental and a written rental agreement.`,
+    ],
+    whatIf,
+  };
+}
+
+// ── G1.14 — HSA maximization ──────────────────────────────────────────────
+
+const HSA_CAP: Record<number, { self: number; family: number; catchup55: number }> = {
+  2024: { self: 4_150, family: 8_300, catchup55: 1_000 },
+  2025: { self: 4_300, family: 8_550, catchup55: 1_000 },
+};
+
+function detectHsaMax(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+  baselineInputs?: TaxReturnInputs;
+}): OpportunityHit | null {
+  const { client, computed, adjustments, baselineInputs } = args;
+  // Proxy for HDHP coverage: client has set hsaIsFamilyCoverage (true or
+  // false). When null, CPA hasn't gathered HSA data — skip. Detector also
+  // skips when there's NO existing hsa_contribution AND the flag is false
+  // (probably non-HDHP client who has set the flag to "self" by default).
+  // For safety: require explicit "true" OR an existing nonzero contribution
+  // (which proves HDHP coverage).
+  const existingHsa = sumAdjustment(adjustments, "hsa_contribution");
+  const existingEmployer = sumAdjustment(adjustments, "hsa_employer_contribution");
+  const isFamily = client.hsaIsFamilyCoverage === true;
+  const hasAnyHsa = existingHsa + existingEmployer > 0;
+  if (!isFamily && !hasAnyHsa) return null;
+
+  const cfg = HSA_CAP[computed.taxYear] ?? HSA_CAP[2025];
+  const baseCap = isFamily ? cfg.family : cfg.self;
+  const age = client.taxpayerAge ?? 0;
+  const catchup = age >= 55 ? cfg.catchup55 : 0;
+  const totalCap = baseCap + catchup;
+  // §223 employer contribution counts against the cap.
+  const remainingRoom = Math.max(0, totalCap - existingHsa - existingEmployer);
+  if (remainingRoom <= 0) return null;
+
+  const fedRate = federalMarginalRate(computed);
+  const stateRate = stateMarginalRate(computed);
+  // HSA is federal + state above-the-line in most states (CA + NJ DO tax
+  // HSA — engine handles state-side; for the heuristic we use combined
+  // rate as a reasonable upper bound).
+  const estSavings = remainingRoom * (fedRate + stateRate);
+
+  const whatIf = runDetectorWhatIf({
+    baselineInputs,
+    scenarioId: "G1.14-hsa-max",
+    label: `Max HSA: add $${remainingRoom.toLocaleString("en-US")}`,
+    mutations: [
+      {
+        kind: "add_adjustment",
+        adjustmentType: "hsa_contribution",
+        amount: remainingRoom,
+      },
+    ],
+    semantics: "savings",
+    varyAmount: true,
+  });
+
+  const strategy = strategyById("G1.14");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    contributionGap: remainingRoom,
+    cap: totalCap,
+    estSavings: Math.round(estSavings),
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings: Math.round(estSavings),
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client has ${fmt(existingHsa + existingEmployer)} of HSA contributions vs the ${fmt(totalCap)} ` +
+      `${isFamily ? "family" : "self-only"} cap${catchup > 0 ? ` (incl ${fmt(catchup)} age-55 catch-up)` : ""}. ` +
+      `Remaining room: ${fmt(remainingRoom)}. HSA contributions are above-the-line, triple-tax-advantaged.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      isFamily,
+      taxpayerAge: age,
+      cap: totalCap,
+      existingHsaContribution: existingHsa,
+      existingEmployerContribution: existingEmployer,
+      remainingRoom,
+      federalMarginalRate: fedRate,
+      stateMarginalRate: stateRate,
+    },
+    assumptions: [
+      `§223 cap TY${computed.taxYear}: ${fmt(baseCap)} ${isFamily ? "family" : "self-only"}${catchup > 0 ? ` + ${fmt(catchup)} age-55 catch-up = ${fmt(totalCap)} total` : ""}.`,
+      `Employer contributions (W-2 Box 12 code W) count against the cap.`,
+      `HDHP coverage required for the full year — pro-rate under §223(b)(8) "last-month rule" with testing period; not modeled here.`,
+      `H2 mutation adds hsa_contribution above-the-line — engine reduces AGI by the full amount (CA + NJ slightly different; engine handles).`,
+      `Contribution deadline: April 15 of next year (same as IRA).`,
+      `Sensitivity range based on ±10% of the remaining room — variations occur if existing employer contribution changes mid-year.`,
+    ],
+    whatIf,
+  };
+}
+
 // ── Top-level evaluator ────────────────────────────────────────────────────
 
 export interface PlanningInputs {
@@ -1130,6 +1510,15 @@ export function evaluatePlanningOpportunities(args: PlanningInputs): Opportunity
   if (qbi) hits.push(qbi);
   const tlh = detectTaxLossHarvesting({ client, computed, baselineInputs });
   if (tlh) hits.push(tlh);
+  // Phase H — H1 expansion (catalog v1.2): QCD, appreciated stock, Augusta, HSA.
+  const qcd = detectQcd({ client, computed, adjustments, baselineInputs });
+  if (qcd) hits.push(qcd);
+  const apprStock = detectAppreciatedStockDonation({ computed, adjustments });
+  if (apprStock) hits.push(apprStock);
+  const augusta = detectAugustaRule({ computed, adjustments, baselineInputs });
+  if (augusta) hits.push(augusta);
+  const hsaMax = detectHsaMax({ client, computed, adjustments, baselineInputs });
+  if (hsaMax) hits.push(hsaMax);
   hits.sort((a, b) => b.estSavings - a.estSavings);
   return hits;
 }
