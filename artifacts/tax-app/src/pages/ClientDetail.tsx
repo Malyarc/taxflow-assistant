@@ -4555,6 +4555,22 @@ function AiDiscoveryCard({ clientId }: { clientId: number }) {
                     {(conf * 100).toFixed(0)}% confidence
                   </span>
                 </div>
+                {c.verification ? (
+                  <div
+                    className={`mt-2 text-[11px] rounded px-2 py-1 ${
+                      c.verification.status === "catalog-overlap"
+                        ? "bg-amber-50 text-amber-900 border border-amber-200"
+                        : "bg-slate-50 text-slate-700 border border-slate-200"
+                    }`}
+                    title={c.verification.detail}
+                  >
+                    <span className="font-medium">
+                      {c.verification.status === "catalog-overlap"
+                        ? `Rule-engine: catalog-overlap with ${c.verification.matchedCatalogId ?? "?"}`
+                        : "Rule-engine: extra strategy (not in catalog)"}
+                    </span>
+                  </div>
+                ) : null}
                 <p className="mt-2 text-fuchsia-900">{c.rationale}</p>
                 {Array.isArray(c.prerequisiteData) && c.prerequisiteData.length > 0 ? (
                   <div className="mt-2 rounded border border-amber-200 bg-amber-50 p-2 text-xs">

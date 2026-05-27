@@ -2153,6 +2153,25 @@ export interface WhatIfSummary {
   effectiveTaxRate: number;
 }
 
+export type PlanningDiscoveryVerificationStatus =
+  (typeof PlanningDiscoveryVerificationStatus)[keyof typeof PlanningDiscoveryVerificationStatus];
+
+export const PlanningDiscoveryVerificationStatus = {
+  "catalog-overlap": "catalog-overlap",
+  "extra-strategy": "extra-strategy",
+} as const;
+
+export interface PlanningDiscoveryVerification {
+  status: PlanningDiscoveryVerificationStatus;
+  /**
+   * Catalog strategy ID matched (catalog-overlap status only).
+   * @nullable
+   */
+  matchedCatalogId?: string | null;
+  /** CPA-readable explanation of the verification status. */
+  detail: string;
+}
+
 export interface PlanningDiscoveryCandidate {
   name: string;
   /** IRS Code section the strategy is anchored in (e.g., "IRC §1031"). */
@@ -2163,6 +2182,9 @@ export interface PlanningDiscoveryCandidate {
   rationale: string;
   /** Data the CPA needs to gather to validate this candidate. */
   prerequisiteData: string[];
+  /** Phase H — H8. Rule-engine cross-check of the LLM's suggestion. `catalog-overlap` = IRC matches a catalog strategy the engine did NOT trigger (CPA: is LLM right or missing data?). `extra-strategy` = not in the engine catalog (qualitative judgment only). Candidates that match an already-detected catalog strategy are filtered out entirely on the server.
+   */
+  verification: PlanningDiscoveryVerification;
 }
 
 export interface PlanningDiscovery {

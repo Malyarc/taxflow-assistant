@@ -49,6 +49,7 @@
     "src/tax-engine-whatif-tests.ts",
     "src/tax-engine-form8606-tests.ts",
     "src/tax-engine-multiyear-tests.ts",
+    "src/tax-engine-discovery-tests.ts",
     "src/seed-dummy-clients.ts"
   ]
 }

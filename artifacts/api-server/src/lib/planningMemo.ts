@@ -251,18 +251,124 @@ No preamble, no markdown fences, no explanation outside the JSON.
 Example output:
 {"candidates":[{"name":"Roth conversion via traditional IRA","ircSection":"IRC §408A","confidence":0.7,"rationale":"Client is in a low-marginal-rate year and has $50k of headroom in the 12% bracket — could convert at a much lower rate than future RMDs would face.","prerequisiteData":["Traditional IRA balance","Client's expected future income trajectory","Roth IRA already open?"]}]}`;
 
+/**
+ * Phase H — H8: Rule-engine verification of an LLM-proposed candidate.
+ *
+ * The LLM proposes strategies based on the client snapshot + catalog. We
+ * post-process each candidate by cross-referencing the catalog:
+ *
+ *   - "catalog-overlap": candidate's IRC section matches a catalog
+ *     strategy that the deterministic engine did NOT trigger for this
+ *     client. CPA action: confirm whether the LLM is right (and the
+ *     engine is missing input data) OR the LLM hallucinated.
+ *   - "extra-strategy": candidate is not in the engine's catalog at all
+ *     — only the LLM's qualitative judgment supports it. CPA evaluates
+ *     from first principles.
+ *
+ * LLM responses that match an ALREADY-DETECTED strategy ID are filtered
+ * out entirely (the prompt forbids these but the LLM occasionally
+ * violates the rule).
+ */
+export interface PlanningDiscoveryVerification {
+  status: "catalog-overlap" | "extra-strategy";
+  /** Catalog strategy ID this candidate maps to (catalog-overlap only). */
+  matchedCatalogId?: string;
+  /** CPA-readable explanation of the verification status. */
+  detail: string;
+}
+
 export interface PlanningDiscoveryCandidate {
   name: string;
   ircSection: string;
   confidence: number;
   rationale: string;
   prerequisiteData: string[];
+  /** Phase H — H8 rule-engine verification. */
+  verification: PlanningDiscoveryVerification;
 }
 
 export interface PlanningDiscoveryResult {
   candidates: PlanningDiscoveryCandidate[];
   aiUsed: boolean;
   model: string;
+}
+
+// ── H8 — verification helpers ────────────────────────────────────────────
+
+/**
+ * Normalize an IRC section string for matching (lowercase, collapse
+ * whitespace, strip the "IRC §" prefix variants).
+ */
+function normalizeIrc(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[§i\.r\.c\.\s,]+/g, " ")
+    .trim();
+}
+
+/**
+ * H8 verifier — match an LLM candidate to a catalog strategy by IRC
+ * section. Returns verification status + match metadata.
+ *
+ * Two outcomes:
+ *   - catalog-overlap: IRC matches a catalog strategy not in detected hits
+ *   - extra-strategy: no catalog match (LLM-only)
+ *
+ * Candidates whose matched catalog strategy is ALREADY DETECTED are
+ * caught by the caller (`verifyAndDedupeCandidates`) before this runs.
+ */
+function verifyCandidate(
+  candidate: Pick<PlanningDiscoveryCandidate, "ircSection">,
+  alreadyDetectedIds: Set<string>,
+): { status: PlanningDiscoveryVerification["status"]; matchedCatalogId?: string; detail: string } | "duplicate" {
+  const candidateIrc = normalizeIrc(candidate.ircSection || "");
+  if (!candidateIrc) {
+    return {
+      status: "extra-strategy",
+      detail: "No IRC section provided — cannot mechanically verify against the catalog.",
+    };
+  }
+  const matched = CATALOG_V1.strategies.find((s) => {
+    const catIrc = normalizeIrc(s.ircSection);
+    if (!catIrc) return false;
+    // Best-effort match: either substring of the other (handles
+    // "IRC §1031" matching "1031" alone, etc.). Multi-section catalog
+    // entries like "IRC §164(b)(6); Notice 2020-75" still match a
+    // single-section candidate via substring.
+    return candidateIrc.includes(catIrc) || catIrc.includes(candidateIrc);
+  });
+  if (!matched) {
+    return {
+      status: "extra-strategy",
+      detail: "Not in the deterministic engine's catalog — CPA evaluates qualitatively from first principles.",
+    };
+  }
+  if (alreadyDetectedIds.has(matched.id)) return "duplicate";
+  return {
+    status: "catalog-overlap",
+    matchedCatalogId: matched.id,
+    detail: `Matches catalog strategy ${matched.id} (${matched.name}), but the deterministic engine did NOT fire it for this client. CPA: verify whether (a) the LLM is right and the engine is missing input data, OR (b) the trigger conditions truly aren't met.`,
+  };
+}
+
+/**
+ * Verify + de-duplicate LLM candidates. Returns the final candidate list
+ * with each `verification` field populated; drops anything that matches
+ * an already-detected catalog strategy (the LLM was told not to do this
+ * but occasionally does anyway). Exported for unit tests.
+ */
+export function verifyAndDedupeCandidates(
+  rawCandidates: Pick<PlanningDiscoveryCandidate, "name" | "ircSection" | "confidence" | "rationale" | "prerequisiteData">[],
+  hits: OpportunityHit[],
+): PlanningDiscoveryCandidate[] {
+  const alreadyIds = new Set(hits.map((h) => h.strategyId));
+  const out: PlanningDiscoveryCandidate[] = [];
+  for (const c of rawCandidates) {
+    const verification = verifyCandidate(c, alreadyIds);
+    if (verification === "duplicate") continue;
+    out.push({ ...c, verification });
+  }
+  return out;
 }
 
 /**
@@ -309,10 +415,11 @@ export async function discoverPlanningCandidates(input: PlanningMemoInput): Prom
     const raw = await chat(DISCOVERY_SYSTEM_PROMPT, payload, 1500);
     // Strip any accidental markdown fences.
     const cleaned = raw.replace(/^```json\s*/i, "").replace(/```$/i, "").trim();
-    const parsed = JSON.parse(cleaned) as { candidates?: PlanningDiscoveryCandidate[] };
+    type RawCandidate = Partial<Omit<PlanningDiscoveryCandidate, "verification">>;
+    const parsed = JSON.parse(cleaned) as { candidates?: RawCandidate[] };
     const candidates = Array.isArray(parsed.candidates) ? parsed.candidates : [];
-    // Filter out malformed entries + cap at 5
-    const validated: PlanningDiscoveryCandidate[] = candidates
+    // Filter out malformed entries + cap at 5 + normalize.
+    const normalized = candidates
       .filter((c) => typeof c?.name === "string" && typeof c?.ircSection === "string")
       .slice(0, 5)
       .map((c) => ({
@@ -324,8 +431,12 @@ export async function discoverPlanningCandidates(input: PlanningMemoInput): Prom
           ? c.prerequisiteData.filter((p): p is string => typeof p === "string")
           : [],
       }));
+    // H8 — rule-engine verification + dedupe of any candidate that matches
+    // an already-detected catalog strategy (LLM occasionally violates the
+    // dedupe instruction in the system prompt).
+    const verified = verifyAndDedupeCandidates(normalized, input.hits);
     return {
-      candidates: validated,
+      candidates: verified,
       aiUsed: true,
       model: PLANNING_MEMO_MODEL,
     };

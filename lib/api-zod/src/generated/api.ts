@@ -2254,6 +2254,22 @@ export const GetPlanningDiscoveryResponse = zod.object({
       prerequisiteData: zod
         .array(zod.string())
         .describe("Data the CPA needs to gather to validate this candidate."),
+      verification: zod
+        .object({
+          status: zod.enum(["catalog-overlap", "extra-strategy"]),
+          matchedCatalogId: zod
+            .string()
+            .nullish()
+            .describe(
+              "Catalog strategy ID matched (catalog-overlap status only).",
+            ),
+          detail: zod
+            .string()
+            .describe("CPA-readable explanation of the verification status."),
+        })
+        .describe(
+          "Phase H — H8. Rule-engine cross-check of the LLM's suggestion. `catalog-overlap` = IRC matches a catalog strategy the engine did NOT trigger (CPA: is LLM right or missing data?). `extra-strategy` = not in the engine catalog (qualitative judgment only). Candidates that match an already-detected catalog strategy are filtered out entirely on the server.\n",
+        ),
     }),
   ),
   aiUsed: zod.boolean(),
