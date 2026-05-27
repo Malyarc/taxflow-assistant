@@ -16,7 +16,7 @@
  */
 
 import { openai, aiEnabled, aiModel } from "@workspace/integrations-openai-ai-server";
-import type { OpportunityHit } from "@workspace/planning-strategies";
+import { CATALOG_V1, type OpportunityHit, type PlanningStrategy } from "@workspace/planning-strategies";
 import type { ComputedTaxReturn } from "./taxReturnEngine";
 
 const PLANNING_MEMO_MODEL = process.env.AI_PLANNING_MODEL ?? aiModel;
@@ -208,6 +208,131 @@ export async function inferMissingData(input: PlanningMemoInput): Promise<{ item
   // Parse "- foo" lines.
   const items = raw.split("\n").map((l) => l.trim()).filter((l) => l.startsWith("- ")).map((l) => l.slice(2).trim());
   return { items: items.length > 0 ? items : deterministic, aiUsed: true, model: PLANNING_MEMO_MODEL };
+}
+
+// ── Phase H — H8 LLM fact-pattern strategy discovery ─────────────────────
+
+const DISCOVERY_SYSTEM_PROMPT = `You are a senior CPA reviewing a client's tax return for OVERLOOKED tax-planning opportunities.
+
+You will receive:
+  (a) A STRUCTURED snapshot of the client's tax return (AGI, taxable income, key line items).
+  (b) The list of opportunities the DETERMINISTIC rule engine already detected (Layer 2 hits).
+  (c) The FULL CATALOG of strategies the rule engine knows about (with IDs, names, trigger descriptions).
+
+YOUR JOB: identify candidate strategies the rule engine MISSED. Two categories:
+
+1. CATALOG strategies — strategies already in the catalog (c) that the rule
+   engine's trigger logic did NOT detect, but which a sharp CPA might still
+   consider applicable based on the client snapshot. Common reasons: client
+   data is incomplete, the trigger uses a conservative threshold, or the
+   strategy applies but needs additional information to confirm.
+
+2. EXTRA strategies — well-established IRS-codified strategies NOT in the
+   catalog (c) that you believe apply to this client. You may suggest these
+   IF you can cite a specific IRC section + plausible reasoning.
+
+HARD CONSTRAINTS:
+  - DO NOT invent or compute dollar amounts. The deterministic engine owns
+    all numbers. Your output is qualitative.
+  - DO NOT recommend a strategy already in the engine's detected hits (b).
+  - For each candidate, you MUST provide:
+      * name (short label)
+      * ircSection (the IRS Code section, e.g., "IRC §1031")
+      * confidence (decimal 0.0-1.0, how sure you are this applies)
+      * rationale (1-2 sentence "why I think this applies to THIS client")
+      * prerequisiteData (string array — what the CPA needs to gather to confirm)
+  - Cap output at 5 candidates total. Quality > quantity.
+  - If you find nothing, return an empty array. Do NOT pad.
+
+OUTPUT FORMAT: a JSON object with a single key "candidates" whose value is
+an array of the candidate objects described above. Output ONLY valid JSON.
+No preamble, no markdown fences, no explanation outside the JSON.
+
+Example output:
+{"candidates":[{"name":"Roth conversion via traditional IRA","ircSection":"IRC §408A","confidence":0.7,"rationale":"Client is in a low-marginal-rate year and has $50k of headroom in the 12% bracket — could convert at a much lower rate than future RMDs would face.","prerequisiteData":["Traditional IRA balance","Client's expected future income trajectory","Roth IRA already open?"]}]}`;
+
+export interface PlanningDiscoveryCandidate {
+  name: string;
+  ircSection: string;
+  confidence: number;
+  rationale: string;
+  prerequisiteData: string[];
+}
+
+export interface PlanningDiscoveryResult {
+  candidates: PlanningDiscoveryCandidate[];
+  aiUsed: boolean;
+  model: string;
+}
+
+/**
+ * Phase H — H8: ask the LLM to propose tax-planning strategies the
+ * deterministic rule engine may have missed. Returns structured candidate
+ * list with confidence + rationale + prerequisite data. Engine math is
+ * NEVER touched by the LLM — output is qualitative only.
+ *
+ * When AI is disabled (no API key), returns a deterministic stub
+ * indicating the feature requires AI; no candidates surfaced.
+ */
+export async function discoverPlanningCandidates(input: PlanningMemoInput): Promise<PlanningDiscoveryResult> {
+  if (!aiEnabled) {
+    return {
+      candidates: [],
+      aiUsed: false,
+      model: "stub",
+    };
+  }
+
+  // Strip the catalog down to its public-facing fields (name + ID + trigger
+  // description + IRC section). Don't send the full formula strings (they
+  // contain implementation detail the LLM doesn't need).
+  const catalogForLlm = CATALOG_V1.strategies.map((s: PlanningStrategy) => ({
+    id: s.id,
+    name: s.name,
+    category: s.category,
+    ircSection: s.ircSection,
+    trigger: s.trigger,
+  }));
+
+  const hitsForLlm = input.hits.map((h) => ({
+    strategyId: h.strategyId,
+    name: h.name,
+  }));
+
+  const payload = {
+    client: clientSnapshotForLlm(input.client, input.computed),
+    catalog: catalogForLlm,
+    alreadyDetected: hitsForLlm,
+  };
+
+  try {
+    const raw = await chat(DISCOVERY_SYSTEM_PROMPT, payload, 1500);
+    // Strip any accidental markdown fences.
+    const cleaned = raw.replace(/^```json\s*/i, "").replace(/```$/i, "").trim();
+    const parsed = JSON.parse(cleaned) as { candidates?: PlanningDiscoveryCandidate[] };
+    const candidates = Array.isArray(parsed.candidates) ? parsed.candidates : [];
+    // Filter out malformed entries + cap at 5
+    const validated: PlanningDiscoveryCandidate[] = candidates
+      .filter((c) => typeof c?.name === "string" && typeof c?.ircSection === "string")
+      .slice(0, 5)
+      .map((c) => ({
+        name: String(c.name),
+        ircSection: String(c.ircSection),
+        confidence: typeof c.confidence === "number" ? Math.max(0, Math.min(1, c.confidence)) : 0.5,
+        rationale: String(c.rationale ?? ""),
+        prerequisiteData: Array.isArray(c.prerequisiteData)
+          ? c.prerequisiteData.filter((p): p is string => typeof p === "string")
+          : [],
+      }));
+    return {
+      candidates: validated,
+      aiUsed: true,
+      model: PLANNING_MEMO_MODEL,
+    };
+  } catch {
+    // LLM returned malformed JSON or service errored — return empty list.
+    return { candidates: [], aiUsed: false, model: "error" };
+  }
 }
 
 // ── Deterministic fallback (no AI) ─────────────────────────────────────────

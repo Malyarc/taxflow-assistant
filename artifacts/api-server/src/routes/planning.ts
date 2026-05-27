@@ -7,6 +7,7 @@ import {
   GetPlanningClientEmailParams,
   GetPlanningMissingDataParams,
   GetPlanningMultiYearParams,
+  GetPlanningDiscoveryParams,
   RunWhatIfScenarioParams,
   RunWhatIfScenarioBody,
   RunStateComparisonParams,
@@ -28,6 +29,7 @@ import {
   generatePlanningMemo,
   generateClientOutreachEmail,
   inferMissingData,
+  discoverPlanningCandidates,
 } from "../lib/planningMemo";
 import { computeTaxReturn, loadTaxReturnInputs } from "../lib/taxReturnPipeline";
 import {
@@ -272,6 +274,28 @@ router.get("/clients/:clientId/planning-missing-data", async (req, res): Promise
   } catch (err) {
     logger.error({ err, clientId: params.data.clientId }, "Planning missing-data failed");
     res.status(500).json({ error: "Planning missing-data failed" });
+  }
+});
+
+// ── Phase H — H8 LLM fact-pattern strategy discovery ──────────────────────
+router.get("/clients/:clientId/planning-discovery", async (req, res): Promise<void> => {
+  const params = GetPlanningDiscoveryParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  try {
+    const ctx = await loadPlanningContext(params.data.clientId);
+    if (!ctx) { res.status(404).json({ error: "Client not found" }); return; }
+    const result = await discoverPlanningCandidates({
+      client: ctx.client, computed: ctx.computed, hits: ctx.hits,
+    });
+    res.json({
+      clientId: params.data.clientId,
+      candidates: result.candidates,
+      aiUsed: result.aiUsed,
+      model: result.model,
+    });
+  } catch (err) {
+    logger.error({ err, clientId: params.data.clientId }, "Planning discovery failed");
+    res.status(500).json({ error: "Planning discovery failed" });
   }
 });
 

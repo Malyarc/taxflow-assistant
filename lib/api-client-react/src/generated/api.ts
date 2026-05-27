@@ -38,6 +38,7 @@ import type {
   GetPlanningHitListParams,
   HealthStatus,
   PeerBenchmarkResponse,
+  PlanningDiscovery,
   PlanningHitList,
   PlanningMemo,
   PlanningMissingData,
@@ -2666,6 +2667,98 @@ export function useGetPlanningMultiYear<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetPlanningMultiYearQueryOptions(clientId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Asks the LLM to identify candidate tax-planning strategies the deterministic rule engine may have missed. The LLM receives the client's tax snapshot + already-detected hits + the FULL strategy catalog, and returns a JSON array of candidates with name, IRC section, confidence (LLM-self-reported 0.0-1.0), rationale, and prerequisiteData.
+Engine math is NEVER touched by the LLM — output is qualitative. Returns empty candidates array when AI is disabled (no API key) or when the LLM finds nothing.
+
+ * @summary AI-powered fact-pattern strategy discovery (Phase H — H8)
+ */
+export const getGetPlanningDiscoveryUrl = (clientId: number) => {
+  return `/api/clients/${clientId}/planning-discovery`;
+};
+
+export const getPlanningDiscovery = async (
+  clientId: number,
+  options?: RequestInit,
+): Promise<PlanningDiscovery> => {
+  return customFetch<PlanningDiscovery>(getGetPlanningDiscoveryUrl(clientId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetPlanningDiscoveryQueryKey = (clientId: number) => {
+  return [`/api/clients/${clientId}/planning-discovery`] as const;
+};
+
+export const getGetPlanningDiscoveryQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPlanningDiscovery>>,
+  TError = ErrorType<ProTierRequired | void>,
+>(
+  clientId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPlanningDiscovery>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetPlanningDiscoveryQueryKey(clientId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getPlanningDiscovery>>
+  > = ({ signal }) =>
+    getPlanningDiscovery(clientId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!clientId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPlanningDiscovery>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetPlanningDiscoveryQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getPlanningDiscovery>>
+>;
+export type GetPlanningDiscoveryQueryError = ErrorType<ProTierRequired | void>;
+
+/**
+ * @summary AI-powered fact-pattern strategy discovery (Phase H — H8)
+ */
+
+export function useGetPlanningDiscovery<
+  TData = Awaited<ReturnType<typeof getPlanningDiscovery>>,
+  TError = ErrorType<ProTierRequired | void>,
+>(
+  clientId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPlanningDiscovery>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetPlanningDiscoveryQueryOptions(clientId, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

@@ -2104,6 +2104,43 @@ export const GetPlanningMultiYearResponse = zod.object({
 });
 
 /**
+ * Asks the LLM to identify candidate tax-planning strategies the deterministic rule engine may have missed. The LLM receives the client's tax snapshot + already-detected hits + the FULL strategy catalog, and returns a JSON array of candidates with name, IRC section, confidence (LLM-self-reported 0.0-1.0), rationale, and prerequisiteData.
+Engine math is NEVER touched by the LLM — output is qualitative. Returns empty candidates array when AI is disabled (no API key) or when the LLM finds nothing.
+
+ * @summary AI-powered fact-pattern strategy discovery (Phase H — H8)
+ */
+export const GetPlanningDiscoveryParams = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const GetPlanningDiscoveryResponse = zod.object({
+  clientId: zod.number(),
+  candidates: zod.array(
+    zod.object({
+      name: zod.string(),
+      ircSection: zod
+        .string()
+        .describe(
+          'IRS Code section the strategy is anchored in (e.g., \"IRC §1031\").',
+        ),
+      confidence: zod
+        .number()
+        .describe("LLM-self-reported confidence (0.0-1.0)."),
+      rationale: zod
+        .string()
+        .describe(
+          "1-2 sentence reasoning for why this strategy might apply to this client.",
+        ),
+      prerequisiteData: zod
+        .array(zod.string())
+        .describe("Data the CPA needs to gather to validate this candidate."),
+    }),
+  ),
+  aiUsed: zod.boolean(),
+  model: zod.string(),
+});
+
+/**
  * Loads all firm clients within an AGI band around the target client and computes cohort statistics: mean / median / p25 / p75 effective tax rate. Returns the client's own effective rate + percentile rank within the cohort, so CPAs can flag clients paying significantly more (or less) than peers.
 Default AGI band: ±$50,000 around target AGI. Override via query.
 

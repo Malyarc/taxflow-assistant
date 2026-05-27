@@ -731,6 +731,44 @@ paths:
         "404":
           description: Client not found
 
+  /clients/{clientId}/planning-discovery:
+    get:
+      operationId: getPlanningDiscovery
+      tags: [planning]
+      summary: AI-powered fact-pattern strategy discovery (Phase H — H8)
+      description: >
+        Asks the LLM to identify candidate tax-planning strategies the
+        deterministic rule engine may have missed. The LLM receives the
+        client's tax snapshot + already-detected hits + the FULL strategy
+        catalog, and returns a JSON array of candidates with name, IRC
+        section, confidence (LLM-self-reported 0.0-1.0), rationale, and
+        prerequisiteData.
+
+        Engine math is NEVER touched by the LLM — output is qualitative.
+        Returns empty candidates array when AI is disabled (no API key)
+        or when the LLM finds nothing.
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Discovery result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PlanningDiscovery"
+        "402":
+          description: Pro tier disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProTierRequired"
+        "404":
+          description: Client not found
+
   /clients/{clientId}/peer-benchmark:
     get:
       operationId: getPeerBenchmark
@@ -3426,6 +3464,42 @@ components:
         federalRefundOrOwed: { type: number }
         stateRefundOrOwed: { type: number }
         effectiveTaxRate: { type: number }
+
+    PlanningDiscoveryCandidate:
+      type: object
+      required: [name, ircSection, confidence, rationale, prerequisiteData]
+      properties:
+        name:
+          type: string
+        ircSection:
+          description: IRS Code section the strategy is anchored in (e.g., "IRC §1031").
+          type: string
+        confidence:
+          description: LLM-self-reported confidence (0.0-1.0).
+          type: number
+        rationale:
+          description: 1-2 sentence reasoning for why this strategy might apply to this client.
+          type: string
+        prerequisiteData:
+          description: Data the CPA needs to gather to validate this candidate.
+          type: array
+          items:
+            type: string
+
+    PlanningDiscovery:
+      type: object
+      required: [clientId, candidates, aiUsed, model]
+      properties:
+        clientId:
+          type: integer
+        candidates:
+          type: array
+          items:
+            $ref: "#/components/schemas/PlanningDiscoveryCandidate"
+        aiUsed:
+          type: boolean
+        model:
+          type: string
 
     PeerBenchmarkResponse:
       type: object

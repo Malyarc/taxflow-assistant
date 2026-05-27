@@ -27,6 +27,7 @@ import {
   useGetPlanningMultiYear,
   useRunStateComparison,
   useGetPeerBenchmark,
+  useGetPlanningDiscovery,
   useGetSettings,
   getGetPlanningOpportunitiesQueryKey,
   getGetPlanningMemoQueryKey,
@@ -34,6 +35,7 @@ import {
   getGetPlanningMissingDataQueryKey,
   getGetPlanningMultiYearQueryKey,
   getGetPeerBenchmarkQueryKey,
+  getGetPlanningDiscoveryQueryKey,
   getGetSettingsQueryKey,
   getGetClientQueryKey,
   getListDocumentsQueryKey,
@@ -4090,6 +4092,8 @@ function PlanningTab({ clientId }: { clientId: number }) {
 
       <CrossStrategyCard crossStrategy={data.crossStrategy} />
 
+      <AiDiscoveryCard clientId={clientId} />
+
       <StateResidencyComparisonCard clientId={clientId} />
 
       <PeerBenchmarkCard clientId={clientId} />
@@ -4391,6 +4395,93 @@ function CrossStrategyCard({ crossStrategy }: { crossStrategy?: CrossStrategyDat
           </dl>
         </div>
       </CardContent>
+    </Card>
+  );
+}
+
+// ── Phase H — H8 AI fact-pattern strategy discovery card ─────────────────
+
+function AiDiscoveryCard({ clientId }: { clientId: number }) {
+  const [enabled, setEnabled] = React.useState(false);
+  const { data, isLoading, error } = useGetPlanningDiscovery(clientId, {
+    query: {
+      queryKey: getGetPlanningDiscoveryQueryKey(clientId),
+      enabled,
+    },
+  });
+  return (
+    <Card className="border-fuchsia-200 bg-fuchsia-50/30">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <CardTitle className="text-base text-fuchsia-900">
+              AI strategy discovery (Phase H — H8)
+            </CardTitle>
+            <div className="text-xs text-fuchsia-700 mt-1">
+              Ask the LLM to scan the client's full picture + the entire 20-rule
+              catalog and surface candidate strategies the deterministic rule
+              engine may have missed. Math stays deterministic; LLM only
+              proposes qualitative candidates with rationales + IRC citations.
+            </div>
+          </div>
+          <Button
+            size="sm"
+            variant={enabled ? "outline" : "default"}
+            onClick={() => setEnabled(true)}
+            disabled={enabled && isLoading}
+          >
+            {enabled && isLoading ? "Scanning..." : enabled ? "Re-scan" : "Discover with AI"}
+          </Button>
+        </div>
+      </CardHeader>
+      {!enabled ? null : isLoading ? (
+        <CardContent className="text-sm text-fuchsia-700">Scanning catalog...</CardContent>
+      ) : error ? (
+        <CardContent className="text-sm text-red-700">
+          Discovery failed. Check server logs.
+        </CardContent>
+      ) : !data ? null : (data.candidates ?? []).length === 0 ? (
+        <CardContent className="text-sm text-fuchsia-700">
+          {data.aiUsed
+            ? "AI scanned the catalog and didn't find any additional strategies for this client. The deterministic rule engine has covered the obvious opportunities."
+            : "AI is disabled on this server (no AI_API_KEY). Enable AI to use Discovery."}
+        </CardContent>
+      ) : (
+        <CardContent className="space-y-3 text-sm">
+          {(data.candidates ?? []).map((c, i) => {
+            const conf = Number(c.confidence ?? 0);
+            return (
+              <div key={i} className="rounded border border-fuchsia-200 bg-white/40 p-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-medium text-fuchsia-900">{c.name}</div>
+                    <div className="text-xs text-fuchsia-700">{c.ircSection}</div>
+                  </div>
+                  <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
+                    conf >= 0.7 ? "bg-emerald-100 text-emerald-800" :
+                    conf >= 0.4 ? "bg-amber-100 text-amber-800" :
+                    "bg-slate-100 text-slate-700"
+                  }`}>
+                    {(conf * 100).toFixed(0)}% confidence
+                  </span>
+                </div>
+                <p className="mt-2 text-fuchsia-900">{c.rationale}</p>
+                {Array.isArray(c.prerequisiteData) && c.prerequisiteData.length > 0 ? (
+                  <div className="mt-2 rounded border border-amber-200 bg-amber-50 p-2 text-xs">
+                    <div className="font-medium text-amber-900 mb-1">Data to gather to confirm:</div>
+                    <ul className="list-disc pl-5 text-amber-900 space-y-0.5">
+                      {c.prerequisiteData.map((p, j) => <li key={j}>{p}</li>)}
+                    </ul>
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+          <div className="text-[10px] text-fuchsia-700 pt-2 border-t border-fuchsia-200">
+            AI: {data.aiUsed ? `${data.model} (engine math is sacred — LLM produces qualitative candidates only)` : "disabled (stub)"}
+          </div>
+        </CardContent>
+      )}
     </Card>
   );
 }

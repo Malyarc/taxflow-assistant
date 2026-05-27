@@ -2089,6 +2089,25 @@ export interface WhatIfSummary {
   effectiveTaxRate: number;
 }
 
+export interface PlanningDiscoveryCandidate {
+  name: string;
+  /** IRS Code section the strategy is anchored in (e.g., "IRC §1031"). */
+  ircSection: string;
+  /** LLM-self-reported confidence (0.0-1.0). */
+  confidence: number;
+  /** 1-2 sentence reasoning for why this strategy might apply to this client. */
+  rationale: string;
+  /** Data the CPA needs to gather to validate this candidate. */
+  prerequisiteData: string[];
+}
+
+export interface PlanningDiscovery {
+  clientId: number;
+  candidates: PlanningDiscoveryCandidate[];
+  aiUsed: boolean;
+  model: string;
+}
+
 export interface PeerBenchmarkCohort {
   /** Number of peer clients in the cohort (excluding the target client). */
   size: number;
