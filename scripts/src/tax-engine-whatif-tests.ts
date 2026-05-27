@@ -1311,6 +1311,229 @@ function buildSeFilerInputs(): TaxReturnInputs {
   }
 }
 
+// ── Case D18: G1.15 NUA detector (catalog v1.3) ──────────────────────────
+// Client has $300k employer stock in 401(k) with $50k cost basis. NUA = $250k.
+// At 32% marginal vs 15% LTCG, savings ≈ $250k × (0.32 - 0.15) = $42,500.
+{
+  const inputs = baseInputs();
+  // Boost income so marginal rate is in 32% band ($191,950+ taxable single).
+  inputs.w2s = [{
+    id: 1, clientId: 1, taxYear: 2024, documentId: null,
+    employerName: "MegaCorp", employerEin: null,
+    wagesBox1: "300000", federalWithholdingBox2: "0",
+    socialSecurityWagesBox3: "168600", socialSecurityTaxBox4: "0",
+    medicareWagesBox5: "300000", medicareTaxBox6: "0",
+    socialSecurityTipsBox7: "0", allocatedTipsBox8: "0",
+    dependentCareBenefitsBox10: "0", nonqualifiedPlansBox11: "0",
+    box12aCode: null, box12aAmount: "0", box12bCode: null, box12bAmount: "0",
+    box12cCode: null, box12cAmount: "0", box12dCode: null, box12dAmount: "0",
+    statutoryEmployeeBox13: false, retirementPlanBox13: false, thirdPartySickPayBox13: false,
+    box14Description: null, box14Amount: "0",
+    stateBox15: "FL", stateWagesBox16: "300000", stateTaxBox17: "0",
+    localWagesBox18: "0", localTaxBox19: "0", localityNameBox20: null,
+    spouse: null, createdAt: new Date(), updatedAt: new Date(),
+  } as unknown as TaxReturnInputs["w2s"][number]];
+  inputs.assetBalances = [{
+    taxYear: 2024,
+    assetType: "employer_stock_in_401k",
+    accountName: "MegaCorp 401k stock",
+    balance: 300000,
+    costBasis: 50000,
+    afterTaxBasis: null,
+    nuaEligible: true,
+  } as unknown as TaxReturnInputs["assetBalances"][number]];
+  const computed = computeTaxReturnPure(inputs);
+  const hits = evaluatePlanningOpportunities({
+    client: inputs.client,
+    computed,
+    adjustments: inputs.adjustments,
+    baselineInputs: inputs,
+  });
+  const nuaHit = hits.find((h) => h.strategyId === "G1.15");
+  checkTruthy("Case D18 NUA hit fires", nuaHit != null);
+  if (nuaHit) {
+    // NUA = $250k, marginal ~ 32%, LTCG 15% → savings = $250k × 17% ≈ $42,500.
+    checkTruthy(
+      "Case D18 NUA estSavings in $40,000-$50,000 range",
+      nuaHit.estSavings >= 40000 && nuaHit.estSavings <= 50000,
+    );
+    // No whatIf (heuristic-only)
+    checkTruthy("Case D18 NUA whatIf absent (heuristic only)", nuaHit.whatIf == null);
+    checkTruthy("Case D18 NUA assumptions populated", (nuaHit.assumptions?.length ?? 0) >= 4);
+  }
+}
+
+// ── Case D19: G1.15 NUA suppressed when nuaEligible=false ────────────────
+{
+  const inputs = baseInputs();
+  inputs.assetBalances = [{
+    taxYear: 2024,
+    assetType: "employer_stock_in_401k",
+    accountName: "Stock",
+    balance: 300000,
+    costBasis: 50000,
+    afterTaxBasis: null,
+    nuaEligible: false, // plan doesn't permit
+  } as unknown as TaxReturnInputs["assetBalances"][number]];
+  const computed = computeTaxReturnPure(inputs);
+  const hits = evaluatePlanningOpportunities({
+    client: inputs.client,
+    computed,
+    adjustments: inputs.adjustments,
+    baselineInputs: inputs,
+  });
+  checkTruthy(
+    "Case D19 NUA suppressed when plan not NUA-eligible",
+    hits.find((h) => h.strategyId === "G1.15") == null,
+  );
+}
+
+// ── Case D20: G1.16 Mega-Backdoor Roth detector ──────────────────────────
+{
+  const inputs = baseInputs();
+  inputs.w2s = [{
+    id: 1, clientId: 1, taxYear: 2024, documentId: null,
+    employerName: "BigCo", employerEin: null,
+    wagesBox1: "400000", federalWithholdingBox2: "0",
+    socialSecurityWagesBox3: "168600", socialSecurityTaxBox4: "0",
+    medicareWagesBox5: "400000", medicareTaxBox6: "0",
+    socialSecurityTipsBox7: "0", allocatedTipsBox8: "0",
+    dependentCareBenefitsBox10: "0", nonqualifiedPlansBox11: "0",
+    box12aCode: null, box12aAmount: "0", box12bCode: null, box12bAmount: "0",
+    box12cCode: null, box12cAmount: "0", box12dCode: null, box12dAmount: "0",
+    statutoryEmployeeBox13: false, retirementPlanBox13: false, thirdPartySickPayBox13: false,
+    box14Description: null, box14Amount: "0",
+    stateBox15: "FL", stateWagesBox16: "400000", stateTaxBox17: "0",
+    localWagesBox18: "0", localTaxBox19: "0", localityNameBox20: null,
+    spouse: null, createdAt: new Date(), updatedAt: new Date(),
+  } as unknown as TaxReturnInputs["w2s"][number]];
+  inputs.assetBalances = [{
+    taxYear: 2024,
+    assetType: "401k_after_tax",
+    accountName: "BigCo 401k after-tax bucket",
+    balance: 0,
+    costBasis: null,
+    afterTaxBasis: null,
+    nuaEligible: false,
+  } as unknown as TaxReturnInputs["assetBalances"][number]];
+  const computed = computeTaxReturnPure(inputs);
+  const hits = evaluatePlanningOpportunities({
+    client: inputs.client,
+    computed,
+    adjustments: inputs.adjustments,
+    baselineInputs: inputs,
+  });
+  const megaHit = hits.find((h) => h.strategyId === "G1.16");
+  checkTruthy("Case D20 Mega-Backdoor Roth fires (after-tax bucket present)", megaHit != null);
+  if (megaHit) {
+    checkTruthy("Case D20 estSavings > 0", megaHit.estSavings > 0);
+    checkTruthy("Case D20 contribution > 0", Number(megaHit.inputs.contribution) > 0);
+  }
+}
+
+// ── Case D21: G1.16 suppressed when no after-tax 401(k) bucket ───────────
+{
+  const inputs = baseInputs();
+  inputs.assetBalances = [{
+    taxYear: 2024,
+    assetType: "traditional_ira",
+    accountName: "Some IRA",
+    balance: 100000,
+    costBasis: null,
+    afterTaxBasis: null,
+    nuaEligible: false,
+  } as unknown as TaxReturnInputs["assetBalances"][number]];
+  const computed = computeTaxReturnPure(inputs);
+  const hits = evaluatePlanningOpportunities({
+    client: inputs.client,
+    computed,
+    adjustments: inputs.adjustments,
+    baselineInputs: inputs,
+  });
+  checkTruthy(
+    "Case D21 Mega-Backdoor suppressed without 401k_after_tax row",
+    hits.find((h) => h.strategyId === "G1.16") == null,
+  );
+}
+
+// ── Case D22: G1.18 REPS suppressed when no suspended PAL ────────────────
+// Default baseInputs has no rentals → no suspended PAL → REPS skipped.
+{
+  const inputs = baseInputs();
+  const computed = computeTaxReturnPure(inputs);
+  const hits = evaluatePlanningOpportunities({
+    client: inputs.client,
+    computed,
+    adjustments: inputs.adjustments,
+    baselineInputs: inputs,
+  });
+  checkTruthy(
+    "Case D22 REPS suppressed with no rental losses",
+    hits.find((h) => h.strategyId === "G1.18") == null,
+  );
+}
+
+// ── Case D23: G1.20 conservation easement only fires for >$1M AGI ────────
+// Default $80k W-2 client should NOT trigger conservation easement.
+{
+  const inputs = baseInputs();
+  const computed = computeTaxReturnPure(inputs);
+  const hits = evaluatePlanningOpportunities({
+    client: inputs.client,
+    computed,
+    adjustments: inputs.adjustments,
+    baselineInputs: inputs,
+  });
+  checkTruthy(
+    "Case D23 Conservation easement suppressed for AGI < $1M",
+    hits.find((h) => h.strategyId === "G1.20") == null,
+  );
+}
+
+// ── Case D24: G1.19 CRT framework fires for $500k+ AGI + large LTCG ──────
+{
+  const inputs = baseInputs();
+  inputs.w2s = [{
+    id: 1, clientId: 1, taxYear: 2024, documentId: null,
+    employerName: "BigCo", employerEin: null,
+    wagesBox1: "500000", federalWithholdingBox2: "0",
+    socialSecurityWagesBox3: "168600", socialSecurityTaxBox4: "0",
+    medicareWagesBox5: "500000", medicareTaxBox6: "0",
+    socialSecurityTipsBox7: "0", allocatedTipsBox8: "0",
+    dependentCareBenefitsBox10: "0", nonqualifiedPlansBox11: "0",
+    box12aCode: null, box12aAmount: "0", box12bCode: null, box12bAmount: "0",
+    box12cCode: null, box12cAmount: "0", box12dCode: null, box12dAmount: "0",
+    statutoryEmployeeBox13: false, retirementPlanBox13: false, thirdPartySickPayBox13: false,
+    box14Description: null, box14Amount: "0",
+    stateBox15: "FL", stateWagesBox16: "500000", stateTaxBox17: "0",
+    localWagesBox18: "0", localTaxBox19: "0", localityNameBox20: null,
+    spouse: null, createdAt: new Date(), updatedAt: new Date(),
+  } as unknown as TaxReturnInputs["w2s"][number]];
+  inputs.form1099s = [{
+    id: 1, clientId: 1, taxYear: 2024, documentId: null,
+    formType: "b",
+    payerName: "Brokerage", payerEin: null, payerAddress: null,
+    longTermGainLoss: "200000", shortTermGainLoss: "0",
+    proceeds: "500000", costBasis: "300000",
+    federalTaxWithheld: "0", stateTaxWithheld: "0", stateCode: null,
+    spouse: null, createdAt: new Date(), updatedAt: new Date(),
+  } as unknown as TaxReturnInputs["form1099s"][number]];
+  const computed = computeTaxReturnPure(inputs);
+  const hits = evaluatePlanningOpportunities({
+    client: inputs.client,
+    computed,
+    adjustments: inputs.adjustments,
+    baselineInputs: inputs,
+  });
+  const crtHit = hits.find((h) => h.strategyId === "G1.19");
+  checkTruthy("Case D24 CRT fires for HNW + large LTCG", crtHit != null);
+  if (crtHit) {
+    checkTruthy("Case D24 CRT estSavings > 0", crtHit.estSavings > 0);
+    // Heuristic: min($200k, $500k cap) × 23.8% = $47,600
+    check("Case D24 CRT estSavings ≈ $47,600", crtHit.estSavings, 47600, 200);
+  }
+}
+
 // ── Case D9: H7 omitted when 0 stackable hits ────────────────────────────
 // Pure-W-2 client with no SE, no investment — should produce no H2 hits.
 {

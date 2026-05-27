@@ -30,6 +30,7 @@ import type {
   ComputedTaxReturn,
   ClientFacts,
   AdjustmentFact,
+  AssetBalanceFact,
   TaxReturnInputs,
 } from "./taxReturnEngine";
 import {
@@ -1421,6 +1422,455 @@ function detectHsaMax(args: {
   };
 }
 
+// ── Phase H — H1 catalog v1.3 detectors ──────────────────────────────────
+
+const LTCG_RATE_DEFAULT = 0.15;
+
+function sumAssetBalance(assets: AssetBalanceFact[] | undefined, type: string): number {
+  if (!assets) return 0;
+  return assets
+    .filter((a) => a.assetType === type)
+    .reduce((s, a) => s + toNum(a.balance), 0);
+}
+
+function sumAssetCostBasis(assets: AssetBalanceFact[] | undefined, type: string): number {
+  if (!assets) return 0;
+  return assets
+    .filter((a) => a.assetType === type)
+    .reduce((s, a) => s + toNum(a.costBasis), 0);
+}
+
+// ── G1.15 — NUA (Net Unrealized Appreciation) on employer stock ──────────
+
+const G1_15_MIN_STOCK_BALANCE = 50_000;
+
+function detectNua(args: {
+  computed: ComputedTaxReturn;
+  assetBalances?: AssetBalanceFact[];
+}): OpportunityHit | null {
+  const { computed, assetBalances } = args;
+  if (!assetBalances || assetBalances.length === 0) return null;
+  // Only NUA-eligible employer stock rows in the 401(k) qualify.
+  const nuaStock = assetBalances.filter(
+    (a) => a.assetType === "employer_stock_in_401k" && a.nuaEligible === true,
+  );
+  if (nuaStock.length === 0) return null;
+  const fmv = nuaStock.reduce((s, a) => s + toNum(a.balance), 0);
+  const costBasis = nuaStock.reduce((s, a) => s + toNum(a.costBasis), 0);
+  if (fmv < G1_15_MIN_STOCK_BALANCE) return null;
+  // Need NUA (FMV > costBasis); if costBasis missing/zero, assume 30% basis as default.
+  const effectiveBasis = costBasis > 0 ? costBasis : fmv * 0.30;
+  const nuaAmount = fmv - effectiveBasis;
+  if (nuaAmount <= 0) return null;
+
+  const fedRate = federalMarginalRate(computed);
+  const stateRate = stateMarginalRate(computed);
+  // Strategy savings: NUA is taxed at LTCG (15-20%) when sold, vs ordinary
+  // (marginal) if rolled to IRA and distributed later.
+  const estSavings = nuaAmount * (fedRate + stateRate - LTCG_RATE_DEFAULT);
+  if (estSavings <= 0) return null;
+
+  const strategy = strategyById("G1.15");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    costBasis: Math.round(effectiveBasis),
+    nuaAmount: Math.round(nuaAmount),
+    estSavings: Math.round(estSavings),
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings: Math.round(estSavings),
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client holds ${fmt(Math.round(fmv))} of NUA-eligible employer stock in their 401(k) ` +
+      `with ${fmt(Math.round(effectiveBasis))} cost basis (${fmt(Math.round(nuaAmount))} of ` +
+      `unrealized appreciation). Lump-sum in-kind distribution + LTCG sale saves vs ordinary ` +
+      `rollover-then-distribute.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      fmv: Math.round(fmv),
+      costBasis: Math.round(effectiveBasis),
+      nuaAmount: Math.round(nuaAmount),
+      federalMarginalRate: fedRate,
+      stateMarginalRate: stateRate,
+      ltcgRateAssumed: LTCG_RATE_DEFAULT,
+    },
+    assumptions: [
+      `Strategy requires a TRIGGERING EVENT: separation from service, age 59½, death, or disability.`,
+      `Entire qualified plan must be distributed in ONE tax year (Form 1099-R "lump sum distribution").`,
+      `Cost basis from plan statement; engine assumes 30% of FMV when missing.`,
+      `LTCG rate assumed at ${(LTCG_RATE_DEFAULT * 100).toFixed(0)}% (0% for taxable < $47,025 single TY2024; 20% > $518,900). CPA refines.`,
+      `Ordinary tax on cost basis is paid immediately (out-of-pocket). Client needs liquidity for that.`,
+      `H2 verification deferred — engine doesn't model the in-kind distribution / per-share basis. Heuristic estSavings uses marginal − LTCG spread.`,
+    ],
+    // No whatIf — needs per-share basis tracking + lump-sum distribution
+    // semantics the engine doesn't yet model.
+  };
+}
+
+// ── G1.16 — Mega-Backdoor Roth ───────────────────────────────────────────
+
+const G1_16_415C_LIMIT: Record<number, number> = {
+  2024: 69_000,
+  2025: 70_000,
+};
+const G1_16_402G_ELECTIVE: Record<number, number> = {
+  2024: 23_000,
+  2025: 23_500,
+};
+
+function detectMegaBackdoorRoth(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+  assetBalances?: AssetBalanceFact[];
+}): OpportunityHit | null {
+  const { computed, adjustments, assetBalances } = args;
+  if (!assetBalances || assetBalances.length === 0) return null;
+  // Presence of a 401k_after_tax row signals: plan permits after-tax + in-
+  // service rollover/conversion. Detector fires when there's measurable
+  // headroom (the §415(c) total annual additions cap minus the elective
+  // deferral cap minus employer match).
+  const afterTaxAsset = assetBalances.find((a) => a.assetType === "401k_after_tax");
+  if (!afterTaxAsset) return null;
+
+  const cap415c = G1_16_415C_LIMIT[computed.taxYear] ?? G1_16_415C_LIMIT[2025];
+  const electiveCap = G1_16_402G_ELECTIVE[computed.taxYear] ?? G1_16_402G_ELECTIVE[2025];
+  // Assume employee elective contribution = full $23k elective cap (most
+  // high-comp clients in this scenario are maxing). Assume employer match
+  // ≈ 5% of W-2 wages (reasonable cohort assumption).
+  const w2Wages = computed.totalIncome > 0 ? computed.totalIncome * 0.7 : 0; // rough
+  const assumedEmployerMatch = Math.min(w2Wages * 0.05, cap415c * 0.5);
+  const headroom = Math.max(0, cap415c - electiveCap - assumedEmployerMatch);
+  if (headroom < 5_000) return null;
+  const existingAfterTax = toNum(afterTaxAsset.balance);
+  const contribution = Math.max(0, headroom - existingAfterTax);
+  if (contribution < 5_000) return null;
+
+  // Heuristic estSavings: future-tax-free growth × assumed future rate.
+  // Use 7%/yr growth × 20 years horizon × 32% future rate, discounted to
+  // present value at 5%. PV ≈ contribution × (1.07^20 - 1) × 0.32 / (1.05^20).
+  const growth = Math.pow(1.07, 20);
+  const futureRate = 0.32;
+  const discount = Math.pow(1.05, 20);
+  const taxFreeGrowth = contribution * (growth - 1);
+  const estSavings = (taxFreeGrowth * futureRate) / discount;
+  if (estSavings <= 0) return null;
+
+  const strategy = strategyById("G1.16");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  void adjustments; // unused — reserved for future per-adjustment detection
+  const vars: Record<string, number | string> = {
+    contribution: Math.round(contribution),
+    estSavings: Math.round(estSavings),
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings: Math.round(estSavings),
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client's 401(k) plan accepts after-tax contributions and permits in-service rollover or ` +
+      `in-plan Roth conversion (H5 record present). §415(c) cap ${fmt(cap415c)} for TY${computed.taxYear} ` +
+      `− elective deferrals ${fmt(electiveCap)} − assumed employer match ~${fmt(Math.round(assumedEmployerMatch))} ` +
+      `= ${fmt(Math.round(contribution))} of mega-backdoor Roth headroom.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      cap415c,
+      electiveCap,
+      assumedEmployerMatch: Math.round(assumedEmployerMatch),
+      existingAfterTax: Math.round(existingAfterTax),
+      headroom: Math.round(headroom),
+      contribution: Math.round(contribution),
+      growthAssumption: 0.07,
+      futureRateAssumption: futureRate,
+      discountRate: 0.05,
+      horizonYears: 20,
+    },
+    assumptions: [
+      `§415(c) total annual additions cap ${fmt(cap415c)} for TY${computed.taxYear}.`,
+      `§402(g) elective deferral cap ${fmt(electiveCap)} assumed maxed (most clients at this AGI level are).`,
+      `Employer match estimated at 5% of approximated W-2 wages — refine with actual plan terms.`,
+      `Long-term benefit assumes 7% growth × 20 years × 32% future tax rate, discounted at 5%/yr.`,
+      `Strategy REQUIRES plan document permitting after-tax contributions AND in-service rollover OR in-plan Roth conversion. Confirm via plan summary plan description (SPD).`,
+      `Notice 2014-54 governs the tax-free / taxable split when rolling out — direct rollover to Roth IRA is cleanest.`,
+      `H2 verification deferred — requires future-year projection of growth + distribution (H3 multi-year primitive in place but not wired yet).`,
+    ],
+  };
+}
+
+// ── G1.17 — S-corp reasonable compensation split ─────────────────────────
+
+const G1_17_MIN_S_CORP_INCOME = 50_000;
+const G1_17_REASONABLE_COMP_PCT = 0.40; // assumption: 40% wages, 60% distributions
+const G1_17_FICA_TOTAL = 0.153; // 6.2% SS + 1.45% Medicare, both sides
+
+function detectScorpReasonableComp(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+}): OpportunityHit | null {
+  const { client, computed } = args;
+  void client; // unused — reserved for future spouse-attribution
+  const k1Summary = computed.scheduleK1;
+  if (!k1Summary) return null;
+  // Estimate S-corp income from active K-1 ordinary income. The engine
+  // doesn't currently track per-K-1 entity type cleanly in summary, so we
+  // use totalActiveOrdinaryIncome as proxy (assumes most active income
+  // comes from S-corp for clients where this matters).
+  const sCorpIncome = k1Summary.totalActiveOrdinaryIncome ?? 0;
+  if (sCorpIncome < G1_17_MIN_S_CORP_INCOME) return null;
+
+  const reasonableComp = sCorpIncome * G1_17_REASONABLE_COMP_PCT;
+  const distributions = sCorpIncome - reasonableComp;
+  // FICA savings on the distribution portion. SS portion is capped at the
+  // 2024 wage base ($168,600); Medicare uncapped. Simplify: 15.3% × dist,
+  // capped at $25,789 (= 0.153 × 168600).
+  const ssWageBase = computed.taxYear === 2024 ? 168_600 : 176_100;
+  const cappedFicaBase = Math.min(distributions, ssWageBase);
+  const estSavings = cappedFicaBase * G1_17_FICA_TOTAL;
+  if (estSavings <= 0) return null;
+
+  const strategy = strategyById("G1.17");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    reasonableComp: Math.round(reasonableComp),
+    distributions: Math.round(distributions),
+    estSavings: Math.round(estSavings),
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings: Math.round(estSavings),
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Active S-corp K-1 income of ${fmt(Math.round(sCorpIncome))}. Splitting between W-2 wages ` +
+      `(FICA-subject) and distributions (FICA-exempt) saves ~${fmt(Math.round(estSavings))} in ` +
+      `FICA tax — but reasonable comp must be defensible (RC Reports / BLS benchmarks).`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      sCorpIncome: Math.round(sCorpIncome),
+      reasonableComp: Math.round(reasonableComp),
+      distributions: Math.round(distributions),
+      cappedFicaBase: Math.round(cappedFicaBase),
+      ficaRate: G1_17_FICA_TOTAL,
+    },
+    assumptions: [
+      `Default split assumption: 40% reasonable W-2 wages / 60% distributions. CPA refines based on RC Reports / BLS / industry.`,
+      `FICA rate ${(G1_17_FICA_TOTAL * 100).toFixed(1)}% (both sides — employer + employee). SS portion capped at ${fmt(ssWageBase)} TY${computed.taxYear} wage base.`,
+      `Rev. Rul. 74-44 + Mike v. Comm'r line of cases: distributions can be recharacterized as wages if comp is unreasonably low — leading IRS audit issue.`,
+      `K-1 income assumed to be from S-corp (engine doesn't yet differentiate entity types in summary). CPA verifies on K-1 box 1 + Schedule K-1 line A.`,
+      `H2 verification deferred — engine would need to model W-2 box 3/5 + FICA tax pipeline for the W-2 portion; current proxy is acceptable for planning estimates.`,
+    ],
+  };
+}
+
+// ── G1.18 — REPS (Real Estate Professional Status) election §469(c)(7) ───
+
+function detectRepsElection(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+}): OpportunityHit | null {
+  const { client, computed } = args;
+  // Don't fire if client is already flagged as real estate professional.
+  if (client.rentalRealEstateProfessional === true) return null;
+
+  // Need suspended passive losses to make REPS worthwhile.
+  const suspendedPal = computed.passiveActivityLoss?.suspendedToNextYear ?? 0;
+  if (suspendedPal <= 0) return null;
+
+  // REPS requires >50% of work time in real estate + 750+ hours. Most
+  // clients with significant non-real-estate W-2 won't qualify. Suppress
+  // for those.
+  const totalIncome = computed.totalIncome ?? 0;
+  // scheduleERentalGrossNet is a NUMBER (net rental income post-MACRS, not
+  // an object). Used here just as a proxy signal that the client has real
+  // estate activity.
+  const rentalRelated = Math.abs(computed.scheduleERentalGrossNet ?? 0);
+  // If non-rental income > $200k it's hard to satisfy >50% time test.
+  if (totalIncome - rentalRelated > 200_000) return null;
+
+  const fedRate = federalMarginalRate(computed);
+  const stateRate = stateMarginalRate(computed);
+  const estSavings = suspendedPal * (fedRate + stateRate);
+  if (estSavings <= 0) return null;
+
+  const strategy = strategyById("G1.18");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    suspendedPal: Math.round(suspendedPal),
+    estSavings: Math.round(estSavings),
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings: Math.round(estSavings),
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client has ${fmt(Math.round(suspendedPal))} of suspended §469 passive losses. Electing ` +
+      `REPS under §469(c)(7) (with material participation) converts losses to NON-passive — they ` +
+      `offset W-2/SE income immediately rather than carry forward.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      suspendedPal: Math.round(suspendedPal),
+      nonRentalIncome: Math.round(totalIncome - rentalRelated),
+      federalMarginalRate: fedRate,
+      stateMarginalRate: stateRate,
+    },
+    assumptions: [
+      `REPS qualification (IRC §469(c)(7)) requires BOTH (1) more than 50% of personal services in real-property trade or business AND (2) more than 750 hours per year.`,
+      `Material participation in EACH rental activity (or aggregate via §1.469-9(g) election covering ALL interests in rental real estate).`,
+      `IRS scrutinizes time logs — contemporaneous calendars, board minutes, and activity logs are required. Backfilled time sheets get challenged.`,
+      `Engine's suspendedPal value reflects the current year's PAL carryforward — actual REPS-recoverable amount depends on lookback to prior years too.`,
+      `H2 mutation is "set rentalRealEstateProfessional = true" — but the engine's §469 calc happens before suspension, so a simple mutation would over-estimate by also recovering prior-year PAL that wouldn't immediately materialize. Detection-only.`,
+    ],
+  };
+}
+
+// ── G1.19 — Charitable Remainder Trust (CRT) — informational ─────────────
+
+function detectCrtFramework(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { computed, adjustments } = args;
+  // Heuristic informational trigger: high AGI + significant capital gains
+  // suggests appreciated assets potentially suitable for CRT.
+  if (computed.adjustedGrossIncome < 500_000) return null;
+  const ltcg = computed.form1099Summary?.longTermCapitalGains ?? 0;
+  const charitableCash = sumAdjustment(adjustments, "charitable_cash");
+  if (ltcg < 100_000 && charitableCash < 25_000) return null;
+
+  // Heuristic estSavings: assume CRT shelters $X of cap gains at 23.8%
+  // (LTCG + NIIT), where X = min(ltcg, $500k) — conservative.
+  const sheltered = Math.min(ltcg, 500_000);
+  const estSavings = sheltered * 0.238;
+  if (estSavings <= 0) return null;
+
+  const strategy = strategyById("G1.19");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    estSavings: Math.round(estSavings),
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings: Math.round(estSavings),
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client has ${fmt(Math.round(ltcg))} of long-term cap gains and ` +
+      `${fmt(Math.round(charitableCash))} of charitable giving + AGI > $500k. A CRT (CRAT or CRUT) ` +
+      `could shelter the cap gains, provide an income stream, AND deliver an immediate charitable ` +
+      `deduction. Informational only — full design requires trust attorney + §7520 actuarial analysis.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      agi: Math.round(computed.adjustedGrossIncome),
+      ltcg: Math.round(ltcg),
+      charitableCash: Math.round(charitableCash),
+      shelteredAssumption: Math.round(sheltered),
+    },
+    assumptions: [
+      `INFORMATIONAL detector — fires for highly-appreciated-asset + high-AGI clients. CPA evaluates suitability.`,
+      `CRT is IRREVOCABLE — once funded, the asset can't be retrieved.`,
+      `Two structures: CRAT (fixed annuity, 5-50% of initial FMV) and CRUT (% of annually-revalued FMV).`,
+      `§7520 rate (Applicable Federal Rate, updated monthly) drives PV of remainder interest — affects current-year deduction.`,
+      `Remainder beneficiary must be a 501(c)(3) public charity (NOT a DAF or private foundation in most cases).`,
+      `Term limits: max 20 years (lifetime annuity for ≥1 life). Charity must receive at LEAST 10% of initial FMV.`,
+      `Full execution requires trust attorney (3-6 months) and actuarial valuation. Engine cannot model this; estSavings is a rough upper bound.`,
+    ],
+  };
+}
+
+// ── G1.20 — Conservation easement (with high audit risk warning) ─────────
+
+function detectConservationEasement(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { computed, adjustments } = args;
+  void adjustments;
+  // Heuristic informational trigger: very-high-AGI client (>$1M) with real
+  // estate holdings is the typical conservation-easement candidate.
+  if (computed.adjustedGrossIncome < 1_000_000) return null;
+  // Need to have real estate income — proxy via Schedule E net (engine
+  // exposes net, not gross). Use absolute value since losses count too.
+  const rentalGross = Math.abs(computed.scheduleERentalGrossNet ?? 0);
+  if (rentalGross < 50_000) return null;
+
+  // Heuristic estSavings: very rough — assume deduction = 30% of AGI cap,
+  // at 37% marginal. Real value depends on appraisal.
+  const deductionEstimate = computed.adjustedGrossIncome * 0.30;
+  const estSavings = deductionEstimate * 0.37;
+  if (estSavings <= 0) return null;
+
+  const strategy = strategyById("G1.20");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    estSavings: Math.round(estSavings),
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings: Math.round(estSavings),
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `**HIGH IRS AUDIT RISK STRATEGY.** Client AGI ${fmt(Math.round(computed.adjustedGrossIncome))} + real ` +
+      `estate ${fmt(Math.round(rentalGross))} suggests potential suitability. Notice 2017-10 designates ` +
+      `syndicated conservation easements as LISTED TRANSACTIONS. Single-property non-syndicated ` +
+      `easements have less risk but still face high IRS scrutiny.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      agi: Math.round(computed.adjustedGrossIncome),
+      rentalGross: Math.round(rentalGross),
+      deductionEstimate: Math.round(deductionEstimate),
+    },
+    assumptions: [
+      `**⚠️ HIGH AUDIT RISK** — Notice 2017-10 designates syndicated conservation easements as LISTED TRANSACTIONS subject to disclosure + penalty. SECURE 2.0 Section 605 imposed a 4:1 maximum-deduction-to-investment ratio for syndicated deals.`,
+      `Single-property easements (client owns suitable land) have less risk but still face heightened IRS scrutiny.`,
+      `Qualified appraisal under §170(h)(1)(A) — appraiser must specialize in conservation easements.`,
+      `Perpetuity requirement — easement runs with the land forever. Affects future sale value.`,
+      `Recipient organization must be a "qualified organization" (typically a land trust accredited by the Land Trust Accreditation Commission).`,
+      `Heuristic estSavings is a CEILING — actual deduction depends on appraisal, qualified organization, and 50% / 30% AGI limits with 15-year carryforward.`,
+      `STRONGLY suggest pre-filing review by experienced tax counsel.`,
+    ],
+  };
+}
+
 // ── Top-level evaluator ────────────────────────────────────────────────────
 
 export interface PlanningInputs {
@@ -1519,6 +1969,22 @@ export function evaluatePlanningOpportunities(args: PlanningInputs): Opportunity
   if (augusta) hits.push(augusta);
   const hsaMax = detectHsaMax({ client, computed, adjustments, baselineInputs });
   if (hsaMax) hits.push(hsaMax);
+  // Phase H — H1 expansion (catalog v1.3): NUA / Mega-Backdoor Roth / S-corp
+  // reasonable comp / REPS election / CRT framework / conservation easement.
+  // The first two use H5 asset balances; latter four use computed/derived signals.
+  const assetBalances = baselineInputs?.assetBalances;
+  const nua = detectNua({ computed, assetBalances });
+  if (nua) hits.push(nua);
+  const megaRoth = detectMegaBackdoorRoth({ computed, adjustments, assetBalances });
+  if (megaRoth) hits.push(megaRoth);
+  const scorpComp = detectScorpReasonableComp({ client, computed });
+  if (scorpComp) hits.push(scorpComp);
+  const reps = detectRepsElection({ client, computed });
+  if (reps) hits.push(reps);
+  const crt = detectCrtFramework({ computed, adjustments });
+  if (crt) hits.push(crt);
+  const consEasement = detectConservationEasement({ computed, adjustments });
+  if (consEasement) hits.push(consEasement);
   hits.sort((a, b) => b.estSavings - a.estSavings);
   return hits;
 }

@@ -1,5 +1,5 @@
 {
-  "version": "v1.2.0",
+  "version": "v1.3.0",
   "reviewedAt": "2026-05-27",
   "strategies": [
     {
@@ -253,6 +253,136 @@
         "Strict 14-day annual limit — track via written rental agreement"
       ],
       "action": "Rent your residence to your business for up to 14 days at ~{{dailyRate}}/day = ~{{rentAmount}} total. Business deducts; you exclude under §280A(g). Estimated savings ~{{estSavings}}.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.15",
+      "name": "NUA — Net Unrealized Appreciation on employer stock",
+      "category": "retirement",
+      "ircSection": "IRC §402(e)(4)",
+      "irsPub": "Pub 575; Rev. Rul. 70-264",
+      "trigger": "H5 asset with assetType=employer_stock_in_401k AND nuaEligible=true AND balance > $50,000",
+      "formula": "Lump-sum distribution of employer stock in-kind. Ordinary tax on COST BASIS only; unrealized appreciation (NUA) gets LTCG treatment when sold. estSavings = (FMV - costBasis) × (marginal - LTCG rate).",
+      "confidence": 0.85,
+      "cpaEffortHours": 4.0,
+      "recurring": false,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Plan document confirming NUA-eligible lump-sum distribution permitted",
+        "Cost basis of employer stock in 401(k) — usually from plan statement",
+        "Client's marginal tax rate at distribution (must do entire-plan distribution in one tax year)",
+        "Triggering event: separation from service / age 59½ / death / disability"
+      ],
+      "action": "Execute a lump-sum distribution of employer stock from the 401(k) in-kind. Pay ordinary income tax on ~{{costBasis}} (cost basis). The unrealized appreciation of ~{{nuaAmount}} gets LTCG treatment when shares are sold — saving ~{{estSavings}}.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.16",
+      "name": "Mega-Backdoor Roth via after-tax 401(k)",
+      "category": "retirement",
+      "ircSection": "IRC §402A; §415(c); Notice 2014-54",
+      "irsPub": "Pub 560; Notice 2014-54",
+      "trigger": "H5 asset with assetType=401k_after_tax (presence indicates plan permits after-tax + in-service rollover/conversion) AND headroom = §415(c) limit - (pre-tax + employer match) > $0",
+      "formula": "After-tax 401(k) contributions converted in-service to Roth 401(k) or rolled to Roth IRA via Notice 2014-54. estSavings = contribution × future tax-free growth × assumed future rate.",
+      "confidence": 0.85,
+      "cpaEffortHours": 2.0,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Plan document confirming after-tax contributions + in-service rollover OR in-plan Roth conversion permitted",
+        "Current year pre-tax + employer match contributions (subtract from §415(c) cap to find headroom)",
+        "Client age (catch-up only applies for §402(g) elective deferrals, NOT after-tax)",
+        "Client's expected future tax rate at distribution (drives long-term value)"
+      ],
+      "action": "Contribute up to {{contribution}} of after-tax dollars to the 401(k), then immediately convert/roll to Roth. Tax-free growth + tax-free distributions. Long-term estimated benefit ~{{estSavings}}.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.17",
+      "name": "S-corp reasonable compensation split",
+      "category": "business",
+      "ircSection": "IRC §1366; Rev. Rul. 74-44",
+      "irsPub": "Form 1120-S instructions; Rev. Rul. 74-44",
+      "trigger": "Active S-corp K-1 income > $50,000 (entityType=s_corp on K-1, activityType=active) AND no W-2 from same EIN",
+      "formula": "Split S-corp net income between W-2 wages (FICA-subject) and distributions (FICA-exempt). estSavings = (distributions × 15.3% FICA up to SS wage base + 2.9% Medicare uncapped) — recovered after CPA-validated reasonable comp benchmark.",
+      "confidence": 0.75,
+      "cpaEffortHours": 3.0,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Reasonable comp benchmark for client's role (RC Reports / BLS / industry surveys)",
+        "Time spent on business (full-time vs part-time)",
+        "Geographic location (cost-of-labor adjustment)",
+        "Confirm S-corp election is active (Form 2553 + IRS acceptance)"
+      ],
+      "action": "Adopt a reasonable-comp split: pay yourself ~{{reasonableComp}} as W-2 wages; take ~{{distributions}} as distributions. Estimated FICA savings ~{{estSavings}} per year.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.18",
+      "name": "Real Estate Professional Status (REPS) election",
+      "category": "business",
+      "ircSection": "IRC §469(c)(7)",
+      "irsPub": "Pub 925; §1.469-9 Regs",
+      "trigger": "Has rental real estate income/expenses AND combined SE/W-2 < $200k AND no current REPS election AND has passive losses being suspended",
+      "formula": "REPS converts rental from passive to non-passive — losses offset W-2/SE income (no $25k PAL cap). estSavings = currently-suspended PAL × federal+state marginal rate.",
+      "confidence": 0.75,
+      "cpaEffortHours": 6.0,
+      "recurring": true,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Documented 750+ hours/year in real-property trade or business",
+        "More than 50% of total work time in real estate",
+        "Per-property election to aggregate (Reg §1.469-9(g)) for material participation",
+        "Detailed time logs (calendar, contemporaneous records — IRS scrutinizes)"
+      ],
+      "action": "Elect Real Estate Professional Status under §469(c)(7). Aggregate rentals under §1.469-9(g) for material participation. Currently-suspended passive losses (~{{suspendedPal}}) convert to active deductions. Estimated savings ~{{estSavings}}.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.19",
+      "name": "Charitable Remainder Trust (CRT) — irrevocable split-interest gift",
+      "category": "charitable",
+      "ircSection": "IRC §664",
+      "irsPub": "Pub 526; §1.664 Regs",
+      "trigger": "Highly-appreciated asset (low basis vs high FMV) + charitable intent + age 55+ (income stream) — heuristic informational only.",
+      "formula": "Transfer asset to CRT → no capital gains on sale by CRT → annual annuity (CRAT) or unitrust (CRUT) income stream → charitable income tax deduction (PV of remainder) → remainder to charity at term end. estSavings = (avoided cap gains tax) + (deduction × marginal rate) — discounted.",
+      "confidence": 0.60,
+      "cpaEffortHours": 12.0,
+      "recurring": false,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "Asset to donate (real estate / appreciated stock / closely-held business interest)",
+        "Cost basis and FMV — must have substantial appreciation to justify",
+        "Annuity/unitrust election (CRAT fixed vs CRUT % of FMV)",
+        "Beneficiary's age (drives §7520 PV calculation)",
+        "Charity selection (501(c)(3) public or DAF)",
+        "Trust attorney + actuarial valuation (complex — 6-12 month setup)"
+      ],
+      "action": "Engage a trust attorney to draft a CRT. Transfer the appreciated asset; CRT sells tax-free; client receives annuity/unitrust income stream + immediate charitable deduction for the present value of the remainder interest. Heuristic savings estimate available only after the §7520 actuarial calculation.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.20",
+      "name": "Conservation easement (with risk warning)",
+      "category": "charitable",
+      "ircSection": "IRC §170(h); Notice 2017-10",
+      "irsPub": "Pub 526; Notice 2017-10 (listed transaction warning)",
+      "trigger": "Owns real estate with conservation potential (rural / scenic / historic) — heuristic informational only.",
+      "formula": "Donate a perpetual easement on real property → deduction = decline in FMV (full FMV - encumbered FMV). estSavings = deduction × marginal rate, but capped at 50% AGI (general property rule, with 15-year carryforward).",
+      "confidence": 0.40,
+      "cpaEffortHours": 20.0,
+      "recurring": false,
+      "validUntil": "2026-12-31",
+      "prerequisiteData": [
+        "**HIGH IRS AUDIT RISK** — syndicated conservation easements are LISTED TRANSACTIONS under IRS Notice 2017-10. Strong scrutiny + penalties.",
+        "Qualified appraisal (must satisfy §170(h)(1)(A) qualified-organization recipient)",
+        "Perpetuity requirement: easement runs with the land forever",
+        "Boundary survey + baseline documentation report",
+        "Land trust acceptance + monitoring agreement",
+        "Client risk tolerance — IRS may challenge valuation"
+      ],
+      "action": "**HIGH AUDIT-RISK STRATEGY.** Only pursue if client owns suitable land + has high charitable intent + is prepared for IRS scrutiny. Engage qualified appraiser (§170(h) compliant) + reputable land trust. Document baseline conservation values. Consider a 4:1 maximum deduction ratio for syndicated deals per Section 605 limits in SECURE 2.0.",
       "formulaRev": 1
     },
     {
