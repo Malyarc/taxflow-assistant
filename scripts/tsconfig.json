@@ -46,6 +46,7 @@
     "src/tax-engine-section1031-tests.ts",
     "src/tax-engine-espp-iso-tests.ts",
     "src/tax-engine-section163j-461l-tests.ts",
+    "src/tax-engine-whatif-tests.ts",
     "src/seed-dummy-clients.ts"
   ]
 }
