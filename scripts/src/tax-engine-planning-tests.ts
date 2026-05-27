@@ -3619,6 +3619,1362 @@ header("G1.66-3 — High AGI but no trad IRA: suppressed (clean backdoor possibl
 }
 
 // ============================================================================
+// H1 catalog v1.12 — 5 new detectors (G1.67 / G1.68 / G1.69 / G1.70 / G1.71)
+// ============================================================================
+section("H1 catalog v1.12 — 5 new detectors (G1.67 / G1.68 / G1.69 / G1.70 / G1.71)");
+
+// ── G1.67 In-plan Roth Conversion §402A(c)(4)(B) ─────────────────────────
+// Hand-calc: single FL TY2024 age 45, W-2 $50k, H5 trad 401k balance $100k.
+//   AGI $50k. Taxable = $50k - $14,600 = $35,400.
+//   Single 2024 12% bracket: $11,600-$47,150. Marginal = 0.12.
+//   State FL = 0.
+//   conversionAmount = min($25k, $100k) = $25,000.
+//   costThisYear = $25,000 × (0.12 + 0) = $3,000.
+header("H1v1.12 G1.67+1 — Single FL age 45, $100k trad 401k @ 12%: cost $3,000");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 45 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    assetBalances: [
+      { assetType: "401k_traditional", balance: "100000", accountName: "Old 401k", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  const hit = findHit(hits, "G1.67");
+  checkTruthy("G1.67+1", "fires (favorable bracket + trad 401k)", hit != null, true);
+  if (hit) {
+    check("G1.67+1", "costThisYear = $3,000 ($25k × 12%)",
+      hit.estSavings, 3000, 5);
+    check("G1.67+1", "conversionAmount = $25,000",
+      Number(hit.inputs.conversionAmount), 25000);
+  }
+}
+
+// Setup +2: single FL age 40, W-2 $80k, H5 trad 401k $50k. Marginal 22%.
+//   Taxable = $80k - $14,600 = $65,400. Single 22% bracket: $47,150-$100,525. Marginal 0.22.
+//   conversionAmount = min($25k, $50k) = $25k.
+//   costThisYear = $25k × 0.22 = $5,500.
+header("H1v1.12 G1.67+2 — Single FL age 40, $50k trad 401k @ 22%: cost $5,500");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 40 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 80000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    assetBalances: [
+      { assetType: "401k_traditional", balance: "50000", accountName: "Old 401k", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  const hit = findHit(hits, "G1.67");
+  checkTruthy("G1.67+2", "fires at 22% marginal cap", hit != null, true);
+  if (hit) {
+    check("G1.67+2", "costThisYear = $5,500", hit.estSavings, 5500, 5);
+  }
+}
+
+// Negative: MFS disqualified
+header("G1.67-1 — MFS: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "married_filing_separately", state: "FL", taxYear: 2024, taxpayerAge: 40 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 80000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    assetBalances: [
+      { assetType: "401k_traditional", balance: "50000", accountName: "x", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  checkTruthy("G1.67-1", "no fire MFS", findHit(hits, "G1.67") == null, true);
+}
+
+// Negative: age too young (under 30)
+header("G1.67-2 — Age 25: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 25 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    assetBalances: [
+      { assetType: "401k_traditional", balance: "50000", accountName: "x", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  checkTruthy("G1.67-2", "no fire under 30", findHit(hits, "G1.67") == null, true);
+}
+
+// Negative: high marginal (24%)
+header("G1.67-3 — High marginal 24%: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 40 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 180000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    assetBalances: [
+      { assetType: "401k_traditional", balance: "100000", accountName: "x", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  checkTruthy("G1.67-3", "no fire marginal > 22%", findHit(hits, "G1.67") == null, true);
+}
+
+// Negative: trad 401k too small
+header("G1.67-4 — Trad 401k under $25k: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 40 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    assetBalances: [
+      { assetType: "401k_traditional", balance: "10000", accountName: "x", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  checkTruthy("G1.67-4", "no fire trad < $25k", findHit(hits, "G1.67") == null, true);
+}
+
+// ── G1.68 §174 R&D Workaround ────────────────────────────────────────────
+// Hand-calc: single FL TY2024, 1099-NEC $250k + qbi_income $230k.
+//   net SE = $250k × 0.9235 = $230,875.
+//   SE tax ≈ $27,602 → half = $13,801.
+//   AGI = $250k - $13,801 = $236,199.
+//   QBI = min(20% × $230k, 20% × ($236,199 - $14,600)) = min($46k, $44,320) = $44,320.
+//   Taxable = $236,199 - $14,600 - $44,320 = $177,279.
+//   Single 2024 24% bracket: $100,525-$191,950. Marginal 0.24.
+//   reclassAmount = $80k × 0.30 = $24k.
+//   estSavings = $24k × (0.24 + 0) = $5,760.
+header("H1v1.12 G1.68+1 — Single FL SE $250k + QBI: estSavings $5,760");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "Tech Co", nonemployeeCompensation: 250000 }],
+    adjustments: [
+      { adjustmentType: "qbi_income", amount: 230875, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  const hit = findHit(hits, "G1.68");
+  checkTruthy("G1.68+1", "fires (SE > $200k + QBI)", hit != null, true);
+  if (hit) {
+    check("G1.68+1", "estSavings = $5,760 ($24k × 24%)",
+      hit.estSavings, 5760, 50);
+  }
+}
+
+// Negative: SE too low
+header("G1.68-1 — SE $100k: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "Co", nonemployeeCompensation: 100000 }],
+    adjustments: [
+      { adjustmentType: "qbi_income", amount: 92000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  checkTruthy("G1.68-1", "no fire SE < $200k", findHit(hits, "G1.68") == null, true);
+}
+
+// Negative: no QBI marker
+header("G1.68-2 — SE $250k but no QBI: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "Co", nonemployeeCompensation: 250000 }],
+  });
+  checkTruthy("G1.68-2", "no fire without QBI", findHit(hits, "G1.68") == null, true);
+}
+
+// ── G1.69 Year-End Income Timing ─────────────────────────────────────────
+// Hand-calc: single FL TY2024, W-2 $66k.
+//   AGI $66k. Taxable = $66k - $14,600 = $51,400.
+//   Single 22% bracket starts $47,150. Marginal = 0.22.
+//   Distance to break = |51,400 - 47,150| = $4,250 ≤ $20,000 ✓.
+//   estSavings = $10k × 0.10 = $1,000.
+header("H1v1.12 G1.69+1 — Single FL W-2 $66k near 22% break: estSavings $1,000");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 66000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  const hit = findHit(hits, "G1.69");
+  checkTruthy("G1.69+1", "fires (near 22% break)", hit != null, true);
+  if (hit) {
+    check("G1.69+1", "estSavings = $1,000", hit.estSavings, 1000, 5);
+  }
+}
+
+// Negative: AGI too low
+header("G1.69-1 — AGI $40k: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 40000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  checkTruthy("G1.69-1", "no fire AGI < $50k", findHit(hits, "G1.69") == null, true);
+}
+
+// Negative: low marginal
+header("G1.69-2 — Marginal 12%: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 55000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  checkTruthy("G1.69-2", "no fire low marginal", findHit(hits, "G1.69") == null, true);
+}
+
+// Negative: far from bracket
+header("G1.69-3 — Mid-bracket far from break: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 90000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  // Taxable $75,400 → distance to $47,150 = $28,250 (over $20k); to $100,525 = $25,125. Neither ≤ $20k.
+  checkTruthy("G1.69-3", "no fire mid-bracket", findHit(hits, "G1.69") == null, true);
+}
+
+// ── G1.70 Bargain Sale to Charity ─────────────────────────────────────────
+// Hand-calc: single FL TY2024, W-2 $80k + 1099-B LTCG $60k.
+//   AGI = $80k + $60k = $140k.
+//   Taxable = $140k - $14,600 = $125,400.
+//   Single 2024 24% bracket: $100,525-$191,950. Marginal = 0.24.
+//   fmv $200k, basis $50k, sale price $50k.
+//   basisAllocated = $50k × ($50k/$200k) = $12,500.
+//   recognizedGain = $50k - $12,500 = $37,500.
+//   charitableDeduction = $200k - $50k = $150,000.
+//   estSavings = $150k × 0.24 - $37,500 × 0.15 = $36,000 - $5,625 = $30,375.
+header("H1v1.12 G1.70+1 — Single FL W-2 $80k + $60k LTCG: estSavings $30,375");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 80000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    form1099s: [{ taxYear: 2024, formType: "b", payerName: "Broker", longTermGainLoss: 60000 }],
+  });
+  const hit = findHit(hits, "G1.70");
+  checkTruthy("G1.70+1", "fires (LTCG > $50k)", hit != null, true);
+  if (hit) {
+    check("G1.70+1", "estSavings = $30,375 ($150k × 24% − $37.5k × 15%)",
+      hit.estSavings, 30375, 50);
+  }
+}
+
+// Negative: low LTCG, no real estate
+header("G1.70-1 — Low LTCG no RE: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 80000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    form1099s: [{ taxYear: 2024, formType: "b", payerName: "Broker", longTermGainLoss: 10000 }],
+  });
+  checkTruthy("G1.70-1", "no fire LTCG < $50k", findHit(hits, "G1.70") == null, true);
+}
+
+// ── G1.71 ISO Lot Selection ──────────────────────────────────────────────
+// Hand-calc: single FL TY2024, W-2 $200k, H5 iso_amt_credit_shares $50k.
+//   isoBalance = $50k ≥ $25k ✓.
+//   estSavings = $50k × 0.09 = $4,500.
+header("H1v1.12 G1.71+1 — Single FL ISO $50k: estSavings $4,500");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 200000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    assetBalances: [
+      { assetType: "iso_amt_credit_shares", balance: "50000", accountName: "ISO", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  const hit = findHit(hits, "G1.71");
+  checkTruthy("G1.71+1", "fires (ISO H5 balance > $25k)", hit != null, true);
+  if (hit) {
+    check("G1.71+1", "estSavings = $4,500", hit.estSavings, 4500);
+  }
+}
+
+// Positive: ISO bargain adjustment alone (without H5)
+header("H1v1.12 G1.71+2 — ISO bargain adj $50k: estSavings $4,500");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 200000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [
+      { adjustmentType: "amt_iso_bargain_element", amount: 50000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  const hit = findHit(hits, "G1.71");
+  checkTruthy("G1.71+2", "fires (ISO bargain adj > 0)", hit != null, true);
+  if (hit) {
+    check("G1.71+2", "estSavings = $4,500", hit.estSavings, 4500);
+  }
+}
+
+// Negative: no ISO indicator
+header("G1.71-1 — No ISO data: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 200000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  checkTruthy("G1.71-1", "no fire without ISO", findHit(hits, "G1.71") == null, true);
+}
+
+// Negative: ISO balance under $25k
+header("G1.71-2 — ISO balance $10k: suppressed");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 100000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    assetBalances: [
+      { assetType: "iso_amt_credit_shares", balance: "10000", accountName: "ISO", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  checkTruthy("G1.71-2", "no fire ISO < $25k", findHit(hits, "G1.71") == null, true);
+}
+
+// ============================================================================
+// H1 catalog v1.13 — 5 new detectors (G1.72 / G1.73 / G1.74 / G1.75 / G1.76)
+// ============================================================================
+section("H1 catalog v1.13 — 5 new detectors (G1.72 / G1.73 / G1.74 / G1.75 / G1.76)");
+
+// ── G1.72 RSU Sell-to-Cover ──────────────────────────────────────────────
+// Hand-calc: single FL TY2024, W-2 $400k. wagesProxy = $400k ≥ $300k ✓.
+//   Taxable = $400k - $14,600 = $385,400. Single 35% bracket. Marginal = 0.35.
+//   gap = $200k × (0.35 - 0.22) = $26,000.
+header("H1v1.12 G1.72+1 — Single FL W-2 $400k @ 35%: gap $26,000");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 400000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  const hit = findHit(hits, "G1.72");
+  checkTruthy("G1.72+1", "fires (W-2 > $300k + marginal ≥ 32%)", hit != null, true);
+  if (hit) {
+    check("G1.72+1", "estSavings = $26,000 ($200k × 13% gap)",
+      hit.estSavings, 26000, 50);
+  }
+}
+
+// Setup +2: W-2 $700k @ 37%. gap = $200k × 0.15 = $30,000.
+header("H1v1.13 G1.72+2 — Single FL W-2 $700k @ 37%: gap $30,000");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 700000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  const hit = findHit(hits, "G1.72");
+  checkTruthy("G1.72+2", "fires at 37% bracket", hit != null, true);
+  if (hit) {
+    check("G1.72+2", "estSavings = $30,000 ($200k × 15% gap)",
+      hit.estSavings, 30000, 50);
+  }
+}
+
+// Negative: W-2 below threshold
+header("G1.72-1 — W-2 $200k: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 200000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  checkTruthy("G1.72-1", "no fire wages < $300k", findHit(hits, "G1.72") == null, true);
+}
+
+// Negative: high W-2 MFJ keeps marginal at 24%
+// MFJ W-2 $310k: taxable $280,800. MFJ 24% bracket $201,050-$383,900. Marginal 0.24.
+// wagesProxy $310k ≥ $300k but marginal < 0.32 — suppressed.
+header("G1.72-2 — MFJ W-2 $310k @ 24%: suppressed (marginal < 32%)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 310000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  checkTruthy("G1.72-2", "no fire marginal < 32%", findHit(hits, "G1.72") == null, true);
+}
+
+// ── G1.73 NUA In-Service ──────────────────────────────────────────────────
+// Hand-calc: single FL TY2024 age 57, H5 employer_stock $200k.
+//   nuaAmount = $200k, basisAmount = $40k, nuaAppreciation = $160k.
+//   estSavings = $160k × 0.09 = $14,400.
+header("H1v1.13 G1.73+1 — Single FL age 57, $200k employer stock: estSavings $14,400");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 57 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 100000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    assetBalances: [
+      { assetType: "employer_stock", balance: "200000", accountName: "401k stock", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  const hit = findHit(hits, "G1.73");
+  checkTruthy("G1.73+1", "fires age 55-59 + employer stock", hit != null, true);
+  if (hit) {
+    check("G1.73+1", "estSavings = $14,400 ($160k × 9%)", hit.estSavings, 14400, 50);
+  }
+}
+
+// Negative: age 50 (too young for in-service window)
+header("G1.73-1 — Age 50: suppressed");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 50 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 100000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    assetBalances: [
+      { assetType: "employer_stock", balance: "200000", accountName: "x", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  checkTruthy("G1.73-1", "no fire under 55", findHit(hits, "G1.73") == null, true);
+}
+
+// Negative: age 65 (past in-service window, G1.15 territory)
+header("G1.73-2 — Age 65: suppressed (G1.15 territory)");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 65 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 100000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    assetBalances: [
+      { assetType: "employer_stock", balance: "200000", accountName: "x", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  checkTruthy("G1.73-2", "no fire over 59", findHit(hits, "G1.73") == null, true);
+}
+
+// Negative: small employer stock
+header("G1.73-3 — Employer stock $30k: suppressed");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 57 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 100000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    assetBalances: [
+      { assetType: "employer_stock", balance: "30000", accountName: "x", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  checkTruthy("G1.73-3", "no fire stock < $50k", findHit(hits, "G1.73") == null, true);
+}
+
+// ── G1.74 §45S FMLA Credit ───────────────────────────────────────────────
+// Hand-calc: single FL TY2024, 1099-NEC $400k.
+//   netSE = $400k × 0.9235 = $369,400 ≥ $250k ✓.
+//   estSavings = $2,500.
+header("H1v1.13 G1.74+1 — Single FL SE $400k: estSavings $2,500");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "Co", nonemployeeCompensation: 400000 }],
+  });
+  const hit = findHit(hits, "G1.74");
+  checkTruthy("G1.74+1", "fires (SE > $250k)", hit != null, true);
+  if (hit) {
+    check("G1.74+1", "estSavings = $2,500 (heuristic)", hit.estSavings, 2500);
+  }
+}
+
+// Negative: SE too low
+header("G1.74-1 — SE $150k: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "Co", nonemployeeCompensation: 150000 }],
+  });
+  checkTruthy("G1.74-1", "no fire SE < $250k", findHit(hits, "G1.74") == null, true);
+}
+
+// Negative: existing credit
+header("G1.74-2 — Existing FMLA credit: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "Co", nonemployeeCompensation: 400000 }],
+    adjustments: [
+      { adjustmentType: "fmla_credit", amount: 1000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  checkTruthy("G1.74-2", "no fire existing FMLA", findHit(hits, "G1.74") == null, true);
+}
+
+// ── G1.75 WOTC §51 ───────────────────────────────────────────────────────
+// Hand-calc: single FL TY2024, 1099-NEC $400k.
+//   netSE ≥ $250k ✓. estSavings = 2 × $2,400 = $4,800.
+header("H1v1.13 G1.75+1 — Single FL SE $400k: estSavings $4,800");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "Co", nonemployeeCompensation: 400000 }],
+  });
+  const hit = findHit(hits, "G1.75");
+  checkTruthy("G1.75+1", "fires (SE > $250k)", hit != null, true);
+  if (hit) {
+    check("G1.75+1", "estSavings = $4,800 (2 × $2,400)", hit.estSavings, 4800);
+  }
+}
+
+// Negative: SE too low
+header("G1.75-1 — SE $150k: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "Co", nonemployeeCompensation: 150000 }],
+  });
+  checkTruthy("G1.75-1", "no fire SE < $250k", findHit(hits, "G1.75") == null, true);
+}
+
+// ── G1.76 §170(h) Non-Syndicated Conservation Easement ─────────────────
+// Hand-calc: single FL TY2024, H5 real_estate $1M.
+//   realEstateBalance = $1M ≥ $500k ✓.
+//   estSavings = $500k × 0.35 = $175,000.
+header("H1v1.13 G1.76+1 — Single FL $1M real estate: estSavings $175,000");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 300000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    assetBalances: [
+      { assetType: "real_estate", balance: "1000000", accountName: "Ranch", taxYear: 2024, costBasis: "200000" } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  const hit = findHit(hits, "G1.76");
+  checkTruthy("G1.76+1", "fires (real estate > $500k)", hit != null, true);
+  if (hit) {
+    check("G1.76+1", "estSavings = $175,000 ($500k × 35%)",
+      hit.estSavings, 175000, 50);
+  }
+}
+
+// Negative: small RE holding
+header("G1.76-1 — Real estate $200k: suppressed");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 300000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    assetBalances: [
+      { assetType: "real_estate", balance: "200000", accountName: "Lot", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  checkTruthy("G1.76-1", "no fire RE < $500k", findHit(hits, "G1.76") == null, true);
+}
+
+// Negative: no real estate H5
+header("G1.76-2 — No real estate: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 300000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  checkTruthy("G1.76-2", "no fire without RE", findHit(hits, "G1.76") == null, true);
+}
+
+// ============================================================================
+// H1 catalog v1.14 — 5 new detectors (G1.77 / G1.78 / G1.79 / G1.80 / G1.81)
+// ============================================================================
+section("H1 catalog v1.14 — 5 new detectors (G1.77 / G1.78 / G1.79 / G1.80 / G1.81)");
+
+// ── G1.77 Self-rental Grouping §1.469-4(d) ───────────────────────────────
+// Hand-calc: single FL TY2024, K-1 active $80k + rental loss $40k suspended.
+// Setup: K-1 active income $80k, rental property with $40k loss + AGI > $150k
+// (suppresses $25k allowance → all $40k suspended).
+// Need W-2 + K-1 = $200k AGI roughly to phase out passive allowance.
+//   K-1 active $80k Box 1 (no SE), W-2 $200k. AGI ≈ $280k.
+//   Rental with $40k loss → phased-out allowance → all suspended.
+//   Note: with AGI > $150k passive allowance phases out: $25k - 0.5 × ($280k - $150k) = $25k - $65k = $0 cap.
+//   So all $40k loss suspended ✓.
+//   k1Active $80k ≥ $50k ✓, suspended $40k ≥ $10k ✓, no REPS ✓.
+//   releaseable = min($40k, $80k) = $40k.
+//   Marginal: AGI $280k - std $14,600 = $265,400. Single 35% bracket $243,725-$609,350. Marginal = 0.35.
+//   State FL = 0. estSavings = $40k × 0.35 = $14,000.
+header("H1v1.14 G1.77+1 — Single FL K1 $80k + rental loss $40k: estSavings $14,000");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 200000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    scheduleK1: [
+      { taxYear: 2024, entityName: "ABC LLC", entityType: "partnership", activityType: "active",
+        box1OrdinaryIncome: 80000 } as unknown as TaxReturnInputs["scheduleK1"][number],
+    ],
+    rentalProperties: [
+      { taxYear: 2024, address: "123 Main", propertyType: "residential", basis: 0,
+        rentalIncome: 10000, totalExpenses: 50000, isActiveParticipant: true } as unknown as TaxReturnInputs["rentalProperties"][number],
+    ],
+  });
+  const hit = findHit(hits, "G1.77");
+  checkTruthy("G1.77+1", "fires (K1 active + suspended PAL)", hit != null, true);
+  if (hit) {
+    check("G1.77+1", "estSavings ≈ $14,000 ($40k × 35%)", hit.estSavings, 14000, 500);
+  }
+}
+
+// Negative: REPS already elected
+header("G1.77-1 — REPS already elected: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, rentalRealEstateProfessional: true } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 200000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    scheduleK1: [
+      { taxYear: 2024, entityName: "ABC", entityType: "partnership", activityType: "active",
+        box1OrdinaryIncome: 80000 } as unknown as TaxReturnInputs["scheduleK1"][number],
+    ],
+    rentalProperties: [
+      { taxYear: 2024, address: "x", propertyType: "residential", basis: 0,
+        rentalIncome: 10000, totalExpenses: 50000, isActiveParticipant: true } as unknown as TaxReturnInputs["rentalProperties"][number],
+    ],
+  });
+  checkTruthy("G1.77-1", "no fire if REPS", findHit(hits, "G1.77") == null, true);
+}
+
+// Negative: no K-1 active income
+header("G1.77-2 — No K1 active income: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 200000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    rentalProperties: [
+      { taxYear: 2024, address: "x", propertyType: "residential", basis: 0,
+        rentalIncome: 10000, totalExpenses: 50000, isActiveParticipant: true } as unknown as TaxReturnInputs["rentalProperties"][number],
+    ],
+  });
+  checkTruthy("G1.77-2", "no fire without K-1 active", findHit(hits, "G1.77") == null, true);
+}
+
+// ── G1.78 Multi-state NR Allocation ──────────────────────────────────────
+// Setup: single CA TY2024, W-2 $300k from NY (remote work).
+//   totalIncome $300k ≥ $200k ✓. residentState=CA. NY ≠ CA ✓.
+//   overSourced = min($300k, $500k) × 0.05 = $15,000.
+//   estSavings = $15k × 0.07 = $1,050.
+header("H1v1.14 G1.78+1 — CA resident, NY W-2 $300k: estSavings $1,050");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "CA", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 300000, stateCode: "NY" } as unknown as TaxReturnInputs["w2s"][number]],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  const hit = findHit(hits, "G1.78");
+  checkTruthy("G1.78+1", "fires (multi-state W-2)", hit != null, true);
+  if (hit) {
+    check("G1.78+1", "estSavings = $1,050 ($15k × 7%)", hit.estSavings, 1050, 5);
+  }
+}
+
+// Negative: single-state W-2 (resident-state match)
+header("G1.78-1 — All W-2 in resident state: suppressed");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "CA", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 300000, stateCode: "CA" } as unknown as TaxReturnInputs["w2s"][number]],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  checkTruthy("G1.78-1", "no fire same state", findHit(hits, "G1.78") == null, true);
+}
+
+// Negative: low income
+header("G1.78-2 — Income $100k: suppressed");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "CA", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 100000, stateCode: "NY" } as unknown as TaxReturnInputs["w2s"][number]],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  checkTruthy("G1.78-2", "no fire low income", findHit(hits, "G1.78") == null, true);
+}
+
+// ── G1.79 §453 Election Out ──────────────────────────────────────────────
+// Hand-calc: single FL TY2024, W-2 $300k + LTCG $400k.
+//   AGI = $300k + $400k = $700k ≥ $250k ✓.
+//   LTCG $400k ≥ $250k ✓.
+//   Taxable = $700k - $14,600 = $685,400. Single 37% bracket > $609,350. Marginal = 0.37.
+//   estSavings = $500k × 0.02 = $10,000.
+header("H1v1.14 G1.79+1 — Single FL LTCG $400k + W-2 $300k @ 37%: estSavings $10,000");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 300000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    form1099s: [{ taxYear: 2024, formType: "b", payerName: "Broker", longTermGainLoss: 400000 }],
+  });
+  const hit = findHit(hits, "G1.79");
+  checkTruthy("G1.79+1", "fires (LTCG > $250k + high marginal)", hit != null, true);
+  if (hit) {
+    check("G1.79+1", "estSavings = $10,000", hit.estSavings, 10000, 50);
+  }
+}
+
+// Negative: low marginal
+header("G1.79-1 — LTCG but low marginal: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 60000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    form1099s: [{ taxYear: 2024, formType: "b", payerName: "B", longTermGainLoss: 250000 }],
+  });
+  // AGI $310k - std $14,600 = $295,400. Single 35% bracket starts $243,725. Marginal = 0.35. So actually FIRES.
+  // Need lower marginal — try MFJ.
+  const hitsMfj = runPlanning({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 60000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    form1099s: [{ taxYear: 2024, formType: "b", payerName: "B", longTermGainLoss: 260000 }],
+  });
+  // MFJ AGI $320k - std $29,200 = $290,800. MFJ 24% bracket: $201,050-$383,900. Marginal 0.24 < 0.32 — suppressed.
+  void hits;
+  checkTruthy("G1.79-1", "no fire MFJ low marginal", findHit(hitsMfj, "G1.79") == null, true);
+}
+
+// ── G1.80 §47 Historic Rehab Credit ──────────────────────────────────────
+// Hand-calc: single FL TY2024, H5 real_estate $500k.
+//   realEstateBalance ≥ $250k ✓.
+//   annualCredit = ($500k × 0.20) / 5 = $20,000.
+header("H1v1.14 G1.80+1 — Single FL $500k real estate: estSavings $20,000");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 100000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    assetBalances: [
+      { assetType: "real_estate", balance: "500000", accountName: "Historic", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  const hit = findHit(hits, "G1.80");
+  checkTruthy("G1.80+1", "fires (real estate > $250k)", hit != null, true);
+  if (hit) {
+    check("G1.80+1", "estSavings = $20,000 ($100k credit / 5 yrs)", hit.estSavings, 20000, 5);
+  }
+}
+
+// Negative: no real estate + low SE
+header("G1.80-1 — No RE + low SE: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  checkTruthy("G1.80-1", "no fire without RE or SE", findHit(hits, "G1.80") == null, true);
+}
+
+// ── G1.81 §44 Disabled Access Credit ─────────────────────────────────────
+// Hand-calc: single FL TY2024, 1099-NEC $200k.
+//   netSE = $200k × 0.9235 = $184,700. ≥ $50k AND ≤ $1M ✓.
+//   credit = 0.5 × ($5,250 - $250) = $2,500.
+header("H1v1.14 G1.81+1 — Single FL SE $200k: credit $2,500");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "Co", nonemployeeCompensation: 200000 }],
+  });
+  const hit = findHit(hits, "G1.81");
+  checkTruthy("G1.81+1", "fires (SE $50k-$1M)", hit != null, true);
+  if (hit) {
+    check("G1.81+1", "credit = $2,500", hit.estSavings, 2500);
+  }
+}
+
+// Negative: SE too high (> $1M)
+header("G1.81-1 — SE $1.5M: suppressed (over $1M cap)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "Co", nonemployeeCompensation: 1500000 }],
+  });
+  checkTruthy("G1.81-1", "no fire SE > $1M", findHit(hits, "G1.81") == null, true);
+}
+
+// Negative: existing credit
+header("G1.81-2 — Existing §44 credit: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "Co", nonemployeeCompensation: 200000 }],
+    adjustments: [
+      { adjustmentType: "disabled_access_credit", amount: 500, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  checkTruthy("G1.81-2", "no fire existing credit", findHit(hits, "G1.81") == null, true);
+}
+
+// ============================================================================
+// H1 catalog v1.15 — 5 new detectors (G1.82 / G1.83 / G1.84 / G1.85 / G1.86)
+// ============================================================================
+section("H1 catalog v1.15 — 5 new detectors (G1.82 / G1.83 / G1.84 / G1.85 / G1.86)");
+
+// ── G1.82 §1374 BIG (S-corp converted from C-corp) ──────────────────────
+// Hand-calc: single FL TY2024, K-1 active $80k. estSavings = $100k × 21% = $21,000.
+header("H1v1.15 G1.82+1 — S-corp K-1 active $80k: estSavings $21,000");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    scheduleK1: [
+      { taxYear: 2024, entityName: "S-corp", entityType: "s_corp", activityType: "active",
+        box1OrdinaryIncome: 80000 } as unknown as TaxReturnInputs["scheduleK1"][number],
+    ],
+  });
+  const hit = findHit(hits, "G1.82");
+  checkTruthy("G1.82+1", "fires (K-1 active > $50k)", hit != null, true);
+  if (hit) {
+    check("G1.82+1", "estSavings = $21,000 ($100k × 21%)", hit.estSavings, 21000);
+  }
+}
+
+// Negative: no K-1
+header("G1.82-1 — No K-1: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 100000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  checkTruthy("G1.82-1", "no fire without K-1", findHit(hits, "G1.82") == null, true);
+}
+
+// ── G1.83 §338(h)(10) ───────────────────────────────────────────────────
+// Hand-calc: single FL TY2024, K-1 active $200k + LTCG $300k.
+//   k1Active $200k ≥ $100k ✓. LTCG $300k ≥ $250k ✓. No SE ✓.
+//   estSavings = $1M × 0.30 × 0.13 = $39,000.
+header("H1v1.15 G1.83+1 — S-corp K1 $200k + LTCG $300k: estSavings $39,000");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    scheduleK1: [
+      { taxYear: 2024, entityName: "S-corp", entityType: "s_corp", activityType: "active",
+        box1OrdinaryIncome: 200000 } as unknown as TaxReturnInputs["scheduleK1"][number],
+    ],
+    form1099s: [{ taxYear: 2024, formType: "b", payerName: "Broker", longTermGainLoss: 300000 }],
+  });
+  const hit = findHit(hits, "G1.83");
+  checkTruthy("G1.83+1", "fires (K1 + LTCG exit year)", hit != null, true);
+  if (hit) {
+    check("G1.83+1", "estSavings = $39,000", hit.estSavings, 39000);
+  }
+}
+
+// Negative: no LTCG (not exit year)
+header("G1.83-1 — No LTCG: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    scheduleK1: [
+      { taxYear: 2024, entityName: "S-corp", entityType: "s_corp", activityType: "active",
+        box1OrdinaryIncome: 200000 } as unknown as TaxReturnInputs["scheduleK1"][number],
+    ],
+  });
+  checkTruthy("G1.83-1", "no fire without LTCG", findHit(hits, "G1.83") == null, true);
+}
+
+// ── G1.84 §351 Controlled-Corp Contribution ────────────────────────────
+// Hand-calc: single FL TY2024, H5 real_estate $600k.
+//   reBalance ≥ $500k ✓.
+//   embeddedGain = $500k - $100k = $400k.
+//   estSavings = $400k × 0.238 = $95,200.
+header("H1v1.15 G1.84+1 — Single FL $600k real estate: estSavings $95,200");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 100000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    assetBalances: [
+      { assetType: "real_estate", balance: "600000", accountName: "RE", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  const hit = findHit(hits, "G1.84");
+  checkTruthy("G1.84+1", "fires (RE > $500k)", hit != null, true);
+  if (hit) {
+    check("G1.84+1", "estSavings = $95,200", hit.estSavings, 95200);
+  }
+}
+
+// Negative: small RE
+header("G1.84-1 — RE $200k: suppressed");
+{
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 100000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    assetBalances: [
+      { assetType: "real_estate", balance: "200000", accountName: "x", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  checkTruthy("G1.84-1", "no fire small RE", findHit(hits, "G1.84") == null, true);
+}
+
+// ── G1.85 §163(h)(3) Mortgage Optimization ─────────────────────────────
+// Hand-calc: single CA TY2024, W-2 $200k + itemized (SALT $10k + mortgage int $30k + charity $5k).
+//   itemized = $10k + $30k + $5k = $45k. Std ded single $14,600 → use itemized.
+//   mortgageInt = $30k ≥ $20k ✓.
+//   AGI $200k. Taxable = $200k - $45k = $155k. Single 24% bracket: $100,525-$191,950. Marginal = 0.24.
+//   retainedDeduction = $30k × 0.80 = $24,000.
+//   estSavings = $24,000 × 0.24 = $5,760.
+header("H1v1.15 G1.85+1 — Single CA $30k mortgage int @ 24%: estSavings $5,760");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "CA", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 200000, stateCode: "CA" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [
+      { adjustmentType: "state_income_tax", amount: 12000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+      { adjustmentType: "mortgage_interest", amount: 30000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+      { adjustmentType: "charitable_cash", amount: 5000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  const hit = findHit(hits, "G1.85");
+  checkTruthy("G1.85+1", "fires (itemized + mortgage int > $20k)", hit != null, true);
+  if (hit) {
+    check("G1.85+1", "estSavings = $5,760 ($24k × 24%)",
+      hit.estSavings, 5760, 50);
+  }
+}
+
+// Negative: standard deduction (no itemized)
+header("G1.85-1 — Std ded path: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 80000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  checkTruthy("G1.85-1", "no fire std ded", findHit(hits, "G1.85") == null, true);
+}
+
+// ── G1.86 Charitable Lead Trust ──────────────────────────────────────────
+// Hand-calc: single FL TY2024, W-2 $1.5M + charity $100k.
+//   AGI $1.5M ≥ $1M ✓.
+//   Taxable = $1.5M - $14,600 = $1,485,400. Single 37% bracket. Marginal = 0.37.
+//   Charity $100k ≥ $50k ✓.
+//   AGI cap = $1.5M × 0.30 = $450k. deductibleThisYear = min($700k, $450k) = $450k.
+//   estSavings = $450k × 0.37 = $166,500.
+header("H1v1.15 G1.86+1 — Single FL AGI $1.5M + charity $100k: estSavings $166,500");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 1500000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [
+      { adjustmentType: "charitable_cash", amount: 100000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  const hit = findHit(hits, "G1.86");
+  checkTruthy("G1.86+1", "fires (HNW + charity)", hit != null, true);
+  if (hit) {
+    check("G1.86+1", "estSavings = $166,500", hit.estSavings, 166500, 100);
+  }
+}
+
+// Negative: AGI under $1M
+header("G1.86-1 — AGI $500k: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 500000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [
+      { adjustmentType: "charitable_cash", amount: 100000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  checkTruthy("G1.86-1", "no fire AGI < $1M", findHit(hits, "G1.86") == null, true);
+}
+
+// Negative: no charity
+header("G1.86-2 — HNW no charity: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 1500000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  checkTruthy("G1.86-2", "no fire without charity", findHit(hits, "G1.86") == null, true);
+}
+
+// ============================================================================
+// H1 catalog v1.16 — 5 new detectors (G1.87 / G1.88 / G1.89 / G1.90 / G1.91)
+// ============================================================================
+section("H1 catalog v1.16 — 5 new detectors (G1.87 / G1.88 / G1.89 / G1.90 / G1.91)");
+
+// ── G1.87 §401(a)(17) Compensation Cap ──────────────────────────────────
+// Hand-calc: single FL TY2024, W-2 $500k + sep_ira adj $30k (any retirement).
+//   AGI ≈ $470k. Wages $500k > $345k cap. compAboveCap = $500k - $345k = $155k.
+//   Taxable = ~$470k - $14,600 = $455,400. Single 35% bracket. Marginal = 0.35.
+//   lostMatch = $155k × 0.05 = $7,750.
+//   estSavings = $7,750 × 0.35 = $2,712.50.
+header("H1v1.16 G1.87+1 — Single FL W-2 $500k + retirement: estSavings $2,713");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 500000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [
+      { adjustmentType: "sep_ira_contribution", amount: 30000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  const hit = findHit(hits, "G1.87");
+  checkTruthy("G1.87+1", "fires (W-2 > $345k cap)", hit != null, true);
+  if (hit) {
+    check("G1.87+1", "estSavings ≈ $2,713", hit.estSavings, 2713, 5);
+  }
+}
+
+// Negative: no retirement plan
+header("G1.87-1 — No retirement plan: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 500000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  checkTruthy("G1.87-1", "no fire without retirement adj", findHit(hits, "G1.87") == null, true);
+}
+
+// Negative: income too low
+header("G1.87-2 — W-2 $200k: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 200000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [
+      { adjustmentType: "sep_ira_contribution", amount: 20000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  checkTruthy("G1.87-2", "no fire low income", findHit(hits, "G1.87") == null, true);
+}
+
+// ── G1.88 §199A SSTB Navigation ─────────────────────────────────────────
+// Hand-calc: single FL TY2024, 1099-NEC $230k + qbi.
+//   netSE = $230k × 0.9235 = $212,405.
+//   SE tax ≈ $25,361. Half = $12,681.
+//   AGI = $230k - $12,681 = $217,319.
+//   With qbi_income $212,405: QBI = min(20% × $212,405, 20% × ($217,319 - $14,600)) = min($42,481, $40,544) = $40,544.
+//   Taxable = $217,319 - $14,600 - $40,544 = $162,175.
+//   Single full thresh $191,950 — taxable $162k < $191k → suppressed.
+// Need taxable BETWEEN $191,950 and $241,950 for fire. Let me use higher SE:
+//   1099-NEC $280k:
+//     netSE = $258,580. SE tax ≈ $26,824 (capped on SS). Half = $13,412.
+//     AGI = $280k - $13,412 = $266,588.
+//     QBI cap = 20% × ($266,588 - $14,600) = $50,398. QBI = min($51,716, $50,398) = $50,398.
+//     Taxable = $266,588 - $14,600 - $50,398 = $201,590.
+//   In phase-out range ($191,950 < $201,590 < $241,950) ✓.
+//   estSavings = $2,400.
+header("H1v1.16 G1.88+1 — Single FL SE $280k in SSTB phase-out: estSavings $2,400");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "Consult", nonemployeeCompensation: 280000 }],
+    adjustments: [
+      { adjustmentType: "qbi_income", amount: 258580, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  const hit = findHit(hits, "G1.88");
+  checkTruthy("G1.88+1", "fires in SSTB phase-out range", hit != null, true);
+  if (hit) {
+    check("G1.88+1", "estSavings = $2,400", hit.estSavings, 2400);
+  }
+}
+
+// Negative: taxable below threshold
+header("G1.88-1 — SE $100k (below SSTB threshold): suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "Co", nonemployeeCompensation: 100000 }],
+    adjustments: [
+      { adjustmentType: "qbi_income", amount: 92000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  checkTruthy("G1.88-1", "no fire below thresh", findHit(hits, "G1.88") == null, true);
+}
+
+// ── G1.89 §199A Aggregation ─────────────────────────────────────────────
+// Hand-calc: single FL TY2024, K-1 active $300k + qbi $300k.
+//   AGI $300k. QBI = min(20% × $300k, 20% × ($300k - $14,600)) = min($60k, $57,080) = $57,080.
+//   Taxable = $300k - $14,600 - $57,080 = $228,320. Above $191,950 ✓.
+//   estSavings = $9,600.
+header("H1v1.16 G1.89+1 — Single FL K1 $300k above thresh: estSavings $9,600");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    scheduleK1: [
+      { taxYear: 2024, entityName: "LLC", entityType: "partnership", activityType: "active",
+        box1OrdinaryIncome: 300000 } as unknown as TaxReturnInputs["scheduleK1"][number],
+    ],
+    adjustments: [
+      { adjustmentType: "qbi_income", amount: 300000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  const hit = findHit(hits, "G1.89");
+  checkTruthy("G1.89+1", "fires (K1 + QBI + above thresh)", hit != null, true);
+  if (hit) {
+    check("G1.89+1", "estSavings = $9,600", hit.estSavings, 9600);
+  }
+}
+
+// Negative: no K-1
+header("G1.89-1 — No K-1: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 250000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [
+      { adjustmentType: "qbi_income", amount: 250000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  checkTruthy("G1.89-1", "no fire without K-1", findHit(hits, "G1.89") == null, true);
+}
+
+// ── G1.90 PIF Pooled Income Fund ─────────────────────────────────────────
+// Hand-calc: single FL TY2024 age 60, W-2 $700k + charity $30k.
+//   AGI $700k ≥ $500k ✓. Age 60 ≥ 55 ✓. Charity $30k ≥ $25k ✓.
+//   Taxable $685,400 — single 37% bracket. Marginal = 0.37.
+//   deductionAmount = $100k × 0.70 = $70,000.
+//   AGI cap = $700k × 0.30 = $210,000. deductibleThisYear = min($70k, $210k) = $70k.
+//   estSavings = $70k × 0.37 = $25,900.
+header("H1v1.16 G1.90+1 — Single FL age 60 AGI $700k + charity $30k: estSavings $25,900");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 60 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 700000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [
+      { adjustmentType: "charitable_cash", amount: 30000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  const hit = findHit(hits, "G1.90");
+  checkTruthy("G1.90+1", "fires (HNW + age 55+ + charity)", hit != null, true);
+  if (hit) {
+    check("G1.90+1", "estSavings = $25,900", hit.estSavings, 25900, 50);
+  }
+}
+
+// Negative: too young
+header("G1.90-1 — Age 40: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 40 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 700000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [
+      { adjustmentType: "charitable_cash", amount: 30000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  checkTruthy("G1.90-1", "no fire age < 55", findHit(hits, "G1.90") == null, true);
+}
+
+// ── G1.91 §139 Disaster Relief ──────────────────────────────────────────
+// Hand-calc: single FL TY2024 (disaster state), W-2 $150k.
+//   AGI $150k ≥ $100k ✓. State FL in disaster set ✓.
+//   Taxable = $150k - $14,600 = $135,400. Single 24% bracket. Marginal = 0.24.
+//   estSavings = $20k × 0.24 = $4,800.
+header("H1v1.16 G1.91+1 — Single FL disaster state W-2 $150k: estSavings $4,800");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 150000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  const hit = findHit(hits, "G1.91");
+  checkTruthy("G1.91+1", "fires (disaster state + AGI > $100k)", hit != null, true);
+  if (hit) {
+    check("G1.91+1", "estSavings = $4,800", hit.estSavings, 4800, 5);
+  }
+}
+
+// Negative: non-disaster state
+header("G1.91-1 — Non-disaster state (NY): suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "NY", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 150000, stateCode: "NY" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  checkTruthy("G1.91-1", "no fire non-disaster state", findHit(hits, "G1.91") == null, true);
+}
+
+// Negative: existing disaster adj
+header("G1.91-2 — Existing §139 payment: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 150000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [
+      { adjustmentType: "section_139_payment", amount: 5000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  checkTruthy("G1.91-2", "no fire existing §139", findHit(hits, "G1.91") == null, true);
+}
+
+// ============================================================================
+// H1 catalog v1.17 — 5 new detectors (G1.92 / G1.93 / G1.94 / G1.95 / G1.96)
+// ============================================================================
+section("H1 catalog v1.17 — 5 new detectors (G1.92 / G1.93 / G1.94 / G1.95 / G1.96)");
+
+// ── G1.92 Solo 401(k) Employee Deferral ──────────────────────────────────
+// Hand-calc: single FL TY2024, 1099-NEC $60k.
+//   netSE = $60k × 0.9235 = $55,410.
+//   SS portion = $55,410 × 0.124 = $6,871. Medicare = $55,410 × 0.029 = $1,607.
+//   SE tax = $8,478. Half = $4,239.
+//   sepContrib = ($55,410 - $4,239) × 0.20 = $51,171 × 0.20 = $10,234.
+//   employeeDeferral = $23,000.
+//   employerMatch = $10,234.
+//   totalContribution = $33,234.
+//   extraVsSep = $33,234 - $10,234 = $23,000.
+//   AGI ≈ $60k - $4,239 = $55,761. Taxable = $55,761 - $14,600 = $41,161.
+//   Single 12% bracket: $11,600-$47,150. Marginal = 0.12.
+//   FL state = 0.
+//   estSavings = $23,000 × 0.12 = $2,760.
+header("H1v1.17 G1.92+1 — Single FL SE $60k: extra shelter $23k → savings $2,760");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "Co", nonemployeeCompensation: 60000 }],
+  });
+  const hit = findHit(hits, "G1.92");
+  checkTruthy("G1.92+1", "fires (low-mid SE)", hit != null, true);
+  if (hit) {
+    check("G1.92+1", "estSavings ≈ $2,760", hit.estSavings, 2760, 10);
+    check("G1.92+1", "extra vs SEP ≈ $23,000",
+      Number(hit.inputs.extraVsSep), 23000, 50);
+  }
+}
+
+// Negative: SE too high (G1.1 SEP territory)
+header("G1.92-1 — SE $200k: suppressed (G1.1 SEP works)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "Co", nonemployeeCompensation: 200000 }],
+  });
+  checkTruthy("G1.92-1", "no fire SE > $150k", findHit(hits, "G1.92") == null, true);
+}
+
+// Negative: SE too low
+header("G1.92-2 — SE $10k: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "Co", nonemployeeCompensation: 10000 }],
+  });
+  checkTruthy("G1.92-2", "no fire SE < $20k", findHit(hits, "G1.92") == null, true);
+}
+
+// Negative: MFS
+header("G1.92-3 — MFS: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "married_filing_separately", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "Co", nonemployeeCompensation: 60000 }],
+  });
+  checkTruthy("G1.92-3", "no fire MFS", findHit(hits, "G1.92") == null, true);
+}
+
+// ── G1.93 §163(d)(4)(B) Investment Interest Election ─────────────────────
+// Hand-calc: single FL TY2024, W-2 $400k + QDIV $50k + investment_interest $30k.
+//   AGI = $400k + $50k = $450k. Taxable = $450k - $14,600 = $435,400.
+//   Wait — does qualifiedDividends go through 1099-DIV? Let me use 1099-DIV box qualifiedDividends.
+//   Single 35% bracket: $243,725-$609,350. Marginal = 0.35.
+//   qdivPlusLtcg = $50k. invInt = $30k.
+//   electedAmount = min($50k, $30k) = $30k.
+//   ratePaid = $30k × 0.132 = $3,960.
+//   interestGain = $30k × 0.35 = $10,500.
+//   estSavings = $10,500 - $3,960 = $6,540.
+header("H1v1.17 G1.93+1 — Single FL W-2 $400k + QDIV $50k + invInt $30k @ 35%: estSavings $6,540");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 400000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    form1099s: [{ taxYear: 2024, formType: "div", payerName: "Broker", ordinaryDividends: 50000, qualifiedDividends: 50000 }],
+    adjustments: [
+      { adjustmentType: "investment_interest_expense", amount: 30000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  const hit = findHit(hits, "G1.93");
+  checkTruthy("G1.93+1", "fires (QDIV + invInt + high marginal)", hit != null, true);
+  if (hit) {
+    check("G1.93+1", "estSavings ≈ $6,540", hit.estSavings, 6540, 50);
+  }
+}
+
+// Negative: low marginal
+header("G1.93-1 — Low marginal: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 100000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    form1099s: [{ taxYear: 2024, formType: "div", payerName: "B", ordinaryDividends: 50000, qualifiedDividends: 50000 }],
+    adjustments: [
+      { adjustmentType: "investment_interest_expense", amount: 30000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
+  });
+  checkTruthy("G1.93-1", "no fire marginal < 32%", findHit(hits, "G1.93") == null, true);
+}
+
+// ── G1.94 §85 Unemployment Income Analysis ───────────────────────────────
+// Hand-calc: single FL TY2024, 1099-G UI $15k + W-2 $50k.
+//   AGI = $50k + $15k = $65k ≤ $150k ✓. UI $15k ≥ $5k ✓.
+//   Taxable = $65k - $14,600 = $50,400. Single 22% bracket. Marginal = 0.22.
+//   estSavings = $15k × 0.22 = $3,300.
+header("H1v1.17 G1.94+1 — Single FL UI $15k + W-2 $50k: estSavings $3,300");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    form1099s: [{ taxYear: 2024, formType: "g", payerName: "State UI", unemploymentCompensation: 15000 }],
+  });
+  const hit = findHit(hits, "G1.94");
+  checkTruthy("G1.94+1", "fires (UI > $5k + AGI < $150k)", hit != null, true);
+  if (hit) {
+    check("G1.94+1", "estSavings = $3,300 ($15k × 22%)",
+      hit.estSavings, 3300, 5);
+  }
+}
+
+// Negative: AGI too high
+header("G1.94-1 — AGI > $150k: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 200000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    form1099s: [{ taxYear: 2024, formType: "g", payerName: "S", unemploymentCompensation: 10000 }],
+  });
+  checkTruthy("G1.94-1", "no fire AGI > $150k", findHit(hits, "G1.94") == null, true);
+}
+
+// Negative: no UI
+header("G1.94-2 — No UI: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  checkTruthy("G1.94-2", "no fire without UI", findHit(hits, "G1.94") == null, true);
+}
+
+// ── G1.95 §1377(a)(2) S-corp Terminating Shareholder ─────────────────────
+// Hand-calc: single FL TY2024, K1 active $100k + SE $80k (LLC member).
+//   k1Active ≥ $50k ✓. SE $80k > $50k proxy ✓ (use scheduleK1 selfEmploymentEarnings).
+//   estSavings = $5,000 (heuristic).
+header("H1v1.17 G1.95+1 — S-corp K1 + SE engagement: estSavings $5,000");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    scheduleK1: [
+      { taxYear: 2024, entityName: "LLC", entityType: "partnership", activityType: "active",
+        box1OrdinaryIncome: 100000, selfEmploymentEarnings: 80000 } as unknown as TaxReturnInputs["scheduleK1"][number],
+    ],
+  });
+  const hit = findHit(hits, "G1.95");
+  checkTruthy("G1.95+1", "fires (K1 + SE proxy)", hit != null, true);
+  if (hit) {
+    check("G1.95+1", "estSavings = $5,000", hit.estSavings, 5000);
+  }
+}
+
+// Negative: no SE
+header("G1.95-1 — K1 but no SE: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    scheduleK1: [
+      { taxYear: 2024, entityName: "LLC", entityType: "s_corp", activityType: "active",
+        box1OrdinaryIncome: 100000 } as unknown as TaxReturnInputs["scheduleK1"][number],
+    ],
+  });
+  checkTruthy("G1.95-1", "no fire without SE", findHit(hits, "G1.95") == null, true);
+}
+
+// ── G1.96 §132(f) Qualified Transportation Fringe ───────────────────────
+// Hand-calc: single FL TY2024, W-2 $80k.
+//   wagesProxy ≥ $50k ✓. monthlyCap $315 × 12 = $3,780.
+//   Taxable = $80k - $14,600 = $65,400. Single 22% bracket. Marginal = 0.22.
+//   estSavings = $3,780 × 0.22 = $831.
+header("H1v1.17 G1.96+1 — Single FL W-2 $80k @ 22%: estSavings $831");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 80000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  const hit = findHit(hits, "G1.96");
+  checkTruthy("G1.96+1", "fires (W-2 > $50k)", hit != null, true);
+  if (hit) {
+    check("G1.96+1", "estSavings ≈ $831", hit.estSavings, 831, 5);
+  }
+}
+
+// Negative: income too low
+header("G1.96-1 — Income $30k: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 30000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  checkTruthy("G1.96-1", "no fire low income", findHit(hits, "G1.96") == null, true);
+}
+
+// Negative: SE only (no W-2)
+header("G1.96-2 — SE only: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "Co", nonemployeeCompensation: 100000 }],
+  });
+  checkTruthy("G1.96-2", "no fire SE-only", findHit(hits, "G1.96") == null, true);
+}
+
+// ============================================================================
 // RESULTS
 // ============================================================================
 

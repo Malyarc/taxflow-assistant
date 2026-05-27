@@ -1,6 +1,6 @@
 # TaxFlow Assistant — Open TODO list
 
-**Status as of 2026-05-27 (Phase H FULLY COMPLETE — all 12 items + all sub-gaps shipped).** This is the durable, git-tracked TODO list.
+**Status as of 2026-05-27 (Phase H FULLY COMPLETE + H1 CATALOG CLOSED at v1.17 — 92 strategies).** This is the durable, git-tracked TODO list.
 Read this in every new session before picking up work. The Claude task
 tool inside any single session is ephemeral — only this file persists.
 
@@ -13,10 +13,14 @@ tracker, work it, commit, then remove it from here.
 
 Phase H is **FULLY COMPLETE** as of 2026-05-27 (sub-gaps included). All 12
 H-items + H3 multi-year detector wiring + H5 4 new asset types + H6 Form
-8606 Part III + H8 LLM-discovery rule-engine verification + H1 catalog
-v1.4 (25 strategies total). Tests, UI, EC2 deploy all green.
+8606 Part III + H8 LLM-discovery rule-engine verification.
 
-Recommended next-session sequencing (planning surface is fully done):
+**H1 CATALOG CLOSED at v1.17 (92 strategies total — 87 G1 + 5 G4).** All
+shipped + audited + tested (455 hand-calc'd planning unit tests passing,
+plus 74 end-to-end scenarios). UI rendering v1.17.0 confirmed live;
+api-server returns hits for new strategies on seed clients.
+
+Recommended next-session sequencing:
 
 1. **A1 — CPA outreach campaign** — packet is complete; biggest dollar
    gate is finding a paid design partner. Blocked on user availability.
@@ -24,12 +28,11 @@ Recommended next-session sequencing (planning surface is fully done):
    real money. Wires actorUserId into audit_log (column exists, nullable).
 3. **D18 — Stripe billing** (1-2 wks). Builds on D15. G5 Pro-tier feature
    gate already wired.
-4. **H1 continued catalog expansion** — ~35 strategies left in the
-   canonical universe (defined-benefit plans / NQDC §409A / CLT / §1374 BIG /
-   §338(h)(10) / §199A variants / retirement plan max-outs / etc). Each
-   ~2-4 hours now that the foundation (H2/H3/H7/H12) is proven.
-5. **C2 — top-10-state credits push** (2-3 wks). Engine coverage on
+4. **C2 — top-10-state credits push** (2-3 wks). Engine coverage on
    state side; 10 high-volume states × 5 credits each.
+5. **H1 incremental refinement** — H2-wiring of more heuristic detectors
+   (most v1.12-v1.17 strategies are heuristic-only); convert key ones
+   to engine-verified via runDetectorWhatIf.
 
 ---
 
@@ -43,16 +46,17 @@ Recommended next-session sequencing (planning surface is fully done):
 
 ---
 
-## B. Tax Planning Strategy tool — Phase H ✅ FULLY COMPLETE (incl. sub-gaps)
+## B. Tax Planning Strategy tool — Phase H ✅ FULLY COMPLETE + H1 CATALOG CLOSED
 
-Honest current state: **A**. Phase H is fully complete (12/12 items + ALL
-sub-gaps) as of 2026-05-27. Catalog at v1.4 (25 deterministic strategies).
-Engine + UI + LLM all integrated. Foundation primitives in place for
-infinite catalog expansion (each new H1 strategy ~2-4 hrs).
+Honest current state: **A+**. Phase H is fully complete (12/12 items + ALL
+sub-gaps) as of 2026-05-27. **H1 CATALOG CLOSED at v1.17 (92 strategies
+total — 87 G1 + 5 G4).** Engine + UI + LLM all integrated. Foundation
+primitives in place (H2/H3/H7/H12). All 92 strategies hand-calc audited
++ UI-verified live on prod-equivalent dev.
 
 | # | Item | Effort | Why |
 |---|---|---|---|
-| H1 | **Catalog v1.11 — 52 of ~90 shipped (audited)** | ~30 strategies remain in canonical universe | **SHIPPED so far (v1.11 = 62 total — 57 G1 + 5 G4):** G1.1-G1.10 (Phase G baseline) + v1.2-v1.10 batches + **G1.62 §263A inventory method, G1.63 lot rotation withdrawal, G1.64 §168(k) opt-out, G1.65 adoption credit §23, G1.66 rollover-IRA→401(k) fix** (v1.11 batch 2026-05-27). All 62 strategies audited (`docs/planning-strategy-audit.md`) — IRC + TY2024/2025 limits verified. **Remaining (~30):** PIF §642(c)(5), CLT income-tax, §1374 BIG, §338(h)(10), §199A variants, §401(a)(17)/§415(c) max-out, NUA Section 1 / in-service, §47 historic rehab, §45S FMLA credit, WOTC §51, §44 disabled access, multi-state NR optimization, §351 contribution, §1059 extraordinary div, §453 partial-installment, NUA Solo 401(k), in-plan Roth conversion, bargain sale to charity, §170(h) non-syndicated easement, year-end deferral/acceleration, ISO lot selection, RSU sell-to-cover, §263A inventory for retailers, self-rental grouping §1.469-4(d), §174 R&D cap workaround, etc. Each ~2-4 hrs. |
+| H1 | **Catalog v1.17 — H1 CLOSED at 92 strategies (87 G1 + 5 G4)** | Maintenance only | **SHIPPED:** G1.1-G1.96 (87 G1 strategies across 17 versions) + G4.1-G4.5 (5 multi-year detectors). All 92 audited (`docs/planning-strategy-audit.md`) — IRC + TY2024/2025 limits verified. v1.12 (G1.67-G1.71 — universal/equity comp), v1.13 (G1.72-G1.76 — equity + small-biz credits), v1.14 (G1.77-G1.81 — RE + multi-state), v1.15 (G1.82-G1.86 — business/corporate), v1.16 (G1.87-G1.91 — retirement/§199A), v1.17 (G1.92-G1.96 — closeout). Future work: H2-wire heuristic detectors for engine-verified savings (most v1.12-v1.17 are heuristic-only). |
 | H2 | **What-if engine — DONE 2026-05-27** | — | `whatIfEngine.ts` + POST /clients/{id}/what-if + 5 G1 detectors wired (G1.1 SEP / G1.5 AMT-ISO / G1.6 NIIT / G1.9 TLH / G1.10 FTC) + G1.4 Roth with "cost" semantics + frontend cards. 169 hand-calc assertions. |
 | H3 | **Multi-year primitive + detector wiring — DONE 2026-05-27** | — | `multiYearEngine.ts` primitive + `runDetectorMultiYear` helper. **WIRED into G1.3 bunching (2-year), G1.8 DAF (3-year), G1.4 Roth (5-year with projected RMD).** Each hit carries `multiYear: { horizonYears, baselineYearTax[], scenarioYearTax[], yearByYearDelta[], totalSavings, growthAssumption, multiYearAssumptions[] }`. estSavings annualizes to multi-year totalSavings when baselineInputs available. 25 primitive + 28 wiring hand-calc assertions. |
 | H4 | **State-residency comparison — DONE 2026-05-27** | — | POST /clients/:id/state-comparison runs the engine for each target state (default TX/FL/NV/WA/TN), re-sourcing W-2/1099 stateCode. New Planning card with sortable table + caveats. |

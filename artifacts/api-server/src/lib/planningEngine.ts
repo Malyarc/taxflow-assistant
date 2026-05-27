@@ -5158,6 +5158,2154 @@ function detectRolloverIraTo401k(args: {
   };
 }
 
+// ── G1.67 — In-plan Roth Conversion §402A(c)(4)(B) (heuristic + H2 cost) ─
+
+const G1_67_MIN_TRAD_401K = 25_000;
+const G1_67_MIN_AGE = 30;
+const G1_67_MAX_AGE = 72;
+const G1_67_MAX_CURRENT_MARGINAL = 0.22;
+const G1_67_CONVERSION_AMOUNT = 25_000;
+
+function detectInPlanRothConversion(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+  assetBalances?: AssetBalanceFact[];
+  baselineInputs?: TaxReturnInputs;
+}): OpportunityHit | null {
+  const { client, computed, assetBalances, baselineInputs } = args;
+  if (client.filingStatus === "married_filing_separately") return null;
+  const age = client.taxpayerAge;
+  if (age == null || age < G1_67_MIN_AGE || age > G1_67_MAX_AGE) return null;
+  if (!assetBalances || assetBalances.length === 0) return null;
+  const trad401kBalance = assetBalances
+    .filter((a) => a.assetType === "401k_traditional")
+    .reduce((s, a) => s + toNum(a.balance), 0);
+  if (trad401kBalance < G1_67_MIN_TRAD_401K) return null;
+  const fedRate = federalMarginalRate(computed);
+  if (fedRate > G1_67_MAX_CURRENT_MARGINAL) return null;
+  const stateRate = stateMarginalRate(computed);
+
+  // Conversion amount = MIN($25k typical, available trad 401(k) balance).
+  // Cost (not savings) = conversion × (federal + state) marginal rate.
+  // H2 cost semantics — current-year tax cost is REAL; long-term Roth benefit deferred.
+  const conversionAmount = Math.min(G1_67_CONVERSION_AMOUNT, Math.round(trad401kBalance));
+  const costThisYear = Math.round(conversionAmount * (fedRate + stateRate));
+
+  // H2 — verify cost by running a what-if scenario (add ordinary income).
+  const whatIf = runDetectorWhatIf({
+    baselineInputs,
+    scenarioId: "G1.67-in-plan-roth-conversion",
+    label: `In-plan Roth conversion $${conversionAmount.toLocaleString("en-US")}`,
+    mutations: [
+      { kind: "add_adjustment", adjustmentType: "additional_income", amount: conversionAmount },
+    ],
+    semantics: "cost",
+    varyAmount: true,
+  });
+
+  const strategy = strategyById("G1.67");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    conversionAmount,
+    costThisYear,
+    currentRate: Math.round(fedRate * 100),
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings: costThisYear,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client age ${age} with ${fmt(Math.round(trad401kBalance))} pre-tax 401(k) at ${Math.round(fedRate * 100)}% ` +
+      `current marginal rate (favorable bracket). In-plan Roth conversion of ${fmt(conversionAmount)} costs ` +
+      `${fmt(costThisYear)} this year; future qualified distributions tax-free. Distinct from G1.4 (IRA) and ` +
+      `G1.26 (backdoor). Pay tax with OUTSIDE funds.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      taxpayerAge: age,
+      trad401kBalance: Math.round(trad401kBalance),
+      conversionAmount,
+      federalMarginalRate: fedRate,
+      stateMarginalRate: stateRate,
+      costThisYear,
+    },
+    assumptions: [
+      `Conversion of $${conversionAmount.toLocaleString("en-US")} of pre-tax 401(k) to designated Roth 401(k) — taxable at current marginal rate.`,
+      `H2 SEMANTICS: estSavings is the current-year tax COST (not savings). Long-term tax-free Roth benefit deferred to retirement.`,
+      `Plan must offer in-plan Roth conversion feature (per Notice 2010-84 + Notice 2013-74). Most modern 401(k) plans do.`,
+      `Pay conversion tax with OUTSIDE funds — withholding from 401(k) reduces converted amount + may trigger §72(t) penalty if under 59½.`,
+      `5-year clock per §402A(c)(4)(F) — each conversion starts its own clock for tax-free qualified distribution.`,
+      `IRREVOCABLE per TCJA — recharacterization eliminated TY2018+.`,
+      `Distinct from G1.4 IRA Roth conversion (different account type) and G1.26 backdoor IRA (different mechanism).`,
+      `Best for clients in transition years (sabbatical, low-income year) before peak career bracket.`,
+    ],
+    whatIf,
+  };
+}
+
+// ── G1.68 — §174 R&D Capitalization Workaround (heuristic) ──────────────
+
+const G1_68_MIN_SE = 200_000;
+const G1_68_RECLASS_PCT = 0.30;
+const G1_68_TYPICAL_RD_BUCKET = 80_000;
+
+function detectSection174RdWorkaround(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { computed, adjustments } = args;
+  const netSe = computed.detail.se.netSeEarnings;
+  if (netSe < G1_68_MIN_SE) return null;
+  // Proxy for active trade/business: QBI adjustment present (CPA tagged for QBI).
+  const hasQbi = adjustments.some(
+    (a) => a.adjustmentType === "qbi_income" && a.isApplied !== false && toNum(a.amount) > 0,
+  );
+  if (!hasQbi) return null;
+  // Skip if already taking §41 R&D credit (covered by G1.36).
+  const hasRdCredit = adjustments.some(
+    (a) =>
+      (a.adjustmentType === "rd_credit" || a.adjustmentType === "section_41_credit") &&
+      a.isApplied !== false &&
+      toNum(a.amount) > 0,
+  );
+  if (hasRdCredit) return null;
+
+  const fedRate = federalMarginalRate(computed);
+  const stateRate = stateMarginalRate(computed);
+  const reclassAmount = G1_68_TYPICAL_RD_BUCKET * G1_68_RECLASS_PCT;
+  const estSavings = Math.round(reclassAmount * (fedRate + stateRate));
+
+  const strategy = strategyById("G1.68");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = { estSavings };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client SE income ${fmt(Math.round(netSe))} + QBI flag — likely active trade/business potentially impacted ` +
+      `by TCJA §174 mandatory 5-yr R&D amortization (TY2022+). Workaround: (a) reclassify post-development ` +
+      `support/marketing/sales from §174 to §162; (b) Form 6765 §41 R&D credit; (c) §59(e)(2) 10-yr election ` +
+      `to avoid AMT preference. Heuristic ${fmt(estSavings)} benefit from ~30% reclassification.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      netSeEarnings: Math.round(netSe),
+      typicalRdBucket: G1_68_TYPICAL_RD_BUCKET,
+      reclassPercent: G1_68_RECLASS_PCT,
+      reclassAmount: Math.round(reclassAmount),
+      federalMarginalRate: fedRate,
+      stateMarginalRate: stateRate,
+    },
+    assumptions: [
+      `HEURISTIC — engine cannot verify whether client actually has §174 R&D exposure. CPA confirms (SaaS, software, biotech, hardware are typical).`,
+      `TCJA §13206 amended §174 effective TY2022 — mandatory 5-yr (domestic) / 15-yr (foreign) amortization replaces prior current-deduction.`,
+      `Workaround #1: §162 vs §174 classification — post-development support, marketing, sales, content NOT §174 per Notice 2023-63.`,
+      `Workaround #2: Form 6765 §41 R&D credit — 14% ASC or 20% incremental; coordinates with G1.36.`,
+      `Workaround #3: §59(e)(2) optional 10-yr election — spreads §174 amortization to avoid line 2i AMT depreciation preference.`,
+      `Change-in-accounting-method via Form 3115 + §481(a) catch-up adjustment (4-yr spread).`,
+      `Coordinate with G1.36 (R&D credit) + G1.60 (§41(h) small-biz payroll-tax credit if < 5 yrs old + < $5M).`,
+      `Documentation burden HIGH — contemporaneous research log + qualified research expense detail per §41(d) 4-part test.`,
+      `Heuristic 30% × $80k typical R&D bucket × marginal — actual depends on client R&D spend mix.`,
+    ],
+  };
+}
+
+// ── G1.69 — Year-end Income Deferral / Acceleration Timing (heuristic) ──
+
+const G1_69_MIN_AGI = 50_000;
+const G1_69_MIN_MARGINAL = 0.22;
+const G1_69_BRACKET_PROXIMITY = 20_000;
+const G1_69_TYPICAL_SHIFT = 10_000;
+const G1_69_BRACKET_BREAKS_2024: Record<string, ReadonlyArray<number>> = {
+  single: [11_600, 47_150, 100_525, 191_950, 243_725, 609_350],
+  head_of_household: [16_550, 63_100, 100_500, 191_950, 243_700, 609_350],
+  married_filing_jointly: [23_200, 94_300, 201_050, 383_900, 487_450, 731_200],
+  qualifying_widow: [23_200, 94_300, 201_050, 383_900, 487_450, 731_200],
+  married_filing_separately: [11_600, 47_150, 100_525, 191_950, 243_725, 365_600],
+};
+
+function detectYearEndTiming(args: {
+  computed: ComputedTaxReturn;
+}): OpportunityHit | null {
+  const { computed } = args;
+  if (computed.adjustedGrossIncome < G1_69_MIN_AGI) return null;
+  const fedRate = federalMarginalRate(computed);
+  if (fedRate < G1_69_MIN_MARGINAL) return null;
+  const breaks = G1_69_BRACKET_BREAKS_2024[computed.filingStatus] ?? G1_69_BRACKET_BREAKS_2024.single;
+  // Find nearest bracket break to current taxable income.
+  let nearestBreak = Infinity;
+  let distanceToBreak = Infinity;
+  for (const b of breaks) {
+    const d = Math.abs(computed.taxableIncome - b);
+    if (d < distanceToBreak) {
+      distanceToBreak = d;
+      nearestBreak = b;
+    }
+  }
+  if (distanceToBreak > G1_69_BRACKET_PROXIMITY) return null;
+
+  // Heuristic spread = 10% (12→22 typical bracket boundary; conservatively assume rising-trajectory client).
+  const bracketSpread = 0.10;
+  const estSavings = Math.round(G1_69_TYPICAL_SHIFT * bracketSpread);
+
+  const stateRate = stateMarginalRate(computed);
+  const strategy = strategyById("G1.69");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const strategyDirection = computed.taxableIncome > nearestBreak ? "Defer" : "Accelerate";
+  const vars: Record<string, number | string> = {
+    projectedNextYear: fmt(Math.round(computed.adjustedGrossIncome * 1.03)),
+    currentTaxable: fmt(Math.round(computed.taxableIncome)),
+    strategyDirection,
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client taxable income ${fmt(Math.round(computed.taxableIncome))} is within ${fmt(G1_69_BRACKET_PROXIMITY)} ` +
+      `of bracket break at ${fmt(nearestBreak)} (TY2024 ${computed.filingStatus} brackets). Year-end income/` +
+      `deduction shift of ~${fmt(G1_69_TYPICAL_SHIFT)} can avoid bracket creep. Estimated annual benefit ${fmt(estSavings)}.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      adjustedGrossIncome: Math.round(computed.adjustedGrossIncome),
+      taxableIncome: Math.round(computed.taxableIncome),
+      nearestBracketBreak: nearestBreak,
+      distanceToBreak: Math.round(distanceToBreak),
+      federalMarginalRate: fedRate,
+      stateMarginalRate: stateRate,
+      typicalShift: G1_69_TYPICAL_SHIFT,
+      bracketSpread,
+    },
+    assumptions: [
+      `HEURISTIC — engine projects next-year trajectory as flat × 1.03. CPA refines with client's actual income outlook.`,
+      `Strategy direction: ${strategyDirection} ~$10k income/deductions to optimize bracket positioning.`,
+      `Cash-method taxpayer only — accrual-method clients have less timing flexibility.`,
+      `Constructive receipt doctrine (Reg §1.451-2) — cannot defer income already physically/constructively received.`,
+      `§461(g) prepaid-expense 12-month rule limits deduction acceleration to expenses with < 12-month benefit period.`,
+      `AMT considerations — accelerating state-tax payment doesn't help if AMT applies (state tax is AMT preference).`,
+      `Coordinate with G1.3 bunching (deduction acceleration), G1.4 Roth (bracket fill), G1.6 NIIT cliff ($200k/$250k boundary).`,
+      `Heuristic 10% bracket spread (12→22 boundary). Real spread varies: 12→22 = 10%, 22→24 = 2%, 24→32 = 8%, 32→35 = 3%, 35→37 = 2%.`,
+    ],
+  };
+}
+
+// ── G1.70 — Bargain Sale to Charity §1011(b) (heuristic) ────────────────
+
+const G1_70_MIN_LTCG = 50_000;
+const G1_70_MIN_HOME_GAIN = 100_000;
+const G1_70_TYPICAL_FMV = 200_000;
+const G1_70_TYPICAL_BASIS = 50_000;
+const G1_70_TYPICAL_SALE_PRICE = 50_000;
+
+function detectBargainSale(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+  assetBalances?: AssetBalanceFact[];
+}): OpportunityHit | null {
+  const { computed, adjustments, assetBalances } = args;
+  void adjustments;
+  // Trigger #1: significant LTCG already realized.
+  const ltcg = computed.detail.capitalGains.longTermGains;
+  // Trigger #2: H5 primary_residence OR real_estate with embedded gain > $100k.
+  const realEstate = (assetBalances ?? []).filter(
+    (a) => a.assetType === "primary_residence" || a.assetType === "real_estate",
+  );
+  const embeddedGain = realEstate.reduce(
+    (s, a) => s + Math.max(0, toNum(a.balance) - toNum(a.afterTaxBasis ?? a.costBasis ?? 0)),
+    0,
+  );
+  if (ltcg < G1_70_MIN_LTCG && embeddedGain < G1_70_MIN_HOME_GAIN) return null;
+
+  // Heuristic calc: $200k FMV asset / $50k basis / $50k sale price.
+  // Per §1011(b): basis allocated = $50k × ($50k/$200k) = $12,500.
+  // Gain = $50k − $12,500 = $37,500 @ LTCG rate.
+  // Charity deduction = $200k − $50k = $150k (capped at 30% AGI for LTCG → public charity).
+  const fmv = G1_70_TYPICAL_FMV;
+  const basis = G1_70_TYPICAL_BASIS;
+  const salePrice = G1_70_TYPICAL_SALE_PRICE;
+  const basisAllocated = basis * (salePrice / fmv);
+  const recognizedGain = salePrice - basisAllocated;
+  const charitableDeduction = fmv - salePrice;
+
+  const ltcgRate = 0.15;
+  const fedRate = federalMarginalRate(computed);
+  // Net benefit = (charitable deduction × marginal rate) − (recognized gain × LTCG rate)
+  const charityBenefit = charitableDeduction * fedRate;
+  const gainCost = recognizedGain * ltcgRate;
+  const estSavings = Math.round(charityBenefit - gainCost);
+  if (estSavings <= 0) return null;
+
+  const strategy = strategyById("G1.70");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    assetDescription: "appreciated real estate / art / securities",
+    fmv: Math.round(fmv),
+    basis: Math.round(basis),
+    salePrice: Math.round(salePrice),
+    salePortion: Math.round((salePrice / fmv) * 100),
+    donationPortion: Math.round((1 - salePrice / fmv) * 100),
+    recognizedGain: Math.round(recognizedGain),
+    charitableDeduction: Math.round(charitableDeduction),
+    charityName: "qualified §501(c)(3)",
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client has ${fmt(Math.round(ltcg))} LTCG and/or ${fmt(Math.round(embeddedGain))} embedded gain in real estate. ` +
+      `Bargain sale of ${fmt(fmv)} FMV asset (basis ${fmt(basis)}) to charity at ${fmt(salePrice)}: ${fmt(Math.round(recognizedGain))} ` +
+      `recognized LTCG @ 15%; ${fmt(Math.round(charitableDeduction))} charitable deduction @ ${Math.round(fedRate * 100)}% marginal. ` +
+      `Net benefit ~${fmt(estSavings)} per §1011(b).`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      longTermGains: Math.round(ltcg),
+      embeddedRealEstateGain: Math.round(embeddedGain),
+      typicalFmv: fmv,
+      typicalBasis: basis,
+      typicalSalePrice: salePrice,
+      basisAllocated: Math.round(basisAllocated),
+      recognizedGain: Math.round(recognizedGain),
+      charitableDeduction: Math.round(charitableDeduction),
+      federalMarginalRate: fedRate,
+      ltcgRate,
+      estSavings,
+    },
+    assumptions: [
+      `HEURISTIC — engine doesn't verify charity acceptance or actual bargain sale terms. CPA structures.`,
+      `§1011(b) basis allocation: basis × (sale_price / FMV) is the basis allocated to SALE portion. Remainder is gift.`,
+      `Recognized gain = sale_price − allocated_basis. Character = LTCG if long-term, else STCG.`,
+      `Charitable deduction = FMV − sale_price. Capped at 30% AGI for LTCG property to public charity (50% if 50%-org), 20% to private foundation. 5-yr carryforward per §170(d)(1).`,
+      `Qualified APPRAISAL required per §170(f)(11)(C) for non-cash > $5,000. Form 8283 Sec B + appraiser signs Part III.`,
+      `Holding period must be > 1 yr for FMV deduction; STCG bargain sale → basis-only deduction per §170(e)(1)(A).`,
+      `Charity acceptance + §170(e)(1)(B)(i) 3-yr rule (for tangible personal property): if charity disposes < 3 yrs of receipt + property's use NOT related to charity's exempt purpose, deduction reduced to basis.`,
+      `Heuristic assumes $200k FMV / $50k basis / $50k sale price example. Real bargain sale numbers vary widely.`,
+      `Net benefit = (charity_deduction × marginal_rate) − (recognized_gain × LTCG_rate). Charity benefit dominates when marginal > LTCG.`,
+    ],
+  };
+}
+
+// ── G1.71 — ISO Lot Selection (Qualifying Disposition) (heuristic) ──────
+
+const G1_71_MIN_ISO_BALANCE = 25_000;
+const G1_71_TYPICAL_SPREAD = 50_000;
+const G1_71_ORDINARY_VS_LTCG_PROXY = 0.09; // 24% ord − 15% LTCG
+
+function detectIsoLotSelection(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+  assetBalances?: AssetBalanceFact[];
+}): OpportunityHit | null {
+  const { computed, adjustments, assetBalances } = args;
+  const isoBalance = (assetBalances ?? [])
+    .filter((a) => a.assetType === "iso_amt_credit_shares")
+    .reduce((s, a) => s + toNum(a.balance), 0);
+  const isoBargainAdj = adjustments
+    .filter(
+      (a) =>
+        a.adjustmentType === "amt_iso_bargain_element" && a.isApplied !== false && toNum(a.amount) > 0,
+    )
+    .reduce((s, a) => s + toNum(a.amount), 0);
+  if (isoBalance < G1_71_MIN_ISO_BALANCE && isoBargainAdj <= 0) return null;
+  void computed;
+
+  // Heuristic: $50k typical spread × (24% ord − 15% LTCG) = $4,500 annual.
+  const estSavings = Math.round(G1_71_TYPICAL_SPREAD * G1_71_ORDINARY_VS_LTCG_PROXY);
+
+  const strategy = strategyById("G1.71");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    eligibleLots: "(CPA-tracked)",
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client has ${fmt(Math.round(isoBalance))} ISO position (or ${fmt(Math.round(isoBargainAdj))} exercise bargain ` +
+      `element). To preserve LTCG character on sale: hold > 2 yrs from grant + > 1 yr from exercise per §422(a). Specific-` +
+      `share-identification election with broker. Heuristic ${fmt(estSavings)} annual preserved LTCG.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      isoBalance: Math.round(isoBalance),
+      isoBargainAdj: Math.round(isoBargainAdj),
+      typicalSpread: G1_71_TYPICAL_SPREAD,
+      ordinaryVsLtcgProxy: G1_71_ORDINARY_VS_LTCG_PROXY,
+      estSavings,
+    },
+    assumptions: [
+      `§422(a) qualifying disposition requires BOTH: (a) > 2 yrs from grant + (b) > 1 yr from exercise.`,
+      `Disqualifying disposition → §421(b) ordinary comp income on lesser of (FMV exercise − strike) or (sale − strike); excess at LTCG/STCG.`,
+      `Distinct from G1.5 (AMT timing at EXERCISE) — this is at SALE; G1.5 covers AMT-preference avoidance at exercise.`,
+      `Specific-share-identification per Reg §1.1012-1(c) — broker must accept SSI election BEFORE sale; default is FIFO.`,
+      `Form 3921 box 1 grant date + box 2 exercise date determine qualifying-eligible lots.`,
+      `$100k §422(d) annual exercise FMV limit — exercises > $100k/yr lose ISO status (NSO instead = ordinary income immediately).`,
+      `AMT credit (Form 8801) — bargain element creates AMT in exercise year; §53 credit recoverable when regular > AMT in future.`,
+      `Coordinate with G1.5 (AMT-ISO exercise timing) + G1.56 (specific-share-ID broader framework).`,
+      `Heuristic: $50k typical spread × 9% (24% ord − 15% LTCG) = $4,500. Real spread varies by client bracket + spread size.`,
+    ],
+  };
+}
+
+// ── G1.72 — RSU Sell-to-Cover Withholding Gap (heuristic) ───────────────
+
+const G1_72_MIN_WAGES = 300_000;
+const G1_72_MIN_MARGINAL = 0.32;
+const G1_72_TYPICAL_RSU = 200_000;
+const G1_72_WITHHOLDING_RATE = 0.22;
+
+function detectRsuSellToCover(args: {
+  computed: ComputedTaxReturn;
+}): OpportunityHit | null {
+  const { computed } = args;
+  // Use W-2 wages proxy. Engine doesn't decompose RSU from W-2; CPA confirms.
+  // Proxy: totalIncome minus identifiable non-wage components (SE, retirement, unemployment).
+  const seIncome = computed.detail.se.netSeEarnings ?? 0;
+  const retirementIncome = computed.form1099Summary?.retirementIncome ?? 0;
+  const unemployment = computed.form1099Summary?.unemploymentCompensationOnly ?? 0;
+  const interest = computed.form1099Summary?.interestIncome ?? 0;
+  const dividends = (computed.form1099Summary?.ordinaryDividends ?? 0)
+                  + (computed.form1099Summary?.qualifiedDividends ?? 0);
+  const wagesProxy = Math.max(0,
+    computed.totalIncome - seIncome - retirementIncome - unemployment - interest - dividends,
+  );
+  if (wagesProxy < G1_72_MIN_WAGES) return null;
+  const fedRate = federalMarginalRate(computed);
+  if (fedRate < G1_72_MIN_MARGINAL) return null;
+
+  // Withholding gap = RSU × (marginal − 22%)
+  const gap = G1_72_TYPICAL_RSU * (fedRate - G1_72_WITHHOLDING_RATE);
+  const estSavings = Math.round(gap);
+
+  const strategy = strategyById("G1.72");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    rsuIncome: G1_72_TYPICAL_RSU,
+    marginalRate: Math.round(fedRate * 100),
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client W-2 wages ${fmt(Math.round(wagesProxy))} (likely embedded RSU vesting) at ${Math.round(fedRate * 100)}% marginal. ` +
+      `RSU withheld at 22% supplemental rate per §3402(g)(1)(A) UNDER-withholds by ${Math.round((fedRate - G1_72_WITHHOLDING_RATE) * 100)}%. ` +
+      `Pre-pay Q4 estimated tax to avoid §6654 underpayment penalty. Heuristic gap ~${fmt(estSavings)}.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      wagesProxy: Math.round(wagesProxy),
+      federalMarginalRate: fedRate,
+      typicalRsu: G1_72_TYPICAL_RSU,
+      withholdingRate: G1_72_WITHHOLDING_RATE,
+      gap: Math.round(gap),
+    },
+    assumptions: [
+      `HEURISTIC — engine doesn't decompose RSU from W-2 Box 1. CPA confirms with Box 12 V (or stock comp records).`,
+      `Per §3402(g)(1)(A) supplemental rate: 22% for first $1M YTD, then 37% for excess (§3402(g)(1)(B)).`,
+      `Withholding gap = RSU × (marginal − 22%). For 32% bracket = 10% gap; 35% = 13%; 37% = 15%.`,
+      `Heuristic typical RSU $200,000 — adjust if client confirms different.`,
+      `Coordinate with G1.52 estimated-tax safe harbor (110% prior-year alternative if AGI > $150k).`,
+      `Coordinate with G1.6 NIIT cliff — RSU vest may push past $200k/$250k threshold.`,
+      `Sell-to-cover ratio — broker auto-sells enough shares for 22% withholding; remainder vested net.`,
+      `Q4 estimated tax due Jan 15 of next year (or Dec 31 if state-tax acceleration helps).`,
+    ],
+  };
+}
+
+// ── G1.73 — NUA In-Service Distribution age 55-59½ (heuristic) ──────────
+
+const G1_73_MIN_EMP_STOCK = 50_000;
+const G1_73_MIN_AGE = 55;
+const G1_73_MAX_AGE = 59;
+const G1_73_TYPICAL_BASIS_RATIO = 0.20;
+const G1_73_RATE_SPREAD = 0.09;
+
+function detectNuaInService(args: {
+  client: ClientFacts;
+  assetBalances?: AssetBalanceFact[];
+}): OpportunityHit | null {
+  const { client, assetBalances } = args;
+  const age = client.taxpayerAge;
+  if (age == null || age < G1_73_MIN_AGE || age > G1_73_MAX_AGE) return null;
+  if (!assetBalances || assetBalances.length === 0) return null;
+  const empStockBalance = assetBalances
+    .filter((a) => a.assetType === "employer_stock")
+    .reduce((s, a) => s + toNum(a.balance), 0);
+  if (empStockBalance < G1_73_MIN_EMP_STOCK) return null;
+
+  // Heuristic: assume 20% basis / 80% NUA appreciation typical.
+  const nuaAmount = Math.round(empStockBalance);
+  const basisAmount = Math.round(nuaAmount * G1_73_TYPICAL_BASIS_RATIO);
+  const nuaAppreciation = nuaAmount - basisAmount;
+  // Savings = NUA × (marginal − 15% LTCG). Use 24% marginal proxy = 9% spread.
+  const estSavings = Math.round(nuaAppreciation * G1_73_RATE_SPREAD);
+
+  const strategy = strategyById("G1.73");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    nuaAmount,
+    basisAmount,
+    nuaAppreciation,
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client age ${age} (in 55-59½ in-service window) with ${fmt(nuaAmount)} of employer stock in 401(k). ` +
+      `§402(e)(4) NUA election + §72(t)(2)(A)(v) 'rule of 55' separation: basis ${fmt(basisAmount)} taxed ` +
+      `ordinary; appreciation ${fmt(nuaAppreciation)} deferred + at 15% LTCG. Distinct from G1.15 (retirement). ` +
+      `Heuristic ${fmt(estSavings)} benefit.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      taxpayerAge: age,
+      employerStockBalance: nuaAmount,
+      typicalBasisRatio: G1_73_TYPICAL_BASIS_RATIO,
+      basisAmount,
+      nuaAppreciation,
+      rateSpread: G1_73_RATE_SPREAD,
+      estSavings,
+    },
+    assumptions: [
+      `HEURISTIC — engine assumes 20% basis / 80% appreciation typical. Real ratio varies; CPA gets actual basis from plan administrator.`,
+      `§402(e)(4) NUA election — MUST be lump-sum distribution of ALL plan assets in same calendar year.`,
+      `Non-employer-stock portion can be rolled to IRA per Rev. Rul. 96-49 (preserves rollover treatment).`,
+      `Triggering event required: separation from service, age 59½, death, OR disability.`,
+      `§72(t)(2)(A)(v) 'rule of 55' — separation from service at age 55+ avoids 10% early-withdrawal penalty.`,
+      `Cost basis taxed at ordinary in distribution year (may push into higher bracket).`,
+      `NUA appreciation taxed at LTCG ONLY when stock sold (deferred indefinitely).`,
+      `Estate planning bonus — NUA stock held until death: basis stepped up to FMV per §1014; NUA appreciation NEVER taxed.`,
+      `Distinct from G1.15 (NUA at full retirement after 59½) — G1.73 captures the age 55-59½ in-service window.`,
+      `Rate spread heuristic 9% = (24% marginal − 15% LTCG). Real spread varies by client bracket.`,
+    ],
+  };
+}
+
+// ── G1.74 — §45S FMLA Credit (heuristic) ────────────────────────────────
+
+const G1_74_MIN_NET_SE = 250_000;
+const G1_74_HEURISTIC_CREDIT = 2_500;
+
+function detectFmlaCredit(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { computed, adjustments } = args;
+  const netSe = computed.detail.se.netSeEarnings;
+  if (netSe < G1_74_MIN_NET_SE) return null;
+  // Skip if already claiming §45S
+  const hasFmlaCredit = adjustments.some(
+    (a) =>
+      (a.adjustmentType === "fmla_credit" || a.adjustmentType === "section_45s_credit") &&
+      a.isApplied !== false &&
+      toNum(a.amount) > 0,
+  );
+  if (hasFmlaCredit) return null;
+
+  const estSavings = G1_74_HEURISTIC_CREDIT;
+
+  const strategy = strategyById("G1.74");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = { estSavings };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client SE income ${fmt(Math.round(netSe))} — likely small biz with employees. §45S credit ` +
+      `(12.5%-25% of paid FMLA wages, up to 12 wks/yr, qualifying employees < $84k prior-yr wages). ` +
+      `Adopt written policy → claim Form 8994. Heuristic 5 employees × 2 wk × $1k × 25% = ${fmt(estSavings)}.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      netSeEarnings: Math.round(netSe),
+      heuristicCredit: G1_74_HEURISTIC_CREDIT,
+    },
+    assumptions: [
+      `HEURISTIC — engine cannot verify whether biz has employees. CPA confirms.`,
+      `Written policy MUST exist BEFORE leave is taken per Notice 2018-71.`,
+      `Minimum 2 weeks paid leave per year + ≥ 50% of normal wage rate.`,
+      `Qualifying employee: > 1 yr employed + < $84,000 prior-yr compensation (TY2024 indexed per Rev. Proc. 2023-34).`,
+      `Credit rate scales 12.5% (at 50% of normal) to 25% (at 100% of normal) per §45S(a)(1)(A).`,
+      `12-week max per employee per year cap.`,
+      `Form 8994 + §38 general business credit pool (20-yr carryforward).`,
+      `Coordinate with state-specific paid-leave laws (CA, NY, NJ, MA, WA, RI, CT, OR, CO) — federal credit doesn't preempt.`,
+      `Heuristic 5 employees × 2 weeks × $1,000/wk × 25% = $2,500 — varies widely by biz size.`,
+    ],
+  };
+}
+
+// ── G1.75 — WOTC §51 (heuristic) ────────────────────────────────────────
+
+const G1_75_MIN_NET_SE = 250_000;
+const G1_75_TYPICAL_HIRES_QUALIFYING = 2;
+const G1_75_STANDARD_CREDIT_PER_HIRE = 2_400;
+
+function detectWotcCredit(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { computed, adjustments } = args;
+  const netSe = computed.detail.se.netSeEarnings;
+  if (netSe < G1_75_MIN_NET_SE) return null;
+  const hasWotc = adjustments.some(
+    (a) =>
+      (a.adjustmentType === "wotc_credit" || a.adjustmentType === "section_51_credit") &&
+      a.isApplied !== false &&
+      toNum(a.amount) > 0,
+  );
+  if (hasWotc) return null;
+
+  const estSavings = G1_75_TYPICAL_HIRES_QUALIFYING * G1_75_STANDARD_CREDIT_PER_HIRE;
+
+  const strategy = strategyById("G1.75");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = { estSavings };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client SE income ${fmt(Math.round(netSe))} — likely has employees. Screen new hires for §51 ` +
+      `targeted groups (vets, ex-felons, SNAP, long-term unemployed). Form 8850 within 28 days. ` +
+      `Heuristic 2 qualifying hires × $2,400 = ${fmt(estSavings)} via Form 5884.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      netSeEarnings: Math.round(netSe),
+      typicalHires: G1_75_TYPICAL_HIRES_QUALIFYING,
+      standardCreditPerHire: G1_75_STANDARD_CREDIT_PER_HIRE,
+    },
+    assumptions: [
+      `HEURISTIC — engine cannot verify hiring activity. CPA confirms.`,
+      `Form 8850 IRS pre-screening MUST be completed by employee on/before day of job offer.`,
+      `28-day window after start date to submit Form 8850 + ETA Form 9061 to state workforce agency.`,
+      `Standard targeted group: 40% × first $6k wages = $2,400 if employee works 400+ hrs first year (25% × $6k = $1,500 if 120-399 hrs).`,
+      `Qualified veteran tiers: up to $9,600 (50% × $24k wages for service-disabled vet w/ 6+ mo unemployment).`,
+      `Targeted groups per §51(d): TANF / IV-A recipient, veteran, ex-felon, designated community resident, vocational rehab referral, summer youth (16-17 from EZ/RC), SNAP recipient, SSI recipient, long-term family assistance, long-term unemployment recipient.`,
+      `§280C(a) wage-deduction reduction (no double-dipping with credit).`,
+      `Form 5884 + §38 general business credit (20-yr carryforward + 1-yr carryback).`,
+      `WOTC currently authorized through 2025-12-31 per §51(c)(4) — periodic re-extensions.`,
+      `Heuristic 2 qualifying hires × $2,400 standard credit = $4,800 — actual varies by hiring volume + target group mix.`,
+    ],
+  };
+}
+
+// ── G1.76 — §170(h) Non-syndicated Conservation Easement (heuristic) ────
+
+const G1_76_MIN_REAL_ESTATE = 500_000;
+const G1_76_TYPICAL_EASEMENT = 500_000;
+const G1_76_TYPICAL_DEDUCTION_RATE = 0.35;
+
+function detectNonSyndicatedEasement(args: {
+  computed: ComputedTaxReturn;
+  assetBalances?: AssetBalanceFact[];
+}): OpportunityHit | null {
+  const { computed, assetBalances } = args;
+  if (!assetBalances || assetBalances.length === 0) return null;
+  const realEstateBalance = assetBalances
+    .filter((a) => a.assetType === "real_estate")
+    .reduce((s, a) => s + toNum(a.balance), 0);
+  if (realEstateBalance < G1_76_MIN_REAL_ESTATE) return null;
+
+  void computed;
+  // Heuristic: $500k typical easement × 35% effective deduction-driven savings.
+  // Spread over multi-year cap; first-year benefit capped at 50% AGI.
+  const estSavings = Math.round(G1_76_TYPICAL_EASEMENT * G1_76_TYPICAL_DEDUCTION_RATE);
+
+  const strategy = strategyById("G1.76");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    landAcres: "(CPA-confirms)",
+    easementValue: G1_76_TYPICAL_EASEMENT,
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client holds ${fmt(Math.round(realEstateBalance))} of real estate (genuine landowner). ` +
+      `§170(h) qualified perpetual conservation easement donation to qualified land trust. DISTINCT from ` +
+      `G1.20 syndicated easement (Notice 2017-10 listed). 50% AGI cap (100% for rancher/farmer per ` +
+      `§170(b)(1)(E)(iv)). Heuristic ${fmt(estSavings)} multi-year savings.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      realEstateBalance: Math.round(realEstateBalance),
+      typicalEasement: G1_76_TYPICAL_EASEMENT,
+      typicalDeductionRate: G1_76_TYPICAL_DEDUCTION_RATE,
+      estSavings,
+    },
+    assumptions: [
+      `HEURISTIC — engine cannot verify whether land is qualified or whether landowner intends genuine donation. CPA confirms.`,
+      `DISTINCT from G1.20 syndicated easement (Notice 2017-10 LISTED TRANSACTION — high audit risk). G1.76 is GENUINE landowner — low risk if appraisal sound.`,
+      `Qualified APPRAISAL per §170(f)(11)(C) — required for ALL non-cash > $5,000. Form 8283 Sec B Part III signed.`,
+      `Conservation purpose per §170(h)(4)(A): outdoor recreation / scenic / historic / open-space (farmland/habitat).`,
+      `Perpetuity test per §170(h)(5)(A) — easement runs in perpetuity. Lender subordination required.`,
+      `AGI cap: 50% per §170(b)(1)(E)(i). 100% if QUALIFIED RANCHER/FARMER per §170(b)(1)(E)(iv) (gross income from ranch/farm > 50% of total).`,
+      `15-yr carryforward per §170(b)(1)(E)(ii) (vs 5-yr standard).`,
+      `Form 8283 + 8283-V + appraisal narrative + baseline documentation + recorded easement deed.`,
+      `State conformity varies — most follow federal §170 limits.`,
+      `Heuristic $500k easement × 35% effective rate. Real easements range from $100k to $10M+; CPA confirms appraisal.`,
+    ],
+  };
+}
+
+// ── G1.77 — Self-rental Grouping §1.469-4(d) (heuristic) ────────────────
+
+const G1_77_MIN_K1_ACTIVE = 50_000;
+const G1_77_MIN_SUSPENDED_PAL = 10_000;
+
+function detectSelfRentalGrouping(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+}): OpportunityHit | null {
+  const { client, computed } = args;
+  const k1Active = computed.scheduleK1?.totalActiveOrdinaryIncome ?? 0;
+  if (k1Active < G1_77_MIN_K1_ACTIVE) return null;
+  const suspended = computed.scheduleEPassiveLossSuspended ?? 0;
+  if (suspended < G1_77_MIN_SUSPENDED_PAL) return null;
+  // Skip if REPS already elected (G1.18 path).
+  if (client.rentalRealEstateProfessional) return null;
+
+  const fedRate = federalMarginalRate(computed);
+  const stateRate = stateMarginalRate(computed);
+  const releaseableP = Math.min(suspended, k1Active);
+  const estSavings = Math.round(releaseableP * (fedRate + stateRate));
+
+  const strategy = strategyById("G1.77");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    suspendedPal: Math.round(suspended),
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client has ${fmt(Math.round(k1Active))} active K-1 income + ${fmt(Math.round(suspended))} rental PAL ` +
+      `suspended under §469. Reg §1.469-4(d)(1) grouping election: combine rental + trade/business as ONE ` +
+      `economic unit → releases suspended PAL against active income. Distinct from G1.18 REPS election. ` +
+      `Estimated savings ${fmt(estSavings)}.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      activeK1Income: Math.round(k1Active),
+      suspendedPal: Math.round(suspended),
+      releaseable: Math.round(releaseableP),
+      federalMarginalRate: fedRate,
+      stateMarginalRate: stateRate,
+      estSavings,
+    },
+    assumptions: [
+      `Material participation required in trade/business (one of 7 tests per Reg §1.469-5T).`,
+      `Rental property rented to same trade/business (or related party) per self-rental rule §1.469-2(f)(6).`,
+      `§1.469-4(c) appropriate economic unit test — 5 factors of organizational/economic unity.`,
+      `Disclosure statement attached to return per Rev. Proc. 2010-13 (election IRREVOCABLE without IRS consent).`,
+      `Distinct from G1.18 REPS election (which requires 750 hrs + > 50% personal services).`,
+      `Self-rental rule §1.469-2(f)(6): net positive self-rental income is non-passive automatically; net negative loss STAYS passive without grouping election.`,
+      `Coordinate with §199A — self-rental + active business CAN be aggregated for §199A wage/UBIA per Reg §1.199A-4.`,
+      `Heuristic = min(suspended PAL, K1 active income) × marginal. Real release depends on at-risk basis + §163(j) flow-through.`,
+    ],
+  };
+}
+
+// ── G1.78 — Multi-state NR Income Allocation (heuristic) ────────────────
+
+const G1_78_MIN_INCOME = 200_000;
+const G1_78_OVER_SOURCING_PROXY = 0.05;
+const G1_78_TYPICAL_STATE_MARGINAL = 0.07;
+
+function detectMultiStateNrAllocation(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+  w2States?: ReadonlyArray<string>;
+}): OpportunityHit | null {
+  const { client, computed, w2States } = args;
+  if (computed.totalIncome < G1_78_MIN_INCOME) return null;
+  // Detect multi-state W-2: at least one W-2 in different state than resident state.
+  const residentState = (client.state ?? "").toUpperCase();
+  if (!residentState) return null;
+  const distinctW2States = new Set((w2States ?? []).map((s) => (s || "").toUpperCase()).filter(Boolean));
+  if (distinctW2States.size === 0) return null;
+  const hasNrState = [...distinctW2States].some((s) => s !== residentState);
+  if (!hasNrState) return null;
+
+  // Heuristic: $200k income × 5% over-sourcing × 7% typical state rate (NY/CA/MA average).
+  const overSourced = Math.min(computed.totalIncome, 500_000) * G1_78_OVER_SOURCING_PROXY;
+  const estSavings = Math.round(overSourced * G1_78_TYPICAL_STATE_MARGINAL);
+
+  const strategy = strategyById("G1.78");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const secondaryState = [...distinctW2States].find((s) => s !== residentState) ?? "(other)";
+  const vars: Record<string, number | string> = {
+    primaryState: residentState,
+    secondaryState,
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client resident in ${residentState} with W-2 income from ${secondaryState}. Multi-state nonresident filing ` +
+      `optimization (work-days calendar + convenience-of-employer rule). Estimated annual benefit ${fmt(estSavings)}.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      totalIncome: Math.round(computed.totalIncome),
+      residentState,
+      secondaryState,
+      overSourcedAmount: Math.round(overSourced),
+      typicalStateMarginal: G1_78_TYPICAL_STATE_MARGINAL,
+      estSavings,
+    },
+    assumptions: [
+      `HEURISTIC — engine cannot verify actual work-days calendar. CPA collects.`,
+      `Convenience-of-employer rule states (work-from-home days STILL sourced to employer state): NY, NJ, DE, NE, PA.`,
+      `State allocation methods vary: NY 'business carried on'; CA 'time of personal services performed'; NJ 'employee's days worked here'.`,
+      `Reciprocity agreements skip nonresident filing: IL/IN, KY/IL/IN/MI/OH/VA/WV, MD/PA/VA/WV/DC, NJ/PA limited.`,
+      `Resident-state credit-for-tax-paid usually capped at TAX-WHERE-EARNED computed at resident-state rate.`,
+      `K-1 sourcing via partnership apportionment factor (sales/payroll/property — UDITPA or single-sales-factor).`,
+      `Heuristic 5% over-sourcing × 7% state marginal. Real range $0 to $50k+ for high-income remote workers.`,
+      `Coordinate with G1.58 state residency change + part-year residency (Phase E E12).`,
+    ],
+  };
+}
+
+// ── G1.79 — §453 Partial-Installment Election Out (heuristic) ───────────
+
+const G1_79_MIN_LTCG = 250_000;
+const G1_79_MIN_MARGINAL = 0.32;
+const G1_79_TYPICAL_RATE_SPREAD = 0.02;
+const G1_79_TYPICAL_GAIN = 500_000;
+
+function detectInstallmentElectionOut(args: {
+  computed: ComputedTaxReturn;
+}): OpportunityHit | null {
+  const { computed } = args;
+  if (computed.detail.capitalGains.longTermGains < G1_79_MIN_LTCG) return null;
+  if (computed.adjustedGrossIncome < 250_000) return null;
+  const fedRate = federalMarginalRate(computed);
+  if (fedRate < G1_79_MIN_MARGINAL) return null;
+
+  const estSavings = Math.round(G1_79_TYPICAL_GAIN * G1_79_TYPICAL_RATE_SPREAD);
+
+  const strategy = strategyById("G1.79");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const projectedRate = Math.min(0.37, fedRate + 0.03);
+  const vars: Record<string, number | string> = {
+    currentRate: Math.round(fedRate * 100),
+    projectedRate: Math.round(projectedRate * 100),
+    totalGain: G1_79_TYPICAL_GAIN,
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client has ${fmt(Math.round(computed.detail.capitalGains.longTermGains))} LTCG + AGI ${fmt(Math.round(computed.adjustedGrossIncome))} ` +
+      `at ${Math.round(fedRate * 100)}% marginal. §453(d) election OUT of installment treatment recognizes ENTIRE gain ` +
+      `in current year (lower bracket vs future). Heuristic ${fmt(estSavings)} benefit.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      longTermGains: Math.round(computed.detail.capitalGains.longTermGains),
+      agi: Math.round(computed.adjustedGrossIncome),
+      currentMarginal: fedRate,
+      typicalGain: G1_79_TYPICAL_GAIN,
+      typicalRateSpread: G1_79_TYPICAL_RATE_SPREAD,
+      estSavings,
+    },
+    assumptions: [
+      `HEURISTIC — engine cannot verify whether installment sale exists. CPA confirms with installment-sale records.`,
+      `§453(d) election OUT is IRREVOCABLE; must be made by due date (with extensions) of return for year of sale.`,
+      `Recapture per §453(i) — depreciation recapture (§1245 / §1250 / §291) is FULLY recognized in year of sale REGARDLESS of installment election.`,
+      `§453A interest charge — applies to installment sales > $5M individual / $10M corp (deferred tax accrues at AFR).`,
+      `Distinct from G1.47 (which uses default installment treatment).`,
+      `Coordinate with G4.4 capital-loss carryforward (offset acceleration), G1.21 §1031 (alternative deferral).`,
+      `Heuristic 2% bracket spread × $500k typical gain. Real spread varies by client trajectory.`,
+    ],
+  };
+}
+
+// ── G1.80 — §47 Historic Rehabilitation Credit (heuristic) ──────────────
+
+const G1_80_MIN_RE_BALANCE = 250_000;
+const G1_80_TYPICAL_QRE = 500_000;
+const G1_80_CREDIT_RATE = 0.20;
+const G1_80_SPREAD_YEARS = 5;
+
+function detectHistoricRehabCredit(args: {
+  computed: ComputedTaxReturn;
+  assetBalances?: AssetBalanceFact[];
+}): OpportunityHit | null {
+  const { computed, assetBalances } = args;
+  const realEstateBalance = (assetBalances ?? [])
+    .filter((a) => a.assetType === "real_estate" || a.assetType === "primary_residence")
+    .reduce((s, a) => s + toNum(a.balance), 0);
+  if (realEstateBalance < G1_80_MIN_RE_BALANCE && computed.detail.se.netSeEarnings < 100_000) return null;
+
+  const annualCredit = (G1_80_TYPICAL_QRE * G1_80_CREDIT_RATE) / G1_80_SPREAD_YEARS;
+  const totalCredit = G1_80_TYPICAL_QRE * G1_80_CREDIT_RATE;
+  const estSavings = Math.round(annualCredit);
+
+  const strategy = strategyById("G1.80");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    qre: G1_80_TYPICAL_QRE,
+    totalCredit: Math.round(totalCredit),
+    annualCredit: Math.round(annualCredit),
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client has ${fmt(Math.round(realEstateBalance))} real estate. If certified historic rehabilitation, ` +
+      `§47 20% credit on QRE ${fmt(G1_80_TYPICAL_QRE)} = ${fmt(Math.round(totalCredit))} spread over 5 yrs ` +
+      `(${fmt(Math.round(annualCredit))}/yr). NPS Form 10-168 approval + Form 3468.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      realEstateBalance: Math.round(realEstateBalance),
+      typicalQre: G1_80_TYPICAL_QRE,
+      creditRate: G1_80_CREDIT_RATE,
+      spreadYears: G1_80_SPREAD_YEARS,
+      annualCredit: Math.round(annualCredit),
+      totalCredit: Math.round(totalCredit),
+      estSavings,
+    },
+    assumptions: [
+      `HEURISTIC — engine cannot verify whether property is certified historic. CPA + NPS confirm.`,
+      `Structure must be CERTIFIED HISTORIC STRUCTURE per §47(c)(3) — listed on National Register OR contributing to registered historic district.`,
+      `Rehabilitation must be CERTIFIED REHABILITATION per §47(c)(2)(C) — Secretary of Interior approval via NPS Form 10-168 Parts 1/2/3.`,
+      `Pre-TCJA 10% non-historic credit REPEALED per TCJA §13402 (placed in service after 2017).`,
+      `TCJA spread: 20% credit recognized 4% per year over 5 yrs (was lump-sum pre-TCJA).`,
+      `Substantial-rehabilitation test per §47(c)(1)(A) — QREs > greater of $5,000 OR adjusted basis, within 24-mo period (60-mo phased).`,
+      `5-yr recapture per §50(a)(1)(A) — disposal before 5 yrs triggers recapture (20% per year remaining).`,
+      `Credit basis reduction per §50(c)(1) — depreciable basis reduced by credit amount.`,
+      `State-specific historic credits stack (35 states with own programs).`,
+      `Heuristic $500k QRE — actual rehabs range $50k to $50M+.`,
+    ],
+  };
+}
+
+// ── G1.81 — §44 Disabled Access Credit (heuristic) ──────────────────────
+
+const G1_81_MIN_SE = 50_000;
+const G1_81_MAX_SE = 1_000_000;
+const G1_81_TYPICAL_EXPENSE = 5_250;
+const G1_81_CREDIT_FLOOR = 250;
+
+function detectDisabledAccessCredit(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { computed, adjustments } = args;
+  const netSe = computed.detail.se.netSeEarnings;
+  if (netSe < G1_81_MIN_SE || netSe > G1_81_MAX_SE) return null;
+  const hasCredit = adjustments.some(
+    (a) =>
+      (a.adjustmentType === "disabled_access_credit" || a.adjustmentType === "section_44_credit") &&
+      a.isApplied !== false &&
+      toNum(a.amount) > 0,
+  );
+  if (hasCredit) return null;
+
+  // Credit = 50% × (expense − $250); capped at $5k ((10250-250)/2).
+  const eligibleExpense = Math.min(G1_81_TYPICAL_EXPENSE, 10_250);
+  const credit = Math.round(0.5 * Math.max(0, eligibleExpense - G1_81_CREDIT_FLOOR));
+  const estSavings = credit;
+
+  const strategy = strategyById("G1.81");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    accommodationDescription: "ADA accommodation",
+    expenseAmount: G1_81_TYPICAL_EXPENSE,
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Small biz SE ${fmt(Math.round(netSe))} (< $1M cap). §44 credit on ADA accommodations: 50% × ` +
+      `($${G1_81_TYPICAL_EXPENSE.toLocaleString("en-US")} expense − $250 floor) = ${fmt(credit)}. Annual cap $5k via Form 8826.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      netSeEarnings: Math.round(netSe),
+      typicalExpense: G1_81_TYPICAL_EXPENSE,
+      creditFloor: G1_81_CREDIT_FLOOR,
+      credit,
+    },
+    assumptions: [
+      `HEURISTIC — engine cannot verify whether biz has actual ADA accommodation expenses. CPA confirms.`,
+      `Eligible small business per §44(b): prior-yr gross receipts ≤ $1,000,000 OR ≤ 30 full-time employees.`,
+      `Expense range: > $250 AND ≤ $10,250 per year (credit = 50% × (expense − $250)).`,
+      `Annual cap $5,000 credit (=50% × ($10,250 − $250)).`,
+      `Eligible expenses per §44(c)(2): remove architectural/physical barriers; interpreters; modify equipment; alternative formats; reasonable accommodations.`,
+      `§44(d)(7) — disallowed if eligible for §190 deduction (architectural barrier removal). Choose ONE: credit OR deduction.`,
+      `Form 8826 + §38 general business credit (20-yr carryforward).`,
+      `Coordinate with state ADA grants.`,
+      `Heuristic $5,250 typical expense → $2,500 credit. Real varies by accommodation type.`,
+    ],
+  };
+}
+
+// ── G1.82 — §1374 Built-In Gains (heuristic) ────────────────────────────
+
+const G1_82_MIN_K1_ACTIVE = 50_000;
+const G1_82_TYPICAL_AVOIDED_RECOGNITION = 100_000;
+const G1_82_BIG_RATE = 0.21;
+
+function detectSection1374Big(args: {
+  computed: ComputedTaxReturn;
+}): OpportunityHit | null {
+  const { computed } = args;
+  const k1Active = computed.scheduleK1?.totalActiveOrdinaryIncome ?? 0;
+  if (k1Active < G1_82_MIN_K1_ACTIVE) return null;
+
+  // Heuristic: $100k avoided recognition × 21% BIG = $21k entity-level tax savings
+  // (flows through K-1 as reduction in pass-through ordinary income).
+  const estSavings = Math.round(G1_82_TYPICAL_AVOIDED_RECOGNITION * G1_82_BIG_RATE);
+
+  const strategy = strategyById("G1.82");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = { estSavings };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client has ${fmt(Math.round(k1Active))} S-corp K-1 active income. If S-corp converted from C-corp ` +
+      `within 5 yrs, §1374 BIG tax = 21% × net recognized BIG. HOLDING appreciated assets past 5-yr recognition ` +
+      `period avoids ${fmt(estSavings)} per $100k of avoided recognition. CPA confirms conversion date + asset basis.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      k1ActiveIncome: Math.round(k1Active),
+      typicalAvoidedRecognition: G1_82_TYPICAL_AVOIDED_RECOGNITION,
+      bigRate: G1_82_BIG_RATE,
+      estSavings,
+    },
+    assumptions: [
+      `HEURISTIC — engine doesn't track per-K-1 conversion date or asset basis. CPA confirms.`,
+      `Applies ONLY to newly-elected S-corp within 5-yr recognition period per §1374(d)(7) (was 10 yrs pre-2009; PATH Act 2015 permanent reduction).`,
+      `BIG tax = 21% × MIN(net recognized BIG, taxable income as if C-corp). Built-in LOSSES per §1374(d)(4) offset.`,
+      `S-corp election date (Form 2553) determines recognition period start.`,
+      `Asset-by-asset basis schedule MUST be maintained over recognition period.`,
+      `C-corp earnings & profits at conversion can trigger §1375 passive investment income tax on top of §1374.`,
+      `Form 1120-S Schedule D + Form 8869 (recognized BIG attached statement).`,
+      `Tax flows through K-1 to shareholder as reduction in pass-through ordinary income.`,
+      `Coordinate with G1.17 (S-corp reasonable comp), G1.83 (§338(h)(10) accelerates recognition).`,
+      `Heuristic $100k avoided recognition × 21% BIG = $21k. Real value depends on asset appreciation × time-to-period-end.`,
+    ],
+  };
+}
+
+// ── G1.83 — §338(h)(10) Election (heuristic) ────────────────────────────
+
+const G1_83_MIN_K1_ACTIVE = 100_000;
+const G1_83_MIN_LTCG = 250_000;
+const G1_83_TYPICAL_DEAL = 1_000_000;
+const G1_83_RECAPTURE_PORTION = 0.30;
+const G1_83_CHARACTER_SPREAD = 0.13;
+
+function detectSection338h10(args: {
+  computed: ComputedTaxReturn;
+}): OpportunityHit | null {
+  const { computed } = args;
+  const k1Active = computed.scheduleK1?.totalActiveOrdinaryIncome ?? 0;
+  if (k1Active < G1_83_MIN_K1_ACTIVE) return null;
+  const ltcg = computed.detail.capitalGains.longTermGains;
+  if (ltcg < G1_83_MIN_LTCG) return null;
+  // Exclude owner-operator with SE income > $100k (proxy that entity has paid them W-2).
+  if (computed.detail.se.netSeEarnings > 100_000) return null;
+
+  // Heuristic: $1M deal × 30% recapture × 13% character spread = $39,000.
+  const characterCost = G1_83_TYPICAL_DEAL * G1_83_RECAPTURE_PORTION * G1_83_CHARACTER_SPREAD;
+  const estSavings = Math.round(characterCost);
+
+  const strategy = strategyById("G1.83");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = { estSavings };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client has ${fmt(Math.round(k1Active))} S-corp K-1 + ${fmt(Math.round(ltcg))} LTCG — likely S-corp exit year. ` +
+      `§338(h)(10) joint election treats stock sale as deemed asset sale: ordinary on §1245/§1250 recapture + cap ` +
+      `gain on goodwill/§197. Buyer typically pays seller premium to compensate for character. Heuristic character ` +
+      `cost ~${fmt(estSavings)} per $1M deal — negotiated against premium.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      k1ActiveIncome: Math.round(k1Active),
+      longTermGains: Math.round(ltcg),
+      typicalDeal: G1_83_TYPICAL_DEAL,
+      recapturePortion: G1_83_RECAPTURE_PORTION,
+      characterSpread: G1_83_CHARACTER_SPREAD,
+      estSavings,
+    },
+    assumptions: [
+      `HEURISTIC — engine cannot verify whether actual stock sale occurred. CPA confirms.`,
+      `Sale must be QUALIFIED STOCK PURCHASE per §338(d)(3) — 80%+ stock purchase within 12-mo period.`,
+      `JOINT election by BOTH BUYER (corporation) AND ALL S-corp shareholders — Form 8023 within 8.5 mo of acquisition.`,
+      `Asset allocation under §1060 residual method — Form 8883 + appraisal.`,
+      `Character analysis: §1245 / §1250 / §291 depreciation recapture is ORDINARY; goodwill / §197 is CAP GAIN.`,
+      `Bilateral price negotiation — buyer typically pays MORE cash to compensate seller for character conversion.`,
+      `Seller-side state tax — most states track federal; CA / NY allow §338(h)(10) recognition deferred.`,
+      `Distinct from §338(g) (one-sided election, no asset-sale treatment for seller — generally unfavorable for individuals).`,
+      `Coordinate with G1.82 §1374 BIG (which DEFERS recognition; §338(h)(10) ACCELERATES via asset-sale treatment).`,
+      `Heuristic 30% recapture portion + 13% character spread. Real allocation varies by industry + asset mix.`,
+    ],
+  };
+}
+
+// ── G1.84 — §351 Controlled-Corp Contribution (heuristic) ───────────────
+
+const G1_84_MIN_RE_BALANCE = 500_000;
+const G1_84_MIN_BROKERAGE_BALANCE = 250_000;
+const G1_84_TYPICAL_FMV = 500_000;
+const G1_84_TYPICAL_BASIS = 100_000;
+const G1_84_LTCG_NIIT_RATE = 0.238;
+
+function detectSection351Contribution(args: {
+  assetBalances?: AssetBalanceFact[];
+}): OpportunityHit | null {
+  const { assetBalances } = args;
+  if (!assetBalances || assetBalances.length === 0) return null;
+  const reBalance = assetBalances
+    .filter((a) => a.assetType === "real_estate")
+    .reduce((s, a) => s + toNum(a.balance), 0);
+  const brokerageBalance = assetBalances
+    .filter((a) => a.assetType === "brokerage_taxable")
+    .reduce((s, a) => s + toNum(a.balance), 0);
+  if (reBalance < G1_84_MIN_RE_BALANCE && brokerageBalance < G1_84_MIN_BROKERAGE_BALANCE) return null;
+
+  // Heuristic: $500k FMV - $100k basis = $400k gain × 23.8% LTCG+NIIT = $95,200 deferred.
+  const embeddedGain = G1_84_TYPICAL_FMV - G1_84_TYPICAL_BASIS;
+  const estSavings = Math.round(embeddedGain * G1_84_LTCG_NIIT_RATE);
+
+  const strategy = strategyById("G1.84");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    contributedFmv: G1_84_TYPICAL_FMV,
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client holds appreciated property (RE ${fmt(Math.round(reBalance))} + brokerage ${fmt(Math.round(brokerageBalance))}). ` +
+      `If forming new corp + contributing for ≥ 80% control: §351 tax-free contribution defers ` +
+      `${fmt(embeddedGain)} embedded gain. Heuristic PV benefit ${fmt(estSavings)}.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      realEstateBalance: Math.round(reBalance),
+      brokerageBalance: Math.round(brokerageBalance),
+      typicalFmv: G1_84_TYPICAL_FMV,
+      typicalBasis: G1_84_TYPICAL_BASIS,
+      embeddedGain: Math.round(embeddedGain),
+      ltcgNiitRate: G1_84_LTCG_NIIT_RATE,
+      estSavings,
+    },
+    assumptions: [
+      `HEURISTIC — engine cannot verify intent to incorporate. CPA confirms.`,
+      `Transferor (or group) must control ≥ 80% voting + ≥ 80% other classes per §368(c) IMMEDIATELY AFTER transfer.`,
+      `Property transferred (NOT services per §351(d)(1) — services don't qualify; receive stock taxable as comp).`,
+      `Boot received → recognize gain up to FMV of boot per §351(b); character preserved (LTCG if held > 1 yr).`,
+      `Transferor basis in stock = transferred property basis − boot + gain recognized (§358).`,
+      `Corporation basis in property = transferor basis + gain recognized (§362).`,
+      `Disqualified: investment company stock (§351(e)(1)); inventory + receivables = ordinary.`,
+      `Distinct from §721 partnership contribution (similar rules but partnership; no 80% control test).`,
+      `Coordinate with §1244 small biz stock election (G1.40) — ordinary loss treatment if business fails.`,
+      `QSBS §1202 timing — 5-yr holding starts at issuance (§351 timing matters for QSBS clock).`,
+      `Heuristic $500k FMV / $100k basis = 80% appreciation. Real basis varies — CPA tracks.`,
+    ],
+  };
+}
+
+// ── G1.85 — §163(h)(3) Mortgage Interest Optimization (heuristic) ───────
+
+const G1_85_MIN_MORTGAGE_INT = 20_000;
+
+function detectMortgageInterestOptim(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { computed, adjustments } = args;
+  if (computed.itemizedDeductions == null) return null;
+  const mortgageInt = sumAdjustment(adjustments, "mortgage_interest");
+  if (mortgageInt < G1_85_MIN_MORTGAGE_INT) return null;
+
+  // Heuristic: 80% of mortgage interest retained × marginal rate.
+  const fedRate = federalMarginalRate(computed);
+  const retainedDeduction = mortgageInt * 0.80;
+  const estSavings = Math.round(retainedDeduction * fedRate);
+
+  const strategy = strategyById("G1.85");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = { estSavings };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client itemizes with ${fmt(Math.round(mortgageInt))} mortgage interest. Verify §163(h)(3) classification: ` +
+      `acquisition cap $750k (post-2017 origination) vs $1M (pre-2018 grandfathered). HELOC interest deductible ` +
+      `ONLY if traced to buy/build/improve. Heuristic retained deduction ${fmt(estSavings)}.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      mortgageInterest: Math.round(mortgageInt),
+      federalMarginalRate: fedRate,
+      retainedDeductionFactor: 0.80,
+      estSavings,
+    },
+    assumptions: [
+      `HEURISTIC — engine assumes 80% retained deduction. Actual retained depends on loan size vs cap.`,
+      `Loans before 2017-12-15 GRANDFATHERED at $1M acquisition cap per §163(h)(3)(F)(i)(I).`,
+      `Loan use TRACING per Reg §1.163-8T — proceeds must be traced to USE (acquisition, improvement, equity).`,
+      `Acquisition indebtedness per §163(h)(3)(B): debt incurred to acquire, construct, or substantially improve qualified residence; secured by qualified residence.`,
+      `Home-equity indebtedness post-TCJA: deductible ONLY if proceeds used to buy/build/improve.`,
+      `Qualifying residence per §163(h)(4)(A)(i): principal residence + ONE other.`,
+      `Refinance grandfathering: refi of grandfathered loan stays at $1M cap UP TO original balance.`,
+      `Joint return aggregation — combined $750k cap (MFS $375k).`,
+      `TCJA changes SUNSET TY2026 (revert to pre-TCJA $1M cap + home-equity allowed) per TCJA §11043(b) UNLESS extended.`,
+      `Coordinate with G1.3 bunching (itemized), G1.78 multi-state.`,
+    ],
+  };
+}
+
+// ── G1.86 — Charitable Lead Trust (heuristic) ────────────────────────────
+
+const G1_86_MIN_AGI = 1_000_000;
+const G1_86_MIN_MARGINAL = 0.32;
+const G1_86_MIN_CHARITY = 50_000;
+const G1_86_TYPICAL_TRUST = 1_000_000;
+const G1_86_PV_DEDUCTION = 700_000;
+
+function detectCharitableLeadTrust(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { computed, adjustments } = args;
+  if (computed.adjustedGrossIncome < G1_86_MIN_AGI) return null;
+  const fedRate = federalMarginalRate(computed);
+  if (fedRate < G1_86_MIN_MARGINAL) return null;
+  const charity = sumAdjustment(adjustments, "charitable_cash");
+  if (charity < G1_86_MIN_CHARITY) return null;
+
+  // Heuristic: $700k PV deduction × marginal rate × 30% AGI cap.
+  // Cap to 30% of AGI for cash to public charity.
+  const agiCap = computed.adjustedGrossIncome * 0.30;
+  const deductibleThisYear = Math.min(G1_86_PV_DEDUCTION, agiCap);
+  const estSavings = Math.round(deductibleThisYear * fedRate);
+
+  const strategy = strategyById("G1.86");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    deductionAmount: G1_86_PV_DEDUCTION,
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client HNW (AGI ${fmt(Math.round(computed.adjustedGrossIncome))}) + ${Math.round(fedRate * 100)}% marginal + ` +
+      `${fmt(Math.round(charity))} charity giving = candidate for Grantor CLT. Fund $1M+ trust → immediate income-` +
+      `tax deduction ~${fmt(G1_86_PV_DEDUCTION)} × marginal = ${fmt(estSavings)} (capped at 30% AGI = ${fmt(Math.round(agiCap))}, 5-yr CF).`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      agi: Math.round(computed.adjustedGrossIncome),
+      federalMarginalRate: fedRate,
+      charitableGiving: Math.round(charity),
+      typicalTrust: G1_86_TYPICAL_TRUST,
+      pvDeduction: G1_86_PV_DEDUCTION,
+      agiCap: Math.round(agiCap),
+      deductibleThisYear: Math.round(deductibleThisYear),
+      estSavings,
+    },
+    assumptions: [
+      `HEURISTIC — engine doesn't compute §7520 rate × PV math. Rough estimate ONLY.`,
+      `GRANTOR CLT vs Non-grantor CLT: GRANTOR gives donor immediate income-tax deduction BUT donor pays tax on trust income during term.`,
+      `Trust term + annuity rate determine PV deduction per §7520 rate (published monthly; use lowest available for highest deduction).`,
+      `AGI cap: 30% for cash to public charity (5-yr carryforward per §170(d)(1)).`,
+      `Distinct from CRT G1.19 (donor gets income, charity gets remainder) — CLT is OPPOSITE.`,
+      `Estate planning bonus — at trust end, remainder to heirs at REDUCED gift/estate tax value (frozen at funding).`,
+      `Trust documents per Rev. Proc. 2007-45 sample forms (CLAT) or Rev. Proc. 2008-45 (CLUT).`,
+      `OUT OF SCOPE for engine — trust files 1041 (out of Option A). Heuristic FOR DONOR 1040 only.`,
+      `Heuristic $700k PV deduction (70% of $1M trust) × marginal. Real PV varies with rate + term + annuity %.`,
+    ],
+  };
+}
+
+// ── G1.87 — §401(a)(17) Compensation Cap (heuristic) ────────────────────
+
+const G1_87_CAP_2024 = 345_000;
+const G1_87_CAP_2025 = 350_000;
+const G1_87_MIN_INCOME = 400_000;
+const G1_87_LOST_MATCH_RATE = 0.05;
+
+function detectSection401a17Cap(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { computed, adjustments } = args;
+  if (computed.totalIncome < G1_87_MIN_INCOME) return null;
+  const seIncome = computed.detail.se.netSeEarnings ?? 0;
+  const wagesProxy = Math.max(0, computed.totalIncome - seIncome);
+  const cap = computed.taxYear >= 2025 ? G1_87_CAP_2025 : G1_87_CAP_2024;
+  if (wagesProxy < cap && seIncome < cap) return null;
+  // Skip if no qualified plan adjustment.
+  const hasRetirement = adjustments.some(
+    (a) =>
+      a.isApplied !== false &&
+      toNum(a.amount) > 0 &&
+      (a.adjustmentType.includes("401k") ||
+        a.adjustmentType.includes("retirement") ||
+        a.adjustmentType.includes("sep") ||
+        a.adjustmentType === "ira_contribution_traditional"),
+  );
+  if (!hasRetirement) return null;
+
+  // Lost match = compensation above cap × 5% typical match rate.
+  const compAboveCap = Math.max(0, Math.max(wagesProxy, seIncome) - cap);
+  const lostMatch = compAboveCap * G1_87_LOST_MATCH_RATE;
+  const fedRate = federalMarginalRate(computed);
+  const estSavings = Math.round(lostMatch * fedRate);
+  if (estSavings <= 0) return null;
+
+  const strategy = strategyById("G1.87");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    capLimit: cap,
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client compensation ${fmt(Math.round(Math.max(wagesProxy, seIncome)))} exceeds §401(a)(17) ${fmt(cap)} ` +
+      `cap. ${fmt(Math.round(compAboveCap))} of compensation INELIGIBLE for qualified-plan math. Combine with ` +
+      `NQDC §409A (G1.57) / DB plan (G1.28) / Mega-Backdoor (G1.16). Heuristic ${fmt(estSavings)} annual benefit.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      totalIncome: Math.round(computed.totalIncome),
+      wagesProxy: Math.round(wagesProxy),
+      seIncome: Math.round(seIncome),
+      capLimit: cap,
+      compAboveCap: Math.round(compAboveCap),
+      lostMatch: Math.round(lostMatch),
+      federalMarginalRate: fedRate,
+      estSavings,
+    },
+    assumptions: [
+      `§401(a)(17) compensation cap TY2024: $345,000 (Notice 2023-75); TY2025: $350,000 (Notice 2024-80).`,
+      `Compensation ABOVE cap is INELIGIBLE for qualified-plan contribution math (employer 401(k) match + profit-share + SEP).`,
+      `§415(c) defined-contribution annual additions limit: TY2024 $69,000 / TY2025 $70,000.`,
+      `§415(b) defined-benefit annual benefit limit: TY2024 $275,000 / TY2025 $280,000.`,
+      `Recapture via: NQDC §409A (G1.57), defined-benefit/cash-balance plan (G1.28), Mega-Backdoor (G1.16).`,
+      `Top-heavy testing per §416 — concentrated ownership may force minimum contribution.`,
+      `Highly Compensated Employees (HCE) test per §414(q): TY2024 > $155,000.`,
+      `Heuristic 5% lost match × marginal — actual depends on employer match formula.`,
+    ],
+  };
+}
+
+// ── G1.88 — §199A SSTB Navigation (heuristic) ───────────────────────────
+
+const G1_88_SSTB_FULL_THRESHOLD_2024: Record<string, number> = {
+  single: 191_950,
+  head_of_household: 191_950,
+  married_filing_jointly: 383_900,
+  qualifying_widow: 383_900,
+  married_filing_separately: 191_950,
+};
+const G1_88_SSTB_PHASEOUT_TOP_2024: Record<string, number> = {
+  single: 241_950,
+  head_of_household: 241_950,
+  married_filing_jointly: 483_900,
+  qualifying_widow: 483_900,
+  married_filing_separately: 241_950,
+};
+const G1_88_TYPICAL_PRESERVED = 2_400;
+
+function detectSstbNavigation(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { computed, adjustments } = args;
+  const k1Active = computed.scheduleK1?.totalActiveOrdinaryIncome ?? 0;
+  const netSe = computed.detail.se.netSeEarnings ?? 0;
+  if (k1Active < 50_000 && netSe < 50_000) return null;
+  const hasQbi = adjustments.some(
+    (a) => a.adjustmentType === "qbi_income" && a.isApplied !== false && toNum(a.amount) > 0,
+  );
+  if (!hasQbi) return null;
+  const fullThresh = G1_88_SSTB_FULL_THRESHOLD_2024[computed.filingStatus] ?? G1_88_SSTB_FULL_THRESHOLD_2024.single;
+  const phaseOutTop = G1_88_SSTB_PHASEOUT_TOP_2024[computed.filingStatus] ?? G1_88_SSTB_PHASEOUT_TOP_2024.single;
+  if (computed.taxableIncome < fullThresh) return null;
+  if (computed.taxableIncome > phaseOutTop) return null;
+
+  // Heuristic preserved benefit: $2,400.
+  const estSavings = G1_88_TYPICAL_PRESERVED;
+
+  const strategy = strategyById("G1.88");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    sstThreshold: fullThresh,
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client in §199A SSTB phase-out range (taxable ${fmt(Math.round(computed.taxableIncome))} between ` +
+      `${fmt(fullThresh)} and ${fmt(phaseOutTop)}). If SSTB (health/law/accounting/consulting/etc.), ` +
+      `deduction phases out — stay BELOW ${fmt(fullThresh)} via max retirement + deductions. Preserved ` +
+      `${fmt(estSavings)} benefit.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      taxableIncome: Math.round(computed.taxableIncome),
+      sstThreshold: fullThresh,
+      phaseOutTop,
+      filingStatus: computed.filingStatus,
+      estSavings,
+    },
+    assumptions: [
+      `HEURISTIC — engine cannot verify whether client's business is SSTB. CPA confirms per Reg §1.199A-5.`,
+      `SSTB definition §199A(d)(2): health, law, accounting, actuarial sci, performing arts, consulting, athletics, financial services, brokerage, investment management, trading, dealing in securities/partnership interests/commodities, OR trade where principal asset is reputation/skill.`,
+      `TY2024 (Notice 2023-75): full deduction ≤ $191,950 single / $383,900 MFJ; phase-out top $241,950 single / $483,900 MFJ; NO deduction above phase-out for SSTB.`,
+      `TY2025 (Notice 2024-80): full ≤ $197,300 single / $394,600 MFJ; phase-out top $247,300 single / $494,600 MFJ.`,
+      `Non-SSTB businesses: phase-IN W-2-wage / UBIA cap above same threshold (G1.7 covers).`,
+      `Strategy to stay below: max retirement (G1.1 SEP / G1.28 DB / G1.16 Mega), accelerate deductions (G1.3 bunching), defer income (G1.69).`,
+      `Aggregation election per Reg §1.199A-4 (G1.89) NOT allowed for SSTB.`,
+      `Heuristic $2,400 preserved — varies with QBI size + bracket.`,
+    ],
+  };
+}
+
+// ── G1.89 — §199A Aggregation Election (heuristic) ──────────────────────
+
+const G1_89_TYPICAL_PRESERVED = 9_600;
+
+function detectSection199aAggregation(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { computed, adjustments } = args;
+  const k1Active = computed.scheduleK1?.totalActiveOrdinaryIncome ?? 0;
+  if (k1Active < 100_000) return null;
+  const hasQbi = adjustments.some(
+    (a) => a.adjustmentType === "qbi_income" && a.isApplied !== false && toNum(a.amount) > 0,
+  );
+  if (!hasQbi) return null;
+  const fullThresh = G1_88_SSTB_FULL_THRESHOLD_2024[computed.filingStatus] ?? G1_88_SSTB_FULL_THRESHOLD_2024.single;
+  if (computed.taxableIncome < fullThresh) return null;
+
+  const estSavings = G1_89_TYPICAL_PRESERVED;
+
+  const strategy = strategyById("G1.89");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    numTrades: 2,
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client has ${fmt(Math.round(k1Active))} K-1 active income + QBI + taxable income above ` +
+      `${fmt(fullThresh)} (W-2/UBIA cap kicks in). Reg §1.199A-4 aggregation election: combine related ` +
+      `non-SSTB trades to share W-2 wages + UBIA. Form 8995-A Sch B annual election. Heuristic ${fmt(estSavings)}.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      k1ActiveIncome: Math.round(k1Active),
+      taxableIncome: Math.round(computed.taxableIncome),
+      fullThreshold: fullThresh,
+      estSavings,
+    },
+    assumptions: [
+      `HEURISTIC — engine cannot verify multi-trade structure. CPA confirms common ownership + shared characteristics.`,
+      `Common ownership ≥ 50% per Reg §1.199A-4(b)(1)(i) (attribution rules §267(b)/§707(b)).`,
+      `Shared characteristics ≥ 2 of: (a) products/services, (b) facilities/employees, (c) interconnected business processes.`,
+      `Cannot include SSTB in aggregation per Reg §1.199A-4(b)(1)(iv).`,
+      `Election made on Form 8995-A Sch B; ANNUAL election (can re-aggregate each year).`,
+      `Disclosure required per Reg §1.199A-4(c)(2) — disclose aggregation by trade.`,
+      `Aggregated wages + UBIA cap applies to AGGREGATED QBI (combined math, not per-trade).`,
+      `Coordinate with G1.7 (W-2/UBIA simplified) + G1.88 (SSTB phase-out).`,
+      `Heuristic $9,600 preserved = $200k QBI × 20% × 24% — varies widely.`,
+    ],
+  };
+}
+
+// ── G1.90 — Pooled Income Fund §642(c)(5) (heuristic) ──────────────────
+
+const G1_90_MIN_AGI = 500_000;
+const G1_90_MIN_AGE = 55;
+const G1_90_MIN_CHARITY = 25_000;
+const G1_90_TYPICAL_CONTRIB = 100_000;
+const G1_90_PV_FACTOR = 0.70;
+
+function detectPooledIncomeFund(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { client, computed, adjustments } = args;
+  if (computed.adjustedGrossIncome < G1_90_MIN_AGI) return null;
+  const age = client.taxpayerAge;
+  if (age == null || age < G1_90_MIN_AGE) return null;
+  const charity = sumAdjustment(adjustments, "charitable_cash");
+  if (charity < G1_90_MIN_CHARITY) return null;
+
+  const deductionAmount = G1_90_TYPICAL_CONTRIB * G1_90_PV_FACTOR;
+  const fedRate = federalMarginalRate(computed);
+  const agiCap = computed.adjustedGrossIncome * 0.30;
+  const deductibleThisYear = Math.min(deductionAmount, agiCap);
+  const estSavings = Math.round(deductibleThisYear * fedRate);
+
+  const strategy = strategyById("G1.90");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    contribution: G1_90_TYPICAL_CONTRIB,
+    deductionAmount: Math.round(deductionAmount),
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client age ${age} + AGI ${fmt(Math.round(computed.adjustedGrossIncome))} + charity ${fmt(Math.round(charity))} ` +
+      `= candidate for PIF §642(c)(5). Contribute ${fmt(G1_90_TYPICAL_CONTRIB)} to charity-maintained fund; receive ` +
+      `pro-rata life income; remainder to charity. PV deduction ${fmt(Math.round(deductionAmount))}; tax savings ${fmt(estSavings)}.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      taxpayerAge: age,
+      agi: Math.round(computed.adjustedGrossIncome),
+      charitableGiving: Math.round(charity),
+      typicalContrib: G1_90_TYPICAL_CONTRIB,
+      pvFactor: G1_90_PV_FACTOR,
+      deductionAmount: Math.round(deductionAmount),
+      federalMarginalRate: fedRate,
+      agiCap: Math.round(agiCap),
+      deductibleThisYear: Math.round(deductibleThisYear),
+      estSavings,
+    },
+    assumptions: [
+      `HEURISTIC — engine doesn't compute §7520 rate × actuarial life expectancy. Rough estimate ONLY.`,
+      `PIF similar to CRT G1.19 BUT: (a) charity maintains fund (no separate trust admin); (b) lower minimum (~$5k vs $100k+ CRT); (c) pro-rata income (no fixed annuity).`,
+      `Qualified charity that maintains PIF per Reg §1.642(c)-5 (universities, hospitals, large land trusts commonly do).`,
+      `Donor receives life income (pro-rata share of fund's ordinary income) — taxable to donor as DNI per §662.`,
+      `PV remainder per §7520 rate × life-expectancy table — deductible at contribution (§170(f)(2)(A)).`,
+      `AGI cap: 30% for cash to public charity (5-yr carryforward per §170(d)(1)).`,
+      `OUT OF SCOPE for engine — PIF computes its own §662 income distribution; engine doesn't model.`,
+      `Estate planning bonus — contribution removes asset from gross estate per §2055.`,
+      `Heuristic 70% PV factor (age 70 + 7520 rate 5%). Real PV varies with age + rate.`,
+    ],
+  };
+}
+
+// ── G1.91 — §139 Qualified Disaster Relief (heuristic) ──────────────────
+
+const G1_91_DISASTER_STATES = new Set([
+  "CA", "FL", "TX", "LA", "NC", "SC", "TN", "KY", "MO", "IA", "GA",
+]);
+const G1_91_MIN_AGI = 100_000;
+const G1_91_TYPICAL_RECEIVED = 20_000;
+
+function detectDisasterRelief(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { client, computed, adjustments } = args;
+  if (computed.adjustedGrossIncome < G1_91_MIN_AGI) return null;
+  const state = (client.state ?? "").toUpperCase();
+  if (!G1_91_DISASTER_STATES.has(state)) return null;
+  const hasDisaster = adjustments.some(
+    (a) =>
+      (a.adjustmentType === "section_139_payment" ||
+        a.adjustmentType === "qualified_disaster_payment") &&
+      a.isApplied !== false &&
+      toNum(a.amount) > 0,
+  );
+  if (hasDisaster) return null;
+
+  const fedRate = federalMarginalRate(computed);
+  const estSavings = Math.round(G1_91_TYPICAL_RECEIVED * fedRate);
+
+  const strategy = strategyById("G1.91");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = { estSavings };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client in ${state} (recent federally-declared disaster proxy state). Confirm any received disaster-relief ` +
+      `payments excluded under §139. Heuristic ${fmt(G1_91_TYPICAL_RECEIVED)} × ${Math.round(fedRate * 100)}% marginal ` +
+      `= ${fmt(estSavings)}. Also: §165(h) casualty loss with 10% AGI floor WAIVED for federally-declared disaster.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      state,
+      agi: Math.round(computed.adjustedGrossIncome),
+      typicalReceived: G1_91_TYPICAL_RECEIVED,
+      federalMarginalRate: fedRate,
+      estSavings,
+    },
+    assumptions: [
+      `HEURISTIC — engine cannot verify disaster payments received OR federally-declared disaster in client's specific year. CPA confirms via FEMA database.`,
+      `Excludable per §139(b): reasonable/necessary personal/family/living/funeral expenses incurred as result of disaster.`,
+      `Excludable per §139(c)(2): reasonable/necessary expenses for repair/rehabilitation of personal residence/contents.`,
+      `Excludable per §139(c)(3): by reason of death/personal physical injury.`,
+      `MUST be paid AS RESULT of qualified disaster (timing + causation).`,
+      `§165(h)(5)(A) federally-declared disaster loss: deductible above 10% AGI floor (waived for fed-declared per TCJA §11044 — extends through 2025).`,
+      `Casualty loss claim: Form 4684; basis adjustment per §165(b).`,
+      `Coordinate with §165(i) prior-year deduction election (federally-declared).`,
+      `Specific exclusions: §139(c)(4)(A) — not eligible if payment also Code §164/§115 excludable.`,
+      `State conformity varies.`,
+      `Heuristic $20k typical received payment × marginal. Real amounts vary by disaster + assistance type.`,
+    ],
+  };
+}
+
+// ── G1.92 — Solo 401(k) Employee Deferral vs SEP (heuristic) ────────────
+
+const G1_92_MIN_SE = 20_000;
+const G1_92_MAX_SE = 150_000;
+const G1_92_EMPLOYEE_DEFERRAL_2024 = 23_000;
+const G1_92_EMPLOYEE_DEFERRAL_2025 = 23_500;
+
+function detectSolo401kDeferral(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { client, computed, adjustments } = args;
+  if (client.filingStatus === "married_filing_separately") return null;
+  const netSe = computed.detail.se.netSeEarnings ?? 0;
+  if (netSe < G1_92_MIN_SE || netSe > G1_92_MAX_SE) return null;
+  // Skip if any retirement adj exists (G1.1 covers).
+  const hasRetirement = adjustments.some(
+    (a) =>
+      a.isApplied !== false &&
+      toNum(a.amount) > 0 &&
+      (a.adjustmentType.includes("sep") ||
+        a.adjustmentType.includes("solo401k") ||
+        a.adjustmentType.includes("solo_401k") ||
+        a.adjustmentType.includes("self_employed_retirement")),
+  );
+  if (hasRetirement) return null;
+
+  // SEP contribution = 20% × (netSE − halfSE)
+  const halfSe = computed.detail.se.deductibleHalf ?? 0;
+  const baseForContrib = Math.max(0, netSe - halfSe);
+  const sepContrib = baseForContrib * 0.20;
+
+  const employeeDeferral = computed.taxYear >= 2025 ? G1_92_EMPLOYEE_DEFERRAL_2025 : G1_92_EMPLOYEE_DEFERRAL_2024;
+  // Solo 401(k) total = employee deferral + employer match (= SEP-equivalent)
+  const employerMatch = sepContrib;
+  const totalContribution = Math.min(employeeDeferral + employerMatch, 69_000);
+
+  // Extra shelter vs SEP
+  const extraVsSep = Math.max(0, totalContribution - sepContrib);
+  if (extraVsSep <= 0) return null;
+
+  const fedRate = federalMarginalRate(computed);
+  const stateRate = stateMarginalRate(computed);
+  const estSavings = Math.round(extraVsSep * (fedRate + stateRate));
+
+  const strategy = strategyById("G1.92");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    employeeDeferral,
+    employerMatch: Math.round(employerMatch),
+    totalContribution: Math.round(totalContribution),
+    extraVsSep: Math.round(extraVsSep),
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client net SE ${fmt(Math.round(netSe))} (low-mid range). Solo 401(k): employee deferral ${fmt(employeeDeferral)} + ` +
+      `employer match ${fmt(Math.round(employerMatch))} = ${fmt(Math.round(totalContribution))} shelter vs SEP-only ` +
+      `${fmt(Math.round(sepContrib))}. Extra shelter ${fmt(Math.round(extraVsSep))}; savings ${fmt(estSavings)}.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      netSeEarnings: Math.round(netSe),
+      halfSeDeduction: Math.round(halfSe),
+      sepContribution: Math.round(sepContrib),
+      employeeDeferral,
+      employerMatch: Math.round(employerMatch),
+      totalContribution: Math.round(totalContribution),
+      extraVsSep: Math.round(extraVsSep),
+      federalMarginalRate: fedRate,
+      stateMarginalRate: stateRate,
+      estSavings,
+    },
+    assumptions: [
+      `Solo 401(k) = employee deferral + employer match. Employee deferral TY2024 $23,000 (§402(g)).`,
+      `Age 50+ catch-up $7,500 (§414(v)). Not included in this heuristic (CPA adds if age ≥ 50).`,
+      `Employer match = 20% × (netSE − halfSE) — same as SEP formula.`,
+      `Total §415(c) cap TY2024 $69,000 / TY2025 $70,000.`,
+      `Plan establishment deadline: 12-31 of plan year (vs SEP-IRA extended return deadline = SEP more flexible).`,
+      `Solo 401(k) allows Roth designation (Solo Roth 401(k) - tax-free growth); SEP doesn't.`,
+      `Loan provision per §72(p) — Solo 401(k) can offer; SEP cannot.`,
+      `Plan admin cost ~$1k/yr; Form 5500-EZ at $250k+ assets.`,
+      `Coordinate with G1.1 (SEP-IRA — for high SE) — choose based on income level + plan-admin tolerance.`,
+      `Heuristic = extra shelter × marginal. Real benefit depends on actual SE + age + employer-match structure.`,
+    ],
+  };
+}
+
+// ── G1.93 — §163(d)(4)(B) Investment Interest Election (heuristic) ──────
+
+const G1_93_MIN_QDIV_LTCG = 20_000;
+const G1_93_MIN_INV_INT = 5_000;
+const G1_93_ORD_LTCG_SPREAD = 0.132;
+
+function detectInvestmentInterestElection(args: {
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { computed, adjustments } = args;
+  const qdivPlusLtcg = computed.preferentialIncome;
+  if (qdivPlusLtcg < G1_93_MIN_QDIV_LTCG) return null;
+  const invInt = sumAdjustment(adjustments, "investment_interest_expense");
+  if (invInt < G1_93_MIN_INV_INT) return null;
+
+  const fedRate = federalMarginalRate(computed);
+  if (fedRate < 0.32) return null;
+
+  // Elect to include enough QDIV/LTCG to free up investment-interest deduction.
+  // Heuristic: $20k QDIV/LTCG × 0.132 spread = $2,640 'paid' to free $20k interest × 37% = $7,400 'gained'.
+  const electedAmount = Math.min(qdivPlusLtcg, invInt);
+  const ratePaid = electedAmount * G1_93_ORD_LTCG_SPREAD;
+  const interestGain = electedAmount * fedRate;
+  const estSavings = Math.round(interestGain - ratePaid);
+  if (estSavings <= 0) return null;
+
+  const strategy = strategyById("G1.93");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    investmentInt: Math.round(invInt),
+    electedAmount: Math.round(electedAmount),
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client has ${fmt(Math.round(qdivPlusLtcg))} QDIV/LTCG + ${fmt(Math.round(invInt))} investment interest expense ` +
+      `+ ${Math.round(fedRate * 100)}% marginal. §163(d)(4)(B) election treats ${fmt(Math.round(electedAmount))} of ` +
+      `QDIV/LTCG as ordinary → frees matching interest deduction. Net benefit ${fmt(estSavings)}.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      qdivPlusLtcg: Math.round(qdivPlusLtcg),
+      investmentInterest: Math.round(invInt),
+      federalMarginalRate: fedRate,
+      electedAmount: Math.round(electedAmount),
+      ratePaid: Math.round(ratePaid),
+      interestGain: Math.round(interestGain),
+      estSavings,
+    },
+    assumptions: [
+      `Form 4952 to track + report investment interest expense.`,
+      `Investment interest expense per §163(d)(3) — interest on debt to PURCHASE / CARRY investment property.`,
+      `Net investment income per §163(d)(4): ordinary investment income (interest, royalties, net ST gain) − investment expenses.`,
+      `Excess investment interest carries forward INDEFINITELY per §163(d)(2).`,
+      `Election made annually on Form 4952 Line 4g — irrevocable for that year.`,
+      `Beneficial when marginal rate >> LTCG rate AND investment-interest expense is large.`,
+      `Coordinate with G1.6 NIIT (electing in adds to NIIT base too).`,
+      `Trade-or-business interest is §163(j) territory (C7) — different rules.`,
+      `Heuristic spread 13.2% = (37% ord − 23.8% LTCG+NIIT). Real spread varies.`,
+    ],
+  };
+}
+
+// ── G1.94 — §85 Unemployment Income Analysis (heuristic) ────────────────
+
+const G1_94_MIN_UI = 5_000;
+const G1_94_MAX_AGI = 150_000;
+
+function detectUnemploymentAnalysis(args: {
+  computed: ComputedTaxReturn;
+}): OpportunityHit | null {
+  const { computed } = args;
+  if (computed.adjustedGrossIncome > G1_94_MAX_AGI) return null;
+  const ui = computed.form1099Summary?.unemploymentCompensationOnly ?? 0;
+  if (ui < G1_94_MIN_UI) return null;
+
+  const fedRate = federalMarginalRate(computed);
+  const estSavings = Math.round(ui * fedRate);
+
+  const strategy = strategyById("G1.94");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    uiAmount: Math.round(ui),
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client has ${fmt(Math.round(ui))} unemployment income. §85 — fully federal-taxable (ARP exclusion ` +
+      `sunset TY2020). Confirm Sch 1 Line 7 has FULL amount. Elect §3402(p) voluntary 10% withholding via ` +
+      `Form W-4V to avoid §6654 underpayment penalty. State-specific exclusions may apply.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      unemploymentIncome: Math.round(ui),
+      agi: Math.round(computed.adjustedGrossIncome),
+      federalMarginalRate: fedRate,
+      estSavings,
+    },
+    assumptions: [
+      `§85 unemployment income FULLY federal-taxable per TY2021+ (post-ARP sunset).`,
+      `Voluntary withholding election per §3402(p) — 10% flat rate from state UI office (Form W-4V).`,
+      `State conformity: TX/WA/FL/NV/SD/WY/AK no income tax; CA/NJ/PA/MT/VA/AL/NH exclude UI; OR after age 62; partial in others.`,
+      `Schedule 1 Line 7 — full UI amount.`,
+      `Form W-4V — voluntary withholding (10% flat federal rate ONLY — no state withholding option for UI).`,
+      `§6654 underpayment penalty — UI without withholding can trigger penalty even with low income.`,
+      `Coordinate with G1.52 estimated tax safe harbor + state-specific filing.`,
+      `Heuristic = UI × marginal. Real value depends on existing withholding + state conformity.`,
+    ],
+  };
+}
+
+// ── G1.95 — §1377(a)(2) S-corp Terminating Shareholder (heuristic) ──────
+
+const G1_95_MIN_K1 = 50_000;
+const G1_95_TYPICAL_MISMATCH_BENEFIT = 5_000;
+
+function detectSection1377Election(args: {
+  computed: ComputedTaxReturn;
+}): OpportunityHit | null {
+  const { computed } = args;
+  const k1Active = computed.scheduleK1?.totalActiveOrdinaryIncome ?? 0;
+  if (k1Active < G1_95_MIN_K1) return null;
+  // Proxy: SE flowing through (member-managed LLC) — indicates engagement.
+  if (computed.detail.se.netSeEarnings < G1_95_MIN_K1) return null;
+
+  const estSavings = G1_95_TYPICAL_MISMATCH_BENEFIT;
+
+  const strategy = strategyById("G1.95");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = { estSavings };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client has ${fmt(Math.round(k1Active))} S-corp K-1 + SE. If shareholder terminates mid-year, ` +
+      `§1377(a)(2) election closes books on termination date (2 short tax years). Beneficial when ` +
+      `income/expense timing mismatches halves. Estimated benefit ${fmt(estSavings)} per case.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      k1ActiveIncome: Math.round(k1Active),
+      netSeEarnings: Math.round(computed.detail.se.netSeEarnings),
+      typicalMismatchBenefit: G1_95_TYPICAL_MISMATCH_BENEFIT,
+      estSavings,
+    },
+    assumptions: [
+      `HEURISTIC — engine cannot detect mid-year termination. CPA confirms.`,
+      `Termination event per §1377(a)(2): shareholder disposes ENTIRE interest (sale, redemption, gift, death).`,
+      `Election BY ALL AFFECTED shareholders (terminating + continuing) per Reg §1.1377-1(b)(2).`,
+      `Reg §1.1377-1(b)(3) election made on Form 1120-S statement attached identifying termination date.`,
+      `Books closed as of termination date — 2 short tax years for K-1 allocation.`,
+      `Default = pro-rata per §1377(a)(1) — allocate by days of ownership.`,
+      `§1366(a) flow-through unchanged; only ALLOCATION method differs.`,
+      `Coordinate with G1.83 §338(h)(10) (full sale election) + G1.17 reasonable comp.`,
+      `All affected shareholders must consent — unanimous OR fall back to pro-rata.`,
+      `Heuristic $5,000 typical — actual depends on income timing mismatch.`,
+    ],
+  };
+}
+
+// ── G1.96 — §132(f) Qualified Transportation Fringe (heuristic) ─────────
+
+const G1_96_MONTHLY_CAP_2024 = 315;
+const G1_96_MONTHLY_CAP_2025 = 325;
+const G1_96_MIN_INCOME = 50_000;
+
+function detectQualifiedTransportFringe(args: {
+  computed: ComputedTaxReturn;
+}): OpportunityHit | null {
+  const { computed } = args;
+  if (computed.totalIncome < G1_96_MIN_INCOME) return null;
+  // Must have W-2 wages (employee eligibility).
+  const seIncome = computed.detail.se.netSeEarnings ?? 0;
+  const wagesProxy = Math.max(0, computed.totalIncome - seIncome);
+  if (wagesProxy < G1_96_MIN_INCOME) return null;
+
+  const monthlyCap = computed.taxYear >= 2025 ? G1_96_MONTHLY_CAP_2025 : G1_96_MONTHLY_CAP_2024;
+  const annualAmount = monthlyCap * 12;
+  const fedRate = federalMarginalRate(computed);
+  const estSavings = Math.round(annualAmount * fedRate);
+
+  const strategy = strategyById("G1.96");
+  const fmt = (n: number) =>
+    n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const vars: Record<string, number | string> = {
+    monthlyAmount: monthlyCap,
+    taxYear: computed.taxYear,
+    capPerMo: monthlyCap,
+    estSavings,
+  };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client W-2 wages ${fmt(Math.round(wagesProxy))}. §132(f) qualified transit/parking fringe: pre-tax ` +
+      `${fmt(monthlyCap)}/mo cap × 12 = ${fmt(annualAmount)} excluded. Annual employee tax savings ${fmt(estSavings)} ` +
+      `at ${Math.round(fedRate * 100)}% marginal.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      totalIncome: Math.round(computed.totalIncome),
+      wagesProxy: Math.round(wagesProxy),
+      monthlyCap,
+      annualAmount,
+      federalMarginalRate: fedRate,
+      estSavings,
+    },
+    assumptions: [
+      `TY2024 monthly cap $315 (transit + parking each, Notice 2023-75).`,
+      `TY2025 monthly cap $325 (Notice 2024-80).`,
+      `Transit pass per §132(f)(5)(A) — token, fare card, voucher, similar instrument.`,
+      `Commuter highway vehicle per §132(f)(5)(B) — vehicle seat ≥ 6 adults; 50%+ of mileage transports employees between home + workplace.`,
+      `Qualified parking per §132(f)(5)(C) — on/near employer premises or near transit terminal employee uses for commute.`,
+      `Bicycle commuting reimbursement per §132(f)(5)(F) — SUSPENDED TY2018-TY2025 by TCJA §11047.`,
+      `TCJA §13304 repealed EMPLOYER deduction for §132(f) (other than safety) — pure employee benefit now.`,
+      `Compensation-reduction election per §132(f)(4) — employee pre-tax election (no compensation cost to employer).`,
+      `Coordinate with §125 cafeteria plan (different mechanism — typically health + dependent care).`,
+      `State conformity varies (NY/CA may differ on parking).`,
+      `Requires employer to OFFER the benefit — CPA confirms employer participates.`,
+    ],
+  };
+}
+
 // ── Top-level evaluator ────────────────────────────────────────────────────
 
 export interface PlanningInputs {
@@ -5372,6 +7520,81 @@ export function evaluatePlanningOpportunities(args: PlanningInputs): Opportunity
   if (adoption) hits.push(adoption);
   const iraToK = detectRolloverIraTo401k({ client, computed, assetBalances });
   if (iraToK) hits.push(iraToK);
+  // Phase H — H1 catalog v1.12: G1.67 in-plan Roth / G1.68 §174 R&D /
+  // G1.69 year-end timing / G1.70 bargain sale / G1.71 ISO lot selection.
+  const inPlanRoth = detectInPlanRothConversion({ client, computed, assetBalances, baselineInputs });
+  if (inPlanRoth) hits.push(inPlanRoth);
+  const section174 = detectSection174RdWorkaround({ computed, adjustments });
+  if (section174) hits.push(section174);
+  const yearEnd = detectYearEndTiming({ computed });
+  if (yearEnd) hits.push(yearEnd);
+  const bargainSale = detectBargainSale({ computed, adjustments, assetBalances });
+  if (bargainSale) hits.push(bargainSale);
+  const isoLot = detectIsoLotSelection({ computed, adjustments, assetBalances });
+  if (isoLot) hits.push(isoLot);
+  // Phase H — H1 catalog v1.13: G1.72 RSU sell-to-cover / G1.73 NUA in-service /
+  // G1.74 §45S FMLA / G1.75 WOTC §51 / G1.76 §170(h) non-syndicated easement.
+  const rsuCover = detectRsuSellToCover({ computed });
+  if (rsuCover) hits.push(rsuCover);
+  const nuaInService = detectNuaInService({ client, assetBalances });
+  if (nuaInService) hits.push(nuaInService);
+  const fmlaCredit = detectFmlaCredit({ computed, adjustments });
+  if (fmlaCredit) hits.push(fmlaCredit);
+  const wotcCredit = detectWotcCredit({ computed, adjustments });
+  if (wotcCredit) hits.push(wotcCredit);
+  const nonSyndEasement = detectNonSyndicatedEasement({ computed, assetBalances });
+  if (nonSyndEasement) hits.push(nonSyndEasement);
+  // Phase H — H1 catalog v1.14: G1.77 self-rental grouping / G1.78 multi-state NR /
+  // G1.79 §453 election out / G1.80 §47 historic rehab / G1.81 §44 disabled access.
+  const selfRental = detectSelfRentalGrouping({ client, computed });
+  if (selfRental) hits.push(selfRental);
+  const w2States = (baselineInputs?.w2s ?? [])
+    .map((w) => (w.stateCode ?? "").toString().toUpperCase())
+    .filter(Boolean);
+  const multiState = detectMultiStateNrAllocation({ client, computed, w2States });
+  if (multiState) hits.push(multiState);
+  const installmentOut = detectInstallmentElectionOut({ computed });
+  if (installmentOut) hits.push(installmentOut);
+  const historicRehab = detectHistoricRehabCredit({ computed, assetBalances });
+  if (historicRehab) hits.push(historicRehab);
+  const disabledAccess = detectDisabledAccessCredit({ computed, adjustments });
+  if (disabledAccess) hits.push(disabledAccess);
+  // Phase H — H1 catalog v1.15: G1.82 §1374 BIG / G1.83 §338(h)(10) /
+  // G1.84 §351 / G1.85 §163(h)(3) mortgage / G1.86 CLT.
+  const section1374 = detectSection1374Big({ computed });
+  if (section1374) hits.push(section1374);
+  const section338 = detectSection338h10({ computed });
+  if (section338) hits.push(section338);
+  const section351 = detectSection351Contribution({ assetBalances });
+  if (section351) hits.push(section351);
+  const mortgageInt = detectMortgageInterestOptim({ computed, adjustments });
+  if (mortgageInt) hits.push(mortgageInt);
+  const clt = detectCharitableLeadTrust({ computed, adjustments });
+  if (clt) hits.push(clt);
+  // Phase H — H1 catalog v1.16: G1.87 §401(a)(17) / G1.88 §199A SSTB /
+  // G1.89 §199A aggregation / G1.90 PIF / G1.91 §139 disaster.
+  const section401a17 = detectSection401a17Cap({ computed, adjustments });
+  if (section401a17) hits.push(section401a17);
+  const sstbNav = detectSstbNavigation({ computed, adjustments });
+  if (sstbNav) hits.push(sstbNav);
+  const section199aAgg = detectSection199aAggregation({ computed, adjustments });
+  if (section199aAgg) hits.push(section199aAgg);
+  const pif = detectPooledIncomeFund({ client, computed, adjustments });
+  if (pif) hits.push(pif);
+  const disasterRelief = detectDisasterRelief({ client, computed, adjustments });
+  if (disasterRelief) hits.push(disasterRelief);
+  // Phase H — H1 catalog v1.17 (FINAL): G1.92 Solo 401(k) deferral / G1.93 §163(d) /
+  // G1.94 §85 UI / G1.95 §1377(a)(2) S-corp close / G1.96 §132(f) transit.
+  const solo401kDeferral = detectSolo401kDeferral({ client, computed, adjustments });
+  if (solo401kDeferral) hits.push(solo401kDeferral);
+  const invInterestElection = detectInvestmentInterestElection({ computed, adjustments });
+  if (invInterestElection) hits.push(invInterestElection);
+  const uiAnalysis = detectUnemploymentAnalysis({ computed });
+  if (uiAnalysis) hits.push(uiAnalysis);
+  const section1377 = detectSection1377Election({ computed });
+  if (section1377) hits.push(section1377);
+  const transitFringe = detectQualifiedTransportFringe({ computed });
+  if (transitFringe) hits.push(transitFringe);
   hits.sort((a, b) => b.estSavings - a.estSavings);
   return hits;
 }

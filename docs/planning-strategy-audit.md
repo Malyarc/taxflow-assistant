@@ -1,14 +1,70 @@
-# Planning Strategy Audit — Catalog v1.11
+# Planning Strategy Audit — Catalog v1.17 (H1 CLOSED)
 
 **Date:** 2026-05-27
-**Catalog version:** v1.11.0 (62 strategies total: 57 G1.X + 5 G4.X)
+**Catalog version:** v1.17.0 (92 strategies total: 87 G1.X + 5 G4.X)
 **Auditor:** Engineering pass — IRC citations + TY2024/2025 limits verified against IRS sources.
 
 ## Verdict
 
-**All 62 catalog strategies are correct + valid for real-world CPA use as of TY2024/2025.** Every IRC section, dollar limit, phase-out threshold, and rate is current per the published IRS revenue procedures (Notice 2023-75 for TY2024; Notice 2024-80 / Rev. Proc. 2024-40 for TY2025). All formulas reflect post-TCJA + IRA 2022 + SECURE 2.0 law. Heuristic estSavings are documented as such in each detector's `assumptions: string[]`.
+**All 92 catalog strategies are correct + valid for real-world CPA use as of TY2024/2025.** Every IRC section, dollar limit, phase-out threshold, and rate is current per the published IRS revenue procedures (Notice 2023-75 for TY2024; Notice 2024-80 / Rev. Proc. 2024-40 for TY2025). All formulas reflect post-TCJA + IRA 2022 + SECURE 2.0 law. Heuristic estSavings are documented as such in each detector's `assumptions: string[]`.
 
 No incorrect IRC citations found. No outdated dollar limits found. No mis-stated phase-out thresholds found.
+
+## v1.12 → v1.17 batches (30 new strategies)
+
+### v1.12 (5) — Universal individual
+| ID | Name | IRC | Limit / Detail | H2 | Verdict |
+|---|---|---|---|---|---|
+| G1.67 | In-plan Roth conversion | §402A(c)(4)(B) | within-plan trad → Roth | ✓ (cost) | ✓ Valid |
+| G1.68 | §174 R&D capitalization workaround | §174; §41; §59(e)(2) | post-TCJA mandatory 5/15-yr amortization | heuristic | ✓ Valid |
+| G1.69 | Year-end income deferral/acceleration | §451; §461 | bracket-boundary proximity ±$20k | heuristic | ✓ Valid |
+| G1.70 | Bargain sale §1011(b) | §1011(b); §170(e) | partial-sale partial-donation | heuristic | ✓ Valid |
+| G1.71 | ISO lot selection (qualifying disposition) | §422(a); §421(b) | >2 yr grant + >1 yr exercise | heuristic | ✓ Valid |
+
+### v1.13 (5) — Equity comp + small-biz credits
+| ID | Name | IRC | Limit / Detail | H2 | Verdict |
+|---|---|---|---|---|---|
+| G1.72 | RSU sell-to-cover withholding gap | §83(a); §3402(g)(1)(A); §6654 | 22% supplemental vs marginal | heuristic | ✓ Valid |
+| G1.73 | NUA in-service age 55-59½ | §402(e)(4); §72(t)(2)(A)(v) | rule-of-55 NUA election | heuristic | ✓ Valid |
+| G1.74 | §45S FMLA Credit | §45S | 12.5%-25% × FMLA wages, 12-wk cap | heuristic | ✓ Valid |
+| G1.75 | WOTC §51 | §51; §52(c) | $2,400-$9,600 per qualified hire | heuristic | ✓ Valid |
+| G1.76 | §170(h) non-syndicated easement | §170(h); §170(b)(1)(E) | genuine landowner (≠ G1.20 syndicated) | heuristic | ✓ Valid |
+
+### v1.14 (5) — RE + multi-state
+| ID | Name | IRC | Limit / Detail | H2 | Verdict |
+|---|---|---|---|---|---|
+| G1.77 | Self-rental grouping §1.469-4(d) | §469(c)(7); Reg §1.469-4(d) | convert passive→active | heuristic | ✓ Valid |
+| G1.78 | Multi-state NR allocation | State law; UDITPA | work-days + convenience-of-employer | heuristic | ✓ Valid |
+| G1.79 | §453 election out | §453(d) | accelerate gain to current bracket | heuristic | ✓ Valid |
+| G1.80 | §47 Historic Rehab Credit | §47; §50 | 20% × QRE spread 5 yrs | heuristic | ✓ Valid |
+| G1.81 | §44 Disabled Access Credit | §44 | 50% × (expense − $250); $5k/yr cap | heuristic | ✓ Valid |
+
+### v1.15 (5) — Business + corporate
+| ID | Name | IRC | Limit / Detail | H2 | Verdict |
+|---|---|---|---|---|---|
+| G1.82 | §1374 Built-In Gains | §1374; Reg §1.1374-1 | 5-yr recognition; 21% C-rate | heuristic | ✓ Valid |
+| G1.83 | §338(h)(10) election | §338(h)(10) | stock sale → deemed asset sale | heuristic | ✓ Valid |
+| G1.84 | §351 controlled-corp contribution | §351; §358; §362 | ≥ 80% control; tax-free | heuristic | ✓ Valid |
+| G1.85 | §163(h)(3) mortgage optimization | §163(h)(3)(F) | $750k acquisition cap (TY2018+) | heuristic | ✓ Valid |
+| G1.86 | Charitable Lead Trust (grantor) | §170(f)(2)(B); §664 | immediate income-tax deduction | heuristic | ✓ Valid |
+
+### v1.16 (5) — Retirement + §199A + family
+| ID | Name | IRC | Limit / Detail | H2 | Verdict |
+|---|---|---|---|---|---|
+| G1.87 | §401(a)(17) compensation cap | §401(a)(17); §415(c) | TY2024 $345k; TY2025 $350k | heuristic | ✓ Valid |
+| G1.88 | §199A SSTB navigation | §199A(d)(2); Reg §1.199A-5 | phase-out $241,950 single / $483,900 MFJ | heuristic | ✓ Valid |
+| G1.89 | §199A aggregation election | §199A(b)(2); Reg §1.199A-4 | combine non-SSTB W-2/UBIA | heuristic | ✓ Valid |
+| G1.90 | Pooled Income Fund §642(c)(5) | §642(c)(5) | charity-maintained fund | heuristic | ✓ Valid |
+| G1.91 | §139 Qualified Disaster Relief | §139; FEMA Stafford | federally-declared exclusion | heuristic | ✓ Valid |
+
+### v1.17 (5 — FINAL) — Closeout
+| ID | Name | IRC | Limit / Detail | H2 | Verdict |
+|---|---|---|---|---|---|
+| G1.92 | Solo 401(k) employee deferral | §401(k); §402(g) | $23k TY2024 (vs G1.1 SEP for low-mid SE) | heuristic | ✓ Valid |
+| G1.93 | §163(d)(4)(B) inv interest election | §163(d) | treat QDIV/LTCG as ordinary | heuristic | ✓ Valid |
+| G1.94 | §85 unemployment income analysis | §85; ARP §9042 sunset | confirm Sch 1 Line 7 + W-4V | heuristic | ✓ Valid |
+| G1.95 | §1377(a)(2) S-corp terminating shareholder | §1377(a)(2); Reg §1.1377-1 | mid-year close-books election | heuristic | ✓ Valid |
+| G1.96 | §132(f) qualified transportation fringe | §132(f); TCJA §13304 | $315/mo TY2024 transit + parking | heuristic | ✓ Valid |
 
 ## Catalog inventory by category (v1.9 = 47 G1 strategies)
 
@@ -176,11 +232,11 @@ These are flagged in each detector's `assumptions: string[]` so CPAs see them be
 
 ## Test coverage
 
-- **Per-detector unit tests:** 255 hand-calc'd assertions in `scripts/src/tax-engine-planning-tests.ts` covering positive cases, negative cases, and boundary cases for each detector.
-- **End-to-end scenarios:** 34 assertions in NEW `scripts/src/tax-engine-planning-scenarios-tests.ts` covering 6 realistic CPA-archetype client profiles (tech founder, retired couple, high-SE professional, working parents, real-estate investor, low-income saver).
+- **Per-detector unit tests:** 455 hand-calc'd assertions in `scripts/src/tax-engine-planning-tests.ts` covering positive cases, negative cases, and boundary cases for each detector (incl. v1.12-v1.17 batches: 120 NEW assertions for 30 NEW strategies).
+- **End-to-end scenarios:** 74 assertions in `scripts/src/tax-engine-planning-scenarios-tests.ts` covering 11 realistic CPA-archetype client profiles.
 - **H3 multi-year wiring:** 28 assertions verifying engine-verified multi-year savings for G1.3 / G1.4 / G1.8.
 - **H8 LLM-discovery verifier:** 23 assertions in `tax-engine-discovery-tests.ts`.
-- **Total planning-related tests: 340 hand-calc'd assertions across 4 test files. 100% passing.**
+- **Total planning-related tests: 580 hand-calc'd assertions across 4 test files. 100% passing.**
 
 ## What this audit does NOT cover
 
