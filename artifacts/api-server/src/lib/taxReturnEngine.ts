@@ -720,6 +720,18 @@ export interface ComputedTaxReturn {
   homeSaleSection121Exclusion: number;
   /** K6 — §121 taxable remainder added to LTCG. */
   homeSaleTaxableGain: number;
+  /**
+   * C5 — §1031 like-kind exchange (real-property only post-TCJA).
+   * Realized gain across all 1031 exchanges. Source: sum of
+   * `section_1031_realized_gain` adjustments.
+   */
+  section1031RealizedGain: number;
+  /** C5 — Boot received in cash + non-like-kind property. Source: sum of `section_1031_boot_received` adjustments. */
+  section1031BootReceived: number;
+  /** C5 — Recognized gain = min(realized, boot). Added to LTCG (long-term per §1031 holding intent). */
+  section1031RecognizedGain: number;
+  /** C5 — Deferred gain = realized − recognized. Carries to replacement-property basis (informational; not tracked across years). */
+  section1031DeferredGain: number;
   // ── Phase 2 line items ─────────────────────────────────────────────────
   /** Capital loss deducted against ordinary income (Schedule D Line 21, $3k/$1.5k cap) */
   capitalLossDeducted: number;
@@ -1195,6 +1207,21 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // entered gain (multiply by 1.33 or 2.0 respectively). Tracked sub-gap.
   const qsbsGrossGainAdj = sumByType("qsbs_gross_gain");
   const qsbsAdjustedBasisAdj = sumByType("qsbs_adjusted_basis");
+  // C5 — §1031 like-kind exchange (post-TCJA: real property only).
+  // CPA enters two adjustments per exchange (or aggregated across multiple
+  // exchanges this year):
+  //   - section_1031_realized_gain: gross gain that would be recognized
+  //     in a fully-taxable sale (FMV of relinquished − adjusted basis).
+  //   - section_1031_boot_received: cash + non-like-kind property received
+  //     (plus net mortgage relief if relinquished mortgage > replacement).
+  // Engine recognizes min(realized, boot); the rest defers (carries to
+  // replacement-property basis). Recognized gain flows to LTCG (§1031
+  // requires investment intent → long-term character).
+  // CPA confirms: like-kind classification, 45-day identification,
+  // 180-day acquisition, qualified-intermediary use. Engine assumes
+  // those eligibility tests are satisfied.
+  const section1031RealizedGainAdj = sumByType("section_1031_realized_gain");
+  const section1031BootReceivedAdj = sumByType("section_1031_boot_received");
   // Credits
   const dependentCareExpensesAdj = sumByType("dependent_care_expenses");
   const llcExpensesAdj = sumByType("qualified_education_expenses_llc");
@@ -1439,12 +1466,20 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const qsbsSection1202Exclusion = Math.min(qsbsGrossGain, qsbsCap);
   const qsbsTaxableGain = Math.max(0, qsbsGrossGain - qsbsCap);
 
+  // C5 — §1031 like-kind exchange: recognized = min(realized, boot).
+  // Both inputs floor at 0 to defend against malformed adjustments. If
+  // there's no exchange (realized = 0), all three downstream values are 0.
+  const section1031RealizedGain = Math.max(0, section1031RealizedGainAdj);
+  const section1031BootReceived = Math.max(0, section1031BootReceivedAdj);
+  const section1031RecognizedGain = Math.min(section1031RealizedGain, section1031BootReceived);
+  const section1031DeferredGain = Math.max(0, section1031RealizedGain - section1031RecognizedGain);
+
   // K-1 net ST/LT capital gain (Box 8 / 9a) joins the cap-gain netting
   // alongside 1099-B-derived gains. Subtract prior-year loss carryforwards.
   // Home-sale taxable remainder (K6) and QSBS taxable remainder (K7) are
   // long-term per §121 (2-of-5 ownership) and §1202 (5-year holding).
   let netSTCG = form1099Summary.shortTermCapitalGains + k1Stcg - stcgCarryforward;
-  let netLTCG = form1099Summary.longTermCapitalGains + k1Ltcg - ltcgCarryforward + homeSaleTaxableGain + qsbsTaxableGain;
+  let netLTCG = form1099Summary.longTermCapitalGains + k1Ltcg - ltcgCarryforward + homeSaleTaxableGain + qsbsTaxableGain + section1031RecognizedGain;
 
   // Cross-netting per Schedule D Lines 7, 15, 16
   if (netSTCG > 0 && netLTCG < 0) {
@@ -2235,6 +2270,10 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     homeSaleGrossGain,
     homeSaleSection121Exclusion,
     homeSaleTaxableGain,
+    section1031RealizedGain,
+    section1031BootReceived,
+    section1031RecognizedGain,
+    section1031DeferredGain,
     feie,
     nolDeduction,
     nolCarryforwardRemaining,

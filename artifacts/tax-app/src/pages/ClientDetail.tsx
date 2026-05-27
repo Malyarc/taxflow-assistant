@@ -757,6 +757,44 @@ interface BreakdownResponse {
   };
 }
 
+// ─── C5 — §1031 Like-Kind Exchange summary ────────────────────────────────
+// Renders only when section1031RealizedGain > 0. Reads from the existing
+// tax-return JSON (which includes the new C5 fields via mapReturn ...spread).
+function Section1031Card({ taxReturn }: { taxReturn: { section1031RealizedGain?: string | number | null; section1031BootReceived?: string | number | null; section1031RecognizedGain?: string | number | null; section1031DeferredGain?: string | number | null } | null | undefined }) {
+  const num = (v: string | number | null | undefined): number => v == null ? 0 : (typeof v === "number" ? v : Number(v));
+  const realized = num(taxReturn?.section1031RealizedGain);
+  const boot = num(taxReturn?.section1031BootReceived);
+  const recognized = num(taxReturn?.section1031RecognizedGain);
+  const deferred = num(taxReturn?.section1031DeferredGain);
+  if (realized <= 0) return null;
+  const fmt = (n: number): string => n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  return (
+    <Card className="print:hidden">
+      <CardHeader>
+        <CardTitle className="text-base">§1031 Like-Kind Exchange Summary</CardTitle>
+        <p className="text-xs text-muted-foreground mt-1">
+          Real property only (post-TCJA). CPA confirms like-kind classification, 45-day identification, 180-day completion, and qualified-intermediary use.
+        </p>
+      </CardHeader>
+      <CardContent>
+        <div className="grid grid-cols-2 gap-y-2 text-sm">
+          <span className="text-slate-600">Realized gain (across all exchanges)</span>
+          <span className="font-mono text-right">{fmt(realized)}</span>
+          <span className="text-slate-600">Boot received (cash + non-like-kind)</span>
+          <span className="font-mono text-right">{fmt(boot)}</span>
+          <span className="text-amber-700 font-medium">Recognized gain (taxed as LTCG this year)</span>
+          <span className="font-mono text-right text-amber-700 font-medium">{fmt(recognized)}</span>
+          <span className="text-emerald-700 font-medium">Deferred gain (carries to replacement basis)</span>
+          <span className="font-mono text-right text-emerald-700 font-medium">{fmt(deferred)}</span>
+        </div>
+        <p className="text-xs text-muted-foreground mt-3">
+          Replacement-property basis = relinquished basis + boot paid − boot received + recognized gain. Engine doesn&apos;t track replacement-property basis across years — CPA records externally for the next exchange.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── C4 — Form 1040-X (Amended Return) ────────────────────────────────────
 interface Form1040xLine {
   lineRef: string;
@@ -1421,6 +1459,7 @@ function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: nu
             </Button>
           </div>
 
+          <Section1031Card taxReturn={taxReturn as unknown as Parameters<typeof Section1031Card>[0]["taxReturn"]} />
           <Form4868Card clientId={clientId} taxYear={taxYear} />
           <Form1040xCard clientId={clientId} taxYear={taxYear} />
         </div>
@@ -2360,6 +2399,8 @@ function AdjustmentsTab({ clientId }: { clientId: number }) {
     nol_carryforward: "NOL Carryforward (post-TCJA 80% limit, IRC §172)",
     qsbs_gross_gain: "§1202 QSBS Gross Gain (exclusion auto-applied: max($10M, 10× basis))",
     qsbs_adjusted_basis: "§1202 QSBS Adjusted Basis (for the 10× cap)",
+    section_1031_realized_gain: "§1031 Like-Kind Exchange — Realized Gain (real property only; aggregated across exchanges)",
+    section_1031_boot_received: "§1031 Like-Kind Exchange — Boot Received (cash + non-like-kind; drives recognition = min(realized, boot))",
     // Schedule C
     schedule_c_expenses: "Schedule C Business Expenses",
     // Credit-driving expenses

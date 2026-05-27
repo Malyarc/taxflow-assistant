@@ -145,6 +145,18 @@ export const taxReturnsTable = pgTable(
     /** E12 — Days resident in currentState (changeDate to Dec 31). 0 when full-year. */
     daysCurrentStateResident: integer("days_current_state_resident").notNull().default(0),
     /**
+     * C5 — §1031 like-kind exchange (real-property only, post-TCJA).
+     * Realized gain across all 1031 exchanges this year (gross gain
+     * that would have been recognized in a fully-taxable sale).
+     */
+    section1031RealizedGain: numeric("section_1031_realized_gain", { precision: 14, scale: 2 }).notNull().default("0"),
+    /** C5 — Boot received (cash + non-like-kind property) across all 1031 exchanges. */
+    section1031BootReceived: numeric("section_1031_boot_received", { precision: 14, scale: 2 }).notNull().default("0"),
+    /** C5 — Recognized gain = min(realized, boot). Added to LTCG this year. */
+    section1031RecognizedGain: numeric("section_1031_recognized_gain", { precision: 14, scale: 2 }).notNull().default("0"),
+    /** C5 — Deferred gain = realized − recognized. Carries to replacement-property basis. */
+    section1031DeferredGain: numeric("section_1031_deferred_gain", { precision: 14, scale: 2 }).notNull().default("0"),
+    /**
      * C4 — Form 1040-X amended-return support.
      *
      * Snapshot of the computed-return values at the moment the CPA

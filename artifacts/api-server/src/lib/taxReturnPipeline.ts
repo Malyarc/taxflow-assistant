@@ -346,6 +346,11 @@ export async function recalculateAndUpsertTaxReturn(
     homeSaleGrossGain: String(result.homeSaleGrossGain),
     homeSaleSection121Exclusion: String(result.homeSaleSection121Exclusion),
     homeSaleTaxableGain: String(result.homeSaleTaxableGain),
+    // C5 — §1031 like-kind exchange breakdown
+    section1031RealizedGain: String(result.section1031RealizedGain),
+    section1031BootReceived: String(result.section1031BootReceived),
+    section1031RecognizedGain: String(result.section1031RecognizedGain),
+    section1031DeferredGain: String(result.section1031DeferredGain),
     socialSecurityBenefits: String(result.socialSecurityBenefits),
     socialSecurityTaxable: String(result.socialSecurityTaxable),
     feieTotalExclusion: String(result.feie.totalExclusion),

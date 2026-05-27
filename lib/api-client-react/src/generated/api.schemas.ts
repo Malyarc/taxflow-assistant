@@ -1131,6 +1131,8 @@ export const AdjustmentAdjustmentType = {
   nol_carryforward: "nol_carryforward",
   qsbs_gross_gain: "qsbs_gross_gain",
   qsbs_adjusted_basis: "qsbs_adjusted_basis",
+  section_1031_realized_gain: "section_1031_realized_gain",
+  section_1031_boot_received: "section_1031_boot_received",
 } as const;
 
 export interface Adjustment {
@@ -1205,6 +1207,8 @@ export const CreateAdjustmentBodyAdjustmentType = {
   nol_carryforward: "nol_carryforward",
   qsbs_gross_gain: "qsbs_gross_gain",
   qsbs_adjusted_basis: "qsbs_adjusted_basis",
+  section_1031_realized_gain: "section_1031_realized_gain",
+  section_1031_boot_received: "section_1031_boot_received",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -1275,6 +1279,8 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   nol_carryforward: "nol_carryforward",
   qsbs_gross_gain: "qsbs_gross_gain",
   qsbs_adjusted_basis: "qsbs_adjusted_basis",
+  section_1031_realized_gain: "section_1031_realized_gain",
+  section_1031_boot_received: "section_1031_boot_received",
 } as const;
 
 export interface UpdateAdjustmentBody {

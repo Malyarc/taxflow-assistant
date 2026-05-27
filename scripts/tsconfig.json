@@ -43,6 +43,7 @@
     "src/tax-engine-cpa-scenarios-tests.ts",
     "src/tax-engine-form4868-tests.ts",
     "src/tax-engine-form1040x-tests.ts",
+    "src/tax-engine-section1031-tests.ts",
     "src/seed-dummy-clients.ts"
   ]
 }
