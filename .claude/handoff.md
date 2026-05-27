@@ -47,19 +47,25 @@ session's "deferred" list. This session shipped:
 - **H1 catalog v1.4 — 5 new strategies**: G1.21 §1031 timing,
   G1.22 pre-RMD Roth ladder, G1.23 cost segregation, G1.24 opportunity
   zones, G1.26 backdoor Roth IRA.
-- **H1 catalog v1.5 — 6 more new strategies** (31 total — first session
-  to push past 20): G1.27 inherited IRA 10-year rule (heuristic
-  informational, SECURE 1.0), G1.28 defined benefit / cash balance plan
-  (H2-wired, age-tiered $150k-$300k cap), G1.33 Clean Vehicle Credit
-  §30D/§25E (H2-wired $7,500 with MAGI gate), G1.34 Residential Clean
-  Energy §25D (H2-wired 30% × $20k install through 2032), G1.39 §1202
-  QSBS (heuristic informational, $238k for K-1 + AGI > $500k), G1.45
-  §121 home sale exclusion (heuristic, $250k single/$500k MFJ).
+- **H1 catalog v1.5 — 6 more new strategies**: G1.27 inherited IRA
+  10-year rule (heuristic, SECURE 1.0), G1.28 defined benefit / cash
+  balance plan (H2-wired), G1.33 Clean Vehicle Credit §30D/§25E
+  (H2-wired), G1.34 Residential Clean Energy §25D (H2-wired), G1.39
+  §1202 QSBS (heuristic), G1.45 §121 home sale exclusion (heuristic).
+- **H1 catalog v1.6 — 6 more new strategies** (37 total — past the
+  v1.4/v1.5 mark; fills education/family gap that was at 0):
+  G1.29 §529→Roth IRA SECURE 2.0 (heuristic PV $12,114 for H5 529 ≥ $35k),
+  G1.31 Saver's Credit §25B (H2-wired, 4-tier AGI band × $2k/$4k cap),
+  G1.32 DCFSA vs §21 Dependent Care Credit (heuristic ~$883 for working
+  parents at 22%+ marginal), G1.36 R&D Credit §41 (heuristic $3,000
+  first-time ASC for tech-SE > $100k), G1.37 §25C Energy Efficient
+  Home Improvement (H2-wired $1,500 heat pump), G1.40 §1244 ordinary
+  loss on small biz stock (heuristic 17% rate spread).
 
-Total: 7 feature commits + 2 close-out commits.
-Total new assertions: 141 hand-calc'd across 4 test files (28 H3-wiring
-+ 40 H6-PartIII + 23 H8-verifier + 24 H1-v1.4 + 26 H1-v1.5). All
-other 23 suites still GREEN. ZERO documented federal/state gaps.
+Total: 9 feature commits + 3 close-out commits.
+Total new assertions: 165 hand-calc'd across 4 test files (28 H3-wiring
++ 40 H6-PartIII + 23 H8-verifier + 24 H1-v1.4 + 26 H1-v1.5 + 24 H1-v1.6).
+All other 23 suites still GREEN. ZERO documented federal/state gaps.
 
 Live-verified end-to-end on seed clients via curl + browser:
 - Client 5429 (G1.4 Roth): multiYear horizon=5 totalSavings=$5,658
