@@ -2674,6 +2674,15 @@ components:
         inputs:
           type: object
           additionalProperties: true
+        whatIfDelta:
+          description: >
+            Phase H — H2. Engine-verified per-field delta for this strategy,
+            computed by running an actual what-if scenario through the pure
+            tax engine. When present, prefer this over the heuristic
+            `estSavings`. Absent when the detector's strategy doesn't yet
+            have a clean single-year mutation expressible to the engine.
+          allOf:
+            - $ref: "#/components/schemas/WhatIfDelta"
 
     PlanningOpportunities:
       type: object

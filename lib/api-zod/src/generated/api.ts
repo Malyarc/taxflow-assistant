@@ -1524,6 +1524,34 @@ export const GetPlanningHitListResponse = zod.object({
           prerequisiteData: zod.array(zod.string()),
           citation: zod.string(),
           inputs: zod.record(zod.string(), zod.unknown()),
+          whatIfDelta: zod
+            .object({
+              adjustedGrossIncome: zod.number(),
+              taxableIncome: zod.number(),
+              standardDeduction: zod.number(),
+              itemizedDeductions: zod.number(),
+              qbiDeduction: zod.number(),
+              federalTaxLiability: zod.number(),
+              stateTaxLiability: zod.number(),
+              selfEmploymentTax: zod.number(),
+              niitTax: zod.number(),
+              amtTax: zod.number(),
+              additionalMedicareTax: zod.number(),
+              eitc: zod.number(),
+              additionalChildTaxCredit: zod.number(),
+              federalRefundOrOwed: zod.number(),
+              stateRefundOrOwed: zod.number(),
+              effectiveTaxRate: zod.number(),
+              combinedTaxDelta: zod.number(),
+              combinedRefundDelta: zod.number(),
+            })
+            .describe(
+              "Field-level scenario−baseline deltas. Positive on a tax field means the scenario INCREASED that tax. combinedTaxDelta is the headline planning number (federal + state tax liability delta); negative = scenario reduces tax = savings.\n",
+            )
+            .optional()
+            .describe(
+              "Phase H — H2. Engine-verified per-field delta for this strategy, computed by running an actual what-if scenario through the pure tax engine. When present, prefer this over the heuristic `estSavings`. Absent when the detector's strategy doesn't yet have a clean single-year mutation expressible to the engine.\n",
+            ),
         }),
       ),
     }),
@@ -1607,6 +1635,34 @@ export const GetPlanningOpportunitiesResponse = zod.object({
       prerequisiteData: zod.array(zod.string()),
       citation: zod.string(),
       inputs: zod.record(zod.string(), zod.unknown()),
+      whatIfDelta: zod
+        .object({
+          adjustedGrossIncome: zod.number(),
+          taxableIncome: zod.number(),
+          standardDeduction: zod.number(),
+          itemizedDeductions: zod.number(),
+          qbiDeduction: zod.number(),
+          federalTaxLiability: zod.number(),
+          stateTaxLiability: zod.number(),
+          selfEmploymentTax: zod.number(),
+          niitTax: zod.number(),
+          amtTax: zod.number(),
+          additionalMedicareTax: zod.number(),
+          eitc: zod.number(),
+          additionalChildTaxCredit: zod.number(),
+          federalRefundOrOwed: zod.number(),
+          stateRefundOrOwed: zod.number(),
+          effectiveTaxRate: zod.number(),
+          combinedTaxDelta: zod.number(),
+          combinedRefundDelta: zod.number(),
+        })
+        .describe(
+          "Field-level scenario−baseline deltas. Positive on a tax field means the scenario INCREASED that tax. combinedTaxDelta is the headline planning number (federal + state tax liability delta); negative = scenario reduces tax = savings.\n",
+        )
+        .optional()
+        .describe(
+          "Phase H — H2. Engine-verified per-field delta for this strategy, computed by running an actual what-if scenario through the pure tax engine. When present, prefer this over the heuristic `estSavings`. Absent when the detector's strategy doesn't yet have a clean single-year mutation expressible to the engine.\n",
+        ),
     }),
   ),
   totalEstSavings: zod.number(),
@@ -1650,6 +1706,34 @@ export const GetPlanningMultiYearResponse = zod.object({
         prerequisiteData: zod.array(zod.string()),
         citation: zod.string(),
         inputs: zod.record(zod.string(), zod.unknown()),
+        whatIfDelta: zod
+          .object({
+            adjustedGrossIncome: zod.number(),
+            taxableIncome: zod.number(),
+            standardDeduction: zod.number(),
+            itemizedDeductions: zod.number(),
+            qbiDeduction: zod.number(),
+            federalTaxLiability: zod.number(),
+            stateTaxLiability: zod.number(),
+            selfEmploymentTax: zod.number(),
+            niitTax: zod.number(),
+            amtTax: zod.number(),
+            additionalMedicareTax: zod.number(),
+            eitc: zod.number(),
+            additionalChildTaxCredit: zod.number(),
+            federalRefundOrOwed: zod.number(),
+            stateRefundOrOwed: zod.number(),
+            effectiveTaxRate: zod.number(),
+            combinedTaxDelta: zod.number(),
+            combinedRefundDelta: zod.number(),
+          })
+          .describe(
+            "Field-level scenario−baseline deltas. Positive on a tax field means the scenario INCREASED that tax. combinedTaxDelta is the headline planning number (federal + state tax liability delta); negative = scenario reduces tax = savings.\n",
+          )
+          .optional()
+          .describe(
+            "Phase H — H2. Engine-verified per-field delta for this strategy, computed by running an actual what-if scenario through the pure tax engine. When present, prefer this over the heuristic `estSavings`. Absent when the detector's strategy doesn't yet have a clean single-year mutation expressible to the engine.\n",
+          ),
       }),
     )
     .describe(

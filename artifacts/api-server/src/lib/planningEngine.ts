@@ -22,13 +22,40 @@ import {
   CATALOG_V1,
   type OpportunityHit,
   type PlanningStrategy,
+  type WhatIfDelta,
 } from "@workspace/planning-strategies";
-import type { ComputedTaxReturn, ClientFacts, AdjustmentFact } from "./taxReturnEngine";
+import type {
+  ComputedTaxReturn,
+  ClientFacts,
+  AdjustmentFact,
+  TaxReturnInputs,
+} from "./taxReturnEngine";
 import {
   calculateFederalTaxWithBreakdown,
   calculateStateTaxWithBreakdown,
   getFederalStandardDeduction,
 } from "./taxCalculator";
+import { runWhatIfScenario, type WhatIfMutation } from "./whatIfEngine";
+
+/**
+ * H2 — Run a what-if scenario against the supplied baseline inputs and
+ * return the WhatIfDelta. Helper so detectors don't have to repeat the
+ * runWhatIfScenario boilerplate.
+ *
+ * Returns null when baselineInputs is undefined (the caller didn't opt
+ * into H2 verification — e.g., the planning-hit-list endpoint, which
+ * runs N×detectors and skips H2 to keep latency bounded).
+ */
+function computeWhatIfDelta(
+  baselineInputs: TaxReturnInputs | undefined,
+  scenarioId: string,
+  label: string,
+  mutations: WhatIfMutation[],
+): WhatIfDelta | undefined {
+  if (!baselineInputs) return undefined;
+  const result = runWhatIfScenario(baselineInputs, { scenarioId, label, mutations });
+  return result.delta;
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -133,8 +160,9 @@ function detectSepIra(args: {
   client: ClientFacts;
   computed: ComputedTaxReturn;
   adjustments: AdjustmentFact[];
+  baselineInputs?: TaxReturnInputs;
 }): OpportunityHit | null {
-  const { client, computed, adjustments } = args;
+  const { client, computed, adjustments, baselineInputs } = args;
   if (client.filingStatus === "married_filing_separately") return null;
 
   const netSe = computed.detail.se.netSeEarnings;
@@ -153,6 +181,18 @@ function detectSepIra(args: {
   const fedRate = federalMarginalRate(computed);
   const stateRate = stateMarginalRate(computed);
   const estSavings = contribution * (fedRate + stateRate);
+
+  // H2: Verify the savings by running the actual scenario through the
+  // engine. The SEP contribution is above-the-line — same arithmetic
+  // as a generic `deduction` adjustment. Re-running the engine picks
+  // up cascade effects the heuristic misses (NIIT cliff escape, AMT
+  // shift, QBI base change, EITC phase-in/out, state-tax recomputation).
+  const whatIfDelta = computeWhatIfDelta(
+    baselineInputs,
+    "G1.1-sep-contribution",
+    `SEP-IRA contribution $${Math.round(contribution).toLocaleString("en-US")}`,
+    [{ kind: "add_adjustment", adjustmentType: "deduction", amount: Math.round(contribution) }],
+  );
 
   const strategy = strategyById("G1.1");
   const contributionRounded = Math.round(contribution);
@@ -187,6 +227,7 @@ function detectSepIra(args: {
       stateMarginalRate: stateRate,
       contribution: Math.round(contribution),
     },
+    whatIfDelta,
   };
 }
 
@@ -754,6 +795,14 @@ export interface PlanningInputs {
   client: ClientFacts;
   computed: ComputedTaxReturn;
   adjustments: AdjustmentFact[];
+  /**
+   * H2 — When present, detectors that support it will run a what-if
+   * scenario through the pure engine and attach a verified `whatIfDelta`
+   * to the OpportunityHit. Absent for callers that prefer speed over
+   * verification (e.g., planning-hit-list which runs detectors over every
+   * client in the firm).
+   */
+  baselineInputs?: TaxReturnInputs;
 }
 
 // ── Layer 3 — Composite scoring (Phase G2) ────────────────────────────────
@@ -807,7 +856,12 @@ export function planningScore(args: {
  */
 export function evaluatePlanningOpportunities(args: PlanningInputs): OpportunityHit[] {
   const hits: OpportunityHit[] = [];
-  const sepIra = detectSepIra(args);
+  const sepIra = detectSepIra({
+    client: args.client,
+    computed: args.computed,
+    adjustments: args.adjustments,
+    baselineInputs: args.baselineInputs,
+  });
   if (sepIra) hits.push(sepIra);
   const ptet = detectPtetElection({ client: args.client, computed: args.computed });
   if (ptet) hits.push(ptet);

@@ -24,6 +24,7 @@ import {
   type ComputedTaxReturn,
   type TaxReturnInputs,
 } from "../../artifacts/api-server/src/lib/taxReturnEngine";
+import { evaluatePlanningOpportunities } from "../../artifacts/api-server/src/lib/planningEngine";
 
 const PASS: string[] = [];
 const FAIL: string[] = [];
@@ -457,6 +458,115 @@ function adj(type: string, amount: number, id = 1000 + Math.floor(Math.random() 
   checkTruthy("Case 20 returns new top-level object even with no mutations", next !== baseline);
   // adjustments must be a fresh array (so callers don't accidentally mutate baseline)
   checkTruthy("Case 20 adjustments array fresh even with no mutations", next.adjustments !== baseline.adjustments);
+}
+
+// ── Detector wiring (G1.1 SEP-IRA + H2) ──────────────────────────────────
+// Verify the planning engine attaches a whatIfDelta when baselineInputs is
+// supplied, and leaves it undefined when not. Sets up a self-employed FL
+// filer that triggers the SEP-IRA detector and inspects the resulting hit.
+
+function buildSeFilerInputs(): TaxReturnInputs {
+  const client = {
+    id: 99, firstName: "SE", lastName: "Test",
+    email: "se@example.com", phone: null,
+    filingStatus: "single", state: "FL", taxYear: 2024,
+    dependentsUnder17: 0, otherDependents: 0, dependentsForCareCredit: 0,
+    taxpayerAge: 45, spouseAge: null, spouseEarnedIncome: null,
+    hsaIsFamilyCoverage: false, iraCoveredByWorkplacePlan: false,
+    eligibleEducatorCount: 0, acaAnnualPremium: null, acaAnnualSlcsp: null,
+    acaAdvanceAptc: null, acaHouseholdSize: null,
+    rentalActiveParticipant: true, rentalRealEstateProfessional: false,
+    localityCode: null, socialSecurityBenefits: null,
+    mfsLivedApartAllYear: false, isKiddieTaxFiler: false,
+    parentsTopMarginalRate: null, priorYearItemized: null,
+    residencyChangedInYear: false, formerState: null, residencyChangeDate: null,
+    notes: null, createdAt: new Date(), updatedAt: new Date(),
+  };
+  const form1099 = {
+    id: 1, clientId: 99, taxYear: 2024, documentId: null,
+    formType: "nec",
+    payerName: "Test Client LLC", payerEin: null, payerAddress: null,
+    recipientName: null, recipientTin: null, recipientAddress: null,
+    nonemployeeCompensation: "120000",
+    federalTaxWithheld: "0", stateTaxWithheld: "0", stateCode: null,
+    spouse: null, createdAt: new Date(), updatedAt: new Date(),
+  };
+  return {
+    client: client as TaxReturnInputs["client"],
+    w2s: [],
+    form1099s: [form1099 as unknown as TaxReturnInputs["form1099s"][number]],
+    adjustments: [],
+    taxYear: 2024,
+  };
+}
+
+// Case D1: baselineInputs supplied → whatIfDelta attached on SEP hit.
+//
+// Hand-calc (SE $120k single FL 2024):
+//   Net SE = 120,000 × 0.9235 = $110,820.
+//   SE tax = 110,820 × 0.153 ≈ $16,955.
+//   Half-SE = $8,478.
+//   SEP contribution = (110,820 − 8,478) × 0.20 = $20,468.
+//
+//   Baseline AGI = 120,000 − 8,478 = 111,522. Taxable = 111,522 − 14,600 = 96,922.
+//     Fed tax on $96,922 single 2024:
+//       10%×11,600 + 12%×(47,150−11,600) + 22%×(96,922−47,150)
+//       = 1,160 + 4,266 + 10,950 = 16,376. Plus SE tax 16,955 = 33,331.
+//   Scenario (with +$20,468 deduction): AGI = 91,054. Taxable = 76,454.
+//     Fed tax = 1,160 + 4,266 + 22%×(76,454−47,150) = 1,160 + 4,266 + 6,447 = 11,873.
+//     Plus SE tax 16,955 = 28,828.
+//   Federal tax delta = 28,828 − 33,331 = −$4,503.
+//   Heuristic estSavings = contribution × marginal = 20,468 × 0.22 = $4,503 (matches in
+//     this case because we stay within the 22% bracket; H2 confirms the heuristic).
+{
+  const inputs = buildSeFilerInputs();
+  const computed = computeTaxReturnPure(inputs);
+  const hitsWith = evaluatePlanningOpportunities({
+    client: inputs.client,
+    computed,
+    adjustments: inputs.adjustments,
+    baselineInputs: inputs,
+  });
+  const sepWith = hitsWith.find((h) => h.strategyId === "G1.1");
+  checkTruthy("Case D1 SEP hit fires", sepWith != null);
+  checkTruthy("Case D1 whatIfDelta attached", sepWith?.whatIfDelta != null);
+  if (sepWith?.whatIfDelta) {
+    check(
+      "Case D1 whatIfDelta.federalTaxLiability ≈ −$4,503 (hand-calc)",
+      sepWith.whatIfDelta.federalTaxLiability,
+      -4503,
+      2,
+    );
+    check(
+      "Case D1 whatIfDelta.combinedTaxDelta = federal (FL no state tax)",
+      sepWith.whatIfDelta.combinedTaxDelta,
+      sepWith.whatIfDelta.federalTaxLiability,
+    );
+    // Heuristic estSavings is reported as a positive savings number; whatIfDelta
+    // is the engine arithmetic so combinedTaxDelta is negative (tax reduced).
+    check(
+      "Case D1 estSavings ≈ |combinedTaxDelta| (heuristic matches engine in 22% bracket)",
+      sepWith.estSavings,
+      Math.abs(sepWith.whatIfDelta.combinedTaxDelta),
+      5,
+    );
+  }
+}
+
+// Case D2: NO baselineInputs supplied → whatIfDelta undefined. Confirms the
+// planning-hit-list path (which skips H2 for perf) still works.
+{
+  const inputs = buildSeFilerInputs();
+  const computed = computeTaxReturnPure(inputs);
+  const hitsWithout = evaluatePlanningOpportunities({
+    client: inputs.client,
+    computed,
+    adjustments: inputs.adjustments,
+  });
+  const sepWithout = hitsWithout.find((h) => h.strategyId === "G1.1");
+  checkTruthy("Case D2 SEP hit fires without baselineInputs", sepWithout != null);
+  checkTruthy("Case D2 whatIfDelta absent when baselineInputs omitted", sepWithout?.whatIfDelta == null);
+  check("Case D2 estSavings still computed via heuristic", sepWithout!.estSavings, 4503, 5);
 }
 
 // ── Print results ─────────────────────────────────────────────────────────

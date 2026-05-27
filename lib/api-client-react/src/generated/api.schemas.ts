@@ -1693,6 +1693,31 @@ export const OpportunityHitCategory = {
 
 export type OpportunityHitInputs = { [key: string]: unknown };
 
+/**
+ * Field-level scenario−baseline deltas. Positive on a tax field means the scenario INCREASED that tax. combinedTaxDelta is the headline planning number (federal + state tax liability delta); negative = scenario reduces tax = savings.
+
+ */
+export interface WhatIfDelta {
+  adjustedGrossIncome: number;
+  taxableIncome: number;
+  standardDeduction: number;
+  itemizedDeductions: number;
+  qbiDeduction: number;
+  federalTaxLiability: number;
+  stateTaxLiability: number;
+  selfEmploymentTax: number;
+  niitTax: number;
+  amtTax: number;
+  additionalMedicareTax: number;
+  eitc: number;
+  additionalChildTaxCredit: number;
+  federalRefundOrOwed: number;
+  stateRefundOrOwed: number;
+  effectiveTaxRate: number;
+  combinedTaxDelta: number;
+  combinedRefundDelta: number;
+}
+
 export interface OpportunityHit {
   strategyId: string;
   name: string;
@@ -1706,6 +1731,9 @@ export interface OpportunityHit {
   prerequisiteData: string[];
   citation: string;
   inputs: OpportunityHitInputs;
+  /** Phase H — H2. Engine-verified per-field delta for this strategy, computed by running an actual what-if scenario through the pure tax engine. When present, prefer this over the heuristic `estSavings`. Absent when the detector's strategy doesn't yet have a clean single-year mutation expressible to the engine.
+   */
+  whatIfDelta?: WhatIfDelta;
 }
 
 export interface PlanningOpportunities {
@@ -1800,31 +1828,6 @@ export interface WhatIfScenarioBody {
   scenarioId?: string | null;
   label: string;
   mutations: WhatIfMutation[];
-}
-
-/**
- * Field-level scenario−baseline deltas. Positive on a tax field means the scenario INCREASED that tax. combinedTaxDelta is the headline planning number (federal + state tax liability delta); negative = scenario reduces tax = savings.
-
- */
-export interface WhatIfDelta {
-  adjustedGrossIncome: number;
-  taxableIncome: number;
-  standardDeduction: number;
-  itemizedDeductions: number;
-  qbiDeduction: number;
-  federalTaxLiability: number;
-  stateTaxLiability: number;
-  selfEmploymentTax: number;
-  niitTax: number;
-  amtTax: number;
-  additionalMedicareTax: number;
-  eitc: number;
-  additionalChildTaxCredit: number;
-  federalRefundOrOwed: number;
-  stateRefundOrOwed: number;
-  effectiveTaxRate: number;
-  combinedTaxDelta: number;
-  combinedRefundDelta: number;
 }
 
 /**

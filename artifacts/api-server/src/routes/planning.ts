@@ -52,10 +52,13 @@ async function loadPlanningContext(clientId: number) {
     .select()
     .from(adjustmentsTable)
     .where(eq(adjustmentsTable.clientId, clientId));
+  // H2 — pass the assembled inputs so detectors can run what-if scenarios
+  // for engine-verified deltas.
   const hits = evaluatePlanningOpportunities({
     client: computed.client,
     computed: computed.result,
     adjustments: adjustments as AdjustmentFact[],
+    baselineInputs: computed.inputs,
   });
   return { computed: computed.result, client: computed.client, hits };
 }
@@ -104,10 +107,13 @@ router.get("/clients/:clientId/planning-opportunities", async (req, res): Promis
       .from(adjustmentsTable)
       .where(eq(adjustmentsTable.clientId, params.data.clientId));
 
+    // H2 — pass baselineInputs so detectors can attach engine-verified
+    // whatIfDelta to each opportunity hit.
     const hits = evaluatePlanningOpportunities({
       client: computed.client,
       computed: computed.result,
       adjustments: adjustments as AdjustmentFact[],
+      baselineInputs: computed.inputs,
     });
 
     const totalEstSavings = hits.reduce((s, h) => s + h.estSavings, 0);

@@ -76,6 +76,40 @@ export interface PlanningStrategyCatalog {
 }
 
 /**
+ * H2 — When present on an OpportunityHit, the engine has computed the
+ * strategy's effect by running an actual what-if scenario through the pure
+ * tax engine (no heuristic). `combinedTaxDelta` < 0 means the strategy
+ * reduces tax (savings). Same shape as the WhatIfDelta returned by the
+ * /clients/{id}/what-if endpoint; documented in the OpenAPI schema.
+ *
+ * When this field is undefined, the OpportunityHit.estSavings is a
+ * heuristic estimate (marginal-rate-times-something), not a verified
+ * engine-computed delta. The frontend distinguishes the two visually.
+ */
+export interface WhatIfDelta {
+  adjustedGrossIncome: number;
+  taxableIncome: number;
+  standardDeduction: number;
+  itemizedDeductions: number;
+  qbiDeduction: number;
+  federalTaxLiability: number;
+  stateTaxLiability: number;
+  selfEmploymentTax: number;
+  niitTax: number;
+  amtTax: number;
+  additionalMedicareTax: number;
+  eitc: number;
+  additionalChildTaxCredit: number;
+  federalRefundOrOwed: number;
+  stateRefundOrOwed: number;
+  effectiveTaxRate: number;
+  /** Federal + state tax liability delta. Negative = savings. */
+  combinedTaxDelta: number;
+  /** Federal + state refund delta. Positive = larger combined refund. */
+  combinedRefundDelta: number;
+}
+
+/**
  * One detected opportunity for a specific client. Produced by Layer 2
  * (deterministic detection engine). Consumed by Layer 3 (scoring),
  * Layer 4 (LLM memo), and the frontend Planning tab.
@@ -103,4 +137,12 @@ export interface OpportunityHit {
   citation: string;
   /** Detector-supplied diagnostic numbers (transparent to CPA review). */
   inputs: Record<string, number | string | boolean | null>;
+  /**
+   * H2 — Engine-verified per-field delta for this strategy, computed by
+   * running an actual what-if scenario. When present, callers should
+   * prefer `whatIfDelta.combinedTaxDelta` (negated) over `estSavings` for
+   * display. Absent for detectors whose strategy doesn't have a clean
+   * single-year mutation (e.g., G1.3 bunching, G1.7 §199A wage limit).
+   */
+  whatIfDelta?: WhatIfDelta;
 }

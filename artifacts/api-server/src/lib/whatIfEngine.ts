@@ -33,6 +33,13 @@ import {
   type ClientFacts,
   type AdjustmentFact,
 } from "./taxReturnEngine";
+import type { WhatIfDelta } from "@workspace/planning-strategies";
+
+// Re-export the canonical type so other api-server modules can `import { WhatIfDelta }`
+// from whatIfEngine alongside the runner. The OpenAPI spec is the source of
+// truth for the shape; the type definition lives in @workspace/planning-strategies
+// because the OpportunityHit on the API wire references it.
+export type { WhatIfDelta };
 
 // ── Mutations ──────────────────────────────────────────────────────────────
 
@@ -83,43 +90,15 @@ export interface WhatIfScenario {
 // ── Delta + result ─────────────────────────────────────────────────────────
 
 /**
- * Per-field arithmetic delta (scenario − baseline). Positive on a tax field
- * means the scenario INCREASED that tax. Negative = decreased.
+ * `WhatIfDelta` shape is declared in `@workspace/planning-strategies` (and
+ * re-exported above). It lives there because OpportunityHit carries it
+ * across the API wire and would otherwise create a circular module dep.
  *
- * `combinedTaxDelta` is the headline planning number: federal + state tax
- * liability delta. Negative = scenario reduces tax = savings.
+ * Per-field arithmetic delta (scenario − baseline). Positive on a tax field
+ * means the scenario INCREASED that tax; negative = decreased.
+ * `combinedTaxDelta` (federal + state liability delta) is the headline
+ * planning number — negative = scenario reduces tax = savings.
  */
-export interface WhatIfDelta {
-  // Income / deduction
-  adjustedGrossIncome: number;
-  taxableIncome: number;
-  standardDeduction: number;
-  itemizedDeductions: number;
-  qbiDeduction: number;
-
-  // Tax components
-  federalTaxLiability: number;
-  stateTaxLiability: number;
-  selfEmploymentTax: number;
-  niitTax: number;
-  amtTax: number;
-  additionalMedicareTax: number;
-
-  // Refundable credits (additive to refund)
-  eitc: number;
-  additionalChildTaxCredit: number;
-
-  // Refund / owed (positive = larger refund or smaller owed)
-  federalRefundOrOwed: number;
-  stateRefundOrOwed: number;
-  effectiveTaxRate: number;
-
-  // Aggregates
-  /** Federal + state tax liability delta. Negative = savings. */
-  combinedTaxDelta: number;
-  /** Federal + state refund/owed delta. Positive = larger combined refund. */
-  combinedRefundDelta: number;
-}
 
 /**
  * Full result of running one scenario against a baseline. Includes both
