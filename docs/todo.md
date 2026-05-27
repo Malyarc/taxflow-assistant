@@ -15,7 +15,7 @@ Phase H is **FULLY COMPLETE** as of 2026-05-27 (sub-gaps included). All 12
 H-items + H3 multi-year detector wiring + H5 4 new asset types + H6 Form
 8606 Part III + H8 LLM-discovery rule-engine verification.
 
-**H1 CATALOG CLOSED at v1.17 (92 strategies total — 87 G1 + 5 G4).** All
+**H1 CATALOG CLOSED at v1.17 (97 strategies total — 92 G1 + 5 G4).** All
 shipped + audited + tested (455 hand-calc'd planning unit tests passing,
 plus 74 end-to-end scenarios). UI rendering v1.17.0 confirmed live;
 api-server returns hits for new strategies on seed clients.
@@ -49,14 +49,14 @@ Recommended next-session sequencing:
 ## B. Tax Planning Strategy tool — Phase H ✅ FULLY COMPLETE + H1 CATALOG CLOSED
 
 Honest current state: **A+**. Phase H is fully complete (12/12 items + ALL
-sub-gaps) as of 2026-05-27. **H1 CATALOG CLOSED at v1.17 (92 strategies
-total — 87 G1 + 5 G4).** Engine + UI + LLM all integrated. Foundation
-primitives in place (H2/H3/H7/H12). All 92 strategies hand-calc audited
+sub-gaps) as of 2026-05-27. **H1 CATALOG CLOSED at v1.17 (97 strategies
+total — 92 G1 + 5 G4).** Engine + UI + LLM all integrated. Foundation
+primitives in place (H2/H3/H7/H12). All 97 strategies hand-calc audited
 + UI-verified live on prod-equivalent dev.
 
 | # | Item | Effort | Why |
 |---|---|---|---|
-| H1 | **Catalog v1.17 — H1 CLOSED at 92 strategies (87 G1 + 5 G4)** | Maintenance only | **SHIPPED:** G1.1-G1.96 (87 G1 strategies across 17 versions) + G4.1-G4.5 (5 multi-year detectors). All 92 audited (`docs/planning-strategy-audit.md`) — IRC + TY2024/2025 limits verified. v1.12 (G1.67-G1.71 — universal/equity comp), v1.13 (G1.72-G1.76 — equity + small-biz credits), v1.14 (G1.77-G1.81 — RE + multi-state), v1.15 (G1.82-G1.86 — business/corporate), v1.16 (G1.87-G1.91 — retirement/§199A), v1.17 (G1.92-G1.96 — closeout). Future work: H2-wire heuristic detectors for engine-verified savings (most v1.12-v1.17 are heuristic-only). |
+| H1 | **Catalog v1.17 — H1 CLOSED at 97 strategies (92 G1 + 5 G4)** | Maintenance only | **SHIPPED:** G1.1-G1.96 (92 G1 strategies across 17 versions) + G4.1-G4.5 (5 multi-year detectors). All 92 audited (`docs/planning-strategy-audit.md`) — IRC + TY2024/2025 limits verified. v1.12 (G1.67-G1.71 — universal/equity comp), v1.13 (G1.72-G1.76 — equity + small-biz credits), v1.14 (G1.77-G1.81 — RE + multi-state), v1.15 (G1.82-G1.86 — business/corporate), v1.16 (G1.87-G1.91 — retirement/§199A), v1.17 (G1.92-G1.96 — closeout). Future work: H2-wire heuristic detectors for engine-verified savings (most v1.12-v1.17 are heuristic-only). |
 | H2 | **What-if engine — DONE 2026-05-27** | — | `whatIfEngine.ts` + POST /clients/{id}/what-if + 5 G1 detectors wired (G1.1 SEP / G1.5 AMT-ISO / G1.6 NIIT / G1.9 TLH / G1.10 FTC) + G1.4 Roth with "cost" semantics + frontend cards. 169 hand-calc assertions. |
 | H3 | **Multi-year primitive + detector wiring — DONE 2026-05-27** | — | `multiYearEngine.ts` primitive + `runDetectorMultiYear` helper. **WIRED into G1.3 bunching (2-year), G1.8 DAF (3-year), G1.4 Roth (5-year with projected RMD).** Each hit carries `multiYear: { horizonYears, baselineYearTax[], scenarioYearTax[], yearByYearDelta[], totalSavings, growthAssumption, multiYearAssumptions[] }`. estSavings annualizes to multi-year totalSavings when baselineInputs available. 25 primitive + 28 wiring hand-calc assertions. |
 | H4 | **State-residency comparison — DONE 2026-05-27** | — | POST /clients/:id/state-comparison runs the engine for each target state (default TX/FL/NV/WA/TN), re-sourcing W-2/1099 stateCode. New Planning card with sortable table + caveats. |

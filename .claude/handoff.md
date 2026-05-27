@@ -12,11 +12,11 @@ The coverage map (per-state + per-feature) lives in
 coverage work.
 
 The planning strategy audit lives in **`docs/planning-strategy-audit.md`**
-— all 92 catalog strategies verified for IRC + TY2024/2025 limits.
+— all 97 catalog strategies verified for IRC + TY2024/2025 limits.
 
 After this session, open sections:
 - **A** — strategic / business (A1 outreach, A2 D15 auth, A3 D18 Stripe)
-- **B** — Phase H ✅ FULLY COMPLETE + **H1 CATALOG CLOSED at 92 strategies**.
+- **B** — Phase H ✅ FULLY COMPLETE + **H1 CATALOG CLOSED at 97 strategies**.
   Future H1 work: H2-wire heuristic detectors for engine-verified savings.
 - **C** — engine coverage push (C2 top-10-state credits, C3 design-partner
   validation, C9 PA local EIT, C10 OH school district, C11 per-state PY
@@ -28,7 +28,7 @@ Read `docs/todo.md` BEFORE picking a task.
 
 ## Headline
 
-**H1 catalog CLOSED at v1.17 — 92 strategies (87 G1 + 5 G4).** Six
+**H1 catalog CLOSED at v1.17 — 97 strategies (92 G1 + 5 G4).** Six
 back-to-back batches shipped in this session (v1.12 → v1.17), adding
 **30 new G1 strategies** covering the remaining canonical universe:
 
@@ -167,12 +167,12 @@ Project: TaxFlow Assistant.
 Read these files first, in order:
   1. docs/todo.md                       — THE LIVE TODO
   2. docs/coverage-matrix.md            — Per-state + per-feature inventory
-  3. docs/planning-strategy-audit.md    — All 92 strategies audited (v1.17)
+  3. docs/planning-strategy-audit.md    — All 97 strategies audited (v1.17)
   4. .claude/handoff.md                 — Last session state (H1 CLOSED at v1.17)
   5. CLAUDE.md                          — invariants, test-file list, closure log
 
 Where we left off (2026-05-27): **H1 CATALOG CLOSED at v1.17 (92
-strategies — 87 G1 + 5 G4).** Phase H FULLY COMPLETE. 455 planning
+strategies — 92 G1 + 5 G4).** Phase H FULLY COMPLETE. 455 planning
 hand-calc tests + 74 end-to-end scenarios + all other 40 suites green.
 ZERO documented federal/state engine gaps.
 

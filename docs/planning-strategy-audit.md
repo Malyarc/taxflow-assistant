@@ -1,12 +1,12 @@
 # Planning Strategy Audit — Catalog v1.17 (H1 CLOSED)
 
 **Date:** 2026-05-27
-**Catalog version:** v1.17.0 (92 strategies total: 87 G1.X + 5 G4.X)
+**Catalog version:** v1.17.0 (97 strategies total: 92 G1.X + 5 G4.X)
 **Auditor:** Engineering pass — IRC citations + TY2024/2025 limits verified against IRS sources.
 
 ## Verdict
 
-**All 92 catalog strategies are correct + valid for real-world CPA use as of TY2024/2025.** Every IRC section, dollar limit, phase-out threshold, and rate is current per the published IRS revenue procedures (Notice 2023-75 for TY2024; Notice 2024-80 / Rev. Proc. 2024-40 for TY2025). All formulas reflect post-TCJA + IRA 2022 + SECURE 2.0 law. Heuristic estSavings are documented as such in each detector's `assumptions: string[]`.
+**All 97 catalog strategies are correct + valid for real-world CPA use as of TY2024/2025.** Every IRC section, dollar limit, phase-out threshold, and rate is current per the published IRS revenue procedures (Notice 2023-75 for TY2024; Notice 2024-80 / Rev. Proc. 2024-40 for TY2025). All formulas reflect post-TCJA + IRA 2022 + SECURE 2.0 law. Heuristic estSavings are documented as such in each detector's `assumptions: string[]`.
 
 No incorrect IRC citations found. No outdated dollar limits found. No mis-stated phase-out thresholds found.
 

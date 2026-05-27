@@ -51,6 +51,7 @@
     "src/tax-engine-multiyear-tests.ts",
     "src/tax-engine-discovery-tests.ts",
     "src/tax-engine-planning-scenarios-tests.ts",
+    "src/h-deep-audit-2026-05-27.ts",
     "src/seed-dummy-clients.ts"
   ]
 }
