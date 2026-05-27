@@ -9,10 +9,14 @@ import {
   GetPlanningMultiYearParams,
   RunWhatIfScenarioParams,
   RunWhatIfScenarioBody,
+  RunStateComparisonParams,
+  RunStateComparisonBody,
+  GetPeerBenchmarkParams,
 } from "@workspace/api-zod";
 import { CATALOG_V1, type OpportunityHit } from "@workspace/planning-strategies";
 import {
   evaluatePlanningOpportunities,
+  evaluateCrossStrategyScenario,
   federalMarginalRate,
   planningScore,
 } from "../lib/planningEngine";
@@ -28,9 +32,11 @@ import {
 import { computeTaxReturn, loadTaxReturnInputs } from "../lib/taxReturnPipeline";
 import {
   runWhatIfScenario,
+  runWhatIfScenarios,
   type WhatIfMutation,
   type WhatIfScenario,
 } from "../lib/whatIfEngine";
+import { computeTaxReturnPure } from "../lib/taxReturnEngine";
 import type { AdjustmentFact, ClientFacts } from "../lib/taxReturnEngine";
 import { logger } from "../lib/logger";
 import { config } from "../lib/config";
@@ -108,7 +114,7 @@ router.get("/clients/:clientId/planning-opportunities", async (req, res): Promis
       .where(eq(adjustmentsTable.clientId, params.data.clientId));
 
     // H2 — pass baselineInputs so detectors can attach engine-verified
-    // whatIfDelta to each opportunity hit.
+    // whatIf data to each opportunity hit.
     const hits = evaluatePlanningOpportunities({
       client: computed.client,
       computed: computed.result,
@@ -118,12 +124,20 @@ router.get("/clients/:clientId/planning-opportunities", async (req, res): Promis
 
     const totalEstSavings = hits.reduce((s, h) => s + h.estSavings, 0);
 
+    // H7 — joint scenario stacking all "savings" H2 mutations together.
+    // Returns undefined when <2 stackable hits are present.
+    const crossStrategy = evaluateCrossStrategyScenario({
+      hits,
+      baselineInputs: computed.inputs,
+    });
+
     res.json({
       clientId: params.data.clientId,
       taxYear: computed.result.taxYear,
       catalogVersion: CATALOG_V1.version,
       hits,
       totalEstSavings,
+      ...(crossStrategy ? { crossStrategy } : {}),
     });
   } catch (err) {
     logger.error({ err, clientId: params.data.clientId }, "Planning evaluation failed");
@@ -330,6 +344,226 @@ router.get("/planning-hit-list", async (req, res): Promise<void> => {
   } catch (err) {
     logger.error({ err }, "Planning hit list failed");
     res.status(500).json({ error: "Planning hit list failed" });
+  }
+});
+
+// ── Phase H — H11 peer benchmark ───────────────────────────────────────────
+
+/**
+ * Default cohort band: ±$50,000 around target AGI. Wider bands include more
+ * peers (more statistical power) but mix in clients with structurally
+ * different tax profiles (e.g., a $200k AGI W-2 client vs a $200k AGI
+ * S-corp owner with massive QBI). The default is conservative.
+ */
+const DEFAULT_PEER_BAND_WIDTH = 50_000;
+
+function percentileRank(sortedValues: number[], target: number): number {
+  if (sortedValues.length === 0) return 50;
+  // Standard "weak" percentile rank: % of values strictly less than target,
+  // plus half the % equal to target. Returns 0-100.
+  let lt = 0;
+  let eq = 0;
+  for (const v of sortedValues) {
+    if (v < target) lt++;
+    else if (v === target) eq++;
+  }
+  return ((lt + eq * 0.5) / sortedValues.length) * 100;
+}
+
+function percentile(sortedValues: number[], pct: number): number {
+  if (sortedValues.length === 0) return 0;
+  if (sortedValues.length === 1) return sortedValues[0];
+  // Linear interpolation between adjacent ranks.
+  const idx = (pct / 100) * (sortedValues.length - 1);
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  if (lo === hi) return sortedValues[lo];
+  const w = idx - lo;
+  return sortedValues[lo] * (1 - w) + sortedValues[hi] * w;
+}
+
+router.get("/clients/:clientId/peer-benchmark", async (req, res): Promise<void> => {
+  const params = GetPeerBenchmarkParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const bandWidthRaw = req.query.bandWidth;
+  const bandWidth = typeof bandWidthRaw === "string" && Number.isFinite(Number(bandWidthRaw))
+    ? Number(bandWidthRaw)
+    : DEFAULT_PEER_BAND_WIDTH;
+  if (bandWidth <= 0) {
+    res.status(400).json({ error: "bandWidth must be > 0" });
+    return;
+  }
+
+  try {
+    // 1. Compute target client's return.
+    const target = await computeTaxReturn(params.data.clientId);
+    if (!target) {
+      res.status(404).json({ error: "Client not found" });
+      return;
+    }
+    const targetAgi = target.result.adjustedGrossIncome;
+    const targetEffectiveRate = target.result.effectiveTaxRate;
+
+    // 2. Load all firm clients and compute each one's return + effective rate.
+    // Bounded N expected for firm-scale (hundreds, not thousands) — fine
+    // for an MVP. Future: a materialized cohort_stats table would scale.
+    const allClients = await db.select().from(clientsTable);
+    const peerRates: number[] = [];
+    for (const c of allClients) {
+      if (c.id === params.data.clientId) continue;
+      const peer = await computeTaxReturn(c.id);
+      if (!peer) continue;
+      const peerAgi = peer.result.adjustedGrossIncome;
+      if (Math.abs(peerAgi - targetAgi) > bandWidth) continue;
+      // Skip peers with zero income (effectiveRate undefined / inflated).
+      if (peer.result.totalIncome <= 0) continue;
+      peerRates.push(peer.result.effectiveTaxRate);
+    }
+
+    if (peerRates.length === 0) {
+      res.json({
+        clientId: params.data.clientId,
+        taxYear: target.result.taxYear,
+        clientAgi: Math.round(targetAgi),
+        clientEffectiveRate: targetEffectiveRate,
+        cohort: {
+          size: 0,
+          agiMin: Math.round(targetAgi - bandWidth),
+          agiMax: Math.round(targetAgi + bandWidth),
+          effectiveRateMean: 0,
+          effectiveRateMedian: 0,
+          effectiveRateP25: 0,
+          effectiveRateP75: 0,
+          clientPercentileRank: 50,
+        },
+      });
+      return;
+    }
+
+    const sorted = [...peerRates].sort((a, b) => a - b);
+    const sum = sorted.reduce((s, v) => s + v, 0);
+    const mean = sum / sorted.length;
+    const median = percentile(sorted, 50);
+    const p25 = percentile(sorted, 25);
+    const p75 = percentile(sorted, 75);
+    const rank = percentileRank(sorted, targetEffectiveRate);
+
+    res.json({
+      clientId: params.data.clientId,
+      taxYear: target.result.taxYear,
+      clientAgi: Math.round(targetAgi),
+      clientEffectiveRate: targetEffectiveRate,
+      cohort: {
+        size: sorted.length,
+        agiMin: Math.round(targetAgi - bandWidth),
+        agiMax: Math.round(targetAgi + bandWidth),
+        effectiveRateMean: mean,
+        effectiveRateMedian: median,
+        effectiveRateP25: p25,
+        effectiveRateP75: p75,
+        clientPercentileRank: rank,
+      },
+    });
+  } catch (err) {
+    logger.error({ err, clientId: params.data.clientId }, "Peer benchmark failed");
+    res.status(500).json({ error: "Peer benchmark failed" });
+  }
+});
+
+// ── Phase H — H4 state-residency comparison ────────────────────────────────
+
+/**
+ * Default target states for state-residency comparison: zero-income-tax
+ * jurisdictions. CPAs can override via the request body. The client's
+ * current state is auto-excluded from the comparison.
+ */
+const DEFAULT_STATE_COMPARISON_TARGETS = ["TX", "FL", "NV", "WA", "TN"] as const;
+
+router.post("/clients/:clientId/state-comparison", async (req, res): Promise<void> => {
+  const params = RunStateComparisonParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const body = RunStateComparisonBody.safeParse(req.body ?? {});
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+
+  try {
+    const loaded = await loadTaxReturnInputs(params.data.clientId);
+    if (!loaded) {
+      res.status(404).json({ error: "Client not found" });
+      return;
+    }
+
+    const baselineState = (loaded.inputs.client.state ?? "").toUpperCase();
+    const requested = (body.data.targetStates ?? DEFAULT_STATE_COMPARISON_TARGETS).map((s) =>
+      s.toUpperCase(),
+    );
+    // Filter out the client's current state — comparing to self is noise.
+    const targets = Array.from(new Set(requested)).filter((s) => s !== baselineState);
+
+    if (targets.length === 0) {
+      res.json({
+        clientId: params.data.clientId,
+        taxYear: loaded.inputs.taxYear,
+        baselineState,
+        baselineFederal: 0,
+        baselineState_tax: 0,
+        results: [],
+      });
+      return;
+    }
+
+    // For state-residency comparison, "move to state X" means the client
+    // ALSO has their W-2 / 1099 income sourced to that state next year. The
+    // generic WhatIfMutation API only supports client + adjustment changes,
+    // not per-W-2 state edits. So we build the modified inputs manually,
+    // rewriting client.state PLUS each W-2 / 1099 stateCode to the target.
+    // Without this, the engine would treat the client as a TX resident with
+    // CA-source wages and still owe CA non-resident tax.
+    const baseline = computeTaxReturnPure(loaded.inputs);
+
+    const computeForState = (target: string) => {
+      const reInputs = {
+        ...loaded.inputs,
+        client: { ...loaded.inputs.client, state: target },
+        w2s: loaded.inputs.w2s.map((w) => ({ ...w, stateCode: target })),
+        form1099s: loaded.inputs.form1099s.map((f) => ({ ...f, stateCode: target })),
+      };
+      const scenario = computeTaxReturnPure(reInputs);
+      return {
+        state: target,
+        deltaFederal: Math.round(scenario.federalTaxLiability - baseline.federalTaxLiability),
+        deltaState: Math.round(scenario.stateTaxLiability - baseline.stateTaxLiability),
+        deltaCombined: Math.round(
+          scenario.federalTaxLiability + scenario.stateTaxLiability -
+            baseline.federalTaxLiability - baseline.stateTaxLiability,
+        ),
+        scenarioFederal: Math.round(scenario.federalTaxLiability),
+        scenarioState: Math.round(scenario.stateTaxLiability),
+      };
+    };
+    const comparisonResults = targets
+      .map(computeForState)
+      .sort((a, b) => a.deltaCombined - b.deltaCombined);
+
+    res.json({
+      clientId: params.data.clientId,
+      taxYear: loaded.inputs.taxYear,
+      baselineState,
+      baselineFederal: Math.round(baseline.federalTaxLiability),
+      baselineState_tax: Math.round(baseline.stateTaxLiability),
+      results: comparisonResults,
+    });
+  } catch (err) {
+    logger.error({ err, clientId: params.data.clientId }, "State comparison failed");
+    res.status(500).json({ error: "State comparison failed" });
   }
 });
 

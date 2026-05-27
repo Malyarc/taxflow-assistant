@@ -78,6 +78,24 @@ export const clientsTable = pgTable("clients", {
    *  state resident from Jan 1 to this date (exclusive); current-state
    *  resident from this date (inclusive) to Dec 31. */
   residencyChangeDate: text("residency_change_date"),
+  /** Phase H — H9. Client-context fields that personalize planning
+   *  recommendations (especially the AI memo). All optional; absent =
+   *  CPA hasn't gathered the data yet. */
+  /** "conservative" | "moderate" | "aggressive" — drives e.g. how
+   *  aggressively to recommend Roth conversions, charitable bunching,
+   *  illiquid investments. */
+  riskTolerance: text("risk_tolerance"),
+  /** Target retirement age (integer years). Used by retirement-strategy
+   *  detectors to evaluate time-horizon-sensitive recommendations
+   *  (Roth conversion runway, RMD planning, etc.). */
+  targetRetirementAge: integer("target_retirement_age"),
+  /** "none" | "will_only" | "trust_in_place" | "complex". Drives
+   *  estate-tax / gifting strategy recommendations. */
+  estatePlanStage: text("estate_plan_stage"),
+  /** Free-text client-specific planning goals (e.g., "buy a house in 2
+   *  years", "fund child's college via 529", "early retirement at 55").
+   *  Passed to the AI memo synthesis prompt. */
+  planningGoals: text("planning_goals"),
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
