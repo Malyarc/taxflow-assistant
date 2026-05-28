@@ -8,6 +8,7 @@
  */
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Sparkles } from "lucide-react";
 
 interface UpgradeProCardProps {
   variant?: "widget" | "tab";
@@ -16,13 +17,18 @@ interface UpgradeProCardProps {
 export function UpgradeProCard({ variant = "widget" }: UpgradeProCardProps) {
   const padding = variant === "tab" ? "py-12" : "py-8";
   return (
-    <Card className="border-2 border-dashed border-indigo-200 bg-gradient-to-br from-indigo-50/40 to-emerald-50/30">
+    <Card className="border-2 border-dashed border-brand/30 bg-brand/[0.04]">
       <CardHeader>
         <div className="flex items-center justify-between gap-3">
-          <CardTitle className="text-lg">
-            Tax planning insights — available on the Pro tier
-          </CardTitle>
-          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800">
+          <div className="flex items-center gap-2.5">
+            <span className="grid h-8 w-8 place-items-center rounded-lg bg-brand/10 text-brand-ink">
+              <Sparkles className="h-4 w-4" strokeWidth={2} />
+            </span>
+            <CardTitle className="text-lg">
+              Tax planning insights — available on the Pro tier
+            </CardTitle>
+          </div>
+          <span className="inline-flex items-center rounded-full bg-gold/20 px-2.5 py-0.5 text-xs font-semibold text-gold-foreground">
             Pro
           </span>
         </div>

@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "@/hooks/use-toast";
+import { Plus, Search } from "lucide-react";
 
 const FILING_STATUS_LABELS: Record<string, string> = {
   single: "Single",
@@ -64,17 +65,20 @@ export default function ClientList() {
           </p>
         </div>
         <Link href="/clients/new">
-          <Button>New Client</Button>
+          <Button><Plus className="mr-1.5 h-4 w-4" strokeWidth={2.5} />New Client</Button>
         </Link>
       </div>
 
       <div className="flex gap-3">
-        <Input
-          placeholder="Search by name or email..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="max-w-sm"
-        />
+        <div className="relative max-w-sm flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Search by name or email..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
           <SelectTrigger className="w-48">
             <SelectValue placeholder="Filing status" />

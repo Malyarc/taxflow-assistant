@@ -39,6 +39,19 @@
   --color-destructive-foreground: hsl(var(--destructive-foreground));
   --color-destructive-border: var(--destructive-border);
 
+  --color-brand: hsl(var(--brand));
+  --color-brand-foreground: hsl(var(--brand-foreground));
+  --color-brand-ink: hsl(var(--brand-ink));
+
+  --color-gold: hsl(var(--gold));
+  --color-gold-foreground: hsl(var(--gold-foreground));
+
+  --color-success: hsl(var(--success));
+  --color-success-foreground: hsl(var(--success-foreground));
+
+  --color-powder: hsl(var(--powder));
+  --color-powder-foreground: hsl(var(--powder-foreground));
+
   --color-chart-1: hsl(var(--chart-1));
   --color-chart-2: hsl(var(--chart-2));
   --color-chart-3: hsl(var(--chart-3));
@@ -76,42 +89,54 @@
   --elevate-1: rgba(0,0,0, .03);
   --elevate-2: rgba(0,0,0, .08);
 
-  --background: 210 20% 98%;
-  --foreground: 222 47% 11%;
-  --border: 214.3 31.8% 91.4%;
+  /* Brookhaven brand — Trusted Blue #231F55 · Brookhaven Blue #41B9EA · Yellow #F0CA17 · Powder Blue #8ED4F0 */
+  --background: 205 38% 98%;
+  --foreground: 244 38% 18%;
+  --border: 210 28% 89%;
   --card: 0 0% 100%;
-  --card-foreground: 222 47% 11%;
-  --card-border: 214.3 31.8% 91.4%;
-  --sidebar: 0 0% 100%;
-  --sidebar-foreground: 222 47% 11%;
-  --sidebar-border: 214.3 31.8% 91.4%;
-  --sidebar-primary: 222 47% 11%;
-  --sidebar-primary-foreground: 210 40% 98%;
-  --sidebar-accent: 210 40% 96.1%;
-  --sidebar-accent-foreground: 222 47% 11%;
-  --sidebar-ring: 222 84% 4.9%;
+  --card-foreground: 244 38% 18%;
+  --card-border: 210 28% 89%;
+  --sidebar: 244 47% 23%;
+  --sidebar-foreground: 0 0% 100%;
+  --sidebar-border: 244 35% 32%;
+  --sidebar-primary: 197 80% 59%;
+  --sidebar-primary-foreground: 244 47% 14%;
+  --sidebar-accent: 244 35% 30%;
+  --sidebar-accent-foreground: 0 0% 100%;
+  --sidebar-ring: 197 80% 59%;
   --popover: 0 0% 100%;
-  --popover-foreground: 222 47% 11%;
-  --popover-border: 214.3 31.8% 91.4%;
-  --primary: 222 47% 11%;
-  --primary-foreground: 210 40% 98%;
-  --secondary: 210 40% 96.1%;
-  --secondary-foreground: 222 47% 11%;
-  --muted: 210 40% 96.1%;
-  --muted-foreground: 215.4 16.3% 46.9%;
-  --accent: 45 100% 51%;
-  --accent-foreground: 222 47% 11%;
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 210 40% 98%;
-  --input: 214.3 31.8% 91.4%;
-  --ring: 222 84% 4.9%;
-  --chart-1: 222 47% 11%;
-  --chart-2: 45 100% 51%;
-  --chart-3: 215 16% 47%;
-  --chart-4: 0 84% 60%;
-  --chart-5: 210 40% 96%;
+  --popover-foreground: 244 38% 18%;
+  --popover-border: 210 28% 89%;
+  --primary: 244 47% 23%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 205 32% 94%;
+  --secondary-foreground: 244 47% 23%;
+  --muted: 205 30% 95%;
+  --muted-foreground: 220 16% 46%;
+  --accent: 197 58% 93%;
+  --accent-foreground: 244 47% 23%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --input: 210 26% 87%;
+  --ring: 197 80% 52%;
 
-  --app-font-sans: 'Inter', sans-serif;
+  --brand: 197 80% 59%;
+  --brand-foreground: 244 47% 16%;
+  --brand-ink: 200 78% 38%;
+  --gold: 49 88% 52%;
+  --gold-foreground: 244 47% 18%;
+  --success: 158 64% 36%;
+  --success-foreground: 0 0% 100%;
+  --powder: 197 77% 75%;
+  --powder-foreground: 244 47% 23%;
+
+  --chart-1: 197 80% 59%;
+  --chart-2: 244 47% 33%;
+  --chart-3: 49 88% 52%;
+  --chart-4: 197 77% 75%;
+  --chart-5: 220 16% 60%;
+
+  --app-font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --app-font-serif: Georgia, serif;
   --app-font-mono: Menlo, monospace;
   --radius: .5rem;
@@ -151,40 +176,51 @@
   --elevate-1: rgba(255,255,255, .04);
   --elevate-2: rgba(255,255,255, .09);
 
-  --background: 222 47% 11%;
-  --foreground: 210 40% 98%;
-  --border: 215.4 16.3% 46.9%;
-  --card: 222 47% 11%;
-  --card-foreground: 210 40% 98%;
-  --card-border: 215.4 16.3% 46.9%;
-  --sidebar: 222 47% 11%;
-  --sidebar-foreground: 210 40% 98%;
-  --sidebar-border: 215.4 16.3% 46.9%;
-  --sidebar-primary: 210 40% 98%;
-  --sidebar-primary-foreground: 222 47% 11%;
-  --sidebar-accent: 215.4 16.3% 46.9%;
-  --sidebar-accent-foreground: 210 40% 98%;
-  --sidebar-ring: 214.3 31.8% 91.4%;
-  --popover: 222 47% 11%;
-  --popover-foreground: 210 40% 98%;
-  --popover-border: 215.4 16.3% 46.9%;
-  --primary: 210 40% 98%;
-  --primary-foreground: 222 47% 11%;
-  --secondary: 215.4 16.3% 46.9%;
-  --secondary-foreground: 210 40% 98%;
-  --muted: 215.4 16.3% 46.9%;
-  --muted-foreground: 214.3 31.8% 91.4%;
-  --accent: 45 100% 51%;
-  --accent-foreground: 222 47% 11%;
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 210 40% 98%;
-  --input: 215.4 16.3% 46.9%;
-  --ring: 214.3 31.8% 91.4%;
-  --chart-1: 210 40% 98%;
-  --chart-2: 45 100% 51%;
-  --chart-3: 215 16% 47%;
-  --chart-4: 0 84% 60%;
-  --chart-5: 222 47% 11%;
+  --background: 244 42% 9%;
+  --foreground: 205 30% 96%;
+  --border: 244 24% 24%;
+  --card: 244 40% 13%;
+  --card-foreground: 205 30% 96%;
+  --card-border: 244 24% 24%;
+  --sidebar: 244 47% 12%;
+  --sidebar-foreground: 205 30% 96%;
+  --sidebar-border: 244 24% 24%;
+  --sidebar-primary: 197 80% 59%;
+  --sidebar-primary-foreground: 244 47% 12%;
+  --sidebar-accent: 244 30% 22%;
+  --sidebar-accent-foreground: 205 30% 96%;
+  --sidebar-ring: 197 80% 59%;
+  --popover: 244 40% 13%;
+  --popover-foreground: 205 30% 96%;
+  --popover-border: 244 24% 24%;
+  --primary: 197 80% 59%;
+  --primary-foreground: 244 47% 12%;
+  --secondary: 244 28% 20%;
+  --secondary-foreground: 205 30% 96%;
+  --muted: 244 26% 19%;
+  --muted-foreground: 210 20% 70%;
+  --accent: 244 30% 24%;
+  --accent-foreground: 205 30% 96%;
+  --destructive: 0 72% 55%;
+  --destructive-foreground: 0 0% 100%;
+  --input: 244 24% 26%;
+  --ring: 197 80% 59%;
+
+  --brand: 197 82% 62%;
+  --brand-foreground: 244 47% 12%;
+  --brand-ink: 197 75% 70%;
+  --gold: 49 88% 56%;
+  --gold-foreground: 244 47% 12%;
+  --success: 158 58% 48%;
+  --success-foreground: 244 47% 10%;
+  --powder: 197 60% 70%;
+  --powder-foreground: 244 47% 12%;
+
+  --chart-1: 197 80% 59%;
+  --chart-2: 197 77% 75%;
+  --chart-3: 49 88% 56%;
+  --chart-4: 244 40% 60%;
+  --chart-5: 210 20% 65%;
 
   --shadow-2xs: 0px 1px 2px 0px rgba(0,0,0,0.5);
   --shadow-xs: 0px 1px 3px 0px rgba(0,0,0,0.5);
@@ -318,14 +354,30 @@
   }
 }
 
+@layer utilities {
+  /* Brookhaven 45° brand gradients — lighter color at the bottom ascending to a darker color */
+  .bg-brand-gradient { background-image: linear-gradient(45deg, hsl(var(--brand)) 0%, hsl(var(--primary)) 100%); }
+  .bg-brand-gradient-soft { background-image: linear-gradient(45deg, hsl(var(--powder)) 0%, hsl(var(--brand)) 100%); }
+  .text-gradient-brand {
+    background-image: linear-gradient(45deg, hsl(var(--brand-ink)) 0%, hsl(var(--primary)) 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  /* Subtle 45° woven texture echoing the brand mark; overlay on dark brand surfaces */
+  .brand-pattern { background-image: repeating-linear-gradient(45deg, hsl(0 0% 100% / 0.05) 0px, hsl(0 0% 100% / 0.05) 1px, transparent 1px, transparent 11px); }
+  /* Thin scrollbar for horizontal strips (tab bar) */
+  .scrollbar-thin { scrollbar-width: thin; scrollbar-color: hsl(var(--border)) transparent; }
+  .scrollbar-thin::-webkit-scrollbar { height: 6px; width: 6px; }
+  .scrollbar-thin::-webkit-scrollbar-thumb { background-color: hsl(var(--border)); border-radius: 9999px; }
+  .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+}
+
 /* ── Print styles: hide chrome and tabs, show only the calculator content ── */
 @media print {
   /* Hide the demo banner, sidebar, page controls, and other tabs' content */
   aside,
   [role="tablist"],
   button,
-  .print\:hidden,
-  div[class*="bg-amber-100"]:has(span:contains("Demo mode")) {
+  .print\:hidden {
     display: none !important;
   }
 

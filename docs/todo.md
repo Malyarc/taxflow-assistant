@@ -1,11 +1,36 @@
 # TaxFlow Assistant — Open TODO list
 
-**Status as of 2026-05-27 (Phase H FULLY COMPLETE + H1 CATALOG CLOSED at v1.17 — 92 strategies).** This is the durable, git-tracked TODO list.
+**Status as of 2026-05-28 (Brookhaven UI/UX revamp shipped; Phase H + C-batch + C3 follow-ups all complete).** This is the durable, git-tracked TODO list.
 Read this in every new session before picking up work. The Claude task
 tool inside any single session is ephemeral — only this file persists.
 
 When you pick up a task: move it from this list into the in-session task
 tracker, work it, commit, then remove it from here.
+
+---
+
+## Brookhaven UI/UX revamp SHIPPED (2026-05-28) — frontend-only
+
+Full visual modernization to the **Brookhaven brand** (Trusted Blue
+`#231F55` / Brookhaven Blue `#41B9EA` / Yellow `#F0CA17` / Powder Blue
+`#8ED4F0`) + the two open UI follow-ups. Engine/api/schema untouched; all
+35 no-API suites still green. See `.claude/handoff.md` for the full list.
+
+| Item | Status |
+|---|---|
+| Brookhaven design tokens (light+dark) in `src/index.css` + brand gradient/pattern utilities | ✅ |
+| Branded chrome — Trusted Blue sidebar + `BrandMark` SVG + lucide nav + gold demo banner + favicon | ✅ |
+| **Cramped ClientDetail tab bar → scrollable icon-pill bar** (was `grid-cols-11`, tabs collided) | ✅ |
+| Dashboard + ClientList modernized (icon stat cards, branded widgets) | ✅ |
+| Hardcoded-color sweep — 172 classes → brand/semantic tokens; 0 residual off-brand | ✅ |
+| **Form 8824 / 8990 PDF download buttons** in Tax Calculator (§1031 / §163(j) cards) | ✅ (UI follow-up) |
+| **SSTB toggle** — `qbi_sstb_flag` surfaced as a §199A card switch in Adjustments | ✅ (UI follow-up) |
+| Mobile responsive — sidebar `hidden lg:flex` + compact mobile top bar | ✅ |
+| Print CSS fix (removed invalid `:contains()`; `print:hidden` banner) | ✅ |
+
+Remaining optional UI polish (deferred): dark-mode toggle (tokens exist,
+no UI toggle), code-split the ~1 MB JS bundle, D7 ClientDetail.tsx
+per-tab component extraction (~4,960 lines).
 
 ---
 

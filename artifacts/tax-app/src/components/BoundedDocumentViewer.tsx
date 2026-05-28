@@ -313,7 +313,7 @@ function BoxOverlay({ boxes, highlightField, onBoxClick, containerWidth, contain
               onBoxClick ? "pointer-events-auto cursor-pointer" : "",
               isActive
                 ? "border-amber-500 bg-amber-200/30 ring-2 ring-amber-500/40"
-                : "border-blue-500/50 bg-blue-100/15 hover:bg-blue-200/30",
+                : "border-brand/50 bg-brand/10 hover:bg-brand/10",
             )}
             style={{ left, top, width, height }}
             title={field}

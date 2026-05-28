@@ -725,11 +725,11 @@ export default function ClientForm({ editId }: Props) {
             </div>
 
             {/* Phase H — H9 client-context fields for planning personalization */}
-            <div className="space-y-3 rounded border border-indigo-200 bg-indigo-50/30 p-4">
-              <div className="text-sm font-medium text-indigo-900">
+            <div className="space-y-3 rounded border border-brand/30 bg-brand/5 p-4">
+              <div className="text-sm font-medium text-primary">
                 Planning context (Phase H — H9)
               </div>
-              <p className="text-xs text-indigo-700">
+              <p className="text-xs text-brand-ink">
                 Optional fields that personalize the AI planning memo. Leave blank if not gathered yet.
               </p>
               <div className="grid grid-cols-2 gap-4">

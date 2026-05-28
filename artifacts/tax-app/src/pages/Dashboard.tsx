@@ -10,10 +10,39 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Link } from "wouter";
 import { UpgradeProCard } from "@/components/UpgradeProCard";
+import { Users, FileClock, Banknote, Receipt, Target, ChevronRight, type LucideIcon } from "lucide-react";
 
 function fmt(n: number | null | undefined): string {
   if (n == null) return "—";
   return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+}
+
+type Tone = "brand" | "success" | "muted";
+const toneChip: Record<Tone, string> = {
+  brand: "bg-brand/10 text-brand-ink",
+  success: "bg-success/10 text-success",
+  muted: "bg-muted text-muted-foreground",
+};
+const toneValue: Record<Tone, string> = {
+  brand: "text-foreground",
+  success: "text-success",
+  muted: "text-foreground",
+};
+
+function StatCard({ icon: Icon, label, value, tone = "brand" }: { icon: LucideIcon; label: string; value: string | number; tone?: Tone }) {
+  return (
+    <Card>
+      <CardContent className="flex items-center gap-4 p-5">
+        <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${toneChip[tone]}`}>
+          <Icon className="h-5 w-5" strokeWidth={2} />
+        </span>
+        <div className="min-w-0">
+          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
+          <div className={`text-2xl font-bold tabular-nums ${toneValue[tone]}`}>{value}</div>
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 export default function Dashboard() {
@@ -29,51 +58,21 @@ export default function Dashboard() {
   return (
     <div className="p-8 max-w-6xl mx-auto space-y-8">
       <div>
-        <h2 className="text-3xl font-bold tracking-tight">Terminal Overview</h2>
-        <p className="text-muted-foreground mt-2">System status and firm performance metrics.</p>
+        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-ink">Firm overview</div>
+        <h2 className="mt-1.5 text-3xl font-bold tracking-tight text-foreground">Terminal Overview</h2>
+        <p className="mt-1.5 text-muted-foreground">System status and firm performance metrics.</p>
       </div>
 
       {isLoading ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Skeleton className="h-32 w-full" />
-          <Skeleton className="h-32 w-full" />
-          <Skeleton className="h-32 w-full" />
-          <Skeleton className="h-32 w-full" />
+          {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-24 w-full rounded-xl" />)}
         </div>
       ) : summary ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Clients</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{summary.totalClients}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Pending Returns</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{summary.pendingReturns}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Total Refunds</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold text-accent">${(summary.totalRefunds ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Avg Refund</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{summary.averageRefund != null ? `$${summary.averageRefund.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : "—"}</div>
-            </CardContent>
-          </Card>
+          <StatCard icon={Users} label="Total Clients" value={summary.totalClients} tone="brand" />
+          <StatCard icon={FileClock} label="Pending Returns" value={summary.pendingReturns} tone="muted" />
+          <StatCard icon={Banknote} label="Total Refunds" value={fmt(summary.totalRefunds)} tone="success" />
+          <StatCard icon={Receipt} label="Avg Refund" value={summary.averageRefund != null ? fmt(summary.averageRefund) : "—"} tone="brand" />
         </div>
       ) : (
         <div>No data available</div>
@@ -93,8 +92,13 @@ function PlanningHitListWidget() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-lg">Top 10 planning targets</CardTitle>
-        <p className="text-xs text-muted-foreground mt-1">
+        <div className="flex items-center gap-2.5">
+          <span className="grid h-8 w-8 place-items-center rounded-lg bg-brand/10 text-brand-ink">
+            <Target className="h-4 w-4" strokeWidth={2} />
+          </span>
+          <CardTitle className="text-lg">Top 10 planning targets</CardTitle>
+        </div>
+        <p className="text-xs text-muted-foreground mt-1.5">
           Ranked by PlanningScore (estSavings × confidence × marginal-rate weight ×
           engagement complexity × stickiness). Click a client to open their Planning tab.
         </p>
@@ -112,9 +116,9 @@ function PlanningHitListWidget() {
           <div className="space-y-2">
             {data.entries.map((entry, idx) => (
               <Link key={entry.clientId} href={`/clients/${entry.clientId}`}>
-                <div className="flex items-center justify-between p-3 rounded border hover:bg-accent/40 cursor-pointer">
+                <div className="group flex items-center justify-between gap-3 rounded-lg border border-border p-3 cursor-pointer transition-colors hover:border-brand/40 hover:bg-accent">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="text-xs text-muted-foreground w-6 text-right font-mono">{idx + 1}</div>
+                    <div className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-secondary text-xs font-bold tabular-nums text-secondary-foreground">{idx + 1}</div>
                     <div className="min-w-0">
                       <div className="font-medium truncate">{entry.firstName} {entry.lastName}</div>
                       <div className="text-xs text-muted-foreground truncate">
@@ -125,11 +129,14 @@ function PlanningHitListWidget() {
                       </div>
                     </div>
                   </div>
-                  <div className="text-right shrink-0 ml-2">
-                    <div className="text-base font-semibold text-emerald-700">{fmt(entry.totalEstSavings)}</div>
-                    <Badge variant="outline" className="text-xs mt-0.5">
-                      score {entry.planningScore.toLocaleString()}
-                    </Badge>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="text-right">
+                      <div className="text-base font-semibold tabular-nums text-success">{fmt(entry.totalEstSavings)}</div>
+                      <Badge variant="outline" className="text-xs mt-0.5">
+                        score {entry.planningScore.toLocaleString()}
+                      </Badge>
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground/50 transition-colors group-hover:text-brand" />
                   </div>
                 </div>
               </Link>

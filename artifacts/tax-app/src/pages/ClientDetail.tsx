@@ -68,6 +68,11 @@ import { CurrencyInput } from "@/components/ui/currency-input";
 import { toast } from "@/hooks/use-toast";
 import { ReviewExtractionModal } from "@/components/ReviewExtractionModal";
 import { localityLabel } from "@/lib/localityLabels";
+import {
+  FileText, FileSpreadsheet, Files, CandlestickChart, Building2, Network,
+  Wallet, Calculator, GitCompareArrows, SlidersHorizontal, Target,
+  FileDown, Briefcase, Pencil, ArrowLeft,
+} from "lucide-react";
 
 const FILING_STATUS_LABELS: Record<string, string> = {
   single: "Single",
@@ -93,6 +98,20 @@ function maskSSN(ssn: string | null | undefined): string {
   const digits = ssn.replace(/\D/g, "");
   if (digits.length < 4) return "XXX-XX-XXXX";
   return `XXX-XX-${digits.slice(-4)}`;
+}
+
+/** Shared className for the scrollable ClientDetail tab triggers (icon + label pills). */
+const TAB_TRIGGER_CLS =
+  "gap-2 whitespace-nowrap rounded-lg px-3.5 py-2 text-muted-foreground hover:text-foreground data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm";
+
+/** Trigger a browser download for a same-origin file URL (PDF / CSV / etc.). */
+function downloadFile(url: string) {
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = "";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }
 
 // ─── Documents Tab ───────────────────────────────────────────────────────────
@@ -164,12 +183,12 @@ function DocumentsTab({ clientId, clientTaxYear, clientState }: { clientId: numb
   // "extracted" is legacy (pre-review-gate auto-write); display it the same as "approved".
   const statusColors: Record<string, string> = {
     pending: "bg-yellow-100 text-yellow-800",
-    processing: "bg-blue-100 text-blue-800",
+    processing: "bg-brand/10 text-primary",
     pending_review: "bg-amber-100 text-amber-900",
-    approved: "bg-green-100 text-green-800",
-    extracted: "bg-green-100 text-green-800",
-    rejected: "bg-gray-200 text-gray-700",
-    failed: "bg-red-100 text-red-800",
+    approved: "bg-success/10 text-success",
+    extracted: "bg-success/10 text-success",
+    rejected: "bg-muted text-foreground",
+    failed: "bg-destructive/10 text-destructive",
   };
   const statusLabels: Record<string, string> = {
     pending: "Pending",
@@ -424,7 +443,7 @@ function ReviewDialog({ clientId, rec, onClose }: { clientId: number; rec: any; 
                     <div
                       key={field}
                       onClick={() => setHighlightedField(field)}
-                      className={`absolute cursor-pointer transition-all ${isHighlighted ? "border-2 border-amber-500 bg-amber-200/40 z-10" : "border border-blue-400 bg-blue-200/20 hover:bg-blue-200/30"}`}
+                      className={`absolute cursor-pointer transition-all ${isHighlighted ? "border-2 border-amber-500 bg-amber-200/40 z-10" : "border border-brand/40 bg-brand/10 hover:bg-brand/10"}`}
                       style={{ left, top, width, height }}
                       title={BOX_FIELD_LABELS[field] ?? field}
                     />
@@ -449,7 +468,7 @@ function ReviewDialog({ clientId, rec, onClose }: { clientId: number; rec: any; 
                   key={field}
                   onClick={() => hasBox && setHighlightedField(field)}
                   className={`flex justify-between items-center px-2 py-1.5 rounded text-sm transition-colors ${
-                    isHighlighted ? "bg-amber-100" : hasBox ? "hover:bg-blue-50 cursor-pointer" : ""
+                    isHighlighted ? "bg-amber-100" : hasBox ? "hover:bg-accent cursor-pointer" : ""
                   }`}
                 >
                   <span className={`text-muted-foreground ${!hasValue ? "italic" : ""}`}>{BOX_FIELD_LABELS[field] ?? field}</span>
@@ -457,7 +476,7 @@ function ReviewDialog({ clientId, rec, onClose }: { clientId: number; rec: any; 
                     {field === "employeeSSN" && typeof val === "string" ? maskSSN(val) :
                       typeof val === "number" ? fmt(val) :
                       hasValue ? String(val) : "—"}
-                    {hasBox && <span className="ml-2 text-[10px] text-blue-600">▣</span>}
+                    {hasBox && <span className="ml-2 text-[10px] text-brand-ink">▣</span>}
                   </span>
                 </div>
               );
@@ -670,9 +689,9 @@ function W2DataTab({ clientId }: { clientId: number }) {
               <div className="mb-4 space-y-1.5">
                 {flagsByW2[rec.id].map((flag, i) => {
                   const tone =
-                    flag.severity === "error" ? "bg-red-50 border-red-200 text-red-900" :
+                    flag.severity === "error" ? "bg-destructive/5 border-destructive/30 text-destructive" :
                     flag.severity === "warning" ? "bg-amber-50 border-amber-200 text-amber-900" :
-                    "bg-blue-50 border-blue-200 text-blue-900";
+                    "bg-brand/5 border-brand/30 text-primary";
                   const icon = flag.severity === "error" ? "⚠" : flag.severity === "warning" ? "▲" : "ℹ";
                   return (
                     <div key={i} className={`text-xs px-3 py-2 rounded border ${tone}`}>
@@ -765,7 +784,7 @@ interface BreakdownResponse {
 // ─── C5 — §1031 Like-Kind Exchange summary ────────────────────────────────
 // Renders only when section1031RealizedGain > 0. Reads from the existing
 // tax-return JSON (which includes the new C5 fields via mapReturn ...spread).
-function Section1031Card({ taxReturn }: { taxReturn: { section1031RealizedGain?: string | number | null; section1031BootReceived?: string | number | null; section1031RecognizedGain?: string | number | null; section1031DeferredGain?: string | number | null } | null | undefined }) {
+function Section1031Card({ taxReturn, clientId, taxYear }: { taxReturn: { section1031RealizedGain?: string | number | null; section1031BootReceived?: string | number | null; section1031RecognizedGain?: string | number | null; section1031DeferredGain?: string | number | null } | null | undefined; clientId: number; taxYear: number }) {
   const num = (v: string | number | null | undefined): number => v == null ? 0 : (typeof v === "number" ? v : Number(v));
   const realized = num(taxReturn?.section1031RealizedGain);
   const boot = num(taxReturn?.section1031BootReceived);
@@ -776,21 +795,34 @@ function Section1031Card({ taxReturn }: { taxReturn: { section1031RealizedGain?:
   return (
     <Card className="print:hidden">
       <CardHeader>
-        <CardTitle className="text-base">§1031 Like-Kind Exchange Summary</CardTitle>
-        <p className="text-xs text-muted-foreground mt-1">
-          Real property only (post-TCJA). CPA confirms like-kind classification, 45-day identification, 180-day completion, and qualified-intermediary use.
-        </p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle className="text-base">§1031 Like-Kind Exchange Summary</CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              Real property only (post-TCJA). CPA confirms like-kind classification, 45-day identification, 180-day completion, and qualified-intermediary use.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            title="Substitute Form 8824 PDF (§1031 like-kind exchange) per Pub 1167"
+            onClick={() => downloadFile(`/api/clients/${clientId}/form-8824/pdf?taxYear=${taxYear}`)}
+          >
+            <FileDown className="mr-1.5 h-4 w-4" />Form 8824 (PDF)
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-2 gap-y-2 text-sm">
-          <span className="text-slate-600">Realized gain (across all exchanges)</span>
+          <span className="text-muted-foreground">Realized gain (across all exchanges)</span>
           <span className="font-mono text-right">{fmt(realized)}</span>
-          <span className="text-slate-600">Boot received (cash + non-like-kind)</span>
+          <span className="text-muted-foreground">Boot received (cash + non-like-kind)</span>
           <span className="font-mono text-right">{fmt(boot)}</span>
           <span className="text-amber-700 font-medium">Recognized gain (taxed as LTCG this year)</span>
           <span className="font-mono text-right text-amber-700 font-medium">{fmt(recognized)}</span>
-          <span className="text-emerald-700 font-medium">Deferred gain (carries to replacement basis)</span>
-          <span className="font-mono text-right text-emerald-700 font-medium">{fmt(deferred)}</span>
+          <span className="text-success font-medium">Deferred gain (carries to replacement basis)</span>
+          <span className="font-mono text-right text-success font-medium">{fmt(deferred)}</span>
         </div>
         <p className="text-xs text-muted-foreground mt-3">
           Replacement-property basis = relinquished basis + boot paid − boot received + recognized gain. Engine doesn&apos;t track replacement-property basis across years — CPA records externally for the next exchange.
@@ -801,35 +833,51 @@ function Section1031Card({ taxReturn }: { taxReturn: { section1031RealizedGain?:
 }
 
 // ─── C7 — §163(j) + §461(l) business-limit summary ───────────────────────
-function Section163j461lCard({ taxReturn }: { taxReturn: { section163jBusinessInterestExpense?: string | number | null; section163jAllowedDeduction?: string | number | null; section163jDisallowedCarryforward?: string | number | null; section461lExcessLossAddback?: string | number | null } | null | undefined }) {
+function Section163j461lCard({ taxReturn, clientId, taxYear }: { taxReturn: { section163jBusinessInterestExpense?: string | number | null; section163jAllowedDeduction?: string | number | null; section163jDisallowedCarryforward?: string | number | null; section461lExcessLossAddback?: string | number | null } | null | undefined; clientId: number; taxYear: number }) {
   const num = (v: string | number | null | undefined): number => v == null ? 0 : (typeof v === "number" ? v : Number(v));
   const gross = num(taxReturn?.section163jBusinessInterestExpense);
   const allowed = num(taxReturn?.section163jAllowedDeduction);
   const cf = num(taxReturn?.section163jDisallowedCarryforward);
   const lossAddback = num(taxReturn?.section461lExcessLossAddback);
   if (gross <= 0 && allowed <= 0 && cf <= 0 && lossAddback <= 0) return null;
+  const has163j = gross > 0 || allowed > 0 || cf > 0;
   const fmt = (n: number): string => n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 });
   return (
     <Card className="print:hidden">
       <CardHeader>
-        <CardTitle className="text-base">Business-Income Limits — §163(j) + §461(l)</CardTitle>
-        <p className="text-xs text-muted-foreground mt-1">
-          §163(j) — engine applies the 30%-of-ATI cap on business interest expense (ATI proxy = pre-§163(j) ordinary income). Disallowed amount carries forward indefinitely. CPA confirms small-business gross-receipts exception (≤$30M for TY2024) or real-property-trade election is NOT invoked. §461(l) — CPA pre-computes the aggregate excess business loss above $305k single / $610k MFJ.
-        </p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle className="text-base">Business-Income Limits — §163(j) + §461(l)</CardTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              §163(j) — engine applies the 30%-of-ATI cap on business interest expense (ATI proxy = pre-§163(j) ordinary income). Disallowed amount carries forward indefinitely. CPA confirms small-business gross-receipts exception (≤$30M for TY2024) or real-property-trade election is NOT invoked. §461(l) — CPA pre-computes the aggregate excess business loss above $305k single / $610k MFJ.
+            </p>
+          </div>
+          {has163j ? (
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              title="Substitute Form 8990 PDF (§163(j) business interest expense limitation)"
+              onClick={() => downloadFile(`/api/clients/${clientId}/form-8990/pdf?taxYear=${taxYear}`)}
+            >
+              <FileDown className="mr-1.5 h-4 w-4" />Form 8990 (PDF)
+            </Button>
+          ) : null}
+        </div>
       </CardHeader>
       <CardContent>
         <div className="grid grid-cols-2 gap-y-2 text-sm">
-          {gross > 0 || allowed > 0 ? <>
-            <span className="text-slate-600">§163(j) gross business interest (CPA-entered)</span>
+          {has163j ? <>
+            <span className="text-muted-foreground">§163(j) gross business interest (CPA-entered)</span>
             <span className="font-mono text-right">{fmt(gross)}</span>
-            <span className="text-emerald-700 font-medium">§163(j) allowed deduction this year</span>
-            <span className="font-mono text-right text-emerald-700 font-medium">{fmt(allowed)}</span>
+            <span className="text-success font-medium">§163(j) allowed deduction this year</span>
+            <span className="font-mono text-right text-success font-medium">{fmt(allowed)}</span>
             <span className="text-amber-700">§163(j) disallowed → carries to next year (indefinite)</span>
             <span className="font-mono text-right text-amber-700">{fmt(cf)}</span>
           </> : null}
           {lossAddback > 0 ? <>
-            <span className="text-red-700 font-medium">§461(l) excess business loss addback</span>
-            <span className="font-mono text-right text-red-700 font-medium">{fmt(lossAddback)}</span>
+            <span className="text-destructive font-medium">§461(l) excess business loss addback</span>
+            <span className="font-mono text-right text-destructive font-medium">{fmt(lossAddback)}</span>
           </> : null}
         </div>
       </CardContent>
@@ -855,14 +903,14 @@ function EsppIsoCard({ taxReturn }: { taxReturn: { isoDisqualifyingDispositionOr
       <CardContent>
         <div className="grid grid-cols-2 gap-y-2 text-sm">
           {iso > 0 ? <>
-            <span className="text-slate-600">ISO disqualifying — ordinary comp</span>
+            <span className="text-muted-foreground">ISO disqualifying — ordinary comp</span>
             <span className="font-mono text-right">{fmt(iso)}</span>
           </> : null}
           {espp > 0 ? <>
-            <span className="text-slate-600">§423 ESPP disqualifying — ordinary comp</span>
+            <span className="text-muted-foreground">§423 ESPP disqualifying — ordinary comp</span>
             <span className="font-mono text-right">{fmt(espp)}</span>
           </> : null}
-          <span className="text-slate-600 font-medium">Total added to ordinary income</span>
+          <span className="text-muted-foreground font-medium">Total added to ordinary income</span>
           <span className="font-mono text-right font-medium">{fmt(iso + espp)}</span>
         </div>
       </CardContent>
@@ -1032,7 +1080,7 @@ function Form1040xCard({ clientId, taxYear }: { clientId: number; taxYear: numbe
       </CardHeader>
       <CardContent className="space-y-4">
         {formQuery.error ? (
-          <p className="text-xs text-red-600">
+          <p className="text-xs text-destructive">
             Form 1040-X load failed: {String((formQuery.error as Error).message)}
           </p>
         ) : null}
@@ -1067,11 +1115,11 @@ function Form1040xCard({ clientId, taxYear }: { clientId: number; taxYear: numbe
                   {form.lines.map((l) => {
                     const isHeadline = l.lineRef === "10" || l.lineRef === "16" || l.lineRef === "20";
                     return (
-                      <tr key={l.lineRef} className={isHeadline ? "border-t bg-slate-50 font-semibold" : "border-b border-slate-100"}>
-                        <td className="py-1.5 pr-2 text-slate-500">{l.lineRef}</td>
+                      <tr key={l.lineRef} className={isHeadline ? "border-t bg-muted/50 font-semibold" : "border-b border-border"}>
+                        <td className="py-1.5 pr-2 text-muted-foreground">{l.lineRef}</td>
                         <td className="py-1.5 pr-2">{l.label}</td>
                         <td className="py-1.5 pr-2 font-mono text-right">{fmtAmendCol(l.original)}</td>
-                        <td className={`py-1.5 pr-2 font-mono text-right ${l.netChange > 0 ? "text-red-700" : l.netChange < 0 ? "text-emerald-700" : ""}`}>
+                        <td className={`py-1.5 pr-2 font-mono text-right ${l.netChange > 0 ? "text-destructive" : l.netChange < 0 ? "text-success" : ""}`}>
                           {fmtAmendCol(l.netChange)}
                         </td>
                         <td className="py-1.5 pr-2 font-mono text-right">{fmtAmendCol(l.amended)}</td>
@@ -1223,23 +1271,23 @@ function Form4868Card({ clientId, taxYear }: { clientId: number; taxYear: number
           </div>
         </div>
 
-        <div className="rounded-md border bg-slate-50 p-4">
+        <div className="rounded-md border bg-muted/50 p-4">
           <div className="grid grid-cols-2 gap-y-2 text-sm">
-            <span className="text-slate-600">Line 4 — Estimated total tax</span>
+            <span className="text-muted-foreground">Line 4 — Estimated total tax</span>
             <span className="font-mono text-right">{data ? fmt4868(data.estimatedTotalTax) : "—"}</span>
-            <span className="text-slate-600">Line 5 — Total payments</span>
+            <span className="text-muted-foreground">Line 5 — Total payments</span>
             <span className="font-mono text-right">{data ? fmt4868(data.totalPayments) : "—"}</span>
-            <span className="text-slate-600 font-medium">Line 6 — Balance due</span>
-            <span className={`font-mono text-right font-medium ${data && data.balanceDue > 0 ? "text-red-700" : ""}`}>
+            <span className="text-muted-foreground font-medium">Line 6 — Balance due</span>
+            <span className={`font-mono text-right font-medium ${data && data.balanceDue > 0 ? "text-destructive" : ""}`}>
               {data ? fmt4868(data.balanceDue) : "—"}
             </span>
-            <span className="text-emerald-700 font-semibold">Line 7 — Paying with extension</span>
-            <span className="font-mono text-right text-emerald-700 font-semibold">{data ? fmt4868(data.amountBeingPaid) : "—"}</span>
+            <span className="text-success font-semibold">Line 7 — Paying with extension</span>
+            <span className="font-mono text-right text-success font-semibold">{data ? fmt4868(data.amountBeingPaid) : "—"}</span>
           </div>
         </div>
 
         {previewQuery.error ? (
-          <p className="text-xs text-red-600">
+          <p className="text-xs text-destructive">
             Could not load Form 4868 preview: {String((previewQuery.error as Error).message)}
           </p>
         ) : null}
@@ -1333,11 +1381,11 @@ function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: nu
       ) : taxReturn ? (
         <div className="space-y-4">
           {/* Refund/Owed Banner */}
-          <div className={`rounded-lg p-6 border-2 ${isRefund ? "border-green-400 bg-green-50" : isOwed ? "border-amber-400 bg-amber-50" : "border-border bg-muted"}`}>
+          <div className={`rounded-lg p-6 border-2 ${isRefund ? "border-success/40 bg-success/10" : isOwed ? "border-amber-400 bg-amber-50" : "border-border bg-muted"}`}>
             <div className="text-sm font-medium text-muted-foreground mb-1">
               Federal {isRefund ? "Refund" : isOwed ? "Amount Owed" : "Balance"}
             </div>
-            <div className={`text-4xl font-bold font-mono ${isRefund ? "text-green-700" : isOwed ? "text-amber-700" : "text-foreground"}`}>
+            <div className={`text-4xl font-bold font-mono ${isRefund ? "text-success" : isOwed ? "text-amber-700" : "text-foreground"}`}>
               {taxReturn.federalRefundOrOwed != null
                 ? fmt(Math.abs(Number(taxReturn.federalRefundOrOwed)))
                 : "—"}
@@ -1412,7 +1460,7 @@ function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: nu
                 ].map(([label, val]) => (
                   <div key={String(label)} className={`flex justify-between ${String(label).startsWith("  └─") ? "text-xs" : ""}`}>
                     <span className="text-muted-foreground">{String(label)}</span>
-                    <span className={`font-mono font-semibold ${String(label).includes("Refund/Owed") && Number(val) > 0 ? "text-green-600" : String(label).includes("Refund/Owed") && Number(val) < 0 ? "text-amber-600" : ""}`}>
+                    <span className={`font-mono font-semibold ${String(label).includes("Refund/Owed") && Number(val) > 0 ? "text-success" : String(label).includes("Refund/Owed") && Number(val) < 0 ? "text-amber-600" : ""}`}>
                       {fmt(Number(val))}
                     </span>
                   </div>
@@ -1444,7 +1492,7 @@ function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: nu
                     )}
                     <div className="flex justify-between border-t pt-2">
                       <span className="font-semibold">Applied credit</span>
-                      <span className="font-mono font-semibold text-green-700">{fmt(breakdown.data.childTaxCredit.appliedCredit)}</span>
+                      <span className="font-mono font-semibold text-success">{fmt(breakdown.data.childTaxCredit.appliedCredit)}</span>
                     </div>
                   </CardContent>
                 </Card>
@@ -1534,9 +1582,9 @@ function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: nu
             </Button>
           </div>
 
-          <Section1031Card taxReturn={taxReturn as unknown as Parameters<typeof Section1031Card>[0]["taxReturn"]} />
+          <Section1031Card clientId={clientId} taxYear={taxYear} taxReturn={taxReturn as unknown as Parameters<typeof Section1031Card>[0]["taxReturn"]} />
           <EsppIsoCard taxReturn={taxReturn as unknown as Parameters<typeof EsppIsoCard>[0]["taxReturn"]} />
-          <Section163j461lCard taxReturn={taxReturn as unknown as Parameters<typeof Section163j461lCard>[0]["taxReturn"]} />
+          <Section163j461lCard clientId={clientId} taxYear={taxYear} taxReturn={taxReturn as unknown as Parameters<typeof Section163j461lCard>[0]["taxReturn"]} />
           <Form4868Card clientId={clientId} taxYear={taxYear} />
           <Form1040xCard clientId={clientId} taxYear={taxYear} />
         </div>
@@ -1756,7 +1804,7 @@ function CompareColumn({
               return (
                 <div key={String(label)} className="flex justify-between">
                   <span className="text-muted-foreground">{String(label)}</span>
-                  <span className={`font-mono font-semibold ${isRefundLine ? (num > 0 ? "text-green-700" : num < 0 ? "text-amber-700" : "") : ""}`}>
+                  <span className={`font-mono font-semibold ${isRefundLine ? (num > 0 ? "text-success" : num < 0 ? "text-amber-700" : "") : ""}`}>
                     {isRefundLine && num !== 0 ? (num > 0 ? "+" : "−") : ""}{fmt(Math.abs(num))}
                   </span>
                 </div>
@@ -1801,7 +1849,7 @@ function CompareColumn({
               return (
                 <div key={String(label)} className="flex justify-between">
                   <span className="text-muted-foreground">{String(label)}</span>
-                  <span className={`font-mono font-semibold ${isRefundLine ? (num > 0 ? "text-green-700" : num < 0 ? "text-amber-700" : "") : ""}`}>
+                  <span className={`font-mono font-semibold ${isRefundLine ? (num > 0 ? "text-success" : num < 0 ? "text-amber-700" : "") : ""}`}>
                     {isRefundLine && num !== 0 ? (num > 0 ? "+" : "−") : ""}{fmt(Math.abs(num))}
                   </span>
                 </div>
@@ -1883,7 +1931,7 @@ function DiffCard({ a, b }: { a: PreviewResponse; b: PreviewResponse }) {
                   <td className="py-1.5 font-sans">{row.label}</td>
                   <td className="py-1.5 text-right">{fmt(row.aVal)}</td>
                   <td className="py-1.5 text-right">{fmt(row.bVal)}</td>
-                  <td className={`py-1.5 text-right font-semibold ${delta > 0 ? "text-green-700" : delta < 0 ? "text-amber-700" : ""}`}>
+                  <td className={`py-1.5 text-right font-semibold ${delta > 0 ? "text-success" : delta < 0 ? "text-amber-700" : ""}`}>
                     {delta === 0 ? "—" : `${delta > 0 ? "+" : "−"}${fmt(Math.abs(delta))}`}
                   </td>
                 </tr>
@@ -2446,6 +2494,26 @@ function AdjustmentsTab({ clientId }: { clientId: number }) {
     );
   }
 
+  // §199A SSTB flag — surfaced as a dedicated toggle. The engine reads the
+  // `qbi_sstb_flag` adjustment to apply the §199A(d)(3) phase-out for a
+  // Specified Service Trade/Business above the income threshold.
+  const sstbAdj = adjustments?.find((a) => a.adjustmentType === "qbi_sstb_flag");
+  const sstbOn = !!sstbAdj?.isApplied;
+  const sstbBusy = createAdj.isPending || updateAdj.isPending;
+  function toggleSstb(next: boolean) {
+    if (sstbAdj) {
+      updateAdj.mutate(
+        { clientId, adjustmentId: sstbAdj.id, data: { isApplied: next } },
+        { onSuccess: () => { invalidate(); toast({ title: next ? "SSTB flag enabled" : "SSTB flag disabled" }); } },
+      );
+    } else if (next) {
+      createAdj.mutate(
+        { clientId, data: { adjustmentType: "qbi_sstb_flag" as CreateAdjustmentBodyAdjustmentType, amount: 0, description: "Specified Service Trade/Business — §199A(d)(3) phase-out applies", isApplied: true } },
+        { onSuccess: () => { invalidate(); toast({ title: "SSTB flag enabled" }); } },
+      );
+    }
+  }
+
   const TYPE_LABELS: Record<string, string> = {
     deduction: "Deduction (above-the-line)",
     credit: "Credit (non-refundable)",
@@ -2454,6 +2522,7 @@ function AdjustmentsTab({ clientId }: { clientId: number }) {
     self_employment_income: "Self-Employment Income",
     investment_income: "Investment Income (NIIT)",
     qbi_income: "Qualified Business Income (QBI)",
+    qbi_sstb_flag: "QBI — Specified Service Trade/Business (SSTB) flag",
     amt_preferences: "AMT Preferences (catch-all — line 2 misc)",
     amt_iso_bargain_element: "AMT — ISO Bargain Element (Form 6251 line 2k)",
     amt_state_tax_addback_override: "AMT — SALT Addback Override (Form 6251 line 2g; replaces auto)",
@@ -2515,7 +2584,27 @@ function AdjustmentsTab({ clientId }: { clientId: number }) {
 
   return (
     <div className="space-y-4">
-      {adjustments?.map((adj) => (
+      <Card className="border-brand/30 bg-brand/[0.03]">
+        <CardContent className="flex items-start justify-between gap-4 py-4">
+          <div className="space-y-1.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <Briefcase className="h-4 w-4 text-brand-ink" />
+              <span className="text-sm font-semibold">§199A Qualified Business Income</span>
+              <Badge variant="outline" className="text-[10px]">auto-applied</Badge>
+            </div>
+            <p className="max-w-2xl text-xs text-muted-foreground">
+              The engine auto-applies the 20% QBI deduction from Schedule&nbsp;C net income and active K-1 Box&nbsp;1.
+              Turn on the SSTB flag for a Specified Service Trade or Business (law, health, consulting, financial
+              services, etc.) so the §199A(d)(3) phase-out applies above $191,950 single / $383,900 MFJ (TY2024).
+            </p>
+          </div>
+          <label className="flex shrink-0 cursor-pointer flex-col items-center gap-1.5">
+            <Switch checked={sstbOn} onCheckedChange={toggleSstb} disabled={sstbBusy} aria-label="Specified Service Trade or Business flag" />
+            <span className="text-[11px] font-medium text-muted-foreground">SSTB</span>
+          </label>
+        </CardContent>
+      </Card>
+      {adjustments?.filter((adj) => adj.adjustmentType !== "qbi_sstb_flag").map((adj) => (
         <Card key={adj.id}>
           <CardContent className="py-4">
             {editingId === adj.id ? (
@@ -2657,47 +2746,54 @@ export default function ClientDetail() {
   }
 
   return (
-    <div className="p-8 max-w-5xl mx-auto space-y-6">
-      <div className="flex items-start justify-between">
-        <div>
-          <div className="flex items-center gap-3">
-            <h2 className="text-3xl font-bold tracking-tight">{client.firstName} {client.lastName}</h2>
-            <Badge variant="outline">{FILING_STATUS_LABELS[client.filingStatus] ?? client.filingStatus}</Badge>
+    <div className="p-8 max-w-6xl mx-auto space-y-6">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex min-w-0 items-start gap-4">
+          <span className="hidden h-12 w-12 shrink-0 place-items-center rounded-xl bg-brand/10 text-base font-bold text-brand-ink ring-1 ring-inset ring-brand/20 sm:grid">
+            {`${client.firstName?.[0] ?? ""}${client.lastName?.[0] ?? ""}`.toUpperCase() || "—"}
+          </span>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-3">
+              <h2 className="text-3xl font-bold tracking-tight text-foreground">{client.firstName} {client.lastName}</h2>
+              <Badge variant="outline">{FILING_STATUS_LABELS[client.filingStatus] ?? client.filingStatus}</Badge>
+            </div>
+            <p className="text-muted-foreground mt-1">
+              {client.email}
+              {client.phone ? ` · ${client.phone}` : ""}
+              {client.state ? ` · ${client.state}` : ""}
+              {` · TY${client.taxYear}`}
+              {(client.dependentsUnder17 ?? 0) > 0 ? ` · ${client.dependentsUnder17} child${client.dependentsUnder17 === 1 ? "" : "ren"}` : ""}
+              {(client.otherDependents ?? 0) > 0 ? ` · ${client.otherDependents} other dep` : ""}
+            </p>
+            {client.notes && <p className="text-sm mt-2 text-muted-foreground italic">{client.notes}</p>}
           </div>
-          <p className="text-muted-foreground mt-1">
-            {client.email}
-            {client.phone ? ` · ${client.phone}` : ""}
-            {client.state ? ` · ${client.state}` : ""}
-            {` · TY${client.taxYear}`}
-            {(client.dependentsUnder17 ?? 0) > 0 ? ` · ${client.dependentsUnder17} child${client.dependentsUnder17 === 1 ? "" : "ren"}` : ""}
-            {(client.otherDependents ?? 0) > 0 ? ` · ${client.otherDependents} other dep` : ""}
-          </p>
-          {client.notes && <p className="text-sm mt-2 text-muted-foreground italic">{client.notes}</p>}
         </div>
-        <div className="flex gap-2">
+        <div className="flex shrink-0 gap-2">
           <Link href={`/clients/${clientId}/edit`}>
-            <Button variant="outline">Edit Client</Button>
+            <Button variant="outline"><Pencil className="mr-1.5 h-4 w-4" />Edit Client</Button>
           </Link>
           <Link href="/clients">
-            <Button variant="ghost">Back</Button>
+            <Button variant="ghost"><ArrowLeft className="mr-1.5 h-4 w-4" />Back</Button>
           </Link>
         </div>
       </div>
 
       <Tabs defaultValue="documents">
-        <TabsList className={`grid ${proTierEnabled ? "grid-cols-11" : "grid-cols-10"} w-full max-w-7xl`}>
-          <TabsTrigger value="documents">Documents</TabsTrigger>
-          <TabsTrigger value="w2data">W-2 Data</TabsTrigger>
-          <TabsTrigger value="form1099">1099 Forms</TabsTrigger>
-          <TabsTrigger value="schedD">Schedule D</TabsTrigger>
-          <TabsTrigger value="rentals">Rentals</TabsTrigger>
-          <TabsTrigger value="k1">K-1s</TabsTrigger>
-          <TabsTrigger value="assets">Assets</TabsTrigger>
-          <TabsTrigger value="calculator">Tax Calculator</TabsTrigger>
-          <TabsTrigger value="compare">Year Compare</TabsTrigger>
-          <TabsTrigger value="adjustments">Adjustments</TabsTrigger>
-          {proTierEnabled ? <TabsTrigger value="planning">Planning</TabsTrigger> : null}
-        </TabsList>
+        <div className="-mx-1 overflow-x-auto px-1 pb-1 scrollbar-thin">
+          <TabsList className="inline-flex h-auto w-max items-center justify-start gap-1 rounded-xl border border-border bg-muted/50 p-1">
+            <TabsTrigger value="documents" className={TAB_TRIGGER_CLS}><FileText className="h-4 w-4" />Documents</TabsTrigger>
+            <TabsTrigger value="w2data" className={TAB_TRIGGER_CLS}><FileSpreadsheet className="h-4 w-4" />W-2 Data</TabsTrigger>
+            <TabsTrigger value="form1099" className={TAB_TRIGGER_CLS}><Files className="h-4 w-4" />1099 Forms</TabsTrigger>
+            <TabsTrigger value="schedD" className={TAB_TRIGGER_CLS}><CandlestickChart className="h-4 w-4" />Schedule D</TabsTrigger>
+            <TabsTrigger value="rentals" className={TAB_TRIGGER_CLS}><Building2 className="h-4 w-4" />Rentals</TabsTrigger>
+            <TabsTrigger value="k1" className={TAB_TRIGGER_CLS}><Network className="h-4 w-4" />K-1s</TabsTrigger>
+            <TabsTrigger value="assets" className={TAB_TRIGGER_CLS}><Wallet className="h-4 w-4" />Assets</TabsTrigger>
+            <TabsTrigger value="calculator" className={TAB_TRIGGER_CLS}><Calculator className="h-4 w-4" />Tax Calculator</TabsTrigger>
+            <TabsTrigger value="compare" className={TAB_TRIGGER_CLS}><GitCompareArrows className="h-4 w-4" />Year Compare</TabsTrigger>
+            <TabsTrigger value="adjustments" className={TAB_TRIGGER_CLS}><SlidersHorizontal className="h-4 w-4" />Adjustments</TabsTrigger>
+            {proTierEnabled ? <TabsTrigger value="planning" className={TAB_TRIGGER_CLS}><Target className="h-4 w-4" />Planning</TabsTrigger> : null}
+          </TabsList>
+        </div>
 
         <TabsContent value="documents" className="mt-6">
           <DocumentsTab clientId={clientId} clientTaxYear={client.taxYear ?? 2024} clientState={client.state ?? undefined} />
@@ -3454,7 +3550,7 @@ function AssetBalancesTab({ clientId, taxYear }: { clientId: number; taxYear: nu
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
-                <thead className="bg-slate-100 text-slate-700">
+                <thead className="bg-muted text-foreground">
                   <tr>
                     <th className="text-left px-3 py-2">Account</th>
                     <th className="text-left px-3 py-2">Type</th>
@@ -3470,20 +3566,20 @@ function AssetBalancesTab({ clientId, taxYear }: { clientId: number; taxYear: nu
                   {rows.map((r) => {
                     const typeLabel = ASSET_TYPES.find((t) => t.value === r.assetType)?.label ?? r.assetType;
                     return (
-                      <tr key={r.id} className="border-t border-slate-200">
+                      <tr key={r.id} className="border-t border-border">
                         <td className="px-3 py-2 font-medium">{r.accountName}</td>
-                        <td className="px-3 py-2 text-slate-700">{typeLabel}</td>
+                        <td className="px-3 py-2 text-foreground">{typeLabel}</td>
                         <td className="text-right tabular-nums px-3 py-2">{fmt(Number(r.balance ?? 0))}</td>
                         <td className="text-right tabular-nums px-3 py-2">{r.costBasis != null ? fmt(Number(r.costBasis)) : "—"}</td>
                         <td className="text-right tabular-nums px-3 py-2">{r.afterTaxBasis != null ? fmt(Number(r.afterTaxBasis)) : "—"}</td>
                         <td className="text-center px-3 py-2">{r.nuaEligible ? "✓" : ""}</td>
-                        <td className="px-3 py-2 text-slate-500 max-w-xs truncate">{r.notes ?? ""}</td>
+                        <td className="px-3 py-2 text-muted-foreground max-w-xs truncate">{r.notes ?? ""}</td>
                         <td className="px-3 py-2 whitespace-nowrap">
                           <Button size="sm" variant="ghost" onClick={() => {
                             setEditingId(r.id);
                             setDraft({ ...r });
                           }}>Edit</Button>
-                          <Button size="sm" variant="ghost" className="text-red-700" onClick={() => {
+                          <Button size="sm" variant="ghost" className="text-destructive" onClick={() => {
                             if (confirm(`Delete ${r.accountName}?`)) deleteMut.mutate(r.id);
                           }}>Delete</Button>
                         </td>
@@ -3949,19 +4045,19 @@ const PLANNING_CATEGORY_LABEL: Record<string, string> = {
 };
 
 const PLANNING_CATEGORY_BADGE: Record<string, string> = {
-  retirement: "bg-emerald-100 text-emerald-900",
-  state: "bg-sky-100 text-sky-900",
-  charitable: "bg-rose-100 text-rose-900",
+  retirement: "bg-success/10 text-success",
+  state: "bg-brand/10 text-primary",
+  charitable: "bg-destructive/10 text-destructive",
   timing: "bg-amber-100 text-amber-900",
-  business: "bg-indigo-100 text-indigo-900",
-  investment: "bg-violet-100 text-violet-900",
-  credits: "bg-teal-100 text-teal-900",
+  business: "bg-brand/10 text-primary",
+  investment: "bg-brand/10 text-primary",
+  credits: "bg-brand/10 text-primary",
 };
 
 function confidenceBadgeColor(confidence: number): string {
-  if (confidence >= 0.85) return "bg-green-100 text-green-800";
+  if (confidence >= 0.85) return "bg-success/10 text-success";
   if (confidence >= 0.70) return "bg-yellow-100 text-yellow-800";
-  return "bg-gray-100 text-gray-700";
+  return "bg-muted text-foreground";
 }
 
 function PlanningSynthesisPanel({ clientId, enabled }: { clientId: number; enabled: boolean }) {
@@ -4117,7 +4213,7 @@ function PlanningTab({ clientId }: { clientId: number }) {
         categories.map((cat) => (
           <div key={cat} className="space-y-3">
             <div className="flex items-center gap-2">
-              <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${PLANNING_CATEGORY_BADGE[cat] ?? "bg-gray-100 text-gray-700"}`}>
+              <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${PLANNING_CATEGORY_BADGE[cat] ?? "bg-muted text-foreground"}`}>
                 {PLANNING_CATEGORY_LABEL[cat] ?? cat}
               </span>
               <span className="text-xs text-muted-foreground">
@@ -4218,12 +4314,12 @@ function PlanningHitHeadline({ hit }: HitCardProps) {
     Math.abs(refundDelta) > 0;
   return (
     <>
-      <div className="text-2xl font-semibold text-emerald-700">
+      <div className="text-2xl font-semibold text-success">
         {fmt(headlineSavings)}
       </div>
       {showVerified ? (
         <div
-          className="mt-1 inline-flex items-center gap-1 rounded bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-800 ring-1 ring-emerald-200"
+          className="mt-1 inline-flex items-center gap-1 rounded bg-success/10 px-2 py-0.5 text-[10px] font-medium text-success ring-1 ring-success/30"
           title="Computed by running an actual what-if scenario through the tax engine — not a heuristic estimate."
         >
           Engine-verified (H2)
@@ -4237,7 +4333,7 @@ function PlanningHitHeadline({ hit }: HitCardProps) {
         </div>
       ) : null}
       {hit.whatIf?.sensitivity ? (
-        <div className="mt-1 text-[11px] text-emerald-700 tabular-nums">
+        <div className="mt-1 text-[11px] text-success tabular-nums">
           Range: {fmt(Number(hit.whatIf.sensitivity.low ?? 0))} – {fmt(Number(hit.whatIf.sensitivity.high ?? 0))}
         </div>
       ) : null}
@@ -4260,10 +4356,10 @@ function PlanningHitWhatIfPanel({ hit }: HitCardProps) {
   const isCost = semantics === "cost";
   const containerClass = isCost
     ? "rounded border border-amber-200 bg-amber-50/40 p-3 text-xs"
-    : "rounded border border-emerald-200 bg-emerald-50/40 p-3 text-xs";
-  const labelClass = isCost ? "font-medium text-amber-900" : "font-medium text-emerald-900";
-  const dlClass = isCost ? "grid grid-cols-2 gap-x-4 gap-y-1 text-amber-900" : "grid grid-cols-2 gap-x-4 gap-y-1 text-emerald-900";
-  const dtClass = isCost ? "text-amber-700" : "text-emerald-700";
+    : "rounded border border-success/30 bg-success/5 p-3 text-xs";
+  const labelClass = isCost ? "font-medium text-amber-900" : "font-medium text-success";
+  const dlClass = isCost ? "grid grid-cols-2 gap-x-4 gap-y-1 text-amber-900" : "grid grid-cols-2 gap-x-4 gap-y-1 text-success";
+  const dtClass = isCost ? "text-amber-700" : "text-success";
   return (
     <div className={containerClass}>
       <div className={`mb-2 ${labelClass}`}>
@@ -4292,7 +4388,7 @@ function PlanningHitWhatIfPanel({ hit }: HitCardProps) {
         <dd className="text-right tabular-nums font-medium">{signedFmt(Number(delta.combinedRefundDelta ?? 0))}</dd>
       </dl>
       {Array.isArray(hit.whatIf.mutations) && hit.whatIf.mutations.length > 0 ? (
-        <div className="mt-2 pt-2 border-t border-emerald-100 text-[10px] text-emerald-700">
+        <div className="mt-2 pt-2 border-t border-success/20 text-[10px] text-success">
           <span className="font-medium">Engine simulated:</span>{" "}
           {hit.whatIf.mutations.map((m, i) => (
             <span key={i}>
@@ -4321,17 +4417,17 @@ function PlanningHitMultiYearPanel({ hit }: HitCardProps) {
   const scenarioTax = (my.scenarioYearTax ?? []).map((v) => Number(v));
   const yearDelta = (my.yearByYearDelta ?? []).map((v) => Number(v));
   const isPositive = totalSavings > 0;
-  const headerColor = isPositive ? "text-indigo-900" : "text-slate-800";
+  const headerColor = isPositive ? "text-primary" : "text-foreground";
   const sumLabel = isPositive
     ? `Saves ${fmt(Math.abs(totalSavings))} over ${horizon} years`
     : `Costs ${fmt(Math.abs(totalSavings))} over ${horizon} years`;
   return (
-    <div className="rounded border border-indigo-200 bg-indigo-50/40 p-3 text-xs">
+    <div className="rounded border border-brand/30 bg-brand/5 p-3 text-xs">
       <div className={`mb-2 font-medium ${headerColor}`}>
         Multi-year projection (H3) · {sumLabel}
       </div>
       <table className="w-full text-[11px] tabular-nums">
-        <thead className="text-indigo-700">
+        <thead className="text-brand-ink">
           <tr>
             <th className="text-left font-medium">Year</th>
             <th className="text-right font-medium">Baseline tax</th>
@@ -4339,7 +4435,7 @@ function PlanningHitMultiYearPanel({ hit }: HitCardProps) {
             <th className="text-right font-medium">Δ</th>
           </tr>
         </thead>
-        <tbody className="text-indigo-900">
+        <tbody className="text-primary">
           {Array.from({ length: horizon }).map((_, y) => {
             const b = baselineTax[y] ?? 0;
             const s = scenarioTax[y] ?? 0;
@@ -4349,13 +4445,13 @@ function PlanningHitMultiYearPanel({ hit }: HitCardProps) {
                 <td className="py-0.5">Year {y}</td>
                 <td className="text-right">{fmt(b)}</td>
                 <td className="text-right">{fmt(s)}</td>
-                <td className={`text-right ${d < 0 ? "text-emerald-700" : d > 0 ? "text-amber-700" : ""}`}>
+                <td className={`text-right ${d < 0 ? "text-success" : d > 0 ? "text-amber-700" : ""}`}>
                   {signedFmt(d)}
                 </td>
               </tr>
             );
           })}
-          <tr className="border-t border-indigo-200">
+          <tr className="border-t border-brand/30">
             <td className="pt-1 font-medium">Total</td>
             <td className="pt-1 text-right font-medium">
               {fmt(baselineTax.reduce((a, b) => a + b, 0))}
@@ -4363,7 +4459,7 @@ function PlanningHitMultiYearPanel({ hit }: HitCardProps) {
             <td className="pt-1 text-right font-medium">
               {fmt(scenarioTax.reduce((a, b) => a + b, 0))}
             </td>
-            <td className="pt-1 text-right font-medium text-indigo-900">
+            <td className="pt-1 text-right font-medium text-primary">
               {signedFmt(scenarioTax.reduce((a, b) => a + b, 0) - baselineTax.reduce((a, b) => a + b, 0))}
             </td>
           </tr>
@@ -4371,10 +4467,10 @@ function PlanningHitMultiYearPanel({ hit }: HitCardProps) {
       </table>
       {Array.isArray(my.multiYearAssumptions) && my.multiYearAssumptions.length > 0 ? (
         <details className="mt-2">
-          <summary className="cursor-pointer text-[10px] font-medium text-indigo-700">
+          <summary className="cursor-pointer text-[10px] font-medium text-brand-ink">
             Multi-year assumptions ({my.multiYearAssumptions.length})
           </summary>
-          <ul className="mt-1 list-disc pl-4 text-[10px] text-indigo-700 space-y-0.5">
+          <ul className="mt-1 list-disc pl-4 text-[10px] text-brand-ink space-y-0.5">
             {my.multiYearAssumptions.map((a, i) => (
               <li key={i}>{a}</li>
             ))}
@@ -4388,11 +4484,11 @@ function PlanningHitMultiYearPanel({ hit }: HitCardProps) {
 function PlanningHitAssumptions({ hit }: HitCardProps) {
   if (!Array.isArray(hit.assumptions) || hit.assumptions.length === 0) return null;
   return (
-    <details className="rounded border border-slate-200 bg-slate-50 p-3 text-xs">
-      <summary className="cursor-pointer font-medium text-slate-700">
+    <details className="rounded border border-border bg-muted/50 p-3 text-xs">
+      <summary className="cursor-pointer font-medium text-foreground">
         Assumptions ({hit.assumptions.length})
       </summary>
-      <ul className="mt-2 list-disc pl-5 text-slate-700 space-y-1">
+      <ul className="mt-2 list-disc pl-5 text-foreground space-y-1">
         {hit.assumptions.map((a, i) => (
           <li key={i}>{a}</li>
         ))}
@@ -4431,12 +4527,12 @@ function CrossStrategyCard({ crossStrategy }: { crossStrategy?: CrossStrategyDat
       ? "Strategies COMPOUND when stacked — joint savings exceeds the simple sum."
       : "Stacked savings are approximately additive (no significant interaction).";
   return (
-    <Card className="border-indigo-200 bg-indigo-50/30">
+    <Card className="border-brand/30 bg-brand/5">
       <CardHeader className="pb-3">
-        <CardTitle className="text-base text-indigo-900">
+        <CardTitle className="text-base text-primary">
           All strategies combined (Phase H — H7)
         </CardTitle>
-        <div className="text-xs text-indigo-700 mt-1">
+        <div className="text-xs text-brand-ink mt-1">
           Engine ran all {crossStrategy.stackedStrategyIds.length} savings strategies as ONE
           stacked scenario: {crossStrategy.stackedStrategyIds.join(", ")}.
         </div>
@@ -4444,43 +4540,43 @@ function CrossStrategyCard({ crossStrategy }: { crossStrategy?: CrossStrategyDat
       <CardContent className="text-sm space-y-3">
         <div className="grid grid-cols-3 gap-4">
           <div>
-            <div className="text-xs text-indigo-700">Joint savings (verified)</div>
-            <div className="text-2xl font-semibold text-emerald-700">{fmt(joint)}</div>
+            <div className="text-xs text-brand-ink">Joint savings (verified)</div>
+            <div className="text-2xl font-semibold text-success">{fmt(joint)}</div>
           </div>
           <div>
-            <div className="text-xs text-indigo-700">Sum of individual savings</div>
-            <div className="text-2xl font-semibold text-slate-700">{fmt(sum)}</div>
+            <div className="text-xs text-brand-ink">Sum of individual savings</div>
+            <div className="text-2xl font-semibold text-foreground">{fmt(sum)}</div>
           </div>
           <div>
-            <div className="text-xs text-indigo-700">Interaction effect</div>
-            <div className={`text-2xl font-semibold tabular-nums ${interaction < 0 ? "text-red-700" : interaction > 0 ? "text-emerald-700" : "text-slate-700"}`}>
+            <div className="text-xs text-brand-ink">Interaction effect</div>
+            <div className={`text-2xl font-semibold tabular-nums ${interaction < 0 ? "text-destructive" : interaction > 0 ? "text-success" : "text-foreground"}`}>
               {signedFmt(interaction)}
             </div>
           </div>
         </div>
-        <p className="text-xs text-indigo-800">{interactionLabel}</p>
-        <div className="rounded border border-indigo-200 bg-white/40 p-3 text-xs text-indigo-900">
+        <p className="text-xs text-primary">{interactionLabel}</p>
+        <div className="rounded border border-brand/30 bg-white/40 p-3 text-xs text-primary">
           <div className="font-medium mb-2">Joint engine delta breakdown</div>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-1">
-            <dt className="text-indigo-700">Federal tax</dt>
+            <dt className="text-brand-ink">Federal tax</dt>
             <dd className="text-right tabular-nums">{signedFmt(Number(crossStrategy.combinedDelta.federalTaxLiability ?? 0))}</dd>
-            <dt className="text-indigo-700">State tax</dt>
+            <dt className="text-brand-ink">State tax</dt>
             <dd className="text-right tabular-nums">{signedFmt(Number(crossStrategy.combinedDelta.stateTaxLiability ?? 0))}</dd>
-            <dt className="text-indigo-700">AGI change</dt>
+            <dt className="text-brand-ink">AGI change</dt>
             <dd className="text-right tabular-nums">{signedFmt(Number(crossStrategy.combinedDelta.adjustedGrossIncome ?? 0))}</dd>
             {Number(crossStrategy.combinedDelta.niitTax ?? 0) !== 0 ? (
               <>
-                <dt className="text-indigo-700">NIIT change</dt>
+                <dt className="text-brand-ink">NIIT change</dt>
                 <dd className="text-right tabular-nums">{signedFmt(Number(crossStrategy.combinedDelta.niitTax))}</dd>
               </>
             ) : null}
             {Number(crossStrategy.combinedDelta.amtTax ?? 0) !== 0 ? (
               <>
-                <dt className="text-indigo-700">AMT change</dt>
+                <dt className="text-brand-ink">AMT change</dt>
                 <dd className="text-right tabular-nums">{signedFmt(Number(crossStrategy.combinedDelta.amtTax))}</dd>
               </>
             ) : null}
-            <dt className="text-indigo-700">Net refund impact</dt>
+            <dt className="text-brand-ink">Net refund impact</dt>
             <dd className="text-right tabular-nums font-medium">{signedFmt(Number(crossStrategy.combinedDelta.combinedRefundDelta ?? 0))}</dd>
           </dl>
         </div>
@@ -4527,7 +4623,7 @@ function AiDiscoveryCard({ clientId }: { clientId: number }) {
       {!enabled ? null : isLoading ? (
         <CardContent className="text-sm text-fuchsia-700">Scanning catalog...</CardContent>
       ) : error ? (
-        <CardContent className="text-sm text-red-700">
+        <CardContent className="text-sm text-destructive">
           Discovery failed. Check server logs.
         </CardContent>
       ) : !data ? null : (data.candidates ?? []).length === 0 ? (
@@ -4548,9 +4644,9 @@ function AiDiscoveryCard({ clientId }: { clientId: number }) {
                     <div className="text-xs text-fuchsia-700">{c.ircSection}</div>
                   </div>
                   <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
-                    conf >= 0.7 ? "bg-emerald-100 text-emerald-800" :
+                    conf >= 0.7 ? "bg-success/10 text-success" :
                     conf >= 0.4 ? "bg-amber-100 text-amber-800" :
-                    "bg-slate-100 text-slate-700"
+                    "bg-muted text-foreground"
                   }`}>
                     {(conf * 100).toFixed(0)}% confidence
                   </span>
@@ -4560,7 +4656,7 @@ function AiDiscoveryCard({ clientId }: { clientId: number }) {
                     className={`mt-2 text-[11px] rounded px-2 py-1 ${
                       c.verification.status === "catalog-overlap"
                         ? "bg-amber-50 text-amber-900 border border-amber-200"
-                        : "bg-slate-50 text-slate-700 border border-slate-200"
+                        : "bg-muted/50 text-foreground border border-border"
                     }`}
                     title={c.verification.detail}
                   >
@@ -4659,7 +4755,7 @@ function StateResidencyComparisonCard({ clientId }: { clientId: number }) {
                         <td className="text-right tabular-nums px-3 py-2">{fmt(Number(r.scenarioState ?? 0))}</td>
                         <td className="text-right tabular-nums px-3 py-2">{signedFmt(Number(r.deltaFederal ?? 0))}</td>
                         <td className="text-right tabular-nums px-3 py-2">{signedFmt(Number(r.deltaState ?? 0))}</td>
-                        <td className={`text-right tabular-nums px-3 py-2 font-medium ${dc < 0 ? "text-emerald-700" : dc > 0 ? "text-red-700" : ""}`}>
+                        <td className={`text-right tabular-nums px-3 py-2 font-medium ${dc < 0 ? "text-success" : dc > 0 ? "text-destructive" : ""}`}>
                           {signedFmt(dc)}
                         </td>
                       </tr>
@@ -4684,7 +4780,7 @@ function StateResidencyComparisonCard({ clientId }: { clientId: number }) {
           </details>
         </CardContent>
       ) : mutation.isError ? (
-        <CardContent className="text-sm text-red-700">
+        <CardContent className="text-sm text-destructive">
           Error running state comparison. Check the server logs.
         </CardContent>
       ) : !hasRun ? (
@@ -4727,14 +4823,14 @@ function PeerBenchmarkCard({ clientId }: { clientId: number }) {
     : rank < 35
     ? "Client pays LESS than most peers — already optimized."
     : "Client pays around the median — typical planning effort warranted.";
-  const verdictClass = rank > 65 ? "text-red-700" : rank < 35 ? "text-emerald-700" : "text-slate-700";
+  const verdictClass = rank > 65 ? "text-destructive" : rank < 35 ? "text-success" : "text-foreground";
   return (
-    <Card className="border-purple-200 bg-purple-50/30">
+    <Card className="border-brand/30 bg-brand/5">
       <CardHeader className="pb-3">
-        <CardTitle className="text-base text-purple-900">
+        <CardTitle className="text-base text-primary">
           Peer benchmark (Phase H — H11)
         </CardTitle>
-        <div className="text-xs text-purple-700 mt-1">
+        <div className="text-xs text-brand-ink mt-1">
           Effective tax rate vs {cohortSize} firm peer{cohortSize === 1 ? "" : "s"}{" "}
           in the {fmt(Number(cohort.agiMin ?? 0))}–{fmt(Number(cohort.agiMax ?? 0))} AGI band.
         </div>
@@ -4742,41 +4838,41 @@ function PeerBenchmarkCard({ clientId }: { clientId: number }) {
       <CardContent className="text-sm space-y-3">
         <div className="grid grid-cols-3 gap-4">
           <div>
-            <div className="text-xs text-purple-700">Client's effective rate</div>
-            <div className="text-2xl font-semibold text-purple-900">
+            <div className="text-xs text-brand-ink">Client's effective rate</div>
+            <div className="text-2xl font-semibold text-primary">
               {(clientRate * 100).toFixed(2)}%
             </div>
           </div>
           <div>
-            <div className="text-xs text-purple-700">Peer median</div>
-            <div className="text-2xl font-semibold text-slate-700">
+            <div className="text-xs text-brand-ink">Peer median</div>
+            <div className="text-2xl font-semibold text-foreground">
               {(median * 100).toFixed(2)}%
             </div>
           </div>
           <div>
-            <div className="text-xs text-purple-700">Percentile rank</div>
-            <div className="text-2xl font-semibold text-purple-900">
+            <div className="text-xs text-brand-ink">Percentile rank</div>
+            <div className="text-2xl font-semibold text-primary">
               {rank.toFixed(0)}<span className="text-base font-normal">/100</span>
             </div>
           </div>
         </div>
         <p className={`text-sm font-medium ${verdictClass}`}>{verdict}</p>
-        <div className="rounded border border-purple-200 bg-white/40 p-3 text-xs text-purple-900">
+        <div className="rounded border border-brand/30 bg-white/40 p-3 text-xs text-primary">
           <div className="font-medium mb-2">Cohort distribution</div>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-1">
-            <dt className="text-purple-700">25th percentile</dt>
+            <dt className="text-brand-ink">25th percentile</dt>
             <dd className="text-right tabular-nums">{(Number(cohort.effectiveRateP25 ?? 0) * 100).toFixed(2)}%</dd>
-            <dt className="text-purple-700">Mean</dt>
+            <dt className="text-brand-ink">Mean</dt>
             <dd className="text-right tabular-nums">{(Number(cohort.effectiveRateMean ?? 0) * 100).toFixed(2)}%</dd>
-            <dt className="text-purple-700">75th percentile</dt>
+            <dt className="text-brand-ink">75th percentile</dt>
             <dd className="text-right tabular-nums">{(Number(cohort.effectiveRateP75 ?? 0) * 100).toFixed(2)}%</dd>
-            <dt className="text-purple-700">Client vs median</dt>
-            <dd className={`text-right tabular-nums font-medium ${delta > 0 ? "text-red-700" : "text-emerald-700"}`}>
+            <dt className="text-brand-ink">Client vs median</dt>
+            <dd className={`text-right tabular-nums font-medium ${delta > 0 ? "text-destructive" : "text-success"}`}>
               {delta >= 0 ? "+" : ""}{(delta * 100).toFixed(2)} pp
             </dd>
           </dl>
         </div>
-        <p className="text-[10px] text-purple-700">
+        <p className="text-[10px] text-brand-ink">
           Cohort is firm-wide clients with AGI within $50k of {fmt(Number(data.clientAgi ?? 0))}.
           Effective rate = total federal + state tax burden / total income.
         </p>
@@ -4834,7 +4930,7 @@ function MultiYearPlanningSection({ clientId }: { clientId: number }) {
           hits.map((hit) => (
             <div
               key={hit.strategyId}
-              className="rounded border border-indigo-200 bg-indigo-50/40 p-3 space-y-2"
+              className="rounded border border-brand/30 bg-brand/5 p-3 space-y-2"
             >
               <div className="flex items-start justify-between gap-3">
                 <div>
@@ -4852,7 +4948,7 @@ function MultiYearPlanningSection({ clientId }: { clientId: number }) {
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="text-lg font-semibold text-indigo-700">
+                  <div className="text-lg font-semibold text-brand-ink">
                     {fmt(Number(hit.estSavings))}
                   </div>
                   <span className={`mt-1 inline-flex px-2 py-0.5 rounded text-xs font-medium ${confidenceBadgeColor(Number(hit.confidence))}`}>
@@ -4862,7 +4958,7 @@ function MultiYearPlanningSection({ clientId }: { clientId: number }) {
               </div>
               <p className="text-muted-foreground">{hit.rationale}</p>
               <p className="font-medium">{hit.action}</p>
-              <div className="text-xs text-muted-foreground border-t border-indigo-200 pt-2">
+              <div className="text-xs text-muted-foreground border-t border-brand/30 pt-2">
                 Citation: {hit.citation}
               </div>
             </div>

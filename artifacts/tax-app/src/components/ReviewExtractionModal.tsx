@@ -531,7 +531,7 @@ function FieldRow({ field, value, onChange, onFocus, onBlur, edited, originalAiV
       className={cn(
         "space-y-1 rounded-md transition-colors px-2 -mx-2 py-1",
         edited && !hasError && !hasWarning && "bg-amber-50 border-l-2 border-amber-500 pl-3",
-        hasError && "bg-red-50 border-l-2 border-red-500 pl-3",
+        hasError && "bg-destructive/5 border-l-2 border-destructive pl-3",
         hasWarning && !hasError && "bg-amber-50 border-l-2 border-amber-500 pl-3",
       )}
     >
@@ -570,9 +570,9 @@ function FieldRow({ field, value, onChange, onFocus, onBlur, edited, originalAiV
               key={idx}
               className={cn(
                 "flex gap-1.5 items-start text-[11px] leading-snug",
-                flag.severity === "error" && "text-red-700",
+                flag.severity === "error" && "text-destructive",
                 flag.severity === "warning" && "text-amber-800",
-                flag.severity === "info" && "text-blue-700",
+                flag.severity === "info" && "text-brand-ink",
               )}
             >
               {flag.severity === "error" ? (
@@ -622,7 +622,7 @@ function DiffIndicator({ state, field, aiValue, cpaValue }: DiffIndicatorProps):
   if (state === "kept") {
     return (
       <span
-        className="inline-flex items-center gap-1 text-[10px] text-emerald-700/80"
+        className="inline-flex items-center gap-1 text-[10px] text-success/80"
         title="CPA kept the AI-extracted value"
       >
         <Check className="size-3 shrink-0" />
@@ -648,7 +648,7 @@ function DiffIndicator({ state, field, aiValue, cpaValue }: DiffIndicatorProps):
   if (state === "added") {
     return (
       <span
-        className="inline-flex items-center gap-1 text-[10px] text-sky-700"
+        className="inline-flex items-center gap-1 text-[10px] text-brand-ink"
         title="AI did not extract this field; CPA filled it in"
       >
         <Plus className="size-3 shrink-0" />
