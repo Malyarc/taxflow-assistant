@@ -1,149 +1,149 @@
-# Handoff Note — 2026-05-28 (Brookhaven UI/UX revamp + UI follow-ups)
+# Handoff Note — 2026-05-28 (Deep audit: correctness + security + DB + tests)
 
 Session continuation point for the next Claude (or human) working on
 TaxFlow Assistant.
 
 ## ⚡ Read this first
 
-The full open TODO is in **`docs/todo.md`** — durable, git-tracked.
-Coverage map: **`docs/coverage-matrix.md`**. C3 validation memo:
-**`docs/c3-design-partner-validation-2026-05-27.md`**.
+Durable TODO: **`docs/todo.md`**. Coverage map: **`docs/coverage-matrix.md`**.
+New this session: **`docs/db-migrations.md`** (versioned-migration setup + cutover).
 
-This session was **frontend-only** — the tax engine, api-server, schema,
-and all calc logic are UNTOUCHED. All 35 no-API test suites still pass
-(0 failures, ~3,200 assertions). No DB migration.
+## 🔴 USER ACTION REQUIRED — rotate two leaked credentials
+
+A stale, gitignored worktree settings file
+(`.claude/worktrees/hopeful-wing-a2bb93/.claude/settings.local.json`) held
+**two production secrets in plaintext** in `psql`/`curl` allowlist entries:
+- the **Neon `neondb_owner` DB password**, and
+- the **Google Gemini API key** (`AIza…`).
+
+They were **never committed to git** (verified — not tracked, path is
+gitignored, no commit ever touched it), but they sat in plaintext on disk and
+were read by tooling. I scrubbed the file (values replaced with
+`REDACTED-ROTATE-…`). **Rotate BOTH in the Neon console and Google AI Studio**
+as a precaution — only you can do that.
 
 ## Headline
 
-**Full UI/UX modernization to the Brookhaven brand + the two open UI
-follow-ups shipped.** The app was rebranded from the generic shadcn
-slate/near-black theme to the Brookhaven palette and given a modern
-layout. Plus: the cramped ClientDetail tab bar was redesigned, and the
-two pending UI follow-ups (Form 8824/8990 download buttons, SSTB toggle)
-are now surfaced.
+**Deep audit across four dimensions (code quality, security, database,
+tax-engine correctness). Found and FIXED 5 tax-correctness bugs + 4
+typecheck-breaking defects, patched 3 dependency CVEs, hardened the DB write
+paths, set up versioned migrations, and added 28 hand-calc'd end-to-end
+scenarios.** The engine is in genuinely good shape — money is stored as
+`numeric` (no float bug), no SQL injection, validation everywhere, tests are
+real hand-calcs. The real gaps were the 5 correctness bugs below + the
+already-known security posture (no auth yet = D15).
 
-### What changed
+### What landed (5 commits, all pushed to `main`)
 
-1. **Brookhaven design tokens** (`src/index.css`) — rebuilt the light +
-   dark CSS-variable palette to the brand:
-   - Trusted Blue `#231F55` → `--primary` (HSL `244 47% 23%`)
-   - Brookhaven Blue `#41B9EA` → new `--brand` (`197 80% 59%`) + `--brand-ink`
-     (`200 78% 38%`, the darker variant used for text/links on light bg)
-   - Yellow `#F0CA17` → new `--gold` (`49 88% 52%`)
-   - Powder Blue `#8ED4F0` → new `--powder` (`197 77% 75%`)
-   - Added `--success` (green) + kept `--destructive`. **Fixed the
-     template's anti-pattern** where `--accent` was bright yellow (it leaked
-     into every Radix menu/select hover) — `--accent` is now a subtle cool
-     tint (proper shadcn semantics); explicit `--gold`/`--brand` carry the
-     brand pops.
-   - New utilities: `.bg-brand-gradient` / `.bg-brand-gradient-soft` /
-     `.text-gradient-brand` (45° per brand guide), `.brand-pattern` (45°
-     woven texture), `.scrollbar-thin`.
-   - The `--color-*` tokens are registered in the `@theme inline` block so
-     `bg-brand`, `text-brand-ink`, `bg-gold`, `text-success`, `bg-powder`,
-     etc. all work.
-2. **Global chrome** (`src/App.tsx` + new `src/components/BrandMark.tsx`) —
-   Trusted Blue sidebar with the 45° brand-pattern texture, the three-bar
-   Brookhaven brand mark (inline SVG, `BrandMark`), lucide nav icons,
-   gold-tinted demo banner. New **mobile top bar** (sidebar is `hidden
-   lg:flex`; a compact navy top bar shows < lg). Favicon rebranded.
-3. **Cramped tab bar redesigned** (`ClientDetail.tsx`) — replaced the
-   `grid-cols-11` (tabs literally collided) with a horizontally-scrollable
-   pill bar: `flex gap-1 overflow-x-auto scrollbar-thin`, each tab an
-   icon + label pill with proper spacing. Active = card pill + brand text.
-4. **Dashboard + ClientList modernized** — icon-chip stat cards (the
-   "Total Refunds" metric is now `text-success` green, was an invisible
-   faint tint after the accent fix), branded planning widget with rank
-   chips + chevrons; ClientList got a search icon + branded "New Client".
-5. **Hardcoded-color sweep** — 172 hardcoded palette classes (slate/indigo/
-   purple/emerald/blue/etc.) mapped to brand/semantic tokens across
-   ClientDetail + ClientForm + modals. Only semantic amber warnings kept.
-   0 residual off-brand tokens.
-6. **Form 8824 / 8990 PDF buttons** (UI follow-up) — added inside the
-   §1031 (`Section1031Card`) and §163(j) (`Section163j461lCard`) summary
-   cards in the Tax Calculator tab. Wired to
-   `GET /clients/:id/form-8824/pdf` and `/form-8990/pdf` via a new
-   `downloadFile()` helper. Cards (and buttons) only render when the
-   relevant data exists. Verified end-to-end (injected a §1031 scenario:
-   recognized $50k / deferred $150k; PDF downloads).
-7. **SSTB toggle** (UI follow-up) — dedicated "§199A Qualified Business
-   Income" card at the top of the Adjustments tab with an SSTB `Switch`.
-   Toggling creates/updates the `qbi_sstb_flag` adjustment the engine
-   reads; the raw flag is filtered out of the adjustment list (the toggle
-   is the canonical control). Added the label to the adjustment-type
-   dropdown too. Verified: POST 201 + list refetch + round-trips.
-8. **Print CSS fix** — removed an invalid `:contains()` pseudo-class from
-   the print `@media` block (it was also stale after the banner restyle);
-   added `print:hidden` to the demo banner instead. Production build is
-   now warning-free (aside from pre-existing chunk-size + sourcemap notices).
+1. **Tax-correctness bugs (the crown jewel)** — each hand-calc'd + regression-tested:
+   - **H-1 QBI §199A**: taxable-income cap now reduced by net capital gain
+     (LTCG + qualified dividends) per §199A(e)(3). Was over-deducting QBI
+     whenever the cap binds with preferential income (probe: $3,717 → $797).
+   - **H-2 + M-1 NIIT §1411**: base rebuilt from the engine's component buckets
+     — now includes passive Schedule-E rental, 1099-MISC + K-1 royalties, K-1
+     portfolio/passive income, and post-netting gains (§121 remainder, §1031
+     recognized, QSBS, K-1 Box 8/9a). Was understating NIIT for the common
+     high-W-2 + rental/K-1/home-sale client. RE-professional rental excluded
+     via `client.rentalRealEstateProfessional`.
+   - **M-2 charitable**: capital-gain-property (30%) deduction now also bounded
+     by the overall 50%-of-AGI ceiling minus cash (§170(b)(1)) — independent
+     caps allowed up to 90% of AGI.
+   - **M-3 dependent-care** (Form 2441): disallowed for MFS unless lived-apart
+     (§21(e)(2)).
+2. **4 typecheck defects** (api-server now passes `tsc`; the esbuild build had
+   been hiding them): `OpportunityMultiYear` export; a **masked spousal-IRA
+   logic bug** (read a misspelled `unemploymentCompensation` field → never
+   subtracted UI comp); `perStateOtherSourced` type relocation (×2).
+3. **Security quick wins**: path-to-regexp + qs CVEs patched (`pnpm.overrides`;
+   `pnpm audit --prod` clean); global Express error middleware (uniform JSON
+   500s); credential scrub (above).
+4. **DB safety**: document-approve (W-2 + 1099) and client-delete wrapped in
+   `db.transaction` (no more orphaned rows / double-counted income on partial
+   failure). Versioned-migrations baseline generated (`lib/db/drizzle/0000…`),
+   `generate`/`migrate` scripts added, `push` kept for local dev only.
+5. **Tests + tooling**: new `tax-engine-realworld-scenarios-tests.ts` (28
+   hand-calc'd S1–S13) + a `test:no-api` runner (`pnpm --filter
+   @workspace/scripts run test:no-api`) that runs all 36 no-API suites.
+6. **Safe refactors**: removed an orphaned dead integration package (13 files);
+   centralized the SS wage base constant (was duplicated).
 
-## Verification (this session)
+## Verification
 
-- `pnpm --filter @workspace/tax-app run typecheck` — clean.
-- All 35 no-API tax-engine suites — **0 failures** (engine untouched).
-- `pnpm --filter @workspace/tax-app run build` — succeeds (1844 modules,
-  ~1.5s), no new warnings.
-- Live click-through (preview): Dashboard, ClientList, ClientForm
-  create + edit (Radix `formReady` gate confirmed — selects keep their
-  values), Documents, Adjustments (+ SSTB toggle POST verified), Tax
-  Calculator (+ §1031 card + Form 8824 button + green refund hero),
-  Planning (rich, on-brand), Assets, and mobile (375px) — **no console
-  errors/warnings anywhere.**
+- `pnpm run typecheck` — clean (all 3 projects; was RED before — the 4 defects).
+- `pnpm --filter @workspace/scripts run test:no-api` — **36 suites, 2,915
+  assertions, 0 failures.**
+- `pnpm --filter @workspace/api-server run build` — clean (192ms).
+- `pnpm --filter @workspace/tax-app run build` — clean (frontend untouched).
+- Live-API integration run (local Postgres): 9/13 suites green, including all
+  three full-pipeline suites (integration / deep-integration / new-features),
+  which validates the new DB transactions end-to-end.
+
+## Known SECONDARY finding (pre-existing — NOT a regression from this session)
+
+3 live-API integration suites (`tax-engine-scenarios`, `-phase1-integration`,
+`-k1-integration`) have **stale expected values** that predate the C3
+QBI-auto-default (2026-05-27). **PROVEN pre-existing**: they fail *identically*
+at the pre-audit baseline `8db8375`, and the maintained no-API suites all pass.
+Example: `$80k W-2 + $50k active S-corp K-1` now correctly gets a $10k QBI
+auto-default → taxable $105,400 (engine, CORRECT), but the test still asserts
+the pre-C3 $115,400. A **follow-up task is spun off** to reconcile these (needs
+fresh per-scenario hand-calcs + a live API). `tax-engine-ai-overlay-tests`
+needs a real `AI_API_KEY` (a dummy key fails extraction → doc goes `failed`).
 
 ## Deploy steps (for the user)
 
-NO DB migration. NO api-server change (frontend-only). But the api-server
-must still be built once on the box if it isn't current; the frontend is
-built locally and rsync'd.
+**api-server CHANGED** (engine fixes + transactions + error mw + CVE deps).
+**No DB migration** (schema unchanged; migrations baseline added but cutover is
+sign-off-gated — see `docs/db-migrations.md`). **Frontend UNCHANGED** (no rsync).
 
 ```bash
-# --- API box (only needed if api-server isn't already current; nothing
-#     changed in api-server this session, so this is optional) ---
 ssh -i ~/Downloads/taxflow-key.pem ubuntu@ec2-18-188-192-154.us-east-2.compute.amazonaws.com
 cd ~/taxflow-pro
-git checkout -- pnpm-lock.yaml
+git checkout -- pnpm-lock.yaml      # pull conflicts on the lock every time
 git pull origin main
-pnpm install
-# no db push, no api rebuild required (frontend-only change)
-curl http://localhost:8080/api/healthz   # sanity
-exit
+pnpm install                        # applies the path-to-regexp/qs CVE overrides
+export DATABASE_URL=$(pm2 env 0 | awk -F": " '/^DATABASE_URL:/ {print $2; exit}')
+export AI_API_KEY=$(pm2 env 0 | awk -F": " '/^AI_API_KEY:/ {print $2; exit}')
+# NO `db push` — schema unchanged this session.
+pnpm --filter @workspace/api-server run build
+pm2 restart taxflow
+curl http://localhost:8080/api/healthz
 ```
 
-```bash
-# --- Local: build frontend + rsync the static bundle (REQUIRED) ---
-pnpm --filter @workspace/tax-app run build
-rsync -e "ssh -i ~/Downloads/taxflow-key.pem" -avz --delete \
-  artifacts/tax-app/dist/public/ \
-  ubuntu@ec2-18-188-192-154.us-east-2.compute.amazonaws.com:~/taxflow-pro/artifacts/tax-app/dist/public/
-```
+## What's left (prioritized)
 
-The api-server serves the static files directly (no nginx). Verify at
-http://ec2-18-188-192-154.us-east-2.compute.amazonaws.com — the sidebar
-should be Trusted Blue navy with the three-bar mark, and the client tab
-bar should be spaced pills.
-
-## What's left (post-revamp)
-
-Engineering UI work is in good shape. Strategic open items unchanged:
-1. **A1 — CPA outreach campaign** (blocked on user availability).
-2. **D15 — multi-tenancy auth** (2-3 wks; required before charging).
-3. **D18 — Stripe billing** (depends on D15).
-- Optional UI polish: dark-mode toggle (tokens exist but there's no toggle
-  in the UI), code-split the 1 MB JS bundle, refactor ClientDetail.tsx
-  (now ~4,960 lines) into per-tab sub-components (D7).
+1. **Security CRITICALs (D15)** — still the #1 risk and unchanged by this audit
+   (it was scoped "quick wins only"): **no authentication/authorization on any
+   API route**, PII stored plaintext at rest, prod served over HTTP. Do not put
+   real client PII on the live box until auth + per-firm tenant isolation +
+   encryption-at-rest + TLS land. Multi-week; needs a model decision
+   (session-cookie vs JWT), a TLS terminator (ALB/CloudFront/nginx+certbot),
+   and KMS for at-rest encryption.
+2. **Reconcile the 3 stale integration suites** (spun-off task) — mechanical,
+   needs fresh hand-calcs + a live API.
+3. **Versioned-migrations cutover** (`docs/db-migrations.md`) — baseline the
+   existing dev + prod DBs, then switch the EC2 deploy from `push` to `migrate`.
+4. **God-file refactors** (deferred): planningEngine.ts (~7.7k lines),
+   `calculateStateAdditionalCredits` (853-line fn), ClientDetail.tsx (~5k).
+   Maintainability-only; do in a dedicated session (850+-line block moves are
+   too risky to rush).
 
 ## How to start the next Claude session
 
 ```
 Project: TaxFlow Assistant.
 
-Read these first: docs/todo.md, docs/coverage-matrix.md, .claude/handoff.md, CLAUDE.md.
+Read first: .claude/handoff.md, CLAUDE.md, docs/db-migrations.md, docs/coverage-matrix.md.
 
-Where we left off (2026-05-28): full Brookhaven UI/UX revamp shipped +
-the two open UI follow-ups (Form 8824/8990 download buttons, SSTB toggle).
-Frontend-only; engine + all 35 no-API test suites still green. Brand
-tokens in src/index.css; brand mark in src/components/BrandMark.tsx.
+Where we left off (2026-05-28): deep audit shipped — 5 tax-correctness bugs
+fixed (QBI cap, NIIT base, charitable ceiling, dependent-care MFS), 4 typecheck
+defects fixed, CVEs patched, DB writes wrapped in transactions, versioned
+migrations baselined, 28 new hand-calc'd scenarios. 36 no-API suites green
+(2,915 assertions). I rotated nothing — USER must rotate the leaked Neon
+password + Gemini key (see handoff).
 
-Top recommendation: A1 CPA outreach (packet complete), then D15
-multi-tenancy auth → D18 Stripe for paid rollout.
+Top recommendation: D15 — authentication + per-firm tenant isolation +
+encryption-at-rest + TLS. It's the #1 risk and a hard blocker before any real
+client PII (or a paid partner) touches the live box. Needs your decisions on
+auth model + hosting/TLS + KMS before building.
 ```
