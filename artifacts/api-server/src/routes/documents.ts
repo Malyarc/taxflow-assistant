@@ -297,27 +297,43 @@ router.post("/clients/:clientId/documents/:documentId/approve", async (req, res)
   const auditSource = `AI extraction from ${doc.fileName}`;
 
   if (parsed.data.recordType === "w2") {
-    const [record] = await db
-      .insert(w2DataTable)
-      .values({
-        clientId: params.data.clientId,
-        documentId: doc.id,
-        taxYear: parsed.data.taxYear,
-        employerName: parsed.data.employerName ?? undefined,
-        employerEin: parsed.data.employerEin ?? undefined,
-        employeeSSN: parsed.data.employeeSSN ?? undefined,
-        wagesBox1: numericToString(parsed.data.wagesBox1),
-        federalTaxWithheldBox2: numericToString(parsed.data.federalTaxWithheldBox2),
-        socialSecurityWagesBox3: numericToString(parsed.data.socialSecurityWagesBox3),
-        socialSecurityTaxBox4: numericToString(parsed.data.socialSecurityTaxBox4),
-        medicareWagesBox5: numericToString(parsed.data.medicareWagesBox5),
-        medicareTaxBox6: numericToString(parsed.data.medicareTaxBox6),
-        stateTaxWithheldBox17: numericToString(parsed.data.stateTaxWithheldBox17),
-        stateWagesBox16: numericToString(parsed.data.stateWagesBox16),
-        stateCode: parsed.data.stateCode ?? undefined,
-        fieldBoxes,
-      })
-      .returning();
+    // Insert the income record AND flip the document to `approved` atomically.
+    // Without a transaction, a failure between the two writes could orphan the
+    // W-2 row while leaving the document `pending_review` (re-approvable →
+    // double-counted income).
+    const { record, updatedDoc } = await db.transaction(async (tx) => {
+      const [inserted] = await tx
+        .insert(w2DataTable)
+        .values({
+          clientId: params.data.clientId,
+          documentId: doc.id,
+          taxYear: parsed.data.taxYear,
+          employerName: parsed.data.employerName ?? undefined,
+          employerEin: parsed.data.employerEin ?? undefined,
+          employeeSSN: parsed.data.employeeSSN ?? undefined,
+          wagesBox1: numericToString(parsed.data.wagesBox1),
+          federalTaxWithheldBox2: numericToString(parsed.data.federalTaxWithheldBox2),
+          socialSecurityWagesBox3: numericToString(parsed.data.socialSecurityWagesBox3),
+          socialSecurityTaxBox4: numericToString(parsed.data.socialSecurityTaxBox4),
+          medicareWagesBox5: numericToString(parsed.data.medicareWagesBox5),
+          medicareTaxBox6: numericToString(parsed.data.medicareTaxBox6),
+          stateTaxWithheldBox17: numericToString(parsed.data.stateTaxWithheldBox17),
+          stateWagesBox16: numericToString(parsed.data.stateWagesBox16),
+          stateCode: parsed.data.stateCode ?? undefined,
+          fieldBoxes,
+        })
+        .returning();
+      const [doc2] = await tx
+        .update(taxDocumentsTable)
+        .set({
+          status: "approved",
+          linkedRecordId: inserted.id,
+          linkedRecordType: "w2",
+        })
+        .where(eq(taxDocumentsTable.id, doc.id))
+        .returning();
+      return { record: inserted, updatedDoc: doc2 };
+    });
     await writeAudit({
       clientId: params.data.clientId,
       action: "create",
@@ -326,15 +342,6 @@ router.post("/clients/:clientId/documents/:documentId/approve", async (req, res)
       after: record,
       source: auditSource,
     });
-    const [updatedDoc] = await db
-      .update(taxDocumentsTable)
-      .set({
-        status: "approved",
-        linkedRecordId: record.id,
-        linkedRecordType: "w2",
-      })
-      .where(eq(taxDocumentsTable.id, doc.id))
-      .returning();
     await writeAudit({
       clientId: params.data.clientId,
       action: "update",
@@ -355,47 +362,63 @@ router.post("/clients/:clientId/documents/:documentId/approve", async (req, res)
       res.status(400).json({ error: "formType is required when recordType is form1099" });
       return;
     }
-    const [record] = await db
-      .insert(form1099DataTable)
-      .values({
-        clientId: params.data.clientId,
-        documentId: doc.id,
-        taxYear: parsed.data.taxYear,
-        formType: parsed.data.formType,
-        payerName: parsed.data.payerName ?? undefined,
-        payerTin: parsed.data.payerTin ?? undefined,
-        recipientTin: parsed.data.recipientTin ?? undefined,
-        federalTaxWithheld: numericToString(parsed.data.federalTaxWithheld),
-        stateTaxWithheld: numericToString(parsed.data.stateTaxWithheld),
-        stateCode: parsed.data.stateCode ?? undefined,
-        nonemployeeCompensation: numericToString(parsed.data.nonemployeeCompensation),
-        rents: numericToString(parsed.data.rents),
-        royalties: numericToString(parsed.data.royalties),
-        otherIncome: numericToString(parsed.data.otherIncome),
-        fishingBoatProceeds: numericToString(parsed.data.fishingBoatProceeds),
-        medicalAndHealthcare: numericToString(parsed.data.medicalAndHealthcare),
-        interestIncome: numericToString(parsed.data.interestIncome),
-        earlyWithdrawalPenalty: numericToString(parsed.data.earlyWithdrawalPenalty),
-        usTreasuryInterest: numericToString(parsed.data.usTreasuryInterest),
-        taxExemptInterest: numericToString(parsed.data.taxExemptInterest),
-        ordinaryDividends: numericToString(parsed.data.ordinaryDividends),
-        qualifiedDividends: numericToString(parsed.data.qualifiedDividends),
-        totalCapitalGainDistribution: numericToString(parsed.data.totalCapitalGainDistribution),
-        nondividendDistributions: numericToString(parsed.data.nondividendDistributions),
-        proceeds: numericToString(parsed.data.proceeds),
-        costBasis: numericToString(parsed.data.costBasis),
-        shortTermGainLoss: numericToString(parsed.data.shortTermGainLoss),
-        longTermGainLoss: numericToString(parsed.data.longTermGainLoss),
-        grossDistribution: numericToString(parsed.data.grossDistribution),
-        taxableAmount: numericToString(parsed.data.taxableAmount),
-        distributionCode: parsed.data.distributionCode ?? undefined,
-        iraSepSimple: parsed.data.iraSepSimple ?? undefined,
-        unemploymentCompensation: numericToString(parsed.data.unemploymentCompensation),
-        stateLocalRefund: numericToString(parsed.data.stateLocalRefund),
-        grossPaymentAmount: numericToString(parsed.data.grossPaymentAmount),
-        fieldBoxes,
-      })
-      .returning();
+    // Capture the narrowed (non-null) formType — TS narrowing from the guard
+    // above does not propagate into the transaction closure below.
+    const formType = parsed.data.formType;
+    // Insert the 1099 record AND approve the document atomically (see W-2 note).
+    const { record, updatedDoc } = await db.transaction(async (tx) => {
+      const [inserted] = await tx
+        .insert(form1099DataTable)
+        .values({
+          clientId: params.data.clientId,
+          documentId: doc.id,
+          taxYear: parsed.data.taxYear,
+          formType,
+          payerName: parsed.data.payerName ?? undefined,
+          payerTin: parsed.data.payerTin ?? undefined,
+          recipientTin: parsed.data.recipientTin ?? undefined,
+          federalTaxWithheld: numericToString(parsed.data.federalTaxWithheld),
+          stateTaxWithheld: numericToString(parsed.data.stateTaxWithheld),
+          stateCode: parsed.data.stateCode ?? undefined,
+          nonemployeeCompensation: numericToString(parsed.data.nonemployeeCompensation),
+          rents: numericToString(parsed.data.rents),
+          royalties: numericToString(parsed.data.royalties),
+          otherIncome: numericToString(parsed.data.otherIncome),
+          fishingBoatProceeds: numericToString(parsed.data.fishingBoatProceeds),
+          medicalAndHealthcare: numericToString(parsed.data.medicalAndHealthcare),
+          interestIncome: numericToString(parsed.data.interestIncome),
+          earlyWithdrawalPenalty: numericToString(parsed.data.earlyWithdrawalPenalty),
+          usTreasuryInterest: numericToString(parsed.data.usTreasuryInterest),
+          taxExemptInterest: numericToString(parsed.data.taxExemptInterest),
+          ordinaryDividends: numericToString(parsed.data.ordinaryDividends),
+          qualifiedDividends: numericToString(parsed.data.qualifiedDividends),
+          totalCapitalGainDistribution: numericToString(parsed.data.totalCapitalGainDistribution),
+          nondividendDistributions: numericToString(parsed.data.nondividendDistributions),
+          proceeds: numericToString(parsed.data.proceeds),
+          costBasis: numericToString(parsed.data.costBasis),
+          shortTermGainLoss: numericToString(parsed.data.shortTermGainLoss),
+          longTermGainLoss: numericToString(parsed.data.longTermGainLoss),
+          grossDistribution: numericToString(parsed.data.grossDistribution),
+          taxableAmount: numericToString(parsed.data.taxableAmount),
+          distributionCode: parsed.data.distributionCode ?? undefined,
+          iraSepSimple: parsed.data.iraSepSimple ?? undefined,
+          unemploymentCompensation: numericToString(parsed.data.unemploymentCompensation),
+          stateLocalRefund: numericToString(parsed.data.stateLocalRefund),
+          grossPaymentAmount: numericToString(parsed.data.grossPaymentAmount),
+          fieldBoxes,
+        })
+        .returning();
+      const [doc2] = await tx
+        .update(taxDocumentsTable)
+        .set({
+          status: "approved",
+          linkedRecordId: inserted.id,
+          linkedRecordType: "form1099",
+        })
+        .where(eq(taxDocumentsTable.id, doc.id))
+        .returning();
+      return { record: inserted, updatedDoc: doc2 };
+    });
     await writeAudit({
       clientId: params.data.clientId,
       action: "create",
@@ -404,15 +427,6 @@ router.post("/clients/:clientId/documents/:documentId/approve", async (req, res)
       after: record,
       source: auditSource,
     });
-    const [updatedDoc] = await db
-      .update(taxDocumentsTable)
-      .set({
-        status: "approved",
-        linkedRecordId: record.id,
-        linkedRecordType: "form1099",
-      })
-      .where(eq(taxDocumentsTable.id, doc.id))
-      .returning();
     await writeAudit({
       clientId: params.data.clientId,
       action: "update",

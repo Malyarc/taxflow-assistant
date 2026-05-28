@@ -133,28 +133,27 @@ router.delete("/clients/:id", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
-  // Application-level cascade: schema has no FK constraints, so we delete
-  // dependent rows manually before removing the client.
-  // NOTE: audit_log has a real FK with ON DELETE CASCADE, so client delete
-  // also clears the audit history. For compliance hardening, future work
-  // should preserve audit_log on client delete (soft-delete clients instead).
   const id = params.data.id;
   const [beforeClient] = await db.select().from(clientsTable).where(eq(clientsTable.id, id));
   if (beforeClient) {
-    // Write the audit BEFORE the cascade (it'll be cascade-deleted as a side
-    // effect; we keep this here for the in-memory transcript at least).
+    // Audit the delete before it happens. audit_log.clientId is ON DELETE SET
+    // NULL, so the log row survives the cascade (with a null clientId).
     await writeAudit({ clientId: id, action: "delete", entityType: "client", entityId: id, before: beforeClient });
   }
-  await db.delete(taxReturnsTable).where(eq(taxReturnsTable.clientId, id));
-  await db.delete(adjustmentsTable).where(eq(adjustmentsTable.clientId, id));
-  await db.delete(w2DataTable).where(eq(w2DataTable.clientId, id));
-  await db.delete(form1099DataTable).where(eq(form1099DataTable.clientId, id));
-  await db.delete(taxDocumentsTable).where(eq(taxDocumentsTable.clientId, id));
-
-  const [client] = await db
-    .delete(clientsTable)
-    .where(eq(clientsTable.id, id))
-    .returning();
+  // Child tables carry FK clientId → clients ON DELETE CASCADE, so removing the
+  // client row also removes its dependents (including rental_properties /
+  // capital_transactions / schedule_k1_data / client_asset_balances, which are
+  // not deleted explicitly below). The explicit deletes are kept for ordering
+  // clarity; the whole sequence runs in ONE transaction so a mid-sequence
+  // failure can no longer leave orphaned rows or a half-deleted client.
+  const [client] = await db.transaction(async (tx) => {
+    await tx.delete(taxReturnsTable).where(eq(taxReturnsTable.clientId, id));
+    await tx.delete(adjustmentsTable).where(eq(adjustmentsTable.clientId, id));
+    await tx.delete(w2DataTable).where(eq(w2DataTable.clientId, id));
+    await tx.delete(form1099DataTable).where(eq(form1099DataTable.clientId, id));
+    await tx.delete(taxDocumentsTable).where(eq(taxDocumentsTable.clientId, id));
+    return tx.delete(clientsTable).where(eq(clientsTable.id, id)).returning();
+  });
   if (!client) {
     res.status(404).json({ error: "Client not found" });
     return;
