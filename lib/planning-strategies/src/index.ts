@@ -10,6 +10,7 @@ export type {
   WhatIfMutation,
   WhatIfSensitivity,
   OpportunityWhatIf,
+  OpportunityMultiYear,
 } from "./types";
 export { validateCatalog } from "./validateCatalog";
 

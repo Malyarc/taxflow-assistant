@@ -212,21 +212,15 @@ function adj(type: string, amount: number, id = Math.floor(Math.random() * 1e9))
   check("Case 8 §1031 deferred = $170k", r.section1031DeferredGain, 170000);
 }
 
-// ── Case 9: §1031 recognized DOES increase AGI but does NOT flow into NIIT ─
-// Known engine gap, consistent with the existing §121 home-sale pattern:
-//   ComputedTaxReturn.section1031RecognizedGain flows to netLTCG and into
-//   adjustedGrossIncome (CLAUDE invariant #1) — so the gain is taxed at
-//   federal LTCG preferential rates as expected.
-//   NIIT investment income is currently sourced ONLY from
-//   form1099Summary.totalInvestmentIncome + investment_income adjustments
-//   (taxReturnEngine.ts:1854). It does NOT include §121, §1202, OR §1031
-//   recognized gains — so a §1031 deal with only W-2 income shows NIIT = $0
-//   even though the recognized gain IS investment income for §1411 purposes.
-//
-// Pinned here as a SUB-GAP to maintain the existing behavior. Fixing it
-// requires a broader NIIT-investment-income refactor that also corrects
-// §121 (a documented gap in CLAUDE.md "Known limitations" / deep-audit-
-// 2026-05-23). Track separately as future engine work.
+// ── Case 9: §1031 recognized gain flows into BOTH AGI and the NIIT base ───
+// The recognized gain (boot) on an investment-property exchange is net
+// investment income under §1411(c)(1)(A)(iii). It flows to netLTCG → AGI
+// (CLAUDE invariant #1) AND into the §1411 NII base. Fixed 2026-05-28 deep
+// audit (finding M-1): the NII base is now built from the engine's component
+// buckets — incl. post-netting gains (§121 remainder, §1031 recognized, QSBS,
+// K-1 Box 8/9a) — not just form1099Summary.totalInvestmentIncome.
+// Hand-calc: $300k W-2 + $50k recognized §1031 LTCG → AGI $350,000.
+//   NII = $50,000; NIIT = 3.8% × min($50,000, $350,000 − $200,000 single) = $1,900.
 {
   const inputs = baseInputs({
     w2s: [{
@@ -246,7 +240,7 @@ function adj(type: string, amount: number, id = Math.floor(Math.random() * 1e9))
   });
   const r = computeTaxReturnPure(inputs);
   check("Case 9 §1031 recognized = $50k", r.section1031RecognizedGain, 50000);
-  check("Case 9 NIIT = $0 (engine doesn't yet route §1031 gain into NIIT base — sub-gap)", r.niitTax, 0);
+  check("Case 9 §1031 recognized gain is NII → NIIT = $1,900", r.niitTax, 1900);
 }
 
 // ── Case 10: §1031 recognized increases AGI (CLAUDE invariant #1) ────────

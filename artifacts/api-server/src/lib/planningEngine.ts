@@ -3425,7 +3425,7 @@ function detectSpousalIra(args: {
   // Heuristic: total earnings (W-2 + net SE) > $7k. Engine can't verify
   // per-spouse split — CPA confirms one spouse has $0 earned income.
   const totalEarnings = computed.totalIncome - (computed.form1099Summary?.retirementIncome ?? 0)
-                       - (computed.form1099Summary?.unemploymentCompensation ?? 0);
+                       - (computed.form1099Summary?.unemploymentCompensationOnly ?? 0);
   if (totalEarnings < G1_46_MIN_EARNED_INCOME) return null;
 
   // Suppress if any spouse_ira_contribution marker already on return.

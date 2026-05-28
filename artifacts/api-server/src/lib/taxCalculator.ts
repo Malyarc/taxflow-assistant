@@ -965,15 +965,6 @@ export function calculateMultiStateTax(params: {
      * during the former-state residence period.
      */
     useW2SourceAllocation?: boolean;
-    /**
-     * C11 deeper — Per-state sourced non-wage income (K-1 + rental). Keys
-     * are uppercase 2-letter state codes. Only used when
-     * `useW2SourceAllocation` is true; the engine subtracts these from the
-     * pro-rata-by-days residual to avoid double-counting. Intangibles
-     * (interest/div/cap gains) still pro-rate to the resident state by
-     * days — the standard residency rule for intangible income.
-     */
-    perStateOtherSourced?: Readonly<Record<string, number>>;
   };
   options?: {
     federalIncomeTaxPaid?: number;
@@ -1007,6 +998,15 @@ export function calculateMultiStateTax(params: {
      *  also subtracts personal exemptions). Only applied for OH SDIT entries
      *  whose base = "traditional". */
     ohTraditionalBase?: number;
+    /**
+     * C11 deeper — Per-state sourced non-wage income (K-1 + rental). Keys
+     * are uppercase 2-letter state codes. Only used when
+     * `partYearResidency.useW2SourceAllocation` is true; the engine subtracts
+     * these from the pro-rata-by-days residual to avoid double-counting.
+     * Intangibles (interest/div/cap gains) still pro-rate to the resident
+     * state by days — the standard residency rule for intangible income.
+     */
+    perStateOtherSourced?: Readonly<Record<string, number>>;
   };
 }): MultiStateTaxResult {
   const resident = params.residentState.toUpperCase();
@@ -1933,7 +1933,15 @@ export function calculateScheduleA(params: {
   // (Per IRS rules each carryforward has a 5-year life; we don't track the
   // vintage but the sum is what gets deducted next year up to that year's cap.)
   const charitableCarryforwardCashRemaining = currentCashExcessToCarry + cashCarryforwardUnused;
-  const propDeductible = Math.min(charitableProperty, agi * CHARITABLE_PROPERTY_AGI_LIMIT);
+  // IRC §170(b)(1): capital-gain-property contributions (30% limit) are ALSO
+  // bounded by the overall 50%-of-AGI ceiling reduced by the cash/50%-limit
+  // contributions already deducted. Without this, cash (≤60%) and property
+  // (≤30%) applied independently could deduct up to 90% of AGI. Property
+  // excess carries forward 5 years (§170(d)(1)) — not modeled here (the engine
+  // tracks the cash carryforward only; documented simplification).
+  const propCap30 = Math.max(0, agi) * CHARITABLE_PROPERTY_AGI_LIMIT;
+  const propOverallHeadroom = Math.max(0, Math.max(0, agi) * 0.50 - cashDeductible);
+  const propDeductible = Math.min(Math.max(0, charitableProperty), propCap30, propOverallHeadroom);
   const charitableDeductible = Math.max(0, cashDeductible + propDeductible);
 
   const totalItemized = medicalDeductible + saltDeductible + mortgageDeductible + charitableDeductible;
@@ -3741,9 +3749,24 @@ export function calculateDependentCareCredit(params: {
   earnedIncomeSpouse?: number;
   agi: number;
   filingStatus: string;
+  /** §21(e)(2)/(e)(4): an MFS filer may claim the credit only if they lived
+   *  apart from their spouse for the last 6 months and are treated as not
+   *  married. Defaults false (the standard MFS case → no credit). */
+  mfsLivedApart?: boolean;
 }): DependentCareCreditCalculation {
-  const { expenses, qualifyingDependents, earnedIncomeTaxpayer, earnedIncomeSpouse, agi, filingStatus } = params;
+  const { expenses, qualifyingDependents, earnedIncomeTaxpayer, earnedIncomeSpouse, agi, filingStatus, mfsLivedApart = false } = params;
   const expenseLimit = qualifyingDependents <= 0 ? 0 : qualifyingDependents === 1 ? DEPCARE_LIMIT_1 : DEPCARE_LIMIT_2_PLUS;
+
+  // §21(e)(2): married-filing-separately filers generally CANNOT claim the
+  // dependent care credit — only if they lived apart from their spouse for the
+  // last 6 months and are treated as not married (§21(e)(4)). Mirrors the EITC
+  // MFS exclusion. (Fixed 2026-05-28 deep audit — finding M-3.)
+  if (filingStatus === "married_filing_separately" && !mfsLivedApart) {
+    return {
+      expenses, qualifyingChildren: qualifyingDependents, expenseLimit,
+      earnedIncomeLimit: 0, eligibleExpenses: 0, rate: 0, appliedCredit: 0,
+    };
+  }
 
   // Both spouses must have earned income for MFJ; the credit caps at the lesser of the two
   let earnedIncomeLimit = earnedIncomeTaxpayer;
@@ -4984,13 +5007,20 @@ export interface QbiCalculation {
 export function calculateQbi(params: {
   qbiIncome: number;
   taxableIncomeBeforeQbi: number;
+  /**
+   * §199A(e)(3) "net capital gain" = net long-term capital gain (§1(h)) +
+   * qualified dividends. The overall limitation is 20% of (taxable income −
+   * net capital gain), so income taxed at preferential rates cannot be
+   * sheltered by the QBI deduction. Defaults to 0 (no preferential income).
+   */
+  netCapitalGain?: number;
 }): QbiCalculation {
-  const { qbiIncome, taxableIncomeBeforeQbi } = params;
+  const { qbiIncome, taxableIncomeBeforeQbi, netCapitalGain = 0 } = params;
   if (qbiIncome <= 0) {
     return { qbiAmount: 0, preliminaryDeduction: 0, taxableIncomeCap: 0, finalDeduction: 0 };
   }
   const preliminary = qbiIncome * 0.20;
-  const cap = Math.max(0, taxableIncomeBeforeQbi) * 0.20;
+  const cap = Math.max(0, taxableIncomeBeforeQbi - Math.max(0, netCapitalGain)) * 0.20;
   return {
     qbiAmount: qbiIncome,
     preliminaryDeduction: preliminary,

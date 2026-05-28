@@ -419,6 +419,10 @@ export interface Form1099Summary {
   paymentCardIncome: number;
   /** 1099-MISC: rents + royalties + other income */
   miscIncome: number;
+  /** 1099-MISC Box 1 rents only (subset of miscIncome) — NIIT NII base */
+  rents: number;
+  /** 1099-MISC Box 2 royalties only (subset of miscIncome) — NIIT NII base */
+  royalties: number;
   /** Federal withholding across all 1099s */
   federalWithheld: number;
   /** State withholding across all 1099s */
@@ -527,6 +531,11 @@ export function summarize1099s(records: Form1099Fact[]): Form1099Summary {
       toNum(r.medicalAndHealthcare),
     0,
   );
+  // 1099-MISC Box 1 (rents) and Box 2 (royalties) split out of miscIncome so
+  // the NIIT base (§1411 investment income) can include them specifically —
+  // miscIncome also contains other/fishing/medical, which are NOT NII.
+  const rents = miscRecords.reduce((s, r) => s + toNum(r.rents), 0);
+  const royalties = miscRecords.reduce((s, r) => s + toNum(r.royalties), 0);
 
   const federalWithheld = records.reduce((s, r) => s + toNum(r.federalTaxWithheld), 0);
   const stateWithheld = records.reduce((s, r) => s + toNum(r.stateTaxWithheld), 0);
@@ -602,6 +611,8 @@ export function summarize1099s(records: Form1099Fact[]): Form1099Summary {
     stateLocalRefundOnly,
     paymentCardIncome,
     miscIncome,
+    rents,
+    royalties,
     federalWithheld,
     stateWithheld,
     totalOrdinaryIncome,
@@ -2140,6 +2151,10 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const qbi = calculateQbi({
     qbiIncome: qbiCombinedIncome,
     taxableIncomeBeforeQbi: calc.taxableIncome,
+    // §199A(e)(3): the taxable-income limit is 20% of (taxable income − net
+    // capital gain), where net capital gain = preferential LTCG + qualified
+    // dividends. Omitting it lets QBI wrongly shelter preferential-rate income.
+    netCapitalGain: ltcgPreferential + qualifiedDividends,
   });
 
   // K4 — NOL carryforward (post-TCJA 80% limit, IRC §172(a)(2)).
@@ -2216,7 +2231,44 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     taxYear,
   });
 
-  const totalInvestmentIncomeForNiit = investmentIncomeFromAdj + form1099Summary.totalInvestmentIncome;
+  // ── §1411 Net Investment Income (NIIT) base ─────────────────────────────
+  // §1411(c)(1): NII = portfolio income (interest, dividends, royalties) +
+  // rents + income from passive activities + net gain on the disposition of
+  // property. Income from a NON-passive trade or business is EXCLUDED, so
+  // active K-1 ordinary (k1ActiveOrdinary) and Schedule C (netSeIncome) are
+  // intentionally omitted. Rental real estate is passive (→ NII) for the
+  // ordinary landlord; a real-estate professional's rental is non-passive and
+  // excluded via client.rentalRealEstateProfessional. Capital LOSSES reduce
+  // NII only to zero (floored below).
+  //
+  // Built from the engine's component buckets — NOT form1099Summary.total-
+  // InvestmentIncome, which is 1099-only and omitted K-1 portfolio/passive
+  // income, 1099-MISC rents/royalties, passive Sch E rental, and the post-
+  // netting gains (§121 remainder, §1031 recognized, QSBS, K-1 Box 8/9a,
+  // capital-transaction detail). Closes audit findings H-2 and M-1.
+  const niitRentalIsNonPassive = client.rentalRealEstateProfessional === true;
+  const totalInvestmentIncomeForNiit = Math.max(
+    0,
+    investmentIncomeFromAdj +
+      // Portfolio income — always NII (1099 + K-1). Dividend terms mirror the
+      // AGI income assembly above (1099 non-qualified + combined qualified +
+      // K-1 Box 6a) so NII stays consistent with the dividends already in AGI.
+      form1099Summary.interestIncome +
+      form1099Summary.ordinaryDividends +
+      qualifiedDividends +
+      k1InterestIncome +
+      k1OrdinaryDividends +
+      form1099Summary.royalties +
+      k1Royalties +
+      // Rents — passive for the ordinary landlord; excluded for RE professionals:
+      (niitRentalIsNonPassive ? 0 : form1099Summary.rents + Math.max(0, rentalNetAppliedToAgi)) +
+      // Passive pass-through income (engine already segregates active vs passive):
+      Math.max(0, k1PassiveAppliedToAgi) +
+      // Net gain on disposition: post-netting positive LTCG + STCG (already
+      // folds in 1099-B, K-1 Box 8/9a, §121 remainder, §1031 recognized, QSBS):
+      ltcgPreferential +
+      stcgInOrdinary,
+  );
   const niit = calculateNiit({
     investmentIncome: totalInvestmentIncomeForNiit,
     modifiedAgi: calc.adjustedGrossIncome,
@@ -2450,6 +2502,8 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     earnedIncomeSpouse: spouseEarnedIncome,
     agi: calc.adjustedGrossIncome,
     filingStatus: client.filingStatus,
+    // §21(e)(2): MFS may claim only if treated as not married (lived apart).
+    mfsLivedApart: client.mfsLivedApartAllYear ?? false,
   });
   const depCareApplied = Math.min(dependentCareCredit.appliedCredit, availableForNonRefundable);
   availableForNonRefundable = Math.max(0, availableForNonRefundable - depCareApplied);

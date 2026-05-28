@@ -496,12 +496,13 @@ section("Scenario 12 — Single CA → TX Jul 1, $400k home gain, $250k §121 ex
   approx("S12", "Taxable home gain = $150,000 → LTCG", r.homeSaleTaxableGain, 150000, 1);
   approx("S12", "AGI ≈ $250,000", r.adjustedGrossIncome, 250000, 50);
   approx("S12", "Capital gains tax (LTCG @ 15% × $150k) = $22,500", r.capitalGainsTax, 22500, 50);
-  // ENGINE SUB-GAP: home_sale_gross_gain_primary_residence flows the taxable
-  // remainder to LTCG via a separate path that doesn't add to NIIT investment
-  // income. Real-world this is borderline (some auditors treat §121 LTCG as
-  // investment income, some don't). Engine returns NIIT=0.
-  exact("S12", "NIIT = 0 (engine doesn't add §121 LTCG to invest income)", r.niitTax, 0);
-  approx("S12", "Federal liability ≈ $36,341 (without NIIT)", r.federalTaxLiability, 36341, 200);
+  // §1411(c)(1)(A)(iii) + Form 8960 instructions: the taxable gain ABOVE the
+  // §121 exclusion on a personal residence IS net investment income. Fixed
+  // 2026-05-28 deep audit (finding M-1). Hand-calc: NII = $150,000 taxable
+  // home LTCG; MAGI $250,000.
+  //   NIIT = 3.8% × min($150,000, $250,000 − $200,000 single) = 3.8% × $50,000 = $1,900.
+  approx("S12", "NIIT = $1,900 (§121 taxable LTCG is NII)", r.niitTax, 1900, 1);
+  approx("S12", "Federal liability ≈ $38,241 (incl $1,900 NIIT)", r.federalTaxLiability, 38241, 200);
   exact("S12", "Former state code = CA", r.formerStateCode, "CA");
   approx("S12", "Former state (CA) tax ≈ $7,710", r.formerStateTax, 7710, 200);
   // stateTaxLiability = multiState.totalStateTax includes CA NR + former
