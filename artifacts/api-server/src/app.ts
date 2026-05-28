@@ -140,4 +140,18 @@ if (fs.existsSync(staticDir)) {
   });
 }
 
+// Terminal error handler (must be registered LAST, after all routes + static).
+// Express 5 auto-forwards rejected async route handlers here; without it,
+// Express's default finalhandler returns a non-JSON HTML 500 that breaks the
+// uniform { error } JSON contract the frontend's custom-fetch parses. Logs the
+// error server-side (Pino) and returns a generic message — no stack or
+// internals leaked to the client.
+app.use(
+  (err: unknown, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    logger.error({ err, method: req.method, url: req.url?.split("?")[0] }, "Unhandled request error");
+    if (res.headersSent) return next(err);
+    res.status(500).json({ error: "Internal server error" });
+  },
+);
+
 export default app;
