@@ -17,9 +17,11 @@ The planning strategy audit lives in **`docs/planning-strategy-audit.md`**
 After this session, open sections:
 - **A** — strategic / business (A1 outreach, A2 D15 auth, A3 D18 Stripe)
 - **B** — Phase H ✅ FULLY COMPLETE + **H1 CATALOG CLOSED at 97 strategies**.
-- **C** — engine coverage push — **C2/C9/C10/C11 now ALL SHIPPED.** C3
-  remains (CPA design-partner validation — blocked on user). Beyond-top-10
-  state credits deferred until customer asks.
+- **C** — engine coverage push — **C2/C9/C10/C11 now ALL SHIPPED.** **C3
+  shadow-CPA validation also shipped** — see `docs/c3-design-partner-validation-2026-05-27.md`.
+  Result: conditional approval. Tier-1 blocker = §199A QBI auto-detection
+  (Sch C + K-1 Box 1). Live CPA partner still recommended for final
+  cross-software validation against UltraTax CS / Lacerte.
 - **D** — infra / security hardening (TLS, S3, soft-delete, etc.)
 - **E** — reactive / deferred (only when a customer asks)
 
@@ -196,6 +198,36 @@ C11 deeper sub-gaps:
   add field to schema + ClientDetail K-1/Rental forms.
 
 ## What's left (post-C-batch — strongest candidates)
+
+### Tier-1 engineering blocker surfaced by C3 validation
+
+**§199A QBI auto-detection** — the engine currently requires CPA to
+manually enter `qbi_income` adjustment for Sch C net OR `section199aQbi`
+on each K-1. Default behavior: QBI deduction = $0. Real CPA expectation:
+QBI should apply automatically for pass-through income. Fix:
+
+```ts
+// In taxReturnEngine.ts, after computing seIncomeFromAdj:
+const qbiIncomeAuto = qbiIncome > 0
+  ? qbiIncome  // existing explicit value wins
+  : Math.max(0, seIncomeFromAdj - se.deductibleHalf);  // auto from Sch C
+// And for K-1s: default `section199aQbi = box1OrdinaryIncome` when
+// activityType === "active" AND no explicit section199aQbi.
+```
+
+Then thread through §199A phase-in (single $191,950 / MFJ $383,900) and
+SSTB flag (engine has SSTB infrastructure already). ~1 day of work.
+**Highest-impact engineering item.**
+
+### Other tier-2/3 fixes from C3
+
+- CA personal exemption credit ($144 single / $288 MFJ + $446/dep) — add
+  to `calculateStateAdditionalCredits`
+- IL dependent exemption ($2,775/dep) — extend IL personal exemption
+  multiplier
+- NJ personal exemption ($1,000 filer / $1,500 dep) — add to `stateTaxData.ts`
+
+### Strategic
 
 1. **A1 — CPA outreach campaign** — packet complete; blocked on user
    availability. Highest revenue gate.

@@ -2,10 +2,14 @@
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
     "outDir": "dist",
-    "types": ["node"],
+    "types": [
+      "node"
+    ],
     "noEmit": true
   },
-  "include": ["src"],
+  "include": [
+    "src"
+  ],
   "exclude": [
     "src/tax-engine-tests.ts",
     "src/tax-engine-integration-tests.ts",
@@ -58,6 +62,7 @@
     "src/tax-engine-c9-c10-bulk-tests.ts",
     "src/tax-engine-c11-part-year-w2-tests.ts",
     "src/tax-engine-c11-deeper-sourcing-tests.ts",
+    "src/c3-validation-rerun.ts",
     "src/seed-dummy-clients.ts"
   ]
 }

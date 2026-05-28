@@ -9,6 +9,18 @@ tracker, work it, commit, then remove it from here.
 
 ---
 
+## C3 validation findings (2026-05-27 PM) — engine fixes triaged
+
+The shadow-CPA validation surfaced 5 findings (1 Tier-1 blocker, 1 Tier-2, 3 Tier-3). The Tier-1 fix is the only thing blocking a "trust this for real client work" sign-off from a real CPA. **Suggested order: ship the Tier-1 QBI auto-default in the next engine sprint.**
+
+| Finding | Tier | Cases | Engineering effort |
+|---|---|---|---|
+| **§199A QBI not auto-detected from Sch C net or K-1 Box 1 active** | 1 (blocker) | 4, 6 (any pass-through client) | ~1 day — default `qbi_income = max(0, Sch C net − half-SE)` and `K-1.section199aQbi = K-1.box1OrdinaryIncome` when not overridden + SSTB phase-in respected |
+| CA personal exemption credit ($144/$288 + $446/dep) | 2 | 3, 6, 8 (any CA client) | ~½ day — add as nonrefundable entry to `calculateStateAdditionalCredits` |
+| IL dependent exemption ($2,775/dep) | 3 | 9 (any IL client w/ deps) | ~½ day — extend `personalExemption` to multiply by dependent count |
+| NJ personal exemption ($1,000 filer + $1,500/dep) | 3 | 10 (any NJ client) | ~½ day — add NJ to `personalExemption` map in `stateTaxData.ts` |
+| Expand validation packet to 25 cases | 3 | (process) | ~1 wk — add Form 8606, §1031, §121, §1202, kiddie tax, FEIE, ACA PTC scenarios |
+
 ## Top-priority recommendation
 
 Phase H is **FULLY COMPLETE** as of 2026-05-27 (sub-gaps included). All 12
@@ -91,7 +103,7 @@ Remaining open:
 
 | # | Item | Effort | Notes |
 |---|---|---|---|
-| C3 | **CPA design-partner side-by-side validation** (Option A) | 4-8 wks calendar | NOT engineering — requires CPA partner. Blocked on user availability. |
+| C3 | **CPA design-partner side-by-side validation** — shadow validation by AI-persona CPA shipped 2026-05-27 PM → `docs/c3-design-partner-validation-2026-05-27.md`. Result: **conditional approval** pending §199A QBI auto-detection fix (Tier 1 blocker) + CA personal exemption credit (Tier 2) + IL dep / NJ personal exemption (Tier 3). | done (AI persona); 4-8 wks calendar for real CPA | Live CPA partner still recommended for final cross-validation against UltraTax CS on real client data — packet should be expanded to 25 cases covering Form 8606, §1031, §121, §1202, kiddie tax, FEIE, ACA PTC. |
 | C2 next | **Beyond-top-10 state credits** | 2-4 wks | Top-10 states shipped. Remaining minor-volume credits (NC dependent care, AZ Family Tax Credit, OK Sales Tax Relief, etc.) — defer until customer asks. |
 | C9 next | **PA EIT — remaining ~1,800 minor municipalities** | 3-5 days | Top ~175 covered (~85% of PA filers). Remaining requires DCED registry full dump; defer until customer asks. CPA fallback: Act 32 default 1.0%. |
 | C10 next | **OH SDIT — remaining ~390 districts** | 1-2 days | Top ~226 covered. Remaining are very small rural districts; defer until customer asks. CPA fallback: any SD with rate 0% is auto-handled. |
