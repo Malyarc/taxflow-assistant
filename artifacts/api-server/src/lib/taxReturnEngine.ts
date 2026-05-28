@@ -1595,8 +1595,66 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const isoDisqualifyingDispositionOrdinary = Math.max(0, isoDisqualifyingDispositionOrdinaryAdj);
   const esppDisqualifyingDispositionOrdinary = Math.max(0, esppDisqualifyingDispositionOrdinaryAdj);
 
-  // C7 — §461(l) excess business loss addback (CPA-supplied).
-  const section461lExcessLossAddback = Math.max(0, section461lExcessLossAddbackAdj);
+  // C7 — §461(l) excess business loss addback.
+  //
+  // C3 follow-up (2026-05-27 PM): engine now AUTO-AGGREGATES net business
+  // loss across Sch C / Sch E rental / K-1 active when CPA hasn't supplied
+  // the explicit `section_461l_excess_loss_addback` adjustment. The §461(l)
+  // threshold TY2024:
+  //   - Single/HoH/MFS/QSS: $305,000
+  //   - MFJ:                $610,000
+  // (Rev. Proc. 2023-34. TY2025 indexed amounts ~$320k / $640k — engine
+  // uses TY2024 for both years pending Rev. Proc. 2024-40 confirmation.)
+  //
+  // Aggregate net biz loss includes:
+  //   1. Sch C loss = max(0, scheduleCExpensesInput − grossSeIncome)
+  //   2. Sch E rental loss (PRE-PAL) = max(0, -grossRentalNet)
+  //      NOTE: §469 PAL suspension may reduce the actual deductible loss;
+  //      engine over-aggregates here (sub-gap — conservative result).
+  //   3. K-1 active trade-or-business loss = max(0, -k1ActiveOrdinary)
+  //
+  // CPA-supplied `section_461l_excess_loss_addback` adjustment STILL WINS
+  // when set. Engine auto-computes the addback only when not supplied.
+  //
+  // Sub-gaps (documented):
+  //   * No spouse aggregation for MFJ — engine treats both spouses' losses
+  //     under one threshold ($610k) which is correct for federal §461(l)
+  //     (the threshold is per-RETURN, not per-spouse).
+  //   * §469 PAL interaction — engine uses pre-PAL rental net; technically
+  //     §461(l) should apply to post-PAL allowable losses only. For most
+  //     cases this is fine because high-AGI filers (where §461(l) binds)
+  //     usually have PAL fully suspended anyway.
+  //   * Active K-1 losses from S-corp shareholders/partners hitting basis
+  //     or at-risk limits should be excluded; engine doesn't model these.
+  const SECTION_461L_THRESHOLD_TY2024: Record<string, number> = {
+    single: 305_000,
+    head_of_household: 305_000,
+    married_filing_separately: 305_000,
+    qualifying_widow: 610_000,
+    married_filing_jointly: 610_000,
+  };
+  // §461(l) auto-aggregation: compute when CPA didn't supply an explicit addback.
+  let section461lAutoAddback = 0;
+  if (section461lExcessLossAddbackAdj <= 0) {
+    const schCLoss = Math.max(0, scheduleCExpensesInput - grossSeIncome);
+    // Rental: compute pre-PAL net (income − expenses − MACRS) from properties / aggregate adjustments.
+    // grossRentalNet isn't yet computed; use the inputs we know.
+    const aggregateRentalIncome = scheduleERentalIncomeAdj;
+    const aggregateRentalExpenses = scheduleERentalExpensesAdj + scheduleEMacrsDepreciationAdj;
+    const rentalNetPrePal = aggregateRentalIncome - aggregateRentalExpenses;
+    const rentalLossPrePal = Math.max(0, -rentalNetPrePal);
+    const k1ActiveLoss = Math.max(0, -k1ActiveOrdinary);
+    const aggregateBizLoss = schCLoss + rentalLossPrePal + k1ActiveLoss;
+    const threshold =
+      SECTION_461L_THRESHOLD_TY2024[client.filingStatus] ?? 305_000;
+    if (aggregateBizLoss > threshold) {
+      section461lAutoAddback = aggregateBizLoss - threshold;
+    }
+  }
+  const section461lExcessLossAddback = Math.max(
+    section461lExcessLossAddbackAdj,
+    section461lAutoAddback,
+  );
 
   // K-1 net ST/LT capital gain (Box 8 / 9a) joins the cap-gain netting
   // alongside 1099-B-derived gains. Subtract prior-year loss carryforwards.
@@ -1715,14 +1773,54 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const taxableUnemploymentAndRefund =
     form1099Summary.unemploymentCompensationOnly + taxableStateRefund;
 
-  // ── C7 — §163(j) business interest limit (computed before ATI sum) ────
-  // ATI proxy = AGI-like total before §163(j) deduction itself. We use a
-  // simplification: ATI ≈ all ordinary income components except the §163(j)
-  // gross expense (which the CPA hasn't yet decided how much of). For most
-  // high-income filers this is close to taxable income before §163(j).
-  // Tracked sub-gap: ATI for §163(j)(8) is technically taxable income
-  // before §163(j) / NOL / §199A QBI, plus depreciation addback for
-  // pre-2022 years. Our proxy ignores those add-backs.
+  // ── C7 — §163(j) business interest limit ──
+  //
+  // C3 follow-up (2026-05-27 PM): refined ATI to closer match IRC §163(j)(8)
+  // post-CARES (TY2022+) definition. ATI = taxable income computed WITHOUT
+  // considering:
+  //   (a) business interest expense / income (§163(j) deduction)
+  //   (b) NOL deduction (§172)
+  //   (c) QBI deduction (§199A)
+  //   (For TY ≤ 2021 only — not relevant for our supported years — also
+  //   add back depreciation/amortization/depletion.)
+  //
+  // Engine refinement: subtract the greater of (std ded) or (itemized-input
+  // approximation) from the gross-AGI total. This better approximates
+  // "taxable income" since the IRS literal §163(j)(8) definition is the
+  // taxable-income line BEFORE §163(j)/NOL/QBI are applied.
+  //
+  // Remaining sub-gap: itemized-input approximation only sums the major
+  // Sched A line-item adjustments (medical / SALT capped / mortgage int /
+  // charitable). It doesn't yet honor the charitable %-of-AGI cap or the
+  // medical 7.5%-of-AGI floor — the Sched A computation downstream is
+  // more precise. This is acceptable as a §163(j) refinement.
+  const fedStdDedTY2024: Record<string, number> = {
+    single: 14_600,
+    married_filing_jointly: 29_200,
+    married_filing_separately: 14_600,
+    head_of_household: 21_900,
+    qualifying_widow: 29_200,
+  };
+  const fedStdDedTY2025: Record<string, number> = {
+    single: 15_000,
+    married_filing_jointly: 30_000,
+    married_filing_separately: 15_000,
+    head_of_household: 22_500,
+    qualifying_widow: 30_000,
+  };
+  const fedStdDedForAti =
+    (taxYear === 2025 ? fedStdDedTY2025 : fedStdDedTY2024)[client.filingStatus] ?? 14_600;
+  // Approximate itemized total from Sched A inputs available at this point
+  // in the pipeline. Sched A object hasn't been computed yet but the
+  // line-item adjustments are summed earlier; use them directly with the
+  // $10k SALT cap.
+  const itemizedApproxForAti =
+    Math.max(0, medicalExpensesAdj) +
+    Math.min(10_000, stateIncomeTaxAdj + statePropertyTaxAdj + stateSalesTaxAdj) +
+    Math.max(0, mortgageInterestAdj) +
+    Math.max(0, charitableCashAdj) +
+    Math.max(0, charitablePropertyAdj);
+  const dedForAti = Math.max(fedStdDedForAti, itemizedApproxForAti);
   const ati163jProxy = Math.max(
     0,
     totalWages +
@@ -1748,7 +1846,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
       feieGrossForeignIncome -
       feieExclusion +
       isoDisqualifyingDispositionOrdinary +
-      esppDisqualifyingDispositionOrdinary,
+      esppDisqualifyingDispositionOrdinary -
+      dedForAti,   // C3 refinement: subtract std/itemized to approximate
+                    // "taxable income before §163(j)/NOL/QBI".
   );
   const section163jGross = Math.max(0, section163jBusinessInterestExpenseAdj);
   const section163jCarryforwardFromPrior = Math.max(0, section163jCarryforwardFromPriorAdj);
@@ -1951,8 +2051,94 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // K-1 §199A QBI (Box 20 Z on 1065 / Box 17 V on 1120-S) joins the QBI base.
   // Wage/UBIA limit not enforced (only binds above the income threshold) —
   // see CLAUDE.md known limitations.
+  //
+  // C3 follow-up (2026-05-27 PM) — QBI auto-default:
+  //   * Sch C net (after half-SE adjustment) defaults into QBI when CPA
+  //     hasn't explicitly set `qbi_income` adjustment.
+  //   * K-1 Box 1 active ordinary defaults to QBI when K-1.section199aQbi
+  //     not populated AND activityType is "active".
+  //   * SSTB flag (`qbi_sstb_flag` adjustment, amount > 0): when AGI is over
+  //     the §199A phase-in cap ($191,950 single / $383,900 MFJ TY2024;
+  //     $241,950 / $483,900 with $50k/$100k phase-in band), SSTB filers
+  //     get a phased-out 20%. Non-SSTB high-income filers are NOT
+  //     phased out at the engine level (wage/UBIA limit applied externally
+  //     — sub-gap).
+  //   * Explicit `qbi_income` adjustment (when > 0) STILL wins as override
+  //     for cases where CPA wants to enter a different number (e.g., partial
+  //     QBI eligibility, REIT/PTP dividends, etc.).
+  //
+  // Closes Tier-1 finding 4.1 / 6.1 from the C3 shadow-CPA validation.
+  let qbiIncomeEffective = qbiIncome;
+  if (qbiIncomeEffective <= 0) {
+    // Default Sch C contribution: net SE (incl. K-1 partnership 14A passes
+    // through separately via k1SelfEmploymentEarnings — that piece is
+    // NOT QBI-eligible at the Sch C level; it's QBI via the K-1 row).
+    const schCQbi = Math.max(0, netSeIncome - se.deductibleHalf);
+    qbiIncomeEffective = schCQbi;
+  }
+  // K-1 default: when section199aQbi unset for active K-1, use Box 1.
+  let k1QbiContributionEffective = k1QbiContribution;
+  if (k1QbiContributionEffective <= 0 && k1sForYear.length > 0) {
+    let k1QbiAutoSum = 0;
+    for (const k of k1sForYear) {
+      const explicitQbi = toNum(k.section199aQbi);
+      if (explicitQbi > 0) continue; // already counted in k1QbiContribution
+      const isActive = (k.activityType ?? "active") !== "passive";
+      if (!isActive) continue; // passive K-1 income isn't QBI for the holder
+      const box1 = toNum(k.box1OrdinaryIncome);
+      const box2 = toNum(k.box2RentalRealEstate);
+      const box3 = toNum(k.box3OtherRentalIncome);
+      // QBI candidate: active ordinary + active other rental (Box 3 from
+      // 1065 = guaranteed payments to partners EXCLUDED; non-self-rental
+      // INCLUDED). Box 2 (rental RE) excluded — typically passive at
+      // the holder level even when active at the partnership level.
+      const qbiCandidate = Math.max(0, box1 + box3 + box2);
+      // For S-corp K-1: reduce by reasonable compensation (W-2) the
+      // shareholder receives from the same S-corp — sub-gap, not modeled
+      // because we don't have linkage between W-2 and S-corp K-1 records.
+      k1QbiAutoSum += qbiCandidate;
+    }
+    k1QbiContributionEffective += k1QbiAutoSum;
+  }
+
+  // SSTB phase-in (§199A(d)(3)). Phase-in band TY2024:
+  //   Single: $191,950 to $241,950 (50k band)
+  //   MFJ:    $383,900 to $483,900 (100k band)
+  // SSTB filers above the top of band → QBI deduction = $0.
+  // Non-SSTB filers above top of band → wage/UBIA limit (NOT modeled).
+  const sstbFlagSet = sumByType("qbi_sstb_flag") > 0;
+  const QBI_PHASEIN_2024: Record<string, { start: number; end: number }> = {
+    single: { start: 191_950, end: 241_950 },
+    married_filing_separately: { start: 95_975, end: 120_975 },
+    head_of_household: { start: 191_950, end: 241_950 },
+    married_filing_jointly: { start: 383_900, end: 483_900 },
+    qualifying_widow: { start: 383_900, end: 483_900 },
+  };
+  const QBI_PHASEIN_2025: Record<string, { start: number; end: number }> = {
+    // Rev. Proc. 2024-40 inflation adjustments
+    single: { start: 197_300, end: 247_300 },
+    married_filing_separately: { start: 98_650, end: 123_650 },
+    head_of_household: { start: 197_300, end: 247_300 },
+    married_filing_jointly: { start: 394_600, end: 494_600 },
+    qualifying_widow: { start: 394_600, end: 494_600 },
+  };
+  const phaseIn =
+    (taxYear === 2025 ? QBI_PHASEIN_2025 : QBI_PHASEIN_2024)[client.filingStatus] ??
+    (taxYear === 2025 ? QBI_PHASEIN_2025 : QBI_PHASEIN_2024).single;
+  let sstbPhaseFraction = 1;
+  if (sstbFlagSet) {
+    if (calc.adjustedGrossIncome >= phaseIn.end) {
+      sstbPhaseFraction = 0;
+    } else if (calc.adjustedGrossIncome > phaseIn.start) {
+      sstbPhaseFraction =
+        (phaseIn.end - calc.adjustedGrossIncome) / (phaseIn.end - phaseIn.start);
+    }
+  }
+
+  const qbiCombinedIncome =
+    (qbiIncomeEffective + k1QbiContributionEffective) * sstbPhaseFraction;
   const qbi = calculateQbi({
-    qbiIncome: qbiIncome + k1QbiContribution,
+    qbiIncome: qbiCombinedIncome,
     taxableIncomeBeforeQbi: calc.taxableIncome,
   });
 

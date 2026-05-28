@@ -130,9 +130,15 @@ header("Pure invocation — 1099-NEC with Schedule C expenses + SE tax");
   // Single, $80k 1099-NEC + $30k Schedule C expenses → net SE $50k.
   // SE tax on net SE income: 15.3% × ($50,000 × 92.35%) = $7,065. Half = $3,532.50 deductible.
   // AGI = $50,000 (net SE) - $3,532.50 = $46,467.50.
-  // Std ded $14,600. Taxable = $31,867.50.
-  // Tax = $1,160 + ($31,867.50 - $11,600) × 0.12 = $1,160 + $2,432.10 = $3,592.10.
-  // Total fed liability = $3,592.10 + $7,065 SE = $10,657.10.
+  // Std ded $14,600. Pre-QBI taxable = $31,867.50.
+  // POST C3 QBI auto-default (2026-05-27 PM):
+  //   QBI candidate = net SE $50k − half SE $3,532.50 = $46,467.50
+  //   Preliminary = 20% × $46,467.50 = $9,293.50
+  //   Cap = 20% × pre-QBI taxable $31,867.50 = $6,373.50
+  //   QBI deduction = min($9,293.50, $6,373.50) = $6,373.50
+  // Post-QBI taxable = $31,867.50 − $6,373.50 = $25,494.
+  // Federal regular tax = $1,160 + 12% × ($25,494 − $11,600) = $1,160 + $1,667.28 = $2,827.28.
+  // Total fed liability = $2,827.28 + $7,065 SE = $9,892.28.
   const inputs: TaxReturnInputs = {
     client: { filingStatus: "single", state: "FL", taxYear: 2024 },
     w2s: [],
@@ -150,7 +156,7 @@ header("Pure invocation — 1099-NEC with Schedule C expenses + SE tax");
   check("Form1099 count = 1", r.form1099Count, 1);
   check("AGI ~$46,467.50 (net SE - SE/2)", r.adjustedGrossIncome, 46467.50, 1);
   check("SE tax ~$7,065", r.selfEmploymentTax, 7065, 5);
-  check("Total federal liability ~$10,657", r.federalTaxLiability, 10657, 10);
+  check("Total federal liability ~$9,892 (post-QBI auto-default)", r.federalTaxLiability, 9892.28, 10);
 }
 
 header("Pure invocation — adjustments respect isApplied = false");

@@ -1,0 +1,26 @@
+{
+  "client": {
+    "filingStatus": "single",
+    "state": "FL",
+    "taxYear": 2024
+  },
+  "slug": "single-feie-form2555-expat",
+  "number": 16,
+  "title": "Single, FEIE §911 (foreign-earned income exclusion)",
+  "description": "U.S. citizen working remotely from Portugal full year. Total foreign-earned wages $130,000. §911 cap TY2024 = $126,500 (single, full year). Engine excludes $126,500; $3,500 remainder taxed at marginal rate. Stacking rule applied: tax computed at marginal rate that would have applied including FEIE.",
+  "expectations": [
+    "FEIE exclusion = $126,500 (cap)",
+    "Taxable foreign-earned income = $3,500",
+    "Stacking rule: tax computed as if FEIE-included income, then back out"
+  ],
+  "w2s": [],
+  "form1099s": [],
+  "adjustments": [
+    {
+      "adjustmentType": "foreign_earned_income",
+      "amount": 130000,
+      "isApplied": true,
+      "description": "PT-based remote work"
+    }
+  ]
+}

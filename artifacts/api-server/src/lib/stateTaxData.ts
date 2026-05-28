@@ -59,6 +59,13 @@ export interface StateTaxInfo {
   /** Per-filer personal exemption (e.g. VT $4,850/filer). Subtracts from state taxable income. */
   personalExemption?: StateStandardDeduction;
   /**
+   * C3 follow-up (2026-05-27 PM) — Per-dependent personal exemption amount
+   * (e.g. IL $2,775/dep, NJ $1,500/dep). Multiplied by `options.dependentCount`
+   * in `calculateStateTax` and added to the filer/spouse exemption. Subject
+   * to the same AGI cliff as personalExemption.
+   */
+  personalExemptionPerDependent?: number;
+  /**
    * AGI cliff above which the personal exemption is reduced to $0 (per state
    * statute — e.g. IL-1040 Line 10b: AGI > $250k single / $500k MFJ → exemption = $0).
    * Each filing-status entry is the federal AGI threshold; > threshold means
@@ -194,8 +201,10 @@ const STATE_TAX_DATA_2024: Record<string, StateTaxInfo> = {
     //   - Federal AGI > $500,000 (MFJ)
     // Engine applies this cliff via personalExemptionAgiCliff below.
     personalExemption: { single: 2775, married_filing_jointly: 5550, head_of_household: 2775, married_filing_separately: 2775, qualifying_widow: 5550 },
+    // C3 follow-up (2026-05-27 PM): $2,775 per dependent now modeled.
+    personalExemptionPerDependent: 2775,
     personalExemptionAgiCliff: { single: 250000, married_filing_jointly: 500000, head_of_household: 250000, married_filing_separately: 250000, qualifying_widow: 250000 },
-    notes: "IL flat 4.95% with $2,775 personal exemption (single) / $5,550 (MFJ); exemption cliffs to $0 at AGI > $250k single / $500k MFJ per IL-1040 Line 10b. Dependent exemptions ($2,775 each) NOT modeled.",
+    notes: "IL flat 4.95% with $2,775 personal exemption (filer/spouse + each dependent); cliffs to $0 at AGI > $250k single / $500k MFJ per IL-1040 Line 10b. Dependents added 2026-05-27 PM (C3 finding 9.2).",
   },
   IN: {
     name: "Indiana", hasIncomeTax: true,
@@ -565,7 +574,22 @@ const STATE_TAX_DATA_2024: Record<string, StateTaxInfo> = {
       ],
     },
     standardDeduction: { single: 0, married_filing_jointly: 0 },
-    notes: "NJ uses personal exemptions, not std deduction.",
+    // C3 follow-up (2026-05-27 PM): NJ personal exemption now modeled.
+    // TY2024 per N.J.S.A. 54A:3-1:
+    //   - $1,000 per filer (single)
+    //   - $2,000 per couple (MFJ — both spouses)
+    //   - $1,500 per dependent (qualifying child or other dependent)
+    //   - Additional $1,000 for filer/spouse 65+, blind, or disabled (NOT MODELED — defer)
+    //   - Additional $1,500 for full-time college student dependent (NOT MODELED — defer)
+    personalExemption: {
+      single: 1000,
+      married_filing_jointly: 2000,
+      head_of_household: 1000,
+      married_filing_separately: 1000,
+      qualifying_widow: 2000,
+    },
+    personalExemptionPerDependent: 1500,
+    notes: "NJ uses personal exemptions ($1,000/filer + $2,000 MFJ + $1,500/dep TY2024 per N.J.S.A. 54A:3-1), not std deduction. Sub-gaps: additional $1,000 age 65+/blind/disabled and $1,500 student-dep not modeled.",
   },
   NM: {
     name: "New Mexico", hasIncomeTax: true,

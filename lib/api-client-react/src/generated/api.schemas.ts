@@ -1203,6 +1203,7 @@ export const AdjustmentAdjustmentType = {
   mi_home_heating_cost: "mi_home_heating_cost",
   mi_household_resources: "mi_household_resources",
   oh_sdit_traditional_base: "oh_sdit_traditional_base",
+  qbi_sstb_flag: "qbi_sstb_flag",
 } as const;
 
 export interface Adjustment {
@@ -1313,6 +1314,7 @@ export const CreateAdjustmentBodyAdjustmentType = {
   mi_home_heating_cost: "mi_home_heating_cost",
   mi_household_resources: "mi_household_resources",
   oh_sdit_traditional_base: "oh_sdit_traditional_base",
+  qbi_sstb_flag: "qbi_sstb_flag",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -1419,6 +1421,7 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   mi_home_heating_cost: "mi_home_heating_cost",
   mi_household_resources: "mi_household_resources",
   oh_sdit_traditional_base: "oh_sdit_traditional_base",
+  qbi_sstb_flag: "qbi_sstb_flag",
 } as const;
 
 export interface UpdateAdjustmentBody {
@@ -2334,4 +2337,24 @@ export type GetPeerBenchmarkParams = {
    * AGI band width in dollars (default $50,000 → ±$50k around target).
    */
   bandWidth?: number;
+};
+
+export type GetForm8824Params = {
+  taxYear?: number;
+};
+
+export type GetForm8824200 = { [key: string]: unknown };
+
+export type GetForm8824PdfParams = {
+  taxYear?: number;
+};
+
+export type GetForm8990Params = {
+  taxYear?: number;
+};
+
+export type GetForm8990200 = { [key: string]: unknown };
+
+export type GetForm8990PdfParams = {
+  taxYear?: number;
 };

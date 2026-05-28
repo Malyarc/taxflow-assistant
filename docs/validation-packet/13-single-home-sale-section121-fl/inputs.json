@@ -1,0 +1,33 @@
+{
+  "client": {
+    "filingStatus": "single",
+    "state": "FL",
+    "taxYear": 2024
+  },
+  "slug": "single-home-sale-section121-fl",
+  "number": 13,
+  "title": "Single, §121 home sale exclusion ($300k gross gain)",
+  "description": "Software developer sells primary residence after 7 years for $300,000 gain. Single filer's §121 exclusion is $250,000. Engine excludes $250k; remaining $50k flows to LTCG (Sch D). FL no state tax.",
+  "expectations": [
+    "§121 exclusion applied = $250,000",
+    "Taxable LTCG remainder = $50,000",
+    "Federal tax on LTCG portion at 15% (within single bracket)"
+  ],
+  "w2s": [
+    {
+      "taxYear": 2024,
+      "wagesBox1": 100000,
+      "federalTaxWithheldBox2": 14000,
+      "stateCode": "FL"
+    }
+  ],
+  "form1099s": [],
+  "adjustments": [
+    {
+      "adjustmentType": "home_sale_gross_gain_primary_residence",
+      "amount": 300000,
+      "isApplied": true,
+      "description": "Primary residence sale gross gain"
+    }
+  ]
+}

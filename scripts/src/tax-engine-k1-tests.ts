@@ -83,10 +83,19 @@ header("Test A — S-corp K-1 active, $50k ordinary biz income");
   const r = computeTaxReturnPure(inputs);
   check("Total income = $130,000", r.totalIncome, 130000, 1);
   check("AGI = $130,000", r.adjustedGrossIncome, 130000, 1);
-  check("Taxable income = $115,400", r.taxableIncome, 115400, 1);
-  check("Federal tax = $20,738.50", r.federalTaxLiability, 20738.5, 1);
+  // C3 follow-up (2026-05-27 PM): §199A QBI now auto-defaults from K-1
+  // Box 1 active S-corp ordinary income. QBI deduction = 20% × $50,000 = $10,000.
+  // Taxable: $115,400 − $10,000 = $105,400.
+  // Federal tax (single TY2024 brackets):
+  //   10% × 11,600 = 1,160.00
+  //   12% × 35,550 = 4,266.00
+  //   22% × 53,375 = 11,742.50
+  //   24% × (105,400 − 100,525) = 24% × 4,875 = 1,170.00
+  //   Total                                  = 18,338.50
+  check("Taxable income = $105,400 (post-QBI auto)", r.taxableIncome, 105400, 1);
+  check("Federal tax = $18,338.50 (post-QBI auto)", r.federalTaxLiability, 18338.5, 1);
   checkExact("No SE tax on S-corp K-1", r.selfEmploymentTax ?? 0, 0);
-  check("QBI deduction = $0 (no §199A flow)", r.qbiDeduction ?? 0, 0, 0.01);
+  check("QBI deduction = $10,000 (auto from K-1 active Box 1)", r.qbiDeduction ?? 0, 10000, 0.01);
   checkExact("K-1 count = 1", r.scheduleK1.k1Count, 1);
   checkExact("S-corp count = 1", r.scheduleK1.sCorpCount, 1);
   checkExact("Partnership count = 0", r.scheduleK1.partnershipCount, 0);
@@ -396,9 +405,20 @@ header("Test G — Partnership K-1 Box 14A SE earnings → Schedule SE");
   check("Net SE earnings = $55,410", r.detail.se.netSeEarnings, 55410, 1);
   check("SE tax ≈ $8,477.73", r.selfEmploymentTax ?? 0, 8477.73, 0.5);
   check("AGI = $55,761.13 (K-1 active − ½ SE)", r.adjustedGrossIncome, 55761.13, 1);
-  check("Taxable income = $41,161.13", r.taxableIncome, 41161.13, 1);
-  // federalTaxLiability includes regular + SE; expect $4,707.34 + $8,477.73 = $13,185.07
-  check("Federal tax (regular + SE) = $13,185.07", r.federalTaxLiability, 13185.07, 1);
+  // C3 follow-up (2026-05-27 PM): §199A QBI now auto-defaults from K-1
+  // Box 1 active partnership Box 1 = $60,000. Per Treas. Reg. §1.199A-3(b)(1)(vi),
+  // QBI = trade/business income (not reduced by ½-SE). Preliminary deduction
+  // = 20% × $60,000 = $12,000. Cap = 20% × taxable-before-QBI $41,161.13 = $8,232.23.
+  // QBI deduction = min($12,000, $8,232.23) = $8,232.23.
+  // Post-QBI taxable: $41,161.13 − $8,232.23 = $32,928.90.
+  // Federal regular tax:
+  //   10% × 11,600 = 1,160.00
+  //   12% × (32,928.90 − 11,600) = 12% × 21,328.90 = 2,559.47
+  //   Total reg                                    = 3,719.47
+  // Plus SE tax $8,477.73 = $12,197.20.
+  check("Taxable income = $32,928.90 (post-QBI auto)", r.taxableIncome, 32928.90, 0.5);
+  check("QBI deduction = $8,232.23 (cap-bound)", r.qbiDeduction ?? 0, 8232.23, 0.5);
+  check("Federal tax (regular + SE) = $12,197.20 (post-QBI auto)", r.federalTaxLiability, 12197.20, 1);
   check("K-1 SE earnings = $60,000", r.scheduleK1.totalSelfEmploymentEarnings, 60000, 0.01);
 }
 

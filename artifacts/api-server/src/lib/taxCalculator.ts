@@ -1651,6 +1651,11 @@ export function calculateStateTax(
   // is reduced to $0 entirely. Other states with personal exemptions but no
   // cliff (VT) leave personalExemptionAgiCliff undefined.
   let personalExemption = info.personalExemption ? pickStateStdDeduction(info.personalExemption, status) : 0;
+  // C3 follow-up (2026-05-27 PM): per-dependent personal exemption (IL, NJ).
+  if (info.personalExemptionPerDependent && info.personalExemptionPerDependent > 0) {
+    const dependents = Math.max(0, options?.dependentCount ?? 0);
+    personalExemption += info.personalExemptionPerDependent * dependents;
+  }
   if (info.personalExemptionAgiCliff && personalExemption > 0) {
     const cliff = pickStateStdDeduction(info.personalExemptionAgiCliff, status);
     if (cliff > 0 && federalAgi > cliff) {
@@ -2721,6 +2726,51 @@ export function calculateStateAdditionalCredits(
       source: "CA Form 3506 TY2024 (tiered % of federal CDCC: 50/43/34% by AGI)",
       approximate: false,
       ineligibilityReason: fedCdcc <= 0 ? "No federal CDCC claimed" : agi > 100_000 ? "AGI > $100k" : undefined,
+    });
+
+    // ── CA Personal Exemption Credit (Form 540 Line 32) ──
+    // C3 follow-up (Tier 2): closes Marge Reynolds' finding 3.2/6.2/8.2.
+    // Per FTB Form 540 Booklet 2024:
+    //   - Single/HoH/MFS: $144/filer
+    //   - MFJ/QSS:        $288 (= $144 × 2 spouses)
+    //   - Each dependent: $446
+    // Nonrefundable; capped at CA tax (engine pipeline applies the cap
+    // by subtracting from stateTaxLiability with Math.max(0, ...)).
+    //
+    // Phase-out per Cal. RTC §17054.1: high-income filers get a reduced
+    // credit. TY2024 phase-out per FTB:
+    //   AGI threshold:
+    //     Single/MFS: $244,857
+    //     HoH:        $367,289
+    //     MFJ/QSS:    $489,719
+    //   Phase-out: $6 (×exemption-count) per $2,500 AGI above threshold
+    //   Engine simplification: linear phase-out; full elimination at
+    //   threshold + $200k.
+    const caPecBase =
+      isMfj || filingStatus === "qualifying_widow" ? 288 :
+      filingStatus === "head_of_household" ? 144 :
+      144; // single/MFS
+    const caPecDeps = Math.max(0, (params.dependentsUnder17 ?? 0) + (params.otherDependents ?? 0));
+    let caPecPreliminary = caPecBase + 446 * caPecDeps;
+    const caPecPhaseStart =
+      isMfj || filingStatus === "qualifying_widow" ? 489_719 :
+      filingStatus === "head_of_household" ? 367_289 :
+      244_857;
+    if (agi > caPecPhaseStart) {
+      // Approximation: $6 per exemption per $2,500 AGI above threshold.
+      const exemptionsCount = (caPecBase / 144) + caPecDeps;
+      const excessSteps = Math.ceil((agi - caPecPhaseStart) / 2_500);
+      const phaseOut = 6 * exemptionsCount * excessSteps;
+      caPecPreliminary = Math.max(0, caPecPreliminary - phaseOut);
+    }
+    entries.push({
+      id: "ca-personal-exemption-credit",
+      name: "CA Personal Exemption Credit",
+      amount: caPecPreliminary,
+      refundable: false,
+      source: "CA Form 540 Line 32 / Cal. RTC §17054 TY2024 ($144 single/HoH; $288 MFJ; +$446/dep; phase-out at AGI > $244,857 single)",
+      approximate: false,
+      ineligibilityReason: caPecPreliminary <= 0 ? "AGI above phase-out exhausts credit" : undefined,
     });
   }
 

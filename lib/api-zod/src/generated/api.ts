@@ -2640,6 +2640,7 @@ export const ListAdjustmentsResponseItem = zod.object({
     "mi_home_heating_cost",
     "mi_household_resources",
     "oh_sdit_traditional_base",
+    "qbi_sstb_flag",
   ]),
   amount: zod.number(),
   description: zod.string(),
@@ -2742,6 +2743,7 @@ export const CreateAdjustmentBody = zod.object({
     "mi_home_heating_cost",
     "mi_household_resources",
     "oh_sdit_traditional_base",
+    "qbi_sstb_flag",
   ]),
   amount: zod.number(),
   description: zod.string(),
@@ -2843,6 +2845,7 @@ export const UpdateAdjustmentBody = zod.object({
       "mi_home_heating_cost",
       "mi_household_resources",
       "oh_sdit_traditional_base",
+      "qbi_sstb_flag",
     ])
     .optional(),
   amount: zod.number().optional(),
@@ -2938,6 +2941,7 @@ export const UpdateAdjustmentResponse = zod.object({
     "mi_home_heating_cost",
     "mi_household_resources",
     "oh_sdit_traditional_base",
+    "qbi_sstb_flag",
   ]),
   amount: zod.number(),
   description: zod.string(),
@@ -3067,6 +3071,58 @@ export const GetForm8606Response = zod.object({
  */
 export const GetForm8606PdfParams = zod.object({
   clientId: zod.coerce.number(),
+});
+
+/**
+ * Reads the client's §1031 adjustments (section_1031_realized_gain, section_1031_boot_received) and returns the structured Form 8824 line items (recognized + deferred gain, boot, basis). Optional query params let the CPA supply property descriptions + dates.
+
+ * @summary Compute Form 8824 §1031 like-kind exchange data (C3 follow-up)
+ */
+export const GetForm8824Params = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const GetForm8824QueryParams = zod.object({
+  taxYear: zod.coerce.number().optional(),
+});
+
+export const GetForm8824Response = zod.record(zod.string(), zod.unknown());
+
+/**
+ * @summary Download Form 8824 (§1031) as a substitute PDF (C3 follow-up)
+ */
+export const GetForm8824PdfParams = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const GetForm8824PdfQueryParams = zod.object({
+  taxYear: zod.coerce.number().optional(),
+});
+
+/**
+ * Reads the client's §163(j) computed values (allowed, disallowed cf, gross interest expense) plus related adjustments (carryforward from prior, floor plan financing, business interest income) and returns the structured Form 8990 line items including ATI back-derived from the allowed/disallowed split.
+
+ * @summary Compute Form 8990 §163(j) business interest data (C3 follow-up)
+ */
+export const GetForm8990Params = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const GetForm8990QueryParams = zod.object({
+  taxYear: zod.coerce.number().optional(),
+});
+
+export const GetForm8990Response = zod.record(zod.string(), zod.unknown());
+
+/**
+ * @summary Download Form 8990 (§163(j)) as a substitute PDF (C3 follow-up)
+ */
+export const GetForm8990PdfParams = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const GetForm8990PdfQueryParams = zod.object({
+  taxYear: zod.coerce.number().optional(),
 });
 
 /**

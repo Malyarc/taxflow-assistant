@@ -1,0 +1,41 @@
+{
+  "client": {
+    "filingStatus": "single",
+    "state": "NY",
+    "taxYear": 2024
+  },
+  "slug": "single-cap-loss-carryforward-ny",
+  "number": 21,
+  "title": "Single, Capital loss carryforward + $3k §1211 offset",
+  "description": "Filer with prior-year cap-loss carryforward: $15,000 ST + $10,000 LT. Current year W-2 $80k, no current-year cap transactions. §1211: net cap loss limited to $3,000/year against ordinary income; rest carries forward. Engine applies $3k offset (ST first by IRS ordering).",
+  "expectations": [
+    "Capital loss deducted = $3,000",
+    "ST cap loss CF remaining = $12,000",
+    "LT cap loss CF remaining = $10,000",
+    "Federal tax reduced by $3k × 22% marginal ≈ $660"
+  ],
+  "w2s": [
+    {
+      "taxYear": 2024,
+      "wagesBox1": 80000,
+      "federalTaxWithheldBox2": 10000,
+      "stateCode": "NY",
+      "stateTaxWithheldBox17": 4000
+    }
+  ],
+  "form1099s": [],
+  "adjustments": [
+    {
+      "adjustmentType": "capital_loss_carryforward_short",
+      "amount": 15000,
+      "isApplied": true,
+      "description": "ST cap loss CF"
+    },
+    {
+      "adjustmentType": "capital_loss_carryforward_long",
+      "amount": 10000,
+      "isApplied": true,
+      "description": "LT cap loss CF"
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "client": {
+    "filingStatus": "single",
+    "state": "NY",
+    "taxYear": 2024,
+    "residencyChangedInYear": true,
+    "formerState": "CA",
+    "residencyChangeDate": "2024-04-01"
+  },
+  "slug": "single-part-year-residency-ca-ny",
+  "number": 23,
+  "title": "Single, Part-year residency CA → NY (Apr 1, 2024)",
+  "description": "Filer moved from CA to NY on April 1, 2024. Total W-2 $120k (all NY stateCode — earned post-move). Without W-2 sourcing: pro-rata 91/366 days to CA = $29,836. With `part_year_use_w2_source` marker: $0 to CA, $120k to NY.",
+  "expectations": [
+    "Engine uses W-2 source-allocation when marker is set",
+    "CA former-state AGI = $0 (no CA W-2)",
+    "NY current-state AGI = $120,000"
+  ],
+  "w2s": [
+    {
+      "taxYear": 2024,
+      "wagesBox1": 120000,
+      "federalTaxWithheldBox2": 18000,
+      "stateCode": "NY",
+      "stateTaxWithheldBox17": 6000
+    }
+  ],
+  "form1099s": [],
+  "adjustments": [
+    {
+      "adjustmentType": "part_year_use_w2_source",
+      "amount": 1,
+      "isApplied": true,
+      "description": "Enable W-2 source allocation"
+    }
+  ]
+}

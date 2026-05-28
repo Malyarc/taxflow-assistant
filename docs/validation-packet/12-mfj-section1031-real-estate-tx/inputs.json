@@ -1,0 +1,39 @@
+{
+  "client": {
+    "filingStatus": "married_filing_jointly",
+    "state": "TX",
+    "taxYear": 2024
+  },
+  "slug": "mfj-section1031-real-estate-tx",
+  "number": 12,
+  "title": "MFJ, §1031 like-kind exchange — commercial RE",
+  "description": "Real-estate investor swaps a TX commercial property for a like-kind FL commercial property. Realized gain $200,000; received $30,000 cash boot (the new property was worth $30k less). Engine computes recognized gain = MIN(realized, boot) = $30k (flows to Sch D LTCG); deferred gain = $170k (reduces basis of received property).",
+  "expectations": [
+    "Recognized gain = $30,000 (Sch D LTCG)",
+    "Deferred gain = $170,000 (basis adjustment of received property)",
+    "Federal LTCG portion taxed at 15% preferential rate"
+  ],
+  "w2s": [
+    {
+      "taxYear": 2024,
+      "wagesBox1": 140000,
+      "federalTaxWithheldBox2": 18000,
+      "stateCode": "TX"
+    }
+  ],
+  "form1099s": [],
+  "adjustments": [
+    {
+      "adjustmentType": "section_1031_realized_gain",
+      "amount": 200000,
+      "isApplied": true,
+      "description": "§1031 realized gain TX→FL commercial RE"
+    },
+    {
+      "adjustmentType": "section_1031_boot_received",
+      "amount": 30000,
+      "isApplied": true,
+      "description": "Cash boot received"
+    }
+  ]
+}

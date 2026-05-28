@@ -1,0 +1,34 @@
+{
+  "client": {
+    "filingStatus": "single",
+    "state": "FL",
+    "taxYear": 2024,
+    "taxpayerAge": 55
+  },
+  "slug": "single-roth-conversion-fl",
+  "number": 19,
+  "title": "Single, Large Roth conversion (no IRA basis)",
+  "description": "Pre-retiree (age 55) converts $80,000 from traditional IRA to Roth. No after-tax basis. Full $80k is ordinary taxable income in conversion year. Plus $90k W-2 → AGI $170k. Federal marginal 24%. Engine routes through adjustments.",
+  "expectations": [
+    "Total income = $170,000 ($90k W-2 + $80k conversion)",
+    "Federal tax on $170k roughly 24% bracket region",
+    "Roth basis carryforward updates"
+  ],
+  "w2s": [
+    {
+      "taxYear": 2024,
+      "wagesBox1": 90000,
+      "federalTaxWithheldBox2": 12000,
+      "stateCode": "FL"
+    }
+  ],
+  "form1099s": [],
+  "adjustments": [
+    {
+      "adjustmentType": "roth_conversion_amount",
+      "amount": 80000,
+      "isApplied": true,
+      "description": "Large Roth conversion"
+    }
+  ]
+}

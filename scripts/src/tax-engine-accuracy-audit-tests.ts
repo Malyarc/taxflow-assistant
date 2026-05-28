@@ -864,16 +864,20 @@ header("D3. Sch C $40k + spouse W-2 $80k, HSA + traditional IRA");
   // CTC = 2,000 (1 child). After CTC = 5,438.15.
   // Total fed = 5,438.15 + 5,651.82 = 11,089.97.
   check("D3", "AGI = $101,874.09", r.adjustedGrossIncome, 101874.09, 5);
-  // Engine's QBI requires explicit `qbi_income` adjustment (does NOT auto-derive
-  // from Sch C / 1099-NEC SE income). Documented limitation; test expectation
-  // updated to match engine contract.
-  check("D3", "Taxable (no QBI applied without qbi_income adj) = $72,674", r.taxableIncome, 72674.09, 5,
-    "Engine quirk: QBI requires explicit qbi_income adjustment");
+  // POST C3 QBI auto-default (2026-05-27 PM): QBI now auto-derives from Sch C
+  // net SE income MINUS half-SE deduction (per Treas. Reg. §1.199A-3(b)(1)(vi)):
+  //   QBI candidate = Sch C net $40,000 − half-SE $2,825.91 = $37,174.09
+  //   Preliminary = 20% × $37,174.09 = $7,434.82
+  //   Cap = 20% × pre-QBI taxable $72,674.09 = $14,534.82
+  //   QBI deduction = min($7,434.82, $14,534.82) = $7,434.82
+  // Post-QBI taxable = $72,674.09 − $7,434.82 = $65,239.27.
+  check("D3", "Taxable = $65,239.27 (post-QBI auto-default)", r.taxableIncome, 65239.27, 5,
+    "QBI now auto-applies from Sch C net (C3 follow-up)");
   // federalTaxLiability is pre-credit (regular tax + SE + AMT + NIIT). On
-  // taxable $72,674 MFJ: 2,320 + 12%×(72,674.09 − 23,200) = 2,320 + 5,936.89 = 8,256.89.
-  // Plus SE 5,651.82 = 13,908.71 (pre-CTC).
-  check("D3", "Pre-credit fed total = $13,908.71 (no QBI, SE included, pre-CTC)",
-    r.federalTaxLiability, 13908.71, 5,
+  // taxable $65,239.27 MFJ: 2,320 + 12%×(65,239.27 − 23,200) = 2,320 + 5,044.71 = 7,364.71.
+  // Plus SE $5,651.82 = $13,016.53 (pre-CTC).
+  check("D3", "Pre-credit fed total = $13,016.53 (post-QBI auto-default)",
+    r.federalTaxLiability, 13016.53, 5,
     "Engine contract: federalTaxLiability excludes credits");
   check("D3", "Net refund/owed reflects CTC $2,000 credit",
     r.federalRefundOrOwed + r.federalTaxLiability - r.federalTaxWithheld,

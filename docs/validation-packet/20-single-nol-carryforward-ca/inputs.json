@@ -1,0 +1,33 @@
+{
+  "client": {
+    "filingStatus": "single",
+    "state": "CA",
+    "taxYear": 2024
+  },
+  "slug": "single-nol-carryforward-ca",
+  "number": 20,
+  "title": "Single, NOL carryforward (post-TCJA 80% limit, §172(a)(2))",
+  "description": "Recovering filer with $40,000 NOL carryforward from prior loss year. Current year W-2 $50,000 (taxable before NOL ≈ $35,400). §172(a)(2) post-TCJA: NOL deduction ≤ 80% × taxable. Cap = 80% × $35,400 = $28,320. NOL used: $28,320. Remaining $11,680 carries forward.",
+  "expectations": [
+    "NOL deduction = $28,320 (80% cap)",
+    "Remaining NOL cf = $11,680",
+    "Federal tax on post-NOL taxable income ≈ $7,080 ($35,400 − $28,320)"
+  ],
+  "w2s": [
+    {
+      "taxYear": 2024,
+      "wagesBox1": 50000,
+      "federalTaxWithheldBox2": 4000,
+      "stateCode": "CA"
+    }
+  ],
+  "form1099s": [],
+  "adjustments": [
+    {
+      "adjustmentType": "nol_carryforward",
+      "amount": 40000,
+      "isApplied": true,
+      "description": "NOL carryforward from prior year"
+    }
+  ]
+}

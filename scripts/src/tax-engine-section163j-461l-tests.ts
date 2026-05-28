@@ -116,14 +116,17 @@ function adj(type: string, amount: number, id = Math.floor(Math.random() * 1e9))
 }
 
 // ── Case 3: §163(j) above 30% cap — partial allowance, cf created ────────
-// ATI ≈ $100k. Cap = $30k. Gross $50k. Allowed = $30k. Disallowed = $20k.
+// POST C3 ATI refinement (2026-05-27 PM):
+// ATI = $100k W-2 − $14,600 single std ded = $85,400. Cap = 30% × $85,400 = $25,620.
+// Gross $50k. Allowed = $25,620. Disallowed = $50,000 − $25,620 = $24,380.
+// AGI = $100k − $25,620 = $74,380.
 {
   const r = computeTaxReturnPure(baseInputs({
     adjustments: [adj("section_163j_business_interest_expense", 50000, 3002)],
   }));
-  check("Case 3 allowed = $30k (capped)", r.section163jAllowedDeduction, 30000);
-  check("Case 3 disallowed cf = $20k", r.section163jDisallowedCarryforward, 20000);
-  check("Case 3 AGI = $100k − $30k allowed", r.adjustedGrossIncome, 70000);
+  check("Case 3 allowed = $25,620 (capped at 30% × ATI=$85,400)", r.section163jAllowedDeduction, 25620);
+  check("Case 3 disallowed cf = $24,380", r.section163jDisallowedCarryforward, 24380);
+  check("Case 3 AGI = $100k − $25,620 allowed", r.adjustedGrossIncome, 74380);
 }
 
 // ── Case 4: Prior-year carryforward stacks on current gross ──────────────
@@ -157,10 +160,12 @@ function adj(type: string, amount: number, id = Math.floor(Math.random() * 1e9))
 }
 
 // ── Case 6: Floor plan financing — 100% allowed, uncapped ────────────────
-// Gross $20k + floor plan $40k. ATI ≈ $30k → cap = $9k.
-//   Cap-subject allowance = min($20k, $9k) = $9k. Disallowed cf = $11k.
+// POST C3 ATI refinement (2026-05-27 PM):
+// Gross $20k + floor plan $40k. ATI = $30k W-2 − $14,600 std ded = $15,400.
+//   Cap = 30% × $15,400 = $4,620.
+//   Cap-subject allowance = min($20k, $4,620) = $4,620. Disallowed cf = $15,380.
 //   Plus floor plan $40k always allowed.
-//   Total allowed = $9k + $40k = $49k.
+//   Total allowed = $4,620 + $40k = $44,620.
 {
   // Smaller W-2 to get a smaller ATI so the cap binds.
   const inputs = baseInputs({
@@ -177,8 +182,8 @@ function adj(type: string, amount: number, id = Math.floor(Math.random() * 1e9))
     ],
   });
   const r = computeTaxReturnPure(inputs);
-  check("Case 6 allowed = $49k (9 cap + 40 floor)", r.section163jAllowedDeduction, 49000);
-  check("Case 6 disallowed cf = $11k", r.section163jDisallowedCarryforward, 11000);
+  check("Case 6 allowed = $44,620 (4,620 cap + 40,000 floor)", r.section163jAllowedDeduction, 44620);
+  check("Case 6 disallowed cf = $15,380", r.section163jDisallowedCarryforward, 15380);
 }
 
 // ── Case 7: §461(l) addback alone ────────────────────────────────────────
@@ -208,10 +213,9 @@ function adj(type: string, amount: number, id = Math.floor(Math.random() * 1e9))
 }
 
 // ── Case 9: §163(j) with ATI ≈ 0 — fully disallowed ───────────────────────
-// ATI proxy: simulate near-zero income by setting W-2 wages near 0.
-// (We can't set 0 because W-2 sums; use small $1k W-2.)
-//   ATI ≈ $1k. Cap = $300. Gross $10k. Allowed (capped portion) = $300.
-//   Disallowed = $9,700.
+// POST C3 ATI refinement (2026-05-27 PM): with $1k W-2 − $14,600 std ded,
+// ATI clamps to $0. Cap = 30% × $0 = $0. Gross $10k. Allowed = $0.
+// Disallowed cf = $10k.
 {
   const r = computeTaxReturnPure(baseInputs({
     w2s: [{
@@ -223,8 +227,8 @@ function adj(type: string, amount: number, id = Math.floor(Math.random() * 1e9))
     } as unknown as TaxReturnInputs["w2s"][number]],
     adjustments: [adj("section_163j_business_interest_expense", 10000, 3012)],
   }));
-  check("Case 9 allowed ≈ $300 (30% of $1k ATI)", r.section163jAllowedDeduction, 300);
-  check("Case 9 disallowed cf ≈ $9,700", r.section163jDisallowedCarryforward, 9700);
+  check("Case 9 allowed = $0 (ATI clamps to 0 after std ded)", r.section163jAllowedDeduction, 0);
+  check("Case 9 disallowed cf = $10,000 (all gross disallowed)", r.section163jDisallowedCarryforward, 10000);
 }
 
 // ── Case 10: Negative inputs — defensive floor at 0 ──────────────────────

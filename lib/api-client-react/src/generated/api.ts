@@ -34,6 +34,12 @@ import type {
   DashboardSummary,
   Form1099Data,
   Form8606Result,
+  GetForm8824200,
+  GetForm8824Params,
+  GetForm8824PdfParams,
+  GetForm8990200,
+  GetForm8990Params,
+  GetForm8990PdfParams,
   GetPeerBenchmarkParams,
   GetPlanningHitListParams,
   HealthStatus,
@@ -3627,6 +3633,458 @@ export function useGetForm8606Pdf<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetForm8606PdfQueryOptions(clientId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Reads the client's §1031 adjustments (section_1031_realized_gain, section_1031_boot_received) and returns the structured Form 8824 line items (recognized + deferred gain, boot, basis). Optional query params let the CPA supply property descriptions + dates.
+
+ * @summary Compute Form 8824 §1031 like-kind exchange data (C3 follow-up)
+ */
+export const getGetForm8824Url = (
+  clientId: number,
+  params?: GetForm8824Params,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/clients/${clientId}/form-8824?${stringifiedParams}`
+    : `/api/clients/${clientId}/form-8824`;
+};
+
+export const getForm8824 = async (
+  clientId: number,
+  params?: GetForm8824Params,
+  options?: RequestInit,
+): Promise<GetForm8824200> => {
+  return customFetch<GetForm8824200>(getGetForm8824Url(clientId, params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetForm8824QueryKey = (
+  clientId: number,
+  params?: GetForm8824Params,
+) => {
+  return [
+    `/api/clients/${clientId}/form-8824`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetForm8824QueryOptions = <
+  TData = Awaited<ReturnType<typeof getForm8824>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  params?: GetForm8824Params,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getForm8824>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetForm8824QueryKey(clientId, params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getForm8824>>> = ({
+    signal,
+  }) => getForm8824(clientId, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!clientId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getForm8824>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetForm8824QueryResult = NonNullable<
+  Awaited<ReturnType<typeof getForm8824>>
+>;
+export type GetForm8824QueryError = ErrorType<void>;
+
+/**
+ * @summary Compute Form 8824 §1031 like-kind exchange data (C3 follow-up)
+ */
+
+export function useGetForm8824<
+  TData = Awaited<ReturnType<typeof getForm8824>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  params?: GetForm8824Params,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getForm8824>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetForm8824QueryOptions(clientId, params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Download Form 8824 (§1031) as a substitute PDF (C3 follow-up)
+ */
+export const getGetForm8824PdfUrl = (
+  clientId: number,
+  params?: GetForm8824PdfParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/clients/${clientId}/form-8824/pdf?${stringifiedParams}`
+    : `/api/clients/${clientId}/form-8824/pdf`;
+};
+
+export const getForm8824Pdf = async (
+  clientId: number,
+  params?: GetForm8824PdfParams,
+  options?: RequestInit,
+): Promise<Blob> => {
+  return customFetch<Blob>(getGetForm8824PdfUrl(clientId, params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetForm8824PdfQueryKey = (
+  clientId: number,
+  params?: GetForm8824PdfParams,
+) => {
+  return [
+    `/api/clients/${clientId}/form-8824/pdf`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetForm8824PdfQueryOptions = <
+  TData = Awaited<ReturnType<typeof getForm8824Pdf>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  params?: GetForm8824PdfParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getForm8824Pdf>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetForm8824PdfQueryKey(clientId, params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getForm8824Pdf>>> = ({
+    signal,
+  }) => getForm8824Pdf(clientId, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!clientId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getForm8824Pdf>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetForm8824PdfQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getForm8824Pdf>>
+>;
+export type GetForm8824PdfQueryError = ErrorType<void>;
+
+/**
+ * @summary Download Form 8824 (§1031) as a substitute PDF (C3 follow-up)
+ */
+
+export function useGetForm8824Pdf<
+  TData = Awaited<ReturnType<typeof getForm8824Pdf>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  params?: GetForm8824PdfParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getForm8824Pdf>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetForm8824PdfQueryOptions(clientId, params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Reads the client's §163(j) computed values (allowed, disallowed cf, gross interest expense) plus related adjustments (carryforward from prior, floor plan financing, business interest income) and returns the structured Form 8990 line items including ATI back-derived from the allowed/disallowed split.
+
+ * @summary Compute Form 8990 §163(j) business interest data (C3 follow-up)
+ */
+export const getGetForm8990Url = (
+  clientId: number,
+  params?: GetForm8990Params,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/clients/${clientId}/form-8990?${stringifiedParams}`
+    : `/api/clients/${clientId}/form-8990`;
+};
+
+export const getForm8990 = async (
+  clientId: number,
+  params?: GetForm8990Params,
+  options?: RequestInit,
+): Promise<GetForm8990200> => {
+  return customFetch<GetForm8990200>(getGetForm8990Url(clientId, params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetForm8990QueryKey = (
+  clientId: number,
+  params?: GetForm8990Params,
+) => {
+  return [
+    `/api/clients/${clientId}/form-8990`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetForm8990QueryOptions = <
+  TData = Awaited<ReturnType<typeof getForm8990>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  params?: GetForm8990Params,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getForm8990>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetForm8990QueryKey(clientId, params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getForm8990>>> = ({
+    signal,
+  }) => getForm8990(clientId, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!clientId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getForm8990>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetForm8990QueryResult = NonNullable<
+  Awaited<ReturnType<typeof getForm8990>>
+>;
+export type GetForm8990QueryError = ErrorType<void>;
+
+/**
+ * @summary Compute Form 8990 §163(j) business interest data (C3 follow-up)
+ */
+
+export function useGetForm8990<
+  TData = Awaited<ReturnType<typeof getForm8990>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  params?: GetForm8990Params,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getForm8990>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetForm8990QueryOptions(clientId, params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Download Form 8990 (§163(j)) as a substitute PDF (C3 follow-up)
+ */
+export const getGetForm8990PdfUrl = (
+  clientId: number,
+  params?: GetForm8990PdfParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/clients/${clientId}/form-8990/pdf?${stringifiedParams}`
+    : `/api/clients/${clientId}/form-8990/pdf`;
+};
+
+export const getForm8990Pdf = async (
+  clientId: number,
+  params?: GetForm8990PdfParams,
+  options?: RequestInit,
+): Promise<Blob> => {
+  return customFetch<Blob>(getGetForm8990PdfUrl(clientId, params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetForm8990PdfQueryKey = (
+  clientId: number,
+  params?: GetForm8990PdfParams,
+) => {
+  return [
+    `/api/clients/${clientId}/form-8990/pdf`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetForm8990PdfQueryOptions = <
+  TData = Awaited<ReturnType<typeof getForm8990Pdf>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  params?: GetForm8990PdfParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getForm8990Pdf>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetForm8990PdfQueryKey(clientId, params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getForm8990Pdf>>> = ({
+    signal,
+  }) => getForm8990Pdf(clientId, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!clientId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getForm8990Pdf>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetForm8990PdfQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getForm8990Pdf>>
+>;
+export type GetForm8990PdfQueryError = ErrorType<void>;
+
+/**
+ * @summary Download Form 8990 (§163(j)) as a substitute PDF (C3 follow-up)
+ */
+
+export function useGetForm8990Pdf<
+  TData = Awaited<ReturnType<typeof getForm8990Pdf>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  params?: GetForm8990PdfParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getForm8990Pdf>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetForm8990PdfQueryOptions(clientId, params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

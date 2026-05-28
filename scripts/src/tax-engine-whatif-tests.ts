@@ -505,22 +505,36 @@ function buildSeFilerInputs(): TaxReturnInputs {
 
 // Case D1: baselineInputs supplied → whatIfDelta attached on SEP hit.
 //
-// Hand-calc (SE $120k single FL 2024):
+// Hand-calc (SE $120k single FL 2024), POST C3 QBI auto-default (2026-05-27 PM):
 //   Net SE = 120,000 × 0.9235 = $110,820.
 //   SE tax = 110,820 × 0.153 ≈ $16,955.
 //   Half-SE = $8,478.
 //   SEP contribution = (110,820 − 8,478) × 0.20 = $20,468.
 //
-//   Baseline AGI = 120,000 − 8,478 = 111,522. Taxable = 111,522 − 14,600 = 96,922.
-//     Fed tax on $96,922 single 2024:
-//       10%×11,600 + 12%×(47,150−11,600) + 22%×(96,922−47,150)
-//       = 1,160 + 4,266 + 10,950 = 16,376. Plus SE tax 16,955 = 33,331.
-//   Scenario (with +$20,468 deduction): AGI = 91,054. Taxable = 76,454.
-//     Fed tax = 1,160 + 4,266 + 22%×(76,454−47,150) = 1,160 + 4,266 + 6,447 = 11,873.
-//     Plus SE tax 16,955 = 28,828.
-//   Federal tax delta = 28,828 − 33,331 = −$4,503.
-//   Heuristic estSavings = contribution × marginal = 20,468 × 0.22 = $4,503 (matches in
-//     this case because we stay within the 22% bracket; H2 confirms the heuristic).
+//   ── BASELINE (no SEP) ──
+//     AGI = 120,000 − 8,478 = $111,522.
+//     Pre-QBI taxable = 111,522 − 14,600 (std ded) = $96,922.
+//     QBI auto-default: qbiIncome = max(0, netSE $120k − halfSE $8,478) = $111,522.
+//       Preliminary = 20% × $111,522 = $22,304.
+//       Cap = 20% × pre-QBI taxable $96,922 = $19,384.
+//       QBI deduction = min($22,304, $19,384) = $19,384.
+//     Post-QBI taxable = 96,922 − 19,384 = $77,538.
+//     Fed reg tax = 10%×$11,600 + 12%×$35,550 + 22%×($77,538−$47,150)
+//                 = 1,160 + 4,266 + 6,685.32 = $12,111.32.
+//     Plus SE tax $16,955 = $29,066.78.
+//   ── SCENARIO (with +$20,468 deduction) ──
+//     AGI = 91,054. Pre-QBI taxable = 76,454.
+//     QBI: qbiIncome still $111,522 (SEP doesn't change net SE). Cap = 20% × $76,454 = $15,291. Final = $15,291.
+//     Post-QBI taxable = 76,454 − 15,291 = $61,163.
+//     Fed reg tax = 1,160 + 4,266 + 22%×($61,163−$47,150) = 1,160 + 4,266 + 3,082.86 = $8,508.86.
+//     Plus SE tax $16,955 = $25,464.32.
+//   Federal tax delta = 25,464.32 − 29,066.78 = −$3,602.46.
+//
+//   Heuristic estSavings = contribution × marginal = $20,468 × 22% = $4,503.
+//   Engine-computed delta = −$3,602. These DIFFER by ~$901 because the SEP
+//   contribution lowers AGI which TIGHTENS the §199A QBI cap, partially
+//   offsetting the deduction. The heuristic does not account for this
+//   interaction. H2 engine-computed value is the more accurate one.
 {
   const inputs = buildSeFilerInputs();
   const computed = computeTaxReturnPure(inputs);
@@ -537,9 +551,9 @@ function buildSeFilerInputs(): TaxReturnInputs {
   checkExact("Case D1 whatIf.semantics = savings", sepWith?.whatIf?.semantics, "savings");
   if (sepWith?.whatIf) {
     check(
-      "Case D1 whatIf.delta.federalTaxLiability ≈ −$4,503 (hand-calc)",
+      "Case D1 whatIf.delta.federalTaxLiability ≈ −$3,602 (post-C3 QBI auto-default)",
       sepWith.whatIf.delta.federalTaxLiability,
-      -4503,
+      -3602.46,
       2,
     );
     check(
@@ -547,13 +561,18 @@ function buildSeFilerInputs(): TaxReturnInputs {
       sepWith.whatIf.delta.combinedTaxDelta,
       sepWith.whatIf.delta.federalTaxLiability,
     );
-    // Heuristic estSavings is reported as a positive savings number; whatIf.delta
-    // is the engine arithmetic so combinedTaxDelta is negative (tax reduced).
-    check(
-      "Case D1 estSavings ≈ |combinedTaxDelta| (heuristic matches engine in 22% bracket)",
-      sepWith.estSavings,
-      Math.abs(sepWith.whatIf.delta.combinedTaxDelta),
-      5,
+    // After C3 QBI auto-default: heuristic estSavings ($4,503 = SEP × 22%
+    // marginal) NO LONGER matches engine-computed delta (−$3,602) because
+    // SEP contribution tightens the §199A QBI cap (lower pre-QBI taxable →
+    // lower QBI cap → less QBI deduction). The H2 engine-computed value is
+    // the accurate one; the heuristic over-estimates by ~$901 in this case.
+    checkTruthy(
+      "Case D1 heuristic estSavings OVER-states engine by ~$901 (QBI cap interaction)",
+      sepWith.estSavings > Math.abs(sepWith.whatIf.delta.combinedTaxDelta),
+    );
+    checkTruthy(
+      "Case D1 heuristic estSavings within $1,500 of engine delta",
+      Math.abs(sepWith.estSavings - Math.abs(sepWith.whatIf.delta.combinedTaxDelta)) < 1500,
     );
     // H12 sensitivity range — should be present for SEP (variable amount)
     checkTruthy("Case D1 sensitivity range present", sepWith.whatIf.sensitivity != null);

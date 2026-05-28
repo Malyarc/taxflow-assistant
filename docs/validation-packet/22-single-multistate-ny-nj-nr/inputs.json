@@ -1,0 +1,27 @@
+{
+  "client": {
+    "filingStatus": "single",
+    "state": "NY",
+    "taxYear": 2024
+  },
+  "slug": "single-multistate-ny-nj-nr",
+  "number": 22,
+  "title": "Single, Multi-state — NY resident, NJ remote W-2 (no reciprocity)",
+  "description": "NY resident works remotely for a NJ employer. W-2 box 16 NJ wages $90,000 (NJ tax withheld $5,000). NY taxes worldwide $90k; NJ taxes $90k as NR. NY resident credit reduces NY tax for NJ tax paid (lesser of NJ tax actually paid or NY tax on the same income).",
+  "expectations": [
+    "NJ NR tax > 0 on $90k wages",
+    "NY resident tax with credit for NJ tax paid",
+    "Total state tax = NJ NR tax + NY tax (net of resident credit)"
+  ],
+  "w2s": [
+    {
+      "taxYear": 2024,
+      "wagesBox1": 90000,
+      "federalTaxWithheldBox2": 12000,
+      "stateCode": "NJ",
+      "stateTaxWithheldBox17": 5000
+    }
+  ],
+  "form1099s": [],
+  "adjustments": []
+}

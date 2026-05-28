@@ -1048,6 +1048,127 @@ paths:
         "404":
           description: Client not found
 
+  # ── Form 8824 (C3 follow-up — §1031 like-kind exchange PDF) ───────────────
+  /clients/{clientId}/form-8824:
+    get:
+      operationId: getForm8824
+      tags: [taxReturns]
+      summary: Compute Form 8824 §1031 like-kind exchange data (C3 follow-up)
+      description: >
+        Reads the client's §1031 adjustments (section_1031_realized_gain,
+        section_1031_boot_received) and returns the structured Form 8824
+        line items (recognized + deferred gain, boot, basis). Optional
+        query params let the CPA supply property descriptions + dates.
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: taxYear
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Form 8824 data (JSON preview)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "404":
+          description: Client not found
+
+  /clients/{clientId}/form-8824/pdf:
+    get:
+      operationId: getForm8824Pdf
+      tags: [taxReturns]
+      summary: Download Form 8824 (§1031) as a substitute PDF (C3 follow-up)
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: taxYear
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Form 8824 PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Client not found
+
+  # ── Form 8990 (C3 follow-up — §163(j) business interest PDF) ──────────────
+  /clients/{clientId}/form-8990:
+    get:
+      operationId: getForm8990
+      tags: [taxReturns]
+      summary: Compute Form 8990 §163(j) business interest data (C3 follow-up)
+      description: >
+        Reads the client's §163(j) computed values (allowed, disallowed cf,
+        gross interest expense) plus related adjustments (carryforward from
+        prior, floor plan financing, business interest income) and returns
+        the structured Form 8990 line items including ATI back-derived
+        from the allowed/disallowed split.
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: taxYear
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Form 8990 data (JSON preview)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "404":
+          description: Client not found
+
+  /clients/{clientId}/form-8990/pdf:
+    get:
+      operationId: getForm8990Pdf
+      tags: [taxReturns]
+      summary: Download Form 8990 (§163(j)) as a substitute PDF (C3 follow-up)
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: taxYear
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Form 8990 PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Client not found
+
   # ── Asset balances (Phase H — H5) ─────────────────────────────────────────
   /clients/{clientId}/asset-balances:
     get:
@@ -2474,7 +2595,7 @@ components:
           type: integer
         adjustmentType:
           type: string
-          enum: [deduction, credit, additional_income, withholding_adjustment, other, self_employment_income, investment_income, qbi_income, amt_preferences, medical_expenses, state_income_tax, state_property_tax, state_sales_tax, mortgage_interest, charitable_cash, charitable_property, hsa_contribution, hsa_employer_contribution, ira_contribution_traditional, ira_contribution_roth, schedule_c_expenses, section_179_expense_election, bonus_depreciation_basis, dependent_care_expenses, qualified_education_expenses_aoc, qualified_education_expenses_llc, retirement_contributions_savers, educator_expenses, student_loan_interest, foreign_tax_paid, foreign_source_taxable_income, residential_clean_energy, energy_efficient_home, energy_efficient_heatpump, ev_charger_property, capital_loss_carryforward_short, capital_loss_carryforward_long, schedule_e_rental_income, schedule_e_rental_expenses, schedule_e_macrs_depreciation, schedule_e_passive_loss_carryforward, amt_iso_bargain_element, amt_state_tax_addback_override, k1_passive_loss_carryforward, amt_credit_carryforward, charitable_carryforward_cash, self_employed_health_insurance_premiums, home_sale_gross_gain_primary_residence, foreign_earned_income, foreign_earned_income_spouse, nol_carryforward, qsbs_gross_gain, qsbs_adjusted_basis, section_1031_realized_gain, section_1031_boot_received, iso_disqualifying_disposition_ordinary, espp_disqualifying_disposition_ordinary, section_163j_business_interest_expense, section_163j_business_interest_income, section_163j_carryforward_from_prior, section_163j_floor_plan_financing_interest, section_461l_excess_loss_addback, roth_conversion_amount, nondeductible_ira_contribution, traditional_ira_distribution, augusta_rule_rent, nua_lump_sum_employer_stock, mega_backdoor_roth_after_tax_contribution, roth_ira_distribution, ca_renter_months, k12_education_expenses, college_tuition_qualified, annual_rent_paid, part_year_use_w2_source, part_year_use_full_source_allocation, ma_assessed_home_value, ma_water_sewer_half, ma_lead_paint_removal_cost, pa_eligibility_income, ga_disabled_home_purchase_cost, mi_home_heating_cost, mi_household_resources, oh_sdit_traditional_base]
+          enum: [deduction, credit, additional_income, withholding_adjustment, other, self_employment_income, investment_income, qbi_income, amt_preferences, medical_expenses, state_income_tax, state_property_tax, state_sales_tax, mortgage_interest, charitable_cash, charitable_property, hsa_contribution, hsa_employer_contribution, ira_contribution_traditional, ira_contribution_roth, schedule_c_expenses, section_179_expense_election, bonus_depreciation_basis, dependent_care_expenses, qualified_education_expenses_aoc, qualified_education_expenses_llc, retirement_contributions_savers, educator_expenses, student_loan_interest, foreign_tax_paid, foreign_source_taxable_income, residential_clean_energy, energy_efficient_home, energy_efficient_heatpump, ev_charger_property, capital_loss_carryforward_short, capital_loss_carryforward_long, schedule_e_rental_income, schedule_e_rental_expenses, schedule_e_macrs_depreciation, schedule_e_passive_loss_carryforward, amt_iso_bargain_element, amt_state_tax_addback_override, k1_passive_loss_carryforward, amt_credit_carryforward, charitable_carryforward_cash, self_employed_health_insurance_premiums, home_sale_gross_gain_primary_residence, foreign_earned_income, foreign_earned_income_spouse, nol_carryforward, qsbs_gross_gain, qsbs_adjusted_basis, section_1031_realized_gain, section_1031_boot_received, iso_disqualifying_disposition_ordinary, espp_disqualifying_disposition_ordinary, section_163j_business_interest_expense, section_163j_business_interest_income, section_163j_carryforward_from_prior, section_163j_floor_plan_financing_interest, section_461l_excess_loss_addback, roth_conversion_amount, nondeductible_ira_contribution, traditional_ira_distribution, augusta_rule_rent, nua_lump_sum_employer_stock, mega_backdoor_roth_after_tax_contribution, roth_ira_distribution, ca_renter_months, k12_education_expenses, college_tuition_qualified, annual_rent_paid, part_year_use_w2_source, part_year_use_full_source_allocation, ma_assessed_home_value, ma_water_sewer_half, ma_lead_paint_removal_cost, pa_eligibility_income, ga_disabled_home_purchase_cost, mi_home_heating_cost, mi_household_resources, oh_sdit_traditional_base, qbi_sstb_flag]
         amount:
           type: number
         description:
@@ -2496,7 +2617,7 @@ components:
       properties:
         adjustmentType:
           type: string
-          enum: [deduction, credit, additional_income, withholding_adjustment, other, self_employment_income, investment_income, qbi_income, amt_preferences, medical_expenses, state_income_tax, state_property_tax, state_sales_tax, mortgage_interest, charitable_cash, charitable_property, hsa_contribution, hsa_employer_contribution, ira_contribution_traditional, ira_contribution_roth, schedule_c_expenses, section_179_expense_election, bonus_depreciation_basis, dependent_care_expenses, qualified_education_expenses_aoc, qualified_education_expenses_llc, retirement_contributions_savers, educator_expenses, student_loan_interest, foreign_tax_paid, foreign_source_taxable_income, residential_clean_energy, energy_efficient_home, energy_efficient_heatpump, ev_charger_property, capital_loss_carryforward_short, capital_loss_carryforward_long, schedule_e_rental_income, schedule_e_rental_expenses, schedule_e_macrs_depreciation, schedule_e_passive_loss_carryforward, amt_iso_bargain_element, amt_state_tax_addback_override, k1_passive_loss_carryforward, amt_credit_carryforward, charitable_carryforward_cash, self_employed_health_insurance_premiums, home_sale_gross_gain_primary_residence, foreign_earned_income, foreign_earned_income_spouse, nol_carryforward, qsbs_gross_gain, qsbs_adjusted_basis, section_1031_realized_gain, section_1031_boot_received, iso_disqualifying_disposition_ordinary, espp_disqualifying_disposition_ordinary, section_163j_business_interest_expense, section_163j_business_interest_income, section_163j_carryforward_from_prior, section_163j_floor_plan_financing_interest, section_461l_excess_loss_addback, roth_conversion_amount, nondeductible_ira_contribution, traditional_ira_distribution, augusta_rule_rent, nua_lump_sum_employer_stock, mega_backdoor_roth_after_tax_contribution, roth_ira_distribution, ca_renter_months, k12_education_expenses, college_tuition_qualified, annual_rent_paid, part_year_use_w2_source, part_year_use_full_source_allocation, ma_assessed_home_value, ma_water_sewer_half, ma_lead_paint_removal_cost, pa_eligibility_income, ga_disabled_home_purchase_cost, mi_home_heating_cost, mi_household_resources, oh_sdit_traditional_base]
+          enum: [deduction, credit, additional_income, withholding_adjustment, other, self_employment_income, investment_income, qbi_income, amt_preferences, medical_expenses, state_income_tax, state_property_tax, state_sales_tax, mortgage_interest, charitable_cash, charitable_property, hsa_contribution, hsa_employer_contribution, ira_contribution_traditional, ira_contribution_roth, schedule_c_expenses, section_179_expense_election, bonus_depreciation_basis, dependent_care_expenses, qualified_education_expenses_aoc, qualified_education_expenses_llc, retirement_contributions_savers, educator_expenses, student_loan_interest, foreign_tax_paid, foreign_source_taxable_income, residential_clean_energy, energy_efficient_home, energy_efficient_heatpump, ev_charger_property, capital_loss_carryforward_short, capital_loss_carryforward_long, schedule_e_rental_income, schedule_e_rental_expenses, schedule_e_macrs_depreciation, schedule_e_passive_loss_carryforward, amt_iso_bargain_element, amt_state_tax_addback_override, k1_passive_loss_carryforward, amt_credit_carryforward, charitable_carryforward_cash, self_employed_health_insurance_premiums, home_sale_gross_gain_primary_residence, foreign_earned_income, foreign_earned_income_spouse, nol_carryforward, qsbs_gross_gain, qsbs_adjusted_basis, section_1031_realized_gain, section_1031_boot_received, iso_disqualifying_disposition_ordinary, espp_disqualifying_disposition_ordinary, section_163j_business_interest_expense, section_163j_business_interest_income, section_163j_carryforward_from_prior, section_163j_floor_plan_financing_interest, section_461l_excess_loss_addback, roth_conversion_amount, nondeductible_ira_contribution, traditional_ira_distribution, augusta_rule_rent, nua_lump_sum_employer_stock, mega_backdoor_roth_after_tax_contribution, roth_ira_distribution, ca_renter_months, k12_education_expenses, college_tuition_qualified, annual_rent_paid, part_year_use_w2_source, part_year_use_full_source_allocation, ma_assessed_home_value, ma_water_sewer_half, ma_lead_paint_removal_cost, pa_eligibility_income, ga_disabled_home_purchase_cost, mi_home_heating_cost, mi_household_resources, oh_sdit_traditional_base, qbi_sstb_flag]
         amount:
           type: number
         description:
@@ -2511,7 +2632,7 @@ components:
       properties:
         adjustmentType:
           type: string
-          enum: [deduction, credit, additional_income, withholding_adjustment, other, self_employment_income, investment_income, qbi_income, amt_preferences, medical_expenses, state_income_tax, state_property_tax, state_sales_tax, mortgage_interest, charitable_cash, charitable_property, hsa_contribution, hsa_employer_contribution, ira_contribution_traditional, ira_contribution_roth, schedule_c_expenses, section_179_expense_election, bonus_depreciation_basis, dependent_care_expenses, qualified_education_expenses_aoc, qualified_education_expenses_llc, retirement_contributions_savers, educator_expenses, student_loan_interest, foreign_tax_paid, foreign_source_taxable_income, residential_clean_energy, energy_efficient_home, energy_efficient_heatpump, ev_charger_property, capital_loss_carryforward_short, capital_loss_carryforward_long, schedule_e_rental_income, schedule_e_rental_expenses, schedule_e_macrs_depreciation, schedule_e_passive_loss_carryforward, amt_iso_bargain_element, amt_state_tax_addback_override, k1_passive_loss_carryforward, amt_credit_carryforward, charitable_carryforward_cash, self_employed_health_insurance_premiums, home_sale_gross_gain_primary_residence, foreign_earned_income, foreign_earned_income_spouse, nol_carryforward, qsbs_gross_gain, qsbs_adjusted_basis, section_1031_realized_gain, section_1031_boot_received, iso_disqualifying_disposition_ordinary, espp_disqualifying_disposition_ordinary, section_163j_business_interest_expense, section_163j_business_interest_income, section_163j_carryforward_from_prior, section_163j_floor_plan_financing_interest, section_461l_excess_loss_addback, roth_conversion_amount, nondeductible_ira_contribution, traditional_ira_distribution, augusta_rule_rent, nua_lump_sum_employer_stock, mega_backdoor_roth_after_tax_contribution, roth_ira_distribution, ca_renter_months, k12_education_expenses, college_tuition_qualified, annual_rent_paid, part_year_use_w2_source, part_year_use_full_source_allocation, ma_assessed_home_value, ma_water_sewer_half, ma_lead_paint_removal_cost, pa_eligibility_income, ga_disabled_home_purchase_cost, mi_home_heating_cost, mi_household_resources, oh_sdit_traditional_base]
+          enum: [deduction, credit, additional_income, withholding_adjustment, other, self_employment_income, investment_income, qbi_income, amt_preferences, medical_expenses, state_income_tax, state_property_tax, state_sales_tax, mortgage_interest, charitable_cash, charitable_property, hsa_contribution, hsa_employer_contribution, ira_contribution_traditional, ira_contribution_roth, schedule_c_expenses, section_179_expense_election, bonus_depreciation_basis, dependent_care_expenses, qualified_education_expenses_aoc, qualified_education_expenses_llc, retirement_contributions_savers, educator_expenses, student_loan_interest, foreign_tax_paid, foreign_source_taxable_income, residential_clean_energy, energy_efficient_home, energy_efficient_heatpump, ev_charger_property, capital_loss_carryforward_short, capital_loss_carryforward_long, schedule_e_rental_income, schedule_e_rental_expenses, schedule_e_macrs_depreciation, schedule_e_passive_loss_carryforward, amt_iso_bargain_element, amt_state_tax_addback_override, k1_passive_loss_carryforward, amt_credit_carryforward, charitable_carryforward_cash, self_employed_health_insurance_premiums, home_sale_gross_gain_primary_residence, foreign_earned_income, foreign_earned_income_spouse, nol_carryforward, qsbs_gross_gain, qsbs_adjusted_basis, section_1031_realized_gain, section_1031_boot_received, iso_disqualifying_disposition_ordinary, espp_disqualifying_disposition_ordinary, section_163j_business_interest_expense, section_163j_business_interest_income, section_163j_carryforward_from_prior, section_163j_floor_plan_financing_interest, section_461l_excess_loss_addback, roth_conversion_amount, nondeductible_ira_contribution, traditional_ira_distribution, augusta_rule_rent, nua_lump_sum_employer_stock, mega_backdoor_roth_after_tax_contribution, roth_ira_distribution, ca_renter_months, k12_education_expenses, college_tuition_qualified, annual_rent_paid, part_year_use_w2_source, part_year_use_full_source_allocation, ma_assessed_home_value, ma_water_sewer_half, ma_lead_paint_removal_cost, pa_eligibility_income, ga_disabled_home_purchase_cost, mi_home_heating_cost, mi_household_resources, oh_sdit_traditional_base, qbi_sstb_flag]
         amount:
           type: number
         description:

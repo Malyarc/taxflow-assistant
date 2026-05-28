@@ -24,6 +24,8 @@ import {
   buildForm1040xPdf,
   type FiledSnapshot,
 } from "../lib/form1040x";
+import { buildForm8824Pdf, type Form8824Data } from "../lib/form8824";
+import { buildForm8990Pdf, type Form8990Data } from "../lib/form8990";
 import {
   buildTaxReturnCsvExport,
   buildTaxReturnJsonExport,
@@ -768,6 +770,251 @@ router.patch("/clients/:clientId/tax-return", async (req, res): Promise<void> =>
     return;
   }
   res.json(mapReturn(taxReturn));
+});
+
+// ── C3 follow-up (2026-05-27 PM) — Form 8824 + Form 8990 PDFs ────────────
+
+/**
+ * GET /clients/:clientId/form-8824 — JSON preview of the §1031 like-kind
+ * exchange data (recognized + deferred gain). CPA can review numbers
+ * before generating the PDF.
+ *
+ * GET /clients/:clientId/form-8824/pdf — Substitute Form 8824 PDF.
+ *
+ * Inputs taken from the engine's existing §1031 adjustments
+ * (section_1031_realized_gain, section_1031_boot_received). CPA may
+ * also supply property description + date fields via query string:
+ *   ?propertyGivenUp=...&propertyReceived=...&dateAcquired=YYYY-MM-DD
+ *   &dateTransferred=...&dateIdentified=...&dateReceived=...
+ *   &fmvLikeKindReceived=N&adjustedBasisGivenUp=N&basisOfReceived=N
+ */
+function buildForm8824Data(
+  computed: { result: import("../lib/taxReturnEngine").ComputedTaxReturn; client: { firstName?: string | null; lastName?: string | null; filingStatus: string } },
+  query: Record<string, unknown>,
+): Form8824Data {
+  const ret = computed.result;
+  const taxpayerName = `${computed.client.firstName ?? ""} ${computed.client.lastName ?? ""}`.trim();
+  const num = (k: string): number | undefined => {
+    const v = query[k];
+    if (v == null) return undefined;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : undefined;
+  };
+  const str = (k: string): string | undefined => {
+    const v = query[k];
+    return typeof v === "string" && v.length > 0 ? v : undefined;
+  };
+  return {
+    taxYear: ret.taxYear,
+    taxpayerName: taxpayerName || "—",
+    filingStatus: computed.client.filingStatus,
+    propertyGivenUp: str("propertyGivenUp"),
+    propertyReceived: str("propertyReceived"),
+    dateAcquired: str("dateAcquired"),
+    dateTransferred: str("dateTransferred"),
+    dateIdentified: str("dateIdentified"),
+    dateReceived: str("dateReceived"),
+    fmvLikeKindReceived: num("fmvLikeKindReceived"),
+    adjustedBasisGivenUp: num("adjustedBasisGivenUp"),
+    bootReceived: Number(ret.section1031BootReceived ?? 0),
+    realizedGain: Number(ret.section1031RealizedGain ?? 0),
+    recognizedGain: Number(ret.section1031RecognizedGain ?? 0),
+    deferredGain: Number(ret.section1031DeferredGain ?? 0),
+    basisOfReceived: num("basisOfReceived"),
+  };
+}
+
+router.get("/clients/:clientId/form-8824", async (req, res): Promise<void> => {
+  const params = GetTaxReturnParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const yearRaw = req.query.taxYear;
+  const overrideYear = typeof yearRaw === "string" && Number.isFinite(Number(yearRaw))
+    ? Number(yearRaw)
+    : undefined;
+  const computed = await computeTaxReturn(params.data.clientId, overrideYear ? { taxYear: overrideYear } : {});
+  if (!computed) {
+    res.status(404).json({ error: "Client not found" });
+    return;
+  }
+  res.json(buildForm8824Data(computed, req.query as Record<string, unknown>));
+});
+
+router.get("/clients/:clientId/form-8824/pdf", async (req, res): Promise<void> => {
+  const params = GetTaxReturnParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const yearRaw = req.query.taxYear;
+  const overrideYear = typeof yearRaw === "string" && Number.isFinite(Number(yearRaw))
+    ? Number(yearRaw)
+    : undefined;
+  const computed = await computeTaxReturn(params.data.clientId, overrideYear ? { taxYear: overrideYear } : {});
+  if (!computed) {
+    res.status(404).json({ error: "Client not found" });
+    return;
+  }
+  try {
+    const data = buildForm8824Data(computed, req.query as Record<string, unknown>);
+    const pdf = await buildForm8824Pdf({ data });
+    const fileName = `form-8824-${computed.client.firstName ?? "client"}-${computed.client.lastName ?? ""}-${computed.result.taxYear}.pdf`;
+    setSecureDownloadHeaders(res, {
+      fileName,
+      contentType: "application/pdf",
+      disposition: "attachment",
+      length: pdf.length,
+      fallbackExt: ".pdf",
+    });
+    res.send(pdf);
+  } catch (err) {
+    logger.error({ err }, "Failed to build Form 8824 PDF");
+    res.status(500).json({ error: "Failed to build Form 8824 PDF" });
+  }
+});
+
+/**
+ * GET /clients/:clientId/form-8990 — JSON preview of §163(j) computation.
+ * GET /clients/:clientId/form-8990/pdf — Substitute Form 8990 PDF.
+ *
+ * Engine computes:
+ *   - currentYearBusinessInterestExpense (section163jBusinessInterestExpense)
+ *   - carryforwardFromPrior (via section_163j_carryforward_from_prior adjustment)
+ *   - floorPlanFinancingInterest (via section_163j_floor_plan_financing_interest adjustment)
+ *   - businessInterestIncome (via section_163j_business_interest_income adjustment)
+ *   - allowedDeduction (section163jAllowedDeduction)
+ *   - disallowedCarryforward (section163jDisallowedCarryforward)
+ *
+ * ATI is approximated from taxable income before §163(j)/NOL/QBI; we
+ * derive it from `allowedDeduction` × (1/0.30) when the cap binds, OR
+ * publish from engine internals if available.
+ */
+async function loadForm8990Data(
+  computed: { result: import("../lib/taxReturnEngine").ComputedTaxReturn; client: { firstName?: string | null; lastName?: string | null; filingStatus: string }; clientId: number },
+): Promise<Form8990Data> {
+  const ret = computed.result;
+  const { db, adjustmentsTable } = await import("@workspace/db");
+  const adjustments = await db
+    .select()
+    .from(adjustmentsTable)
+    .where(eq(adjustmentsTable.clientId, computed.clientId));
+  const num = (v: string | number | null | undefined): number => {
+    if (v == null) return 0;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const sumAdj = (type: string): number =>
+    adjustments
+      .filter((a) => a.adjustmentType === type && a.isApplied !== false)
+      .reduce((s, a) => s + num(a.amount), 0);
+
+  const grossExpense = Number(ret.section163jBusinessInterestExpense ?? 0);
+  const carryforwardFromPrior = sumAdj("section_163j_carryforward_from_prior");
+  const floorPlanFinancingInterest = sumAdj("section_163j_floor_plan_financing_interest");
+  const businessInterestIncome = sumAdj("section_163j_business_interest_income");
+  const allowedDeduction = Number(ret.section163jAllowedDeduction ?? 0);
+  const disallowedCarryforward = Number(ret.section163jDisallowedCarryforward ?? 0);
+
+  const totalSubjectToCap = grossExpense + carryforwardFromPrior;
+  // Back-derive ATI from cap-subject portion:
+  //   cap-allowed = total-allowed − floor-plan − biz-int-income
+  //   if cap binds, cap-allowed = 30% × ATI → ATI = cap-allowed / 0.30
+  //   if cap doesn't bind, ATI is at least (total-cap-subject / 0.30) — engine
+  //   doesn't surface raw ATI, so use the larger of the two as the conservative
+  //   reported ATI on the form.
+  const capAllowed = Math.max(
+    0,
+    allowedDeduction - floorPlanFinancingInterest - businessInterestIncome,
+  );
+  let ati: number;
+  if (disallowedCarryforward > 0) {
+    // Cap binds — ATI = capAllowed / 0.30
+    ati = Math.round(capAllowed / 0.30);
+  } else {
+    // Cap doesn't bind — engine had enough ATI to cover all cap-subject.
+    // Report at least totalSubjectToCap/0.30; engine internal ATI may be higher.
+    ati = Math.round(totalSubjectToCap / 0.30);
+  }
+  const thirtyPercentAti = Math.round(0.30 * ati);
+
+  const taxpayerName = `${computed.client.firstName ?? ""} ${computed.client.lastName ?? ""}`.trim();
+
+  return {
+    taxYear: ret.taxYear,
+    taxpayerName: taxpayerName || "—",
+    filingStatus: computed.client.filingStatus,
+    currentYearBusinessInterestExpense: grossExpense,
+    carryforwardFromPrior,
+    totalSubjectToCap,
+    floorPlanFinancingInterest,
+    businessInterestIncome,
+    ati,
+    thirtyPercentAti,
+    allowedDeduction,
+    disallowedCarryforward,
+  };
+}
+
+router.get("/clients/:clientId/form-8990", async (req, res): Promise<void> => {
+  const params = GetTaxReturnParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const yearRaw = req.query.taxYear;
+  const overrideYear = typeof yearRaw === "string" && Number.isFinite(Number(yearRaw))
+    ? Number(yearRaw)
+    : undefined;
+  const computed = await computeTaxReturn(params.data.clientId, overrideYear ? { taxYear: overrideYear } : {});
+  if (!computed) {
+    res.status(404).json({ error: "Client not found" });
+    return;
+  }
+  const data = await loadForm8990Data({
+    result: computed.result,
+    client: computed.client,
+    clientId: params.data.clientId,
+  });
+  res.json(data);
+});
+
+router.get("/clients/:clientId/form-8990/pdf", async (req, res): Promise<void> => {
+  const params = GetTaxReturnParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const yearRaw = req.query.taxYear;
+  const overrideYear = typeof yearRaw === "string" && Number.isFinite(Number(yearRaw))
+    ? Number(yearRaw)
+    : undefined;
+  const computed = await computeTaxReturn(params.data.clientId, overrideYear ? { taxYear: overrideYear } : {});
+  if (!computed) {
+    res.status(404).json({ error: "Client not found" });
+    return;
+  }
+  try {
+    const data = await loadForm8990Data({
+      result: computed.result,
+      client: computed.client,
+      clientId: params.data.clientId,
+    });
+    const pdf = await buildForm8990Pdf({ data });
+    const fileName = `form-8990-${computed.client.firstName ?? "client"}-${computed.client.lastName ?? ""}-${computed.result.taxYear}.pdf`;
+    setSecureDownloadHeaders(res, {
+      fileName,
+      contentType: "application/pdf",
+      disposition: "attachment",
+      length: pdf.length,
+      fallbackExt: ".pdf",
+    });
+    res.send(pdf);
+  } catch (err) {
+    logger.error({ err }, "Failed to build Form 8990 PDF");
+    res.status(500).json({ error: "Failed to build Form 8990 PDF" });
+  }
 });
 
 export default router;

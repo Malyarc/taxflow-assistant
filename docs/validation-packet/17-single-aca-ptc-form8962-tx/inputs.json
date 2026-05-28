@@ -1,0 +1,31 @@
+{
+  "client": {
+    "filingStatus": "single",
+    "state": "TX",
+    "taxYear": 2024,
+    "acaAnnualPremium": 9000,
+    "acaAnnualSlcsp": 8400,
+    "acaAdvanceAptc": 4500,
+    "acaHouseholdSize": 1
+  },
+  "slug": "single-aca-ptc-form8962-tx",
+  "number": 17,
+  "title": "Single, ACA Premium Tax Credit (Form 8962)",
+  "description": "Sole-proprietor consultant with marketplace coverage. AGI $55k, annual premium $9,000, SLCSP $8,400, advance APTC received $4,500. Engine computes net PTC reconciliation; balance flows to Form 8962. (Sub-gap: engine simplifies SLCSP-vs-actual computation.)",
+  "expectations": [
+    "Net PTC (after advance reconciliation) computed",
+    "Excess APTC repayment OR additional PTC refund per Form 8962"
+  ],
+  "w2s": [],
+  "form1099s": [
+    {
+      "taxYear": 2024,
+      "formType": "nec",
+      "payerName": "Consulting LLC",
+      "nonemployeeCompensation": 55000,
+      "federalTaxWithheld": 0,
+      "stateCode": "TX"
+    }
+  ],
+  "adjustments": []
+}

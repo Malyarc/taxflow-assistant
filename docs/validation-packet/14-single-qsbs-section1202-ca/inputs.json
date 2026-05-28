@@ -1,0 +1,40 @@
+{
+  "client": {
+    "filingStatus": "single",
+    "state": "CA",
+    "taxYear": 2024
+  },
+  "slug": "single-qsbs-section1202-ca",
+  "number": 14,
+  "title": "Single, §1202 QSBS exclusion (founder, $5M gain)",
+  "description": "Tech-startup founder sells qualified small business stock acquired 2019 (5+ year hold). Realized gain $5,000,000; adjusted basis $100,000. §1202 100% exclusion (post-2010-09-27 acquisition); exclusion cap = MAX($10M, 10× basis $1M) = $10M. Full gain excluded; $0 federal LTCG.",
+  "expectations": [
+    "§1202 exclusion = $5,000,000 (full)",
+    "Taxable QSBS portion = $0",
+    "Federal LTCG from QSBS = $0",
+    "CA conforms to federal QSBS exclusion (engine treats as zero CA-taxable)"
+  ],
+  "w2s": [
+    {
+      "taxYear": 2024,
+      "wagesBox1": 200000,
+      "federalTaxWithheldBox2": 40000,
+      "stateCode": "CA"
+    }
+  ],
+  "form1099s": [],
+  "adjustments": [
+    {
+      "adjustmentType": "qsbs_gross_gain",
+      "amount": 5000000,
+      "isApplied": true,
+      "description": "QSBS realized gain"
+    },
+    {
+      "adjustmentType": "qsbs_adjusted_basis",
+      "amount": 100000,
+      "isApplied": true,
+      "description": "QSBS adjusted basis"
+    }
+  ]
+}

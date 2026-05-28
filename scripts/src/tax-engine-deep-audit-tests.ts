@@ -329,13 +329,19 @@ header("I2. Gig worker — single $30k W-2 + $20k NEC CA");
     form1099s: [{ taxYear: 2024, formType: "nec", payerName: "App", nonemployeeCompensation: 20000 }] });
   // SE: 20k × 0.9235 = 18,470 × 15.3% = $2,825.91. Half = $1,412.95.
   // Total income: 30k + 20k = 50k. AGI = 50k - 1,412.95 = $48,587.05.
-  // Std ded 14,600. Taxable = $33,987.05. (Note: QBI auto-derivation NOT modeled — engine.)
-  // Tax on $33,987 single: 1,160 + 12%×(33,987.05 − 11,600) = 1,160 + 2,686.45 = $3,846.45.
-  // + SE 2,825.91 = $6,672.36 pre-credit.
+  // Std ded 14,600. Pre-QBI taxable = $33,987.05.
+  // POST C3 QBI auto-default (2026-05-27 PM):
+  //   QBI candidate = $20,000 Sch C net − $1,412.95 half-SE = $18,587.05
+  //   Preliminary = 20% × $18,587.05 = $3,717.41
+  //   Cap = 20% × pre-QBI taxable $33,987.05 = $6,797.41
+  //   QBI deduction = min($3,717.41, $6,797.41) = $3,717.41
+  // Post-QBI taxable = $33,987.05 − $3,717.41 = $30,269.64.
+  // Tax: 1,160 + 12%×(30,269.64 − 11,600) = 1,160 + 2,240.36 = $3,400.36.
+  // + SE $2,825.91 = $6,226.27 pre-credit.
   check("I2", "AGI ≈ $48,587", r.adjustedGrossIncome, 48587.05, 2);
   check("I2", "SE tax $2,825.91", r.selfEmploymentTax, 2825.91, 1);
-  check("I2", "Pre-credit fed tax $6,672 (tax + SE)",
-    r.federalTaxLiability, 6672.36, 5);
+  check("I2", "Pre-credit fed tax $6,226.27 (post-QBI auto-default)",
+    r.federalTaxLiability, 6226.27, 5);
 }
 
 // I3. Public school teacher — MFJ, $55k + $45k W-2s, 2 kids, IL, $300 supplies.
@@ -352,12 +358,14 @@ header("I3. Teacher household MFJ — $100k combined, 2 kids, IL");
   // Std ded MFJ = $29,200. Taxable = $70,500.
   // Tax: 2,320 + 12%×(70,500 − 23,200) = 2,320 + 5,676 = $7,996.
   // CTC: 2 × $2,000 = $4,000 (under $400k threshold). After CTC = $3,996.
-  // IL state tax: 99,700 − 5,550 (MFJ exemption) = 94,150 × 4.95% = $4,660.43.
+  // IL state tax: 99,700 − $5,550 MFJ filer/spouse exemption − $5,550 (2 deps ×
+  // $2,775, per C3 follow-up) = $88,600. × 4.95% = $4,385.70.
+  // (Pre-C3: $4,660.43 with dep exemption not modeled.)
   check("I3", "AGI $99,700 (educator deducted)", r.adjustedGrossIncome, 99700, 1);
   check("I3", "Taxable $70,500", r.taxableIncome, 70500, 1);
   check("I3", "Pre-credit fed tax $7,996", r.federalTaxLiability, 7996, 2);
   check("I3", "CTC $4,000", r.childTaxCredit.appliedCredit, 4000, 1);
-  check("I3", "IL state tax $4,660.43", r.stateTaxLiability, 4660.43, 5);
+  check("I3", "IL state tax $4,385.70 (post-C3 IL dep exemption)", r.stateTaxLiability, 4385.70, 5);
 }
 
 // I4. Sole-prop consultant — single $80k Sch C, TX, home office NOT modeled.
@@ -368,14 +376,19 @@ header("I4. Sole-prop consultant — single $80k Sch C TX");
     adjustments: [{ adjustmentType: "schedule_c_expenses", amount: 15000, isApplied: true }] });
   // Net SE = $65,000. SE base 65,000 × 0.9235 = 60,027.50. SE tax = 60,027.50 × 0.153 = $9,184.21.
   // Half SE = $4,592.10. AGI = 65,000 − 4,592.10 = $60,407.90.
-  // Std ded $14,600. Taxable before QBI = $45,807.90.
-  // QBI auto-derivation NOT modeled (engine known limit) → no QBI.
-  // Tax: 1,160 + 12%×(45,807.90 − 11,600) = 1,160 + 4,104.95 = $5,264.95.
-  // Total fed = 5,264.95 + 9,184.21 = $14,449.16.
+  // Std ded $14,600. Pre-QBI taxable = $45,807.90.
+  // POST C3 QBI auto-default (2026-05-27 PM):
+  //   QBI candidate = Sch C net $65,000 − half-SE $4,592.10 = $60,407.90
+  //   Preliminary = 20% × $60,407.90 = $12,081.58
+  //   Cap = 20% × pre-QBI taxable $45,807.90 = $9,161.58
+  //   QBI deduction = min($12,081.58, $9,161.58) = $9,161.58
+  // Post-QBI taxable = $45,807.90 − $9,161.58 = $36,646.32.
+  // Tax: 1,160 + 12%×(36,646.32 − 11,600) = 1,160 + 3,005.56 = $4,165.56.
+  // Total fed = $4,165.56 + $9,184.21 = $13,349.77.
   check("I4", "AGI $60,408", r.adjustedGrossIncome, 60407.90, 2);
   check("I4", "SE tax $9,184", r.selfEmploymentTax, 9184.21, 2);
-  check("I4", "Pre-credit fed = $14,449 (tax + SE, no QBI)",
-    r.federalTaxLiability, 14449.16, 5);
+  check("I4", "Pre-credit fed = $13,349.77 (post-QBI auto-default)",
+    r.federalTaxLiability, 13349.77, 5);
 }
 
 // I5. Tech worker w/ ISO + RSU — single $250k W-2 + $100k ISO bargain, NY+NYC.
@@ -463,12 +476,18 @@ header("I8. S-corp owner — single $100k W-2 + $80k K-1 CA");
       stateWagesBox16: 100000, stateTaxWithheldBox17: 6000 }],
     scheduleK1: [{ taxYear: 2024, entityName: "Acme", entityType: "s_corp",
       activityType: "active", box1OrdinaryIncome: 80000 }] });
-  // AGI = $180k (no SE on K-1 for S-corp). No QBI (auto-derivation not modeled).
-  // Std ded $14,600. Taxable = $165,400.
-  // Tax on $165k single: 1,160 + 4,266 + 11,742.50 + (165,400 − 100,525) × 24% = 17,168.50 + 15,570 = $32,738.50.
+  // AGI = $180k (no SE on K-1 for S-corp).
+  // Std ded $14,600. Pre-QBI taxable = $165,400.
+  // POST C3 QBI auto-default (2026-05-27 PM):
+  //   K-1 active S-corp Box 1 = $80,000 → QBI candidate = $80,000
+  //   Preliminary = 20% × $80,000 = $16,000
+  //   Cap = 20% × pre-QBI taxable $165,400 = $33,080
+  //   QBI deduction = min($16,000, $33,080) = $16,000
+  // Post-QBI taxable = $165,400 − $16,000 = $149,400.
+  // Tax on $149,400 single: 1,160 + 4,266 + 11,742.50 + 24%×(149,400 − 100,525) = 17,168.50 + 11,730 = $28,898.50.
   check("I8", "AGI $180k (W-2 + K-1 active, no SE)", r.adjustedGrossIncome, 180000, 1);
-  check("I8", "Taxable $165,400", r.taxableIncome, 165400, 1);
-  check("I8", "Pre-credit fed tax $32,738.50", r.federalTaxLiability, 32738.50, 5);
+  check("I8", "Taxable $149,400 (post-QBI auto-default)", r.taxableIncome, 149400, 1);
+  check("I8", "Pre-credit fed tax $28,898.50 (post-QBI auto-default)", r.federalTaxLiability, 28898.50, 5);
 }
 
 // I9. Single parent HoH — $35k W-2, 2 kids, FL, EITC qualifies.

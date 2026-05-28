@@ -317,19 +317,21 @@ header("G1.2+1 — MFJ NY $300k K-1 + $35k SALT: PTET recovers $25k @ 24% = $6,0
 }
 
 // --- G1.2+2 — CA MFJ $500k active partnership K-1 + $60k SALT ---
-// Hand-calc:
-//   K-1 partnership active box 1 = $500k.
-//   AGI = $500k.
-//   Wait — partnership K-1 box 14A SE earnings would flow through. To keep
-//   the case clean (no SE tax), use s_corp where box 1 is NOT SE income.
-//   Use s_corp with box 1 = $500k active.
+// Hand-calc (POST C3 QBI auto-default 2026-05-27 PM):
+//   K-1 S-corp active box 1 = $500k → AGI = $500k.
 //   Sch A: state_income $40k + property $20k = $60k SALT uncapped → $10k.
 //     mortgage = $30k. totalItemized = $10k + $30k = $40k.
-//   Std ded MFJ 2024 = $29,200 → itemize.
-//   Federal taxable = $500k − $40k = $460k.
-//   MFJ 2024: 32% bracket $383,900-$487,450 → marginal 0.32 at $460k.
-//   recoverableSalt = $60k − $10k = $50k. estSavings = $50k × 0.32 = $16,000.
-header("G1.2+2 — MFJ CA $500k S-corp + $60k SALT: PTET recovers $50k @ 32% = $16,000");
+//   Federal pre-QBI taxable = $500k − $40k = $460k.
+//   POST C3 QBI auto-default:
+//     QBI candidate = K-1 Box 1 $500k (S-corp active auto-flagged)
+//     Preliminary = 20% × $500k = $100,000
+//     Cap = 20% × pre-QBI taxable $460k = $92,000
+//     QBI deduction = min($100k, $92k) = $92,000
+//   Post-QBI taxable = $460k − $92k = $368,000.
+//   MFJ 2024: 24% bracket $201,050-$383,900 → marginal 0.24 at $368k.
+//   (Pre-QBI it was 32% at $460k taxable. QBI pulls into 24% bracket.)
+//   recoverableSalt = $60k − $10k = $50k. estSavings = $50k × 0.24 = $12,000.
+header("G1.2+2 — MFJ CA $500k S-corp + $60k SALT: PTET recovers $50k @ 24% = $12,000 (post-QBI)");
 {
   const hits = runPlanning({
     client: { filingStatus: "married_filing_jointly", state: "CA", taxYear: 2024 },
@@ -346,9 +348,9 @@ header("G1.2+2 — MFJ CA $500k S-corp + $60k SALT: PTET recovers $50k @ 32% = $
   const hit = findHit(hits, "G1.2");
   checkTruthy("G1.2+2", "PTET hit fires (CA)", hit != null, true);
   if (hit) {
-    check("G1.2+2", "estSavings = $16,000", hit.estSavings, 16000, 10);
-    check("G1.2+2", "federal marginal = 0.32",
-      Number(hit.inputs.federalMarginalRate), 0.32, 0.001);
+    check("G1.2+2", "estSavings = $12,000 (post-QBI)", hit.estSavings, 12000, 10);
+    check("G1.2+2", "federal marginal = 0.24 (post-QBI)",
+      Number(hit.inputs.federalMarginalRate), 0.24, 0.001);
   }
 }
 
@@ -3408,10 +3410,16 @@ header("G1.61-4 — Already claiming student_loan_interest: suppressed");
 section("H1 catalog v1.11 — 5 new detectors (G1.62 / G1.63 / G1.64 / G1.65 / G1.66)");
 
 // ── G1.62 §263A Inventory Method ───────────────────────────────────────
-// Hand-calc: single FL, $150k 1099-NEC.
-//   netSE = $138,525 > $100k threshold ✓.
-//   Taxable ~$117k → 24% bracket. estSavings = $10k × 0.24 = $2,400.
-header("H1v1.11 G1.62+1 — Single SE $150k: estSavings $2,400");
+// Hand-calc (POST C3 QBI auto-default 2026-05-27 PM): single FL, $150k 1099-NEC.
+//   Net SE = $150k. SE tax = $21,196. Half-SE = $10,598.
+//   AGI = $150k - $10,598 = $139,402.
+//   Std ded $14,600. Pre-QBI taxable = $124,802.
+//   POST C3 QBI auto: candidate = $139,402; preliminary $27,880;
+//     cap = 20% × $124,802 = $24,960; QBI ded = $24,960.
+//   Post-QBI taxable = $124,802 - $24,960 = $99,842.
+//   Marginal single 2024: 22% bracket ($47,150-$100,525) → 22%.
+//   estSavings = $10k × 22% = $2,200.
+header("H1v1.11 G1.62+1 — Single SE $150k: estSavings $2,200 (post-QBI)");
 {
   const hits = runPlanning({
     client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
@@ -3420,8 +3428,8 @@ header("H1v1.11 G1.62+1 — Single SE $150k: estSavings $2,400");
   const hit = findHit(hits, "G1.62");
   checkTruthy("G1.62+1", "fires for SE > $100k", hit != null, true);
   if (hit) {
-    check("G1.62+1", "estSavings = $2,400 ($10k × 24% marginal)",
-      hit.estSavings, 2400, 50);
+    check("G1.62+1", "estSavings = $2,200 ($10k × 22% marginal, post-QBI)",
+      hit.estSavings, 2200, 50);
   }
 }
 

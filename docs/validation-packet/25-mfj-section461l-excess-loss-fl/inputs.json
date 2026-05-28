@@ -1,0 +1,42 @@
+{
+  "client": {
+    "filingStatus": "married_filing_jointly",
+    "state": "FL",
+    "taxYear": 2024
+  },
+  "slug": "mfj-section461l-excess-loss-fl",
+  "number": 25,
+  "title": "MFJ, §461(l) excess business loss addback ($800k Sch C loss)",
+  "description": "High-income family with a Sch C trade/business showing $800,000 loss (large investment + capital write-off). MFJ threshold TY2024 = $610,000. Excess = $800k − $610k = $190k addback to ordinary income. Auto-aggregation via the C3 follow-up.",
+  "expectations": [
+    "Aggregate Sch C loss = $800,000",
+    "§461(l) excess addback = $190,000 (post-threshold)",
+    "AGI includes $190k addback"
+  ],
+  "w2s": [
+    {
+      "taxYear": 2024,
+      "wagesBox1": 500000,
+      "federalTaxWithheldBox2": 100000,
+      "stateCode": "FL"
+    }
+  ],
+  "form1099s": [
+    {
+      "taxYear": 2024,
+      "formType": "nec",
+      "payerName": "Acme Client LLC",
+      "nonemployeeCompensation": 200000,
+      "federalTaxWithheld": 0,
+      "stateCode": "FL"
+    }
+  ],
+  "adjustments": [
+    {
+      "adjustmentType": "schedule_c_expenses",
+      "amount": 1000000,
+      "isApplied": true,
+      "description": "Sch C investment + write-offs"
+    }
+  ]
+}

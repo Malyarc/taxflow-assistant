@@ -1,0 +1,34 @@
+{
+  "client": {
+    "filingStatus": "married_filing_jointly",
+    "state": "TX",
+    "taxYear": 2024,
+    "hsaIsFamilyCoverage": true
+  },
+  "slug": "mfj-hsa-form8889-excess-tx",
+  "number": 18,
+  "title": "MFJ, HSA Form 8889 + §4973(g) excess contribution excise",
+  "description": "MFJ couple with family-coverage HSA. TY2024 family cap = $8,300. They contributed $10,000 (over-contributed by $1,700). Engine deducts up to cap; excess subject to 6% §4973(g) excise per year until withdrawn.",
+  "expectations": [
+    "HSA deduction = $8,300 (capped)",
+    "Excess contribution = $1,700",
+    "§4973(g) 6% excise = $102"
+  ],
+  "w2s": [
+    {
+      "taxYear": 2024,
+      "wagesBox1": 140000,
+      "federalTaxWithheldBox2": 18000,
+      "stateCode": "TX"
+    }
+  ],
+  "form1099s": [],
+  "adjustments": [
+    {
+      "adjustmentType": "hsa_contribution",
+      "amount": 10000,
+      "isApplied": true,
+      "description": "Family HSA contribution"
+    }
+  ]
+}

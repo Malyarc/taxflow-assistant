@@ -1,0 +1,50 @@
+{
+  "client": {
+    "filingStatus": "single",
+    "state": "TN",
+    "taxYear": 2024
+  },
+  "slug": "single-backdoor-roth-tn",
+  "number": 11,
+  "title": "Single, Backdoor Roth IRA (Form 8606 §408(d)(2))",
+  "description": "Mid-career engineer makes nondeductible traditional IRA contribution $7,000 + immediate Roth conversion. Already has $50,000 pre-tax balance in existing rollover IRA from former 401(k). Exercises Form 8606 Part I pro-rata: $7k nondeductible / ($7k + $50k existing) = 12.28% basis recovery. Engine reports basis-recovered portion (not taxable) vs taxable conversion amount.",
+  "expectations": [
+    "Form 8606 Part I pro-rata fraction ≈ 0.1228",
+    "Taxable conversion ≈ $6,140 (added to ordinary income)",
+    "Tax-free basis recovery ≈ $860",
+    "Year-end basis carryforward updates"
+  ],
+  "w2s": [
+    {
+      "taxYear": 2024,
+      "wagesBox1": 150000,
+      "federalTaxWithheldBox2": 22000,
+      "stateCode": "TN"
+    }
+  ],
+  "form1099s": [],
+  "adjustments": [
+    {
+      "adjustmentType": "nondeductible_ira_contribution",
+      "amount": 7000,
+      "isApplied": true,
+      "description": "Nondeductible trad IRA"
+    },
+    {
+      "adjustmentType": "roth_conversion_amount",
+      "amount": 7000,
+      "isApplied": true,
+      "description": "Roth conversion"
+    }
+  ],
+  "assetBalances": [
+    {
+      "taxYear": 2024,
+      "assetType": "traditional_ira",
+      "accountName": "Rollover IRA",
+      "balance": 50000,
+      "costBasis": 0,
+      "afterTaxBasis": 0
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "client": {
+    "filingStatus": "single",
+    "state": "NY",
+    "taxYear": 2024
+  },
+  "slug": "single-section163j-biz-int-ny",
+  "number": 24,
+  "title": "Single, §163(j) business interest cap (above 30% ATI)",
+  "description": "Active business owner with Sch C net $100,000 + business interest expense $40,000. Post-C3 refined ATI ≈ $100k − $14,600 std ded − ½ SE $7,065 ≈ $78,335. Cap = 30% × $78,335 ≈ $23,500. Disallowed cf ≈ $16,500.",
+  "expectations": [
+    "§163(j) gross = $40,000",
+    "§163(j) allowed ≈ $23,500 (capped at 30% × ATI)",
+    "§163(j) disallowed cf ≈ $16,500"
+  ],
+  "w2s": [],
+  "form1099s": [
+    {
+      "taxYear": 2024,
+      "formType": "nec",
+      "payerName": "Acme Client LLC",
+      "nonemployeeCompensation": 100000,
+      "federalTaxWithheld": 0,
+      "stateCode": "NY"
+    }
+  ],
+  "adjustments": [
+    {
+      "adjustmentType": "section_163j_business_interest_expense",
+      "amount": 40000,
+      "isApplied": true,
+      "description": "Biz interest expense"
+    }
+  ]
+}

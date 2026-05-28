@@ -1,0 +1,31 @@
+{
+  "client": {
+    "filingStatus": "single",
+    "state": "NY",
+    "taxYear": 2024,
+    "isKiddieTaxFiler": true,
+    "parentsTopMarginalRate": 0.35
+  },
+  "slug": "single-kiddie-tax-form8615-ny",
+  "number": 15,
+  "title": "Single child filer, Kiddie tax (Form 8615 §1(g))",
+  "description": "16-year-old child of HNW NY family has $15,000 of investment income (1099-DIV qualified dividends from UTMA account). Parent's top marginal rate = 35%. Kiddie tax: unearned income > $2,600 taxed at parent's marginal rate per §1(g) / Form 8615. Engine taxes excess $12,400 at 35% kiddie rate.",
+  "expectations": [
+    "Total income = $15,000 (1099-DIV)",
+    "Unearned income net of $2,600 threshold = $12,400 taxed at parent's 35% kiddie rate",
+    "Form 8615 Line 18 max(regular, kiddie) determines tax"
+  ],
+  "w2s": [],
+  "form1099s": [
+    {
+      "taxYear": 2024,
+      "formType": "div",
+      "payerName": "Schwab UTMA",
+      "ordinaryDividends": 15000,
+      "qualifiedDividends": 15000,
+      "federalTaxWithheld": 0,
+      "stateCode": "NY"
+    }
+  ],
+  "adjustments": []
+}

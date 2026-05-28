@@ -63,6 +63,7 @@
     "src/tax-engine-c11-part-year-w2-tests.ts",
     "src/tax-engine-c11-deeper-sourcing-tests.ts",
     "src/c3-validation-rerun.ts",
+    "src/build-validation-packet-v2.ts",
     "src/seed-dummy-clients.ts"
   ]
 }

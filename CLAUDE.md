@@ -116,6 +116,15 @@ Future-you will be tempted to "simplify" these. Don't.
   | `tax-engine-c9-c10-bulk-tests.ts` | no (C9 v3 + C10 v3 — 35 hand-calc'd assertions for the bulk PA EIT registry (~175 munis) + bulk OH SDIT registry (~226 SDs). Verifies PSD-code AND name-keyed lookup, both `earned_income` and `traditional` (oh_traditional) bases, state-mismatch rejection, E2E pipeline. NEW 2026-05-27 PM.) |
   | `tax-engine-c11-part-year-w2-tests.ts` | no (C11 v2 — 11 hand-calc'd assertions for OPT-IN per-W-2-stateCode wage allocation via `part_year_use_w2_source` adjustment. Verifies wage source-state allocation AND pure-pro-rata default unchanged.) |
   | `tax-engine-c11-deeper-sourcing-tests.ts` | no (C11 v3 — 20 hand-calc'd assertions for per-K-1 + per-rental source-state allocation via `part_year_use_full_source_allocation` adjustment. K-1 + rental net income flows to source state; intangibles still pro-rate to resident state by days. Backward-compat verified. NEW 2026-05-27 PM.) |
+
+**Non-test scripts:**
+- `build-validation-packet-v2.ts` — generates 15 new validation packet cases (Cases 11-25: Form 8606 backdoor Roth, §1031, §121, §1202, kiddie tax, FEIE, ACA PTC, HSA, Roth conv, NOL, cap-loss CF, multi-state NR, part-year residency, §163(j), §461(l)). Pure-function; no live API needed.
+- `c3-validation-rerun.ts` — re-runs all 25 packet cases against current engine; emits JSON for line-by-line comparison.
+
+**C3 follow-up engine modules (NEW 2026-05-27 PM):**
+- `artifacts/api-server/src/lib/form8824.ts` — Form 8824 (§1031) substitute PDF via pdfkit.
+- `artifacts/api-server/src/lib/form8990.ts` — Form 8990 (§163(j)) substitute PDF via pdfkit.
+- `qbi_sstb_flag` adjustment type — when set, engine applies §199A phase-out for SSTBs above the income threshold ($191,950 single / $383,900 MFJ TY2024).
 - **Scenarios are CPA-style end-to-end cases.** Each one has a `Hand-calc:` comment block — keep that convention. When a scenario fails, double-check your hand-calc before mutating the assertion; the calculator is usually right.
 - **Run all suites after any pipeline or schema change.** The Phase 1 work flushed out one regression (scenario 8 — needed to add EITC to expected refund).
 
