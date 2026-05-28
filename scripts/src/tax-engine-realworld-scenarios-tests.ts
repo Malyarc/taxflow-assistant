@@ -202,6 +202,155 @@ function header(t: string) { console.log(`\n── ${t} ──`); }
   check("S6 control: SINGLE dependent-care credit = $600 (20% × $3,000)", single.dependentCareCredit.appliedCredit, 600, 1);
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// S7 — Real-estate professional: rental EXCLUDED from NII (mirror of S2)
+// ════════════════════════════════════════════════════════════════════════════
+// Profile: Single, FL, $300k W-2 + $100k rental net, client IS a real-estate
+// professional (rental is non-passive → NOT net investment income). TY2024.
+// Hand-calc: AGI = $400,000 (rental still flows to AGI). NII = $0 (rental
+// excluded for RE pros, wages are never NII) → NIIT = $0.
+{
+  header("S7 — RE-professional rental excluded from NII");
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, rentalRealEstateProfessional: true },
+    w2s: [{ taxYear: 2024, wagesBox1: 300000, stateCode: "FL" }],
+    form1099s: [],
+    adjustments: [{ adjustmentType: "schedule_e_rental_income", amount: 100000, isApplied: true }],
+    taxYear: 2024,
+  });
+  check("S7 AGI = $400,000", r.adjustedGrossIncome, 400000, 1);
+  check("S7 NIIT = $0 (RE-professional rental is non-passive)", r.niitTax, 0, 1);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// S8 — Royalty earner: NIIT on 1099-MISC royalties
+// ════════════════════════════════════════════════════════════════════════════
+// Profile: Single, FL, $220k W-2 + $60k 1099-MISC Box 2 royalties. TY2024.
+// Hand-calc: AGI = $220,000 + $60,000 = $280,000. NII = royalties $60,000.
+//   NIIT = 3.8% × min($60,000, $280,000 − $200,000) = 3.8% × $60,000 = $2,280.
+{
+  header("S8 — NIIT on 1099-MISC royalties");
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 220000, stateCode: "FL" }],
+    form1099s: [{ taxYear: 2024, formType: "misc", royalties: 60000 }],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  check("S8 AGI = $280,000", r.adjustedGrossIncome, 280000, 1);
+  check("S8 NIIT = $2,280 (royalties are NII)", r.niitTax, 2280, 1);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// S9 — Net capital loss: $3k ordinary offset + NII floored at $0
+// ════════════════════════════════════════════════════════════════════════════
+// Profile: Single, FL, $250k W-2 + 1099-B $20k LTCG and −$50k STCG. TY2024.
+// Hand-calc: cross-net → net $30k LT/ST loss. $3,000 offsets ordinary income;
+//   $27k carries forward. AGI = $250,000 − $3,000 = $247,000.
+//   No positive investment gain → NII floored at $0 → NIIT = $0.
+{
+  header("S9 — Net capital loss: $3k offset + NII floor");
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 250000, stateCode: "FL" }],
+    form1099s: [{ taxYear: 2024, formType: "b", longTermGainLoss: 20000, shortTermGainLoss: -50000 }],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  check("S9 AGI = $247,000 ($3k capital-loss offset)", r.adjustedGrossIncome, 247000, 1);
+  check("S9 NIIT = $0 (no positive NII)", r.niitTax, 0, 1);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// S10 — Qualifying surviving spouse: §121 $500k cap + $250k NIIT threshold
+// ════════════════════════════════════════════════════════════════════════════
+// Profile: QSS, FL, $180k W-2 + $900k primary-residence gain + 2 kids. TY2024.
+// Hand-calc: §121 cap (QSS = MFJ) = $500,000 → taxable home LTCG = $400,000.
+//   AGI = $180,000 + $400,000 = $580,000.
+//   NIIT (QSS $250k threshold) = 3.8% × min($400,000, $580,000 − $250,000)
+//     = 3.8% × $330,000 = $12,540.
+{
+  header("S10 — QSS §121 $500k cap + NIIT");
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "qualifying_widow", state: "FL", taxYear: 2024, dependentsUnder17: 2 },
+    w2s: [{ taxYear: 2024, wagesBox1: 180000, stateCode: "FL" }],
+    form1099s: [],
+    adjustments: [{ adjustmentType: "home_sale_gross_gain_primary_residence", amount: 900000, isApplied: true }],
+    taxYear: 2024,
+  });
+  check("S10 §121 taxable remainder = $400,000", r.homeSaleTaxableGain, 400000, 1);
+  check("S10 AGI = $580,000", r.adjustedGrossIncome, 580000, 1);
+  check("S10 NIIT = $12,540 (QSS $250k threshold)", r.niitTax, 12540, 1);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// S11 — Social Security taxability (Pub 915 85%) + IRA + LTCG
+// ════════════════════════════════════════════════════════════════════════════
+// Profile: MFJ, MN, age 70, $60k SS benefits + $120k IRA distribution + $50k LTCG. TY2024.
+// Hand-calc (Pub 915): provisional income = $120k + $50k + ½×$60k = $200k ≫
+//   $44k MFJ top threshold → 85% of SS taxable = 0.85 × $60,000 = $51,000.
+//   AGI = $120,000 IRA + $50,000 LTCG + $51,000 taxable SS = $221,000.
+//   NIIT: NII = $50,000 LTCG; MAGI $221,000 < $250k MFJ threshold → NIIT = $0.
+{
+  header("S11 — SS taxability (Pub 915 85%) + IRA + LTCG");
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "married_filing_jointly", state: "MN", taxYear: 2024, taxpayerAge: 70, socialSecurityBenefits: 60000 },
+    w2s: [],
+    form1099s: [
+      { taxYear: 2024, formType: "r", grossDistribution: 120000, taxableAmount: 120000, distributionCode: "7" },
+      { taxYear: 2024, formType: "b", longTermGainLoss: 50000 },
+    ],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  check("S11 AGI = $221,000 (85% of SS taxable)", r.adjustedGrossIncome, 221000, 1);
+  check("S11 NIIT = $0 (MAGI under $250k MFJ threshold)", r.niitTax, 0, 1);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// S12 — HNW stacked (CA): NIIT including passive K-1, at scale
+// ════════════════════════════════════════════════════════════════════════════
+// Profile: MFJ, CA, $600k W-2 + $300k LTCG (1099-B) + $150k passive K-1 ordinary
+//   + 3 kids. TY2024.
+// Hand-calc: AGI = $600k + $300k + $150k = $1,050,000.
+//   NII = $300k LTCG + $150k passive K-1 = $450,000.
+//   NIIT = 3.8% × min($450,000, $1,050,000 − $250,000) = 3.8% × $450,000 = $17,100.
+//   CTC: fully phased out at $1.05M MFJ → $0 (not asserted here).
+{
+  header("S12 — HNW stacked: NIIT incl. passive K-1 (CA)");
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "married_filing_jointly", state: "CA", taxYear: 2024, dependentsUnder17: 3 },
+    w2s: [{ taxYear: 2024, wagesBox1: 600000, stateCode: "CA" }],
+    form1099s: [{ taxYear: 2024, formType: "b", longTermGainLoss: 300000 }],
+    scheduleK1: [{ taxYear: 2024, entityType: "partnership", activityType: "passive", box1OrdinaryIncome: 150000 }],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  check("S12 AGI = $1,050,000", r.adjustedGrossIncome, 1050000, 1);
+  check("S12 NIIT = $17,100 (LTCG + passive K-1 in NII)", r.niitTax, 17100, 1);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// S13 — Simple single filer (easy-end sanity anchor)
+// ════════════════════════════════════════════════════════════════════════════
+// Profile: Single, FL, $60k W-2, $6k federal withheld. TY2024.
+// Hand-calc: AGI $60,000 − $14,600 std = $45,400 taxable.
+//   Tax = $1,160 (10% to $11,600) + ($45,400 − $11,600) × 12% = $1,160 + $4,056 = $5,216.
+//   Refund = $6,000 − $5,216 = $784.
+{
+  header("S13 — Simple single $60k (sanity anchor)");
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 60000, federalTaxWithheldBox2: 6000, stateCode: "FL" }],
+    form1099s: [],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  check("S13 taxable income = $45,400", r.taxableIncome, 45400, 1);
+  check("S13 federal tax = $5,216", r.federalTaxLiability, 5216, 2);
+  check("S13 refund = $784", r.federalRefundOrOwed, 784, 2);
+}
+
 const total = PASS.length + FAIL.length;
 console.log(`\n${"═".repeat(66)}`);
 console.log(`RESULTS: ${PASS.length} passed, ${FAIL.length} failed (${total} total)`);
