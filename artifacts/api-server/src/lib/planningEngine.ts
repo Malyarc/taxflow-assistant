@@ -38,6 +38,7 @@ import {
   calculateFederalTaxWithBreakdown,
   calculateStateTaxWithBreakdown,
   getFederalStandardDeduction,
+  SS_WAGE_BASE,
 } from "./taxCalculator";
 import { runWhatIfScenarios } from "./whatIfEngine";
 import {
@@ -1855,7 +1856,7 @@ function detectScorpReasonableComp(args: {
   // FICA savings on the distribution portion. SS portion is capped at the
   // 2024 wage base ($168,600); Medicare uncapped. Simplify: 15.3% × dist,
   // capped at $25,789 (= 0.153 × 168600).
-  const ssWageBase = computed.taxYear === 2024 ? 168_600 : 176_100;
+  const ssWageBase = SS_WAGE_BASE[computed.taxYear === 2024 ? 2024 : 2025];
   const cappedFicaBase = Math.min(distributions, ssWageBase);
   const estSavings = cappedFicaBase * G1_17_FICA_TOTAL;
   if (estSavings <= 0) return null;

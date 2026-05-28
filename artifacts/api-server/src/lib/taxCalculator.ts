@@ -4630,7 +4630,7 @@ export function calculateFederalTaxWithCapitalGains(params: {
 // SS portion only applies up to the wage base ($168,600 in 2024, $176,100 in 2025).
 // Net earnings = SE income × 0.9235 (the 7.65% employer-equivalent reduction).
 // Half of SE tax is deductible above-the-line on Form 1040.
-const SS_WAGE_BASE: Record<TaxYear, number> = { 2024: 168600, 2025: 176100 };
+export const SS_WAGE_BASE: Record<TaxYear, number> = { 2024: 168600, 2025: 176100 };
 const SS_RATE = 0.124;
 const MEDICARE_RATE = 0.029;
 const SE_NET_EARNINGS_FACTOR = 0.9235;
