@@ -39,6 +39,7 @@ import {
   calculateStateTaxWithBreakdown,
   getFederalStandardDeduction,
   SS_WAGE_BASE,
+  calculateStudentLoanInterest,
 } from "./taxCalculator";
 import { runWhatIfScenarios } from "./whatIfEngine";
 import {
@@ -1853,12 +1854,19 @@ function detectScorpReasonableComp(args: {
 
   const reasonableComp = sCorpIncome * G1_17_REASONABLE_COMP_PCT;
   const distributions = sCorpIncome - reasonableComp;
-  // FICA savings on the distribution portion. SS portion is capped at the
-  // 2024 wage base ($168,600); Medicare uncapped. Simplify: 15.3% × dist,
-  // capped at $25,789 (= 0.153 × 168600).
+  // PLAN-07: the FICA saved by taking distributions instead of wages is the
+  // 12.4% SS portion ONLY on distributions up to the wage base REMAINING after
+  // reasonable-comp wages already consume it, plus 2.9% Medicare (uncapped) on
+  // all distributions. When reasonable comp >= the wage base, SS savings is $0
+  // (only Medicare is saved) — the old "15.3% × min(dist, wageBase)" overstated
+  // savings by the full 12.4% SS portion for high-comp owners.
+  const SS_RATE = 0.124;
+  const MED_RATE = 0.029;
   const ssWageBase = SS_WAGE_BASE[computed.taxYear === 2024 ? 2024 : 2025];
-  const cappedFicaBase = Math.min(distributions, ssWageBase);
-  const estSavings = cappedFicaBase * G1_17_FICA_TOTAL;
+  const ssBaseRemaining = Math.max(0, ssWageBase - reasonableComp);
+  const ssSavings = Math.min(distributions, ssBaseRemaining) * SS_RATE;
+  const medSavings = distributions * MED_RATE;
+  const estSavings = ssSavings + medSavings;
   if (estSavings <= 0) return null;
 
   const strategy = strategyById("G1.17");
@@ -1888,12 +1896,13 @@ function detectScorpReasonableComp(args: {
       sCorpIncome: Math.round(sCorpIncome),
       reasonableComp: Math.round(reasonableComp),
       distributions: Math.round(distributions),
-      cappedFicaBase: Math.round(cappedFicaBase),
+      ssSavings: Math.round(ssSavings),
+      medSavings: Math.round(medSavings),
       ficaRate: G1_17_FICA_TOTAL,
     },
     assumptions: [
       `Default split assumption: 40% reasonable W-2 wages / 60% distributions. CPA refines based on RC Reports / BLS / industry.`,
-      `FICA rate ${(G1_17_FICA_TOTAL * 100).toFixed(1)}% (both sides — employer + employee). SS portion capped at ${fmt(ssWageBase)} TY${computed.taxYear} wage base.`,
+      `SS portion (12.4%) applies only to distributions up to the ${fmt(ssWageBase)} TY${computed.taxYear} wage base REMAINING after reasonable comp; Medicare (2.9%) on all distributions. When comp >= the wage base, only Medicare is saved.`,
       `Rev. Rul. 74-44 + Mike v. Comm'r line of cases: distributions can be recharacterized as wages if comp is unreasonably low — leading IRS audit issue.`,
       `K-1 income assumed to be from S-corp (engine doesn't yet differentiate entity types in summary). CPA verifies on K-1 box 1 + Schedule K-1 line A.`,
       `H2 verification deferred — engine would need to model W-2 box 3/5 + FICA tax pipeline for the W-2 portion; current proxy is acceptable for planning estimates.`,
@@ -3022,10 +3031,13 @@ const G1_31_AGI_BANDS: Record<string, Array<{ rate: number; maxAgi: number }>> =
     { rate: 0.20, maxAgi: 50_000 },
     { rate: 0.10, maxAgi: 76_500 },
   ],
+  // PLAN-01: Form 8880 places Qualifying Surviving Spouse in the SINGLE/MFS
+  // column, NOT MFJ — §25B grants the doubled thresholds to joint returns +
+  // HoH (75%) only; QSS falls in the residual single column.
   qualifying_widow: [
-    { rate: 0.50, maxAgi: 46_000 },
-    { rate: 0.20, maxAgi: 50_000 },
-    { rate: 0.10, maxAgi: 76_500 },
+    { rate: 0.50, maxAgi: 23_000 },
+    { rate: 0.20, maxAgi: 25_000 },
+    { rate: 0.10, maxAgi: 38_250 },
   ],
 };
 const G1_31_CONTRIB_CAP_SINGLE = 2_000;
@@ -3057,8 +3069,8 @@ function detectSaversCredit(args: {
   const matchedBand = bands.find((b) => agi <= b.maxAgi);
   if (!matchedBand) return null;
 
-  const cap = client.filingStatus === "married_filing_jointly" ||
-              client.filingStatus === "qualifying_widow"
+  // PLAN-01: QSS uses the single $2,000 cap (Form 8880), not the MFJ $4,000.
+  const cap = client.filingStatus === "married_filing_jointly"
     ? G1_31_CONTRIB_CAP_MFJ
     : G1_31_CONTRIB_CAP_SINGLE;
   const qualifyingContrib = Math.min(anyRetirement, cap);
@@ -3654,9 +3666,13 @@ function detectFamilyEmployment(args: {
   const { client, computed, adjustments, baselineInputs } = args;
   const netSe = computed.detail.se.netSeEarnings;
   if (netSe < G1_49_MIN_NET_SE) return null;
-  // Need children under 17 (engine field). dependentsUnder17 is a count.
-  const kidsUnder17 = client.dependentsUnder17 ?? 0;
-  if (kidsUnder17 <= 0) return null;
+  // PLAN-03: the §3121(b)(3)(A) FICA exemption covers children UNDER 18 (FUTA
+  // under 21) — broader than the CTC's under-17 count. A 17-year-old dependent
+  // child drops out of dependentsUnder17 into otherDependents, so use both as
+  // the eligible-children proxy. (CPA confirms the dependent is the taxpayer's
+  // child actually employed — otherDependents may include non-child relatives.)
+  const eligibleChildren = (client.dependentsUnder17 ?? 0) + (client.otherDependents ?? 0);
+  if (eligibleChildren <= 0) return null;
   // Suppress if existing family_employment marker. Use generic "deduction"
   // with a magic amount as a proxy.
   const existingFamEmp = adjustments.find((a) =>
@@ -3664,7 +3680,7 @@ function detectFamilyEmployment(args: {
   );
   if (existingFamEmp) return null;
 
-  const numChildren = Math.min(kidsUnder17, G1_49_DEFAULT_NUM_CHILDREN);
+  const numChildren = Math.min(eligibleChildren, G1_49_DEFAULT_NUM_CHILDREN);
   const wagesPerChild = G1_49_CHILD_STD_DED_2024;
   const totalWages = wagesPerChild * numChildren;
 
@@ -3705,7 +3721,7 @@ function detectFamilyEmployment(args: {
     cpaEffortHours: strategy.cpaEffortHours,
     recurring: strategy.recurring,
     rationale:
-      `Sole prop with ${fmt(Math.round(netSe))} net SE income + ${kidsUnder17} dependent(s) under 17. ` +
+      `Sole prop with ${fmt(Math.round(netSe))} net SE income + ${eligibleChildren} eligible child dependent(s). ` +
       `Employing child(ren) under 18 in the business shields wages from FICA per §3121(b)(3)(A) ` +
       `AND the child's standard deduction (${fmt(G1_49_CHILD_STD_DED_2024)}) shields the wages from ` +
       `federal income tax. Net savings ~${fmt(estSavings)} per year per child.`,
@@ -3714,7 +3730,7 @@ function detectFamilyEmployment(args: {
     citation: `${strategy.ircSection}; ${strategy.irsPub}`,
     inputs: {
       netSeEarnings: Math.round(netSe),
-      dependentsUnder17: kidsUnder17,
+      eligibleChildren,
       numChildrenAssumed: numChildren,
       wagesPerChild,
       totalWages,
@@ -4768,7 +4784,16 @@ function detectStudentLoanInterest(args: {
 
   const fedRate = federalMarginalRate(computed);
   const stateRate = stateMarginalRate(computed);
-  const estSavings = Math.round(G1_61_DEDUCTION_CAP * (fedRate + stateRate));
+  // PLAN-05: apply the §221 phase-out fraction instead of assuming the full
+  // $2,500 across the whole band. The detector only fires when no SLI deduction
+  // is already claimed, so AGI == the §221 MAGI (§221(b)(2)(C) adds it back).
+  const allowedDeduction = calculateStudentLoanInterest({
+    interestPaid: G1_61_DEDUCTION_CAP,
+    magi: computed.adjustedGrossIncome,
+    filingStatus: client.filingStatus,
+    taxYear: computed.taxYear,
+  }).deductible;
+  const estSavings = Math.round(allowedDeduction * (fedRate + stateRate));
   if (estSavings <= 0) return null;
 
   // H2 mutation: add student_loan_interest = $2,500. Engine treats as
@@ -7193,8 +7218,11 @@ function detectSection1377Election(args: {
   const { computed } = args;
   const k1Active = computed.scheduleK1?.totalActiveOrdinaryIncome ?? 0;
   if (k1Active < G1_95_MIN_K1) return null;
-  // Proxy: SE flowing through (member-managed LLC) — indicates engagement.
-  if (computed.detail.se.netSeEarnings < G1_95_MIN_K1) return null;
+  // PLAN-02: §1377(a)(2) is an S-corp-only election; gate on S-corp presence,
+  // NOT SE earnings. S-corp K-1 Box 1 is never self-employment income, so the
+  // old `netSeEarnings` gate made this detector dead code for the very S-corp
+  // shareholders the strategy targets.
+  if ((computed.scheduleK1?.sCorpCount ?? 0) < 1) return null;
 
   const estSavings = G1_95_TYPICAL_MISMATCH_BENEFIT;
 

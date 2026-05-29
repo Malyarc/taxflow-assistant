@@ -25,6 +25,7 @@ import {
   calculateNycLocalTax,
   calculateFlatRateLocalTax,
   calculateStateTax,
+  calculateSaversCredit,
   KIDDIE_TAX_THRESHOLD,
 } from "../../artifacts/api-server/src/lib/taxCalculator";
 
@@ -114,6 +115,28 @@ section("STL-04 — IL part-year exemption cliff (full-year AGI)");
   const belowCliff = 200000 * 182 / 366; // ≈ 99,453.55
   const guard = calculateStateTax(belowCliff, "IL", "single", 2024, { fullYearFederalAgiForCliff: 200000 });
   check("IL part-year, full-year AGI $200k < cliff → exemption kept → $4,785.59", guard, (belowCliff - 2775) * 0.0495, 0.05);
+}
+
+// ── PLAN-01 — Saver's Credit: QSS uses the SINGLE column (Form 8880) ──────
+// §25B grants the doubled MFJ thresholds to joint returns + HoH (75%) only;
+// Qualifying Surviving Spouse falls in the residual single/MFS column
+// ($38,250 ceiling, $2,000 cap TY2024). Both the engine (SAVERS_CREDIT_TIERS +
+// calculateSaversCredit cap) and the planning detector previously gave QSS the
+// MFJ band + $4,000 cap → false positive + doubled credit.
+section("PLAN-01 — Saver's Credit QSS = single column");
+{
+  const qssIneligible = calculateSaversCredit({ filingStatus: "qualifying_widow", agi: 50000, retirementContributions: 5000, taxYear: 2024 });
+  check("Saver's QSS $50k > $38,250 → rate 0 (ineligible)", qssIneligible.rate, 0);
+  check("Saver's QSS → $2,000 single cap, not $4,000", qssIneligible.eligibleContribution, 2000);
+  check("Saver's QSS $50k → credit $0", qssIneligible.appliedCredit, 0);
+  const qssEligible = calculateSaversCredit({ filingStatus: "qualifying_widow", agi: 24000, retirementContributions: 3000, taxYear: 2024 });
+  check("Saver's QSS $24k → 20% band", qssEligible.rate, 0.20, 0.001);
+  check("Saver's QSS $24k → credit $400 (min(3000,2000)×0.20)", qssEligible.appliedCredit, 400);
+  // Control: MFJ unchanged — $60k is in the 10% band with the $4,000 cap.
+  const mfj = calculateSaversCredit({ filingStatus: "married_filing_jointly", agi: 60000, retirementContributions: 5000, taxYear: 2024 });
+  check("Saver's MFJ $60k → 10% band (unchanged)", mfj.rate, 0.10, 0.001);
+  check("Saver's MFJ → $4,000 cap (unchanged)", mfj.eligibleContribution, 4000);
+  check("Saver's MFJ $60k → credit $400", mfj.appliedCredit, 400);
 }
 
 console.log(`\nRESULTS: ${pass} passed, ${failures.length} failed`);

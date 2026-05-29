@@ -3692,14 +3692,14 @@ const SAVERS_CREDIT_TIERS: Record<TaxYear, Record<string, SaversCreditTier[]>> =
     married_filing_jointly: [{ agiMax: 46000, rate: 0.50 }, { agiMax: 50000, rate: 0.20 }, { agiMax: 76500, rate: 0.10 }, { agiMax: Infinity, rate: 0 }],
     married_filing_separately: [{ agiMax: 23000, rate: 0.50 }, { agiMax: 25000, rate: 0.20 }, { agiMax: 38250, rate: 0.10 }, { agiMax: Infinity, rate: 0 }],
     head_of_household: [{ agiMax: 34500, rate: 0.50 }, { agiMax: 37500, rate: 0.20 }, { agiMax: 57375, rate: 0.10 }, { agiMax: Infinity, rate: 0 }],
-    qualifying_widow: [{ agiMax: 46000, rate: 0.50 }, { agiMax: 50000, rate: 0.20 }, { agiMax: 76500, rate: 0.10 }, { agiMax: Infinity, rate: 0 }],
+    qualifying_widow: [{ agiMax: 23000, rate: 0.50 }, { agiMax: 25000, rate: 0.20 }, { agiMax: 38250, rate: 0.10 }, { agiMax: Infinity, rate: 0 }], // PLAN-01: QSS = single column (Form 8880)
   },
   2025: {
     single: [{ agiMax: 23750, rate: 0.50 }, { agiMax: 25750, rate: 0.20 }, { agiMax: 39500, rate: 0.10 }, { agiMax: Infinity, rate: 0 }],
     married_filing_jointly: [{ agiMax: 47500, rate: 0.50 }, { agiMax: 51500, rate: 0.20 }, { agiMax: 79000, rate: 0.10 }, { agiMax: Infinity, rate: 0 }],
     married_filing_separately: [{ agiMax: 23750, rate: 0.50 }, { agiMax: 25750, rate: 0.20 }, { agiMax: 39500, rate: 0.10 }, { agiMax: Infinity, rate: 0 }],
     head_of_household: [{ agiMax: 35625, rate: 0.50 }, { agiMax: 38625, rate: 0.20 }, { agiMax: 59250, rate: 0.10 }, { agiMax: Infinity, rate: 0 }],
-    qualifying_widow: [{ agiMax: 47500, rate: 0.50 }, { agiMax: 51500, rate: 0.20 }, { agiMax: 79000, rate: 0.10 }, { agiMax: Infinity, rate: 0 }],
+    qualifying_widow: [{ agiMax: 23750, rate: 0.50 }, { agiMax: 25750, rate: 0.20 }, { agiMax: 39500, rate: 0.10 }, { agiMax: Infinity, rate: 0 }], // PLAN-01: QSS = single column
   },
 };
 const SAVERS_CREDIT_CONTRIBUTION_CAP_PER_FILER = 2000;
@@ -3727,7 +3727,8 @@ export function calculateSaversCredit(params: {
   }
 
   // Cap: $2,000 per filer (so $4,000 MFJ effectively, but applied as one $2,000 cap with $4k cap on contributions)
-  const cap = (params.filingStatus === "married_filing_jointly" || params.filingStatus === "qualifying_widow")
+  // PLAN-01: QSS files a single return → $2,000 cap, not the MFJ $4,000.
+  const cap = params.filingStatus === "married_filing_jointly"
     ? SAVERS_CREDIT_CONTRIBUTION_CAP_PER_FILER * 2
     : SAVERS_CREDIT_CONTRIBUTION_CAP_PER_FILER;
   const eligibleContribution = Math.min(Math.max(0, params.retirementContributions), cap);

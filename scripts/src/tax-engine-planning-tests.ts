@@ -4915,33 +4915,38 @@ header("G1.94-2 — No UI: suppressed");
 // Hand-calc: single FL TY2024, K1 active $100k + SE $80k (LLC member).
 //   k1Active ≥ $50k ✓. SE $80k > $50k proxy ✓ (use scheduleK1 selfEmploymentEarnings).
 //   estSavings = $5,000 (heuristic).
-header("H1v1.17 G1.95+1 — S-corp K1 + SE engagement: estSavings $5,000");
+// PLAN-02: §1377(a)(2) is an S-corp-only election; it gates on an active S-corp
+// K-1 (sCorpCount ≥ 1) carrying ≥ $50k Box 1 — NOT self-employment earnings
+// (S-corp K-1 Box 1 is never SE income, so the old SE-proxy gate made the
+// detector dead code for its target audience).
+header("H1v1.17 G1.95+1 — active S-corp K-1 ≥ $50k: estSavings $5,000");
 {
   const hits = runPlanning({
     client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
     scheduleK1: [
-      { taxYear: 2024, entityName: "LLC", entityType: "partnership", activityType: "active",
-        box1OrdinaryIncome: 100000, selfEmploymentEarnings: 80000 } as unknown as TaxReturnInputs["scheduleK1"][number],
+      { taxYear: 2024, entityName: "S-Corp Inc.", entityType: "s_corp", activityType: "active",
+        box1OrdinaryIncome: 200000 } as unknown as TaxReturnInputs["scheduleK1"][number],
     ],
   });
   const hit = findHit(hits, "G1.95");
-  checkTruthy("G1.95+1", "fires (K1 + SE proxy)", hit != null, true);
+  checkTruthy("G1.95+1", "fires for active S-corp K-1", hit != null, true);
   if (hit) {
     check("G1.95+1", "estSavings = $5,000", hit.estSavings, 5000);
   }
 }
 
-// Negative: no SE
-header("G1.95-1 — K1 but no SE: suppressed");
+// Negative: active S-corp K-1 below the $50k materiality floor → no fire.
+// (PLAN-02 inverted the old assertion — a $100k S-corp K-1 now CORRECTLY fires.)
+header("G1.95-1 — S-corp K-1 below $50k floor: suppressed");
 {
   const hits = runPlanning({
     client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
     scheduleK1: [
-      { taxYear: 2024, entityName: "LLC", entityType: "s_corp", activityType: "active",
-        box1OrdinaryIncome: 100000 } as unknown as TaxReturnInputs["scheduleK1"][number],
+      { taxYear: 2024, entityName: "S-Corp Inc.", entityType: "s_corp", activityType: "active",
+        box1OrdinaryIncome: 40000 } as unknown as TaxReturnInputs["scheduleK1"][number],
     ],
   });
-  checkTruthy("G1.95-1", "no fire without SE", findHit(hits, "G1.95") == null, true);
+  checkTruthy("G1.95-1", "no fire below $50k floor", findHit(hits, "G1.95") == null, true);
 }
 
 // ── G1.96 §132(f) Qualified Transportation Fringe ───────────────────────
@@ -4980,6 +4985,50 @@ header("G1.96-2 — SE only: suppressed");
     form1099s: [{ taxYear: 2024, formType: "nec", payerName: "Co", nonemployeeCompensation: 100000 }],
   });
   checkTruthy("G1.96-2", "no fire SE-only", findHit(hits, "G1.96") == null, true);
+}
+
+// ── 2026-05-29 deep-audit detector fixes (PLAN-03 / PLAN-05 / PLAN-07) ────
+header("PLAN-03 G1.49 — sole prop + one 17-year-old (otherDependents) fires");
+{
+  // §3121(b)(3)(A) FICA exemption covers children under 18; a 17-year-old sits
+  // in otherDependents, not dependentsUnder17. Pre-fix this was a false negative.
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 45, dependentsUnder17: 0, otherDependents: 1 } as unknown as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "x", nonemployeeCompensation: 100000 } as unknown as TaxReturnInputs["form1099s"][number]],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  const hit = findHit(hits, "G1.49");
+  checkTruthy("PLAN-03", "G1.49 fires for a 17yo in otherDependents", hit != null, true);
+  if (hit) check("PLAN-03", "totalWages = $14,600", Number(hit.inputs.totalWages), 14600);
+}
+
+header("PLAN-05 G1.61 — student-loan interest phased out near the AGI ceiling");
+{
+  // Single MAGI $93k: §221 deduction = $2,500 × (95,000−93,000)/15,000 = $333.33.
+  // estSavings = round($333.33 × 22% fed, FL 0% state) = $73 (was the full $550).
+  const hits = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 35 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, employerName: "x", wagesBox1: 93000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  const hit = findHit(hits, "G1.61");
+  checkTruthy("PLAN-05", "G1.61 fires at AGI $93k", hit != null, true);
+  if (hit) check("PLAN-05", "estSavings ≈ $73 (phase-out applied, not $550)", hit.estSavings, 73, 6);
+}
+
+header("PLAN-07 G1.17 — S-corp reasonable comp: SS savings net of wage base");
+{
+  // Active S-corp K-1 $425k → 40/60 split: reasonable comp $170k (> $168,600
+  // wage base), distributions $255k. SS already fully consumed by wages → SS
+  // savings $0; only Medicare 2.9% × $255k = $7,395 (was 15.3%×capped ≈ $25,796).
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    scheduleK1: [
+      { taxYear: 2024, entityName: "S-Corp Inc.", entityType: "s_corp", activityType: "active",
+        box1OrdinaryIncome: 425000 } as unknown as TaxReturnInputs["scheduleK1"][number],
+    ],
+  });
+  const hit = findHit(hits, "G1.17");
+  checkTruthy("PLAN-07", "G1.17 fires for active S-corp", hit != null, true);
+  if (hit) check("PLAN-07", "estSavings = $7,395 (Medicare-only; comp ≥ wage base)", hit.estSavings, 7395, 1);
 }
 
 // ============================================================================
