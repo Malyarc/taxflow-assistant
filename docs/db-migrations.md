@@ -47,7 +47,15 @@ try to `CREATE TABLE` rows that already exist and fail. They must be
 > flow on a throwaway database first** (create empty DB → `migrate` → confirm it
 > builds the schema cleanly).
 
-Baseline an existing database (run once per DB):
+**STATUS (2026-05-28): the LOCAL dev DB (`taxflow_pro`) is BASELINED + validated.**
+`migrate` against it is now a verified no-op (it sees 0000 as applied and does
+NOT re-create tables; the 13 app tables are untouched). The 0000 migration was
+also validated against a fresh throwaway DB (built all 13 tables + the tracking
+table cleanly). **PROD (Neon) is NOT yet baselined** — run the one-time baseline
+on the box (below) before switching the deploy to `migrate`.
+
+Baseline an existing database (run once per DB). The canonical 0000 hash that
+drizzle records is fixed (sha256 of the migration file content):
 
 ```sql
 CREATE SCHEMA IF NOT EXISTS drizzle;
@@ -58,27 +66,32 @@ CREATE TABLE IF NOT EXISTS drizzle."__drizzle_migrations" (
 );
 -- Mark the 0000 baseline as applied so `migrate` skips it and only runs 0001+.
 INSERT INTO drizzle."__drizzle_migrations" (hash, created_at)
-VALUES ('<sha256-of-0000-file>', 1780003127842);
+VALUES ('3383733c4b800535bf751dcb9363c6cbf6b1e85ee5ffe6510b7279e0c7e0eb79', 1780003127842);
 ```
 
-Compute the hash drizzle expects (sha256 of the raw .sql file content):
+(How dev was baselined, for reference: run `migrate` against a fresh empty DB so
+drizzle writes the row itself, then copy it —
+`pg_dump --schema=drizzle <fresh> | psql <target>`. That yields the identical
+row above. Either method works.)
+
+After inserting, confirm `pnpm --filter @workspace/db run migrate` reports
+success while applying NOTHING (it sees 0000 as done). Only then switch the
+deploy to `migrate`.
+
+## EC2 deploy change (after the one-time prod baseline)
+
+On the box, ONCE: baseline the Neon prod DB with the SQL above (`psql` against
+the prod `DATABASE_URL` from `pm2 env 0`), and confirm `migrate` applies
+nothing. THEN replace the schema step in the EC2 deploy cycle (`CLAUDE.md` →
+"EC2 deploy"):
 
 ```bash
-node -e "const c=require('crypto'),fs=require('fs');console.log(c.createHash('sha256').update(fs.readFileSync('lib/db/drizzle/0000_messy_corsair.sql')).digest('hex'))"
-```
-
-Verify on a throwaway DB that, after baselining, `migrate` reports
-"No migrations to apply" (i.e. it correctly sees 0000 as done). Only then apply
-the same baseline to dev and prod.
-
-## EC2 deploy change (after cutover)
-
-Once dev + prod are baselined, replace the schema step in the EC2 deploy cycle
-(`CLAUDE.md` → "EC2 deploy"):
-
-```bash
-# OLD (remove after cutover):
+# OLD (remove after the prod baseline):
 pnpm --filter @workspace/db run push      # only if schema changed
 # NEW:
 pnpm --filter @workspace/db run migrate   # applies any pending versioned migrations
 ```
+
+Until prod is baselined, the deploy keeps using `push` (a migrate would fail on
+prod's already-existing tables). Dev is already baselined, so locally you can
+use `migrate` now.

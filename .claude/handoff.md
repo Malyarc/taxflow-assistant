@@ -126,8 +126,11 @@ curl http://localhost:8080/api/healthz
    and KMS for at-rest encryption.
 2. ~~Reconcile the 3 stale integration suites~~ — **DONE 2026-05-28**
    (follow-up session; see "Secondary finding" above).
-3. **Versioned-migrations cutover** (`docs/db-migrations.md`) — baseline the
-   existing dev + prod DBs, then switch the EC2 deploy from `push` to `migrate`.
+3. **Versioned-migrations cutover** (`docs/db-migrations.md`) — **DEV DB
+   baselined + validated 2026-05-28** (0000 verified on a fresh DB → 13 tables;
+   `migrate` on dev is now a confirmed no-op). **PROD (Neon) baseline is the one
+   remaining step** — run it once on the box (canonical 0000 hash is in the
+   doc), then flip the EC2 deploy `push` line to `migrate`.
 4. **God-file refactors** (deferred): planningEngine.ts (~7.7k lines),
    `calculateStateAdditionalCredits` (853-line fn), ClientDetail.tsx (~5k).
    Maintainability-only; do in a dedicated session (850+-line block moves are

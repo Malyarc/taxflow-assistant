@@ -156,6 +156,10 @@ pnpm install
 export DATABASE_URL=$(pm2 env 0 | awk -F": " '/^DATABASE_URL:/ {print $2; exit}')
 export AI_API_KEY=$(pm2 env 0 | awk -F": " '/^AI_API_KEY:/ {print $2; exit}')
 pnpm --filter @workspace/db run push      # only if schema changed
+# MIGRATION CUTOVER (see docs/db-migrations.md): versioned migrations are ready
+# and the dev DB is baselined. After a ONE-TIME baseline of the Neon prod DB
+# (canonical 0000 hash in that doc), replace the `push` line above with:
+#   pnpm --filter @workspace/db run migrate   # applies pending versioned migrations
 pnpm --filter @workspace/api-server run build
 pm2 restart taxflow
 curl http://localhost:8080/api/healthz
