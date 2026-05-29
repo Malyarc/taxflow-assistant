@@ -1,157 +1,161 @@
-# Handoff Note — 2026-05-28 (Deep audit: correctness + security + DB + tests)
+# Handoff Note — 2026-05-29 (Deep audit #2: code, security, DB, every engine, UI)
 
-Session continuation point for the next Claude (or human) working on
-TaxFlow Assistant.
+Session continuation point for the next Claude (or human) on TaxFlow Assistant.
 
 ## ⚡ Read this first
 
 Durable TODO: **`docs/todo.md`**. Coverage map: **`docs/coverage-matrix.md`**.
-New this session: **`docs/db-migrations.md`** (versioned-migration setup + cutover).
+Branch: **`deep-audit-2026-05-29`** (5 commits, pushed; open a PR to merge to main).
 
-## 🔴 USER ACTION REQUIRED — rotate two leaked credentials
+## 🔴 USER ACTION STILL PENDING (from the 2026-05-28 session)
 
-A stale, gitignored worktree settings file
-(`.claude/worktrees/hopeful-wing-a2bb93/.claude/settings.local.json`) held
-**two production secrets in plaintext** in `psql`/`curl` allowlist entries:
-- the **Neon `neondb_owner` DB password**, and
-- the **Google Gemini API key** (`AIza…`).
-
-They were **never committed to git** (verified — not tracked, path is
-gitignored, no commit ever touched it), but they sat in plaintext on disk and
-were read by tooling. I scrubbed the file (values replaced with
-`REDACTED-ROTATE-…`). **Rotate BOTH in the Neon console and Google AI Studio**
-as a precaution — only you can do that.
+Rotate the two leaked production credentials (Neon `neondb_owner` password +
+Google Gemini API key). They were scrubbed from disk but only you can rotate
+them in the Neon console + Google AI Studio.
 
 ## Headline
 
-**Deep audit across four dimensions (code quality, security, database,
-tax-engine correctness). Found and FIXED 5 tax-correctness bugs + 4
-typecheck-breaking defects, patched 3 dependency CVEs, hardened the DB write
-paths, set up versioned migrations, and added 28 hand-calc'd end-to-end
-scenarios.** The engine is in genuinely good shape — money is stored as
-`numeric` (no float bug), no SQL injection, validation everywhere, tests are
-real hand-calcs. The real gaps were the 5 correctness bugs below + the
-already-known security posture (no auth yet = D15).
+**Second deep audit, run as two adversarially-verified multi-agent passes
+(8-dimension find → verify, then 19 tax-correctness claims independently
+re-derived against the code + a cited IRS/state source with hand-calcs).** Every
+finding was triaged: false positives were dropped (the verify pass refuted 2
+tax findings and downgraded several), and only confirmed bugs were fixed. 22
+bugs fixed across 5 commits, all guarded by the test suite (now **37 no-API
+suites / 2,943 assertions green**, clean typecheck) and the key fixes verified
+live in the browser.
 
-### What landed (5 commits, all pushed to `main`)
+### What landed (5 commits on `deep-audit-2026-05-29`, all pushed)
 
-1. **Tax-correctness bugs (the crown jewel)** — each hand-calc'd + regression-tested:
-   - **H-1 QBI §199A**: taxable-income cap now reduced by net capital gain
-     (LTCG + qualified dividends) per §199A(e)(3). Was over-deducting QBI
-     whenever the cap binds with preferential income (probe: $3,717 → $797).
-   - **H-2 + M-1 NIIT §1411**: base rebuilt from the engine's component buckets
-     — now includes passive Schedule-E rental, 1099-MISC + K-1 royalties, K-1
-     portfolio/passive income, and post-netting gains (§121 remainder, §1031
-     recognized, QSBS, K-1 Box 8/9a). Was understating NIIT for the common
-     high-W-2 + rental/K-1/home-sale client. RE-professional rental excluded
-     via `client.rentalRealEstateProfessional`.
-   - **M-2 charitable**: capital-gain-property (30%) deduction now also bounded
-     by the overall 50%-of-AGI ceiling minus cash (§170(b)(1)) — independent
-     caps allowed up to 90% of AGI.
-   - **M-3 dependent-care** (Form 2441): disallowed for MFS unless lived-apart
-     (§21(e)(2)).
-2. **4 typecheck defects** (api-server now passes `tsc`; the esbuild build had
-   been hiding them): `OpportunityMultiYear` export; a **masked spousal-IRA
-   logic bug** (read a misspelled `unemploymentCompensation` field → never
-   subtracted UI comp); `perStateOtherSourced` type relocation (×2).
-3. **Security quick wins**: path-to-regexp + qs CVEs patched (`pnpm.overrides`;
-   `pnpm audit --prod` clean); global Express error middleware (uniform JSON
-   500s); credential scrub (above).
-4. **DB safety**: document-approve (W-2 + 1099) and client-delete wrapped in
-   `db.transaction` (no more orphaned rows / double-counted income on partial
-   failure). Versioned-migrations baseline generated (`lib/db/drizzle/0000…`),
-   `generate`/`migrate` scripts added, `push` kept for local dev only.
-5. **Tests + tooling**: new `tax-engine-realworld-scenarios-tests.ts` (28
-   hand-calc'd S1–S13) + a `test:no-api` runner (`pnpm --filter
-   @workspace/scripts run test:no-api`) that runs all 36 no-API suites.
-6. **Safe refactors**: removed an orphaned dead integration package (13 files);
-   centralized the SS wage base constant (was duplicated).
+1. **`20c6d0b` safe non-tax fixes** — DB-01 pg Pool config (max/idle/timeout/
+   keepAlive + Neon TLS + `pool.on('error')`); BE-02 atomic `onConflictDoUpdate`
+   replacing the racy SELECT-then-INSERT in `recalculateAndUpsertTaxReturn`;
+   SEC-01 project away base64 `fileContent` PII from the documents list; SEC-03
+   block `__proto__`/`constructor` in the what-if field setter; **FE-02 hoist
+   `W2Fields` to module scope** (it remounted on every keystroke and stole input
+   focus — W-2 entry was unusable); BE-06/BE-08 hygiene.
+2. **`d08b490` 9 federal + state tax-correctness bugs** + a new 28-assertion
+   regression suite (`tax-engine-audit-2026-05-29-tests.ts`) + 4 updated prior
+   expectations that encoded the old buggy values:
+   - FED-01 AMT 26/28% breakpoint halved for MFS (Form 6251; was −$2,326).
+   - FED-02 kiddie-tax threshold year-indexed ($2,600/$2,700).
+   - FED-03 NIIT MAGI adds back the §911(a)(1) FEIE per §1411(d).
+   - FED-04 QBI §199A cap computed on POST-NOL taxable income.
+   - FED-06 EITC §32(i) test now counts tax-exempt interest.
+   - STL-01 NYC self-employed MCTMT = flat 0.60% over $50k (Zone 1, TY2024+).
+   - STL-02 PA EIT / OH SDIT / Philly NPT earned-income base includes SE net profit.
+   - STL-03 MA 4% / CA 1% surtaxes on state taxable income, not AGI.
+   - STL-04 IL part-year exemption cliff tested on full-year AGI.
+3. **`fea8d3c` 5 planning-detector bugs** + tests (the §1377 tests were inverted
+   because the old ones asserted the dead-code bug):
+   - PLAN-01 Saver's Credit QSS → single column (fixed in detector AND engine).
+   - PLAN-02 §1377 detector gates on S-corp presence, not SE earnings (was dead).
+   - PLAN-03 family-employment includes 17-year-olds (otherDependents).
+   - PLAN-05 student-loan-interest applies the §221 phase-out fraction.
+   - PLAN-07 S-corp reasonable-comp nets wages out of the SS wage base.
+4. **`c8e9f37` FORM-01** — corrected the stale Form 8824 footnote that told CPAs
+   to manually add NIIT on §1031 boot gain the engine already taxes (double-count).
+5. **`76afa96` DB scaling** — DB-07 `/dashboard/summary` SQL aggregate (was a
+   full-table load of the widest table); + `clients(updated_at)`, `clients(email)`,
+   `tax_returns(adjusted_gross_income)` indexes (clients had ZERO secondary
+   indexes). Applied to the dev DB; EXPLAIN confirms Index Scan Backward.
 
-## Verification
+### Verification
 
-- `pnpm run typecheck` — clean (all 3 projects; was RED before — the 4 defects).
-- `pnpm --filter @workspace/scripts run test:no-api` — **36 suites, 2,915
+- `pnpm run typecheck` — clean (forced a fresh build; the incremental cache had
+  masked a real error mid-session — clear `*.tsbuildinfo` when in doubt).
+- `pnpm --filter @workspace/scripts run test:no-api` — **37 suites, 2,943
   assertions, 0 failures.**
-- `pnpm --filter @workspace/api-server run build` — clean (192ms).
-- `pnpm --filter @workspace/tax-app run build` — clean (frontend untouched).
-- Live-API integration run (local Postgres): 9/13 suites green, including all
-  three full-pipeline suites (integration / deep-integration / new-features),
-  which validates the new DB transactions end-to-end.
+- Live UI (Vite + api-server on the dev DB): dashboard renders DB-07 values +
+  planning hit-list, zero console errors; ClientDetail 11 tabs render; **W-2 Add
+  form keeps focus across keystrokes** (FE-02 confirmed) — screenshot in session.
 
-## Secondary finding — RECONCILED 2026-05-28 (follow-up session)
+## What's left — prioritized plan (NEEDS YOUR DECISION on the big ones)
 
-The 3 live-API integration suites (`tax-engine-scenarios`,
-`-phase1-integration`, `-k1-integration`) that had **stale expected values**
-predating the C3 QBI-auto-default (2026-05-27) are now **fixed**. All 9 stale
-assertions were independently re-hand-calc'd against the auto-default (active
-K-1 Box 1 + Sch C net SE → 20% §199A deduction, bound by either the
-20%-of-QBI amount or the 20%-of-(taxable − net-cap-gain) cap), confirmed to
-match the engine, and rewritten with Hand-calc comment blocks. Example:
-`$80k W-2 + $50k active S-corp K-1` → $10k QBI auto-default → taxable $105,400,
-federal tax $18,338.50 (was asserting the pre-C3 $115,400 / $20,738.50).
-**All three suites now green**: K-1 23/23, phase1 55/0, scenarios 95/0.
-
-`tax-engine-ai-overlay-tests` still needs a real `AI_API_KEY` (a dummy key
-fails extraction → doc goes `failed` → approve correctly 400s with
-`"only 'pending_review' can be approved"`). Environmental, not a code issue.
+1. **Auth + multi-tenancy (D15)** — STILL the #1 risk. No auth on any route, no
+   `firm_id`/tenant column. Multi-week; needs decisions: session-cookie vs JWT;
+   TLS terminator (ALB/CloudFront/nginx+certbot); KMS for at-rest PII. Blocks any
+   real client PII on the live box. Once `firm_id` lands it also unlocks the next item.
+2. **N×M planning query storm (DB-02/03/BE-05)** — `/planning-hit-list` (backs
+   the dashboard widget, hottest path) + `/peer-benchmark` recompute the FULL tax
+   engine for EVERY client serially (~12×N queries) with no firm scoping. Fix:
+   read the persisted `tax_returns` rows (AGI/effective-rate are stored columns;
+   the agi index from this session supports it) instead of recomputing; bound
+   concurrency; add `WHERE firm_id` (needs #1). Fine at 97 clients, bites at scale.
+3. **Prod DB migration cutover — BLOCKED.** `drizzle-kit generate`/`migrate` fail
+   on a malformed snapshot path in `lib/db/drizzle/meta/_journal.json` (a doubled
+   `.//<abs path>`). Fix that first, then the new indexes ship as a versioned
+   migration. Until then, add the 3 indexes to prod manually with `CREATE INDEX
+   CONCURRENTLY` (statements in commit `76afa96`).
+4. **Forms (verified specs ready, need small schema changes):**
+   - FORM-02 (HIGH): Form 1040-X Line 8/10 overstate tax by the non-refundable
+     credits (engine `federalTaxLiability` is pre-credit). Needs a persisted
+     `total_non_refundable_applied` column + snapshot + line math.
+   - FORM-03 (MED, pure code): 1040-X Line 19/20 don't reconcile on a refund↔owed
+     swap — rebuild as the IRS Line 16→21 chain.
+   - FORM-04 (HIGH): Form 8606 Part III treats converted basis as taxable
+     earnings (over-taxes). Needs a `roth_conversion_basis` adjustment + the
+     conversion-basis layer (function fix is backward-compatible).
+5. **God-file refactor** (maintainability): planningEngine.ts (~7.7k),
+   ClientDetail.tsx (~5k), `calculateStateAdditionalCredits` (~853-line fn).
+6. **Frontend robustness:** FE-03 (Schedule D / Rentals / K-1 queryFns skip
+   `res.ok` → crash on a 500), FE-04 (hardcoded cyan/fuchsia in two Planning
+   cards break dark mode). Exact line refs in the audit output.
+7. **Real-world scenario battery** — the audit workflow designed 16 complex CPA
+   scenarios (individual + pass-through). Encode them as a hand-calc'd suite; they
+   also give end-to-end coverage for FED-03/04/06 (currently locked by direct
+   hand-calc, not a pipeline test).
+8. **Low-priority verified items:** FED-05 (blind std ded — unwired feature),
+   STL-05 (MD EITC two-component; realistic error $0), PLAN-04/06/08, SEC-02/04/05,
+   DB-09 (audit_log → timestamptz), DB-10 (redundant tax_returns index), DB-11
+   (CHECK constraints on enum-ish text cols), DB-12 (adjustments needs tax_year).
+9. **Refuted — do NOT "fix":** FORM-05 (8606 pro-rata denominator is correct per
+   Form 8606 Line 9; only a contradictory docstring), MY-01 (multi-year
+   carryforward held flat is inert — no consumer reads it within the horizon).
 
 ## Deploy steps (for the user)
 
-**api-server CHANGED** (engine fixes + transactions + error mw + CVE deps).
-**No DB migration** (schema unchanged; migrations baseline added but cutover is
-sign-off-gated — see `docs/db-migrations.md`). **Frontend UNCHANGED** (no rsync).
+**api-server CHANGED** (engine fixes + dashboard aggregate + pool config).
+**Frontend CHANGED** (ClientDetail W-2 hoist — needs rebuild + rsync).
+**DB:** 3 additive indexes — add to prod with `CREATE INDEX CONCURRENTLY` (see
+commit `76afa96`); no other schema change this session.
 
 ```bash
+# 1. Merge the branch (open PR from deep-audit-2026-05-29) or push to main.
+# 2. Frontend build (locally — the 908 MiB box OOMs on Vite):
+pnpm --filter @workspace/tax-app run build
+rsync -e "ssh -i ~/Downloads/taxflow-key.pem" -avz --delete \
+  artifacts/tax-app/dist/public/ \
+  ubuntu@ec2-18-188-192-154.us-east-2.compute.amazonaws.com:~/taxflow-pro/artifacts/tax-app/dist/public/
+# 3. api-server (on the box):
 ssh -i ~/Downloads/taxflow-key.pem ubuntu@ec2-18-188-192-154.us-east-2.compute.amazonaws.com
-cd ~/taxflow-pro
-git checkout -- pnpm-lock.yaml      # pull conflicts on the lock every time
-git pull origin main
-pnpm install                        # applies the path-to-regexp/qs CVE overrides
+cd ~/taxflow-pro && git checkout -- pnpm-lock.yaml && git pull origin main && pnpm install
 export DATABASE_URL=$(pm2 env 0 | awk -F": " '/^DATABASE_URL:/ {print $2; exit}')
 export AI_API_KEY=$(pm2 env 0 | awk -F": " '/^AI_API_KEY:/ {print $2; exit}')
-# NO `db push` — schema unchanged this session.
-pnpm --filter @workspace/api-server run build
-pm2 restart taxflow
+# 4. Prod indexes (one-time, non-blocking) — psql into Neon and run:
+#   CREATE INDEX CONCURRENTLY IF NOT EXISTS clients_updated_at_idx ON clients (updated_at);
+#   CREATE INDEX CONCURRENTLY IF NOT EXISTS clients_email_idx ON clients (email);
+#   CREATE INDEX CONCURRENTLY IF NOT EXISTS tax_returns_agi_idx ON tax_returns (adjusted_gross_income);
+pnpm --filter @workspace/api-server run build && pm2 restart taxflow
 curl http://localhost:8080/api/healthz
 ```
-
-## What's left (prioritized)
-
-1. **Security CRITICALs (D15)** — still the #1 risk and unchanged by this audit
-   (it was scoped "quick wins only"): **no authentication/authorization on any
-   API route**, PII stored plaintext at rest, prod served over HTTP. Do not put
-   real client PII on the live box until auth + per-firm tenant isolation +
-   encryption-at-rest + TLS land. Multi-week; needs a model decision
-   (session-cookie vs JWT), a TLS terminator (ALB/CloudFront/nginx+certbot),
-   and KMS for at-rest encryption.
-2. ~~Reconcile the 3 stale integration suites~~ — **DONE 2026-05-28**
-   (follow-up session; see "Secondary finding" above).
-3. **Versioned-migrations cutover** (`docs/db-migrations.md`) — **DEV DB
-   baselined + validated 2026-05-28** (0000 verified on a fresh DB → 13 tables;
-   `migrate` on dev is now a confirmed no-op). **PROD (Neon) baseline is the one
-   remaining step** — run it once on the box (canonical 0000 hash is in the
-   doc), then flip the EC2 deploy `push` line to `migrate`.
-4. **God-file refactors** (deferred): planningEngine.ts (~7.7k lines),
-   `calculateStateAdditionalCredits` (853-line fn), ClientDetail.tsx (~5k).
-   Maintainability-only; do in a dedicated session (850+-line block moves are
-   too risky to rush).
 
 ## How to start the next Claude session
 
 ```
 Project: TaxFlow Assistant.
 
-Read first: .claude/handoff.md, CLAUDE.md, docs/db-migrations.md, docs/coverage-matrix.md.
+Read first: .claude/handoff.md, CLAUDE.md, docs/coverage-matrix.md.
 
-Where we left off (2026-05-28): deep audit shipped — 5 tax-correctness bugs
-fixed (QBI cap, NIIT base, charitable ceiling, dependent-care MFS), 4 typecheck
-defects fixed, CVEs patched, DB writes wrapped in transactions, versioned
-migrations baselined, 28 new hand-calc'd scenarios. 36 no-API suites green
-(2,915 assertions). I rotated nothing — USER must rotate the leaked Neon
-password + Gemini key (see handoff).
+Where we left off (2026-05-29): second deep audit shipped on branch
+deep-audit-2026-05-29 (5 commits) — 22 verified bug fixes (federal + state tax
+correctness, 5 planning detectors, security/perf/frontend), DB-07 dashboard
+aggregate + scaling indexes, FE-02 W-2 focus bug. 37 no-API suites / 2,943
+assertions green; clean typecheck; UI verified live.
 
-Top recommendation: D15 — authentication + per-firm tenant isolation +
-encryption-at-rest + TLS. It's the #1 risk and a hard blocker before any real
-client PII (or a paid partner) touches the live box. Needs your decisions on
-auth model + hosting/TLS + KMS before building.
+Top recommendation: FORM-02 + FORM-04 (the two HIGH-severity CPA-form bugs with
+verified specs in the handoff) — both are small + isolated and each needs one
+schema addition. Do them together with the prod-migration-snapshot-path fix
+(handoff item 3) so the schema change ships cleanly. Then tackle the N×M planning
+query storm (handoff item 2). Auth + multi-tenancy (D15) remains the #1 risk and
+needs your architecture decisions before building.
 ```
