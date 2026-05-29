@@ -1135,7 +1135,9 @@ header("E7-1 — No §179/bonus adjustments, both zero");
 // E8 — NYC School Tax Credit + MCTMT
 // School Tax Credit (IT-201 Line 69b): flat $63 single / $125 MFJ when
 //   NYAGI < $250k. NYC UBT explicitly NOT modeled (complex entity-type rules).
-// MCTMT: tiered SE tax. 0.34% over $50k → 0.50% over $362.5k → 0.60% over $675k.
+// MCTMT: STL-01 — for TY2024+ a self-employed individual in MCTD Zone 1 (the
+//   five NYC boroughs) pays a FLAT 0.60% on net SE earnings over the $50k
+//   exclusion. (The graduated rates are the EMPLOYER payroll-expense rates.)
 // ============================================================================
 section("E8 — NYC School Tax Credit + MCTMT");
 
@@ -1179,11 +1181,11 @@ header("E8-1 — Single $300k > $250k NYAGI, no school credit");
   check("E8-1", "schoolTaxCredit = $0", out.nycSchoolTaxCredit, 0, 1);
 }
 
-// --- E8+3: NYC SE filer $200k → MCTMT $510 ---
+// --- E8+3: NYC SE filer $200k → MCTMT $900 (STL-01 flat 0.60%) ---
 // Hand-calc:
-//   Net SE = $200,000; exemption $50k; tier1 spread = $200k - $50k = $150k
-//   MCTMT = $150,000 × 0.34% = $510
-header("E8+3 — NYC SE $200k → MCTMT 0.34% × ($200k - $50k) = $510");
+//   Net SE = $200,000; exclusion $50k; base = $200k - $50k = $150k
+//   MCTMT = $150,000 × 0.60% = $900
+header("E8+3 — NYC SE $200k → MCTMT 0.60% × ($200k - $50k) = $900");
 {
   const out = calculateNycLocalTax({
     nysTaxableIncome: 180000,
@@ -1193,15 +1195,13 @@ header("E8+3 — NYC SE $200k → MCTMT 0.34% × ($200k - $50k) = $510");
     taxYear: 2024,
     netSeEarnings: 200000,
   });
-  check("E8+3", "MCTMT = $510", out.nycMctmt, 510, 1, "0.34% × $150k tier 1");
+  check("E8+3", "MCTMT = $900", out.nycMctmt, 900, 1, "flat 0.60% × $150k (STL-01)");
 }
 
-// --- E8+4: NYC SE filer $500k → MCTMT tier 1 + tier 2 ---
+// --- E8+4: NYC SE filer $500k → MCTMT $2,700 (STL-01 flat 0.60%) ---
 // Hand-calc:
-//   tier1 = min(500k, 362.5k) - 50k = 312,500 × 0.34% = $1,062.50
-//   tier2 = max(0, min(500k, 675k) - 362.5k) = 137,500 × 0.50% = $687.50
-//   total = $1,750
-header("E8+4 — NYC SE $500k → MCTMT $1,750 (tier 1 + 2)");
+//   base = $500,000 - $50,000 = $450,000 × 0.60% = $2,700
+header("E8+4 — NYC SE $500k → MCTMT 0.60% × ($500k - $50k) = $2,700");
 {
   const out = calculateNycLocalTax({
     nysTaxableIncome: 470000,
@@ -1211,7 +1211,7 @@ header("E8+4 — NYC SE $500k → MCTMT $1,750 (tier 1 + 2)");
     taxYear: 2024,
     netSeEarnings: 500000,
   });
-  check("E8+4", "MCTMT = $1,750", out.nycMctmt, 1750, 1);
+  check("E8+4", "MCTMT = $2,700", out.nycMctmt, 2700, 1);
 }
 
 // --- E8-2: NYC SE filer below $50k → no MCTMT ---

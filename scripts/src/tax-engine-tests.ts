@@ -187,8 +187,11 @@ check("CA 2024 $200k MFJ", calculateStateTax(200000, "CA", "married_filing_joint
 // Just verify the surtax adds correctly relative to a baseline below threshold
 const ca999k = calculateStateTax(999000, "CA", "single", 2024);
 const ca1500k = calculateStateTax(1500000, "CA", "single", 2024);
-// The surtax adds $5,000 (500k × 1%); the bracket math adds (501k × 12.3%) for bracket-only difference
-const expectedDiff = (1500000 - 999000) * 0.123 + (1500000 - 1000000) * 0.01;
+// STL-03: the CA 1% MHST is imposed on CA TAXABLE INCOME (AGI − $5,540 single
+// std ded), not raw AGI. Surtax base at $1.5M AGI = $1,494,460; the $999k
+// baseline (taxable $993,460) is below $1M so adds no surtax. Bracket delta is
+// unchanged ($501k of top-bracket income at 12.3%). → 61,623 + 4,944.60 = 66,567.60.
+const expectedDiff = (1500000 - 999000) * 0.123 + ((1500000 - 5540) - 1000000) * 0.01;
 check("CA 2024 surtax: $1.5M − $999k delta", ca1500k - ca999k, expectedDiff);
 
 header("D. State tax: progressive — New York 2024");

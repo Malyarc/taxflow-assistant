@@ -625,7 +625,9 @@ section("Scenario 16 — NYC SE filer single $250k Sched C, MCTMT applies");
   approx("S16", "Taxable income ≈ $177,279", r.taxableIncome, 177279, 100);
   approx("S16", "Federal liability ≈ $63,469", r.federalTaxLiability, 63469, 200);
   approx("S16", "NY state ≈ $13,233", r.stateTaxLiability, 13233, 100);
-  approx("S16", "Local tax (NYC PIT + MCTMT) ≈ $9,333", r.localTaxLiability, 9333, 200);
+  // STL-01: NYC MCTMT is now a flat 0.60% — (230,875 net SE − 50,000) × 0.60%
+  // = $1,085.25 (was $615 graduated). + unchanged NYC PIT ≈ $8,720 → ≈ $9,805.
+  approx("S16", "Local tax (NYC PIT + MCTMT) ≈ $9,805", r.localTaxLiability, 9805, 60);
   exact("S16", "Locality = NYC", r.localTaxJurisdiction, "NYC");
 }
 

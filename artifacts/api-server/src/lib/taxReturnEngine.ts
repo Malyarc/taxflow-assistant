@@ -2146,26 +2146,29 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     }
   }
 
-  const qbiCombinedIncome =
-    (qbiIncomeEffective + k1QbiContributionEffective) * sstbPhaseFraction;
-  const qbi = calculateQbi({
-    qbiIncome: qbiCombinedIncome,
-    taxableIncomeBeforeQbi: calc.taxableIncome,
-    // §199A(e)(3): the taxable-income limit is 20% of (taxable income − net
-    // capital gain), where net capital gain = preferential LTCG + qualified
-    // dividends. Omitting it lets QBI wrongly shelter preferential-rate income.
-    netCapitalGain: ltcgPreferential + qualifiedDividends,
-  });
-
-  // K4 — NOL carryforward (post-TCJA 80% limit, IRC §172(a)(2)).
-  // NOL deduction is the lesser of (NOL carryforward, 80% × taxable income
-  // before the NOL deduction). Applied between calc.taxableIncome and QBI.
+  // K4 — NOL carryforward (post-TCJA 80% limit, IRC §172(a)(2)). Computed
+  // BEFORE QBI (FED-04) so the §199A 20%-of-taxable-income cap is keyed to
+  // POST-NOL taxable income (the NOL is subtracted in arriving at §63 taxable
+  // income / Form 8995 Line 11). The 80% NOL limit itself stays on pre-NOL,
+  // pre-QBI taxable income per §172(a)(2) ("without regard to §§172/199A/250").
   // Unused NOL carries to next year. Engine returns transparency fields.
   const nolCarryforwardAvailable = Math.max(0, nolCarryforwardAdj);
   const nolLimit = 0.80 * Math.max(0, calc.taxableIncome);
   const nolDeduction = Math.min(nolCarryforwardAvailable, Math.max(0, nolLimit));
   const nolCarryforwardRemaining = Math.max(0, nolCarryforwardAvailable - nolDeduction);
   const taxableAfterNol = Math.max(0, calc.taxableIncome - nolDeduction);
+
+  const qbiCombinedIncome =
+    (qbiIncomeEffective + k1QbiContributionEffective) * sstbPhaseFraction;
+  const qbi = calculateQbi({
+    qbiIncome: qbiCombinedIncome,
+    // FED-04: cap base is POST-NOL taxable income, per Form 8995 Line 11.
+    taxableIncomeBeforeQbi: taxableAfterNol,
+    // §199A(e)(3): the taxable-income limit is 20% of (taxable income − net
+    // capital gain), where net capital gain = preferential LTCG + qualified
+    // dividends. Omitting it lets QBI wrongly shelter preferential-rate income.
+    netCapitalGain: ltcgPreferential + qualifiedDividends,
+  });
 
   const taxableAfterQbi = Math.max(0, taxableAfterNol - qbi.finalDeduction);
 
@@ -2271,7 +2274,11 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   );
   const niit = calculateNiit({
     investmentIncome: totalInvestmentIncomeForNiit,
-    modifiedAgi: calc.adjustedGrossIncome,
+    // FED-03 — §1411(d): NIIT MAGI = AGI + the §911(a)(1) FEIE add-back. The
+    // §911(d)(6) net-down for deductions allocable to excluded income is not
+    // modeled (sub-gap), so we add back the gross exclusion — exact for the
+    // common full-exclusion / no-allocable-deduction expat case.
+    modifiedAgi: calc.adjustedGrossIncome + feieExclusion,
     filingStatus: client.filingStatus,
   });
 
@@ -2423,6 +2430,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
       // E8 — Net SE earnings for NYC MCTMT. Only applied when
       // localityCode === "NYC".
       netSeEarnings: se.netSeEarnings,
+      // STL-02 — net Schedule-C/1099-NEC profit (line 31) for PA local EIT /
+      // OH SDIT earned-income base (legally includes SE net profit).
+      netSeProfit: netSeIncome,
       // C10 — Optional CPA-supplied OH IT-1040 Line 3 for SDIT traditional
       // base. Read via adjustment marker `oh_sdit_traditional_base`. Only
       // applied for OH SDIT-traditional districts.
@@ -2583,12 +2593,20 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   );
 
   // ── Step 8: Refundable credits + PTC reconciliation ───
+  // FED-06 — §32(i)(2) EITC disqualifying-investment-income cliff. Unlike the
+  // §1411 NIIT base, §32(i)(2)(B) COUNTS tax-exempt interest, so add it back.
+  // The remaining components (taxable interest + dividends, net capital gain,
+  // passive/non-business rents & royalties) are shared with the NIIT base, and
+  // ordinary-course-of-business rents that §32(i)(2)(C) excludes are already
+  // out of that base (RE-pro rents excluded) — so it matches §32(i).
+  const eitcDisqualifyingIncome =
+    totalInvestmentIncomeForNiit + form1099Summary.taxExemptInterest;
   const eitc = calculateEitc({
     filingStatus: client.filingStatus,
     qualifyingChildren: client.dependentsUnder17 ?? 0,
     earnedIncome: earnedIncomeHousehold,
     agi: calc.adjustedGrossIncome,
-    investmentIncome: totalInvestmentIncomeForNiit,
+    investmentIncome: eitcDisqualifyingIncome,
     taxYear,
   });
 

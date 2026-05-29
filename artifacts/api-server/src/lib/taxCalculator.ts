@@ -315,8 +315,9 @@ export function calculateStateTaxWithBreakdown(
   const brackets = pickStateBrackets(info.brackets, status);
   const breakdown = applyBracketsWithBreakdown(stateTaxable, brackets);
   let total = breakdown.reduce((s, b) => s + b.taxFromBracket, 0);
-  if (info.surtax && federalAgi > info.surtax.threshold) {
-    total += (federalAgi - info.surtax.threshold) * info.surtax.rate;
+  // STL-03: surtax on state taxable income, not AGI (see calculateStateTax).
+  if (info.surtax && stateTaxable > info.surtax.threshold) {
+    total += (stateTaxable - info.surtax.threshold) * info.surtax.rate;
   }
   const marginalRate = breakdown.length > 0 ? breakdown[breakdown.length - 1].rate : 0;
   return { total: Math.max(0, total), breakdown, marginalRate, stateName: info.name, hasIncomeTax: true };
@@ -765,6 +766,9 @@ export function calculateFlatRateLocalTax(params: {
    *  taxable income before personal exemption); engine uses federalAgi −
    *  state std ded when not supplied (consistent with `state_taxable`). */
   ohTraditionalBase?: number;
+  /** STL-02 — net Schedule-C/1099-NEC profit added to the PA EIT / OH SDIT
+   *  earned-income (wages_only) base. */
+  netSeProfit?: number;
 }): NycLocalTaxCalculation | null {
   const info = LOCAL_TAX_DATA[params.localityCode];
   if (info) {
@@ -781,6 +785,7 @@ export function calculateFlatRateLocalTax(params: {
       params.filingStatus,
       params.taxYear,
       params.ohTraditionalBase,
+      params.netSeProfit ?? 0,
     );
   }
   // C9 — PA bulk registry fallback
@@ -798,6 +803,7 @@ export function calculateFlatRateLocalTax(params: {
         params.filingStatus,
         params.taxYear,
         params.ohTraditionalBase,
+        params.netSeProfit ?? 0,
       );
     }
   }
@@ -819,6 +825,7 @@ export function calculateFlatRateLocalTax(params: {
         params.filingStatus,
         params.taxYear,
         params.ohTraditionalBase,
+        params.netSeProfit ?? 0,
       );
     }
   }
@@ -836,12 +843,19 @@ function computeFlatRateLocalTaxFromInfo(
   filingStatus: string,
   taxYear: number,
   ohTraditionalBase?: number,
+  netSeProfit: number = 0,
 ): NycLocalTaxCalculation {
   let base = 0;
   if (baseType === "federal_agi") {
     base = Math.max(0, federalAgi);
   } else if (baseType === "wages_only") {
-    base = Math.max(0, totalWages);
+    // STL-02 — the PA Act 32 EIT / Philadelphia NPT / OH SDIT earned-income
+    // base legally includes self-employment net profit (PA CLGS-32-1 Line 5;
+    // ORC 5748.01 via IRC §1402(a)). A net SE loss cannot reduce wage-based
+    // EIT, so the SE term is floored at 0 independently. (Sub-gap: Philadelphia
+    // self-employed file the NPT, computed here at the same resident rate,
+    // gross of the income-based Schedule SP / SE-tax-equivalent reductions.)
+    base = Math.max(0, totalWages) + Math.max(0, netSeProfit);
   } else if (baseType === "oh_traditional") {
     // C10 — OH SDIT traditional base = Ohio IT-1040 Line 3 (Ohio taxable
     // income before personal exemption). Engine approximates this as
@@ -991,6 +1005,10 @@ export function calculateMultiStateTax(params: {
     /** E8 — Net SE earnings for NYC MCTMT (Metropolitan Commuter
      *  Transportation Mobility Tax). Only applied when localityCode === "NYC". */
     netSeEarnings?: number;
+    /** STL-02 — net Schedule-C/1099-NEC profit (Sch C line 31, NOT the 92.35%
+     *  SE-tax base) added to the PA local EIT / OH SDIT earned-income base,
+     *  which legally includes self-employment net profit. */
+    netSeProfit?: number;
     /** C10 — Optional OH IT-1040 Line 3 (Ohio taxable income before personal
      *  exemption) used as the SDIT "traditional" base. When undefined, the
      *  engine approximates as federalAgi − OH std ded (Sub-gap: OH std ded
@@ -1230,6 +1248,7 @@ export function calculateMultiStateTax(params: {
       filingStatus: params.filingStatus,
       taxYear: params.taxYear,
       ohTraditionalBase: params.options?.ohTraditionalBase,
+      netSeProfit: params.options?.netSeProfit ?? 0,
     });
   }
 
@@ -1358,10 +1377,10 @@ function computePartYearAllocation(
   // We use the same options for both (e.g., taxableSocialSecurity is pro-rated
   // implicitly by the AGI ratio — slightly conservative; documented sub-gap).
   const formerStateTax = formerStateAgi > 0
-    ? calculateStateTax(formerStateAgi, formerStateUpper, filingStatus, taxYear, options)
+    ? calculateStateTax(formerStateAgi, formerStateUpper, filingStatus, taxYear, { ...options, fullYearFederalAgiForCliff: federalAgiSafe })
     : 0;
   const currentStateTax = currentStateAgi > 0
-    ? calculateStateTax(currentStateAgi, currentStateUpper, filingStatus, taxYear, options)
+    ? calculateStateTax(currentStateAgi, currentStateUpper, filingStatus, taxYear, { ...options, fullYearFederalAgiForCliff: federalAgiSafe })
     : 0;
 
   return {
@@ -1565,22 +1584,18 @@ export function calculateNycLocalTax(params: {
     nycSchoolTaxCredit = isMfj ? 125 : 63; // includes QSS and HoH via isMfj truthy path
   }
 
-  // E8 — MCTMT (Metropolitan Commuter Transportation Mobility Tax, NYS
-  // PMT-MTA-6). Tiered rate on net SE earnings allocated to MCTD above
-  // the $50,000 annual exemption:
-  //   $50,001 - $362,500: 0.34%
-  //   $362,501 - $675,000: 0.50% (incremental)
-  //   $675,001+: 0.60% (incremental)
-  // Engine applies in the simplified-tier form for most filers.
+  // E8 — MCTMT (Metropolitan Commuter Transportation Mobility Tax, NY Tax Law
+  // Art. 23). STL-01: for TY2024+ a SELF-EMPLOYED individual doing business in
+  // MCTD Zone 1 (the five NYC boroughs = localityCode "NYC") pays a FLAT 0.60%
+  // on net SE earnings over the $50,000 annual exclusion. The graduated
+  // 0.11/0.23/0.60% schedule is the EMPLOYER payroll-expense rate, NOT the
+  // self-employed rate (TY2023 self-employed was 0.47%). Zone 2 (flat 0.34%)
+  // is out of scope on this NYC-gated path.
+  const MCTMT_SE_ZONE1_RATE = 0.0060; // TY2024+
   const netSe = Math.max(0, params.netSeEarnings ?? 0);
   let nycMctmt = 0;
   if (netSe > 50000) {
-    const tier1Cap = 362500;
-    const tier2Cap = 675000;
-    const inTier1 = Math.min(netSe, tier1Cap) - 50000;
-    const inTier2 = Math.max(0, Math.min(netSe, tier2Cap) - tier1Cap);
-    const inTier3 = Math.max(0, netSe - tier2Cap);
-    nycMctmt = inTier1 * 0.0034 + inTier2 * 0.0050 + inTier3 * 0.0060;
+    nycMctmt = (netSe - 50000) * MCTMT_SE_ZONE1_RATE;
   }
 
   // E8 — School Tax Credit per IT-201 Line 69 is REFUNDABLE at the state
@@ -1627,6 +1642,10 @@ export function calculateStateTax(
      *  ($9,500 added to eligibility thresholds per dependent). Pass
      *  `client.dependentsUnder17 + client.otherDependents`. */
     dependentCount?: number;
+    /** STL-04 — Part-year: full-year federal AGI used ONLY for the IL
+     *  personal-exemption AGI cliff test (IL Sched NR computes Line 10 as a
+     *  full-year resident). Defaults to federalAgi for full-year filers. */
+    fullYearFederalAgiForCliff?: number;
   },
 ): number {
   const year = resolveTaxYear(taxYear);
@@ -1658,7 +1677,11 @@ export function calculateStateTax(
   }
   if (info.personalExemptionAgiCliff && personalExemption > 0) {
     const cliff = pickStateStdDeduction(info.personalExemptionAgiCliff, status);
-    if (cliff > 0 && federalAgi > cliff) {
+    // STL-04: the cliff is tested on FULL-YEAR federal AGI (IL Sched NR
+    // computes Line 10 as a full-year resident). Part-year callers pass the
+    // full-year AGI; full-year filers fall back to federalAgi.
+    const cliffAgi = options?.fullYearFederalAgiForCliff ?? federalAgi;
+    if (cliff > 0 && cliffAgi > cliff) {
       personalExemption = 0;
     }
   }
@@ -1688,11 +1711,11 @@ export function calculateStateTax(
   const brackets = pickStateBrackets(info.brackets, status);
   let tax = applyBrackets(stateTaxable, brackets);
 
-  // Apply surtax (e.g. MA millionaire's tax, CA mental health 1% over $1M).
-  // Surtax thresholds use federal AGI per state statute; SS exclusion does
-  // not apply to surtax threshold determination (surtax is on raw AGI band).
-  if (info.surtax && federalAgi > info.surtax.threshold) {
-    tax += (federalAgi - info.surtax.threshold) * info.surtax.rate;
+  // Apply surtax (MA 4% millionaire's tax, CA 1% mental-health tax over $1M).
+  // STL-03: both are imposed on state TAXABLE INCOME over the threshold (MA
+  // M.G.L. ch.62 §4(b); CA R&TC §17043 / Form 540 Line 19), NOT on raw AGI.
+  if (info.surtax && stateTaxable > info.surtax.threshold) {
+    tax += (stateTaxable - info.surtax.threshold) * info.surtax.rate;
   }
 
   // E11 — PA Schedule SP Tax Forgiveness (61 Pa. Code §111). Applied as a
@@ -4595,9 +4618,11 @@ export function calculateFederalTaxWithCapitalGains(params: {
   // portion within kiddie income is also taxed at parent rate in this model;
   // IRS Form 8615 uses a more elaborate stacking with the QDCG worksheet).
   let kiddieTotal = ordinaryTax + prefTax;
-  if (params.kiddieTax && params.kiddieTax.isKiddieTaxFiler && params.kiddieTax.unearnedIncome > 2600) {
+  // FED-02: net-unearned threshold is year-indexed ($2,600 TY2024 / $2,700 TY2025).
+  const kiddieThreshold = KIDDIE_TAX_THRESHOLD[year];
+  if (params.kiddieTax && params.kiddieTax.isKiddieTaxFiler && params.kiddieTax.unearnedIncome > kiddieThreshold) {
     const totalTaxable = ordinaryWithStcg + ltcgIncluded;
-    const netUnearned = params.kiddieTax.unearnedIncome - 2600;
+    const netUnearned = params.kiddieTax.unearnedIncome - kiddieThreshold;
     const amountAtParentRate = Math.min(netUnearned, totalTaxable);
     if (amountAtParentRate > 0) {
       // Child's remaining ordinary base (after carving out the parent-rate portion).
@@ -4631,6 +4656,12 @@ export function calculateFederalTaxWithCapitalGains(params: {
 // Net earnings = SE income × 0.9235 (the 7.65% employer-equivalent reduction).
 // Half of SE tax is deductible above-the-line on Form 1040.
 export const SS_WAGE_BASE: Record<TaxYear, number> = { 2024: 168600, 2025: 176100 };
+
+// FED-02 — Form 8615 kiddie-tax net-unearned-income threshold = 2× the limited
+// dependent standard deduction (§1(g)(4) + §63(c)(5)(A), inflation-adjusted).
+// TY2024 $2,600 (Rev. Proc. 2023-34); TY2025 $2,700 (Rev. Proc. 2024-40). Drives
+// BOTH the filing trigger and the Form 8615 Line 2 subtraction.
+export const KIDDIE_TAX_THRESHOLD: Record<TaxYear, number> = { 2024: 2600, 2025: 2700 };
 const SS_RATE = 0.124;
 const MEDICARE_RATE = 0.029;
 const SE_NET_EARNINGS_FACTOR = 0.9235;
@@ -5092,11 +5123,16 @@ export function calculateAmt(params: {
   const exemption = Math.max(0, baseExemption - phaseOut);
   const amtBase = Math.max(0, amti - exemption);
 
+  // FED-01: the 26%/28% breakpoint is halved for MFS (Form 6251: "$232,600 —
+  // or $116,300 if married filing separately"; 2025: $239,100 / $119,550).
+  const rateBreakpoint =
+    fs === "married_filing_separately" ? data.rateBreakpoint / 2 : data.rateBreakpoint;
+
   // Path 1 — AMT at full 26/28% on the entire AMT base (original behavior).
   const amtAtFullRateOnAmtBase =
-    amtBase <= data.rateBreakpoint
+    amtBase <= rateBreakpoint
       ? amtBase * 0.26
-      : data.rateBreakpoint * 0.26 + (amtBase - data.rateBreakpoint) * 0.28;
+      : rateBreakpoint * 0.26 + (amtBase - rateBreakpoint) * 0.28;
 
   // Path 2 — Form 6251 Part III: preserve LTCG/QDIV at 0/15/20% preferential rates.
   // Splits the AMT base into ordinary portion (taxed at 26/28%) and LTCG/QDIV
@@ -5108,9 +5144,9 @@ export function calculateAmt(params: {
   if (ltcgQdivInAmtBase > 0) {
     const ordinaryPortion = Math.max(0, amtBase - ltcgQdivInAmtBase);
     const amtOnOrdinary =
-      ordinaryPortion <= data.rateBreakpoint
+      ordinaryPortion <= rateBreakpoint
         ? ordinaryPortion * 0.26
-        : data.rateBreakpoint * 0.26 + (ordinaryPortion - data.rateBreakpoint) * 0.28;
+        : rateBreakpoint * 0.26 + (ordinaryPortion - rateBreakpoint) * 0.28;
     const ltcgTax = calculateLtcgQdivStackedTax(ordinaryPortion, ltcgQdivInAmtBase, fs, year);
     amtWithPreferentialRates = amtOnOrdinary + ltcgTax;
   }
