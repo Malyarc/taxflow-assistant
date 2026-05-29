@@ -331,9 +331,9 @@ export function buildForm8824Pdf(
     // ── Footnote / signature ──
     doc.fontSize(9).fillColor("#666");
     doc.text(
-      "Sub-gap (documented): Recognized §1031 gain currently flows to Schedule D LTCG but is NOT propagated " +
-        "to the NIIT investment-income base. CPA should review §1411(c)(1)(B) treatment manually. Form 8824 " +
-        "Part IV (§1043 conflict-of-interest sales) not rendered.",
+      "Note: recognized §1031 boot gain flows to Schedule D LTCG AND is already included in the engine's " +
+        "§1411 NIIT investment-income base (to the extent it survives capital-loss netting) — do NOT add " +
+        "3.8% NIIT on it manually. Form 8824 Part IV (§1043 conflict-of-interest sales) not rendered.",
       54,
       doc.y,
       { width: 504 },
