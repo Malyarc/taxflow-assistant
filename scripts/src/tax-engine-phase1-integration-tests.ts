@@ -206,11 +206,17 @@ async function testScheduleC() {
   console.log("\n══════════ 2. Schedule C — expenses reduce SE income ══════════\n");
 
   // 1099-NEC $50k gross, $20k expenses → net $30k SE income
-  // SE tax: $30k × 0.9235 × 15.3% = $4,238.83
-  // 1/2 SE tax = $2,119.42 (above-the-line)
+  // SE tax: $30k × 0.9235 × 15.3% = $4,238.87
+  // 1/2 SE tax = $2,119.43 (above-the-line)
   // Total income = $30k (net SE only)
-  // AGI = $30k - $2,119.42 = $27,880.58
-  // Std single = $14,600, Taxable = $13,280.58. Federal: $1,160 + ($1,680.58 × 0.12) = $1,160 + $201.67 = $1,361.67
+  // AGI = $30k - $2,119.43 = $27,880.57
+  // Std single = $14,600, Taxable before QBI = $13,280.57.
+  // C3 QBI auto-default (2026-05-27): Sch C net (less half-SE) defaults to QBI.
+  //   QBI base = $30,000 − $2,119.43 = $27,880.57.
+  //   QBI deduction = min(20% × $27,880.57, 20% × $13,280.57) = min($5,576.11, $2,656.11) = $2,656.11 (cap binds).
+  //   Taxable after QBI = $13,280.57 − $2,656.11 = $10,624.46 (drops into 10% bracket).
+  //   Federal ordinary = $10,624.46 × 10% = $1,062.45.
+  // Total federal = $1,062.45 ordinary + $4,238.87 SE = $5,301.31.
   console.log("── 2a. Schedule C: $50k gross - $20k expenses → SE tax on $30k net ──");
   {
     const cid = await makeClient({ firstName: "Sched_C", state: "FL" });
@@ -222,10 +228,9 @@ async function testScheduleC() {
       check("Schedule C expenses persisted = $20k", Number(r.scheduleCExpenses), 20000, 1);
       check("Total income = net SE $30k", Number(r.totalIncome), 30000, 1);
       // SE tax computed on $30k net (after Schedule C)
-      check("SE tax $4,238.83 (on $30k net)", Number(r.selfEmploymentTax), 4238.83, 1);
-      // Total fed liability = ordinary + SE
-      // Ordinary fed on taxable $13,280.58 = $1,361.67
-      check("Federal tax incl. SE ~$5,600.50", Number(r.federalTaxLiability), 5600.50, 5);
+      check("SE tax $4,238.87 (on $30k net)", Number(r.selfEmploymentTax), 4238.87, 1);
+      // Total fed liability = ordinary (on taxable after QBI) + SE
+      check("Federal tax incl. SE $5,301.31 (QBI auto-default, cap-bound)", Number(r.federalTaxLiability), 5301.31, 5);
     } finally {
       await delClient(cid);
     }

@@ -60,8 +60,15 @@ async function settle() { await new Promise((r) => setTimeout(r, 75)); }
 async function run() {
   // ──────────────────────────────────────────────────────────────────────
   console.log("── 1. S-corp K-1 active, $50k Box 1 → AGI $130k ──");
-  // Hand-calc (matches pure Test A): AGI = $80k W-2 + $50k K-1 = $130k.
-  // Taxable = $115,400; federal tax = $20,738.50.
+  // Hand-calc: AGI = $80k W-2 + $50k K-1 = $130k.
+  //   Std (single) $14,600 → taxable before QBI = $115,400.
+  //   C3 QBI auto-default (2026-05-27): active S-corp K-1 Box 1 with
+  //   section199aQbi unset defaults to QBI. QBI base = Box 1 $50,000
+  //   (engine does NOT net reasonable comp — documented sub-gap).
+  //   QBI deduction = min(20% × $50,000, 20% × $115,400) = min($10,000, $23,080) = $10,000.
+  //   Taxable after QBI = $115,400 − $10,000 = $105,400.
+  //   Federal tax (single 2024) on $105,400 (24% bracket):
+  //     $17,168.50 + 24% × ($105,400 − $100,525) = $17,168.50 + $1,170 = $18,338.50.
   await withTempClient({}, async (cid) => {
     await api(`/clients/${cid}/w2data`, {
       method: "POST",
@@ -81,8 +88,8 @@ async function run() {
     await settle();
     const r = await api<any>(`/clients/${cid}/tax-return`);
     check("AGI = $130,000", Number(r.adjustedGrossIncome), 130000, 2);
-    check("Taxable = $115,400", Number(r.taxableIncome), 115400, 2);
-    check("Federal tax = $20,738.50", Number(r.federalTaxLiability), 20738.5, 2);
+    check("Taxable = $105,400 (after $10k QBI auto-default on active K-1)", Number(r.taxableIncome), 105400, 2);
+    check("Federal tax = $18,338.50", Number(r.federalTaxLiability), 18338.5, 2);
     check("SE tax = $0 (S-corp K-1)", Number(r.selfEmploymentTax ?? 0), 0, 0.01);
   });
 
@@ -143,7 +150,16 @@ async function run() {
 
   // ──────────────────────────────────────────────────────────────────────
   console.log("\n── 4. Partnership K-1 SE flows to Schedule SE (Test G mirror) ──");
-  // AGI = $55,761.13; SE tax = $8,477.73; total federal = $13,185.07.
+  // Hand-calc: K-1 Box 1 $60k active partnership + SE earnings $60k.
+  //   SE tax = $60,000 × 0.9235 × 15.3% = $8,477.73; half-SE = $4,238.87.
+  //   AGI = $60,000 − $4,238.87 = $55,761.13. Std $14,600 → taxable before QBI = $41,161.13.
+  //   C3 QBI auto-default: active K-1 Box 1 → QBI base $60,000 (engine K-1 path does
+  //   NOT net half-SE — documented sub-gap). But the 20%-of-taxable cap binds either way:
+  //   QBI = min(20% × $60,000, 20% × $41,161.13) = min($12,000, $8,232.23) = $8,232.23.
+  //   (Same result whether base is $60k or $55,761.13, since the cap is lower than both.)
+  //   Taxable after QBI = $41,161.13 − $8,232.23 = $32,928.91.
+  //   Federal ordinary (single 2024, 12% bracket) = $1,160 + 12% × ($32,928.91 − $11,600) = $3,719.47.
+  //   Total federal = $3,719.47 + SE $8,477.73 = $12,197.20.
   await withTempClient({}, async (cid) => {
     await api(`/clients/${cid}/k1s`, {
       method: "POST",
@@ -160,7 +176,7 @@ async function run() {
     const r = await api<any>(`/clients/${cid}/tax-return`);
     check("AGI = $55,761.13", Number(r.adjustedGrossIncome), 55761.13, 1);
     check("SE tax = $8,477.73", Number(r.selfEmploymentTax ?? 0), 8477.73, 1);
-    check("Federal tax = $13,185.07", Number(r.federalTaxLiability), 13185.07, 1);
+    check("Federal tax = $12,197.20 (after QBI auto-default, cap-bound)", Number(r.federalTaxLiability), 12197.20, 1);
   });
 
   // ──────────────────────────────────────────────────────────────────────

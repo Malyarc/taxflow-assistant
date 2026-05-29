@@ -78,17 +78,22 @@ already-known security posture (no auth yet = D15).
   three full-pipeline suites (integration / deep-integration / new-features),
   which validates the new DB transactions end-to-end.
 
-## Known SECONDARY finding (pre-existing — NOT a regression from this session)
+## Secondary finding — RECONCILED 2026-05-28 (follow-up session)
 
-3 live-API integration suites (`tax-engine-scenarios`, `-phase1-integration`,
-`-k1-integration`) have **stale expected values** that predate the C3
-QBI-auto-default (2026-05-27). **PROVEN pre-existing**: they fail *identically*
-at the pre-audit baseline `8db8375`, and the maintained no-API suites all pass.
-Example: `$80k W-2 + $50k active S-corp K-1` now correctly gets a $10k QBI
-auto-default → taxable $105,400 (engine, CORRECT), but the test still asserts
-the pre-C3 $115,400. A **follow-up task is spun off** to reconcile these (needs
-fresh per-scenario hand-calcs + a live API). `tax-engine-ai-overlay-tests`
-needs a real `AI_API_KEY` (a dummy key fails extraction → doc goes `failed`).
+The 3 live-API integration suites (`tax-engine-scenarios`,
+`-phase1-integration`, `-k1-integration`) that had **stale expected values**
+predating the C3 QBI-auto-default (2026-05-27) are now **fixed**. All 9 stale
+assertions were independently re-hand-calc'd against the auto-default (active
+K-1 Box 1 + Sch C net SE → 20% §199A deduction, bound by either the
+20%-of-QBI amount or the 20%-of-(taxable − net-cap-gain) cap), confirmed to
+match the engine, and rewritten with Hand-calc comment blocks. Example:
+`$80k W-2 + $50k active S-corp K-1` → $10k QBI auto-default → taxable $105,400,
+federal tax $18,338.50 (was asserting the pre-C3 $115,400 / $20,738.50).
+**All three suites now green**: K-1 23/23, phase1 55/0, scenarios 95/0.
+
+`tax-engine-ai-overlay-tests` still needs a real `AI_API_KEY` (a dummy key
+fails extraction → doc goes `failed` → approve correctly 400s with
+`"only 'pending_review' can be approved"`). Environmental, not a code issue.
 
 ## Deploy steps (for the user)
 
@@ -119,8 +124,8 @@ curl http://localhost:8080/api/healthz
    encryption-at-rest + TLS land. Multi-week; needs a model decision
    (session-cookie vs JWT), a TLS terminator (ALB/CloudFront/nginx+certbot),
    and KMS for at-rest encryption.
-2. **Reconcile the 3 stale integration suites** (spun-off task) — mechanical,
-   needs fresh hand-calcs + a live API.
+2. ~~Reconcile the 3 stale integration suites~~ — **DONE 2026-05-28**
+   (follow-up session; see "Secondary finding" above).
 3. **Versioned-migrations cutover** (`docs/db-migrations.md`) — baseline the
    existing dev + prod DBs, then switch the EC2 deploy from `push` to `migrate`.
 4. **God-file refactors** (deferred): planningEngine.ts (~7.7k lines),

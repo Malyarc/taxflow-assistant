@@ -247,16 +247,20 @@ async function main() {
       const r = await getReturn(cid);
       // Total income = $60k + $25k = $85k
       // SE: $25k × 0.9235 = $23,087.50; SE tax = $23,087.50 × 15.3% = $3,532.39
-      // 1/2 SE deduction = $1,766.20
-      // AGI = $85k - $1,766.20 = $83,233.80
-      // Std deduction $14,600. Taxable = $68,633.80
-      // Federal ordinary: 1160 + 4266 + (68633.80-47150)×.22 = 1160 + 4266 + 4726.44 = $10,152.44
+      // 1/2 SE deduction = $1,766.19
+      // AGI = $85k - $1,766.19 = $83,233.81
+      // Std deduction $14,600. Taxable before QBI = $68,633.81
+      // C3 QBI auto-default (2026-05-27): Sch C net (less half-SE) defaults to QBI.
+      //   QBI base = $25,000 − $1,766.19 = $23,233.81.
+      //   QBI deduction = min(20% × $23,233.81, 20% × $68,633.81) = min($4,646.76, $13,726.76) = $4,646.76.
+      //   Taxable after QBI = $68,633.81 − $4,646.76 = $63,987.05.
+      // Federal ordinary (22% bracket): 5426 + (63987.05-47150)×.22 = 5426 + 3704.15 = $9,130.15
       // Plus SE tax: $3,532.39
-      // Total fed liability = $13,684.83
+      // Total fed liability = $9,130.15 + $3,532.39 = $12,662.54
       assert(ctx, "Total income $85k", Number(r.totalIncome), 85000);
       assert(ctx, "SE tax ~$3,532", Number(r.selfEmploymentTax), 3532.39, 2);
       assert(ctx, "AGI = $85k - 1/2 SE", Number(r.adjustedGrossIncome), 83233.80, 2);
-      assert(ctx, "Total federal liability", Number(r.federalTaxLiability), 13684.83, 5);
+      assert(ctx, "Total federal liability (QBI auto-default on 1099-NEC)", Number(r.federalTaxLiability), 12662.54, 5);
       // NY state: AGI $83,234, std $8000, taxable $75,234
       // 4%×8500 + 4.5%×3200 + 5.25%×2200 + 5.5%×(75234-13900) = 340+144+115.5+3373.37 = 3972.87
       assert(ctx, "NY state tax", Number(r.stateTaxLiability), 3972.87, 5);
@@ -399,31 +403,36 @@ async function main() {
       // Total income = $250k + $50k + $40k + $30k = $370k
       // SE tax on $30k: $30k × 0.9235 × 15.3% = $4,238.83. 1/2 = $2,119.42
       // AGI = $370k - $2,119.42 = $367,880.58
-      // Std MFJ $29,200. Taxable = $338,680.58
-      // Ordinary portion = $338,680.58 - $40k LTCG - $50k QDIV = $248,680.58
-      // Federal MFJ ordinary on $248,680.58: 2320 + 8532 + 23485 + (248680.58-201050)×.24 = 2320 + 8532 + 23485 + 11431.34 = $45,768.34
-      //   wait let me recompute: 2320 + (94300-23200)×.12 + (201050-94300)×.22 + (248680.58-201050)×.24
-      //   = 2320 + 8532 + 23485 + 11431.34 = $45,768.34
-      // LTCG+QDIV $90k stacks on $248,680.58:
-      //   $248,680.58 < MFJ 15% boundary $583,750, so all $90k at 15% = $13,500
-      // Total fed ordinary+capgains = $45,768.34 + $13,500 = $59,268.34
-      // SE tax: $4,238.83
+      // Std MFJ $29,200. Taxable before QBI = $338,680.58
+      // C3 QBI auto-default (2026-05-27): Sch C net (less half-SE) from the $30k 1099-NEC
+      //   defaults to QBI. QBI base = $30,000 − $2,119.43 = $27,880.57.
+      //   net capital gain = $40k LTCG + $50k QDIV = $90,000.
+      //   QBI deduction = min(20% × $27,880.57, 20% × ($338,680.58 − $90,000))
+      //     = min($5,576.11, $49,736.11) = $5,576.11 (preliminary 20%-of-QBI binds).
+      //   Taxable after QBI = $338,680.58 − $5,576.11 = $333,104.45.
+      // Ordinary portion = $333,104.45 - $40k LTCG - $50k QDIV = $243,104.45
+      // Federal MFJ ordinary on $243,104.45: 2320 + (94300-23200)×.12 + (201050-94300)×.22 + (243104.45-201050)×.24
+      //   = 2320 + 8532 + 23485 + 10093.07 = $44,430.07
+      // LTCG+QDIV $90k stacks on $243,104.45:
+      //   $243,104.45 < MFJ 15% boundary $583,750, so all $90k at 15% = $13,500
+      // Total fed ordinary+capgains = $44,430.07 + $13,500 = $57,930.07
+      // SE tax: $4,238.87
       // CTC: 2×$2000 = $4,000. AGI $367,880 < MFJ threshold $400k → no phase-out
-      // NIIT: AGI $367,880, excess over $250k MFJ = $117,880. Investment income = $40k LTCG + $50k QDIV + $50k full divs = wait, the $50k qualified is INSIDE the $50k ordinary divs (box 1b is subset of 1a)
-      //   form1099Summary.totalInvestmentIncome = interest + ordinaryDivs(non-qualified portion=$0) + qualifiedDivs($50k) + LTCG($40k) + STCG(0) = $90k
+      // NIIT: AGI $367,880, excess over $250k MFJ = $117,880. (QBI doesn't reduce AGI/MAGI.)
+      //   Investment income = $40k LTCG + $50k QDIV (qualified is inside the $50k ordinary divs box 1a) = $90k
       //   NIIT = min($90k, $117,880) × 3.8% = $3,420
-      // Total federal liability = $59,268.34 + $4,238.83 + $3,420 = $66,927.17
+      // Total federal liability = $57,930.07 + $4,238.87 + $3,420 = $65,588.94
       // Plus Form 8959 Add'l Medicare (MFJ threshold $250k):
       //   Wages $250k = threshold → wages portion $0
       //   SE net $27,705, threshold remaining $0 → SE over $27,705 × 0.9% = $249.35
-      // Total federal liability = $66,927.17 + $249.35 = $67,176.52
-      // Apply CTC $4,000: refund/owed = withheld $50k - $67,176.52 + $4,000 = -$13,176.52 (owes)
+      // Total federal liability = $65,588.94 + $249.35 = $65,838.28
+      // Apply CTC $4,000: refund/owed = withheld $50k - $65,838.28 + $4,000 = -$11,838.28 (owes)
       assert(ctx, "Total income $370k", Number(r.totalIncome), 370000);
       assert(ctx, "SE tax ~$4,239 (MFJ — Line 9 not applied)", Number(r.selfEmploymentTax), 4238.83, 2);
       assert(ctx, "Capital gains tax 15% × $90k = $13,500", Number(r.capitalGainsTax), 13500, 5);
       assert(ctx, "NIIT 3.8% × $90k investment", Number(r.niitTax), 3420, 5);
       assert(ctx, "Add'l Medicare $249.35 on SE (MFJ wages = threshold)", Number(r.additionalMedicareTax), 249.35, 1);
-      assert(ctx, "Total federal liability ~$67,177", Number(r.federalTaxLiability), 67176.52, 10);
+      assert(ctx, "Total federal liability ~$65,838 (after QBI auto-default on 1099-NEC)", Number(r.federalTaxLiability), 65838.28, 10);
     } finally { await delClient(cid); }
   });
 
@@ -438,17 +447,22 @@ async function main() {
       await api(`/clients/${cid}/form1099data`, { method: "POST", body: JSON.stringify({ taxYear: 2024, formType: "nec", payerName: "ConsultCo", nonemployeeCompensation: 10000 }) });
       await settle();
       const r = await getReturn(cid);
-      // Note: 1099-K is reported as income but our model doesn't auto-treat it as SE.
-      // 1099-NEC $10k → SE tax: 10000 × 0.9235 × 15.3% = $1,412.96
+      // Note: 1099-K is reported as income but our model doesn't auto-treat it as SE
+      // (and thus not QBI either — only the $10k 1099-NEC is SE/QBI-eligible).
+      // 1099-NEC $10k → SE tax: 10000 × 0.9235 × 15.3% = $1,412.96. 1/2 SE = $706.48.
       // Total income = $20k + $10k = $30k
       // AGI = $30k - 1/2 SE ($706.48) = $29,293.52
-      // Std $14,600. Taxable = $14,693.52
-      // Federal ordinary: 1160 + (14693.52-11600)×.12 = 1160 + 371.22 = $1,531.22
+      // Std $14,600. Taxable before QBI = $14,693.52
+      // C3 QBI auto-default (2026-05-27): Sch C net (the $10k NEC, less half-SE) defaults to QBI.
+      //   QBI base = $10,000 − $706.48 = $9,293.52.
+      //   QBI deduction = min(20% × $9,293.52, 20% × $14,693.52) = min($1,858.70, $2,938.70) = $1,858.70.
+      //   Taxable after QBI = $14,693.52 − $1,858.70 = $12,834.82.
+      // Federal ordinary: 1160 + (12834.82-11600)×.12 = 1160 + 148.18 = $1,308.18
       // SE tax: $1,412.96
-      // Total fed = $2,944.18
+      // Total fed = $1,308.18 + $1,412.96 = $2,721.13
       assert(ctx, "Total income $30k", Number(r.totalIncome), 30000);
       assert(ctx, "SE tax (only on 1099-NEC)", Number(r.selfEmploymentTax), 1412.96, 1);
-      assert(ctx, "Total federal liability", Number(r.federalTaxLiability), 2944.18, 5);
+      assert(ctx, "Total federal liability (QBI auto-default on 1099-NEC)", Number(r.federalTaxLiability), 2721.13, 5);
     } finally { await delClient(cid); }
   });
 
@@ -692,17 +706,20 @@ async function main() {
       //   SE tax total = $9,890.69. Half SE = $4,945.34.
       // Total income = net SE $70k.
       // AGI = $70k - $4,945.34 = $65,054.66.
-      // Std $14,600. Taxable = $50,454.66.
-      // Federal ordinary: 1160 + ($47,150 - $11,600) × 12% + ($50,454.66 - $47,150) × 22%
-      //   = 1160 + 4266 + 727.02 = $6,153.02
-      // Total fed liability = $6,153.02 + SE $9,890.69 = $16,043.71
+      // Std $14,600. Taxable before QBI = $50,454.66.
+      // C3 QBI auto-default (2026-05-27): Sch C net (less half-SE) defaults to QBI.
+      //   QBI base = $70,000 − $4,945.34 = $65,054.66.
+      //   QBI deduction = min(20% × $65,054.66, 20% × $50,454.66) = min($13,010.93, $10,090.93) = $10,090.93 (cap binds).
+      //   Taxable after QBI = $50,454.66 − $10,090.93 = $40,363.73 (drops into 12% bracket).
+      // Federal ordinary: 1160 + ($40,363.73 - $11,600) × 12% = 1160 + 3451.65 = $4,611.65
+      // Total fed liability = $4,611.65 + SE $9,890.69 = $14,502.33
       // No CTC, EITC, etc. No withholding (SE pays via estimated tax).
-      // Refund = $0 - $16,043.71 = -$16,043.71 (owes)
+      // Refund = $0 - $14,502.33 = -$14,502.33 (owes)
       assert(ctx, "Schedule C expenses $30k", Number(r.scheduleCExpenses), 30000);
       assert(ctx, "Total income = net SE $70k", Number(r.totalIncome), 70000, 1);
       assert(ctx, "SE tax $9,890.69 (on net SE)", Number(r.selfEmploymentTax), 9890.69, 1);
-      assert(ctx, "Federal liability $16,043.71 (incl. SE)", Number(r.federalTaxLiability), 16043.71, 5);
-      assert(ctx, "Owes $16,043.71 (no withholding)", Number(r.federalRefundOrOwed), -16043.71, 5);
+      assert(ctx, "Federal liability $14,502.33 (incl. SE, after QBI auto-default)", Number(r.federalTaxLiability), 14502.33, 5);
+      assert(ctx, "Owes $14,502.33 (no withholding)", Number(r.federalRefundOrOwed), -14502.33, 5);
     } finally { await delClient(cid); }
   });
 
