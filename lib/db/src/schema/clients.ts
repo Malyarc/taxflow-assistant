@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, numeric, boolean, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, numeric, boolean, timestamp, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 
@@ -99,7 +99,15 @@ export const clientsTable = pgTable("clients", {
   notes: text("notes"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
-});
+}, (table) => ({
+  // DB-06/DB-08: GET /clients + /dashboard/recent-clients ORDER BY updated_at DESC
+  // — without this every list/dashboard load is a full seq-scan + sort.
+  updatedAtIdx: index("clients_updated_at_idx").on(table.updatedAt),
+  // DB-04: speed up find-by-email. NON-unique on purpose — the data already has
+  // duplicate emails (test rows), and the correct long-term model is a per-firm
+  // unique index (firm_id, lower(email)) once tenancy lands. Dedup before UNIQUE.
+  emailIdx: index("clients_email_idx").on(table.email),
+}));
 
 export const insertClientSchema = createInsertSchema(clientsTable).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertClient = z.infer<typeof insertClientSchema>;

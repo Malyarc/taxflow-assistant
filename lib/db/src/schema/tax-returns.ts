@@ -231,6 +231,9 @@ export const taxReturnsTable = pgTable(
     // index lookups slightly differently than a plain composite. Explicit
     // index here documents the intent.
     clientYearIdx: index("tax_returns_client_year_idx").on(table.clientId, table.taxYear),
+    // DB-03: supports the peer-benchmark AGI-band cohort query (and any analytic
+    // read filtering/ordering by AGI). Becomes (firm_id, agi) once tenancy lands.
+    agiIdx: index("tax_returns_agi_idx").on(table.adjustedGrossIncome),
   }),
 );
 

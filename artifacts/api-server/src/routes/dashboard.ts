@@ -20,21 +20,30 @@ router.get("/dashboard/summary", async (_req, res): Promise<void> => {
     .from(taxDocumentsTable)
     .where(inArray(taxDocumentsTable.status, ["approved", "extracted", "pending_review", "rejected"]));
 
-  const taxReturns = await db.select().from(taxReturnsTable);
-  const completedReturns = taxReturns.filter((r) => r.federalRefundOrOwed != null);
-  const pendingReturns = Number(clientCount?.count ?? 0) - completedReturns.length;
+  // DB-07: aggregate in SQL instead of loading the entire tax_returns table
+  // (the widest table in the schema, with two jsonb columns) into JS just to
+  // count rows and sum one column. One indexed scan, no row transfer.
+  const col = taxReturnsTable.federalRefundOrOwed;
+  const [agg] = await db
+    .select({
+      completed: sql<number>`count(*) filter (where ${col} is not null)`,
+      refundCount: sql<number>`count(*) filter (where ${col} > 0)`,
+      totalRefunds: sql<number>`coalesce(sum(${col}) filter (where ${col} > 0), 0)`,
+      totalOwed: sql<number>`coalesce(sum(-${col}) filter (where ${col} < 0), 0)`,
+    })
+    .from(taxReturnsTable);
 
-  const refunds = completedReturns.filter((r) => Number(r.federalRefundOrOwed) > 0);
-  const owed = completedReturns.filter((r) => Number(r.federalRefundOrOwed) < 0);
-
-  const totalRefunds = refunds.reduce((sum, r) => sum + Number(r.federalRefundOrOwed), 0);
-  const totalOwed = owed.reduce((sum, r) => sum + Math.abs(Number(r.federalRefundOrOwed)), 0);
-  const averageRefund = refunds.length > 0 ? totalRefunds / refunds.length : null;
+  const totalClients = Number(clientCount?.count ?? 0);
+  const completedReturns = Number(agg?.completed ?? 0);
+  const refundCount = Number(agg?.refundCount ?? 0);
+  const totalRefunds = Number(agg?.totalRefunds ?? 0);
+  const totalOwed = Number(agg?.totalOwed ?? 0);
+  const averageRefund = refundCount > 0 ? totalRefunds / refundCount : null;
 
   res.json({
-    totalClients: Number(clientCount?.count ?? 0),
-    pendingReturns: Math.max(0, pendingReturns),
-    completedReturns: completedReturns.length,
+    totalClients,
+    pendingReturns: Math.max(0, totalClients - completedReturns),
+    completedReturns,
     totalRefunds,
     totalOwed,
     documentsProcessed: Number(docCount?.count ?? 0),
