@@ -156,8 +156,16 @@ export function applyWhatIfMutations(
         if (m.field == null) {
           throw new Error("set_client_field requires field");
         }
+        const field = String(m.field);
+        // SEC-03: set_client_field is meant to overwrite a known ClientFacts
+        // key (filingStatus, state, taxpayerAge, …). Reject prototype-pollution
+        // keys so an arbitrary client-supplied `field` can't reach the object
+        // prototype chain.
+        if (field === "__proto__" || field === "constructor" || field === "prototype") {
+          throw new Error(`set_client_field: illegal field "${field}"`);
+        }
         const c = ensureClientClone();
-        c[String(m.field)] = m.value ?? null;
+        c[field] = m.value ?? null;
         break;
       }
       default: {

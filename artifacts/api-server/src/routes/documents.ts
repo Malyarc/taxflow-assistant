@@ -47,8 +47,24 @@ router.get("/clients/:clientId/documents", async (req, res): Promise<void> => {
     res.status(400).json({ error: params.error.message });
     return;
   }
+  // SEC-01: project away `fileContent` — the full base64 of the uploaded
+  // W-2/1099 (SSN/EIN/amounts), which the list view never reads (the POST
+  // handler already strips it, and previews use the dedicated /content
+  // endpoint). Returning it bloats every list response by megabytes/doc and
+  // widens the plaintext-PII surface in browser/proxy caches.
   const documents = await db
-    .select()
+    .select({
+      id: taxDocumentsTable.id,
+      clientId: taxDocumentsTable.clientId,
+      documentType: taxDocumentsTable.documentType,
+      fileName: taxDocumentsTable.fileName,
+      status: taxDocumentsTable.status,
+      extractedText: taxDocumentsTable.extractedText,
+      linkedRecordId: taxDocumentsTable.linkedRecordId,
+      linkedRecordType: taxDocumentsTable.linkedRecordType,
+      rejectionReason: taxDocumentsTable.rejectionReason,
+      createdAt: taxDocumentsTable.createdAt,
+    })
     .from(taxDocumentsTable)
     .where(eq(taxDocumentsTable.clientId, params.data.clientId));
   res.json(documents);
@@ -238,7 +254,10 @@ router.delete("/clients/:clientId/documents/:documentId", async (req, res): Prom
   });
   // Recalc in case the doc was linked to a w2/1099 (cascades aren't wired, but the recalc
   // is cheap and keeps the tax return consistent if downstream logic ever does delete).
-  recalculateAfterMutation(params.data.clientId).catch(() => {});
+  // Await (and let recalculateAfterMutation log its own failures) instead of
+  // a fire-and-forget empty .catch() that silently dropped recalc errors —
+  // matches every other mutation route (BE-08).
+  await recalculateAfterMutation(params.data.clientId);
   res.sendStatus(204);
 });
 

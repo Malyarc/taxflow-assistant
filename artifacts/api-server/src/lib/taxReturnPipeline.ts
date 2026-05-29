@@ -329,17 +329,8 @@ export async function recalculateAndUpsertTaxReturn(
   }
   const { result } = computed;
 
-  // Multi-year: look up by (clientId, taxYear) composite, not just clientId.
-  // This means each client can have one row per tax year, not one row total.
-  const [existing] = await db
-    .select()
-    .from(taxReturnsTable)
-    .where(
-      and(
-        eq(taxReturnsTable.clientId, clientId),
-        eq(taxReturnsTable.taxYear, result.taxYear),
-      ),
-    );
+  // Multi-year: keyed by the (clientId, taxYear) composite unique constraint,
+  // so each client can have one row per tax year (not one row total).
 
   // Education credits split: aocCredit = total AOC applied (refundable + non-refundable AOC);
   // aocRefundablePortion separated for display.
@@ -450,21 +441,20 @@ export async function recalculateAndUpsertTaxReturn(
     daysCurrentStateResident: result.daysCurrentStateResident,
   };
 
-  if (existing) {
-    const [updated] = await db
-      .update(taxReturnsTable)
-      .set({ ...payload, updatedAt: new Date() })
-      .where(
-        and(
-          eq(taxReturnsTable.clientId, clientId),
-          eq(taxReturnsTable.taxYear, result.taxYear),
-        ),
-      )
-      .returning();
-    return updated;
-  }
-  const [created] = await db.insert(taxReturnsTable).values(payload).returning();
-  return created;
+  // Atomic upsert on the (clientId, taxYear) unique constraint. Replaces a
+  // non-atomic SELECT-then-INSERT/UPDATE that could race two concurrent
+  // recalcs for the same client+year into a unique violation (spurious 500)
+  // or a silently-stale row (BE-02). Concurrent UPDATEs are last-write-wins,
+  // which is safe here: the recalc is deterministic from persisted inputs.
+  const [row] = await db
+    .insert(taxReturnsTable)
+    .values(payload)
+    .onConflictDoUpdate({
+      target: [taxReturnsTable.clientId, taxReturnsTable.taxYear],
+      set: { ...payload, updatedAt: new Date() },
+    })
+    .returning();
+  return row;
 }
 
 /**

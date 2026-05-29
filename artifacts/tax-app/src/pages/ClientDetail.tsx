@@ -488,6 +488,54 @@ function ReviewDialog({ clientId, rec, onClose }: { clientId: number; rec: any; 
   );
 }
 
+// Hoisted to module scope (FE-02). Defined inside W2DataTab, this got a new
+// function identity on every keystroke, so React remounted the whole field
+// subtree and the focused <Input>/<CurrencyInput> lost focus after each
+// character — making manual W-2 entry/edit unusable. It only closes over its
+// props, so module scope is safe (mirrors Form1099Fields).
+function W2Fields({ form, onChange }: { form: W2FormData; onChange: (k: keyof W2FormData, v: string) => void }) {
+  return (
+    <div className="grid grid-cols-2 gap-4 mt-4">
+      <div className="col-span-2 grid grid-cols-3 gap-4">
+        <div className="space-y-1">
+          <Label className="text-xs">Tax Year</Label>
+          <Input value={form.taxYear} onChange={(e) => onChange("taxYear", e.target.value)} type="number" />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Employer Name</Label>
+          <Input value={form.employerName} onChange={(e) => onChange("employerName", e.target.value)} />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Employer EIN</Label>
+          <Input value={form.employerEin} onChange={(e) => onChange("employerEin", e.target.value)} placeholder="XX-XXXXXXX" />
+        </div>
+      </div>
+      {[
+        { key: "wagesBox1", label: "Box 1 — Wages" },
+        { key: "federalTaxWithheldBox2", label: "Box 2 — Federal W/H" },
+        { key: "socialSecurityWagesBox3", label: "Box 3 — SS Wages" },
+        { key: "socialSecurityTaxBox4", label: "Box 4 — SS Tax" },
+        { key: "medicareWagesBox5", label: "Box 5 — Medicare Wages" },
+        { key: "medicareTaxBox6", label: "Box 6 — Medicare Tax" },
+        { key: "stateWagesBox16", label: "Box 16 — State Wages" },
+        { key: "stateTaxWithheldBox17", label: "Box 17 — State W/H" },
+      ].map(({ key, label }) => (
+        <div key={key} className="space-y-1">
+          <Label className="text-xs text-muted-foreground">{label}</Label>
+          <CurrencyInput
+            value={form[key as keyof W2FormData]}
+            onChange={(v) => onChange(key as keyof W2FormData, v)}
+          />
+        </div>
+      ))}
+      <div className="space-y-1">
+        <Label className="text-xs">State Code</Label>
+        <Input value={form.stateCode} onChange={(e) => onChange("stateCode", e.target.value)} placeholder="CA" maxLength={2} />
+      </div>
+    </div>
+  );
+}
+
 function W2DataTab({ clientId }: { clientId: number }) {
   const { data: w2Records, isLoading } = useListW2Data(clientId, {
     query: { queryKey: getListW2DataQueryKey(clientId) },
@@ -605,49 +653,6 @@ function W2DataTab({ clientId }: { clientId: number }) {
           toast({ title: "W-2 record deleted" });
         },
       }
-    );
-  }
-
-  function W2Fields({ form, onChange }: { form: W2FormData; onChange: (k: keyof W2FormData, v: string) => void }) {
-    return (
-      <div className="grid grid-cols-2 gap-4 mt-4">
-        <div className="col-span-2 grid grid-cols-3 gap-4">
-          <div className="space-y-1">
-            <Label className="text-xs">Tax Year</Label>
-            <Input value={form.taxYear} onChange={(e) => onChange("taxYear", e.target.value)} type="number" />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Employer Name</Label>
-            <Input value={form.employerName} onChange={(e) => onChange("employerName", e.target.value)} />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Employer EIN</Label>
-            <Input value={form.employerEin} onChange={(e) => onChange("employerEin", e.target.value)} placeholder="XX-XXXXXXX" />
-          </div>
-        </div>
-        {[
-          { key: "wagesBox1", label: "Box 1 — Wages" },
-          { key: "federalTaxWithheldBox2", label: "Box 2 — Federal W/H" },
-          { key: "socialSecurityWagesBox3", label: "Box 3 — SS Wages" },
-          { key: "socialSecurityTaxBox4", label: "Box 4 — SS Tax" },
-          { key: "medicareWagesBox5", label: "Box 5 — Medicare Wages" },
-          { key: "medicareTaxBox6", label: "Box 6 — Medicare Tax" },
-          { key: "stateWagesBox16", label: "Box 16 — State Wages" },
-          { key: "stateTaxWithheldBox17", label: "Box 17 — State W/H" },
-        ].map(({ key, label }) => (
-          <div key={key} className="space-y-1">
-            <Label className="text-xs text-muted-foreground">{label}</Label>
-            <CurrencyInput
-              value={form[key as keyof W2FormData]}
-              onChange={(v) => onChange(key as keyof W2FormData, v)}
-            />
-          </div>
-        ))}
-        <div className="space-y-1">
-          <Label className="text-xs">State Code</Label>
-          <Input value={form.stateCode} onChange={(e) => onChange("stateCode", e.target.value)} placeholder="CA" maxLength={2} />
-        </div>
-      </div>
     );
   }
 

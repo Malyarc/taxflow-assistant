@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, and, desc } from "drizzle-orm";
-import { db, taxReturnsTable, clientsTable } from "@workspace/db";
+import { db, taxReturnsTable, clientsTable, adjustmentsTable, assetBalancesTable } from "@workspace/db";
 import {
   GetTaxReturnParams,
   CalculateTaxReturnParams,
@@ -264,7 +264,6 @@ router.get("/clients/:clientId/tax-return/form-4868/pdf", async (req, res): Prom
  *     balances (sum across all traditional_ira, sep_ira, simple_ira types)
  */
 async function loadForm8606Inputs(clientId: number) {
-  const { db, adjustmentsTable, assetBalancesTable, clientsTable } = await import("@workspace/db");
   const [adjustments, assets, clientRows] = await Promise.all([
     db.select().from(adjustmentsTable).where(eq(adjustmentsTable.clientId, clientId)),
     db.select().from(assetBalancesTable).where(eq(assetBalancesTable.clientId, clientId)),
@@ -895,7 +894,6 @@ async function loadForm8990Data(
   computed: { result: import("../lib/taxReturnEngine").ComputedTaxReturn; client: { firstName?: string | null; lastName?: string | null; filingStatus: string }; clientId: number },
 ): Promise<Form8990Data> {
   const ret = computed.result;
-  const { db, adjustmentsTable } = await import("@workspace/db");
   const adjustments = await db
     .select()
     .from(adjustmentsTable)
