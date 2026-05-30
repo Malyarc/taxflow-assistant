@@ -86,15 +86,11 @@ live in the browser.
    `.//<abs path>`). Fix that first, then the new indexes ship as a versioned
    migration. Until then, add the 3 indexes to prod manually with `CREATE INDEX
    CONCURRENTLY` (statements in commit `76afa96`).
-4. **Forms (verified specs ready, need small schema changes):**
-   - FORM-02 (HIGH): Form 1040-X Line 8/10 overstate tax by the non-refundable
-     credits (engine `federalTaxLiability` is pre-credit). Needs a persisted
-     `total_non_refundable_applied` column + snapshot + line math.
-   - FORM-03 (MED, pure code): 1040-X Line 19/20 don't reconcile on a refund↔owed
-     swap — rebuild as the IRS Line 16→21 chain.
-   - FORM-04 (HIGH): Form 8606 Part III treats converted basis as taxable
-     earnings (over-taxes). Needs a `roth_conversion_basis` adjustment + the
-     conversion-basis layer (function fix is backward-compatible).
+4. **FORM-03 (the last 1040-X form bug, MED, pure code):** Line 19/20 don't
+   reconcile on a refund↔owed swap — rebuild as the IRS Line 16→21 chain.
+   (FORM-02 + FORM-04 SHIPPED 2026-05-30 — commit `aa03002`, deployed to prod
+   incl. the `tax_returns.total_non_refundable_applied` column ALTER + the
+   `roth_conversion_basis` adjustment types; verified live.)
 5. **God-file refactor** (maintainability): planningEngine.ts (~7.7k),
    ClientDetail.tsx (~5k), `calculateStateAdditionalCredits` (~853-line fn).
 6. **Frontend robustness:** FE-03 (Schedule D / Rentals / K-1 queryFns skip
