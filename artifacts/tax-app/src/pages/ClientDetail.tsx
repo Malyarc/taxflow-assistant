@@ -100,9 +100,11 @@ function maskSSN(ssn: string | null | undefined): string {
   return `XXX-XX-${digits.slice(-4)}`;
 }
 
-/** Shared className for the scrollable ClientDetail tab triggers (icon + label pills). */
+/** Shared className for the ClientDetail tab triggers (icon + label).
+ *  On lg+ the triggers sit in a vertical rail (full-width, left-aligned rows);
+ *  below lg they stay as pills in a horizontal scroll strip. */
 const TAB_TRIGGER_CLS =
-  "gap-2 whitespace-nowrap rounded-lg px-3.5 py-2 text-muted-foreground hover:text-foreground data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm";
+  "gap-2 whitespace-nowrap rounded-lg px-3.5 py-2 text-muted-foreground hover:text-foreground data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm lg:w-full lg:justify-start";
 
 /** Trigger a browser download for a same-origin file URL (PDF / CSV / etc.). */
 function downloadFile(url: string) {
@@ -2783,9 +2785,12 @@ export default function ClientDetail() {
         </div>
       </div>
 
-      <Tabs defaultValue="documents">
-        <div className="-mx-1 overflow-x-auto px-1 pb-1 scrollbar-thin">
-          <TabsList className="inline-flex h-auto w-max items-center justify-start gap-1 rounded-xl border border-border bg-muted/50 p-1">
+      <Tabs defaultValue="documents" orientation="vertical" className="lg:flex lg:items-start lg:gap-6">
+        {/* Tab rail: a vertical sidebar on desktop so all 11 sections are
+            visible at once (no horizontal scrolling / hunting); falls back to
+            the horizontal scroll strip on mobile, which already has its own nav. */}
+        <div className="-mx-1 overflow-x-auto px-1 pb-1 scrollbar-thin lg:mx-0 lg:shrink-0 lg:overflow-visible lg:px-0 lg:pb-0">
+          <TabsList className="inline-flex h-auto w-max items-center justify-start gap-1 rounded-xl border border-border bg-muted/50 p-1 lg:sticky lg:top-4 lg:flex lg:w-56 lg:flex-col lg:items-stretch lg:gap-0.5 lg:p-1.5">
             <TabsTrigger value="documents" className={TAB_TRIGGER_CLS}><FileText className="h-4 w-4" />Documents</TabsTrigger>
             <TabsTrigger value="w2data" className={TAB_TRIGGER_CLS}><FileSpreadsheet className="h-4 w-4" />W-2 Data</TabsTrigger>
             <TabsTrigger value="form1099" className={TAB_TRIGGER_CLS}><Files className="h-4 w-4" />1099 Forms</TabsTrigger>
@@ -2800,6 +2805,10 @@ export default function ClientDetail() {
           </TabsList>
         </div>
 
+        {/* Content pane — fills the space beside the rail on desktop. min-w-0
+            lets wide content (tables, the calculator) shrink instead of
+            overflowing the flex row. */}
+        <div className="min-w-0 lg:flex-1">
         <TabsContent value="documents" className="mt-6">
           <DocumentsTab clientId={clientId} clientTaxYear={client.taxYear ?? 2024} clientState={client.state ?? undefined} />
         </TabsContent>
@@ -2835,6 +2844,7 @@ export default function ClientDetail() {
             <PlanningTab clientId={clientId} />
           </TabsContent>
         ) : null}
+        </div>
       </Tabs>
     </div>
   );
