@@ -350,6 +350,56 @@ function checkBool(label: string, actual: boolean, expected: boolean): void {
     r.earlyDistributionPenalty, 2000);
 }
 
+// ── FORM-04: Roth conversion basis recovered tax-free BEFORE earnings ─────
+// 40-yr-old (under 59½), Roth = $30k contributions + $20k conversion (2 yrs
+// old, within the 5-yr §72(t) window) + $0 earnings; withdraws $40,000.
+// Treas. Reg. §1.408A-6 Q&A 8 ordering: $30k from contributions, then $10k of
+// conversion basis (return of basis → tax-free), $0 earnings.
+//   taxable = $0 (was $10,000 before the fix — the over-taxation bug).
+//   §72(t) penalty = 10% × $10k recovered within-5yr conversion principal = $1,000.
+{
+  const r = computeForm8606PartIII({
+    rothDistribution: 40000,
+    rothContributionsBasis: 30000,
+    conversionBasis: 20000,
+    conversionBasisWithin5Years: 20000,
+    rothBalanceBeforeDistribution: 50000,
+    ownerAge: 40,
+    firstRothFiveYearsOld: true,
+  });
+  check("FORM-04 taxableEarnings = 0 (conversion basis tax-free)", r.taxableEarnings, 0);
+  check("FORM-04 line25 taxable amount = 0", r.line25_taxableAmount, 0);
+  check("FORM-04 line24 conversion basis recovered = 10,000", r.line24_conversionBasisRecovered, 10000);
+  check("FORM-04 basisRecovered total = 40,000", r.basisRecovered, 40000);
+  check("FORM-04 §72(t) penalty = 1,000 (within-5yr conversion principal)", r.earlyDistributionPenalty, 1000);
+}
+
+// FORM-04 guard: conversion older than 5 years → no §72(t) penalty (proves the
+// penalty no longer rides on the wrong earnings base).
+{
+  const r = computeForm8606PartIII({
+    rothDistribution: 40000,
+    rothContributionsBasis: 30000,
+    conversionBasis: 20000,
+    conversionBasisWithin5Years: 0,
+    ownerAge: 40,
+  });
+  check("FORM-04 >5yr conversion: taxable still 0", r.taxableEarnings, 0);
+  check("FORM-04 >5yr conversion: penalty = 0", r.earlyDistributionPenalty, 0);
+}
+
+// FORM-04 backward-compat: no conversionBasis → old behavior preserved
+// ($30k contrib basis / $50k dist → $20k earnings, $2k penalty under 59½).
+{
+  const r = computeForm8606PartIII({
+    rothDistribution: 50000,
+    rothContributionsBasis: 30000,
+    ownerAge: 45,
+  });
+  check("FORM-04 no conv basis: taxableEarnings = 20,000 (unchanged)", r.taxableEarnings, 20000);
+  check("FORM-04 no conv basis: penalty = 2,000 (unchanged)", r.earlyDistributionPenalty, 2000);
+}
+
 // ── Print results ─────────────────────────────────────────────────────────
 console.log(`\nForm 8606 (H6) tests:`);
 console.log(`  ✓ Passed: ${PASS.length}`);

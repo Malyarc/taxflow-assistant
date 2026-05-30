@@ -66,6 +66,8 @@ export interface FiledSnapshot {
     stateTaxLiability: number;
     stateTaxWithheld: number;
     stateRefundOrOwed: number;
+    /** FORM-02 — non-refundable credits applied (income-tax offset). */
+    totalNonRefundableApplied: number;
   };
 }
 
@@ -107,6 +109,7 @@ export function captureFiledSnapshot(row: TaxReturnRow | ComputedTaxReturn): Fil
       stateTaxLiability: num((row as TaxReturnRow).stateTaxLiability),
       stateTaxWithheld: num((row as TaxReturnRow).stateTaxWithheld),
       stateRefundOrOwed: num((row as TaxReturnRow).stateRefundOrOwed),
+      totalNonRefundableApplied: num((row as TaxReturnRow).totalNonRefundableApplied),
     },
   };
 }
@@ -172,6 +175,7 @@ export function computeAmendmentDiff(args: {
     stateTaxLiability: num((current as TaxReturnRow).stateTaxLiability),
     stateTaxWithheld: num((current as TaxReturnRow).stateTaxWithheld),
     stateRefundOrOwed: num((current as TaxReturnRow).stateRefundOrOwed),
+    totalNonRefundableApplied: num((current as TaxReturnRow).totalNonRefundableApplied),
   };
 
   // ── Helper: chosen deduction (the one actually taken; per CLAUDE.md
@@ -195,8 +199,11 @@ export function computeAmendmentDiff(args: {
   // → Line 8 = total tax − other taxes
   // (Lines 6 and 7 individually require breaking out non-ref credits which we
   // don't persist as a single sum; the Line 8 derivation captures the net.)
-  const oLine8 = o.federalTaxLiability - oOther;
-  const cLine8 = cur.federalTaxLiability - cOther;
+  // FORM-02: Line 8 = (regular tax + AMT) − non-refundable credits. Engine
+  // federalTaxLiability is PRE-credit and bundles other taxes, so back out
+  // both: (federalTaxLiability − otherTaxes) − totalNonRefundableApplied.
+  const oLine8 = o.federalTaxLiability - oOther - o.totalNonRefundableApplied;
+  const cLine8 = cur.federalTaxLiability - cOther - cur.totalNonRefundableApplied;
 
   // ── Refundable credits sum (Line 14) ──────────────────────────────────
   const refundable = (s: typeof o): number =>
@@ -209,8 +216,12 @@ export function computeAmendmentDiff(args: {
   // ── Total payments (Line 16) — derived consistently with engine ──────
   // engine: federalRefundOrOwed = totalPayments − federalTaxLiability
   // → totalPayments = federalTaxLiability + federalRefundOrOwed
-  const oTotalPayments = o.federalTaxLiability + o.federalRefundOrOwed;
-  const cTotalPayments = cur.federalTaxLiability + cur.federalRefundOrOwed;
+  // FORM-02: total payments = withholding + refundable credits (non-refundable
+  // credits reduce TAX on Line 10, not payments). Engine federalRefundOrOwed
+  // already nets ALL credits, so back the non-refundable ones out here too:
+  // payments = federalTaxLiability + federalRefundOrOwed − totalNonRefundableApplied.
+  const oTotalPayments = o.federalTaxLiability + o.federalRefundOrOwed - o.totalNonRefundableApplied;
+  const cTotalPayments = cur.federalTaxLiability + cur.federalRefundOrOwed - cur.totalNonRefundableApplied;
 
   // Per IRS Form 1040-X instructions: col (b) "Net change" = (c) − (a),
   // where (a) and (c) are each independently rounded to whole dollars.
@@ -233,7 +244,9 @@ export function computeAmendmentDiff(args: {
     // Tax Liability
     line("8", "Subtract nonrefundable credits from tax (incl. AMT)", oLine8, cLine8),
     line("9", "Other taxes (Sch 2 Line 21: SE + NIIT + AddlMed)", oOther, cOther),
-    line("10", "Total tax", o.federalTaxLiability, cur.federalTaxLiability),
+    // FORM-02: Total tax = tax + AMT − non-refundable credits + other taxes
+    // = federalTaxLiability − totalNonRefundableApplied (engine total is pre-credit).
+    line("10", "Total tax", o.federalTaxLiability - o.totalNonRefundableApplied, cur.federalTaxLiability - cur.totalNonRefundableApplied),
     // Payments
     line("11", "Federal income tax withheld", o.federalTaxWithheld, cur.federalTaxWithheld),
     line("13", "EITC", o.eitc, cur.eitc),

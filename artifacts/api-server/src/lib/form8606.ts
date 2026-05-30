@@ -175,6 +175,19 @@ export interface Form8606PartIIIInputs {
    * for most clients with material Roth balance) when undefined.
    */
   firstRothFiveYearsOld?: boolean;
+  /**
+   * FORM-04 — total Roth CONVERSION basis (lifetime). Recovered tax-free for
+   * income tax AFTER contributions but BEFORE earnings (Treas. Reg.
+   * §1.408A-6 Q&A 8 ordering: contributions → conversions → earnings).
+   * Defaults 0 (backward-compatible: behaves as the old contributions-only model).
+   */
+  conversionBasis?: number;
+  /**
+   * FORM-04 — subset of conversionBasis still inside a conversion's 5-year
+   * §72(t) window. The 10% additional tax applies to this recovered principal
+   * when under 59½ even though it is NOT includible in income. Defaults 0.
+   */
+  conversionBasisWithin5Years?: number;
 }
 
 export interface Form8606PartIIIResult {
@@ -202,6 +215,8 @@ export interface Form8606PartIIIResult {
   line22_contributionBasis: number;
   /** Line 23 — Line 21 − Line 22 (remaining after contribution recovery). */
   line23_remainingAfterBasis: number;
+  /** Line 24 — Roth conversion basis recovered (tax-free return of basis). */
+  line24_conversionBasisRecovered: number;
   /** Line 25 — taxable amount (flows to Form 1040 Line 4b). */
   line25_taxableAmount: number;
 }
@@ -241,6 +256,7 @@ export function computeForm8606PartIII(
       line21_nonExceptionDistribution: 0,
       line22_contributionBasis: basis,
       line23_remainingAfterBasis: 0,
+      line24_conversionBasisRecovered: 0,
       line25_taxableAmount: 0,
     };
   }
@@ -257,24 +273,34 @@ export function computeForm8606PartIII(
       line21_nonExceptionDistribution: 0,
       line22_contributionBasis: basis,
       line23_remainingAfterBasis: 0,
+      line24_conversionBasisRecovered: 0,
       line25_taxableAmount: 0,
     };
   }
 
-  // Non-qualified: basis-first ordering.
+  // Non-qualified: contributions → conversions → earnings ordering (Treas.
+  // Reg. §1.408A-6 Q&A 8). FORM-04: recover converted basis tax-free BEFORE
+  // treating any remainder as taxable earnings. Previously the post-contribution
+  // remainder was ALL taxed as earnings, over-stating income whenever the Roth
+  // held converted (already-taxed) basis.
   const basisRecovered = Math.min(dist, basis);
-  const remainingAfterBasis = dist - basisRecovered;
-  // MVP: treat the post-basis remainder as TAXABLE EARNINGS. (CPA refines
-  // when there are recent conversions that should come out before earnings
-  // — those are tax-free for income tax but still get the 10% penalty.)
-  const taxableEarnings = remainingAfterBasis;
-  const penalty = !isOver59 && taxableEarnings > 0
-    ? Math.round(taxableEarnings * 0.10)
+  const remainingAfterContrib = dist - basisRecovered;
+  const convBasis = Math.max(0, inputs.conversionBasis ?? 0);
+  const conversionRecovered = Math.min(remainingAfterContrib, convBasis);
+  const taxableEarnings = remainingAfterContrib - conversionRecovered;
+  // §72(t) 10% additional tax under 59½: on taxable earnings ALWAYS, plus the
+  // portion of recovered CONVERSION principal still inside a 5-year window
+  // (not income, but still penalized per Q&A 5). Allocate recovered conversion
+  // to the within-5-year subset first (conservative).
+  const convWithin5 = Math.max(0, Math.min(convBasis, inputs.conversionBasisWithin5Years ?? 0));
+  const penalizedConversion = Math.min(conversionRecovered, convWithin5);
+  const penalty = !isOver59
+    ? Math.round((taxableEarnings + penalizedConversion) * 0.10)
     : 0;
 
   return {
     isQualifiedDistribution: false,
-    basisRecovered,
+    basisRecovered: basisRecovered + conversionRecovered,
     taxableEarnings,
     earlyDistributionPenalty: penalty,
     basisRemaining: Math.max(0, basis - basisRecovered),
@@ -282,7 +308,8 @@ export function computeForm8606PartIII(
     line20_qualifiedException: 0,
     line21_nonExceptionDistribution: dist,
     line22_contributionBasis: basis,
-    line23_remainingAfterBasis: remainingAfterBasis,
+    line23_remainingAfterBasis: remainingAfterContrib,
+    line24_conversionBasisRecovered: conversionRecovered,
     line25_taxableAmount: taxableEarnings,
   };
 }

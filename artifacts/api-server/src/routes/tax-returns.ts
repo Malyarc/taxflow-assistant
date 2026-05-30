@@ -302,6 +302,11 @@ async function loadForm8606Inputs(clientId: number) {
       // MVP: assume first Roth contribution is 5+ years old when any Roth
       // balance exists. CPA can refine via a future client-level field.
       firstRothFiveYearsOld: rothBalance > 0 || rothContributionsBasis > 0,
+      // FORM-04: converted basis is recovered tax-free AFTER contributions but
+      // BEFORE earnings (Treas. Reg. §1.408A-6 Q&A 8). The within-5yr subset
+      // still draws the 10% §72(t) additional tax under 59½.
+      conversionBasis: sumAdj("roth_conversion_basis"),
+      conversionBasisWithin5Years: sumAdj("roth_conversion_basis_within_5yr"),
     },
   };
 }

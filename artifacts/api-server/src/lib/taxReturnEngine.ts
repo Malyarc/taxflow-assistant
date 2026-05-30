@@ -728,6 +728,11 @@ export interface ComputedTaxReturn {
   amtCreditGenerated: number;
   /** E2 — Form 8801 unused minimum-tax credit carried forward to next year. */
   amtCreditCarryforwardRemaining: number;
+  /** FORM-02 — total non-refundable credits applied against income tax this
+   *  year (CTC-nonref + FTC + dependent-care + AOC-nonref + LLC + savers +
+   *  residential energy + AMT credit). federalTaxLiability is PRE-credit, so
+   *  Form 1040-X Lines 8/10/16 subtract this to get tax net of credits. */
+  totalNonRefundableApplied: number;
   /**
    * E3 — Cash charitable contribution carried forward to next tax year
    * (IRC §170(d)(1) — excess above 60% AGI cap, up to 5 years).
@@ -2860,6 +2865,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     amtCreditApplied,
     amtCreditGenerated,
     amtCreditCarryforwardRemaining,
+    totalNonRefundableApplied,
     charitableCarryforwardCashRemaining: scheduleA.charitableCarryforwardCashRemaining,
     earlyWithdrawalPenalty: form1099Summary.earlyWithdrawalPenalty,
     hsaExcessExcise: retirement.hsaExcessExcise,

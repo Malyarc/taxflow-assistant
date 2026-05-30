@@ -1204,6 +1204,8 @@ export const AdjustmentAdjustmentType = {
   mi_household_resources: "mi_household_resources",
   oh_sdit_traditional_base: "oh_sdit_traditional_base",
   qbi_sstb_flag: "qbi_sstb_flag",
+  roth_conversion_basis: "roth_conversion_basis",
+  roth_conversion_basis_within_5yr: "roth_conversion_basis_within_5yr",
 } as const;
 
 export interface Adjustment {
@@ -1315,6 +1317,8 @@ export const CreateAdjustmentBodyAdjustmentType = {
   mi_household_resources: "mi_household_resources",
   oh_sdit_traditional_base: "oh_sdit_traditional_base",
   qbi_sstb_flag: "qbi_sstb_flag",
+  roth_conversion_basis: "roth_conversion_basis",
+  roth_conversion_basis_within_5yr: "roth_conversion_basis_within_5yr",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -1422,6 +1426,8 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   mi_household_resources: "mi_household_resources",
   oh_sdit_traditional_base: "oh_sdit_traditional_base",
   qbi_sstb_flag: "qbi_sstb_flag",
+  roth_conversion_basis: "roth_conversion_basis",
+  roth_conversion_basis_within_5yr: "roth_conversion_basis_within_5yr",
 } as const;
 
 export interface UpdateAdjustmentBody {

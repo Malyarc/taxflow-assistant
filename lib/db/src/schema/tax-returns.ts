@@ -20,6 +20,9 @@ export const taxReturnsTable = pgTable(
     itemizedDeductions: numeric("itemized_deductions", { precision: 12, scale: 2 }),
     taxableIncome: numeric("taxable_income", { precision: 12, scale: 2 }),
     federalTaxLiability: numeric("federal_tax_liability", { precision: 12, scale: 2 }),
+    /** FORM-02 — total non-refundable credits applied (income-tax offset).
+     *  federalTaxLiability is pre-credit; Form 1040-X Lines 8/10/16 net this out. */
+    totalNonRefundableApplied: numeric("total_non_refundable_applied", { precision: 12, scale: 2 }),
     federalTaxWithheld: numeric("federal_tax_withheld", { precision: 12, scale: 2 }),
     federalRefundOrOwed: numeric("federal_refund_or_owed", { precision: 12, scale: 2 }),
     stateTaxLiability: numeric("state_tax_liability", { precision: 12, scale: 2 }),

@@ -49,6 +49,7 @@ interface FlatComputed {
   stateTaxLiability: number;
   stateTaxWithheld: number;
   stateRefundOrOwed: number;
+  totalNonRefundableApplied: number;
 }
 
 function stub(args: Partial<FlatComputed> & { taxYear?: number } = {}): ComputedTaxReturn {
@@ -60,6 +61,7 @@ function stub(args: Partial<FlatComputed> & { taxYear?: number } = {}): Computed
     selfEmploymentTax: 0, niitTax: 0, amtTax: 0, additionalMedicareTax: 0,
     eitc: 0, additionalChildTaxCredit: 0, aocRefundablePortion: 0, premiumTaxCredit: 0,
     stateTaxLiability: 0, stateTaxWithheld: 0, stateRefundOrOwed: 0,
+    totalNonRefundableApplied: 0,
   };
   return { ...blank, ...args } as unknown as ComputedTaxReturn;
 }
@@ -265,6 +267,27 @@ function findLine(lines: ReturnType<typeof computeAmendmentDiff>["lines"], ref: 
 }
 
 // ── Print results ─────────────────────────────────────────────────────────
+// ── FORM-02: non-refundable credit changes flow to Lines 8/10/16 ──────────
+// Filed: regular tax $20,000, withholding $20,000, no credits → liability
+// $20,000, refund/owed $0. Amend to add a $3,000 foreign tax credit (a
+// NON-refundable credit) → engine federalTaxLiability stays $20,000 (it's
+// PRE-credit), totalNonRefundableApplied $3,000, federalRefundOrOwed +$3,000.
+// Pre-fix the breakdown showed Line 10 net $0 (contradicting the +$3,000
+// headline); post-fix Line 10 "Total tax" drops $3,000 and the form foots.
+{
+  const filed = stub({ federalTaxLiability: 20000, federalTaxWithheld: 20000, federalRefundOrOwed: 0, totalNonRefundableApplied: 0 });
+  const amended = stub({ federalTaxLiability: 20000, federalTaxWithheld: 20000, federalRefundOrOwed: 3000, totalNonRefundableApplied: 3000 });
+  const form = computeAmendmentDiff({ current: amended, snapshot: captureFiledSnapshot(filed) });
+  check("FORM-02 Line 10 total tax original = $20,000", findLine(form.lines, "10").original, 20000);
+  check("FORM-02 Line 10 total tax amended = $17,000 (net of $3k FTC)", findLine(form.lines, "10").amended, 17000);
+  check("FORM-02 Line 10 net change = -$3,000", findLine(form.lines, "10").netChange, -3000);
+  check("FORM-02 Line 16 total payments unchanged (FTC is not a payment)", findLine(form.lines, "16").netChange, 0);
+  check("FORM-02 headline net refund change = +$3,000", form.netFederalRefundChange, 3000);
+  // Form foots: (Line 16 − Line 10) = refund/owed in each column.
+  check("FORM-02 footing: amended payments − tax = $3,000 refund", findLine(form.lines, "16").amended - findLine(form.lines, "10").amended, 3000);
+  check("FORM-02 footing: original payments − tax = $0", findLine(form.lines, "16").original - findLine(form.lines, "10").original, 0);
+}
+
 console.log(`\nForm 1040-X (C4) tests:`);
 console.log(`  ✓ Passed: ${PASS.length}`);
 console.log(`  ✗ Failed: ${FAIL.length}`);

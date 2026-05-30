@@ -395,6 +395,7 @@ export async function recalculateAndUpsertTaxReturn(
     amtCreditApplied: String(result.amtCreditApplied),
     amtCreditGenerated: String(result.amtCreditGenerated),
     amtCreditCarryforwardRemaining: String(result.amtCreditCarryforwardRemaining),
+    totalNonRefundableApplied: String(result.totalNonRefundableApplied),
     charitableCarryforwardCashRemaining: String(result.charitableCarryforwardCashRemaining),
     qsbsGrossGain: String(result.qsbsGrossGain),
     qsbsSection1202Exclusion: String(result.qsbsSection1202Exclusion),
