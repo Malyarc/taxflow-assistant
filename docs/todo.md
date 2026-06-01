@@ -9,6 +9,71 @@ tracker, work it, commit, then remove it from here.
 
 ---
 
+## ⚡ CURRENT FOCUS (2026-05-30): refine tax calc + tax planning
+
+**D15 (auth + multi-tenancy) is POSTPONED** — this app will be fused into the
+larger **Haven** app, which brings its own auth/tenancy, so we won't build it
+twice. The focus is the **portable engine + planning feature**
+(`computeTaxReturnPure` is already Haven-portable — keep it pure). The live EC2
+box stays a **demo** (no auth/TLS) — do NOT put real client PII on it until the
+Haven fusion lands. 8 audit-fix commits shipped + deployed 2026-05-29/30 (see
+`.claude/handoff.md`); 37 no-API suites / 2,965 assertions green.
+
+### Tax CALCULATOR refinement backlog (correctness-first)
+
+Confirmed-open from the 2026-05-29 audit:
+- **FORM-03** — Form 1040-X Lines 19/20 don't reconcile on a refund↔owed swap
+  (pure form-math; headline correct). Rebuild as the IRS Line 16→21 chain.
+- **FED-05** — blind additional std deduction is implemented but UNREACHABLE (no
+  `taxpayerBlind`/`spouseBlind` schema fields). A blind non-elderly filer
+  under-deducts $1,550–$1,950/box. Add the fields + plumb into runTaxCalculation.
+- **STL-05** — MD EITC modeled as a single 45% refundable credit; real MD = 50%
+  nonrefundable + 45% refundable (take the larger). Under-credits in the high-MD-tax zone.
+
+Documented engine sub-gaps (ordered by how often they bite a real return):
+- **§461(l) Sch-C loss flow** — engine floors netSeIncome at 0, so a Schedule C
+  LOSS can't offset other income; the §461(l) addback is CPA-supplied, not auto-flowed.
+- **K-1 depth** — §199A wage/UBIA limits + true SSTB phase-out (engine uses a
+  simplified 20%); K-1 basis/at-risk limits not enforced; guaranteed payments (Box 4) absent.
+- **§163(j)** — ATI proxy is approximate; $30M small-biz exemption not auto-detected;
+  Form 8990 Sec II/III (pass-through) are zero-placeholders.
+- **AMT prefs** — line 2i MACRS-vs-ADS depreciation, 2e state-refund recapture, AMT NOL
+  not modeled (2g SALT addback + 2k ISO bargain ARE).
+- **Part-year residency** — per-income-item sourcing (NY IT-203 / CA 540NR Sched CA),
+  mid-year resident credit, part-year locality/AMT, pro-rated std ded not modeled.
+- **Wash sales** — §1091(d) ST→LT flip on the replacement lot; partial wash (engine
+  fully disallows the loss); cross-account wash only when both brokers' txns entered.
+- **State retirement exemptions** — HI / NJ / NY partial exemptions (PA/IL/MS done).
+- **Local** — NYC UBT, KY occupational tax, OH cross-city employment credit, IN/MD per-dependent.
+
+Validation:
+- **16-scenario real-world battery** — the audit workflow designed 16 complex CPA
+  scenarios (individual + pass-through); encode as a hand-calc'd end-to-end suite
+  (also gives pipeline coverage for FED-03/04/06 + the STL fixes).
+
+### Tax PLANNING refinement backlog
+
+Confirmed-open from the audit:
+- **PLAN-04** — kiddie-tax + Coverdell-ESA detectors gate on the under-17 count,
+  missing 17-year-olds + 18–23 student dependents (same fix as the shipped PLAN-03 —
+  reuse a shared eligible-children helper across detectKiddieTax/detectCoverdellEsa).
+- **PLAN-06** — QCD detector requires whole-year age ≥71, missing clients who reached
+  70½ mid-year; fire at age ≥70 with a "confirm distribution on/after 70½" caveat.
+- **PLAN-08** — catalog `validUntil` expiry gate is documented but never enforced;
+  TY-specific strategies keep firing with stale thresholds past their date (latent → 2027).
+
+Biggest credibility lift:
+- **H2-wire the heuristic detectors** — most of catalog v1.12–v1.17 (≈G1.67–G1.96) are
+  heuristic-only (estSavings is a rule of thumb). Convert the high-value ones to
+  engine-verified via `runDetectorWhatIf` (like the 6 already wired: SEP / AMT-ISO /
+  NIIT / TLH / FTC / Roth) so estSavings is a real before/after engine delta.
+- **Multi-year-wire more detectors (H3)** — only G1.3 / G1.8 / G1.4 are multi-year-aware;
+  extend to Roth conversion ladders, RMD planning, installment sales, carryforward depletion.
+- **Catalog freshness** — refresh TY2025/2026 limits + any OBBBA-driven changes across
+  the 97 strategies (`docs/planning-strategy-audit.md` is the per-strategy source of truth).
+
+---
+
 ## Brookhaven UI/UX revamp SHIPPED (2026-05-28) — frontend-only
 
 Full visual modernization to the **Brookhaven brand** (Trusted Blue
@@ -88,7 +153,7 @@ Recommended next-session sequencing:
 | # | Item | Effort | Notes |
 |---|---|---|---|
 | A1 | **Live CPA outreach campaign** | 4-6 wks calendar | Packet ready in `docs/outreach/`. Send to 30-50 firms. Recruit 1-2 design partners. Blocked on user availability, not engineering. |
-| A2 | **D15 — multi-tenancy auth** | 2-3 wks | Per-firm tables, RBAC, per-client visibility. The dominant remaining security gap. Required before paid customers. |
+| A2 | **D15 — multi-tenancy auth** | 2-3 wks | **POSTPONED 2026-05-30 → deferred to the Haven-app fusion** (Haven brings its own auth/tenancy). Per-firm tables, RBAC. Until then the EC2 box is demo-only — no real client PII. |
 | A3 | **D18 — Stripe billing** | 1-2 wks | Needs D15 first. G5 Pro-tier feature gate already wired. |
 
 ---
