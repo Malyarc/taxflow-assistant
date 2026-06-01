@@ -16,11 +16,11 @@ larger **Haven** app, which brings its own auth/tenancy, so we won't build it
 twice. The focus is the **portable engine + planning feature**
 (`computeTaxReturnPure` is already Haven-portable — keep it pure). The live EC2
 box stays a **demo** (no auth/TLS) — do NOT put real client PII on it until the
-Haven fusion lands. **2026-06-01: 11 refinement fixes shipped + verified live**
+Haven fusion lands. **2026-06-01: 12 refinement fixes shipped + verified live**
 (FORM-03, FED-05, PLAN-04, PLAN-06, 16-scenario battery, H2-wire G1.92/G1.96,
 §461(l) Sch-C loss flow, STL-05 MD EITC, K-1 §199A wage/UBIA limit, AMT line 2e
-state-refund recapture, wash-sale §1091(d) holding-period tack — see
-`.claude/handoff.md`); **38 no-API suites / 3,099 assertions green**, clean typecheck.
+state-refund recapture, wash-sale §1091(d) holding-period tack, PLAN-08 validUntil
+gate — see `.claude/handoff.md`); **38 no-API suites / 3,106 assertions green**, clean typecheck.
 
 ### Tax CALCULATOR refinement backlog (correctness-first)
 
@@ -87,8 +87,10 @@ Validation:
   — §199A QBI cap dampens it) + **G1.96 §132(f) transit** ($907.20). +9 tests.
 
 Confirmed-open from the audit:
-- **PLAN-08** — catalog `validUntil` expiry gate is documented but never enforced;
-  TY-specific strategies keep firing with stale thresholds past their date (latent → 2027).
+- ✅ **PLAN-08 — SHIPPED 2026-06-01.** `isStrategyExpiredForYear(validUntil, taxYear)`
+  + `evaluatePlanningOpportunities` filters expired hits (return tax year > validUntil
+  year). All current strategies are validUntil 2026, so TY≤2026 unaffected; TY2027+
+  surfaces nothing until refresh. +7 tests.
 
 Biggest credibility lift:
 - **H2-wire — REMAINING IS MOSTLY QUALITATIVE (survey done 2026-06-01).** Of the
@@ -105,8 +107,14 @@ Biggest credibility lift:
   underlying credit/election in the engine.** A `credit` adjustment exists but is
   treated as REFUNDABLE — wiring a nonrefundable credit (e.g. G1.65 adoption) through
   it would over-state for low-tax filers; needs a nonrefundable-credit mutation first.
-- **Multi-year-wire more detectors (H3)** — only G1.3 / G1.8 / G1.4 are multi-year-aware;
-  extend to Roth conversion ladders, RMD planning, installment sales, carryforward depletion.
+- **Multi-year-wire more detectors (H3)** — only G1.3 / G1.8 / G1.4 are multi-year-aware.
+  **Assessed 2026-06-01 + DEFERRED:** the strongest candidate (G1.22 pre-RMD Roth
+  ladder) overlaps heavily with the already-wired G1.4 Roth, and a correct ladder
+  needs a ~13-year RMD projection with future-bracket arbitrage — inherently
+  approximate and hard to hand-verify to the project's rigor bar. Carryforward
+  depletion is already covered by the G4.4/G4.5 multi-year detectors. Do this only
+  with dedicated time for a defensible trajectory model + a sound tolerance-based
+  test approach (the H3.G1.3 precedent), not as a quick win.
 - **Catalog freshness** — refresh TY2025/2026 limits + any OBBBA-driven changes across
   the 97 strategies (`docs/planning-strategy-audit.md` is the per-strategy source of truth).
 

@@ -25,11 +25,12 @@ Every expected value hand-calc'd against the published IRS/state rule before
 asserting. Then began the planning-credibility lift (H2-wiring, survey found most
 heuristic detectors are qualitative-by-nature) and closed a run of engine sub-gaps:
 §461(l) Schedule-C loss flow, STL-05 (Maryland two-component EITC), K-1 §199A
-wage/UBIA limit, AMT line 2e state-refund recapture, and wash-sale §1091(d)
-holding-period tack. **38 no-API suites / 3,099 assertions / 0 failures**, clean
-typecheck, FED-05 UI verified in a local browser preview, deploys verified live.
+wage/UBIA limit, AMT line 2e state-refund recapture, wash-sale §1091(d)
+holding-period tack, and PLAN-08 (catalog validUntil gate). **38 no-API suites /
+3,106 assertions / 0 failures**, clean typecheck, FED-05 UI verified in a local
+browser preview, deploys verified live.
 
-### What landed (11 fixes on `main`, all pushed; deploys verified live)
+### What landed (12 fixes on `main`, all pushed; deploys verified live)
 
 1. **`e768c0c` FORM-03** — Form 1040-X Lines 16→20 rebuilt as the IRS settlement
    chain (Line 17 overpayment-on-original, Line 18 tax-paid-with-original, Lines
@@ -97,6 +98,13 @@ typecheck, FED-05 UI verified in a local browser preview, deploys verified live.
     already done; now `detectWashSales` also tacks the washed lot's holding period
     onto the replacement and flips its formBox A/B/C → D/E/F when the tacked period
     crosses one year (same-year replacement sale → STCG becomes LTCG). +5 tests.
+12. **`0afb4e8` PLAN-08 catalog validUntil gate** — the per-strategy `validUntil` was
+    documented + date-validated but never enforced. New `isStrategyExpiredForYear`
+    + a filter in `evaluatePlanningOpportunities` suppress hits whose validUntil tax
+    year is before the RETURN's tax year (deterministic, not wall-clock). All current
+    strategies are validUntil 2026, so TY≤2026 unaffected; TY2027+ surfaces nothing.
+    +7 tests. (H3 multi-year wiring assessed + DEFERRED — best candidate G1.22 overlaps
+    the wired G1.4 Roth + needs a ~13-yr RMD projection; see docs/todo.md.)
 
 ### Engine semantics worth remembering (learned this session)
 
@@ -174,22 +182,23 @@ which brings its own auth/tenancy — so D15 auth is POSTPONED, don't build it).
 Read first: .claude/handoff.md, CLAUDE.md, docs/todo.md (CURRENT FOCUS),
 docs/coverage-matrix.md, docs/planning-strategy-audit.md.
 
-Where we left off (2026-06-01): shipped + deployed 11 fixes — 4 audit quick-wins
+Where we left off (2026-06-01): shipped + deployed 12 fixes — 4 audit quick-wins
 (FORM-03 1040-X chain, FED-05 blind std ded incl. a prod clients-table ALTER,
 PLAN-04 kiddie/Coverdell child gate, PLAN-06 QCD 70½), a 16-scenario hand-calc'd
 pipeline battery, H2-wired 2 heuristic planning detectors (G1.92 Solo 401(k),
-G1.96 §132(f)), and 5 engine sub-gaps: §461(l) Sch-C loss flow, STL-05 Maryland
-two-component EITC, K-1 §199A wage/UBIA limit, AMT line 2e state-refund recapture,
-wash-sale §1091(d) holding-period tack. 38 no-API suites / 3,099 assertions green;
-clean typecheck; live-verified on EC2.
+G1.96 §132(f)), 5 engine sub-gaps (§461(l) Sch-C loss flow, STL-05 Maryland EITC,
+K-1 §199A wage/UBIA limit, AMT line 2e state-refund recapture, wash-sale §1091(d)
+tack), and PLAN-08 (catalog validUntil gate). 38 no-API suites / 3,106 assertions
+green; clean typecheck; live-verified on EC2.
 
-Recommended next task: the high-value tax-calc sub-gaps are CLOSED. Remaining ones
-are niche (AMT NOL, line 2i depreciation, K-1 guaranteed-payments dedicated field,
-§163(j) $30M exemption, part-year exact schedules, partial/cross-account wash —
-see docs/todo.md). Consider pivoting to PLANNING depth instead: extend H3 multi-year
-wiring (only G1.3/G1.8/G1.4 are multi-year-aware → Roth ladders, RMD, installment
-sales, carryforward depletion), enforce catalog `validUntil` (PLAN-08), and refresh
-TY2025/2026 + OBBBA limits across the 97 strategies. Keep computeTaxReturnPure
-pure/portable for the Haven fusion. Hand-calc every expected value; run the no-API
+Recommended next task: the high-value tax-calc sub-gaps AND the quick planning wins
+are CLOSED. The remaining work is either niche calc edge cases (AMT NOL, line 2i,
+K-1 guaranteed-payments field, §163(j) $30M, part-year exact schedules, partial wash)
+or larger lifts that need dedicated time: H3 multi-year wiring (assessed + deferred —
+best candidate overlaps G1.4, needs a defensible ~13-yr RMD model; see docs/todo.md),
+and a TY2025/2026 + OBBBA catalog refresh (needs an authoritative OBBBA source — do
+NOT guess the values). Strong candidates for a fresh, high-leverage session: a live
+CPA-validation pass (A1 outreach packet is ready), or the Haven-fusion prep. Keep
+computeTaxReturnPure pure/portable. Hand-calc every expected value; run the no-API
 suite; commit per chunk; push to main AND fully deploy to EC2 + verify live.
 ```
