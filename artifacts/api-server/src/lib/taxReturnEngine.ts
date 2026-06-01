@@ -2251,8 +2251,15 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const saltAddbackForAmt = amtStateTaxAddbackOverride > 0
     ? amtStateTaxAddbackOverride
     : autoSaltAddback;
-  // Total Form 6251 AMTI adjustment = legacy catch-all + ISO bargain + SALT addback
-  const totalAmtPreferences = amtPreferencesLegacy + amtIsoBargainElement + saltAddbackForAmt;
+  // Form 6251 line 2e — a taxable state/local refund (§111) included in regular
+  // taxable income is NOT income for AMT (the underlying state-tax deduction was
+  // never allowed for AMT, so refunding it can't be AMT income). Remove it from
+  // the AMT base as a NEGATIVE adjustment. (Only nonzero when the filer itemized
+  // last year → taxableStateRefund > 0.)
+  // Total Form 6251 AMTI adjustment = legacy catch-all + ISO bargain + SALT
+  // addback (line 2g) − taxable state refund (line 2e).
+  const totalAmtPreferences =
+    amtPreferencesLegacy + amtIsoBargainElement + saltAddbackForAmt - taxableStateRefund;
 
   const amt = calculateAmt({
     taxableIncome: taxableAfterQbi,

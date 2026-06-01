@@ -24,6 +24,7 @@ import {
   computeTaxReturnPure,
   type TaxReturnInputs,
 } from "../../artifacts/api-server/src/lib/taxReturnEngine";
+import { calculateAmt } from "../../artifacts/api-server/src/lib/taxCalculator";
 
 const PASS: string[] = [];
 const FAIL: string[] = [];
@@ -223,6 +224,50 @@ header("Test G — MFJ SALT addback flows through identically");
   });
   check("Itemized = $60,000 (SALT $10k + mortgage $50k)", r.itemizedDeductions ?? 0, 60000, 1);
   check("AMTI = $350,000 (taxable $340k + SALT addback $10k)", r.detail.amt.amti, 350000, 1);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Form 6251 LINE 2e — taxable state refund removed from AMTI (fix 2026-06-01)
+// ════════════════════════════════════════════════════════════════════════════
+// A taxable state/local refund (§111) is included in regular taxable income but
+// is NOT income for AMT (the underlying state-tax deduction was never allowed
+// for AMT). The engine now subtracts it from the AMT base (a negative §6251
+// adjustment); the AMTI floor moved from the prefs to AMTI itself so a negative
+// net adjustment is honored.
+
+// ── Direct mechanism: a negative net preference reduces AMTI by amount × rate ─
+// taxableIncome $300,000. With prefs −$5,000 → AMTI = max(0, 295,000) = 295,000;
+//   amtBase = 295,000 − 85,700 = 209,300; 26% = $54,418 (below $232,600).
+// With prefs 0 → AMTI 300,000; amtBase 214,300; 26% = $55,718.
+// Difference $1,300 = $5,000 × 26% (the refund's AMT effect).
+{
+  const withNeg = calculateAmt({ taxableIncome: 300000, amtPreferences: -5000, filingStatus: "single", regularTax: 0, taxYear: 2024 });
+  const without = calculateAmt({ taxableIncome: 300000, amtPreferences: 0, filingStatus: "single", regularTax: 0, taxYear: 2024 });
+  check("Line 2e direct: neg pref → AMTI $295,000", withNeg.amti, 295000, 1);
+  check("Line 2e direct: TMT $54,418 (vs $55,718 without)", withNeg.amtAtFullRateOnAmtBase, 54418, 1);
+  check("Line 2e direct: difference = $1,300 ($5k × 26%)", without.amtAtFullRateOnAmtBase - withNeg.amtAtFullRateOnAmtBase, 1300, 1);
+}
+
+// ── End-to-end: toggling ONLY the state refund leaves AMTI identical ──────
+// Single NY itemizer (W-2 $200k, SALT capped $10k + mortgage $20k, prior-year
+// itemized). A $5,000 state refund flows into REGULAR taxable income (170k →
+// 175k) but line 2e removes it from AMTI → AMTI stays $180,000 either way.
+// (Without the fix the refund run would show AMTI $185,000.)
+{
+  const base = {
+    client: { filingStatus: "single", state: "NY", taxYear: 2024, priorYearItemized: true } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 200000, federalTaxWithheldBox2: 0, stateCode: "NY" }] as unknown as TaxReturnInputs["w2s"],
+    adjustments: [
+      { adjustmentType: "state_income_tax", amount: 25000, isApplied: true },
+      { adjustmentType: "mortgage_interest", amount: 20000, isApplied: true },
+    ] as unknown as TaxReturnInputs["adjustments"],
+    taxYear: 2024,
+  };
+  const withRefund = computeTaxReturnPure({ ...base, form1099s: [{ taxYear: 2024, formType: "g", stateLocalRefund: 5000 }] as unknown as TaxReturnInputs["form1099s"] });
+  const noRefund = computeTaxReturnPure({ ...base, form1099s: [] });
+  check("Line 2e E2E: refund flows to REGULAR taxable ($175k vs $170k)", withRefund.taxableIncome - noRefund.taxableIncome, 5000, 1);
+  check("Line 2e E2E: AMTI identical $180,000 (refund excluded)", withRefund.detail.amt.amti, 180000, 1);
+  check("Line 2e E2E: AMTI unchanged by the refund", withRefund.detail.amt.amti - noRefund.detail.amt.amti, 0, 0.5);
 }
 
 // ────────────────────────────────────────────────────────────────────────────

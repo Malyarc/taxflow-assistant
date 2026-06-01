@@ -5208,7 +5208,11 @@ export function calculateAmt(params: {
   const fs = filingStatus in data.exemption ? filingStatus : "single";
   const baseExemption = data.exemption[fs];
   const phaseStart = data.exemptionPhaseOutStart[fs];
-  const amti = taxableIncome + Math.max(0, amtPreferences);
+  // AMTI = regular taxable income + net AMT preferences/adjustments. Net prefs
+  // may be NEGATIVE (Form 6251 line 2e — a taxable state refund is removed for
+  // AMT). Floor AMTI (not the prefs) at 0. Equivalent to the prior
+  // `Math.max(0, amtPreferences)` for all non-negative-pref callers.
+  const amti = Math.max(0, taxableIncome + amtPreferences);
   // Phase out: 25¢ per $1 over threshold
   const phaseOut = amti > phaseStart ? (amti - phaseStart) * 0.25 : 0;
   const exemption = Math.max(0, baseExemption - phaseOut);
