@@ -957,6 +957,9 @@ async function loadForm8990Data(
     thirtyPercentAti,
     allowedDeduction,
     disallowedCarryforward,
+    smallBusinessExempt: ret.section163jSmallBusinessExempt ?? false,
+    grossReceipts: Number(ret.section163jGrossReceipts ?? 0),
+    grossReceiptsThreshold: Number(ret.section163jGrossReceiptsThreshold ?? 30_000_000),
   };
 }
 

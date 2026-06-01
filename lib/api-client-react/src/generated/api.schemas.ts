@@ -1192,6 +1192,7 @@ export const AdjustmentAdjustmentType = {
   section_163j_carryforward_from_prior: "section_163j_carryforward_from_prior",
   section_163j_floor_plan_financing_interest:
     "section_163j_floor_plan_financing_interest",
+  section_163j_gross_receipts: "section_163j_gross_receipts",
   section_461l_excess_loss_addback: "section_461l_excess_loss_addback",
   roth_conversion_amount: "roth_conversion_amount",
   nondeductible_ira_contribution: "nondeductible_ira_contribution",
@@ -1305,6 +1306,7 @@ export const CreateAdjustmentBodyAdjustmentType = {
   section_163j_carryforward_from_prior: "section_163j_carryforward_from_prior",
   section_163j_floor_plan_financing_interest:
     "section_163j_floor_plan_financing_interest",
+  section_163j_gross_receipts: "section_163j_gross_receipts",
   section_461l_excess_loss_addback: "section_461l_excess_loss_addback",
   roth_conversion_amount: "roth_conversion_amount",
   nondeductible_ira_contribution: "nondeductible_ira_contribution",
@@ -1414,6 +1416,7 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   section_163j_carryforward_from_prior: "section_163j_carryforward_from_prior",
   section_163j_floor_plan_financing_interest:
     "section_163j_floor_plan_financing_interest",
+  section_163j_gross_receipts: "section_163j_gross_receipts",
   section_461l_excess_loss_addback: "section_461l_excess_loss_addback",
   roth_conversion_amount: "roth_conversion_amount",
   nondeductible_ira_contribution: "nondeductible_ira_contribution",

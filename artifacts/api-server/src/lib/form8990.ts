@@ -49,6 +49,12 @@ export interface Form8990Data {
   allowedDeduction: number;
   /** Line 31 (Section IV) — Disallowed business interest carryforward to next year. */
   disallowedCarryforward: number;
+  /** §163(j)(3) small-business exemption (3-yr avg gross receipts ≤ §448(c) threshold). */
+  smallBusinessExempt?: boolean;
+  /** §448(c) 3-prior-year average gross receipts the CPA supplied (0 = not provided). */
+  grossReceipts?: number;
+  /** §448(c) gross-receipts threshold for the tax year. */
+  grossReceiptsThreshold?: number;
 }
 
 const FILING_STATUS_LABELS: Record<string, string> = {
@@ -156,33 +162,49 @@ export function buildForm8990Pdf(
       );
     doc.moveDown(1);
 
-    // ── Important notice ──
+    // ── Important notice (engine's §163(j)(3) exemption determination) ──
     const noticeTop = doc.y;
+    const exempt = data.smallBusinessExempt === true;
+    const grossReceipts = data.grossReceipts ?? 0;
+    const threshold = data.grossReceiptsThreshold ?? 30_000_000;
+    const noticeColor = exempt ? "#0a5d2a" : "#aa6600";
     doc
-      .rect(54, noticeTop, 504, 72)
+      .rect(54, noticeTop, 504, 82)
       .lineWidth(0.5)
-      .strokeColor("#aa6600")
+      .strokeColor(noticeColor)
       .stroke();
     doc
       .fontSize(9)
-      .fillColor("#aa6600")
+      .fillColor(noticeColor)
       .font("Helvetica-Bold")
-      .text("Small Business Taxpayer Exemption", 64, noticeTop + 6);
+      .text(
+        exempt
+          ? "EXEMPT — Small Business Taxpayer (§163(j)(3))"
+          : grossReceipts > 0
+            ? "NOT EXEMPT — §163(j) limitation applies"
+            : "Small Business Taxpayer Exemption (§163(j)(3))",
+        64,
+        noticeTop + 6,
+      );
+    const noticeBody = exempt
+      ? `The engine determined this filer is EXEMPT: 3-year average gross receipts ${fmtCurrency(grossReceipts)} ` +
+        `≤ the §448(c) threshold ${fmtCurrency(threshold)} for TY${data.taxYear}. The §163(j) limitation does NOT ` +
+        `apply — all business interest is fully deductible and nothing carries forward. Filing Form 8990 is OPTIONAL ` +
+        `(it may still be useful as an audit trail).`
+      : grossReceipts > 0
+        ? `The engine determined this filer is NOT exempt: 3-year average gross receipts ${fmtCurrency(grossReceipts)} ` +
+          `exceeds the §448(c) threshold ${fmtCurrency(threshold)} for TY${data.taxYear}. The §163(j) 30%-of-ATI ` +
+          `limitation applies (Section I below) and Form 8990 is REQUIRED.`
+        : `Per §163(j)(3), the limitation does NOT apply to a taxpayer meeting the §448(c) gross-receipts test ` +
+          `(3-year average ≤ ${fmtCurrency(threshold)} for TY${data.taxYear}). No gross-receipts figure was supplied, ` +
+          `so the engine applied the §163(j) limitation (Section I). To claim the exemption, enter the 3-year average ` +
+          `gross receipts; if exempt, Form 8990 is OPTIONAL.`;
     doc
       .fontSize(8)
       .font("Helvetica")
       .fillColor("#444")
-      .text(
-        "Per §163(j)(3), the limitation does NOT apply to a taxpayer that meets the gross receipts test " +
-          "of §448(c) — average annual gross receipts ≤ $30,000,000 for the 3 prior tax years (TY2024 indexed " +
-          "amount). The engine does NOT auto-detect this exemption; the CPA must determine whether Form 8990 " +
-          "is required. If exempt, file is OPTIONAL but may be useful for carryforward tracking. If not exempt, " +
-          "Form 8990 is REQUIRED.",
-        64,
-        noticeTop + 22,
-        { width: 484 },
-      );
-    doc.y = noticeTop + 80;
+      .text(noticeBody, 64, noticeTop + 22, { width: 484 });
+    doc.y = noticeTop + 90;
     doc.moveDown(0.5);
 
     // ── Identification ──
@@ -254,6 +276,50 @@ export function buildForm8990Pdf(
     );
     doc.moveDown(0.5);
 
+    // ── Section II — Partnership Pass-Through Items (Lines 31-37) ──
+    // These are completed by a PARTNERSHIP filing its own Form 8990; an
+    // individual partner does not complete them. The partner-level item is
+    // excess business interest expense (EBIE) reported on Schedule K-1
+    // (1065 Box 13 code K / Box 20 code N), carried to the partner's
+    // Form 8990 Schedule A and deductible only against future excess taxable
+    // income from the SAME partnership (not the partner's own ATI).
+    doc
+      .fontSize(11)
+      .font("Helvetica-Bold")
+      .fillColor("#000")
+      .text("Section II  Partnership Pass-Through Items (Lines 31-37)");
+    doc.moveDown(0.3);
+    doc.fontSize(9).font("Helvetica").fillColor("#555");
+    doc.text(
+      "Not applicable to an individual filer. A partnership computes its §163(j) limitation at the entity level " +
+        "and reports each partner's excess business interest expense (EBIE), excess taxable income (ETI), and " +
+        "excess business interest income on Schedule K-1. A partner who received EBIE carries it on Schedule A " +
+        "of their own Form 8990 — it is deductible only against later ETI from the same partnership and is NOT " +
+        "subject to the partner's own 30%-of-ATI limit in Section I.",
+      54,
+      doc.y,
+      { width: 504 },
+    );
+    doc.moveDown(0.5);
+
+    // ── Section III — S Corporation Pass-Through Items (Lines 38-42) ──
+    doc
+      .fontSize(11)
+      .font("Helvetica-Bold")
+      .fillColor("#000")
+      .text("Section III  S Corporation Pass-Through Items (Lines 38-42)");
+    doc.moveDown(0.3);
+    doc.fontSize(9).font("Helvetica").fillColor("#555");
+    doc.text(
+      "Not applicable to an individual filer. An S corporation applies §163(j) at the entity level; any disallowed " +
+        "business interest stays at the S-corp level (it does not pass through as EBIE the way a partnership's does). " +
+        "Shareholders therefore have no Section III pass-through entries on their individual Form 8990.",
+      54,
+      doc.y,
+      { width: 504 },
+    );
+    doc.moveDown(0.5);
+
     // ── Section IV — Disallowed Business Interest Expense Carryforward ──
     doc
       .fontSize(11)
@@ -311,11 +377,11 @@ export function buildForm8990Pdf(
     // ── Footnote ──
     doc.fontSize(9).fillColor("#666");
     doc.text(
-      "Sub-gaps (documented): (1) ATI proxy is taxable-income-before-§163(j)/NOL/QBI; for TY≤2021 the rules " +
-        "also require depreciation/amortization/depletion addback (not relevant for TY2024+). (2) Section II " +
-        "(partnership pass-through) and Section III (S-corp pass-through) not rendered — for individual " +
-        "filers, these are typically blank since the partnership/S-corp files its own Form 8990. (3) Small-" +
-        "business exemption (§163(j)(3)) requires CPA-determined eligibility; engine doesn't auto-detect.",
+      "Notes: (1) ATI proxy is taxable-income-before-§163(j)/NOL/QBI; for TY≤2021 the rules also require " +
+        "depreciation/amortization/depletion addback (not relevant for TY2024+). (2) Sections II/III are " +
+        "entity-level (the partnership/S-corp files its own Form 8990) and are correctly blank for an individual " +
+        "filer; partner-received EBIE is reported on Schedule A. (3) The §163(j)(3) small-business exemption is " +
+        "now auto-detected from the CPA-supplied 3-year average gross receipts vs. the §448(c) threshold.",
       54,
       doc.y,
       { width: 504 },

@@ -352,6 +352,92 @@ function adj(type: string, amount: number, id = Math.floor(Math.random() * 1e9))
   check("Case L6 AGI floors at $0 (loss > income)", r.adjustedGrossIncome, 0);
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// §163(j)(3) SMALL-BUSINESS GROSS-RECEIPTS EXEMPTION (§448(c))
+// §448(c) thresholds (Rev. Proc. 2023-34 / 2024-40 / 2025-32):
+//   TY2024 $30,000,000 · TY2025 $31,000,000 · TY2026 $32,000,000
+// ════════════════════════════════════════════════════════════════════════════
+function bcheck(label: string, actual: boolean, expected: boolean): void {
+  if (actual === expected) PASS.push(`✓ ${label}`);
+  else FAIL.push(`✗ ${label}: expected ${expected}, got ${actual}`);
+}
+
+// Case S1 — gross receipts BELOW threshold → EXEMPT: 30% cap lifted, full allow.
+// Base $100k W-2; gross interest $50k (would cap to $25,620 — see Case 3);
+// gross receipts $5,000,000 ≤ $30M (2024) → exempt → allowed = $50k, cf = $0.
+{
+  const r = computeTaxReturnPure(baseInputs({ adjustments: [
+    adj("section_163j_business_interest_expense", 50000, 7001),
+    adj("section_163j_gross_receipts", 5_000_000, 7002),
+  ] }));
+  bcheck("Case S1 small-biz EXEMPT", r.section163jSmallBusinessExempt, true);
+  check("Case S1 allowed = $50k (cap lifted)", r.section163jAllowedDeduction, 50000);
+  check("Case S1 disallowed cf = $0", r.section163jDisallowedCarryforward, 0);
+  check("Case S1 threshold = $30M (2024)", r.section163jGrossReceiptsThreshold, 30_000_000);
+  check("Case S1 AGI = $100k − $50k", r.adjustedGrossIncome, 50000);
+}
+
+// Case S2 — gross receipts ABOVE threshold → NOT exempt → 30% cap applies.
+// Same as Case 3: allowed $25,620 (30% × ATI $85,400), disallowed $24,380.
+{
+  const r = computeTaxReturnPure(baseInputs({ adjustments: [
+    adj("section_163j_business_interest_expense", 50000, 7011),
+    adj("section_163j_gross_receipts", 40_000_000, 7012),
+  ] }));
+  bcheck("Case S2 NOT exempt", r.section163jSmallBusinessExempt, false);
+  check("Case S2 allowed = $25,620 (capped)", r.section163jAllowedDeduction, 25620);
+  check("Case S2 disallowed cf = $24,380", r.section163jDisallowedCarryforward, 24380);
+}
+
+// Case S3 — gross receipts EXACTLY at threshold ($30M, 2024) → exempt (≤).
+{
+  const r = computeTaxReturnPure(baseInputs({ adjustments: [
+    adj("section_163j_business_interest_expense", 50000, 7021),
+    adj("section_163j_gross_receipts", 30_000_000, 7022),
+  ] }));
+  bcheck("Case S3 at-threshold EXEMPT (≤)", r.section163jSmallBusinessExempt, true);
+  check("Case S3 allowed = $50k", r.section163jAllowedDeduction, 50000);
+}
+
+// Case S4 — gross receipts $1 over threshold → NOT exempt.
+{
+  const r = computeTaxReturnPure(baseInputs({ adjustments: [
+    adj("section_163j_business_interest_expense", 50000, 7031),
+    adj("section_163j_gross_receipts", 30_000_001, 7032),
+  ] }));
+  bcheck("Case S4 $1-over NOT exempt", r.section163jSmallBusinessExempt, false);
+  check("Case S4 allowed = $25,620 (capped)", r.section163jAllowedDeduction, 25620);
+}
+
+// Case S5 — exemption also frees the prior-year carryforward.
+// Gross $20k + carryforward $40k = $60k subject; exempt → all $60k allowed, cf $0.
+{
+  const r = computeTaxReturnPure(baseInputs({ adjustments: [
+    adj("section_163j_business_interest_expense", 20000, 7041),
+    adj("section_163j_carryforward_from_prior", 40000, 7042),
+    adj("section_163j_gross_receipts", 10_000_000, 7043),
+  ] }));
+  bcheck("Case S5 EXEMPT (incl. carryforward)", r.section163jSmallBusinessExempt, true);
+  check("Case S5 allowed = $60k (gross + cf, no cap)", r.section163jAllowedDeduction, 60000);
+  check("Case S5 disallowed cf = $0", r.section163jDisallowedCarryforward, 0);
+  check("Case S5 AGI = $100k − $60k", r.adjustedGrossIncome, 40000);
+}
+
+// Case S6 — TY2025 threshold = $31M. Gross receipts $30.5M is ABOVE the 2024 $30M
+// but ≤ the 2025 $31M → exempt for 2025 (year-keyed threshold).
+{
+  const inp = baseInputs({ taxYear: 2025, adjustments: [
+    adj("section_163j_business_interest_expense", 50000, 7051),
+    adj("section_163j_gross_receipts", 30_500_000, 7052),
+  ] });
+  (inp.client as unknown as { taxYear: number }).taxYear = 2025;
+  (inp.w2s[0] as unknown as { taxYear: number }).taxYear = 2025;
+  const r = computeTaxReturnPure(inp);
+  check("Case S6 threshold = $31M (2025)", r.section163jGrossReceiptsThreshold, 31_000_000);
+  bcheck("Case S6 EXEMPT at $30.5M for 2025", r.section163jSmallBusinessExempt, true);
+  check("Case S6 allowed = $50k (cap lifted)", r.section163jAllowedDeduction, 50000);
+}
+
 console.log(`\n§163(j) + §461(l) (C7) tests:`);
 console.log(`  ✓ Passed: ${PASS.length}`);
 console.log(`  ✗ Failed: ${FAIL.length}`);

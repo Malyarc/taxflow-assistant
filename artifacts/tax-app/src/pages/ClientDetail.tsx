@@ -840,12 +840,14 @@ function Section1031Card({ taxReturn, clientId, taxYear }: { taxReturn: { sectio
 }
 
 // ─── C7 — §163(j) + §461(l) business-limit summary ───────────────────────
-function Section163j461lCard({ taxReturn, clientId, taxYear }: { taxReturn: { section163jBusinessInterestExpense?: string | number | null; section163jAllowedDeduction?: string | number | null; section163jDisallowedCarryforward?: string | number | null; section461lExcessLossAddback?: string | number | null } | null | undefined; clientId: number; taxYear: number }) {
+function Section163j461lCard({ taxReturn, clientId, taxYear }: { taxReturn: { section163jBusinessInterestExpense?: string | number | null; section163jAllowedDeduction?: string | number | null; section163jDisallowedCarryforward?: string | number | null; section461lExcessLossAddback?: string | number | null; section163jSmallBusinessExempt?: boolean | null; section163jGrossReceipts?: string | number | null; section163jGrossReceiptsThreshold?: string | number | null } | null | undefined; clientId: number; taxYear: number }) {
   const num = (v: string | number | null | undefined): number => v == null ? 0 : (typeof v === "number" ? v : Number(v));
   const gross = num(taxReturn?.section163jBusinessInterestExpense);
   const allowed = num(taxReturn?.section163jAllowedDeduction);
   const cf = num(taxReturn?.section163jDisallowedCarryforward);
   const lossAddback = num(taxReturn?.section461lExcessLossAddback);
+  const sbExempt = taxReturn?.section163jSmallBusinessExempt === true;
+  const grossReceipts = num(taxReturn?.section163jGrossReceipts);
   if (gross <= 0 && allowed <= 0 && cf <= 0 && lossAddback <= 0) return null;
   const has163j = gross > 0 || allowed > 0 || cf > 0;
   const fmt = (n: number): string => n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0, maximumFractionDigits: 0 });
@@ -856,7 +858,7 @@ function Section163j461lCard({ taxReturn, clientId, taxYear }: { taxReturn: { se
           <div>
             <CardTitle className="text-base">Business-Income Limits — §163(j) + §461(l)</CardTitle>
             <p className="text-xs text-muted-foreground mt-1">
-              §163(j) — engine applies the 30%-of-ATI cap on business interest expense (ATI proxy = pre-§163(j) ordinary income). Disallowed amount carries forward indefinitely. CPA confirms small-business gross-receipts exception (≤$30M for TY2024) or real-property-trade election is NOT invoked. §461(l) — CPA pre-computes the aggregate excess business loss above $305k single / $610k MFJ.
+              §163(j) — engine applies the 30%-of-ATI cap on business interest expense (ATI proxy = pre-§163(j) ordinary income). Disallowed amount carries forward indefinitely. The small-business gross-receipts exemption (§163(j)(3)/§448(c), ≤$30M 2024 / $31M 2025 / $32M 2026) is auto-detected when the 3-yr avg gross-receipts adjustment is entered. §461(l) — CPA pre-computes the aggregate excess business loss above $305k single / $610k MFJ.
             </p>
           </div>
           {has163j ? (
@@ -877,6 +879,10 @@ function Section163j461lCard({ taxReturn, clientId, taxYear }: { taxReturn: { se
           {has163j ? <>
             <span className="text-muted-foreground">§163(j) gross business interest (CPA-entered)</span>
             <span className="font-mono text-right">{fmt(gross)}</span>
+            {sbExempt ? <>
+              <span className="text-success font-medium">§163(j)(3) small-business EXEMPT (gross receipts {fmt(grossReceipts)})</span>
+              <span className="font-mono text-right text-success font-medium">no 30% cap</span>
+            </> : null}
             <span className="text-success font-medium">§163(j) allowed deduction this year</span>
             <span className="font-mono text-right text-success font-medium">{fmt(allowed)}</span>
             <span className="text-amber-700">§163(j) disallowed → carries to next year (indefinite)</span>
@@ -2560,6 +2566,7 @@ function AdjustmentsTab({ clientId }: { clientId: number }) {
     section_163j_business_interest_income: "§163(j) Business Interest Income (adds to allowance dollar-for-dollar)",
     section_163j_carryforward_from_prior: "§163(j) Carryforward from Prior Year (stacks on gross, subject to same 30% cap)",
     section_163j_floor_plan_financing_interest: "§163(j) Floor Plan Financing Interest (100% allowed; never capped)",
+    section_163j_gross_receipts: "§163(j) 3-yr Avg Gross Receipts — §448(c) (≤ threshold → small-biz EXEMPT, no 30% cap; $30M 2024 / $31M 2025 / $32M 2026)",
     section_461l_excess_loss_addback: "§461(l) Excess Business Loss Addback (TY2024 thresholds $305k/$610k; CPA pre-computes)",
     // Schedule C
     schedule_c_expenses: "Schedule C Business Expenses",

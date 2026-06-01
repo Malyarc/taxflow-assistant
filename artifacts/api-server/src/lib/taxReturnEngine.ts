@@ -833,6 +833,12 @@ export interface ComputedTaxReturn {
   section163jAllowedDeduction: number;
   /** C7 — §163(j) disallowed amount carried to next year (indefinite). */
   section163jDisallowedCarryforward: number;
+  /** §163(j)(3) small-business exemption — TRUE when 3-yr avg gross receipts ≤ §448(c) threshold. */
+  section163jSmallBusinessExempt: boolean;
+  /** §448(c) 3-prior-year average gross receipts entered by CPA (0 = not provided). */
+  section163jGrossReceipts: number;
+  /** §448(c) gross-receipts threshold for the tax year ($30M 2024 / $31M 2025 / $32M 2026). */
+  section163jGrossReceiptsThreshold: number;
   /**
    * C7 — §461(l) excess business loss addback (TCJA). Positive value
    * added to ordinary income (reverses a prior over-deduction).
@@ -1371,14 +1377,16 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // amortization / depletion (pre-2022 only; post-2022 reversed). The
   // engine doesn't track depreciation separately at this layer, so AGI
   // less LTCG/QDIV is a workable proxy at moderate-to-high incomes.
-  // Tracked sub-gap. Real-property-trade-or-business election and the
-  // small-business gross-receipts exception ($30M TY2024) are the CPA's
-  // responsibility — engine assumes §163(j) applies if the CPA enters
-  // any business interest expense.
+  // Tracked sub-gap. Real-property-trade-or-business election is the CPA's
+  // responsibility. The §163(j)(3) small-business gross-receipts EXEMPTION is
+  // now auto-detected: when the CPA supplies section_163j_gross_receipts (the
+  // 3-prior-year average per §448(c)) ≤ the year's threshold, §163(j) does NOT
+  // apply and all business interest is allowed (see section163jSmallBusinessExempt).
   const section163jBusinessInterestExpenseAdj = sumByType("section_163j_business_interest_expense");
   const section163jBusinessInterestIncomeAdj = sumByType("section_163j_business_interest_income");
   const section163jCarryforwardFromPriorAdj = sumByType("section_163j_carryforward_from_prior");
   const section163jFloorPlanInterestAdj = sumByType("section_163j_floor_plan_financing_interest");
+  const section163jGrossReceiptsAdj = sumByType("section_163j_gross_receipts");
   // C7 — §461(l) excess business loss addback (TCJA, TY2024 thresholds
   // $305k single / $610k MFJ). CPA computes the aggregate net business
   // loss (Sched C + Sched E + K-1 active losses after §469 PAL), subtracts
@@ -1957,11 +1965,29 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const section163jCarryforwardFromPrior = Math.max(0, section163jCarryforwardFromPriorAdj);
   const section163jBusinessInterestIncome = Math.max(0, section163jBusinessInterestIncomeAdj);
   const section163jFloorPlanInterest = Math.max(0, section163jFloorPlanInterestAdj);
+  // §163(j)(3) small-business exemption: a taxpayer that meets the §448(c)
+  // gross-receipts test (3-prior-year average ≤ the inflation-adjusted
+  // threshold) is NOT subject to §163(j) — all business interest is allowed.
+  // §448(c) thresholds (Rev. Proc. 2023-34 / 2024-40 / 2025-32):
+  //   TY2024 $30,000,000 · TY2025 $31,000,000 · TY2026 $32,000,000.
+  // Auto-detected only when the CPA supplies a positive gross-receipts figure;
+  // 0/absent preserves prior behavior (engine applies the 30% cap).
+  const SECTION_448C_THRESHOLD: Record<number, number> = {
+    2024: 30_000_000, 2025: 31_000_000, 2026: 32_000_000,
+  };
+  const section163jGrossReceipts = Math.max(0, section163jGrossReceiptsAdj);
+  const section163jGrossReceiptsThreshold = SECTION_448C_THRESHOLD[taxYear] ?? 30_000_000;
+  const section163jSmallBusinessExempt =
+    section163jGrossReceipts > 0 && section163jGrossReceipts <= section163jGrossReceiptsThreshold;
+
   // §163(j)(1): allowance = (biz interest income) + (floor plan financing
   // interest) + (30% × ATI). Items NOT subject to the 30% cap are added
   // directly. Items subject (gross interest + carryforward) cap at 30% ATI.
+  // When the small-business exemption applies, the 30% cap is lifted — the
+  // cap-subject portion (current gross + prior carryforward) is fully allowed
+  // and nothing carries forward.
   const cappedPortion = section163jGross + section163jCarryforwardFromPrior;
-  const cappedAllowance = 0.30 * ati163jProxy;
+  const cappedAllowance = section163jSmallBusinessExempt ? cappedPortion : 0.30 * ati163jProxy;
   const cappedAllowed = Math.min(cappedPortion, cappedAllowance);
   const section163jAllowedDeduction =
     cappedAllowed + section163jBusinessInterestIncome + section163jFloorPlanInterest;
@@ -2988,6 +3014,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     section163jBusinessInterestExpense,
     section163jAllowedDeduction,
     section163jDisallowedCarryforward,
+    section163jSmallBusinessExempt,
+    section163jGrossReceipts,
+    section163jGrossReceiptsThreshold,
     section461lExcessLossAddback,
     feie,
     nolDeduction,
