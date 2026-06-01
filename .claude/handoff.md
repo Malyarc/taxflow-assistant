@@ -23,11 +23,12 @@ postponed to the Haven fusion). Knocked out the four quick correctness wins the
 gives the previously-missing PIPELINE coverage for the audit's federal fixes.
 Every expected value hand-calc'd against the published IRS/state rule before
 asserting. Then began the planning-credibility lift (H2-wiring, survey found most
-heuristic detectors are qualitative-by-nature) and closed the §461(l) Schedule-C
-loss-flow engine gap. **38 no-API suites / 3,074 assertions / 0 failures**, clean
-typecheck, FED-05 UI verified in a local browser preview, full deploy verified live.
+heuristic detectors are qualitative-by-nature) and closed two engine gaps: the
+§461(l) Schedule-C loss flow and STL-05 (Maryland's two-component EITC). **38 no-API
+suites / 3,083 assertions / 0 failures**, clean typecheck, FED-05 UI verified in a
+local browser preview, full deploy verified live.
 
-### What landed (7 commits on `main`, all pushed + deployed)
+### What landed (8 fixes on `main`, all pushed + deployed)
 
 1. **`e768c0c` FORM-03** — Form 1040-X Lines 16→20 rebuilt as the IRS settlement
    chain (Line 17 overpayment-on-original, Line 18 tax-paid-with-original, Lines
@@ -72,6 +73,12 @@ typecheck, FED-05 UI verified in a local browser preview, full deploy verified l
    stays floored (== old value) for the SE-tax base, QBI, local EIT, earned income.
    +12 tests. Remaining (documented): no auto-NOL when loss > income (AGI floors at
    0, CPA uses nol_carryforward); §163(j) ATI proxy still floored.
+8. **`601ae5f` STL-05 Maryland two-component EITC** — was a flat 45% refundable;
+   now `max(0.45 × fedEITC, min(0.50 × fedEITC, mdTax))` (nonrefundable 50% capped
+   at MD tax + refundable 45% floor), per Md. Code Tax-General §10-704. `calculateStateEitc`
+   gained a `stateTaxLiability` param, threaded from the engine credit block. +9
+   tests (direct unit + end-to-end wiring check). Childless-worker ~100% expansion
+   still not modeled (documented).
 
 ### Engine semantics worth remembering (learned this session)
 
@@ -119,12 +126,11 @@ project at `~/taxflow-pro`. Full runbook in CLAUDE.md.
 
 ## What's left — prioritized (next session)
 
-1. **Tax-calc correctness:** **STL-05** (MD EITC two-component: 50% nonrefundable
-   + 45% refundable, take the larger — engine has a single 45% refundable). Then the
-   remaining documented engine sub-gaps in `docs/todo.md` ordered by how often they
-   bite: K-1 §199A wage/UBIA + SSTB depth + guaranteed payments (Box 4), §163(j) ATI
-   proxy, AMT prefs (2i/2e/AMT-NOL), part-year per-income sourcing, wash-sale
-   §1091(d). (§461(l) Sch-C loss flow CLOSED 2026-06-01.)
+1. **Tax-calc correctness:** the remaining documented engine sub-gaps in
+   `docs/todo.md`, ordered by how often they bite: K-1 §199A wage/UBIA + SSTB depth
+   + guaranteed payments (Box 4), §163(j) ATI proxy, AMT prefs (2i/2e/AMT-NOL),
+   part-year per-income sourcing, wash-sale §1091(d). (§461(l) Sch-C loss flow +
+   STL-05 MD EITC both CLOSED 2026-06-01.)
 2. **Tax-planning:** H2-wiring is DONE for the wireable subset (G1.92 + G1.96);
    the rest is qualitative — see the survey note in `docs/todo.md` (do NOT
    force-wire). Remaining planning work: extend H3 multi-year wiring (only
@@ -147,20 +153,20 @@ which brings its own auth/tenancy — so D15 auth is POSTPONED, don't build it).
 Read first: .claude/handoff.md, CLAUDE.md, docs/todo.md (CURRENT FOCUS),
 docs/coverage-matrix.md, docs/planning-strategy-audit.md.
 
-Where we left off (2026-06-01): shipped + deployed 4 audit quick-wins (FORM-03
-1040-X chain, FED-05 blind std ded incl. a prod clients-table ALTER, PLAN-04
-kiddie/Coverdell child gate, PLAN-06 QCD 70½) + a 16-scenario hand-calc'd
-pipeline battery (FED-03/04/06 + pass-through/NIIT/state coverage) + H2-wired the
-2 cleanly-wireable heuristic planning detectors (G1.92 Solo 401(k), G1.96
-§132(f)) + closed the §461(l) Schedule-C loss-flow engine gap. 38 no-API suites /
-3,074 assertions green; clean typecheck; live-verified on EC2.
+Where we left off (2026-06-01): shipped + deployed 8 fixes — 4 audit quick-wins
+(FORM-03 1040-X chain, FED-05 blind std ded incl. a prod clients-table ALTER,
+PLAN-04 kiddie/Coverdell child gate, PLAN-06 QCD 70½), a 16-scenario hand-calc'd
+pipeline battery (FED-03/04/06 + pass-through/NIIT/state coverage), H2-wired the 2
+cleanly-wireable heuristic planning detectors (G1.92 Solo 401(k), G1.96 §132(f)),
+the §461(l) Schedule-C loss flow, and STL-05 (Maryland two-component EITC). 38
+no-API suites / 3,083 assertions green; clean typecheck; live-verified on EC2.
 
-Recommended next task: tax-calc correctness — STL-05 (MD EITC two-component: 50%
-nonrefundable + 45% refundable, take the larger) and the remaining engine sub-gaps
-in docs/todo.md (K-1 §199A wage/UBIA + SSTB depth + guaranteed payments, §163(j)
-ATI, AMT prefs, part-year sourcing, wash-sale §1091(d)). (H2-wiring is DONE for the
-wireable subset — the rest is qualitative; §461(l) Sch-C loss flow is CLOSED.)
-Keep computeTaxReturnPure pure/portable for the Haven fusion. Hand-calc every
-expected value; run the no-API suite; commit per chunk; push to main AND fully
-deploy to EC2 + verify live (runbook in CLAUDE.md / handoff.md).
+Recommended next task: tax-calc correctness — the remaining engine sub-gaps in
+docs/todo.md, ordered by how often they bite: K-1 §199A wage/UBIA + SSTB depth +
+guaranteed payments (Box 4); §163(j) ATI proxy; AMT prefs (2i/2e/AMT-NOL);
+part-year per-income sourcing; wash-sale §1091(d). (H2-wiring DONE for the wireable
+subset — the rest is qualitative; §461(l) + STL-05 both CLOSED.) Keep
+computeTaxReturnPure pure/portable for the Haven fusion. Hand-calc every expected
+value; run the no-API suite; commit per chunk; push to main AND fully deploy to EC2
++ verify live (runbook in CLAUDE.md / handoff.md).
 ```

@@ -16,10 +16,10 @@ larger **Haven** app, which brings its own auth/tenancy, so we won't build it
 twice. The focus is the **portable engine + planning feature**
 (`computeTaxReturnPure` is already Haven-portable — keep it pure). The live EC2
 box stays a **demo** (no auth/TLS) — do NOT put real client PII on it until the
-Haven fusion lands. **2026-06-01: 7 refinement commits shipped + deployed + verified
+Haven fusion lands. **2026-06-01: 8 refinement fixes shipped + deployed + verified
 live** (FORM-03, FED-05, PLAN-04, PLAN-06, 16-scenario battery, H2-wire G1.92/G1.96,
-§461(l) Sch-C loss flow — see `.claude/handoff.md`); **38 no-API suites / 3,074
-assertions green**, clean typecheck.
+§461(l) Sch-C loss flow, STL-05 MD two-component EITC — see `.claude/handoff.md`);
+**38 no-API suites / 3,083 assertions green**, clean typecheck.
 
 ### Tax CALCULATOR refinement backlog (correctness-first)
 
@@ -31,8 +31,10 @@ assertions green**, clean typecheck.
   ALTER applied. +10 hand-calc'd tests.
 
 Confirmed-open from the 2026-05-29 audit:
-- **STL-05** — MD EITC modeled as a single 45% refundable credit; real MD = 50%
-  nonrefundable + 45% refundable (take the larger). Under-credits in the high-MD-tax zone.
+- ✅ **STL-05 — SHIPPED 2026-06-01.** Maryland two-component EITC: net benefit =
+  max(45% × fedEITC refundable floor, min(50% × fedEITC, MD tax) nonrefundable).
+  No longer under-credits the high-MD-tax zone. +9 tests. (Childless-worker ~100%
+  expansion still not modeled — documented.)
 
 Documented engine sub-gaps (ordered by how often they bite a real return):
 - ✅ **§461(l) Sch-C loss flow — SHIPPED 2026-06-01.** Signed `scheduleCNetSigned`

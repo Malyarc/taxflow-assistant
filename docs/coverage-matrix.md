@@ -170,7 +170,7 @@ Source files referenced:
 | KY | Kentucky | ✓ | F 4.0% | ✓ | — | — | — | — | — | — | — | — | — |
 | LA | Louisiana | ✓ | P | ✓ | — | — | — | — | ✓ 5% | — | — | — | — |
 | ME | Maine | ✓ | P | ✓ | — | — | — | — | ✓ 25% | — | — | — | — |
-| MD | Maryland | ✓ | P | ✓ | — | — | — | — | ✓ 45% | — | — | — | ✓ (24) |
+| MD | Maryland | ✓ | P | ✓ | — | — | — | — | ✓ 50%NR/45%ref (STL-05) | — | — | — | ✓ (24) |
 | MA | Massachusetts | ✓ | F 5.0% | ✗ | — | — | 4% >$1.05M | — | ✓ 40% | — | — | — | — |
 | MI | Michigan | ✓ | F 4.25% | ✗ | — | — | — | — | ✓ 30% | — | — | — | — |
 | MN | Minnesota | ✓ | P | ✓ | — | — | — | ✓ | ✓ WFC | — | — | — | — |
