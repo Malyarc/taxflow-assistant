@@ -114,6 +114,9 @@ export interface ClientFacts {
   dependentsForCareCredit?: number | null;
   taxpayerAge?: number | null;
   spouseAge?: number | null;
+  /** FED-05 — legally blind at year end → extra std-ded box per IRC §63(f)(2). */
+  taxpayerBlind?: boolean | null;
+  spouseBlind?: boolean | null;
   spouseEarnedIncome?: Numish;
   hsaIsFamilyCoverage?: boolean | null;
   iraCoveredByWorkplacePlan?: boolean | null;
@@ -2062,6 +2065,8 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     // Age-65 / blind add-on inputs (IRS Form 1040 Std Ded Chart).
     taxpayerAge: client.taxpayerAge,
     spouseAge: client.spouseAge,
+    taxpayerBlind: client.taxpayerBlind,
+    spouseBlind: client.spouseBlind,
   });
 
   // K-1 §199A QBI (Box 20 Z on 1065 / Box 17 V on 1120-S) joins the QBI base.

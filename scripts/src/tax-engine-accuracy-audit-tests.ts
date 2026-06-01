@@ -422,6 +422,80 @@ header("A15. Std deduction over-65 add-on (single +$1,950)");
     "Rev. Proc. 2023-34 §3.16 — over-65 add-on");
 }
 
+// FED-05. BLIND additional standard deduction (IRC §63(f)(2)). Same per-box
+// amounts as the age-65 box: 2024 single/HoH +$1,950, MFJ/MFS/QSS +$1,550;
+// 2025 +$2,000 / +$1,600. Box counting per Form 1040 "Standard Deduction
+// Chart for People Who Were Born Before Jan 2, 1960, or Were Blind". Prior to
+// FED-05 the blind flag was implemented in the calculator but UNREACHABLE
+// (no schema field) — a blind NON-elderly filer under-deducted a full box.
+header("FED-05. Blind additional std deduction (IRC §63(f)(2))");
+{
+  // (a) Single, BLIND, age 50 (non-elderly) → 1 box × $1,950 = $16,550.
+  // $40k W-2, FL, no kids → no credits/other taxes, so federalTaxLiability is
+  // pure income tax. Taxable = 40,000 − 16,550 = 23,450.
+  // 2024 single tax: 1,160 (10% to 11,600) + 12%×(23,450−11,600=11,850)=1,422
+  //   = $2,582. (Without the box: taxable 25,400 → tax $2,816; box saves $234.)
+  const a = run({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 50, taxpayerBlind: true },
+    w2s: [{ taxYear: 2024, wagesBox1: 40000, stateCode: "FL" }],
+  });
+  check("FED-05a", "Single blind age 50 std ded = $16,550 (1 box)", a.standardDeduction, 16550, 1, "IRC §63(f)(2)");
+  check("FED-05a", "Single blind taxable = $23,450", a.taxableIncome, 23450, 1, "Form 1040 Line 15");
+  check("FED-05a", "Single blind fed tax = $2,582 (box saves $234)", a.federalTaxLiability, 2582, 1, "2024 Tax Computation single");
+
+  // (b) Single, BLIND + age 67 → 2 boxes × $1,950 = $3,900 → $18,500.
+  const b = run({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 67, taxpayerBlind: true },
+    w2s: [{ taxYear: 2024, wagesBox1: 40000, stateCode: "FL" }],
+  });
+  check("FED-05b", "Single blind+age67 std ded = $18,500 (2 boxes)", b.standardDeduction, 18500, 1, "IRC §63(f) — age + blind");
+
+  // (c) MFJ, taxpayer blind age 50, spouse NOT blind age 50 → 1 box × $1,550
+  //     → 29,200 + 1,550 = $30,750.
+  const c = run({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024, taxpayerAge: 50, spouseAge: 50, taxpayerBlind: true, spouseBlind: false },
+    w2s: [{ taxYear: 2024, wagesBox1: 60000, stateCode: "FL" }],
+  });
+  check("FED-05c", "MFJ one blind std ded = $30,750 (1 box × $1,550)", c.standardDeduction, 30750, 1, "IRC §63(f)(2) MFJ per-box $1,550");
+
+  // (d) MFJ, BOTH blind + BOTH age 67 → 4 boxes × $1,550 = $6,200 → $35,400.
+  const d = run({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024, taxpayerAge: 67, spouseAge: 67, taxpayerBlind: true, spouseBlind: true },
+    w2s: [{ taxYear: 2024, wagesBox1: 60000, stateCode: "FL" }],
+  });
+  check("FED-05d", "MFJ both blind+age67 std ded = $35,400 (4 boxes)", d.standardDeduction, 35400, 1, "Form 1040 chart — 4 boxes × $1,550");
+
+  // (e) MFS, taxpayer blind age 50; spouse blind flag IGNORED for MFS (only
+  //     MFJ/QSS count the spouse's boxes) → 1 box × $1,550 → 14,600 + 1,550 = $16,150.
+  const e = run({
+    client: { filingStatus: "married_filing_separately", state: "FL", taxYear: 2024, taxpayerAge: 50, taxpayerBlind: true, spouseBlind: true },
+    w2s: [{ taxYear: 2024, wagesBox1: 40000, stateCode: "FL" }],
+  });
+  check("FED-05e", "MFS blind std ded = $16,150 (spouse box not counted)", e.standardDeduction, 16150, 1, "MFS counts taxpayer box only");
+
+  // (f) HoH, blind age 50 → 1 box × $1,950 → 21,900 + 1,950 = $23,850.
+  const f = run({
+    client: { filingStatus: "head_of_household", state: "FL", taxYear: 2024, taxpayerAge: 50, taxpayerBlind: true, dependentsUnder17: 1 },
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, stateCode: "FL" }],
+  });
+  check("FED-05f", "HoH blind std ded = $23,850 (1 box × $1,950)", f.standardDeduction, 23850, 1, "HoH per-box $1,950");
+
+  // (g) TY2025 single blind age 50 → 15,000 + 2,000 = $17,000 (Rev. Proc. 2024-40).
+  const g = run({
+    client: { filingStatus: "single", state: "FL", taxYear: 2025, taxpayerAge: 50, taxpayerBlind: true },
+    w2s: [{ taxYear: 2025, wagesBox1: 40000, stateCode: "FL" }],
+    taxYear: 2025,
+  });
+  check("FED-05g", "TY2025 single blind std ded = $17,000", g.standardDeduction, 17000, 1, "Rev. Proc. 2024-40 §3.16");
+
+  // (h) CONTROL: single age 50, NOT blind → base $14,600, no add-on.
+  const h = run({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 50, taxpayerBlind: false },
+    w2s: [{ taxYear: 2024, wagesBox1: 40000, stateCode: "FL" }],
+  });
+  check("FED-05h", "Control: single not-blind std ded = $14,600 (no add-on)", h.standardDeduction, 14600, 1, "base std ded, flag gates correctly");
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // B. CANONICAL FED — IRS-published worked examples
 // ════════════════════════════════════════════════════════════════════════════

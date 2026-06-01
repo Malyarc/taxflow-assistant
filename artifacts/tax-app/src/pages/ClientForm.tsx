@@ -47,6 +47,8 @@ interface FormState {
   dependentsForCareCredit: number;
   taxpayerAge: number | "";
   spouseAge: number | "";
+  taxpayerBlind: boolean;
+  spouseBlind: boolean;
   spouseEarnedIncome: string;
   hsaIsFamilyCoverage: boolean;
   iraCoveredByWorkplacePlan: boolean;
@@ -93,6 +95,8 @@ const defaultForm: FormState = {
   dependentsForCareCredit: 0,
   taxpayerAge: "",
   spouseAge: "",
+  taxpayerBlind: false,
+  spouseBlind: false,
   spouseEarnedIncome: "",
   hsaIsFamilyCoverage: false,
   iraCoveredByWorkplacePlan: false,
@@ -142,6 +146,8 @@ export default function ClientForm({ editId }: Props) {
         dependentsForCareCredit?: number;
         taxpayerAge?: number | null;
         spouseAge?: number | null;
+        taxpayerBlind?: boolean | null;
+        spouseBlind?: boolean | null;
         spouseEarnedIncome?: number | null;
         hsaIsFamilyCoverage?: boolean;
         iraCoveredByWorkplacePlan?: boolean;
@@ -161,6 +167,8 @@ export default function ClientForm({ editId }: Props) {
         dependentsForCareCredit: e.dependentsForCareCredit ?? 0,
         taxpayerAge: e.taxpayerAge ?? "",
         spouseAge: e.spouseAge ?? "",
+        taxpayerBlind: e.taxpayerBlind ?? false,
+        spouseBlind: e.spouseBlind ?? false,
         spouseEarnedIncome: e.spouseEarnedIncome != null ? String(e.spouseEarnedIncome) : "",
         hsaIsFamilyCoverage: e.hsaIsFamilyCoverage ?? false,
         iraCoveredByWorkplacePlan: e.iraCoveredByWorkplacePlan ?? false,
@@ -224,6 +232,8 @@ export default function ClientForm({ editId }: Props) {
       dependentsForCareCredit: Number(form.dependentsForCareCredit) || 0,
       taxpayerAge: form.taxpayerAge === "" ? null : Number(form.taxpayerAge),
       spouseAge: form.spouseAge === "" ? null : Number(form.spouseAge),
+      taxpayerBlind: Boolean(form.taxpayerBlind),
+      spouseBlind: Boolean(form.spouseBlind),
       spouseEarnedIncome: form.spouseEarnedIncome === "" ? null : Number(form.spouseEarnedIncome),
       hsaIsFamilyCoverage: Boolean(form.hsaIsFamilyCoverage),
       iraCoveredByWorkplacePlan: Boolean(form.iraCoveredByWorkplacePlan),
@@ -516,6 +526,35 @@ export default function ClientForm({ editId }: Props) {
                   placeholder="e.g. 33"
                 />
                 <p className="text-xs text-muted-foreground">For joint catch-up contribution limits.</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex items-start gap-2">
+                <input
+                  id="taxpayer-blind"
+                  type="checkbox"
+                  className="mt-1"
+                  checked={form.taxpayerBlind}
+                  onChange={(e) => set("taxpayerBlind", e.target.checked)}
+                />
+                <Label htmlFor="taxpayer-blind" className="font-normal">
+                  Taxpayer is legally blind
+                  <p className="text-xs text-muted-foreground mt-1">Extra standard-deduction box (IRC §63(f)): +$1,950 single/HoH, +$1,550 MFJ/MFS (2024).</p>
+                </Label>
+              </div>
+              <div className="flex items-start gap-2">
+                <input
+                  id="spouse-blind"
+                  type="checkbox"
+                  className="mt-1"
+                  checked={form.spouseBlind}
+                  onChange={(e) => set("spouseBlind", e.target.checked)}
+                />
+                <Label htmlFor="spouse-blind" className="font-normal">
+                  Spouse is legally blind (MFJ/QSS)
+                  <p className="text-xs text-muted-foreground mt-1">Counts only on a joint return — adds the spouse's blind box.</p>
+                </Label>
               </div>
             </div>
 

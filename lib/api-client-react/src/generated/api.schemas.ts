@@ -63,6 +63,10 @@ export interface Client {
   taxpayerAge?: number | null;
   /** @nullable */
   spouseAge?: number | null;
+  /** Taxpayer is legally blind at year end (extra standard-deduction box, IRC §63(f)). */
+  taxpayerBlind?: boolean;
+  /** Spouse is legally blind at year end (MFJ/QSS extra standard-deduction box). */
+  spouseBlind?: boolean;
   /** @nullable */
   spouseEarnedIncome?: number | null;
   hsaIsFamilyCoverage?: boolean;
@@ -199,6 +203,10 @@ export interface CreateClientBody {
   taxpayerAge?: number | null;
   /** @nullable */
   spouseAge?: number | null;
+  /** Taxpayer is legally blind at year end (extra standard-deduction box, IRC §63(f)). */
+  taxpayerBlind?: boolean;
+  /** Spouse is legally blind at year end (MFJ/QSS extra standard-deduction box). */
+  spouseBlind?: boolean;
   /** @nullable */
   spouseEarnedIncome?: number | null;
   hsaIsFamilyCoverage?: boolean;
@@ -289,6 +297,10 @@ export interface UpdateClientBody {
   taxpayerAge?: number | null;
   /** @nullable */
   spouseAge?: number | null;
+  /** Taxpayer is legally blind at year end (extra standard-deduction box, IRC §63(f)). */
+  taxpayerBlind?: boolean;
+  /** Spouse is legally blind at year end (MFJ/QSS extra standard-deduction box). */
+  spouseBlind?: boolean;
   /** @nullable */
   spouseEarnedIncome?: number | null;
   hsaIsFamilyCoverage?: boolean;

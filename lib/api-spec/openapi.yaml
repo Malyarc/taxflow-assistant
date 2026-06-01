@@ -1641,6 +1641,12 @@ components:
           type: ["integer", "null"]
         spouseAge:
           type: ["integer", "null"]
+        taxpayerBlind:
+          type: boolean
+          description: Taxpayer is legally blind at year end (extra standard-deduction box, IRC §63(f)).
+        spouseBlind:
+          type: boolean
+          description: Spouse is legally blind at year end (MFJ/QSS extra standard-deduction box).
         spouseEarnedIncome:
           type: ["number", "null"]
         hsaIsFamilyCoverage:
@@ -1762,6 +1768,12 @@ components:
           type: ["integer", "null"]
         spouseAge:
           type: ["integer", "null"]
+        taxpayerBlind:
+          type: boolean
+          description: Taxpayer is legally blind at year end (extra standard-deduction box, IRC §63(f)).
+        spouseBlind:
+          type: boolean
+          description: Spouse is legally blind at year end (MFJ/QSS extra standard-deduction box).
         spouseEarnedIncome:
           type: ["number", "null"]
         hsaIsFamilyCoverage:
@@ -1848,6 +1860,12 @@ components:
           type: ["integer", "null"]
         spouseAge:
           type: ["integer", "null"]
+        taxpayerBlind:
+          type: boolean
+          description: Taxpayer is legally blind at year end (extra standard-deduction box, IRC §63(f)).
+        spouseBlind:
+          type: boolean
+          description: Spouse is legally blind at year end (MFJ/QSS extra standard-deduction box).
         spouseEarnedIncome:
           type: ["number", "null"]
         hsaIsFamilyCoverage:

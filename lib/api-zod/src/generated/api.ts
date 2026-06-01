@@ -63,6 +63,18 @@ export const ListClientsResponseItem = zod.object({
     ),
   taxpayerAge: zod.number().nullish(),
   spouseAge: zod.number().nullish(),
+  taxpayerBlind: zod
+    .boolean()
+    .optional()
+    .describe(
+      "Taxpayer is legally blind at year end (extra standard-deduction box, IRC §63(f)).",
+    ),
+  spouseBlind: zod
+    .boolean()
+    .optional()
+    .describe(
+      "Spouse is legally blind at year end (MFJ\/QSS extra standard-deduction box).",
+    ),
   spouseEarnedIncome: zod.number().nullish(),
   hsaIsFamilyCoverage: zod.boolean().optional(),
   iraCoveredByWorkplacePlan: zod.boolean().optional(),
@@ -207,6 +219,18 @@ export const CreateClientBody = zod.object({
   dependentsForCareCredit: zod.number().optional(),
   taxpayerAge: zod.number().nullish(),
   spouseAge: zod.number().nullish(),
+  taxpayerBlind: zod
+    .boolean()
+    .optional()
+    .describe(
+      "Taxpayer is legally blind at year end (extra standard-deduction box, IRC §63(f)).",
+    ),
+  spouseBlind: zod
+    .boolean()
+    .optional()
+    .describe(
+      "Spouse is legally blind at year end (MFJ\/QSS extra standard-deduction box).",
+    ),
   spouseEarnedIncome: zod.number().nullish(),
   hsaIsFamilyCoverage: zod.boolean().optional(),
   iraCoveredByWorkplacePlan: zod.boolean().optional(),
@@ -314,6 +338,18 @@ export const GetClientResponse = zod.object({
     ),
   taxpayerAge: zod.number().nullish(),
   spouseAge: zod.number().nullish(),
+  taxpayerBlind: zod
+    .boolean()
+    .optional()
+    .describe(
+      "Taxpayer is legally blind at year end (extra standard-deduction box, IRC §63(f)).",
+    ),
+  spouseBlind: zod
+    .boolean()
+    .optional()
+    .describe(
+      "Spouse is legally blind at year end (MFJ\/QSS extra standard-deduction box).",
+    ),
   spouseEarnedIncome: zod.number().nullish(),
   hsaIsFamilyCoverage: zod.boolean().optional(),
   iraCoveredByWorkplacePlan: zod.boolean().optional(),
@@ -463,6 +499,18 @@ export const UpdateClientBody = zod.object({
   dependentsForCareCredit: zod.number().optional(),
   taxpayerAge: zod.number().nullish(),
   spouseAge: zod.number().nullish(),
+  taxpayerBlind: zod
+    .boolean()
+    .optional()
+    .describe(
+      "Taxpayer is legally blind at year end (extra standard-deduction box, IRC §63(f)).",
+    ),
+  spouseBlind: zod
+    .boolean()
+    .optional()
+    .describe(
+      "Spouse is legally blind at year end (MFJ\/QSS extra standard-deduction box).",
+    ),
   spouseEarnedIncome: zod.number().nullish(),
   hsaIsFamilyCoverage: zod.boolean().optional(),
   iraCoveredByWorkplacePlan: zod.boolean().optional(),
@@ -563,6 +611,18 @@ export const UpdateClientResponse = zod.object({
     ),
   taxpayerAge: zod.number().nullish(),
   spouseAge: zod.number().nullish(),
+  taxpayerBlind: zod
+    .boolean()
+    .optional()
+    .describe(
+      "Taxpayer is legally blind at year end (extra standard-deduction box, IRC §63(f)).",
+    ),
+  spouseBlind: zod
+    .boolean()
+    .optional()
+    .describe(
+      "Spouse is legally blind at year end (MFJ\/QSS extra standard-deduction box).",
+    ),
   spouseEarnedIncome: zod.number().nullish(),
   hsaIsFamilyCoverage: zod.boolean().optional(),
   iraCoveredByWorkplacePlan: zod.boolean().optional(),
@@ -3730,6 +3790,18 @@ export const GetRecentClientsResponseItem = zod.object({
     ),
   taxpayerAge: zod.number().nullish(),
   spouseAge: zod.number().nullish(),
+  taxpayerBlind: zod
+    .boolean()
+    .optional()
+    .describe(
+      "Taxpayer is legally blind at year end (extra standard-deduction box, IRC §63(f)).",
+    ),
+  spouseBlind: zod
+    .boolean()
+    .optional()
+    .describe(
+      "Spouse is legally blind at year end (MFJ\/QSS extra standard-deduction box).",
+    ),
   spouseEarnedIncome: zod.number().nullish(),
   hsaIsFamilyCoverage: zod.boolean().optional(),
   iraCoveredByWorkplacePlan: zod.boolean().optional(),

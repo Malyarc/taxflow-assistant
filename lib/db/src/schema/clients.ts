@@ -21,6 +21,10 @@ export const clientsTable = pgTable("clients", {
   taxpayerAge: integer("taxpayer_age"),
   /** Spouse age at year end (for joint catch-ups) */
   spouseAge: integer("spouse_age"),
+  /** Taxpayer is legally blind at year end — extra std-ded box per IRC §63(f)(2). */
+  taxpayerBlind: boolean("taxpayer_blind").notNull().default(false),
+  /** Spouse is legally blind at year end (MFJ/QSS) — extra std-ded box per IRC §63(f)(2). */
+  spouseBlind: boolean("spouse_blind").notNull().default(false),
   /** Earned income of spouse (for dependent care credit limit) */
   spouseEarnedIncome: numeric("spouse_earned_income", { precision: 12, scale: 2 }),
   /** HSA family coverage flag (vs self-only) — drives contribution limit */
