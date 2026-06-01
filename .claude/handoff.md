@@ -22,12 +22,12 @@ postponed to the Haven fusion). Knocked out the four quick correctness wins the
 2026-05-29 audit left open, then encoded the 16-scenario real-world battery that
 gives the previously-missing PIPELINE coverage for the audit's federal fixes.
 Every expected value hand-calc'd against the published IRS/state rule before
-asserting. Then began the planning-credibility lift (H2-wiring), with a survey
-that found most heuristic detectors are qualitative-by-nature. **38 no-API suites
-/ 3,062 assertions / 0 failures**, clean typecheck, FED-05 UI verified in a local
-browser preview, full deploy verified on the live box.
+asserting. Then began the planning-credibility lift (H2-wiring, survey found most
+heuristic detectors are qualitative-by-nature) and closed the §461(l) Schedule-C
+loss-flow engine gap. **38 no-API suites / 3,074 assertions / 0 failures**, clean
+typecheck, FED-05 UI verified in a local browser preview, full deploy verified live.
 
-### What landed (6 commits on `main`, all pushed + deployed)
+### What landed (7 commits on `main`, all pushed + deployed)
 
 1. **`e768c0c` FORM-03** — Form 1040-X Lines 16→20 rebuilt as the IRS settlement
    chain (Line 17 overpayment-on-original, Line 18 tax-paid-with-original, Lines
@@ -64,6 +64,14 @@ browser preview, full deploy verified on the live box.
    G1.46–G1.96 are qualitative-by-nature (business credits, entity elections, trust
    vehicles, multi-year structures, after-tax contributions, soft guidance) and
    should NOT be force-wired — they aren't a single current-year engine mutation.
+7. **`6681644` §461(l) Sch-C loss flow** — the engine floored `netSeIncome` at 0, so
+   a Schedule C LOSS couldn't offset other income (and a large loss inflated AGI,
+   since the §461(l) auto-addback was still added: a $500k loss returned AGI $695k).
+   New signed `scheduleCNetSigned` flows the loss to the main AGI aggregation where
+   the existing §461(l) addback caps it at $305k single / $610k MFJ; `netSeIncome`
+   stays floored (== old value) for the SE-tax base, QBI, local EIT, earned income.
+   +12 tests. Remaining (documented): no auto-NOL when loss > income (AGI floors at
+   0, CPA uses nol_carryforward); §163(j) ATI proxy still floored.
 
 ### Engine semantics worth remembering (learned this session)
 
@@ -113,10 +121,10 @@ project at `~/taxflow-pro`. Full runbook in CLAUDE.md.
 
 1. **Tax-calc correctness:** **STL-05** (MD EITC two-component: 50% nonrefundable
    + 45% refundable, take the larger — engine has a single 45% refundable). Then the
-   documented engine sub-gaps in `docs/todo.md` ordered by how often they bite:
-   §461(l) Sch-C loss flow (engine floors netSeIncome at 0), K-1 §199A wage/UBIA +
-   SSTB depth + guaranteed payments, §163(j) ATI proxy, AMT prefs (2i/2e/AMT-NOL),
-   part-year per-income sourcing, wash-sale §1091(d).
+   remaining documented engine sub-gaps in `docs/todo.md` ordered by how often they
+   bite: K-1 §199A wage/UBIA + SSTB depth + guaranteed payments (Box 4), §163(j) ATI
+   proxy, AMT prefs (2i/2e/AMT-NOL), part-year per-income sourcing, wash-sale
+   §1091(d). (§461(l) Sch-C loss flow CLOSED 2026-06-01.)
 2. **Tax-planning:** H2-wiring is DONE for the wireable subset (G1.92 + G1.96);
    the rest is qualitative — see the survey note in `docs/todo.md` (do NOT
    force-wire). Remaining planning work: extend H3 multi-year wiring (only
@@ -144,14 +152,14 @@ Where we left off (2026-06-01): shipped + deployed 4 audit quick-wins (FORM-03
 kiddie/Coverdell child gate, PLAN-06 QCD 70½) + a 16-scenario hand-calc'd
 pipeline battery (FED-03/04/06 + pass-through/NIIT/state coverage) + H2-wired the
 2 cleanly-wireable heuristic planning detectors (G1.92 Solo 401(k), G1.96
-§132(f)). 38 no-API suites / 3,062 assertions green; clean typecheck; live-verified
-on EC2.
+§132(f)) + closed the §461(l) Schedule-C loss-flow engine gap. 38 no-API suites /
+3,074 assertions green; clean typecheck; live-verified on EC2.
 
-Recommended next task: tax-calc correctness — START with the §461(l) Schedule-C
-loss flow (the engine floors netSeIncome at 0, so a Sch C LOSS can't offset other
-income — a real gap that bites). Then STL-05 (MD EITC two-component) and the other
-engine sub-gaps in docs/todo.md. (H2-wiring is DONE for the wireable subset; the
-rest is qualitative — see the survey note in docs/todo.md, do NOT force-wire.)
+Recommended next task: tax-calc correctness — STL-05 (MD EITC two-component: 50%
+nonrefundable + 45% refundable, take the larger) and the remaining engine sub-gaps
+in docs/todo.md (K-1 §199A wage/UBIA + SSTB depth + guaranteed payments, §163(j)
+ATI, AMT prefs, part-year sourcing, wash-sale §1091(d)). (H2-wiring is DONE for the
+wireable subset — the rest is qualitative; §461(l) Sch-C loss flow is CLOSED.)
 Keep computeTaxReturnPure pure/portable for the Haven fusion. Hand-calc every
 expected value; run the no-API suite; commit per chunk; push to main AND fully
 deploy to EC2 + verify live (runbook in CLAUDE.md / handoff.md).

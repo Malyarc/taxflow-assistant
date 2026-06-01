@@ -16,9 +16,10 @@ larger **Haven** app, which brings its own auth/tenancy, so we won't build it
 twice. The focus is the **portable engine + planning feature**
 (`computeTaxReturnPure` is already Haven-portable — keep it pure). The live EC2
 box stays a **demo** (no auth/TLS) — do NOT put real client PII on it until the
-Haven fusion lands. **2026-06-01: 6 refinement commits shipped + deployed + verified
-live** (FORM-03, FED-05, PLAN-04, PLAN-06, 16-scenario battery, H2-wire G1.92/G1.96 —
-see `.claude/handoff.md`); **38 no-API suites / 3,062 assertions green**, clean typecheck.
+Haven fusion lands. **2026-06-01: 7 refinement commits shipped + deployed + verified
+live** (FORM-03, FED-05, PLAN-04, PLAN-06, 16-scenario battery, H2-wire G1.92/G1.96,
+§461(l) Sch-C loss flow — see `.claude/handoff.md`); **38 no-API suites / 3,074
+assertions green**, clean typecheck.
 
 ### Tax CALCULATOR refinement backlog (correctness-first)
 
@@ -34,8 +35,12 @@ Confirmed-open from the 2026-05-29 audit:
   nonrefundable + 45% refundable (take the larger). Under-credits in the high-MD-tax zone.
 
 Documented engine sub-gaps (ordered by how often they bite a real return):
-- **§461(l) Sch-C loss flow** — engine floors netSeIncome at 0, so a Schedule C
-  LOSS can't offset other income; the §461(l) addback is CPA-supplied, not auto-flowed.
+- ✅ **§461(l) Sch-C loss flow — SHIPPED 2026-06-01.** Signed `scheduleCNetSigned`
+  now flows the Sch C loss to AGI, capped by the §461(l) addback ($305k/$610k).
+  netSeIncome stays floored for SE-tax/QBI/local/earned-income. +12 tests.
+  (Remaining: engine doesn't auto-generate the NOL when the loss exceeds total
+  income — AGI floors at 0, CPA carries the excess via nol_carryforward; and the
+  §163(j) ATI proxy still uses the floored value — documented approximations.)
 - **K-1 depth** — §199A wage/UBIA limits + true SSTB phase-out (engine uses a
   simplified 20%); K-1 basis/at-risk limits not enforced; guaranteed payments (Box 4) absent.
 - **§163(j)** — ATI proxy is approximate; $30M small-biz exemption not auto-detected;
@@ -138,7 +143,7 @@ The shadow-CPA validation (Marge Reynolds, CPA) flagged 5 engine findings + reco
 **Remaining sub-gaps (newly documented during shipping):**
 
 - **§1031 / §121 / NIIT investment-income base** — recognized gains still don't flow into NIIT base (existing sub-gap, noted in Form 8824 PDF footnote).
-- **§461(l) Sch C loss flow** — engine clamps `netSeIncome = max(0, ...)` which prevents Sch C loss from offsetting other income. §461(l) auto-aggregation now correctly identifies the addback amount, but the underlying Sch C-loss-to-AGI flow needs a deeper refactor.
+- ~~**§461(l) Sch C loss flow**~~ — **CLOSED 2026-06-01.** Signed `scheduleCNetSigned` flows the Sch C loss to AGI, capped by the §461(l) addback; `netSeIncome` stays floored for SE-tax/QBI/local/earned-income. (NOL not auto-generated when loss > income; §163(j) ATI proxy still floored — documented approximations.)
 - **§163(j) Sections II/III** (partnership / S-corp pass-through) — Form 8990 PDF rendered as zero-placeholder sections (typical for individual filers).
 - **§163(j) small-business exemption** — engine doesn't auto-detect `gross receipts < $30M` exemption per §163(j)(3); CPA must determine whether the form is required.
 
