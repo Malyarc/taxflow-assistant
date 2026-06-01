@@ -201,6 +201,161 @@ header("GP-4 — GP excluded from QBI (§199A(c)(4))");
   check("AGI = $136,467.61", r.adjustedGrossIncome, 136467.6125, 0.5);
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// 1b — BASIS / AT-RISK LOSS LIMITATION (§704(d) / §1366(d) / §465)
+// ════════════════════════════════════════════════════════════════════════════
+
+// BA-1 — Active K-1 ordinary loss limited by BASIS (at-risk not tracked).
+// Filer: single 2024, $120,000 W-2. Active partnership K-1: Box 1 = −$50,000,
+//        basisAtYearStart = $30,000, atRiskAmount = null (not tracked → ∞).
+// Hand-calc:
+//   Allowed loss = min(50,000, basis 30,000, at-risk ∞) = 30,000
+//   Suspended = 50,000 − 30,000 = 20,000
+//   k1 active ordinary = −30,000
+//   Total income / AGI = 120,000 − 30,000 = 90,000  (no SE: loss, no Box 14A)
+//   Taxable = 90,000 − 14,600 = 75,400  (QBI = 0, business is a loss)
+//   Income tax (single 2024): 1,160 + 4,266 + 22%×(75,400 − 47,150)
+//     = 1,160 + 4,266 + 22%×28,250 = 1,160 + 4,266 + 6,215 = 11,641
+header("BA-1 — active K-1 loss limited by basis");
+{
+  const inputs: TaxReturnInputs = {
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 120000, federalTaxWithheldBox2: 0, stateCode: "FL" }],
+    form1099s: [],
+    adjustments: [],
+    scheduleK1: [{
+      taxYear: 2024,
+      entityName: "Loss LP",
+      entityType: "partnership",
+      activityType: "active",
+      box1OrdinaryIncome: -50000,
+      basisAtYearStart: 30000,
+    }],
+    taxYear: 2024,
+  };
+  const r = computeTaxReturnPure(inputs);
+  check("Basis/at-risk loss suspended = $20,000", r.scheduleK1.k1BasisAtRiskLossSuspended, 20000, 0.01);
+  check("K-1 active ordinary = −$30,000 (loss capped at basis)", r.scheduleK1.totalActiveOrdinaryIncome, -30000, 0.01);
+  check("AGI = $90,000", r.adjustedGrossIncome, 90000, 1);
+  check("Taxable income = $75,400", r.taxableIncome, 75400, 1);
+  check("federalTaxLiability = $11,641", r.federalTaxLiability, 11641, 1);
+}
+
+// BA-2 — AT-RISK limit is the binding constraint (lower than basis).
+// Filer: single 2024, $120,000 W-2. Active K-1: Box 1 = −$40,000,
+//        basisAtYearStart = $35,000, atRiskAmount = $15,000.
+// Hand-calc:
+//   Allowed loss = min(40,000, basis 35,000, at-risk 15,000) = 15,000
+//   Suspended = 25,000 ; k1 active ordinary = −15,000
+//   AGI = 120,000 − 15,000 = 105,000
+//   Taxable = 105,000 − 14,600 = 90,400
+//   Income tax: 1,160 + 4,266 + 22%×(90,400 − 47,150) = 1,160 + 4,266 + 9,515 = 14,941
+header("BA-2 — at-risk limit binds below basis");
+{
+  const inputs: TaxReturnInputs = {
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 120000, federalTaxWithheldBox2: 0, stateCode: "FL" }],
+    form1099s: [],
+    adjustments: [],
+    scheduleK1: [{
+      taxYear: 2024,
+      entityName: "AtRisk LP",
+      entityType: "partnership",
+      activityType: "active",
+      box1OrdinaryIncome: -40000,
+      basisAtYearStart: 35000,
+      atRiskAmount: 15000,
+    }],
+    taxYear: 2024,
+  };
+  const r = computeTaxReturnPure(inputs);
+  check("Suspended = $25,000 (at-risk binds)", r.scheduleK1.k1BasisAtRiskLossSuspended, 25000, 0.01);
+  check("K-1 active ordinary = −$15,000", r.scheduleK1.totalActiveOrdinaryIncome, -15000, 0.01);
+  check("AGI = $105,000", r.adjustedGrossIncome, 105000, 1);
+  check("federalTaxLiability = $14,941", r.federalTaxLiability, 14941, 1);
+}
+
+// BA-3 — Zero basis (tracked) → full loss suspended.
+// Filer: single 2024, $100,000 W-2. Active K-1: Box 1 = −$20,000,
+//        basisAtYearStart = $0 (tracked, not null), atRiskAmount = null.
+// Hand-calc: allowed = min(20,000, 0, ∞) = 0 ; suspended = 20,000 ;
+//   k1 active ordinary = 0 ; AGI = 100,000.
+header("BA-3 — zero tracked basis suspends the whole loss");
+{
+  const inputs: TaxReturnInputs = {
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 100000, federalTaxWithheldBox2: 0, stateCode: "FL" }],
+    form1099s: [],
+    adjustments: [],
+    scheduleK1: [{
+      taxYear: 2024,
+      entityName: "ZeroBasis LP",
+      entityType: "partnership",
+      activityType: "active",
+      box1OrdinaryIncome: -20000,
+      basisAtYearStart: 0,
+    }],
+    taxYear: 2024,
+  };
+  const r = computeTaxReturnPure(inputs);
+  check("Suspended = $20,000 (basis 0)", r.scheduleK1.k1BasisAtRiskLossSuspended, 20000, 0.01);
+  check("K-1 active ordinary = $0", r.scheduleK1.totalActiveOrdinaryIncome, 0, 0.01);
+  check("AGI = $100,000", r.adjustedGrossIncome, 100000, 1);
+}
+
+// BA-4 — No basis/at-risk tracked → loss flows UNLIMITED (backward compat).
+// Filer: single 2024, $100,000 W-2. Active K-1: Box 1 = −$20,000, no basis fields.
+// Hand-calc: not tracked → allowed = 20,000 ; suspended = 0 ;
+//   k1 active ordinary = −20,000 ; AGI = 80,000.
+header("BA-4 — untracked basis preserves prior unlimited-loss behavior");
+{
+  const inputs: TaxReturnInputs = {
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 100000, federalTaxWithheldBox2: 0, stateCode: "FL" }],
+    form1099s: [],
+    adjustments: [],
+    scheduleK1: [{
+      taxYear: 2024,
+      entityName: "Untracked LP",
+      entityType: "partnership",
+      activityType: "active",
+      box1OrdinaryIncome: -20000,
+    }],
+    taxYear: 2024,
+  };
+  const r = computeTaxReturnPure(inputs);
+  check("Suspended = $0 (untracked)", r.scheduleK1.k1BasisAtRiskLossSuspended, 0, 0.01);
+  check("K-1 active ordinary = −$20,000 (full loss flows)", r.scheduleK1.totalActiveOrdinaryIncome, -20000, 0.01);
+  check("AGI = $80,000", r.adjustedGrossIncome, 80000, 1);
+}
+
+// BA-5 — Basis limit never touches INCOME (Box 1 > 0).
+// Filer: single 2024, $50,000 W-2. Active K-1: Box 1 = +$40,000,
+//        basisAtYearStart = $10,000 (low basis — irrelevant to income).
+// Hand-calc: Box 1 ≥ 0 → no limit ; k1 active ordinary = +40,000 ; suspended = 0 ;
+//   AGI = 90,000 (before QBI/half-SE; no SE since Box 14A blank).
+header("BA-5 — low basis does not limit K-1 income");
+{
+  const inputs: TaxReturnInputs = {
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, federalTaxWithheldBox2: 0, stateCode: "FL" }],
+    form1099s: [],
+    adjustments: [],
+    scheduleK1: [{
+      taxYear: 2024,
+      entityName: "Income LP",
+      entityType: "partnership",
+      activityType: "active",
+      box1OrdinaryIncome: 40000,
+      basisAtYearStart: 10000,
+    }],
+    taxYear: 2024,
+  };
+  const r = computeTaxReturnPure(inputs);
+  check("Suspended = $0 (income not limited)", r.scheduleK1.k1BasisAtRiskLossSuspended, 0, 0.01);
+  check("K-1 active ordinary = +$40,000", r.scheduleK1.totalActiveOrdinaryIncome, 40000, 0.01);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 console.log(`\n${"═".repeat(60)}`);
 console.log(`PASS: ${PASS.length}`);

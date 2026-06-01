@@ -4022,7 +4022,7 @@ function ScheduleK1Form({
 
           {/* Basis & at-risk */}
           <div className="border-t pt-3">
-            <div className="text-xs font-semibold text-muted-foreground uppercase mb-2">Basis & at-risk (stored — not enforced)</div>
+            <div className="text-xs font-semibold text-muted-foreground uppercase mb-2">Basis & at-risk (§704(d)/§465 — caps active Box 1 loss)</div>
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-1">
                 <Label>Basis at year start</Label>

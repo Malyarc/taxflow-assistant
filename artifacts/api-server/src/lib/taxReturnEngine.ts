@@ -649,6 +649,8 @@ export interface ScheduleK1Summary {
   totalGuaranteedPayments: number;
   totalPassiveBucketNetApplied: number;
   k1PassiveLossSuspended: number;
+  /** §704(d)/§1366(d) basis + §465 at-risk loss disallowed this year (carryforward). */
+  k1BasisAtRiskLossSuspended: number;
   totalInterestIncome: number;
   totalOrdinaryDividends: number;
   totalQualifiedDividends: number;
@@ -1461,8 +1463,33 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     pick: (k: ScheduleK1Fact) => Numish,
   ) => k1sForYear.filter(pred).reduce((s, k) => s + toNum(pick(k)), 0);
 
+  // §704(d) / §1366(d) basis limit + §465 at-risk limit on ACTIVE K-1 ordinary
+  // (Box 1) LOSSES. A partner/shareholder may deduct a distributive-share loss
+  // only up to outside basis (§704(d) partnership / §1366(d) S-corp stock+debt),
+  // then only up to the amount at risk (§465); the disallowed excess is
+  // suspended and carries forward (the CPA re-enters it in the year basis or
+  // at-risk is restored). Enforced only when the CPA supplied basisAtYearStart
+  // and/or atRiskAmount (null = not tracked → unlimited, the prior behavior).
+  // Box 1 INCOME (≥ 0) is never limited. Passive K-1 losses are already fully
+  // suspended by §469 (the passive bucket below), so this targets the active
+  // Box 1 loss that otherwise flows freely to AGI. Sub-gap: the limit is keyed
+  // to basisAtYearStart (the basis available to absorb losses); it does not
+  // model basis consumed by distributions / separately-stated deductions.
+  let k1BasisAtRiskLossSuspended = 0;
+  const k1ActiveBox1Capped = k1sForYear.filter(k1IsActive).reduce((s, k) => {
+    const box1 = toNum(k.box1OrdinaryIncome);
+    if (box1 >= 0) return s + box1;
+    const tracksBasis = k.basisAtYearStart != null;
+    const tracksAtRisk = k.atRiskAmount != null;
+    if (!tracksBasis && !tracksAtRisk) return s + box1; // not tracked → unlimited
+    const basisLimit = tracksBasis ? Math.max(0, toNum(k.basisAtYearStart)) : Infinity;
+    const atRiskLimit = tracksAtRisk ? Math.max(0, toNum(k.atRiskAmount)) : Infinity;
+    const allowedMag = Math.min(Math.abs(box1), basisLimit, atRiskLimit);
+    k1BasisAtRiskLossSuspended += Math.abs(box1) - allowedMag;
+    return s - allowedMag;
+  }, 0);
   const k1ActiveOrdinary =
-    sumK1Where(k1IsActive, (k) => k.box1OrdinaryIncome) +
+    k1ActiveBox1Capped +
     sumK1Where(k1IsActive, (k) => k.box3OtherRentalIncome);
   // K-1 passive bucket (current year, BEFORE prior-year carryforward):
   // passive Box 1, ALL Box 2 (rental real estate held through a pass-through
@@ -1689,8 +1716,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   //     §461(l) should apply to post-PAL allowable losses only. For most
   //     cases this is fine because high-AGI filers (where §461(l) binds)
   //     usually have PAL fully suspended anyway.
-  //   * Active K-1 losses from S-corp shareholders/partners hitting basis
-  //     or at-risk limits should be excluded; engine doesn't model these.
+  //   * Active K-1 losses are already net of the §704(d)/§1366(d) basis +
+  //     §465 at-risk limit (k1ActiveOrdinary uses the capped loss), so the
+  //     §461(l) aggregation correctly excludes basis/at-risk-disallowed losses.
   const SECTION_461L_THRESHOLD_TY2024: Record<string, number> = {
     single: 305_000,
     head_of_household: 305_000,
@@ -2970,6 +2998,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
       totalGuaranteedPayments: k1GuaranteedPayments,
       totalPassiveBucketNetApplied: k1PassiveAppliedToAgi,
       k1PassiveLossSuspended,
+      k1BasisAtRiskLossSuspended,
       totalInterestIncome: k1InterestIncome,
       totalOrdinaryDividends: k1OrdinaryDividends,
       totalQualifiedDividends: k1QualifiedDividends,
