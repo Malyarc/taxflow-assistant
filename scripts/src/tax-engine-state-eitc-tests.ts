@@ -27,6 +27,7 @@ import {
   computeTaxReturnPure,
   type TaxReturnInputs,
 } from "../../artifacts/api-server/src/lib/taxReturnEngine";
+import { calculateStateEitc } from "../../artifacts/api-server/src/lib/taxCalculator";
 
 const PASS: string[] = [];
 const FAIL: string[] = [];
@@ -239,6 +240,46 @@ for (const state of ["CO", "IL", "NJ", "MA"]) {
     taxYear: 2024,
   });
   check(`${state}: high-AGI filer → state EITC = $0`, r.stateEitc.credit, 0, 0.01);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// STL-05 — Maryland TWO-COMPONENT EITC (50% nonrefundable + 45% refundable)
+// ════════════════════════════════════════════════════════════════════════════
+// Net benefit = nonRef min(0.50×E, mdTax) + refundable max(0, 0.45×E − mdTax)
+//             = max(0.45×E, min(0.50×E, mdTax)).
+// (Was a flat 45% refundable — under-credited the high-MD-tax zone.)
+function mdEitc(fedEITC: number, mdTax: number, eligible = true): number {
+  return calculateStateEitc({
+    state: "MD", federalEitcApplied: fedEITC, federalEitcEligible: eligible,
+    agi: 30000, earnedIncome: 30000, investmentIncome: 0,
+    qualifyingChildren: 2, taxYear: 2024, filingStatus: "single",
+    stateTaxLiability: mdTax,
+  }).credit;
+}
+// fedEITC $2,000 → 50% = $1,000, 45% = $900.
+check("MD-EITC high tax ($5k ≥ 50%) → $1,000 (50% nonref)", mdEitc(2000, 5000), 1000);
+check("MD-EITC zero tax → $900 (45% refundable floor)", mdEitc(2000, 0), 900);
+check("MD-EITC tax $950 (between 45%/50%) → $950 (= tax cap)", mdEitc(2000, 950), 950);
+check("MD-EITC tax $500 (< 45%) → $900 (nonref $500 + refundable $400)", mdEitc(2000, 500), 900);
+check("MD-EITC tax exactly $1,000 (= 50%) → $1,000", mdEitc(2000, 1000), 1000);
+check("MD-EITC federal-ineligible → $0", mdEitc(2000, 5000, false), 0);
+// Regression vs old flat 45%: a high-MD-tax filer now gets MORE than 45%.
+check("MD-EITC fix: high-tax credit ($1,000) exceeds old flat 45% ($900)", mdEitc(2000, 5000) - 900, 100);
+
+// End-to-end: MD resident, 2 kids, low income → federal EITC fires; verify the
+// engine wires stateTaxLiability into the two-component formula (using the
+// engine's own computed MD tax, so no separate MD-tax hand-calc needed).
+{
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "MD", taxYear: 2024, dependentsUnder17: 2 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 20000, stateCode: "MD" } as unknown as TaxReturnInputs["w2s"][number]],
+    form1099s: [], adjustments: [], taxYear: 2024,
+  });
+  const fedE = r.eitc.appliedCredit;
+  const mdTax = r.stateTaxLiability;
+  const expected = Math.max(0.45 * fedE, Math.min(0.50 * fedE, mdTax));
+  check("MD-EITC E2E: stateEitc == max(45%, min(50%, mdTax)) [wiring]", r.stateEitc.credit, expected, 0.5);
+  check("MD-EITC E2E: federal EITC fires (low income + 2 kids)", fedE > 0 ? 1 : 0, 1);
 }
 
 // ────────────────────────────────────────────────────────────────────────────

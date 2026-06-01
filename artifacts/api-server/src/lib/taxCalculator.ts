@@ -2194,6 +2194,8 @@ export function calculateStateEitc(params: {
   taxYear: number;
   /** Filing status — needed for MN MFJ phase-out threshold ($36,880 vs $31,090). */
   filingStatus?: string;
+  /** STL-05 — gross state income-tax liability, needed for MD's nonrefundable 50% cap. */
+  stateTaxLiability?: number;
 }): StateEitcCalculation {
   const { state, federalEitcApplied, federalEitcEligible, agi, earnedIncome, investmentIncome, qualifyingChildren } = params;
   const year = resolveTaxYear(params.taxYear);
@@ -2276,6 +2278,30 @@ export function calculateStateEitc(params: {
     }
     return { state, credit: federalEitcApplied * 0.40, approximate: false };
   }
+  if (state === "MD") {
+    // STL-05 — Maryland's TWO-COMPONENT EITC (Md. Code Tax-General §10-704 /
+    // §10-704.5; Form 502 Lines 22 + 42). A resident may claim the GREATER of:
+    //   (a) a NONREFUNDABLE credit = 50% of the federal EITC, limited to the MD tax, OR
+    //   (b) a REFUNDABLE credit = 45% of the federal EITC (no tax cap).
+    // The two combine to a net benefit of:
+    //   nonRefundable = min(0.50 × fedEITC, mdTax)
+    //   refundable    = max(0, 0.45 × fedEITC − mdTax)
+    //   total         = max(0.45 × fedEITC, min(0.50 × fedEITC, mdTax))
+    // The engine folds the whole benefit into the refundable `credit` (added to
+    // the state refund) — identical to splitting it, since the bottom line is
+    // withheld − tax + benefit either way. The prior flat 45% under-credited the
+    // high-MD-tax zone (where the 50% nonrefundable gives more, up to 50%).
+    // NOT modeled: the expanded childless-worker credit (~100% of federal,
+    // SB218/2021) — engine uses the standard 45%/50% schedule (conservative).
+    if (!federalEitcEligible) {
+      return { state, credit: 0, approximate: true,
+        ineligibilityReason: "Federal EITC ineligible (MD piggyback requires it)" };
+    }
+    const mdTax = Math.max(0, params.stateTaxLiability ?? 0);
+    const mdNonRefundable = Math.min(0.50 * federalEitcApplied, mdTax);
+    const mdRefundable = Math.max(0, 0.45 * federalEitcApplied - mdTax);
+    return { state, credit: mdNonRefundable + mdRefundable, approximate: true };
+  }
   if (state === "MN") {
     // Minnesota Working Family Credit (Schedule M1CWFC). INDEPENDENT calc —
     // not a % of federal EITC. Source: 2024 Schedule M1CWFC (M1CWFC-24.pdf,
@@ -2346,8 +2372,7 @@ export function calculateStateEitc(params: {
     VA: 0.15, // VA Sched ADJ Line 19 — choice of 20% non-ref vs 15% refundable; use 15%
     DC: 0.70, // DC EITC — simplified to 70% (actual is 70% w/ kids, complex childless)
     ME: 0.25, // ME Earned Income Credit — 25% w/ kids, 50% childless; simplified to 25%
-    MD: 0.45, // MD Form 502 Line 22 — 45% standard (50% Maryland refundable since TY2023);
-              // expanded for childless filers (~100% of federal) not modeled — use 45%
+    // MD handled above as a dedicated two-component credit (STL-05).
     MI: 0.30, // MI Sched 1 — Public Act 4 of 2023 raised from 6% to 30% retroactive
   };
   if (state in STATE_EITC_PCT_OF_FEDERAL) {

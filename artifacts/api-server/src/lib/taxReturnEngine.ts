@@ -2713,6 +2713,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     qualifyingChildren: client.dependentsUnder17 ?? 0,
     taxYear: calc.taxYear,
     filingStatus: client.filingStatus,
+    stateTaxLiability, // STL-05 — MD's 50% nonrefundable cap is limited to MD tax
   });
 
   // State EITC is refundable — adds to the state refund (or reduces the owed).
