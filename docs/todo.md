@@ -16,10 +16,11 @@ larger **Haven** app, which brings its own auth/tenancy, so we won't build it
 twice. The focus is the **portable engine + planning feature**
 (`computeTaxReturnPure` is already Haven-portable — keep it pure). The live EC2
 box stays a **demo** (no auth/TLS) — do NOT put real client PII on it until the
-Haven fusion lands. **2026-06-01: 8 refinement fixes shipped + deployed + verified
-live** (FORM-03, FED-05, PLAN-04, PLAN-06, 16-scenario battery, H2-wire G1.92/G1.96,
-§461(l) Sch-C loss flow, STL-05 MD two-component EITC — see `.claude/handoff.md`);
-**38 no-API suites / 3,083 assertions green**, clean typecheck.
+Haven fusion lands. **2026-06-01: 11 refinement fixes shipped + verified live**
+(FORM-03, FED-05, PLAN-04, PLAN-06, 16-scenario battery, H2-wire G1.92/G1.96,
+§461(l) Sch-C loss flow, STL-05 MD EITC, K-1 §199A wage/UBIA limit, AMT line 2e
+state-refund recapture, wash-sale §1091(d) holding-period tack — see
+`.claude/handoff.md`); **38 no-API suites / 3,099 assertions green**, clean typecheck.
 
 ### Tax CALCULATOR refinement backlog (correctness-first)
 
@@ -43,15 +44,24 @@ Documented engine sub-gaps (ordered by how often they bite a real return):
   (Remaining: engine doesn't auto-generate the NOL when the loss exceeds total
   income — AGI floors at 0, CPA carries the excess via nol_carryforward; and the
   §163(j) ATI proxy still uses the floored value — documented approximations.)
-- **K-1 depth** — §199A wage/UBIA limits + true SSTB phase-out (engine uses a
-  simplified 20%); K-1 basis/at-risk limits not enforced; guaranteed payments (Box 4) absent.
-- **§163(j)** — ATI proxy is approximate; $30M small-biz exemption not auto-detected;
-  Form 8990 Sec II/III (pass-through) are zero-placeholders.
-- **AMT prefs** — line 2i MACRS-vs-ADS depreciation, 2e state-refund recapture, AMT NOL
-  not modeled (2g SALT addback + 2k ISO bargain ARE).
-- **Part-year residency** — per-income-item sourcing (NY IT-203 / CA 540NR Sched CA),
-  mid-year resident credit, part-year locality/AMT, pro-rated std ded not modeled.
-- **Wash sales** — §1091(d) ST→LT flip on the replacement lot; partial wash (engine
+- **K-1 depth** — ✅ **§199A wage/UBIA limit SHIPPED 2026-06-01** (max(50% wages,
+  25% wages + 2.5% UBIA), phased over the band, when the K-1 supplies positive
+  section199aW2Wages/Ubia; +5 tests). Remaining: true per-business SSTB depth;
+  K-1 basis/at-risk limits not enforced; guaranteed payments (Box 4) flow via the
+  `additional_income` adjustment (income + QBI-excluded) + Box 14A (SE) — a
+  dedicated Box 4 field is a future UX refinement.
+- **§163(j)** — ATI proxy ≈ taxable income before §163(j)/NOL/QBI; for TY2024+
+  (post-2021) this needs NO depreciation addback per §163(j)(8), so the proxy is
+  close. Remaining: $30M small-biz exemption not auto-detected; Form 8990 Sec
+  II/III (pass-through) are zero-placeholders. (Low priority.)
+- **AMT prefs** — ✅ **line 2e state-refund recapture SHIPPED 2026-06-01** (+6
+  tests; AMTI floor moved from prefs to AMTI). Remaining: line 2i MACRS-vs-ADS
+  depreciation diff + AMT NOL (each needs a separate AMT computation).
+- **Part-year residency** — per-income-item sourcing partially shipped (C11: K-1/
+  rental/W-2 stateCode). Remaining: exact NY IT-203 / CA 540NR Sched CA schedules,
+  mid-year resident credit, part-year locality/AMT, pro-rated std ded.
+- **Wash sales** — ✅ **§1091(d) basis add + §1223(3) holding-period tack (ST→LT
+  formBox flip) SHIPPED 2026-06-01** (+5 tests). Remaining: partial wash (engine
   fully disallows the loss); cross-account wash only when both brokers' txns entered.
 - **State retirement exemptions** — HI / NJ / NY partial exemptions (PA/IL/MS done).
 - **Local** — NYC UBT, KY occupational tax, OH cross-city employment credit, IN/MD per-dependent.
