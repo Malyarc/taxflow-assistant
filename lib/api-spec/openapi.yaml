@@ -3135,6 +3135,7 @@ components:
         - box1OrdinaryIncome
         - box2RentalRealEstate
         - box3OtherRentalIncome
+        - box4GuaranteedPayments
         - interestIncome
         - ordinaryDividends
         - qualifiedDividends
@@ -3170,6 +3171,9 @@ components:
           type: number
         box3OtherRentalIncome:
           type: number
+        box4GuaranteedPayments:
+          type: number
+          description: 1065 Box 4 guaranteed payments (§707(c)). Ordinary income to the partner; excluded from QBI per §199A(c)(4); SE-taxable (engine uses max(Box 14A, Box 4) for the SE base).
         interestIncome:
           type: number
         ordinaryDividends:
@@ -3227,6 +3231,9 @@ components:
           type: number
         box3OtherRentalIncome:
           type: number
+        box4GuaranteedPayments:
+          type: number
+          description: 1065 Box 4 guaranteed payments (§707(c)). Ordinary income to the partner; excluded from QBI per §199A(c)(4); SE-taxable (engine uses max(Box 14A, Box 4) for the SE base).
         interestIncome:
           type: number
         ordinaryDividends:
@@ -3277,6 +3284,9 @@ components:
           type: number
         box3OtherRentalIncome:
           type: number
+        box4GuaranteedPayments:
+          type: number
+          description: 1065 Box 4 guaranteed payments (§707(c)). Ordinary income to the partner; excluded from QBI per §199A(c)(4); SE-taxable (engine uses max(Box 14A, Box 4) for the SE base).
         interestIncome:
           type: number
         ordinaryDividends:

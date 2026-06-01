@@ -3385,6 +3385,7 @@ interface ScheduleK1Row {
   box1OrdinaryIncome: number;
   box2RentalRealEstate: number;
   box3OtherRentalIncome: number;
+  box4GuaranteedPayments: number;
   interestIncome: number;
   ordinaryDividends: number;
   qualifiedDividends: number;
@@ -3825,6 +3826,7 @@ function ScheduleK1Form({
   const [box1, setBox1] = useState(existing?.box1OrdinaryIncome != null ? String(existing.box1OrdinaryIncome) : "");
   const [box2, setBox2] = useState(existing?.box2RentalRealEstate != null ? String(existing.box2RentalRealEstate) : "");
   const [box3, setBox3] = useState(existing?.box3OtherRentalIncome != null ? String(existing.box3OtherRentalIncome) : "");
+  const [box4Gp, setBox4Gp] = useState(existing?.box4GuaranteedPayments != null ? String(existing.box4GuaranteedPayments) : "");
   const [interestIncome, setInterestIncome] = useState(existing?.interestIncome != null ? String(existing.interestIncome) : "");
   const [ordinaryDividends, setOrdinaryDividends] = useState(existing?.ordinaryDividends != null ? String(existing.ordinaryDividends) : "");
   const [qualifiedDividends, setQualifiedDividends] = useState(existing?.qualifiedDividends != null ? String(existing.qualifiedDividends) : "");
@@ -3865,6 +3867,7 @@ function ScheduleK1Form({
       box1OrdinaryIncome: asNum(box1),
       box2RentalRealEstate: asNum(box2),
       box3OtherRentalIncome: asNum(box3),
+      box4GuaranteedPayments: asNum(box4Gp),
       interestIncome: asNum(interestIncome),
       ordinaryDividends: asNum(ordinaryDividends),
       qualifiedDividends: asNum(qualifiedDividends),
@@ -3960,7 +3963,12 @@ function ScheduleK1Form({
                 <CurrencyInput value={box3} onChange={setBox3} />
               </div>
               <div className="space-y-1">
-                <Label>Interest income (Box 5 / Box 4)</Label>
+                <Label>Box 4 — Guaranteed payments (§707(c))</Label>
+                <CurrencyInput value={box4Gp} onChange={setBox4Gp} />
+                <p className="text-[11px] text-muted-foreground">Partnership only. Ordinary income; excluded from QBI; SE-taxable.</p>
+              </div>
+              <div className="space-y-1">
+                <Label>Interest income (Box 5)</Label>
                 <CurrencyInput value={interestIncome} onChange={setInterestIncome} />
               </div>
               <div className="space-y-1">

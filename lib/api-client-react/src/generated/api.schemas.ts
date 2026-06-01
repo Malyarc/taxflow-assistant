@@ -1854,6 +1854,8 @@ export interface ScheduleK1 {
   box1OrdinaryIncome: number;
   box2RentalRealEstate: number;
   box3OtherRentalIncome: number;
+  /** 1065 Box 4 guaranteed payments (§707(c)). Ordinary income to the partner; excluded from QBI per §199A(c)(4); SE-taxable (engine uses max(Box 14A, Box 4) for the SE base). */
+  box4GuaranteedPayments: number;
   interestIncome: number;
   ordinaryDividends: number;
   qualifiedDividends: number;
@@ -1902,6 +1904,8 @@ export interface CreateScheduleK1Body {
   box1OrdinaryIncome?: number;
   box2RentalRealEstate?: number;
   box3OtherRentalIncome?: number;
+  /** 1065 Box 4 guaranteed payments (§707(c)). Ordinary income to the partner; excluded from QBI per §199A(c)(4); SE-taxable (engine uses max(Box 14A, Box 4) for the SE base). */
+  box4GuaranteedPayments?: number;
   interestIncome?: number;
   ordinaryDividends?: number;
   qualifiedDividends?: number;
@@ -1948,6 +1952,8 @@ export interface UpdateScheduleK1Body {
   box1OrdinaryIncome?: number;
   box2RentalRealEstate?: number;
   box3OtherRentalIncome?: number;
+  /** 1065 Box 4 guaranteed payments (§707(c)). Ordinary income to the partner; excluded from QBI per §199A(c)(4); SE-taxable (engine uses max(Box 14A, Box 4) for the SE base). */
+  box4GuaranteedPayments?: number;
   interestIncome?: number;
   ordinaryDividends?: number;
   qualifiedDividends?: number;

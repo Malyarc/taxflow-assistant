@@ -54,6 +54,16 @@ export const scheduleK1DataTable = pgTable("schedule_k1_data", {
   box2RentalRealEstate: numeric("box2_rental_real_estate", { precision: 14, scale: 2 }).notNull().default("0"),
   /** Box 3 — other net rental income (loss). Passive; runs through K-1 passive bucket. */
   box3OtherRentalIncome: numeric("box3_other_rental_income", { precision: 14, scale: 2 }).notNull().default("0"),
+  /**
+   * 1065 Box 4 (4a services + 4b capital) — guaranteed payments to a partner
+   * under §707(c). Ordinary income to the partner (Sch E Part II → 1040 Line 8),
+   * EXCLUDED from QBI per §199A(c)(4), and SE-taxable for a service partner.
+   * Box 14A on a real 1065 K-1 already INCLUDES the guaranteed payment, so the
+   * engine takes max(Box 14A, Box 4) for the SE base — GP is captured even if
+   * Box 14A is left blank, and not double-counted when Box 14A includes it.
+   * S-corp K-1s have no guaranteed payments (leave $0).
+   */
+  box4GuaranteedPayments: numeric("box4_guaranteed_payments", { precision: 14, scale: 2 }).notNull().default("0"),
   /** 1065 Box 5 / 1120-S Box 4 — interest income. */
   interestIncome: numeric("interest_income", { precision: 14, scale: 2 }).notNull().default("0"),
   /** 1065 Box 6a / 1120-S Box 5a — ordinary dividends. */

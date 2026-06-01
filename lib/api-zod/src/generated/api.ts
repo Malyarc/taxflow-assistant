@@ -3620,6 +3620,11 @@ export const ListScheduleK1sResponseItem = zod.object({
   box1OrdinaryIncome: zod.number(),
   box2RentalRealEstate: zod.number(),
   box3OtherRentalIncome: zod.number(),
+  box4GuaranteedPayments: zod
+    .number()
+    .describe(
+      "1065 Box 4 guaranteed payments (§707(c)). Ordinary income to the partner; excluded from QBI per §199A(c)(4); SE-taxable (engine uses max(Box 14A, Box 4) for the SE base).",
+    ),
   interestIncome: zod.number(),
   ordinaryDividends: zod.number(),
   qualifiedDividends: zod.number(),
@@ -3655,6 +3660,12 @@ export const CreateScheduleK1Body = zod.object({
   box1OrdinaryIncome: zod.number().optional(),
   box2RentalRealEstate: zod.number().optional(),
   box3OtherRentalIncome: zod.number().optional(),
+  box4GuaranteedPayments: zod
+    .number()
+    .optional()
+    .describe(
+      "1065 Box 4 guaranteed payments (§707(c)). Ordinary income to the partner; excluded from QBI per §199A(c)(4); SE-taxable (engine uses max(Box 14A, Box 4) for the SE base).",
+    ),
   interestIncome: zod.number().optional(),
   ordinaryDividends: zod.number().optional(),
   qualifiedDividends: zod.number().optional(),
@@ -3688,6 +3699,12 @@ export const UpdateScheduleK1Body = zod.object({
   box1OrdinaryIncome: zod.number().optional(),
   box2RentalRealEstate: zod.number().optional(),
   box3OtherRentalIncome: zod.number().optional(),
+  box4GuaranteedPayments: zod
+    .number()
+    .optional()
+    .describe(
+      "1065 Box 4 guaranteed payments (§707(c)). Ordinary income to the partner; excluded from QBI per §199A(c)(4); SE-taxable (engine uses max(Box 14A, Box 4) for the SE base).",
+    ),
   interestIncome: zod.number().optional(),
   ordinaryDividends: zod.number().optional(),
   qualifiedDividends: zod.number().optional(),
@@ -3715,6 +3732,11 @@ export const UpdateScheduleK1Response = zod.object({
   box1OrdinaryIncome: zod.number(),
   box2RentalRealEstate: zod.number(),
   box3OtherRentalIncome: zod.number(),
+  box4GuaranteedPayments: zod
+    .number()
+    .describe(
+      "1065 Box 4 guaranteed payments (§707(c)). Ordinary income to the partner; excluded from QBI per §199A(c)(4); SE-taxable (engine uses max(Box 14A, Box 4) for the SE base).",
+    ),
   interestIncome: zod.number(),
   ordinaryDividends: zod.number(),
   qualifiedDividends: zod.number(),

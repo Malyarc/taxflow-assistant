@@ -317,6 +317,10 @@ export interface ScheduleK1Fact {
   box1OrdinaryIncome?: Numish;
   box2RentalRealEstate?: Numish;
   box3OtherRentalIncome?: Numish;
+  /** 1065 Box 4 (§707(c)) guaranteed payments. Ordinary income to the partner
+   *  (Sch E Part II); EXCLUDED from QBI per §199A(c)(4); SE-taxable for a
+   *  service partner. Engine takes max(Box 14A, Box 4) for the SE base. */
+  box4GuaranteedPayments?: Numish;
   interestIncome?: Numish;
   ordinaryDividends?: Numish;
   qualifiedDividends?: Numish;
@@ -641,6 +645,8 @@ export interface ScheduleK1Summary {
   partnershipCount: number;
   sCorpCount: number;
   totalActiveOrdinaryIncome: number;
+  /** 1065 Box 4 §707(c) guaranteed payments — ordinary income, non-QBI. */
+  totalGuaranteedPayments: number;
   totalPassiveBucketNetApplied: number;
   k1PassiveLossSuspended: number;
   totalInterestIncome: number;
@@ -1472,13 +1478,26 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const k1Royalties = sumK1Where(() => true, (k) => k.royalties);
   const k1Stcg = sumK1Where(() => true, (k) => k.netShortTermCapitalGain);
   const k1Ltcg = sumK1Where(() => true, (k) => k.netLongTermCapitalGain);
-  // Partnership Box 14A only — S-corp K-1 income isn't subject to SE tax
-  // (shareholders take W-2 wages for services; their distributive share is
-  // investment-type income, not SE earnings).
-  const k1SelfEmploymentEarnings = sumK1Where(
-    (k) => (k.entityType ?? "partnership") === "partnership",
-    (k) => k.selfEmploymentEarnings,
-  );
+  // 1065 Box 4 guaranteed payments (§707(c)) — ordinary income to the partner
+  // on Schedule E Part II. Always ordinary (never passive-bucketed) and
+  // EXCLUDED from QBI per §199A(c)(4) (the QBI auto-default below reads Box 1/
+  // 2/3, never Box 4). S-corp K-1s have no guaranteed payments, so summing all
+  // rows is safe.
+  const k1GuaranteedPayments = sumK1Where(() => true, (k) => k.box4GuaranteedPayments);
+  // Partnership SE base. S-corp K-1 income isn't subject to SE tax (shareholders
+  // take W-2 wages for services; their distributive share is investment-type).
+  // Per partnership K-1, SE = max(Box 14A, Box 4 guaranteed payments): a real
+  // 1065 K-1 reports Box 14A INCLUSIVE of the guaranteed payment, so max() does
+  // NOT double-count when Box 14A is entered, and still captures the GP as SE
+  // income when the CPA enters only Box 4 (Box 14A left blank). Box 14A may be a
+  // loss (negative); GP is normally ≥ 0, so max() floors the SE contribution at
+  // the GP for a service partner.
+  const k1SelfEmploymentEarnings = k1sForYear
+    .filter((k) => (k.entityType ?? "partnership") === "partnership")
+    .reduce(
+      (s, k) => s + Math.max(toNum(k.selfEmploymentEarnings), toNum(k.box4GuaranteedPayments)),
+      0,
+    );
   const k1QbiContribution = sumK1Where(() => true, (k) => k.section199aQbi);
 
   // K-1 passive bucket netting: subtract prior-year suspended K-1 passive
@@ -1885,6 +1904,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
       stcgInOrdinary -
       capitalLossDeducted +
       k1ActiveOrdinary +
+      k1GuaranteedPayments +
       k1PassiveAppliedToAgi +
       k1InterestIncome +
       k1OrdinaryDividends +
@@ -1928,6 +1948,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     stcgInOrdinary -
     capitalLossDeducted +
     k1ActiveOrdinary +
+    k1GuaranteedPayments +   // 1065 Box 4 §707(c) — ordinary income, not QBI
     k1PassiveAppliedToAgi +
     k1InterestIncome +
     k1OrdinaryDividends +
@@ -2946,6 +2967,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
       partnershipCount: k1sForYear.filter((k) => (k.entityType ?? "partnership") === "partnership").length,
       sCorpCount: k1sForYear.filter((k) => k.entityType === "s_corp").length,
       totalActiveOrdinaryIncome: k1ActiveOrdinary,
+      totalGuaranteedPayments: k1GuaranteedPayments,
       totalPassiveBucketNetApplied: k1PassiveAppliedToAgi,
       k1PassiveLossSuspended,
       totalInterestIncome: k1InterestIncome,
