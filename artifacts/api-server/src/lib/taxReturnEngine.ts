@@ -2179,6 +2179,14 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
 
   const qbiCombinedIncome =
     (qbiIncomeEffective + k1QbiContributionEffective) * sstbPhaseFraction;
+  // K-1 §199A wage/UBIA limit inputs — aggregate the CPA-supplied §199A W-2
+  // wages + UBIA across the year's K-1s. Positive values opt into the engine
+  // applying the §199A(b)(2)(B) limit above the income threshold; 0/absent
+  // preserves the simplified 20% (CPA applies the limit externally).
+  const k1Section199aW2Wages = k1sForYear.reduce(
+    (s, k) => s + Math.max(0, toNum(k.section199aW2Wages)), 0);
+  const k1Section199aUbia = k1sForYear.reduce(
+    (s, k) => s + Math.max(0, toNum(k.section199aUbia)), 0);
   const qbi = calculateQbi({
     qbiIncome: qbiCombinedIncome,
     // FED-04: cap base is POST-NOL taxable income, per Form 8995 Line 11.
@@ -2187,6 +2195,11 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     // capital gain), where net capital gain = preferential LTCG + qualified
     // dividends. Omitting it lets QBI wrongly shelter preferential-rate income.
     netCapitalGain: ltcgPreferential + qualifiedDividends,
+    // §199A(b)(2)(B) wage/UBIA limit (K-1 depth) — only binds above the threshold.
+    w2Wages: k1Section199aW2Wages,
+    ubia: k1Section199aUbia,
+    filingStatus: client.filingStatus,
+    taxYear,
   });
 
   const taxableAfterQbi = Math.max(0, taxableAfterNol - qbi.finalDeduction);

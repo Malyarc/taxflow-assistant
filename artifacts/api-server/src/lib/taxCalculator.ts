@@ -5059,7 +5059,32 @@ export interface QbiCalculation {
   preliminaryDeduction: number;
   taxableIncomeCap: number;
   finalDeduction: number;
+  /** §199A(b)(2)(B) wage/UBIA limit = max(50% W-2 wages, 25% wages + 2.5% UBIA). 0 = not computed. */
+  wageUbiaLimit?: number;
+  /** True when the wage/UBIA limit reduced the deduction below the 20% tentative. */
+  wageUbiaLimitBinds?: boolean;
 }
+
+// §199A taxable-income threshold + phase-in band by filing status / year.
+// Below `start`: simplified 20% (no wage/UBIA limit). Above `end`: full
+// wage/UBIA limit. Within: phased per Treas. Reg. §1.199A-1(d)(2)(iv).
+// MFS thresholds are half the single amount. (Rev. Proc. 2023-34 / 2024-40.)
+const QBI_WAGE_LIMIT_BAND: Record<TaxYear, Record<string, { start: number; end: number }>> = {
+  2024: {
+    single: { start: 191_950, end: 241_950 },
+    head_of_household: { start: 191_950, end: 241_950 },
+    married_filing_separately: { start: 95_975, end: 120_975 },
+    married_filing_jointly: { start: 383_900, end: 483_900 },
+    qualifying_widow: { start: 383_900, end: 483_900 },
+  },
+  2025: {
+    single: { start: 197_300, end: 247_300 },
+    head_of_household: { start: 197_300, end: 247_300 },
+    married_filing_separately: { start: 98_650, end: 123_650 },
+    married_filing_jointly: { start: 394_600, end: 494_600 },
+    qualifying_widow: { start: 394_600, end: 494_600 },
+  },
+};
 
 export function calculateQbi(params: {
   qbiIncome: number;
@@ -5071,6 +5096,13 @@ export function calculateQbi(params: {
    * sheltered by the QBI deduction. Defaults to 0 (no preferential income).
    */
   netCapitalGain?: number;
+  /** Aggregate §199A W-2 wages from the qualified business(es) (K-1 Box 20 code W / statement). */
+  w2Wages?: number;
+  /** Aggregate UBIA of qualified property (unadjusted basis immediately after acquisition). */
+  ubia?: number;
+  /** Filing status + tax year — needed for the §199A threshold + phase-in band. */
+  filingStatus?: string;
+  taxYear?: number;
 }): QbiCalculation {
   const { qbiIncome, taxableIncomeBeforeQbi, netCapitalGain = 0 } = params;
   if (qbiIncome <= 0) {
@@ -5078,11 +5110,44 @@ export function calculateQbi(params: {
   }
   const preliminary = qbiIncome * 0.20;
   const cap = Math.max(0, taxableIncomeBeforeQbi - Math.max(0, netCapitalGain)) * 0.20;
+
+  // §199A(b)(2)(B) wage/UBIA limit. Only binds ABOVE the taxable-income
+  // threshold, phased in over the band, and only when the CPA supplied the
+  // business's W-2 wages / UBIA (positive). Absent that data, fall back to the
+  // simplified 20% — the prior behavior (CPA applies the limit externally).
+  // Sub-gap: when QBI combines a Sch C (no wages entered) WITH a wage-bearing
+  // K-1, the engine applies one AGGREGATE limit to the combined QBI rather than
+  // a per-business §199A(b)(1) computation (the CPA enters all businesses' wages
+  // or overrides for the mixed case).
+  const w2Wages = Math.max(0, params.w2Wages ?? 0);
+  const ubia = Math.max(0, params.ubia ?? 0);
+  let wageLimitedPreliminary = preliminary;
+  let wageUbiaLimit = 0;
+  let wageUbiaLimitBinds = false;
+  if (w2Wages > 0 || ubia > 0) {
+    const year = resolveTaxYear(params.taxYear);
+    const band =
+      QBI_WAGE_LIMIT_BAND[year][params.filingStatus ?? "single"] ??
+      QBI_WAGE_LIMIT_BAND[year].single;
+    if (taxableIncomeBeforeQbi > band.start) {
+      wageUbiaLimit = Math.max(0.50 * w2Wages, 0.25 * w2Wages + 0.025 * ubia);
+      const excessRatio = Math.min(1, Math.max(0,
+        (taxableIncomeBeforeQbi - band.start) / (band.end - band.start)));
+      // Reduction = (tentative − limit) × excess-ratio, only when the limit
+      // is below the tentative 20%. At the band top the full limit applies.
+      const reduction = Math.max(0, preliminary - wageUbiaLimit) * excessRatio;
+      wageLimitedPreliminary = preliminary - reduction;
+      wageUbiaLimitBinds = reduction > 0;
+    }
+  }
+
   return {
     qbiAmount: qbiIncome,
     preliminaryDeduction: preliminary,
     taxableIncomeCap: cap,
-    finalDeduction: Math.min(preliminary, cap),
+    finalDeduction: Math.min(wageLimitedPreliminary, cap),
+    wageUbiaLimit,
+    wageUbiaLimitBinds,
   };
 }
 

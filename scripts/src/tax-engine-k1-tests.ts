@@ -502,6 +502,97 @@ header("Test I — No K-1 rows → all summary fields zero");
   check("AGI unchanged $50,000", r.adjustedGrossIncome, 50000, 1);
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// §199A WAGE/UBIA LIMIT (K-1 depth, fix 2026-06-01) — IRC §199A(b)(2)(B)
+// ════════════════════════════════════════════════════════════════════════════
+// Above the taxable-income threshold ($191,950 single TY2024), the QBI deduction
+// is limited to the GREATER of 50% of W-2 wages OR 25% wages + 2.5% UBIA, phased
+// in over the band. The engine now applies this when the K-1 supplies positive
+// section199aW2Wages / section199aUbia. S-corp K-1 (no SE) for clean isolation.
+
+// ── Test W1: wage limit binds, fully phased (high income, low wages) ──────
+// S-corp Box 1 $1,000,000 QBI, W-2 wages $100,000, UBIA $0.
+//   prelim = 20% × 1,000,000 = 200,000. taxable-before-QBI = 985,400 >> band top.
+//   wageLimit = max(50%×100,000=50,000, 25%×100,000=25,000) = 50,000.
+//   reduction = (200,000 − 50,000) × 1 = 150,000 → wage-limited = 50,000.
+//   cap = 20% × 985,400 = 197,080. QBI = min(50,000, 197,080) = 50,000.
+//   (Pre-fix: min(200,000, 197,080) = 197,080 — over-deducted by $147,080.)
+header("Test W1 — §199A wage limit binds (50% of W-2 wages)");
+{
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [], form1099s: [], adjustments: [],
+    scheduleK1: [{ taxYear: 2024, entityType: "s_corp", activityType: "active",
+      box1OrdinaryIncome: 1000000, section199aQbi: 1000000,
+      section199aW2Wages: 100000, section199aUbia: 0 }],
+    taxYear: 2024,
+  });
+  check("W1 QBI deduction = $50,000 (50% W-2 wage limit)", r.qbiDeduction ?? 0, 50000, 1);
+}
+
+// ── Test W2: UBIA path (25% wages + 2.5% UBIA) exceeds 50% wages ──────────
+// W-2 wages $100,000, UBIA $4,000,000 → wageLimit = max(50,000, 25,000+100,000)
+//   = 125,000. QBI = min(125,000, 197,080) = 125,000.
+header("Test W2 — §199A UBIA path (25% wages + 2.5% UBIA)");
+{
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [], form1099s: [], adjustments: [],
+    scheduleK1: [{ taxYear: 2024, entityType: "s_corp", activityType: "active",
+      box1OrdinaryIncome: 1000000, section199aQbi: 1000000,
+      section199aW2Wages: 100000, section199aUbia: 4000000 }],
+    taxYear: 2024,
+  });
+  check("W2 QBI deduction = $125,000 (UBIA path)", r.qbiDeduction ?? 0, 125000, 1);
+}
+
+// ── Test W3: phase-in (50% through the band) — partial limit ─────────────
+// Box 1 $231,550 → taxable-before-QBI 216,950 → excessRatio 0.5. W-2 wages
+//   $20,000 → wageLimit 10,000. prelim 46,310. reduction = (46,310−10,000)×0.5
+//   = 18,155 → wage-limited 28,155. cap 43,390. QBI = 28,155.
+header("Test W3 — §199A phase-in (50% through the band)");
+{
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [], form1099s: [], adjustments: [],
+    scheduleK1: [{ taxYear: 2024, entityType: "s_corp", activityType: "active",
+      box1OrdinaryIncome: 231550, section199aQbi: 231550,
+      section199aW2Wages: 20000, section199aUbia: 0 }],
+    taxYear: 2024,
+  });
+  check("W3 QBI deduction = $28,155 (mid-band phase-in)", r.qbiDeduction ?? 0, 28155, 1);
+}
+
+// ── Test W4: below threshold — wage limit ignored (control) ──────────────
+// Box 1 $150,000 → taxable-before-QBI 135,400 < threshold → simplified 20%.
+//   QBI = min(30,000, 20%×135,400=27,080) = 27,080.
+header("Test W4 — below threshold: wage limit ignored");
+{
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [], form1099s: [], adjustments: [],
+    scheduleK1: [{ taxYear: 2024, entityType: "s_corp", activityType: "active",
+      box1OrdinaryIncome: 150000, section199aQbi: 150000,
+      section199aW2Wages: 10000, section199aUbia: 0 }],
+    taxYear: 2024,
+  });
+  check("W4 QBI deduction = $27,080 (cap binds, no wage limit)", r.qbiDeduction ?? 0, 27080, 1);
+}
+
+// ── Test W5: no wages supplied — backward-compat simplified 20% ───────────
+// Box 1 $1,000,000, NO wage/UBIA → QBI = min(200,000, 197,080) = 197,080.
+header("Test W5 — no wages supplied: simplified 20% (backward compat)");
+{
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [], form1099s: [], adjustments: [],
+    scheduleK1: [{ taxYear: 2024, entityType: "s_corp", activityType: "active",
+      box1OrdinaryIncome: 1000000, section199aQbi: 1000000 }],
+    taxYear: 2024,
+  });
+  check("W5 QBI deduction = $197,080 (no wage data → simplified)", r.qbiDeduction ?? 0, 197080, 1);
+}
+
 // ────────────────────────────────────────────────────────────────────────────
 console.log("\n────────────────────────────────────────────────────────────────────");
 console.log(`PASS: ${PASS.length}`);
