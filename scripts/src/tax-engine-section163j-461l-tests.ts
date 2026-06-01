@@ -279,6 +279,79 @@ function adj(type: string, amount: number, id = Math.floor(Math.random() * 1e9))
   check("Case 12 disallowed cf = $50k", r.section163jDisallowedCarryforward, 50000);
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// §461(l) Schedule-C-LOSS FLOW (fix 2026-06-01)
+// ════════════════════════════════════════════════════════════════════════════
+// Before the fix the engine floored netSeIncome at 0, so a Schedule C loss
+// could not offset other income (and, worse, the §461(l) auto-addback was still
+// added → inflated AGI). The signed Sch C net now flows to AGI, capped by the
+// §461(l) excess-business-loss limit ($305k single / $610k MFJ TY2024).
+
+// ── Case L1: Sch C loss offsets W-2 (under §461(l) threshold) ─────────────
+// W-2 $100,000 + self_employment_income −$30,000. schCLoss $30k < $305k → no
+// §461(l) addback. AGI = 100,000 − 30,000 = 70,000. SE tax $0 (loss).
+{
+  const r = computeTaxReturnPure(baseInputs({ adjustments: [adj("self_employment_income", -30000)] }));
+  check("Case L1 AGI = $70k (Sch C loss offsets W-2)", r.adjustedGrossIncome, 70000);
+  check("Case L1 §461(l) addback = 0 (loss < threshold)", r.section461lExcessLossAddback, 0);
+  check("Case L1 SE tax = 0 (no positive SE)", r.selfEmploymentTax, 0);
+}
+
+// ── Case L2: §461(l) caps a large Sch C loss (single $305k) ───────────────
+// W-2 $500,000 + self_employment_income −$500,000. schCLoss $500k; addback =
+// 500,000 − 305,000 = 195,000. AGI = 500,000 − 500,000 + 195,000 = 195,000
+// (i.e. only the $305k allowed loss offsets W-2). Pre-fix this returned a
+// nonsensical $695k (loss floored to 0 BUT addback still added).
+{
+  const inp = baseInputs({ adjustments: [adj("self_employment_income", -500000)] });
+  (inp.w2s[0] as { wagesBox1: string }).wagesBox1 = "500000";
+  const r = computeTaxReturnPure(inp);
+  check("Case L2 §461(l) addback = $195k", r.section461lExcessLossAddback, 195000);
+  check("Case L2 AGI = $195k (loss capped at $305k allowed)", r.adjustedGrossIncome, 195000);
+}
+
+// ── Case L3: MFJ §461(l) higher threshold ($610k) ────────────────────────
+// MFJ, W-2 $800,000 + self_employment_income −$700,000. addback = 700,000 −
+// 610,000 = 90,000. AGI = 800,000 − 700,000 + 90,000 = 190,000.
+{
+  const inp = baseInputs({ adjustments: [adj("self_employment_income", -700000)] });
+  (inp.client as { filingStatus: string }).filingStatus = "married_filing_jointly";
+  (inp.w2s[0] as { wagesBox1: string }).wagesBox1 = "800000";
+  const r = computeTaxReturnPure(inp);
+  check("Case L3 MFJ §461(l) addback = $90k", r.section461lExcessLossAddback, 90000);
+  check("Case L3 MFJ AGI = $190k (loss capped at $610k)", r.adjustedGrossIncome, 190000);
+}
+
+// ── Case L4: positive Sch C unaffected (regression control) ───────────────
+// W-2 $100,000 + self_employment_income +$50,000. netSE = 50,000 × 0.9235 =
+// 46,175 → SE tax 7,064.78; half 3,532.39. AGI = 100,000 + 50,000 − 3,532.39
+// = 146,467.61. (Signed net == floored net when positive.)
+{
+  const r = computeTaxReturnPure(baseInputs({ adjustments: [adj("self_employment_income", 50000)] }));
+  check("Case L4 AGI = $146,467.61 (positive Sch C unchanged)", r.adjustedGrossIncome, 146467.61, 1);
+  check("Case L4 SE tax = $7,064.78", r.selfEmploymentTax, 7064.78, 1);
+}
+
+// ── Case L5: Sch C loss via expenses > gross also flows ───────────────────
+// W-2 $100,000 + self_employment_income +$20,000 + schedule_c_expenses $50,000.
+// scheduleCNetSigned = 20,000 − 50,000 = −30,000. AGI = 100,000 − 30,000 = 70,000.
+{
+  const r = computeTaxReturnPure(baseInputs({
+    adjustments: [adj("self_employment_income", 20000), adj("schedule_c_expenses", 50000)],
+  }));
+  check("Case L5 AGI = $70k (expenses-path loss flows)", r.adjustedGrossIncome, 70000);
+  check("Case L5 SE tax = 0 (net loss)", r.selfEmploymentTax, 0);
+}
+
+// ── Case L6: loss exceeds total income → AGI floors at 0 (NOL not auto-gen) ─
+// W-2 $100,000 + self_employment_income −$150,000. income = −50,000 → AGI = 0.
+// The $50k excess would be an NOL the CPA carries via nol_carryforward
+// (documented sub-gap — engine does not auto-generate the NOL).
+{
+  const r = computeTaxReturnPure(baseInputs({ adjustments: [adj("self_employment_income", -150000)] }));
+  check("Case L6 AGI floors at $0 (loss > income)", r.adjustedGrossIncome, 0);
+}
+
 console.log(`\n§163(j) + §461(l) (C7) tests:`);
 console.log(`  ✓ Passed: ${PASS.length}`);
 console.log(`  ✗ Failed: ${FAIL.length}`);

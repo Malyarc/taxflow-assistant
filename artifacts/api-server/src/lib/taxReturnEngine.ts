@@ -1483,7 +1483,16 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     Math.max(0, scheduleCExpensesInput),
     Math.max(0, grossSeIncome),
   );
-  const netSeIncome = Math.max(0, grossSeIncome - scheduleCExpenses);
+  // §461(l) Sch-C-loss-flow fix: the SIGNED Schedule C net (can be NEGATIVE)
+  // flows to AGI so a Schedule C LOSS offsets other income — capped downstream
+  // by the §461(l) excess-business-loss addback (line ~1912). `netSeIncome`
+  // stays floored at 0 for everything a loss may NOT reduce: the SE-tax base,
+  // QBI, local EIT, and earned income. Uses the uncapped scheduleCExpensesInput
+  // so expenses > gross also produce a deductible loss, consistent with the
+  // §461(l) schCLoss derivation below. `Math.max(0, scheduleCNetSigned)` is
+  // arithmetically identical to the prior `grossSeIncome - scheduleCExpenses`.
+  const scheduleCNetSigned = grossSeIncome - Math.max(0, scheduleCExpensesInput);
+  const netSeIncome = Math.max(0, scheduleCNetSigned);
   // SE-tax base = Schedule C net + K-1 partnership Box 14A SE earnings
   // (K-1 SE loss nets against positive amounts; floor at 0).
   const seTaxBase = Math.max(0, netSeIncome + k1SelfEmploymentEarnings);
@@ -1889,7 +1898,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     additionalIncome +
     additionalIncomeAdjustments +
     investmentIncomeFromAdj +
-    netSeIncome +
+    scheduleCNetSigned +   // §461(l) fix: signed Sch C net (loss flows to AGI; §461(l) addback below caps it)
     form1099Summary.interestIncome +
     form1099Summary.ordinaryDividends +
     form1099Summary.retirementIncome +
