@@ -57,6 +57,7 @@
     "src/tax-engine-planning-scenarios-tests.ts",
     "src/tax-engine-realworld-scenarios-tests.ts",
     "src/tax-engine-audit-2026-05-29-tests.ts",
+    "src/tax-engine-16-scenario-battery-tests.ts",
     "src/h-deep-audit-2026-05-27.ts",
     "src/tax-engine-c2-state-credits-tests.ts",
     "src/tax-engine-c2-state-credits-v2-tests.ts",

@@ -15,8 +15,8 @@
  *
  * STL-03 (CA/MA surtax on taxable income) is locked by tax-engine-tests.ts.
  * FED-03 (NIIT FEIE add-back), FED-04 (QBI/NOL ordering) and FED-06 (EITC
- * §32(i) tax-exempt interest) are exercised end-to-end in
- * tax-engine-audit-2026-05-29-scenarios-tests.ts.
+ * §32(i) tax-exempt interest) are exercised end-to-end in the 16-scenario
+ * battery, tax-engine-16-scenario-battery-tests.ts (N1/N2/N3 + N14).
  */
 
 import {
