@@ -1054,6 +1054,24 @@ export function detectWashSales(
     const replacement = rows[bestIdx];
     replacement.costBasis = toNum(replacement.costBasis) + loss;
 
+    // 3) §1091(d) / §1223(3) holding-period TACK-ON: the replacement's holding
+    // period INCLUDES the washed shares' holding period. When the replacement
+    // is ALSO sold this year and the tacked period exceeds one year, its
+    // character flips short-term → long-term (formBox A/B/C → D/E/F), re-routing
+    // its gain from STCG to LTCG. (Only matters when both lots sell same-year;
+    // across years the CPA carries the adjusted basis + holding period forward.)
+    const replSold = parseISO(replacement.dateSold ?? null);
+    const fb = (replacement.formBox ?? "").toUpperCase();
+    const ST_TO_LT: Record<string, "D" | "E" | "F"> = { A: "D", B: "E", C: "F" };
+    if (replSold && sAcq && sSold && Number.isFinite(bestAcqMs) && fb in ST_TO_LT) {
+      const washedHoldingMs = sSold.getTime() - sAcq.getTime();
+      const replOwnHoldingMs = replSold.getTime() - bestAcqMs;
+      const tackedHoldingDays = (replOwnHoldingMs + washedHoldingMs) / ONE_DAY_MS;
+      if (tackedHoldingDays > 365) {
+        replacement.formBox = ST_TO_LT[fb];
+      }
+    }
+
     detected += 1;
     totalDisallowed += loss;
   }

@@ -1728,6 +1728,47 @@ header("E13+4 — Day +31 → NO wash sale");
   check("E13+4", "Day +31 does NOT fire", r.washSalesDetected, 0, 0);
 }
 
+// --- E13+19: §1091(d)/§1223(3) holding-period TACK-ON flips replacement ST→LT ---
+// Hand-calc:
+//   S: AAPL bought 2022-01-01, sold 2024-06-01 → held 882 days (LONG-TERM),
+//      loss $1,000 (proceeds 5,000 / basis 6,000). Wash sale.
+//   T: AAPL bought 2024-06-15 (+14 days), sold 2024-08-01 → own holding 47 days
+//      (short-term, formBox "A"). §1223(3): T's holding period TACKS S's 882 days
+//      → 929 days > 1 year → T flips to LONG-TERM (formBox A → D). Basis +$1,000.
+header("E13+19 — §1091(d) holding-period tack: replacement flips ST→LT");
+{
+  const txns: CapitalTransactionFact[] = [
+    { taxYear: 2024, description: "100 sh AAPL", dateAcquired: "2022-01-01", dateSold: "2024-06-01",
+      proceeds: 5000, costBasis: 6000, adjustmentAmount: 0, formBox: "D" },
+    { taxYear: 2024, description: "100 sh AAPL", dateAcquired: "2024-06-15", dateSold: "2024-08-01",
+      proceeds: 6000, costBasis: 5500, adjustmentAmount: 0, formBox: "A" },
+  ];
+  const r = detectWashSales(txns);
+  check("E13+19", "wash sale detected", r.washSalesDetected, 1, 0);
+  check("E13+19", "T basis += $1,000 (§1091(d))", Number(r.adjustedTransactions[1].costBasis), 6500, 0.01);
+  check("E13+19", "T formBox flipped A → D (tacked > 1yr)",
+    r.adjustedTransactions[1].formBox === "D" ? 1 : 0, 1, 0,
+    "IRC §1091(d) / §1223(3) holding-period tack-on");
+}
+
+// --- E13+20: short-term washed lot, tacked < 1yr → NO flip (control) ---
+// S held 2024-01-01 → 2024-06-01 (152 days). T own 47 days. Tacked 199 < 365 →
+// formBox stays "A" (short-term).
+header("E13+20 — short tacked period: replacement stays ST (no flip)");
+{
+  const txns: CapitalTransactionFact[] = [
+    { taxYear: 2024, description: "100 sh AAPL", dateAcquired: "2024-01-01", dateSold: "2024-06-01",
+      proceeds: 5000, costBasis: 6000, adjustmentAmount: 0, formBox: "A" },
+    { taxYear: 2024, description: "100 sh AAPL", dateAcquired: "2024-06-15", dateSold: "2024-08-01",
+      proceeds: 6000, costBasis: 5500, adjustmentAmount: 0, formBox: "A" },
+  ];
+  const r = detectWashSales(txns);
+  check("E13+20", "wash sale detected", r.washSalesDetected, 1, 0);
+  check("E13+20", "T formBox stays A (tacked < 1yr)",
+    r.adjustedTransactions[1].formBox === "A" ? 1 : 0, 1, 0,
+    "no holding-period crossover");
+}
+
 // --- E13+5: Before-window replacement (T bought 25 days BEFORE S sold) → wash sale ---
 // Hand-calc:
 //   S: 100 sh GOOG acquired 2024-01-01, sold 2024-06-01 for loss ($800)
