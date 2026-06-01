@@ -22,10 +22,12 @@ postponed to the Haven fusion). Knocked out the four quick correctness wins the
 2026-05-29 audit left open, then encoded the 16-scenario real-world battery that
 gives the previously-missing PIPELINE coverage for the audit's federal fixes.
 Every expected value hand-calc'd against the published IRS/state rule before
-asserting. **38 no-API suites / 3,053 assertions / 0 failures**, clean typecheck,
-FED-05 UI verified in a local browser preview, full deploy verified on the live box.
+asserting. Then began the planning-credibility lift (H2-wiring), with a survey
+that found most heuristic detectors are qualitative-by-nature. **38 no-API suites
+/ 3,062 assertions / 0 failures**, clean typecheck, FED-05 UI verified in a local
+browser preview, full deploy verified on the live box.
 
-### What landed (5 commits on `main`, all pushed + deployed)
+### What landed (6 commits on `main`, all pushed + deployed)
 
 1. **`e768c0c` FORM-03** — Form 1040-X Lines 16→20 rebuilt as the IRS settlement
    chain (Line 17 overpayment-on-original, Line 18 tax-paid-with-original, Lines
@@ -52,6 +54,16 @@ FED-05 UI verified in a local browser preview, full deploy verified on the live 
    STL-02 Philly EIT incl. SE, Pub 915 SS taxability, §1202 QSBS. Added to
    scripts/tsconfig.json exclude; the dangling forward-ref in the 2026-05-29 audit
    suite was repointed here.
+6. **`6f9121b` H2-wire G1.92 + G1.96** — attached engine-verified `runDetectorWhatIf`
+   deltas to the two cleanly-wireable heuristic detectors (Solo 401(k) employee
+   deferral + §132(f) transit), threading baselineInputs from the evaluator.
+   estSavings stays the heuristic fallback (per the G1.1 SEP pattern). The G1.92
+   whatIf ($3,760) lands BELOW the flat heuristic ($5,060) because the §199A QBI cap
+   dampens each $1 of deduction — the cascade H2 is meant to capture. +9 tests.
+   **Survey finding (in docs/todo.md):** the other ~44 heuristic detectors in
+   G1.46–G1.96 are qualitative-by-nature (business credits, entity elections, trust
+   vehicles, multi-year structures, after-tax contributions, soft guidance) and
+   should NOT be force-wired — they aren't a single current-year engine mutation.
 
 ### Engine semantics worth remembering (learned this session)
 
@@ -105,13 +117,13 @@ project at `~/taxflow-pro`. Full runbook in CLAUDE.md.
    §461(l) Sch-C loss flow (engine floors netSeIncome at 0), K-1 §199A wage/UBIA +
    SSTB depth + guaranteed payments, §163(j) ATI proxy, AMT prefs (2i/2e/AMT-NOL),
    part-year per-income sourcing, wash-sale §1091(d).
-2. **Tax-planning credibility — the big lift:** H2-wire the heuristic catalog
-   detectors (≈G1.67–G1.96, most of v1.12–v1.17) to engine-verified savings via
-   `runDetectorWhatIf` (like the 6 already wired: SEP / AMT-ISO / NIIT / TLH / FTC /
-   Roth), so `estSavings` is a real before/after engine delta. Then extend H3
-   multi-year wiring (only G1.3/G1.8/G1.4 are multi-year-aware). Then **PLAN-08**
-   (enforce catalog `validUntil`) + a TY2025/2026 + OBBBA limits refresh across the
-   97 strategies (`docs/planning-strategy-audit.md`).
+2. **Tax-planning:** H2-wiring is DONE for the wireable subset (G1.92 + G1.96);
+   the rest is qualitative — see the survey note in `docs/todo.md` (do NOT
+   force-wire). Remaining planning work: extend H3 multi-year wiring (only
+   G1.3/G1.8/G1.4 are multi-year-aware → Roth ladders, RMD, installment sales,
+   carryforward depletion); **PLAN-08** (enforce catalog `validUntil`); a
+   TY2025/2026 + OBBBA limits refresh across the 97 strategies
+   (`docs/planning-strategy-audit.md`).
 3. **Haven fusion prep:** keep `computeTaxReturnPure` pure/portable (no DB/API
    imports) — it carries into Haven, which brings its own auth/tenancy.
 
@@ -130,13 +142,17 @@ docs/coverage-matrix.md, docs/planning-strategy-audit.md.
 Where we left off (2026-06-01): shipped + deployed 4 audit quick-wins (FORM-03
 1040-X chain, FED-05 blind std ded incl. a prod clients-table ALTER, PLAN-04
 kiddie/Coverdell child gate, PLAN-06 QCD 70½) + a 16-scenario hand-calc'd
-pipeline battery (FED-03/04/06 + pass-through/NIIT/state coverage). 38 no-API
-suites / 3,053 assertions green; clean typecheck; live-verified on EC2.
+pipeline battery (FED-03/04/06 + pass-through/NIIT/state coverage) + H2-wired the
+2 cleanly-wireable heuristic planning detectors (G1.92 Solo 401(k), G1.96
+§132(f)). 38 no-API suites / 3,062 assertions green; clean typecheck; live-verified
+on EC2.
 
-Recommended next task: the big tax-planning credibility lift — H2-wire the
-heuristic catalog detectors (≈G1.67–G1.96) to engine-verified savings via
-runDetectorWhatIf so estSavings is a real engine delta (6 are already wired as
-the pattern). Keep computeTaxReturnPure pure/portable for the Haven fusion.
-Hand-calc every expected value; run the no-API suite; commit per chunk; push to
-main AND fully deploy to EC2 + verify live (runbook in CLAUDE.md / handoff.md).
+Recommended next task: tax-calc correctness — START with the §461(l) Schedule-C
+loss flow (the engine floors netSeIncome at 0, so a Sch C LOSS can't offset other
+income — a real gap that bites). Then STL-05 (MD EITC two-component) and the other
+engine sub-gaps in docs/todo.md. (H2-wiring is DONE for the wireable subset; the
+rest is qualitative — see the survey note in docs/todo.md, do NOT force-wire.)
+Keep computeTaxReturnPure pure/portable for the Haven fusion. Hand-calc every
+expected value; run the no-API suite; commit per chunk; push to main AND fully
+deploy to EC2 + verify live (runbook in CLAUDE.md / handoff.md).
 ```

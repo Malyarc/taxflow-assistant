@@ -16,9 +16,9 @@ larger **Haven** app, which brings its own auth/tenancy, so we won't build it
 twice. The focus is the **portable engine + planning feature**
 (`computeTaxReturnPure` is already Haven-portable — keep it pure). The live EC2
 box stays a **demo** (no auth/TLS) — do NOT put real client PII on it until the
-Haven fusion lands. **2026-06-01: 5 refinement commits shipped + deployed + verified
-live** (FORM-03, FED-05, PLAN-04, PLAN-06, 16-scenario battery — see `.claude/handoff.md`);
-**38 no-API suites / 3,053 assertions green**, clean typecheck.
+Haven fusion lands. **2026-06-01: 6 refinement commits shipped + deployed + verified
+live** (FORM-03, FED-05, PLAN-04, PLAN-06, 16-scenario battery, H2-wire G1.92/G1.96 —
+see `.claude/handoff.md`); **38 no-API suites / 3,062 assertions green**, clean typecheck.
 
 ### Tax CALCULATOR refinement backlog (correctness-first)
 
@@ -64,16 +64,30 @@ Validation:
   17-year-olds + 18–23 students. +4 tests.
 - ✅ **PLAN-06** — QCD detector fires at year-end age ≥70 (was ≥71) with a 70½
   distribution-date-confirm caveat for the borderline age-70 case. +4 tests.
+- ✅ **H2-wire (partial)** — wired the two cleanly-wireable heuristic detectors in
+  the G1.46–G1.96 range to engine-verified `runDetectorWhatIf` deltas: **G1.92
+  Solo 401(k)** (employee deferral as deduction; whatIf $3,760 vs heuristic $5,060
+  — §199A QBI cap dampens it) + **G1.96 §132(f) transit** ($907.20). +9 tests.
 
 Confirmed-open from the audit:
 - **PLAN-08** — catalog `validUntil` expiry gate is documented but never enforced;
   TY-specific strategies keep firing with stale thresholds past their date (latent → 2027).
 
 Biggest credibility lift:
-- **H2-wire the heuristic detectors** — most of catalog v1.12–v1.17 (≈G1.67–G1.96) are
-  heuristic-only (estSavings is a rule of thumb). Convert the high-value ones to
-  engine-verified via `runDetectorWhatIf` (like the 6 already wired: SEP / AMT-ISO /
-  NIIT / TLH / FTC / Roth) so estSavings is a real before/after engine delta.
+- **H2-wire — REMAINING IS MOSTLY QUALITATIVE (survey done 2026-06-01).** Of the
+  ~46 heuristic detectors in G1.46–G1.96, only G1.92 + G1.96 were cleanly wireable
+  (shipped above). The other ~44 are NOT a single current-year engine mutation and
+  should stay heuristic: business credits the individual engine doesn't model
+  (§41 R&D, §45S FMLA, §51 WOTC, §47 historic rehab, §44 disabled access), entity/
+  S-corp elections (§351, §338(h)(10), §1374 BIG, §1377, §263A method), trust
+  vehicles (CLT, PIF, conservation easement), multi-year structures (§453 installment,
+  §72(t) SEPP, §174 amortization, §529→Roth), after-tax contributions with no
+  current deduction (custodial Roth G1.55, Coverdell G1.59 — value is long-term
+  growth), and soft guidance (residency change, hobby loss, wash-sale avoidance, lot
+  selection, year-end timing). **Don't re-attempt these without first modeling the
+  underlying credit/election in the engine.** A `credit` adjustment exists but is
+  treated as REFUNDABLE — wiring a nonrefundable credit (e.g. G1.65 adoption) through
+  it would over-state for low-tax filers; needs a nonrefundable-credit mutation first.
 - **Multi-year-wire more detectors (H3)** — only G1.3 / G1.8 / G1.4 are multi-year-aware;
   extend to Roth conversion ladders, RMD planning, installment sales, carryforward depletion.
 - **Catalog freshness** — refresh TY2025/2026 limits + any OBBBA-driven changes across
