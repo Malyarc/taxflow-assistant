@@ -16,17 +16,20 @@ larger **Haven** app, which brings its own auth/tenancy, so we won't build it
 twice. The focus is the **portable engine + planning feature**
 (`computeTaxReturnPure` is already Haven-portable — keep it pure). The live EC2
 box stays a **demo** (no auth/TLS) — do NOT put real client PII on it until the
-Haven fusion lands. 8 audit-fix commits shipped + deployed 2026-05-29/30 (see
-`.claude/handoff.md`); 37 no-API suites / 2,965 assertions green.
+Haven fusion lands. **2026-06-01: 5 refinement commits shipped + deployed + verified
+live** (FORM-03, FED-05, PLAN-04, PLAN-06, 16-scenario battery — see `.claude/handoff.md`);
+**38 no-API suites / 3,053 assertions green**, clean typecheck.
 
 ### Tax CALCULATOR refinement backlog (correctness-first)
 
+**SHIPPED 2026-06-01** (commits on main, deployed to EC2 + verified live):
+- ✅ **FORM-03** — Form 1040-X Lines 16→20 rebuilt as the IRS settlement chain;
+  Line 20 − Line 19 now foots to `netFederalRefundChange` on every swap. +28 tests.
+- ✅ **FED-05** — blind additional std deduction wired (new `clients.taxpayer_blind`
+  / `spouse_blind` columns + ClientForm checkboxes + ClientFacts + engine). Prod
+  ALTER applied. +10 hand-calc'd tests.
+
 Confirmed-open from the 2026-05-29 audit:
-- **FORM-03** — Form 1040-X Lines 19/20 don't reconcile on a refund↔owed swap
-  (pure form-math; headline correct). Rebuild as the IRS Line 16→21 chain.
-- **FED-05** — blind additional std deduction is implemented but UNREACHABLE (no
-  `taxpayerBlind`/`spouseBlind` schema fields). A blind non-elderly filer
-  under-deducts $1,550–$1,950/box. Add the fields + plumb into runTaxCalculation.
 - **STL-05** — MD EITC modeled as a single 45% refundable credit; real MD = 50%
   nonrefundable + 45% refundable (take the larger). Under-credits in the high-MD-tax zone.
 
@@ -47,18 +50,22 @@ Documented engine sub-gaps (ordered by how often they bite a real return):
 - **Local** — NYC UBT, KY occupational tax, OH cross-city employment credit, IN/MD per-dependent.
 
 Validation:
-- **16-scenario real-world battery** — the audit workflow designed 16 complex CPA
-  scenarios (individual + pass-through); encode as a hand-calc'd end-to-end suite
-  (also gives pipeline coverage for FED-03/04/06 + the STL fixes).
+- ✅ **16-scenario real-world battery** — SHIPPED 2026-06-01 as
+  `tax-engine-16-scenario-battery-tests.ts` (42 hand-calc'd assertions, N1–N16).
+  Gives the missing PIPELINE coverage for FED-03 (NIIT FEIE add-back), FED-04
+  (QBI/NOL ordering), FED-06 (EITC §32(i)) + STL-02 (Philly EIT incl. SE) + MA
+  surtax + stacked pass-through / NIIT / SE / QSBS / SS-taxability returns.
 
 ### Tax PLANNING refinement backlog
 
+**SHIPPED 2026-06-01**:
+- ✅ **PLAN-04** — kiddie-tax + Coverdell-ESA now gate on a shared
+  `countEligibleChildren` helper (dependentsUnder17 + otherDependents), catching
+  17-year-olds + 18–23 students. +4 tests.
+- ✅ **PLAN-06** — QCD detector fires at year-end age ≥70 (was ≥71) with a 70½
+  distribution-date-confirm caveat for the borderline age-70 case. +4 tests.
+
 Confirmed-open from the audit:
-- **PLAN-04** — kiddie-tax + Coverdell-ESA detectors gate on the under-17 count,
-  missing 17-year-olds + 18–23 student dependents (same fix as the shipped PLAN-03 —
-  reuse a shared eligible-children helper across detectKiddieTax/detectCoverdellEsa).
-- **PLAN-06** — QCD detector requires whole-year age ≥71, missing clients who reached
-  70½ mid-year; fire at age ≥70 with a "confirm distribution on/after 70½" caveat.
 - **PLAN-08** — catalog `validUntil` expiry gate is documented but never enforced;
   TY-specific strategies keep firing with stale thresholds past their date (latent → 2027).
 

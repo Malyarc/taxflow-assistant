@@ -1,157 +1,142 @@
-# Handoff Note — 2026-05-29 (Deep audit #2: code, security, DB, every engine, UI)
+# Handoff Note — 2026-06-01 (Tax-calc + planning refinement: 4 fixes + 16-scenario battery)
 
 Session continuation point for the next Claude (or human) on TaxFlow Assistant.
 
 ## ⚡ Read this first
 
-Durable TODO: **`docs/todo.md`**. Coverage map: **`docs/coverage-matrix.md`**.
-Branch: **`deep-audit-2026-05-29`** (5 commits, pushed; open a PR to merge to main).
+Durable TODO: **`docs/todo.md`** (CURRENT FOCUS section). Coverage map:
+**`docs/coverage-matrix.md`**. Per-strategy planning source of truth:
+**`docs/planning-strategy-audit.md`**. Branch: **`main`** (5 commits this session,
+all pushed + deployed to EC2 + verified live).
 
 ## 🔴 USER ACTION STILL PENDING (from the 2026-05-28 session)
 
 Rotate the two leaked production credentials (Neon `neondb_owner` password +
-Google Gemini API key). They were scrubbed from disk but only you can rotate
-them in the Neon console + Google AI Studio.
+Google Gemini API key). Scrubbed from disk, but only you can rotate them in the
+Neon console + Google AI Studio.
 
 ## Headline
 
-**Second deep audit, run as two adversarially-verified multi-agent passes
-(8-dimension find → verify, then 19 tax-correctness claims independently
-re-derived against the code + a cited IRS/state source with hand-calcs).** Every
-finding was triaged: false positives were dropped (the verify pass refuted 2
-tax findings and downgraded several), and only confirmed bugs were fixed. 22
-bugs fixed across 5 commits, all guarded by the test suite (now **37 no-API
-suites / 2,943 assertions green**, clean typecheck) and the key fixes verified
-live in the browser.
+Refinement session on the **portable tax engine + planning feature** (D15 auth is
+postponed to the Haven fusion). Knocked out the four quick correctness wins the
+2026-05-29 audit left open, then encoded the 16-scenario real-world battery that
+gives the previously-missing PIPELINE coverage for the audit's federal fixes.
+Every expected value hand-calc'd against the published IRS/state rule before
+asserting. **38 no-API suites / 3,053 assertions / 0 failures**, clean typecheck,
+FED-05 UI verified in a local browser preview, full deploy verified on the live box.
 
-### What landed (5 commits on `deep-audit-2026-05-29`, all pushed)
+### What landed (5 commits on `main`, all pushed + deployed)
 
-1. **`20c6d0b` safe non-tax fixes** — DB-01 pg Pool config (max/idle/timeout/
-   keepAlive + Neon TLS + `pool.on('error')`); BE-02 atomic `onConflictDoUpdate`
-   replacing the racy SELECT-then-INSERT in `recalculateAndUpsertTaxReturn`;
-   SEC-01 project away base64 `fileContent` PII from the documents list; SEC-03
-   block `__proto__`/`constructor` in the what-if field setter; **FE-02 hoist
-   `W2Fields` to module scope** (it remounted on every keystroke and stole input
-   focus — W-2 entry was unusable); BE-06/BE-08 hygiene.
-2. **`d08b490` 9 federal + state tax-correctness bugs** + a new 28-assertion
-   regression suite (`tax-engine-audit-2026-05-29-tests.ts`) + 4 updated prior
-   expectations that encoded the old buggy values:
-   - FED-01 AMT 26/28% breakpoint halved for MFS (Form 6251; was −$2,326).
-   - FED-02 kiddie-tax threshold year-indexed ($2,600/$2,700).
-   - FED-03 NIIT MAGI adds back the §911(a)(1) FEIE per §1411(d).
-   - FED-04 QBI §199A cap computed on POST-NOL taxable income.
-   - FED-06 EITC §32(i) test now counts tax-exempt interest.
-   - STL-01 NYC self-employed MCTMT = flat 0.60% over $50k (Zone 1, TY2024+).
-   - STL-02 PA EIT / OH SDIT / Philly NPT earned-income base includes SE net profit.
-   - STL-03 MA 4% / CA 1% surtaxes on state taxable income, not AGI.
-   - STL-04 IL part-year exemption cliff tested on full-year AGI.
-3. **`fea8d3c` 5 planning-detector bugs** + tests (the §1377 tests were inverted
-   because the old ones asserted the dead-code bug):
-   - PLAN-01 Saver's Credit QSS → single column (fixed in detector AND engine).
-   - PLAN-02 §1377 detector gates on S-corp presence, not SE earnings (was dead).
-   - PLAN-03 family-employment includes 17-year-olds (otherDependents).
-   - PLAN-05 student-loan-interest applies the §221 phase-out fraction.
-   - PLAN-07 S-corp reasonable-comp nets wages out of the SS wage base.
-4. **`c8e9f37` FORM-01** — corrected the stale Form 8824 footnote that told CPAs
-   to manually add NIIT on §1031 boot gain the engine already taxes (double-count).
-5. **`76afa96` DB scaling** — DB-07 `/dashboard/summary` SQL aggregate (was a
-   full-table load of the widest table); + `clients(updated_at)`, `clients(email)`,
-   `tax_returns(adjusted_gross_income)` indexes (clients had ZERO secondary
-   indexes). Applied to the dev DB; EXPLAIN confirms Index Scan Backward.
+1. **`e768c0c` FORM-03** — Form 1040-X Lines 16→20 rebuilt as the IRS settlement
+   chain (Line 17 overpayment-on-original, Line 18 tax-paid-with-original, Lines
+   19/20 the amendment's owe/refund). INVARIANT now test-locked: Line 20 − Line 19
+   == `netFederalRefundChange` on every refund↔owed swap. Line 16 kept standalone
+   so the FORM-02 footing survives. +28 hand-calc'd assertions (52→80 in the suite).
+2. **`d3825d0` FED-05** — blind additional std deduction wired end-to-end. New
+   `clients.taxpayer_blind` / `spouse_blind` boolean columns (openapi + db + codegen),
+   `ClientFacts` fields, engine passes them to the age/blind box counter, and two
+   ClientForm checkboxes. +10 assertions (IRC §63(f); single/MFJ/MFS/HoH, 2025 rates,
+   not-blind control). **Prod `clients` ALTER applied** (see deploy notes).
+3. **`9bfb90a` PLAN-04** — kiddie-tax + Coverdell-ESA detectors now gate on a shared
+   `countEligibleChildren(client)` helper (`dependentsUnder17 + otherDependents`),
+   catching 17-year-olds + 18–23 student dependents. detectFamilyEmployment (PLAN-03)
+   refactored onto the same helper. +4 assertions.
+4. **`809e044` PLAN-06** — QCD detector fires at year-end age ≥70 (was ≥71), catching
+   clients who reached 70½ mid-year, with a `requires70HalfDateConfirm` flag + a
+   sharpened distribution-date caveat for the borderline age-70 case. +4 assertions.
+5. **`5d812de` 16-scenario battery** — new `tax-engine-16-scenario-battery-tests.ts`
+   (42 hand-calc'd, N1–N16): FED-03 NIIT FEIE add-back (N1 single, N14 MFJ per-spouse
+   cap), FED-04 QBI/NOL ordering (N2), FED-06 EITC §32(i) tax-exempt interest (N3),
+   plus S-corp/partnership K-1 pass-through, MFS NIIT/Add'l-Medicare, cap-loss CF,
+   §1031 boot in NIIT, SE above-the-line stacking, HoH CTC/ACTC/EITC, MA surtax,
+   STL-02 Philly EIT incl. SE, Pub 915 SS taxability, §1202 QSBS. Added to
+   scripts/tsconfig.json exclude; the dangling forward-ref in the 2026-05-29 audit
+   suite was repointed here.
+
+### Engine semantics worth remembering (learned this session)
+
+- `federalTaxLiability` is **PRE-(nonrefundable-credit)** + bundles other taxes
+  (SE/NIIT/Add'l-Medicare). CTC/FTC/etc. flow into `federalRefundOrOwed`, NOT this
+  field. Assert clean income tax only on no-credit scenarios; use
+  `childTaxCredit.nonRefundablePortion` / `additionalChildTaxCredit` / `eitc.appliedCredit`
+  for credit detail.
+- `r.eitc` is an `EitcCalculation` object → use `r.eitc.appliedCredit`.
+- Known sub-gap re-confirmed: K-1 §199A QBI is NOT reduced by the SE-tax / SEHI /
+  SEP deductions (only Schedule C is, via `netSeIncome − deductibleHalf`). The
+  battery does not assert K-1 QBI for that reason (noted in-comment).
 
 ### Verification
 
-- `pnpm run typecheck` — clean (forced a fresh build; the incremental cache had
-  masked a real error mid-session — clear `*.tsbuildinfo` when in doubt).
-- `pnpm --filter @workspace/scripts run test:no-api` — **37 suites, 2,943
+- `pnpm run typecheck` — clean (full workspace).
+- `pnpm --filter @workspace/scripts run test:no-api` — **38 suites, 3,053
   assertions, 0 failures.**
-- Live UI (Vite + api-server on the dev DB): dashboard renders DB-07 values +
-  planning hit-list, zero console errors; ClientDetail 11 tabs render; **W-2 Add
-  form keeps focus across keystrokes** (FE-02 confirmed) — screenshot in session.
+- Local browser preview (Vite + api-server on local DB): /clients/new renders both
+  FED-05 "legally blind" checkboxes with the IRC §63(f) helper text, the toggle
+  fires onChange, zero console errors.
+- Live EC2 (after deploy): `GET /api/healthz` ok, `/api/settings` proTierEnabled,
+  `/api/clients` serializes `taxpayerBlind`/`spouseBlind`, served HTML references
+  the new JS bundle.
 
-## What's left — prioritized plan (NEEDS YOUR DECISION on the big ones)
+## Deploy — DONE this session (for the record / next time)
 
-1. **Auth + multi-tenancy (D15)** — STILL the #1 risk. No auth on any route, no
-   `firm_id`/tenant column. Multi-week; needs decisions: session-cookie vs JWT;
-   TLS terminator (ALB/CloudFront/nginx+certbot); KMS for at-rest PII. Blocks any
-   real client PII on the live box. Once `firm_id` lands it also unlocks the next item.
-2. **N×M planning query storm (DB-02/03/BE-05)** — `/planning-hit-list` (backs
-   the dashboard widget, hottest path) + `/peer-benchmark` recompute the FULL tax
-   engine for EVERY client serially (~12×N queries) with no firm scoping. Fix:
-   read the persisted `tax_returns` rows (AGI/effective-rate are stored columns;
-   the agi index from this session supports it) instead of recomputing; bound
-   concurrency; add `WHERE firm_id` (needs #1). Fine at 97 clients, bites at scale.
-3. **Prod DB migration cutover — BLOCKED.** `drizzle-kit generate`/`migrate` fail
-   on a malformed snapshot path in `lib/db/drizzle/meta/_journal.json` (a doubled
-   `.//<abs path>`). Fix that first, then the new indexes ship as a versioned
-   migration. Until then, add the 3 indexes to prod manually with `CREATE INDEX
-   CONCURRENTLY` (statements in commit `76afa96`).
-4. **FORM-03 (the last 1040-X form bug, MED, pure code):** Line 19/20 don't
-   reconcile on a refund↔owed swap — rebuild as the IRS Line 16→21 chain.
-   (FORM-02 + FORM-04 SHIPPED 2026-05-30 — commit `aa03002`, deployed to prod
-   incl. the `tax_returns.total_non_refundable_applied` column ALTER + the
-   `roth_conversion_basis` adjustment types; verified live.)
-5. **God-file refactor** (maintainability): planningEngine.ts (~7.7k),
-   ClientDetail.tsx (~5k), `calculateStateAdditionalCredits` (~853-line fn).
-6. **Frontend robustness:** FE-03 (Schedule D / Rentals / K-1 queryFns skip
-   `res.ok` → crash on a 500), FE-04 (hardcoded cyan/fuchsia in two Planning
-   cards break dark mode). Exact line refs in the audit output.
-7. **Real-world scenario battery** — the audit workflow designed 16 complex CPA
-   scenarios (individual + pass-through). Encode them as a hand-calc'd suite; they
-   also give end-to-end coverage for FED-03/04/06 (currently locked by direct
-   hand-calc, not a pipeline test).
-8. **Low-priority verified items:** FED-05 (blind std ded — unwired feature),
-   STL-05 (MD EITC two-component; realistic error $0), PLAN-04/06/08, SEC-02/04/05,
-   DB-09 (audit_log → timestamptz), DB-10 (redundant tax_returns index), DB-11
-   (CHECK constraints on enum-ish text cols), DB-12 (adjustments needs tax_year).
-9. **Refuted — do NOT "fix":** FORM-05 (8606 pro-rata denominator is correct per
-   Form 8606 Line 9; only a contradictory docstring), MY-01 (multi-year
-   carryforward held flat is inert — no consumer reads it within the horizon).
+api-server CHANGED, frontend CHANGED, **DB: 2 additive `clients` columns**.
+Deploy performed + verified live 2026-06-01:
 
-## Deploy steps (for the user)
+1. **Prod DB (Neon):** `psql` is NOT on the box. Added the two columns surgically
+   via a one-off `node` + `pg` script run from `~/taxflow-pro/lib/db` with
+   `DATABASE_URL` sourced from `pm2 env 0`:
+   `ALTER TABLE clients ADD COLUMN IF NOT EXISTS taxpayer_blind boolean NOT NULL DEFAULT false;`
+   (+ `spouse_blind`). Chosen over `drizzle-kit push` to avoid reconciling against
+   the manually-added 2026-05-29 prod indexes.
+2. **Frontend:** built locally (`pnpm --filter @workspace/tax-app run build`) +
+   `rsync --delete artifacts/tax-app/dist/public/` → box (the 908 MiB box OOMs on Vite).
+3. **api-server:** on the box — `git checkout -- pnpm-lock.yaml && git pull origin main
+   && pnpm install && pnpm --filter @workspace/api-server run build && pm2 restart taxflow`
+   (skipped `db push` since the columns were added in step 1).
 
-**api-server CHANGED** (engine fixes + dashboard aggregate + pool config).
-**Frontend CHANGED** (ClientDetail W-2 hoist — needs rebuild + rsync).
-**DB:** 3 additive indexes — add to prod with `CREATE INDEX CONCURRENTLY` (see
-commit `76afa96`); no other schema change this session.
+EC2: `ssh -i ~/Downloads/taxflow-key.pem ubuntu@ec2-18-188-192-154.us-east-2.compute.amazonaws.com`,
+project at `~/taxflow-pro`. Full runbook in CLAUDE.md.
 
-```bash
-# 1. Merge the branch (open PR from deep-audit-2026-05-29) or push to main.
-# 2. Frontend build (locally — the 908 MiB box OOMs on Vite):
-pnpm --filter @workspace/tax-app run build
-rsync -e "ssh -i ~/Downloads/taxflow-key.pem" -avz --delete \
-  artifacts/tax-app/dist/public/ \
-  ubuntu@ec2-18-188-192-154.us-east-2.compute.amazonaws.com:~/taxflow-pro/artifacts/tax-app/dist/public/
-# 3. api-server (on the box):
-ssh -i ~/Downloads/taxflow-key.pem ubuntu@ec2-18-188-192-154.us-east-2.compute.amazonaws.com
-cd ~/taxflow-pro && git checkout -- pnpm-lock.yaml && git pull origin main && pnpm install
-export DATABASE_URL=$(pm2 env 0 | awk -F": " '/^DATABASE_URL:/ {print $2; exit}')
-export AI_API_KEY=$(pm2 env 0 | awk -F": " '/^AI_API_KEY:/ {print $2; exit}')
-# 4. Prod indexes (one-time, non-blocking) — psql into Neon and run:
-#   CREATE INDEX CONCURRENTLY IF NOT EXISTS clients_updated_at_idx ON clients (updated_at);
-#   CREATE INDEX CONCURRENTLY IF NOT EXISTS clients_email_idx ON clients (email);
-#   CREATE INDEX CONCURRENTLY IF NOT EXISTS tax_returns_agi_idx ON tax_returns (adjusted_gross_income);
-pnpm --filter @workspace/api-server run build && pm2 restart taxflow
-curl http://localhost:8080/api/healthz
-```
+## What's left — prioritized (next session)
+
+1. **Tax-calc correctness:** **STL-05** (MD EITC two-component: 50% nonrefundable
+   + 45% refundable, take the larger — engine has a single 45% refundable). Then the
+   documented engine sub-gaps in `docs/todo.md` ordered by how often they bite:
+   §461(l) Sch-C loss flow (engine floors netSeIncome at 0), K-1 §199A wage/UBIA +
+   SSTB depth + guaranteed payments, §163(j) ATI proxy, AMT prefs (2i/2e/AMT-NOL),
+   part-year per-income sourcing, wash-sale §1091(d).
+2. **Tax-planning credibility — the big lift:** H2-wire the heuristic catalog
+   detectors (≈G1.67–G1.96, most of v1.12–v1.17) to engine-verified savings via
+   `runDetectorWhatIf` (like the 6 already wired: SEP / AMT-ISO / NIIT / TLH / FTC /
+   Roth), so `estSavings` is a real before/after engine delta. Then extend H3
+   multi-year wiring (only G1.3/G1.8/G1.4 are multi-year-aware). Then **PLAN-08**
+   (enforce catalog `validUntil`) + a TY2025/2026 + OBBBA limits refresh across the
+   97 strategies (`docs/planning-strategy-audit.md`).
+3. **Haven fusion prep:** keep `computeTaxReturnPure` pure/portable (no DB/API
+   imports) — it carries into Haven, which brings its own auth/tenancy.
+
+D15 (auth + multi-tenancy) is POSTPONED to the Haven fusion — do NOT build it; the
+EC2 box stays a demo with no real PII.
 
 ## How to start the next Claude session
 
 ```
-Project: TaxFlow Assistant.
+Project: TaxFlow Assistant (CPA tax-prep + planning; will fuse into "Haven",
+which brings its own auth/tenancy — so D15 auth is POSTPONED, don't build it).
 
-Read first: .claude/handoff.md, CLAUDE.md, docs/coverage-matrix.md.
+Read first: .claude/handoff.md, CLAUDE.md, docs/todo.md (CURRENT FOCUS),
+docs/coverage-matrix.md, docs/planning-strategy-audit.md.
 
-Where we left off (2026-05-29): second deep audit shipped on branch
-deep-audit-2026-05-29 (5 commits) — 22 verified bug fixes (federal + state tax
-correctness, 5 planning detectors, security/perf/frontend), DB-07 dashboard
-aggregate + scaling indexes, FE-02 W-2 focus bug. 37 no-API suites / 2,943
-assertions green; clean typecheck; UI verified live.
+Where we left off (2026-06-01): shipped + deployed 4 audit quick-wins (FORM-03
+1040-X chain, FED-05 blind std ded incl. a prod clients-table ALTER, PLAN-04
+kiddie/Coverdell child gate, PLAN-06 QCD 70½) + a 16-scenario hand-calc'd
+pipeline battery (FED-03/04/06 + pass-through/NIIT/state coverage). 38 no-API
+suites / 3,053 assertions green; clean typecheck; live-verified on EC2.
 
-Top recommendation: FORM-02 + FORM-04 (the two HIGH-severity CPA-form bugs with
-verified specs in the handoff) — both are small + isolated and each needs one
-schema addition. Do them together with the prod-migration-snapshot-path fix
-(handoff item 3) so the schema change ships cleanly. Then tackle the N×M planning
-query storm (handoff item 2). Auth + multi-tenancy (D15) remains the #1 risk and
-needs your architecture decisions before building.
+Recommended next task: the big tax-planning credibility lift — H2-wire the
+heuristic catalog detectors (≈G1.67–G1.96) to engine-verified savings via
+runDetectorWhatIf so estSavings is a real engine delta (6 are already wired as
+the pattern). Keep computeTaxReturnPure pure/portable for the Haven fusion.
+Hand-calc every expected value; run the no-API suite; commit per chunk; push to
+main AND fully deploy to EC2 + verify live (runbook in CLAUDE.md / handoff.md).
 ```
