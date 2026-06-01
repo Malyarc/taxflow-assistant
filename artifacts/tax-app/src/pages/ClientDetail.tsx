@@ -2539,6 +2539,8 @@ function AdjustmentsTab({ clientId }: { clientId: number }) {
     amt_preferences: "AMT Preferences (catch-all — line 2 misc)",
     amt_iso_bargain_element: "AMT — ISO Bargain Element (Form 6251 line 2k)",
     amt_state_tax_addback_override: "AMT — SALT Addback Override (Form 6251 line 2g; replaces auto)",
+    amt_depreciation_adjustment: "AMT — MACRS-vs-ADS Depreciation (Form 6251 line 2i; regular − AMT depr, ± reversal)",
+    amt_nol_carryforward: "AMT NOL Carryforward — ATNOLD (§56(d); AMT-basis NOL, capped at 90% of AMTI)",
     // Schedule A line items (itemized deductions)
     medical_expenses: "Medical/Dental Expenses (Sched A)",
     state_income_tax: "State Income Tax (Sched A SALT)",

@@ -5190,6 +5190,10 @@ export interface AmtCalculation {
   amtWithPreferentialRates: number;
   /** K3 — portion of LTCG+QDIV included in the AMT base. */
   ltcgQdivInAmtBase: number;
+  /** ATNOLD (§56(d)) applied this year — limited to 90% of AMTI before the ATNOLD. */
+  atnoldApplied: number;
+  /** AMT NOL carryforward remaining after this year's ATNOLD. */
+  atnoldCarryforwardRemaining: number;
 }
 
 export function calculateAmt(params: {
@@ -5201,6 +5205,9 @@ export function calculateAmt(params: {
   /** K3 — LTCG + QDIV portion of taxable income (Form 6251 Part III).
    *  When > 0, AMT is computed both ways and the lower is used. */
   ltcgPlusQdiv?: number;
+  /** AMT NOL carryforward (ATNOLD, §56(d)) — the AMT-basis NOL the CPA carries
+   *  in. Applied against AMTI, limited to 90% of AMTI before the ATNOLD. */
+  amtNolCarryforward?: number;
 }): AmtCalculation {
   const year = resolveTaxYear(params.taxYear);
   const data = AMT_DATA[year];
@@ -5212,7 +5219,14 @@ export function calculateAmt(params: {
   // may be NEGATIVE (Form 6251 line 2e — a taxable state refund is removed for
   // AMT). Floor AMTI (not the prefs) at 0. Equivalent to the prior
   // `Math.max(0, amtPreferences)` for all non-negative-pref callers.
-  const amti = Math.max(0, taxableIncome + amtPreferences);
+  const amtiBeforeAtnold = Math.max(0, taxableIncome + amtPreferences);
+  // ATNOLD (§56(d)(1)): the alternative-tax NOL deduction is limited to 90% of
+  // AMTI figured WITHOUT the ATNOLD. The unused excess carries forward. The CPA
+  // supplies the AMT-basis NOL carryforward (recomputed with AMT adjustments).
+  const amtNol = Math.max(0, params.amtNolCarryforward ?? 0);
+  const atnoldApplied = Math.min(amtNol, 0.90 * amtiBeforeAtnold);
+  const atnoldCarryforwardRemaining = Math.max(0, amtNol - atnoldApplied);
+  const amti = Math.max(0, amtiBeforeAtnold - atnoldApplied);
   // Phase out: 25¢ per $1 over threshold
   const phaseOut = amti > phaseStart ? (amti - phaseStart) * 0.25 : 0;
   const exemption = Math.max(0, baseExemption - phaseOut);
@@ -5257,6 +5271,8 @@ export function calculateAmt(params: {
     amtAtFullRateOnAmtBase,
     amtWithPreferentialRates,
     ltcgQdivInAmtBase,
+    atnoldApplied,
+    atnoldCarryforwardRemaining,
   };
 }
 

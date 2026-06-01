@@ -272,6 +272,95 @@ header("Test G — MFJ SALT addback flows through identically");
 
 // ────────────────────────────────────────────────────────────────────────────
 console.log("\n────────────────────────────────────────────────────────────────────");
+// ════════════════════════════════════════════════════════════════════════════
+// Line 2i — MACRS-vs-ADS depreciation difference (Form 6251 line 2i)
+// Base: single 2024, $300k W-2, FL, std ded.
+//   Taxable = 300,000 − 14,600 = 285,400.
+//   Regular tax (single 2024) = 1,160 + 4,266 + 11,742.50 + 21,942 + 16,568
+//     + 35%×(285,400−243,725=41,675=14,586.25) = 70,264.75
+//   No-pref AMTI = 285,400 ; exemption 85,700 ; base 199,700 ; tentative
+//     26%×199,700 = 51,922 < regular → AMT $0.
+// ════════════════════════════════════════════════════════════════════════════
+header("Test L2i-A — positive line 2i depreciation creates AMT");
+{
+  // +$200,000 line 2i: AMTI = 485,400 ; base = 399,700 ;
+  //   tentative = 26%×232,600 + 28%×(399,700−232,600=167,100)
+  //             = 60,476 + 46,788 = 107,264
+  //   AMT = 107,264 − 70,264.75 = 36,999.25
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 300000, federalTaxWithheldBox2: 0, stateCode: "FL" }],
+    form1099s: [],
+    adjustments: [{ adjustmentType: "amt_depreciation_adjustment", amount: 200000, isApplied: true }],
+    taxYear: 2024,
+  });
+  check("AMTI = $485,400 (taxable + line 2i $200k)", r.detail.amt.amti, 485400, 1);
+  check("AMT tax = $36,999.25", r.amtTax ?? 0, 36999.25, 1);
+}
+
+header("Test L2i-B — negative line 2i (reversal year) reduces AMTI");
+{
+  // ISO bargain $200k creates AMT; line 2i −$50k reversal nets prefs to $150k.
+  //   AMTI = 285,400 + 150,000 = 435,400 ; base = 349,700 ;
+  //   tentative = 60,476 + 28%×(349,700−232,600=117,100=32,788) = 93,264
+  //   AMT = 93,264 − 70,264.75 = 22,999.25 (vs $36,999.25 ISO-only — the
+  //   −$50k reversal cut AMT by 28%×50,000 = $14,000).
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 300000, federalTaxWithheldBox2: 0, stateCode: "FL" }],
+    form1099s: [],
+    adjustments: [
+      { adjustmentType: "amt_iso_bargain_element", amount: 200000, isApplied: true },
+      { adjustmentType: "amt_depreciation_adjustment", amount: -50000, isApplied: true },
+    ],
+    taxYear: 2024,
+  });
+  check("AMTI = $435,400 (taxable + $200k ISO − $50k line 2i)", r.detail.amt.amti, 435400, 1);
+  check("AMT tax = $22,999.25 (reversal reduced AMT)", r.amtTax ?? 0, 22999.25, 1);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// ATNOLD (§56(d)) — AMT net operating loss deduction, capped at 90% of AMTI.
+// ════════════════════════════════════════════════════════════════════════════
+header("Test ATNOLD-A — AMT NOL reduces AMTI (engine wiring)");
+{
+  // Base = L2i-A (AMTI before ATNOLD = 485,400). amt_nol_carryforward $100k.
+  //   90% × 485,400 = 436,860 ≥ 100,000 → full $100k applied, remaining $0.
+  //   AMTI = 385,400 ; base = 299,700 ;
+  //   tentative = 60,476 + 28%×(299,700−232,600=67,100=18,788) = 79,264
+  //   AMT = 79,264 − 70,264.75 = 8,999.25 (down from $36,999.25; 28%×100k = $28k).
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 300000, federalTaxWithheldBox2: 0, stateCode: "FL" }],
+    form1099s: [],
+    adjustments: [
+      { adjustmentType: "amt_depreciation_adjustment", amount: 200000, isApplied: true },
+      { adjustmentType: "amt_nol_carryforward", amount: 100000, isApplied: true },
+    ],
+    taxYear: 2024,
+  });
+  check("ATNOLD applied = $100,000", r.amtNolDeduction ?? 0, 100000, 1);
+  check("ATNOLD carryforward remaining = $0", r.amtNolCarryforwardRemaining ?? 0, 0, 1);
+  check("AMTI = $385,400 (after ATNOLD)", r.detail.amt.amti, 385400, 1);
+  check("AMT tax = $8,999.25", r.amtTax ?? 0, 8999.25, 1);
+}
+
+header("Test ATNOLD-unit — 90%-of-AMTI cap binds; excess carries forward");
+{
+  // calculateAmt direct: TI $100k, no prefs → AMTI-before-ATNOLD = 100,000.
+  //   90% limit = 90,000.
+  // (a) AMT NOL $50k ≤ limit → applied $50k, remaining $0, AMTI 50,000.
+  const a = calculateAmt({ taxableIncome: 100000, amtPreferences: 0, filingStatus: "single", regularTax: 0, taxYear: 2024, amtNolCarryforward: 50000 });
+  check("ATNOLD-unit (a) applied = $50,000", a.atnoldApplied, 50000, 0.5);
+  check("ATNOLD-unit (a) remaining = $0", a.atnoldCarryforwardRemaining, 0, 0.5);
+  check("ATNOLD-unit (a) AMTI = $50,000", a.amti, 50000, 0.5);
+  // (b) AMT NOL $120k > 90% limit → applied $90k, remaining $30k, AMTI 10,000.
+  const b = calculateAmt({ taxableIncome: 100000, amtPreferences: 0, filingStatus: "single", regularTax: 0, taxYear: 2024, amtNolCarryforward: 120000 });
+  check("ATNOLD-unit (b) applied = $90,000 (90% cap)", b.atnoldApplied, 90000, 0.5);
+  check("ATNOLD-unit (b) remaining = $30,000", b.atnoldCarryforwardRemaining, 30000, 0.5);
+  check("ATNOLD-unit (b) AMTI = $10,000", b.amti, 10000, 0.5);
+}
+
 console.log(`PASS: ${PASS.length}`);
 for (const p of PASS) console.log("  " + p);
 if (FAIL.length > 0) {
