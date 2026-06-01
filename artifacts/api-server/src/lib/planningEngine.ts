@@ -1274,6 +1274,11 @@ const QCD_CAP: Record<number, number> = {
 };
 
 const QCD_MIN_AGE = 70.5;
+// PLAN-06: detector gates on year-end age. A client who turned 70 in the
+// first half of the year reaches 70½ by year-end and is QCD-eligible — so we
+// fire at year-end age ≥ 70 and have the CPA confirm the distribution date for
+// the borderline age-70 case (a late-year 70th birthday isn't yet 70½).
+const QCD_MIN_FIRE_AGE = 70;
 
 function detectQcd(args: {
   client: ClientFacts;
@@ -1283,11 +1288,16 @@ function detectQcd(args: {
 }): OpportunityHit | null {
   const { client, computed, adjustments, baselineInputs } = args;
   const age = client.taxpayerAge;
-  // Must be 70½ on the distribution date. Engine doesn't track distribution
-  // dates per-1099-R, so use whole-year age as proxy (conservative: fires
-  // when age ≥ 71 to avoid false-positive for 70½ split-year clients;
-  // CPA can override). For MVP we use 71+ for clarity.
-  if (age == null || age < 71) return null;
+  // Must be 70½ on the distribution date. Engine tracks only whole-year
+  // (year-end) age, not the exact 70½ date. PLAN-06: fire at year-end age ≥ 70
+  // — a client who turned 70 in the first half of the year reaches 70½ by
+  // year-end and IS eligible. The prior 71+ gate silently dropped every
+  // eligible 70½ split-year client. Year-end age 70 can't itself confirm 70½
+  // (a late-year birthday misses it), so the assumptions flag the CPA to
+  // confirm the distribution fell on/after the 70½ date.
+  if (age == null || age < QCD_MIN_FIRE_AGE) return null;
+  // age 70 at year-end is the borderline case needing a distribution-date check.
+  const needs70HalfDateConfirm = age < 71;
   // Must have IRA / retirement-plan income (the QCD source).
   const retIncome = computed.form1099Summary?.retirementIncome ?? 0;
   if (retIncome <= 0) return null;
@@ -1360,6 +1370,7 @@ function detectQcd(args: {
     citation: `${strategy.ircSection}; ${strategy.irsPub}`,
     inputs: {
       taxpayerAge: age,
+      requires70HalfDateConfirm: needs70HalfDateConfirm,
       retirementIncome: Math.round(retIncome),
       charitableCash: Math.round(charitableCash),
       qcdCap: cap,
@@ -1368,7 +1379,9 @@ function detectQcd(args: {
       stateMarginalRate: stateRate,
     },
     assumptions: [
-      `Client must be age 70½+ on the distribution date — detector fires at age 71+ for safety; CPA verifies for 70½ split-year clients.`,
+      needs70HalfDateConfirm
+        ? `Client is age 70 at year-end — CONFIRM the QCD was made on/after the day the client turned 70½ (IRC §408(d)(8)). A late-year 70th birthday means they reach 70½ next year and are NOT yet eligible.`
+        : `Client is past 70½ for the full year — QCD-eligible. (Detector fires at year-end age ≥ 70; PLAN-06.)`,
       `QCD cap ${fmt(cap)} for TY${computed.taxYear} (IRC §408(d)(8)(F); indexed for inflation post-SECURE 2.0).`,
       `Charity must be a 501(c)(3) public charity — NOT a private foundation, DAF, or supporting organization.`,
       `Transfer MUST go direct from IRA custodian to charity — distribution to the client first DISQUALIFIES it.`,

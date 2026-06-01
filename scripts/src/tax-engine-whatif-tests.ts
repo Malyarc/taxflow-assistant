@@ -1129,7 +1129,7 @@ function buildSeFilerInputs(): TaxReturnInputs {
   }
 }
 
-// ── Case D11: QCD detector age-gating (suppresses < 71) ───────────────────
+// ── Case D11: QCD detector age-gating (suppresses < 70 after PLAN-06) ──────
 // Same fixture but age 65 → QCD detector should NOT fire.
 {
   const inputs = baseInputs();
@@ -1154,8 +1154,51 @@ function buildSeFilerInputs(): TaxReturnInputs {
     baselineInputs: inputs,
   });
   checkTruthy(
-    "Case D11 QCD suppressed for age < 71",
+    "Case D11 QCD suppressed for age < 70",
     hits.find((h) => h.strategyId === "G1.11") == null,
+  );
+}
+
+// ── Case D11b: PLAN-06 — QCD fires at year-end age 70 (70½ split-year) ─────
+// Prior gate (71+) silently dropped clients who turned 70 in H1 and reached
+// 70½ by year-end. Now age-70 fires WITH a distribution-date-confirm caveat.
+// Age 69 stays suppressed (the new boundary).
+{
+  const mk = (age: number) => {
+    const inputs = baseInputs();
+    (inputs.client as { taxpayerAge: number }).taxpayerAge = age;
+    inputs.form1099s = [
+      {
+        id: 1, clientId: 1, taxYear: 2024, documentId: null,
+        formType: "r",
+        payerName: "Vanguard IRA", payerEin: null, payerAddress: null,
+        grossDistribution: "30000", taxableAmount: "30000",
+        distributionCode: "7",
+        federalTaxWithheld: "0", stateTaxWithheld: "0", stateCode: null,
+        spouse: null, createdAt: new Date(), updatedAt: new Date(),
+      } as unknown as TaxReturnInputs["form1099s"][number],
+    ];
+    inputs.adjustments = [adj("charitable_cash", 20000, 12001)];
+    const computed = computeTaxReturnPure(inputs);
+    return evaluatePlanningOpportunities({
+      client: inputs.client, computed, adjustments: inputs.adjustments, baselineInputs: inputs,
+    });
+  };
+  const hit70 = mk(70).find((h) => h.strategyId === "G1.11");
+  checkTruthy("Case D11b PLAN-06 QCD fires at year-end age 70", hit70 != null);
+  if (hit70) {
+    checkTruthy(
+      "Case D11b age-70 hit carries 70½ date-confirm caveat",
+      (hit70.inputs as { requires70HalfDateConfirm?: boolean }).requires70HalfDateConfirm === true,
+    );
+    checkTruthy(
+      "Case D11b age-70 assumption mentions on/after 70½",
+      (hit70.assumptions ?? []).some((a) => /70½/.test(a) && /on\/after/i.test(a)),
+    );
+  }
+  checkTruthy(
+    "Case D11b QCD still suppressed at age 69 (new boundary)",
+    mk(69).find((h) => h.strategyId === "G1.11") == null,
   );
 }
 
