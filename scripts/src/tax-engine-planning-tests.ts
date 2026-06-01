@@ -19,6 +19,7 @@ import {
 } from "../../artifacts/api-server/src/lib/taxReturnEngine";
 import {
   evaluatePlanningOpportunities,
+  isStrategyExpiredForYear,
   marginalRateWeight,
   engagementComplexityWeight,
   stickinessWeight,
@@ -5058,6 +5059,39 @@ header("PLAN-07 G1.17 — S-corp reasonable comp: SS savings net of wage base");
   const hit = findHit(hits, "G1.17");
   checkTruthy("PLAN-07", "G1.17 fires for active S-corp", hit != null, true);
   if (hit) check("PLAN-07", "estSavings = $7,395 (Medicare-only; comp ≥ wage base)", hit.estSavings, 7395, 1);
+}
+
+// ============================================================================
+// PLAN-08 — catalog validUntil expiry gate
+// ============================================================================
+section("PLAN-08 — catalog validUntil expiry gate");
+// Direct logic: a strategy is expired when the RETURN's tax year is past its
+// validUntil year. Every current strategy is validUntil "2026-12-31".
+header("PLAN-08 — isStrategyExpiredForYear logic");
+{
+  checkTruthy("PLAN-08", "2026-12-31 valid for TY2024", isStrategyExpiredForYear("2026-12-31", 2024), false);
+  checkTruthy("PLAN-08", "2026-12-31 valid for TY2026 (boundary)", isStrategyExpiredForYear("2026-12-31", 2026), false);
+  checkTruthy("PLAN-08", "2026-12-31 EXPIRED for TY2027", isStrategyExpiredForYear("2026-12-31", 2027), true);
+  checkTruthy("PLAN-08", "2024-12-31 expired for TY2025", isStrategyExpiredForYear("2024-12-31", 2025), true);
+  checkTruthy("PLAN-08", "malformed date never suppresses (fail-open)", isStrategyExpiredForYear("nope", 2030), false);
+}
+
+// End-to-end: a SEP-eligible filer fires hits in TY2024; overriding the
+// computed tax year to 2027 (past every strategy's validUntil) suppresses them.
+header("PLAN-08 — expired catalog → no hits for a future tax year");
+{
+  const inputs = {
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as unknown as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "X", nonemployeeCompensation: 200000 }] as unknown as TaxReturnInputs["form1099s"],
+  };
+  const computed2024 = computeTaxReturnPure({ w2s: [], adjustments: [], taxYear: 2024, ...inputs });
+  const hits2024 = evaluatePlanningOpportunities({ client: inputs.client, computed: computed2024, adjustments: [] });
+  checkTruthy("PLAN-08", "TY2024 SEP filer surfaces ≥1 hit", hits2024.length > 0, true);
+
+  // Same computed return, but stamp the tax year past every validUntil (2026).
+  const computed2027 = { ...computed2024, taxYear: 2027 } as typeof computed2024;
+  const hits2027 = evaluatePlanningOpportunities({ client: inputs.client, computed: computed2027, adjustments: [] });
+  check("PLAN-08", "TY2027 (past validUntil 2026) → 0 hits", hits2027.length, 0, 0);
 }
 
 // ============================================================================

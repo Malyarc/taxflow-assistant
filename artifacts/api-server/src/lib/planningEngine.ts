@@ -214,6 +214,19 @@ function strategyById(id: string): PlanningStrategy {
 }
 
 /**
+ * PLAN-08 — a catalog strategy stops being authoritative past its `validUntil`
+ * tax year (its TY-specific thresholds go stale). Compared against the RETURN's
+ * tax year — deterministic + back-fileable, NOT the wall clock. A "2026-12-31"
+ * strategy is valid for TY ≤ 2026 returns and suppressed for TY ≥ 2027.
+ * Malformed dates never suppress (defensive — fail open, don't hide a strategy).
+ */
+export function isStrategyExpiredForYear(validUntil: string, taxYear: number): boolean {
+  const validUntilYear = Number(String(validUntil).slice(0, 4));
+  if (!Number.isFinite(validUntilYear)) return false;
+  return taxYear > validUntilYear;
+}
+
+/**
  * Template substitution. Replaces {{key}} with the formatted value.
  * Numbers are formatted with commas, no decimals (planning-tier values).
  */
@@ -7709,8 +7722,16 @@ export function evaluatePlanningOpportunities(args: PlanningInputs): Opportunity
   if (section1377) hits.push(section1377);
   const transitFringe = detectQualifiedTransportFringe({ computed, baselineInputs });
   if (transitFringe) hits.push(transitFringe);
-  hits.sort((a, b) => b.estSavings - a.estSavings);
-  return hits;
+  // PLAN-08 — drop hits whose catalog entry has expired for this return's tax
+  // year (stale TY-specific thresholds). Today every strategy is validUntil
+  // 2026-12-31, so TY2024/2025 returns are unaffected; a TY2027+ return correctly
+  // surfaces nothing until the catalog is refreshed.
+  const liveHits = hits.filter((h) => {
+    const strat = CATALOG_V1.strategies.find((x) => x.id === h.strategyId);
+    return !strat || !isStrategyExpiredForYear(strat.validUntil, computed.taxYear);
+  });
+  liveHits.sort((a, b) => b.estSavings - a.estSavings);
+  return liveHits;
 }
 
 // ── Phase H — H7 cross-strategy interaction modeling ──────────────────────
