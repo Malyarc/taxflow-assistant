@@ -288,6 +288,108 @@ function findLine(lines: ReturnType<typeof computeAmendmentDiff>["lines"], ref: 
   check("FORM-02 footing: original payments − tax = $0", findLine(form.lines, "16").original - findLine(form.lines, "10").original, 0);
 }
 
+// ── FORM-03: settlement chain (Lines 17-20) reconciles on every swap ──────
+// The amendment's bottom line is Line 20 (refund) − Line 19 (owe), which by
+// construction must equal the headline netFederalRefundChange. Prior code put
+// each return's STANDALONE owe/refund on Lines 19/20 so the breakdown failed
+// to foot on a refund↔owed swap.
+//
+// Hand-calc, Case 3 reprise (original refund $1,000 → amended owed $2,000):
+//   cTotalTax       = 8,000 (amended tax, no non-ref credits)
+//   cTotalPayments  = 8,000 + (−2,000) = 6,000
+//   origOverpayment = max(0, +1,000) = 1,000   (Line 17)
+//   origBalancePaid = max(0, −1,000) = 0        (Line 18)
+//   available       = 6,000 + 0 − 1,000 = 5,000
+//   Line 19 owe     = max(0, 8,000 − 5,000) = 3,000
+//   Line 20 refund  = max(0, 5,000 − 8,000) = 0
+//   Line 20 − Line 19 = −3,000 = netFederalRefundChange ✓
+{
+  const original = stub({ federalTaxLiability: 5000, federalTaxWithheld: 6000, federalRefundOrOwed: 1000 });
+  const amended = stub({ federalTaxLiability: 8000, federalTaxWithheld: 6000, federalRefundOrOwed: -2000 });
+  const form = computeAmendmentDiff({ current: amended, snapshot: captureFiledSnapshot(original) });
+  check("FORM-03 Case3 Line 17 orig overpayment", findLine(form.lines, "17").amended, 1000);
+  check("FORM-03 Case3 Line 18 orig balance paid", findLine(form.lines, "18").amended, 0);
+  check("FORM-03 Case3 Line 19 amount you owe", findLine(form.lines, "19").amended, 3000);
+  check("FORM-03 Case3 Line 20 refund", findLine(form.lines, "20").amended, 0);
+  check("FORM-03 Case3 reconciles (L20−L19 == headline)",
+    findLine(form.lines, "20").amended - findLine(form.lines, "19").amended, form.netFederalRefundChange);
+  // Settlement lines carry no col-b "change".
+  check("FORM-03 Case3 Line 19 netChange pinned 0", findLine(form.lines, "19").netChange, 0);
+  check("FORM-03 Case3 Line 20 netChange pinned 0", findLine(form.lines, "20").netChange, 0);
+}
+
+// Case 4 reprise (original owed $5,000 → amended refund $1,000):
+//   cTotalTax=19,000; cTotalPayments=20,000; origBalancePaid=5,000 (Line 18);
+//   available=20,000+5,000=25,000; Line 20 refund=max(0,25,000−19,000)=6,000;
+//   Line 19 owe=0; L20−L19=+6,000=netFederalRefundChange ✓
+{
+  const original = stub({ federalTaxLiability: 25000, federalTaxWithheld: 20000, federalRefundOrOwed: -5000 });
+  const amended = stub({ federalTaxLiability: 19000, federalTaxWithheld: 20000, federalRefundOrOwed: 1000 });
+  const form = computeAmendmentDiff({ current: amended, snapshot: captureFiledSnapshot(original) });
+  check("FORM-03 Case4 Line 17 orig overpayment", findLine(form.lines, "17").amended, 0);
+  check("FORM-03 Case4 Line 18 orig balance paid", findLine(form.lines, "18").amended, 5000);
+  check("FORM-03 Case4 Line 19 amount you owe", findLine(form.lines, "19").amended, 0);
+  check("FORM-03 Case4 Line 20 refund", findLine(form.lines, "20").amended, 6000);
+  check("FORM-03 Case4 reconciles (L20−L19 == headline)",
+    findLine(form.lines, "20").amended - findLine(form.lines, "19").amended, form.netFederalRefundChange);
+}
+
+// Case 2 reprise (owed $0 → refund $2,000): Line 20 = 2,000, Line 19 = 0.
+{
+  const original = stub({ federalTaxLiability: 20000, federalTaxWithheld: 20000, federalRefundOrOwed: 0 });
+  const amended = stub({ federalTaxLiability: 18000, federalTaxWithheld: 20000, federalRefundOrOwed: 2000 });
+  const form = computeAmendmentDiff({ current: amended, snapshot: captureFiledSnapshot(original) });
+  check("FORM-03 Case2 Line 20 refund", findLine(form.lines, "20").amended, 2000);
+  check("FORM-03 Case2 Line 19 owe", findLine(form.lines, "19").amended, 0);
+  check("FORM-03 Case2 reconciles",
+    findLine(form.lines, "20").amended - findLine(form.lines, "19").amended, form.netFederalRefundChange);
+}
+
+// FORM-02 reprise (non-refundable $3k FTC added): Line 10 drops $3k, the
+// settlement shows a $3,000 additional refund (Line 20), Line 19 = 0.
+{
+  const filed = stub({ federalTaxLiability: 20000, federalTaxWithheld: 20000, federalRefundOrOwed: 0, totalNonRefundableApplied: 0 });
+  const amended = stub({ federalTaxLiability: 20000, federalTaxWithheld: 20000, federalRefundOrOwed: 3000, totalNonRefundableApplied: 3000 });
+  const form = computeAmendmentDiff({ current: amended, snapshot: captureFiledSnapshot(filed) });
+  check("FORM-03 FTC Line 20 refund", findLine(form.lines, "20").amended, 3000);
+  check("FORM-03 FTC Line 19 owe", findLine(form.lines, "19").amended, 0);
+  check("FORM-03 FTC reconciles",
+    findLine(form.lines, "20").amended - findLine(form.lines, "19").amended, form.netFederalRefundChange);
+}
+
+// Compound: non-refundable credits + SE other-tax + owed→less-owed swap.
+// Original: federalTaxLiability $50,000 (regular+AMT $38k + SE $12k), non-ref
+//   $5,000, withheld $30k, ACTC $4k → net tax (Line 10) $45,000; standalone
+//   payments $34,000; owed $11,000 (refundOrOwed −11,000).
+// Amended:  federalTaxLiability $44,000 (regular+AMT $34k + SE $10k), non-ref
+//   $5,000, withheld $30k, ACTC $4k → net tax $39,000; payments $34,000;
+//   owed $5,000 (refundOrOwed −5,000).
+//   netFederalRefundChange = −5,000 − (−11,000) = +6,000.
+//   cTotalTax=39,000; cTotalPayments=34,000; origBalancePaid=11,000 (Line 18);
+//   available=34,000+11,000=45,000; Line 20 refund=45,000−39,000=6,000.
+{
+  const original = stub({
+    federalTaxLiability: 50000, selfEmploymentTax: 12000, totalNonRefundableApplied: 5000,
+    federalTaxWithheld: 30000, additionalChildTaxCredit: 4000, federalRefundOrOwed: -11000,
+  });
+  const amended = stub({
+    federalTaxLiability: 44000, selfEmploymentTax: 10000, totalNonRefundableApplied: 5000,
+    federalTaxWithheld: 30000, additionalChildTaxCredit: 4000, federalRefundOrOwed: -5000,
+  });
+  const form = computeAmendmentDiff({ current: amended, snapshot: captureFiledSnapshot(original) });
+  check("FORM-03 Compound Line 10 original total tax", findLine(form.lines, "10").original, 45000);
+  check("FORM-03 Compound Line 10 amended total tax", findLine(form.lines, "10").amended, 39000);
+  check("FORM-03 Compound Line 10 net change", findLine(form.lines, "10").netChange, -6000);
+  check("FORM-03 Compound Line 18 tax paid with original", findLine(form.lines, "18").amended, 11000);
+  check("FORM-03 Compound Line 20 refund", findLine(form.lines, "20").amended, 6000);
+  check("FORM-03 Compound Line 19 owe", findLine(form.lines, "19").amended, 0);
+  check("FORM-03 Compound headline +6,000", form.netFederalRefundChange, 6000);
+  check("FORM-03 Compound reconciles",
+    findLine(form.lines, "20").amended - findLine(form.lines, "19").amended, form.netFederalRefundChange);
+  // Line 16 standalone footing preserved (FORM-02 invariant): payments − tax = owed.
+  check("FORM-03 Compound Line 16 amended footing", findLine(form.lines, "16").amended - findLine(form.lines, "10").amended, -5000);
+}
+
 console.log(`\nForm 1040-X (C4) tests:`);
 console.log(`  ✓ Passed: ${PASS.length}`);
 console.log(`  ✗ Failed: ${FAIL.length}`);

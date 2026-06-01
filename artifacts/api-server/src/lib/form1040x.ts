@@ -223,6 +223,31 @@ export function computeAmendmentDiff(args: {
   const oTotalPayments = o.federalTaxLiability + o.federalRefundOrOwed - o.totalNonRefundableApplied;
   const cTotalPayments = cur.federalTaxLiability + cur.federalRefundOrOwed - cur.totalNonRefundableApplied;
 
+  // ── FORM-03: settlement reconciliation (IRS Form 1040-X Lines 17-20) ────
+  // The amended total tax (Line 10, col c) compared against the payments the
+  // taxpayer has ALREADY made (and not had refunded) determines the
+  // additional amount owed or refunded BY FILING THE AMENDMENT — which is the
+  // whole point of Form 1040-X. The prior implementation showed each return's
+  // own standalone owe/refund on Lines 19/20, so on a refund↔owed swap the
+  // breakdown failed to foot to the headline.
+  //
+  // Official-form mapping (we keep our Line 16 as this return's standalone
+  // total payments to preserve the per-column footing Line16 − Line10 =
+  // refund/owed that the FORM-02 tests lock in):
+  //   Line 17  Overpayment shown on original return (already refunded/applied)
+  //   Line 18  Tax paid with original return  (official Form 1040-X Line 15)
+  //   Line 19  Amount you owe with this amendment            (official Line 19)
+  //   Line 20  Refund with this amendment                    (official Line 20)
+  // Net payments available against amended tax (official Line 18) =
+  //   Line 16(c) + Line 18 − Line 17  =  cTotalPayments − o.federalRefundOrOwed.
+  // INVARIANT: Line 20 − Line 19 === netFederalRefundChange (proven by tests).
+  const cTotalTax = cur.federalTaxLiability - cur.totalNonRefundableApplied; // = Line 10 (c)
+  const origOverpayment = Math.max(0, o.federalRefundOrOwed); // refund already received on original
+  const origBalancePaid = Math.max(0, -o.federalRefundOrOwed); // tax already paid with original
+  const availablePayments = cTotalPayments + origBalancePaid - origOverpayment; // ≡ cTotalPayments − o.refund
+  const additionalOwe = Math.max(0, cTotalTax - availablePayments);
+  const additionalRefund = Math.max(0, availablePayments - cTotalTax);
+
   // Per IRS Form 1040-X instructions: col (b) "Net change" = (c) − (a),
   // where (a) and (c) are each independently rounded to whole dollars.
   // This means col (b) = round(amended) − round(original), NOT
@@ -233,6 +258,19 @@ export function computeAmendmentDiff(args: {
     const c = Math.round(amended);
     return { lineRef, label, original: a, amended: c, netChange: c - a };
   };
+
+  // Settlement lines (17-20) are single-column figures on the official form —
+  // there is no col-a/col-b comparison for them. We render the operative
+  // value in col (c) and pin netChange to 0 (they are derived totals, not
+  // line-by-line "changes"). Keeps the "every line nets 0 on an identical
+  // amendment" guarantee intact.
+  const reconLine = (lineRef: string, label: string, colA: number, colC: number): Form1040xLine => ({
+    lineRef,
+    label,
+    original: Math.round(colA),
+    amended: Math.round(colC),
+    netChange: 0,
+  });
 
   const lines: Form1040xLine[] = [
     // Income & Deductions
@@ -252,21 +290,12 @@ export function computeAmendmentDiff(args: {
     line("13", "EITC", o.eitc, cur.eitc),
     line("14", "Refundable credits (ACTC, AOC refundable, PTC)", oRef, cRef),
     line("16", "Total payments", oTotalPayments, cTotalPayments),
-    // Refund / Owed — IRS pattern: each column independently shows the
-    // current value at that snapshot, with col (b) being the auto-derived
-    // (c−a) delta. Don't pre-compute a delta in the original column.
-    line("18", "Amount paid with original return",
-      Math.max(0, -o.federalRefundOrOwed),
-      Math.max(0, -o.federalRefundOrOwed),
-    ),
-    line("19", "Amount you owe (if any)",
-      Math.max(0, -o.federalRefundOrOwed),
-      Math.max(0, -cur.federalRefundOrOwed),
-    ),
-    line("20", "Refund (if any)",
-      Math.max(0, o.federalRefundOrOwed),
-      Math.max(0, cur.federalRefundOrOwed),
-    ),
+    // ── Settlement (FORM-03 — IRS Line 16→20 chain). Single-column figures;
+    //    Line 20 − Line 19 foots to the headline netFederalRefundChange. ────
+    reconLine("17", "Overpayment per original return (already refunded/applied)", origOverpayment, origOverpayment),
+    reconLine("18", "Tax paid with original return", origBalancePaid, origBalancePaid),
+    reconLine("19", "Amount you owe with this amended return", 0, additionalOwe),
+    reconLine("20", "Refund with this amended return", 0, additionalRefund),
   ];
 
   // Bottom-line delta — used for the headline UI display.
