@@ -1866,6 +1866,8 @@ export interface ScheduleK1 {
   section199aQbi: number;
   section199aW2Wages: number;
   section199aUbia: number;
+  /** §199A(d)(2) specified service trade or business. Per-business SSTB QBI phases out over the §199A income band. */
+  isSstb: boolean;
   /** @nullable */
   basisAtYearStart?: number | null;
   /** @nullable */
@@ -1916,6 +1918,8 @@ export interface CreateScheduleK1Body {
   section199aQbi?: number;
   section199aW2Wages?: number;
   section199aUbia?: number;
+  /** §199A(d)(2) specified service trade or business. Per-business SSTB QBI phases out over the §199A income band. */
+  isSstb?: boolean;
   /** @nullable */
   basisAtYearStart?: number | null;
   /** @nullable */
@@ -1964,6 +1968,8 @@ export interface UpdateScheduleK1Body {
   section199aQbi?: number;
   section199aW2Wages?: number;
   section199aUbia?: number;
+  /** §199A(d)(2) specified service trade or business. Per-business SSTB QBI phases out over the §199A income band. */
+  isSstb?: boolean;
   /** @nullable */
   basisAtYearStart?: number | null;
   /** @nullable */

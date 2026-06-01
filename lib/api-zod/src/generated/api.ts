@@ -3635,6 +3635,11 @@ export const ListScheduleK1sResponseItem = zod.object({
   section199aQbi: zod.number(),
   section199aW2Wages: zod.number(),
   section199aUbia: zod.number(),
+  isSstb: zod
+    .boolean()
+    .describe(
+      "§199A(d)(2) specified service trade or business. Per-business SSTB QBI phases out over the §199A income band.",
+    ),
   basisAtYearStart: zod.number().nullish(),
   basisAtYearEnd: zod.number().nullish(),
   atRiskAmount: zod.number().nullish(),
@@ -3676,6 +3681,12 @@ export const CreateScheduleK1Body = zod.object({
   section199aQbi: zod.number().optional(),
   section199aW2Wages: zod.number().optional(),
   section199aUbia: zod.number().optional(),
+  isSstb: zod
+    .boolean()
+    .optional()
+    .describe(
+      "§199A(d)(2) specified service trade or business. Per-business SSTB QBI phases out over the §199A income band.",
+    ),
   basisAtYearStart: zod.number().nullish(),
   basisAtYearEnd: zod.number().nullish(),
   atRiskAmount: zod.number().nullish(),
@@ -3715,6 +3726,12 @@ export const UpdateScheduleK1Body = zod.object({
   section199aQbi: zod.number().optional(),
   section199aW2Wages: zod.number().optional(),
   section199aUbia: zod.number().optional(),
+  isSstb: zod
+    .boolean()
+    .optional()
+    .describe(
+      "§199A(d)(2) specified service trade or business. Per-business SSTB QBI phases out over the §199A income band.",
+    ),
   basisAtYearStart: zod.number().nullish(),
   basisAtYearEnd: zod.number().nullish(),
   atRiskAmount: zod.number().nullish(),
@@ -3747,6 +3764,11 @@ export const UpdateScheduleK1Response = zod.object({
   section199aQbi: zod.number(),
   section199aW2Wages: zod.number(),
   section199aUbia: zod.number(),
+  isSstb: zod
+    .boolean()
+    .describe(
+      "§199A(d)(2) specified service trade or business. Per-business SSTB QBI phases out over the §199A income band.",
+    ),
   basisAtYearStart: zod.number().nullish(),
   basisAtYearEnd: zod.number().nullish(),
   atRiskAmount: zod.number().nullish(),

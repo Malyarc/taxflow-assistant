@@ -303,10 +303,16 @@ export interface RentalPropertyFact {
  *   - Box 14A (1065 only) → Schedule SE
  *   - §199A (Box 20 Z on 1065 / Box 17 V on 1120-S) → §199A calc
  *
- * Known simplifications (per CLAUDE.md):
- *   - §199A W-2-wage + UBIA limits not enforced
- *   - SSTB phase-out not modeled
- *   - Basis / at-risk limits stored but not enforced
+ * Modeled (session-1 K-1 depth):
+ *   - §199A(b)(2)(B) W-2-wage / UBIA limit (when the K-1 supplies positive
+ *     section199aW2Wages / section199aUbia; aggregate across K-1s — sub-gap)
+ *   - §199A(d)(2) per-business SSTB phase-out (via isSstb)
+ *   - §707(c) guaranteed payments (box4GuaranteedPayments) → AGI + SE, non-QBI
+ *   - §704(d)/§1366(d) basis + §465 at-risk loss limits (via basisAtYearStart /
+ *     atRiskAmount) cap the active Box 1 loss; excess suspended (carryforward)
+ * Remaining simplifications:
+ *   - wage/UBIA limit is aggregate, not per-business (Form 8995-A)
+ *   - basis/at-risk keyed to basisAtYearStart (not reduced by distributions)
  */
 export interface ScheduleK1Fact {
   taxYear: number;
@@ -331,6 +337,9 @@ export interface ScheduleK1Fact {
   section199aQbi?: Numish;
   section199aW2Wages?: Numish;
   section199aUbia?: Numish;
+  /** §199A(d)(2) specified service trade or business — per-business SSTB
+   *  phase-out applies to this K-1's QBI above the §199A income band. */
+  isSstb?: boolean | null;
   basisAtYearStart?: Numish;
   basisAtYearEnd?: Numish;
   atRiskAmount?: Numish;
@@ -2174,7 +2183,17 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     qbiIncomeEffective = schCQbi;
   }
   // K-1 default: when section199aQbi unset for active K-1, use Box 1.
+  // Per-business SSTB (§199A(d)(2)): track the SSTB portion of K-1 QBI
+  // (k1QbiSstbPortion) so the §199A(d)(3) phase-out below applies ONLY to
+  // SSTB QBI, per K-1 via k.isSstb. k1QbiContributionEffective itself is the
+  // total and its computation is unchanged (backward-compatible).
   let k1QbiContributionEffective = k1QbiContribution;
+  let k1QbiSstbPortion = 0;
+  // SSTB portion of the explicit K-1 QBI:
+  for (const k of k1sForYear) {
+    const explicitQbi = toNum(k.section199aQbi);
+    if (explicitQbi > 0 && k.isSstb === true) k1QbiSstbPortion += explicitQbi;
+  }
   if (k1QbiContributionEffective <= 0 && k1sForYear.length > 0) {
     let k1QbiAutoSum = 0;
     for (const k of k1sForYear) {
@@ -2194,6 +2213,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
       // shareholder receives from the same S-corp — sub-gap, not modeled
       // because we don't have linkage between W-2 and S-corp K-1 records.
       k1QbiAutoSum += qbiCandidate;
+      if (k.isSstb === true) k1QbiSstbPortion += qbiCandidate;
     }
     k1QbiContributionEffective += k1QbiAutoSum;
   }
@@ -2201,9 +2221,10 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // SSTB phase-in (§199A(d)(3)). Phase-in band TY2024:
   //   Single: $191,950 to $241,950 (50k band)
   //   MFJ:    $383,900 to $483,900 (100k band)
-  // SSTB filers above the top of band → QBI deduction = $0.
-  // Non-SSTB filers above top of band → wage/UBIA limit (NOT modeled).
-  const sstbFlagSet = sumByType("qbi_sstb_flag") > 0;
+  // SSTB QBI above the top of band → $0; within band → linear phase-out;
+  // non-SSTB QBI is unaffected. SSTB is PER-BUSINESS: the Sch C via the
+  // `qbi_sstb_flag` adjustment, each K-1 via k.isSstb (k1QbiSstbPortion above).
+  const schCIsSstb = sumByType("qbi_sstb_flag") > 0;
   const QBI_PHASEIN_2024: Record<string, { start: number; end: number }> = {
     single: { start: 191_950, end: 241_950 },
     married_filing_separately: { start: 95_975, end: 120_975 },
@@ -2222,14 +2243,15 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const phaseIn =
     (taxYear === 2025 ? QBI_PHASEIN_2025 : QBI_PHASEIN_2024)[client.filingStatus] ??
     (taxYear === 2025 ? QBI_PHASEIN_2025 : QBI_PHASEIN_2024).single;
+  // Compute the phase-out fraction unconditionally; it is APPLIED only to the
+  // SSTB QBI portion below (which is 0 when no business is SSTB), so this is a
+  // no-op for non-SSTB returns.
   let sstbPhaseFraction = 1;
-  if (sstbFlagSet) {
-    if (calc.adjustedGrossIncome >= phaseIn.end) {
-      sstbPhaseFraction = 0;
-    } else if (calc.adjustedGrossIncome > phaseIn.start) {
-      sstbPhaseFraction =
-        (phaseIn.end - calc.adjustedGrossIncome) / (phaseIn.end - phaseIn.start);
-    }
+  if (calc.adjustedGrossIncome >= phaseIn.end) {
+    sstbPhaseFraction = 0;
+  } else if (calc.adjustedGrossIncome > phaseIn.start) {
+    sstbPhaseFraction =
+      (phaseIn.end - calc.adjustedGrossIncome) / (phaseIn.end - phaseIn.start);
   }
 
   // K4 — NOL carryforward (post-TCJA 80% limit, IRC §172(a)(2)). Computed
@@ -2244,8 +2266,14 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const nolCarryforwardRemaining = Math.max(0, nolCarryforwardAvailable - nolDeduction);
   const taxableAfterNol = Math.max(0, calc.taxableIncome - nolDeduction);
 
-  const qbiCombinedIncome =
-    (qbiIncomeEffective + k1QbiContributionEffective) * sstbPhaseFraction;
+  // Per-business SSTB split: the Sch C QBI is SSTB when schCIsSstb; each K-1's
+  // SSTB QBI is in k1QbiSstbPortion. Phase-out applies to the SSTB portion only;
+  // the non-SSTB portion keeps full QBI (subject to the wage/UBIA limit below).
+  // Equivalent to the prior whole-QBI × fraction for the pure-Sch-C-SSTB case.
+  const totalQbiRaw = qbiIncomeEffective + k1QbiContributionEffective;
+  const sstbQbiPortion = (schCIsSstb ? Math.max(0, qbiIncomeEffective) : 0) + k1QbiSstbPortion;
+  const nonSstbQbiPortion = totalQbiRaw - sstbQbiPortion;
+  const qbiCombinedIncome = nonSstbQbiPortion + sstbQbiPortion * sstbPhaseFraction;
   // K-1 §199A wage/UBIA limit inputs — aggregate the CPA-supplied §199A W-2
   // wages + UBIA across the year's K-1s. Positive values opt into the engine
   // applying the §199A(b)(2)(B) limit above the income threshold; 0/absent

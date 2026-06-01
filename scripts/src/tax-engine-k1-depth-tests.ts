@@ -356,6 +356,160 @@ header("BA-5 — low basis does not limit K-1 income");
   check("K-1 active ordinary = +$40,000", r.scheduleK1.totalActiveOrdinaryIncome, 40000, 0.01);
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// 1c — PER-BUSINESS SSTB PHASE-OUT (§199A(d)(2)/(d)(3))
+// ════════════════════════════════════════════════════════════════════════════
+// 2024 single §199A band: $191,950 → $241,950 (width $50,000).
+
+// SSTB-1 — SSTB K-1 ABOVE the band top → $0 QBI.
+// Filer: single 2024, $200,000 W-2, S-corp K-1 Box 1 = $100,000, isSstb=true.
+// Hand-calc: AGI = 300,000 ≥ 241,950 → phase fraction 0 → SSTB QBI = $0.
+//   (A non-SSTB K-1 would instead give 20% × 100,000 = $20,000.)
+header("SSTB-1 — SSTB K-1 above band → $0 QBI");
+{
+  const inputs: TaxReturnInputs = {
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 200000, federalTaxWithheldBox2: 0, stateCode: "FL" }],
+    form1099s: [],
+    adjustments: [],
+    scheduleK1: [{
+      taxYear: 2024, entityName: "Law Firm S Corp", entityType: "s_corp",
+      activityType: "active", box1OrdinaryIncome: 100000, isSstb: true,
+    }],
+    taxYear: 2024,
+  };
+  const r = computeTaxReturnPure(inputs);
+  check("AGI = $300,000 (above band)", r.adjustedGrossIncome, 300000, 1);
+  check("QBI deduction = $0 (SSTB phased out)", r.qbiDeduction ?? 0, 0, 0.5);
+}
+
+// SSTB-1b — same K-1 NOT flagged SSTB → full 20% (control).
+// Hand-calc: AGI 300,000, non-SSTB, no wage limit (no wages supplied) →
+//   QBI = 20% × 100,000 = 20,000 (cap 20%×285,400 = 57,080 — not binding).
+header("SSTB-1b — non-SSTB control → $20,000 QBI");
+{
+  const inputs: TaxReturnInputs = {
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 200000, federalTaxWithheldBox2: 0, stateCode: "FL" }],
+    form1099s: [],
+    adjustments: [],
+    scheduleK1: [{
+      taxYear: 2024, entityName: "Mfg S Corp", entityType: "s_corp",
+      activityType: "active", box1OrdinaryIncome: 100000, isSstb: false,
+    }],
+    taxYear: 2024,
+  };
+  const r = computeTaxReturnPure(inputs);
+  check("QBI deduction = $20,000 (non-SSTB, full 20%)", r.qbiDeduction ?? 0, 20000, 0.5);
+}
+
+// SSTB-2 — SSTB K-1 BELOW the band start → full QBI (SSTB irrelevant).
+// Filer: single 2024, $50,000 W-2, S-corp K-1 Box 1 = $60,000, isSstb=true.
+// Hand-calc: AGI = 110,000 < 191,950 → fraction 1 → QBI = 20% × 60,000 = 12,000
+//   (cap 20%×95,400 = 19,080 — not binding).
+header("SSTB-2 — SSTB K-1 below band → full QBI");
+{
+  const inputs: TaxReturnInputs = {
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, federalTaxWithheldBox2: 0, stateCode: "FL" }],
+    form1099s: [],
+    adjustments: [],
+    scheduleK1: [{
+      taxYear: 2024, entityName: "Consulting S Corp", entityType: "s_corp",
+      activityType: "active", box1OrdinaryIncome: 60000, isSstb: true,
+    }],
+    taxYear: 2024,
+  };
+  const r = computeTaxReturnPure(inputs);
+  check("AGI = $110,000 (below band)", r.adjustedGrossIncome, 110000, 1);
+  check("QBI deduction = $12,000 (SSTB below band → full)", r.qbiDeduction ?? 0, 12000, 0.5);
+}
+
+// SSTB-3 — SSTB K-1 WITHIN the band → linear phase-out.
+// Filer: single 2024, $116,950 W-2, S-corp K-1 Box 1 = $100,000, isSstb=true.
+// Hand-calc: AGI = 216,950 ; fraction = (241,950 − 216,950)/50,000 = 0.5
+//   SSTB QBI = 100,000 × 0.5 = 50,000 → deduction = 20% × 50,000 = 10,000
+//   (cap 20%×202,350 = 40,470 — not binding).
+header("SSTB-3 — SSTB K-1 within band → 50% phase-out");
+{
+  const inputs: TaxReturnInputs = {
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 116950, federalTaxWithheldBox2: 0, stateCode: "FL" }],
+    form1099s: [],
+    adjustments: [],
+    scheduleK1: [{
+      taxYear: 2024, entityName: "Accounting S Corp", entityType: "s_corp",
+      activityType: "active", box1OrdinaryIncome: 100000, isSstb: true,
+    }],
+    taxYear: 2024,
+  };
+  const r = computeTaxReturnPure(inputs);
+  check("AGI = $216,950 (band midpoint)", r.adjustedGrossIncome, 216950, 1);
+  check("QBI deduction = $10,000 (50% SSTB phase-out)", r.qbiDeduction ?? 0, 10000, 0.5);
+}
+
+// SSTB-4 — PER-BUSINESS: one SSTB K-1 + one non-SSTB K-1 within the band.
+// Filer: single 2024, $30,000 W-2; S-corp K-1 A = $100,000 SSTB,
+//        S-corp K-1 B = $80,000 non-SSTB.
+// Hand-calc: AGI = 210,000 ; fraction = (241,950 − 210,000)/50,000 = 0.639
+//   SSTB QBI = 100,000 × 0.639 = 63,900 ; non-SSTB QBI = 80,000 (full)
+//   combined QBI = 143,900 → deduction = 20% × 143,900 = 28,780
+//   (cap 20%×195,400 = 39,080 — not binding).
+//   Proves the non-SSTB K-1 keeps full QBI while the SSTB one phases out.
+header("SSTB-4 — per-business: SSTB + non-SSTB K-1 within band");
+{
+  const inputs: TaxReturnInputs = {
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 30000, federalTaxWithheldBox2: 0, stateCode: "FL" }],
+    form1099s: [],
+    adjustments: [],
+    scheduleK1: [
+      { taxYear: 2024, entityName: "SSTB S Corp", entityType: "s_corp", activityType: "active", box1OrdinaryIncome: 100000, isSstb: true },
+      { taxYear: 2024, entityName: "Trade S Corp", entityType: "s_corp", activityType: "active", box1OrdinaryIncome: 80000, isSstb: false },
+    ],
+    taxYear: 2024,
+  };
+  const r = computeTaxReturnPure(inputs);
+  check("AGI = $210,000", r.adjustedGrossIncome, 210000, 1);
+  check("QBI deduction = $28,780 (SSTB phased, non-SSTB full)", r.qbiDeduction ?? 0, 28780, 0.5);
+}
+
+// SSTB-5 — FIX: Sch C SSTB flag does NOT phase out a non-SSTB K-1.
+// (Old engine phased the WHOLE combined QBI when the Sch C flag was set.)
+// Filer: single 2024, $150,000 W-2, self_employment_income $100,000 with
+//        qbi_sstb_flag set (Sch C is SSTB), S-corp K-1 Box 1 = $50,000 non-SSTB.
+// Hand-calc (Sch SE Part I Line 9 — the $150k W-2 uses most of the SS base):
+//   net SE = 100,000 × 0.9235 = 92,350
+//   SS subject = min(92,350, 168,600 − 150,000 W-2 SS) = 18,600
+//   SS tax = 18,600 × 0.124 = 2,306.40 ; Med = 92,350 × 0.029 = 2,678.15
+//   SE tax = 4,984.55 ; half = 2,492.275
+//   AGI = 150,000 + 100,000 + 50,000 − 2,492.275 = 297,507.725 (> 241,950 → fraction 0)
+//   Sch C QBI = 100,000 − 2,492.275 = 97,507.725 (SSTB → 0)
+//   K-1 QBI = 50,000 (non-SSTB → full)
+//   combined = 50,000 → deduction = 20% × 50,000 = 10,000
+//     (cap 20%×282,907.725 = 56,581 — not binding).
+//   OLD behavior would have given $0 (whole QBI phased). New = $10,000.
+header("SSTB-5 — Sch C SSTB flag does not phase a non-SSTB K-1");
+{
+  const inputs: TaxReturnInputs = {
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 150000, federalTaxWithheldBox2: 0, stateCode: "FL" }],
+    form1099s: [],
+    adjustments: [
+      { adjustmentType: "self_employment_income", amount: 100000, isApplied: true },
+      { adjustmentType: "qbi_sstb_flag", amount: 1, isApplied: true },
+    ],
+    scheduleK1: [{
+      taxYear: 2024, entityName: "Trade S Corp", entityType: "s_corp",
+      activityType: "active", box1OrdinaryIncome: 50000, isSstb: false,
+    }],
+    taxYear: 2024,
+  };
+  const r = computeTaxReturnPure(inputs);
+  check("AGI = $297,507.73 (W-2 SS base offset)", r.adjustedGrossIncome, 297507.725, 0.5);
+  check("QBI deduction = $10,000 (non-SSTB K-1 retained; Sch C SSTB → 0)", r.qbiDeduction ?? 0, 10000, 0.5);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 console.log(`\n${"═".repeat(60)}`);
 console.log(`PASS: ${PASS.length}`);

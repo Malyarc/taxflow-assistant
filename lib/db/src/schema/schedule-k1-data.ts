@@ -14,17 +14,22 @@
  *     a net passive loss carries forward as `k1_passive_loss_carryforward`
  *     (NO $25k special allowance — that is rental-RE active-participation only)
  *
+ * Modeled (session-1 K-1 depth): §199A(b)(2)(B) wage/UBIA limit (aggregate),
+ * §199A(d)(2) per-business SSTB phase-out (isSstb), §707(c) guaranteed payments
+ * (box4GuaranteedPayments), and §704(d)/§1366(d) basis + §465 at-risk loss limits
+ * (basisAtYearStart / atRiskAmount cap the active Box 1 loss).
+ *
  * Not modeled (intentional simplification, documented in CLAUDE.md known limits):
- *   - §199A W-2-wage + UBIA limit (only binds above the income threshold)
- *   - §199A SSTB phase-out
- *   - Basis / at-risk limits (we store the fields, but enforce neither)
+ *   - Per-business (Form 8995-A) wage/UBIA limit — engine applies it in aggregate
+ *   - Basis reduced by distributions / separately-stated deductions (uses
+ *     basisAtYearStart as the loss-absorbing amount)
  *   - Cross-bucketing of K-1 passive vs. rental-RE passive under Form 8582
  *     (currently keep K-1 and rental-RE in separate passive buckets)
  *
  * Sources: 1065 K-1 instructions, 1120-S K-1 instructions, Form 8995-A
  * instructions, IRS Pub 541, IRS Pub 925 (§469).
  */
-import { pgTable, text, serial, integer, numeric, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, numeric, boolean, timestamp, index } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { clientsTable } from "./clients";
@@ -82,6 +87,14 @@ export const scheduleK1DataTable = pgTable("schedule_k1_data", {
   selfEmploymentEarnings: numeric("self_employment_earnings", { precision: 14, scale: 2 }).notNull().default("0"),
 
   // ── §199A flow-through (1065 Box 20 code Z / 1120-S Box 17 code V) ──
+  /**
+   * Whether THIS pass-through is a specified service trade or business
+   * (§199A(d)(2): health, law, accounting, consulting, financial services,
+   * etc.). Per-business: above the §199A phase-in band an SSTB yields $0 QBI;
+   * within the band its QBI phases out linearly; a non-SSTB business is
+   * unaffected. (The Sch C SSTB flag is the separate `qbi_sstb_flag` adjustment.)
+   */
+  isSstb: boolean("is_sstb").notNull().default(false),
   /** Qualified business income reported on the K-1 statement. */
   section199aQbi: numeric("section_199a_qbi", { precision: 14, scale: 2 }).notNull().default("0"),
   /** W-2 wages of the pass-through (stored; wage limit not currently enforced). */

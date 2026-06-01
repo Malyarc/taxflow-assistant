@@ -3396,6 +3396,7 @@ interface ScheduleK1Row {
   section199aQbi: number;
   section199aW2Wages: number;
   section199aUbia: number;
+  isSstb: boolean;
   basisAtYearStart: number | null;
   basisAtYearEnd: number | null;
   atRiskAmount: number | null;
@@ -3837,6 +3838,7 @@ function ScheduleK1Form({
   const [qbi, setQbi] = useState(existing?.section199aQbi != null ? String(existing.section199aQbi) : "");
   const [w2Wages, setW2Wages] = useState(existing?.section199aW2Wages != null ? String(existing.section199aW2Wages) : "");
   const [ubia, setUbia] = useState(existing?.section199aUbia != null ? String(existing.section199aUbia) : "");
+  const [isSstb, setIsSstb] = useState(existing?.isSstb ?? false);
   const [basisStart, setBasisStart] = useState(existing?.basisAtYearStart != null ? String(existing.basisAtYearStart) : "");
   const [basisEnd, setBasisEnd] = useState(existing?.basisAtYearEnd != null ? String(existing.basisAtYearEnd) : "");
   const [atRisk, setAtRisk] = useState(existing?.atRiskAmount != null ? String(existing.atRiskAmount) : "");
@@ -3878,6 +3880,7 @@ function ScheduleK1Form({
       section199aQbi: asNum(qbi),
       section199aW2Wages: asNum(w2Wages),
       section199aUbia: asNum(ubia),
+      isSstb,
       basisAtYearStart: asNumOrNull(basisStart),
       basisAtYearEnd: asNumOrNull(basisEnd),
       atRiskAmount: asNumOrNull(atRisk),
@@ -4003,20 +4006,26 @@ function ScheduleK1Form({
                 <CurrencyInput value={seEarnings} onChange={setSeEarnings} />
               </div>
               <div className="space-y-1 col-span-2 mt-2">
-                <p className="text-xs text-muted-foreground italic">§199A QBI: 1065 Box 20 code Z / 1120-S Box 17 code V. The engine applies the simplified 20% deduction; the W-2-wage / UBIA limit and SSTB phase-out are not modeled (only bind above $191,950 single / $383,900 MFJ).</p>
+                <p className="text-xs text-muted-foreground italic">§199A QBI: 1065 Box 20 code Z / 1120-S Box 17 code V. The engine applies the 20% deduction with the §199A(b)(2)(B) wage/UBIA limit (when wages/UBIA below are positive) and the per-business SSTB phase-out (toggle below), both binding above $191,950 single / $383,900 MFJ (2024).</p>
               </div>
               <div className="space-y-1">
                 <Label>§199A QBI amount</Label>
                 <CurrencyInput value={qbi} onChange={setQbi} />
               </div>
               <div className="space-y-1">
-                <Label>§199A W-2 wages of entity (informational)</Label>
+                <Label>§199A W-2 wages of entity</Label>
                 <CurrencyInput value={w2Wages} onChange={setW2Wages} />
               </div>
               <div className="space-y-1">
-                <Label>§199A UBIA (informational)</Label>
+                <Label>§199A UBIA</Label>
                 <CurrencyInput value={ubia} onChange={setUbia} />
               </div>
+              {formReady && (
+                <div className="flex items-center gap-2 col-span-2 mt-1">
+                  <Switch id="k1-sstb" checked={isSstb} onCheckedChange={setIsSstb} aria-label="Specified service trade or business" />
+                  <Label htmlFor="k1-sstb" className="cursor-pointer">Specified service trade or business (§199A(d)(2) — SSTB)</Label>
+                </div>
+              )}
             </div>
           </div>
 

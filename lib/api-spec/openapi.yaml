@@ -3146,6 +3146,7 @@ components:
         - section199aQbi
         - section199aW2Wages
         - section199aUbia
+        - isSstb
         - createdAt
         - updatedAt
       properties:
@@ -3194,6 +3195,9 @@ components:
           type: number
         section199aUbia:
           type: number
+        isSstb:
+          type: boolean
+          description: §199A(d)(2) specified service trade or business. Per-business SSTB QBI phases out over the §199A income band.
         basisAtYearStart:
           type: ["number", "null"]
         basisAtYearEnd:
@@ -3254,6 +3258,9 @@ components:
           type: number
         section199aUbia:
           type: number
+        isSstb:
+          type: boolean
+          description: §199A(d)(2) specified service trade or business. Per-business SSTB QBI phases out over the §199A income band.
         basisAtYearStart:
           type: ["number", "null"]
         basisAtYearEnd:
@@ -3307,6 +3314,9 @@ components:
           type: number
         section199aUbia:
           type: number
+        isSstb:
+          type: boolean
+          description: §199A(d)(2) specified service trade or business. Per-business SSTB QBI phases out over the §199A income band.
         basisAtYearStart:
           type: ["number", "null"]
         basisAtYearEnd:
