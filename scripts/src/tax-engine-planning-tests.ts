@@ -3095,6 +3095,21 @@ header("G1.53-3 — AGI $100k + kids: suppressed (below $200k HNW proxy)");
   checkTruthy("G1.53-3", "no fire AGI < $200k", findHit(hits, "G1.53") == null, true);
 }
 
+// PLAN-04: a 17-year-old (or 18-23 student) dependent lives in otherDependents,
+// NOT dependentsUnder17. Kiddie tax §1(g) still applies to them, so the detector
+// must fire on the broadened eligible-children count. numAffected caps at 1, so
+// estSavings is unchanged ($5k × (32%−10%) = $1,100).
+header("PLAN-04 G1.53-4 — 0 under-17 but 1 otherDependent (17yo/student): fires");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, dependentsUnder17: 0, otherDependents: 1 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 250000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  const hit = findHit(hits, "G1.53");
+  checkTruthy("G1.53-4", "fires on otherDependents (17yo/student)", hit != null, true);
+  if (hit) check("G1.53-4", "estSavings still $1,100 (capped 1 affected)", hit.estSavings, 1100);
+}
+
 // ── G1.54 §183 Hobby Loss ──────────────────────────────────────────────
 // Hand-calc: single FL, $5k 1099-NEC + $80k W-2.
 //   netSE = $5k × 0.9235 = $4,617. In $1k-$10k range ✓.
@@ -3326,6 +3341,20 @@ header("G1.59-3 — MFJ AGI $150k no kids: suppressed");
     w2s: [{ taxYear: 2024, wagesBox1: 150000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
   });
   checkTruthy("G1.59-3", "no fire without kids", findHit(hits, "G1.59") == null, true);
+}
+
+// PLAN-04: a 17-year-old dependent (in otherDependents) still has one Coverdell
+// contribution year. Detector must fire on the broadened eligible-children
+// count. Same MFJ AGI $150k @ 22% → estSavings ≈ $372 (numAffected caps at 1).
+header("PLAN-04 G1.59-4 — 0 under-17 but 2 otherDependents: fires");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024, taxpayerAge: 40, dependentsUnder17: 0, otherDependents: 2 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 150000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  const hit = findHit(hits, "G1.59");
+  checkTruthy("G1.59-4", "fires on otherDependents (17yo)", hit != null, true);
+  if (hit) check("G1.59-4", "estSavings ≈ $372 PV (capped 1 affected)", hit.estSavings, 372, 10);
 }
 
 // ── G1.60 §41(h) R&D Payroll Election ───────────────────────────────────

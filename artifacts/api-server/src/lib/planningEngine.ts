@@ -3657,6 +3657,24 @@ const G1_49_CHILD_STD_DED_2024 = 14_600;
 const G1_49_SE_FICA_RATE = 0.153; // both employer + employee = 15.3% on SE
 const G1_49_DEFAULT_NUM_CHILDREN = 1;
 
+/**
+ * PLAN-03/04 — count of dependent children that could be subject to a
+ * child-focused planning strategy.
+ *
+ * `dependentsUnder17` captures only CTC-qualifying kids (under 17). A child
+ * who is 17, or an 18-23 full-time student, drops out of that count into
+ * `otherDependents` (where they earn the $500 Credit for Other Dependents).
+ * Child-strategy detectors apply to populations that extend past 16 —
+ * family employment §3121(b)(3)(A) covers under-18, kiddie tax §1(g) covers
+ * under-18 + 18-23 students, Coverdell §530 covers under-18 — so the
+ * eligible-children proxy is the SUM. Callers caveat that `otherDependents`
+ * may also include non-child relatives (e.g. an elderly parent), which the
+ * CPA filters when confirming the strategy.
+ */
+function countEligibleChildren(client: ClientFacts): number {
+  return (client.dependentsUnder17 ?? 0) + (client.otherDependents ?? 0);
+}
+
 function detectFamilyEmployment(args: {
   client: ClientFacts;
   computed: ComputedTaxReturn;
@@ -3671,7 +3689,7 @@ function detectFamilyEmployment(args: {
   // child drops out of dependentsUnder17 into otherDependents, so use both as
   // the eligible-children proxy. (CPA confirms the dependent is the taxpayer's
   // child actually employed — otherDependents may include non-child relatives.)
-  const eligibleChildren = (client.dependentsUnder17 ?? 0) + (client.otherDependents ?? 0);
+  const eligibleChildren = countEligibleChildren(client);
   if (eligibleChildren <= 0) return null;
   // Suppress if existing family_employment marker. Use generic "deduction"
   // with a magic amount as a proxy.
@@ -4265,12 +4283,16 @@ function detectKiddieTax(args: {
   computed: ComputedTaxReturn;
 }): OpportunityHit | null {
   const { client, computed } = args;
-  const kidsUnder17 = client.dependentsUnder17 ?? 0;
-  if (kidsUnder17 <= 0) return null;
+  // PLAN-04: kiddie tax (§1(g)) reaches children under 18 AND 18-23 full-time
+  // students — both populations beyond the CTC under-17 count. 17-year-olds
+  // and student dependents live in otherDependents, so gate on the broader
+  // eligible-children proxy (was dependentsUnder17 only, which under-fired).
+  const eligibleChildren = countEligibleChildren(client);
+  if (eligibleChildren <= 0) return null;
   if (computed.adjustedGrossIncome < G1_53_MIN_AGI) return null;
 
   // estSavings per affected child × num kids (conservatively assume 1 affected).
-  const numAffected = Math.min(kidsUnder17, 1);
+  const numAffected = Math.min(eligibleChildren, 1);
   const estSavings = Math.round(G1_53_ASSUMED_EXCESS * G1_53_RATE_DIFFERENTIAL * numAffected);
 
   const strategy = strategyById("G1.53");
@@ -4286,15 +4308,18 @@ function detectKiddieTax(args: {
     cpaEffortHours: strategy.cpaEffortHours,
     recurring: strategy.recurring,
     rationale:
-      `Client AGI ${fmt(Math.round(computed.adjustedGrossIncome))} + ${kidsUnder17} dependent(s) under 17. ` +
-      `If any child has unearned income > $2,600 (TY2024 threshold), excess is taxed at parent's marginal ` +
-      `rate via Form 8615. Shift to growth-oriented or tax-deferred investments to minimize current-year ` +
-      `unearned income. Per affected child: ~${fmt(estSavings)}/year.`,
+      `Client AGI ${fmt(Math.round(computed.adjustedGrossIncome))} + ${eligibleChildren} dependent child(ren) ` +
+      `(incl. any 17-yr-olds / 18-23 full-time students). If a child subject to kiddie tax has unearned income ` +
+      `> $2,600 (TY2024 threshold), the excess is taxed at the parent's marginal rate via Form 8615. Shift to ` +
+      `growth-oriented or tax-deferred investments to minimize current-year unearned income. Per affected ` +
+      `child: ~${fmt(estSavings)}/year.`,
     action: interpolate(strategy.action, vars),
     prerequisiteData: strategy.prerequisiteData,
     citation: `${strategy.ircSection}; ${strategy.irsPub}`,
     inputs: {
-      dependentsUnder17: kidsUnder17,
+      eligibleChildren,
+      dependentsUnder17: client.dependentsUnder17 ?? 0,
+      otherDependents: client.otherDependents ?? 0,
       numAffectedAssumed: numAffected,
       agi: Math.round(computed.adjustedGrossIncome),
       unearnedThreshold: G1_53_UNEARNED_THRESHOLD,
@@ -4302,7 +4327,8 @@ function detectKiddieTax(args: {
       rateDifferential: G1_53_RATE_DIFFERENTIAL,
     },
     assumptions: [
-      `HEURISTIC — engine cannot track child's unearned income. Fires for HNW families with kids under 17.`,
+      `HEURISTIC — engine cannot track a child's unearned income. Fires for HNW families with dependent children (under-18, or 18-23 full-time students — both reached via dependentsUnder17 + otherDependents).`,
+      `CPA filters otherDependents for non-child relatives (e.g. an elderly parent dependent isn't a kiddie-tax subject).`,
       `TY2024 unearned-income thresholds (Rev. Proc. 2023-34): $1,300 (no tax) + $1,300 (child's rate) = $2,600 free.`,
       `Excess unearned income taxed at PARENT's marginal rate per IRC §1(g)(7)(A) and Form 8615.`,
       `Kiddie tax applies under 18 (or 18-23 if full-time student dependent, or 18 with no earned income > half support).`,
@@ -4644,8 +4670,12 @@ function detectCoverdellEsa(args: {
 }): OpportunityHit | null {
   const { client, computed, adjustments } = args;
   if (client.filingStatus === "married_filing_separately") return null;
-  const kidsUnder17 = client.dependentsUnder17 ?? 0;
-  if (kidsUnder17 <= 0) return null;
+  // PLAN-04: Coverdell beneficiaries are children under 18 — a 17-year-old
+  // (one more contribution year) sits in otherDependents, not dependentsUnder17.
+  // Gate on the broader eligible-children proxy; the under-18 caveat below
+  // tells the CPA to exclude any 18-23 student dependents swept into the count.
+  const eligibleChildren = countEligibleChildren(client);
+  if (eligibleChildren <= 0) return null;
   const cap = G1_59_AGI_PHASE_OUT_TOP[client.filingStatus] ?? G1_59_AGI_PHASE_OUT_TOP.single;
   if (computed.adjustedGrossIncome > cap) return null;
   void adjustments;
@@ -4654,7 +4684,7 @@ function detectCoverdellEsa(args: {
   // PV per child: $2k × (1.07^15 − 1) × marginal / 1.05^15
   const growthDollars = G1_59_CONTRIBUTION_CAP * (G1_59_GROWTH_15YR - 1);
   const estSavingsPerChild = Math.round((growthDollars * fedRate) / G1_59_DISCOUNT_15YR);
-  const numAffected = Math.min(kidsUnder17, 1);
+  const numAffected = Math.min(eligibleChildren, 1);
   const estSavings = estSavingsPerChild * numAffected;
   if (estSavings <= 0) return null;
 
@@ -4671,9 +4701,10 @@ function detectCoverdellEsa(args: {
     cpaEffortHours: strategy.cpaEffortHours,
     recurring: strategy.recurring,
     rationale:
-      `Client has ${kidsUnder17} dependent(s) under 17 + AGI ${fmt(Math.round(computed.adjustedGrossIncome))} ` +
-      `(under ${fmt(cap)} Coverdell cap). Contribute ${fmt(G1_59_CONTRIBUTION_CAP)}/yr per beneficiary for ` +
-      `tax-free K-12 + college growth. Long-term PV ~${fmt(estSavings)} per child.`,
+      `Client has ${eligibleChildren} dependent child(ren) (incl. any 17-yr-olds in otherDependents) + AGI ` +
+      `${fmt(Math.round(computed.adjustedGrossIncome))} (under ${fmt(cap)} Coverdell cap). Contribute ` +
+      `${fmt(G1_59_CONTRIBUTION_CAP)}/yr per beneficiary UNDER 18 for tax-free K-12 + college growth. ` +
+      `Long-term PV ~${fmt(estSavings)} per child.`,
     action: interpolate(strategy.action, vars),
     prerequisiteData: strategy.prerequisiteData,
     citation: `${strategy.ircSection}; ${strategy.irsPub}`,
@@ -4681,7 +4712,9 @@ function detectCoverdellEsa(args: {
       filingStatus: client.filingStatus,
       agi: Math.round(computed.adjustedGrossIncome),
       phaseOutTop: cap,
-      dependentsUnder17: kidsUnder17,
+      eligibleChildren,
+      dependentsUnder17: client.dependentsUnder17 ?? 0,
+      otherDependents: client.otherDependents ?? 0,
       contributionCap: G1_59_CONTRIBUTION_CAP,
       federalMarginalRate: fedRate,
       estSavingsPerChild,
@@ -4689,7 +4722,7 @@ function detectCoverdellEsa(args: {
     },
     assumptions: [
       `Contribution cap $2,000/yr PER BENEFICIARY — aggregate across all contributors.`,
-      `Beneficiary must be under 18 (or special needs to age 21) when contributed.`,
+      `Beneficiary must be under 18 (or special needs to age 21) when contributed. The eligible-children count includes otherDependents (to catch 17-yr-olds) — CPA excludes any 18-23 student dependents swept in, who can no longer receive new contributions.`,
       `AGI phase-out TY2024 (Rev. Proc. 2023-34 §3.20): $95k-$110k single / $190k-$220k MFJ.`,
       `Tax-free for QUALIFIED K-12 AND post-secondary education expenses (more flexible than §529 K-12 $10k/yr cap).`,
       `Non-qualified withdrawals: earnings portion taxable + 10% penalty.`,
