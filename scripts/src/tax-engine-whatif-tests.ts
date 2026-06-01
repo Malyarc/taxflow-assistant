@@ -1624,6 +1624,65 @@ function buildSeFilerInputs(): TaxReturnInputs {
     xstrat == null);
 }
 
+// ── H2 wiring (2026-06-01): G1.96 §132(f) transit fringe ─────────────────
+// Single FL, W-2 $150,000. Annual cap 315 × 12 = $3,780 pre-tax exclusion,
+// modeled as an above-the-line deduction. taxable = 150,000 − 14,600 = 135,400
+// (24% bracket); +$3,780 stays inside 24% (131,620) → engine delta = 3,780 ×
+// 24% = $907.20 (no QBI, no SE → clean). Heuristic estSavings is the same here.
+{
+  const inputs = baseInputs();
+  (inputs.w2s[0] as { wagesBox1: string }).wagesBox1 = "150000";
+  const computed = computeTaxReturnPure(inputs);
+  const hits = evaluatePlanningOpportunities({
+    client: inputs.client, computed, adjustments: inputs.adjustments, baselineInputs: inputs,
+  });
+  const hit = hits.find((h) => h.strategyId === "G1.96");
+  checkTruthy("G1.96 transit fringe fires (W-2 $150k)", hit != null);
+  if (hit) {
+    checkTruthy("G1.96 whatIf attached (H2-wired)", hit.whatIf != null);
+    checkExact("G1.96 whatIf semantics = savings", hit.whatIf?.semantics ?? "", "savings");
+    if (hit.whatIf) {
+      check("G1.96 whatIf combinedRefundDelta = $907.20 (3,780 × 24%)",
+        hit.whatIf.delta.combinedRefundDelta, 907.2, 2);
+    }
+  }
+}
+
+// ── H2 wiring (2026-06-01): G1.92 Solo 401(k) deferral ───────────────────
+// Single FL, Schedule C net $100,000, no retirement. netSE = 92,350 ∈ [20k,150k].
+// extraVsSep = employee deferral $23,000 (the part SEP can't do). Flat heuristic
+// = 23,000 × 22% marginal = $5,060. BUT the §199A QBI cap binds, so each $1 of
+// deduction drops taxable $1 → QBI cap (20% of taxable) drops $0.20 → QBI shrinks
+// $0.20 → net taxable falls only $0.80. Engine-verified:
+//   baseline: AGI 92,935.225, taxable-before-QBI 78,335.225, QBI cap 15,667.045
+//             → taxable 62,668.18 → income tax $8,840.00
+//   +$23k deduction: taxable-before-QBI 55,335.225, QBI cap 11,067.045
+//             → taxable 44,268.18 → income tax $5,080.18
+//   delta = 8,840.00 − 5,080.18 = $3,759.82 (SE tax unchanged).
+// The whatIf ($3,760) is BELOW the naive heuristic ($5,060) — exactly the §199A
+// cap cascade the H2 engine-verification is meant to capture.
+{
+  const inputs = baseInputs();
+  inputs.w2s = [];
+  inputs.adjustments = [adj("self_employment_income", 100000)];
+  const computed = computeTaxReturnPure(inputs);
+  const hits = evaluatePlanningOpportunities({
+    client: inputs.client, computed, adjustments: inputs.adjustments, baselineInputs: inputs,
+  });
+  const hit = hits.find((h) => h.strategyId === "G1.92");
+  checkTruthy("G1.92 Solo 401(k) fires (Sch C $100k)", hit != null);
+  if (hit) {
+    checkTruthy("G1.92 whatIf attached (H2-wired)", hit.whatIf != null);
+    checkExact("G1.92 whatIf semantics = savings", hit.whatIf?.semantics ?? "", "savings");
+    if (hit.whatIf) {
+      check("G1.92 whatIf combinedRefundDelta = $3,759.82 (QBI-cap-dampened)",
+        hit.whatIf.delta.combinedRefundDelta, 3759.82, 5);
+      checkTruthy("G1.92 whatIf < flat heuristic estSavings (QBI cascade captured)",
+        hit.whatIf.delta.combinedRefundDelta < hit.estSavings);
+    }
+  }
+}
+
 // ── Print results ─────────────────────────────────────────────────────────
 console.log(`\nH2 What-If engine tests:`);
 console.log(`  ✓ Passed: ${PASS.length}`);

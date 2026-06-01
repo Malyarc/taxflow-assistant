@@ -7036,8 +7036,9 @@ function detectSolo401kDeferral(args: {
   client: ClientFacts;
   computed: ComputedTaxReturn;
   adjustments: AdjustmentFact[];
+  baselineInputs?: TaxReturnInputs;
 }): OpportunityHit | null {
-  const { client, computed, adjustments } = args;
+  const { client, computed, adjustments, baselineInputs } = args;
   if (client.filingStatus === "married_filing_separately") return null;
   const netSe = computed.detail.se.netSeEarnings ?? 0;
   if (netSe < G1_92_MIN_SE || netSe > G1_92_MAX_SE) return null;
@@ -7070,6 +7071,22 @@ function detectSolo401kDeferral(args: {
   const fedRate = federalMarginalRate(computed);
   const stateRate = stateMarginalRate(computed);
   const estSavings = Math.round(extraVsSep * (fedRate + stateRate));
+
+  // H2: the Solo 401(k) employee elective deferral (the `extraVsSep` shelter
+  // beyond the SEP-equivalent employer match) is an above-the-line deduction
+  // on Schedule 1 — same arithmetic as a generic `deduction`. Re-running the
+  // engine on the incremental deferral verifies the bracket-exact marginal
+  // savings vs the flat heuristic (and any NIIT/AMT/QBI/state cascade).
+  const whatIf = runDetectorWhatIf({
+    baselineInputs,
+    scenarioId: "G1.92-solo401k-deferral",
+    label: `Solo 401(k) extra deferral $${Math.round(extraVsSep).toLocaleString("en-US")}`,
+    mutations: [
+      { kind: "add_adjustment", adjustmentType: "deduction", amount: Math.round(extraVsSep) },
+    ],
+    semantics: "savings",
+    varyAmount: true,
+  });
 
   const strategy = strategyById("G1.92");
   const fmt = (n: number) =>
@@ -7119,7 +7136,9 @@ function detectSolo401kDeferral(args: {
       `Plan admin cost ~$1k/yr; Form 5500-EZ at $250k+ assets.`,
       `Coordinate with G1.1 (SEP-IRA — for high SE) — choose based on income level + plan-admin tolerance.`,
       `Heuristic = extra shelter × marginal. Real benefit depends on actual SE + age + employer-match structure.`,
+      `H2: whatIf models the incremental deferral (extra vs SEP) as an above-the-line deduction; delta is the engine-verified bracket-exact savings.`,
     ],
+    whatIf,
   };
 }
 
@@ -7320,8 +7339,9 @@ const G1_96_MIN_INCOME = 50_000;
 
 function detectQualifiedTransportFringe(args: {
   computed: ComputedTaxReturn;
+  baselineInputs?: TaxReturnInputs;
 }): OpportunityHit | null {
-  const { computed } = args;
+  const { computed, baselineInputs } = args;
   if (computed.totalIncome < G1_96_MIN_INCOME) return null;
   // Must have W-2 wages (employee eligibility).
   const seIncome = computed.detail.se.netSeEarnings ?? 0;
@@ -7332,6 +7352,23 @@ function detectQualifiedTransportFringe(args: {
   const annualAmount = monthlyCap * 12;
   const fedRate = federalMarginalRate(computed);
   const estSavings = Math.round(annualAmount * fedRate);
+
+  // H2: the §132(f) compensation-reduction election excludes `annualAmount`
+  // from W-2 Box 1 wages — same income-tax arithmetic as a generic
+  // above-the-line `deduction`. Engine re-run captures the bracket-exact
+  // marginal rate + any phase-out / NIIT-cliff / state interaction the flat
+  // heuristic misses. (The FICA savings is separate + not modeled here, same
+  // as the heuristic.) Fixed statutory cap → no ±10% sensitivity.
+  const whatIf = runDetectorWhatIf({
+    baselineInputs,
+    scenarioId: "G1.96-transit-fringe",
+    label: `§132(f) pre-tax transit/parking $${Math.round(annualAmount).toLocaleString("en-US")}`,
+    mutations: [
+      { kind: "add_adjustment", adjustmentType: "deduction", amount: Math.round(annualAmount) },
+    ],
+    semantics: "savings",
+    varyAmount: false,
+  });
 
   const strategy = strategyById("G1.96");
   const fmt = (n: number) =>
@@ -7377,7 +7414,9 @@ function detectQualifiedTransportFringe(args: {
       `Coordinate with §125 cafeteria plan (different mechanism — typically health + dependent care).`,
       `State conformity varies (NY/CA may differ on parking).`,
       `Requires employer to OFFER the benefit — CPA confirms employer participates.`,
+      `H2: engine models the pre-tax exclusion as an above-the-line deduction; whatIf delta is the bracket-exact income-tax savings (FICA savings is additional, not modeled).`,
     ],
+    whatIf,
   };
 }
 
@@ -7660,7 +7699,7 @@ export function evaluatePlanningOpportunities(args: PlanningInputs): Opportunity
   if (disasterRelief) hits.push(disasterRelief);
   // Phase H — H1 catalog v1.17 (FINAL): G1.92 Solo 401(k) deferral / G1.93 §163(d) /
   // G1.94 §85 UI / G1.95 §1377(a)(2) S-corp close / G1.96 §132(f) transit.
-  const solo401kDeferral = detectSolo401kDeferral({ client, computed, adjustments });
+  const solo401kDeferral = detectSolo401kDeferral({ client, computed, adjustments, baselineInputs });
   if (solo401kDeferral) hits.push(solo401kDeferral);
   const invInterestElection = detectInvestmentInterestElection({ computed, adjustments });
   if (invInterestElection) hits.push(invInterestElection);
@@ -7668,7 +7707,7 @@ export function evaluatePlanningOpportunities(args: PlanningInputs): Opportunity
   if (uiAnalysis) hits.push(uiAnalysis);
   const section1377 = detectSection1377Election({ computed });
   if (section1377) hits.push(section1377);
-  const transitFringe = detectQualifiedTransportFringe({ computed });
+  const transitFringe = detectQualifiedTransportFringe({ computed, baselineInputs });
   if (transitFringe) hits.push(transitFringe);
   hits.sort((a, b) => b.estSavings - a.estSavings);
   return hits;
