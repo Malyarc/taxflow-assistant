@@ -1376,11 +1376,17 @@ function computePartYearAllocation(
   // For each period: call calculateStateTax with that period's pro-rated AGI.
   // We use the same options for both (e.g., taxableSocialSecurity is pro-rated
   // implicitly by the AGI ratio — slightly conservative; documented sub-gap).
+  // Pro-rate the flat allowances (std ded + personal exemption) by residency
+  // DAYS so each state grants only its residency-period share. daysFormer/Current
+  // sum to daysInYear, so the two factors sum to 1 → one full std-ded/exemption
+  // split across the two states (was previously full in BOTH → ~2× over-deduct).
+  const formerProration = daysInYear > 0 ? daysFormer / daysInYear : 0;
+  const currentProration = daysInYear > 0 ? daysCurrent / daysInYear : 1;
   const formerStateTax = formerStateAgi > 0
-    ? calculateStateTax(formerStateAgi, formerStateUpper, filingStatus, taxYear, { ...options, fullYearFederalAgiForCliff: federalAgiSafe })
+    ? calculateStateTax(formerStateAgi, formerStateUpper, filingStatus, taxYear, { ...options, fullYearFederalAgiForCliff: federalAgiSafe, partYearDeductionProration: formerProration })
     : 0;
   const currentStateTax = currentStateAgi > 0
-    ? calculateStateTax(currentStateAgi, currentStateUpper, filingStatus, taxYear, { ...options, fullYearFederalAgiForCliff: federalAgiSafe })
+    ? calculateStateTax(currentStateAgi, currentStateUpper, filingStatus, taxYear, { ...options, fullYearFederalAgiForCliff: federalAgiSafe, partYearDeductionProration: currentProration })
     : 0;
 
   return {
@@ -1646,6 +1652,13 @@ export function calculateStateTax(
      *  personal-exemption AGI cliff test (IL Sched NR computes Line 10 as a
      *  full-year resident). Defaults to federalAgi for full-year filers. */
     fullYearFederalAgiForCliff?: number;
+    /** Part-year: 0-1 multiplier applied to the standard deduction + personal
+     *  exemption so a part-year resident gets only the residency-period share
+     *  of these flat allowances (the two periods' factors sum to 1 → one full
+     *  std-ded/exemption split across states, not double-counted). Default 1
+     *  (full-year filer). Does NOT scale the retirement/SS exclusions, which
+     *  already track the pro-rated AGI. */
+    partYearDeductionProration?: number;
   },
 ): number {
   const year = resolveTaxYear(taxYear);
@@ -1707,7 +1720,15 @@ export function calculateStateTax(
     njGrossIncomeApprox: options?.njGrossIncomeApprox ?? federalAgi,
   }).exemption;
 
-  const stateTaxable = Math.max(0, federalAgi - stdDed - personalExemption - oregonSubtraction - retirementExemption - ssExclusion);
+  // Part-year: pro-rate the flat allowances (std ded + personal exemption) by
+  // the residency-period factor so the filer doesn't get a full deduction in
+  // BOTH the former and current state. The two periods' factors sum to 1, so
+  // the combined allowance equals one full annual std-ded/exemption. Clamped to
+  // [0,1]; default 1 for full-year filers.
+  const allowanceProration = Math.min(1, Math.max(0, options?.partYearDeductionProration ?? 1));
+  const proratedStdDed = stdDed * allowanceProration;
+  const proratedPersonalExemption = personalExemption * allowanceProration;
+  const stateTaxable = Math.max(0, federalAgi - proratedStdDed - proratedPersonalExemption - oregonSubtraction - retirementExemption - ssExclusion);
   const brackets = pickStateBrackets(info.brackets, status);
   let tax = applyBrackets(stateTaxable, brackets);
 

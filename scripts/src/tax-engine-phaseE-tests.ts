@@ -2072,8 +2072,9 @@ header("E12+1 — CA → TX on Apr 1 — pro-rated CA tax only, TX=0");
   check("E12+1", "currentAgi ≈ $90,164",
     r.partYearResidency?.currentStateAgi ?? 0, 90163.93, 1,
     "$120k × 275/366");
-  const expectedCaTax = calculateStateTax(29836.07, "CA", "single", 2024);
-  check("E12+1", "formerStateTax = CA tax on $29,836",
+  // #4 — std ded + personal exemption pro-rated by residency days (91/366).
+  const expectedCaTax = calculateStateTax(29836.07, "CA", "single", 2024, { partYearDeductionProration: 91 / 366 });
+  check("E12+1", "formerStateTax = CA tax on $29,836 (std ded pro-rated 91/366)",
     r.partYearResidency?.formerStateTax ?? 0, expectedCaTax, 1);
   check("E12+1", "currentStateTax (TX) = $0",
     r.partYearResidency?.currentStateTax ?? 0, 0, 0.01,
@@ -2104,7 +2105,7 @@ header("E12+2 — NY → FL on Apr 1 MFJ $200k → pro-rated NY tax only");
     },
   });
   const formerAgi = 200000 * 91 / 366;
-  const expectedNyTax = calculateStateTax(formerAgi, "NY", "married_filing_jointly", 2024);
+  const expectedNyTax = calculateStateTax(formerAgi, "NY", "married_filing_jointly", 2024, { partYearDeductionProration: 91 / 366 });
   check("E12+2", "formerAgi ≈ NY share",
     r.partYearResidency?.formerStateAgi ?? 0, formerAgi, 1);
   check("E12+2", "formerStateTax = NY tax on share",
@@ -2139,8 +2140,8 @@ header("E12+3 — IL → CO on Jul 1 single $80k — both have state tax");
   check("E12+3", "daysCurrent = 184", r.partYearResidency?.daysCurrent ?? 0, 184, 0);
   const formerAgi = 80000 * 182 / 366;
   const currentAgi = 80000 * 184 / 366;
-  const expectedIlTax = calculateStateTax(formerAgi, "IL", "single", 2024);
-  const expectedCoTax = calculateStateTax(currentAgi, "CO", "single", 2024);
+  const expectedIlTax = calculateStateTax(formerAgi, "IL", "single", 2024, { partYearDeductionProration: 182 / 366 });
+  const expectedCoTax = calculateStateTax(currentAgi, "CO", "single", 2024, { partYearDeductionProration: 184 / 366 });
   check("E12+3", "formerStateTax matches IL calc",
     r.partYearResidency?.formerStateTax ?? 0, expectedIlTax, 1);
   check("E12+3", "currentStateTax matches CO calc",
@@ -2172,6 +2173,34 @@ header("E12+4 — TY2025 non-leap (365 days): Apr 1 → daysFormer=90");
     r.partYearResidency?.daysFormer ?? 0, 90, 0);
   check("E12+4", "non-leap daysCurrent = 275",
     r.partYearResidency?.daysCurrent ?? 0, 275, 0);
+}
+
+// --- E12+5: pro-rated standard deduction (#4) — explicit hand-calc ---
+// Single $100,000, CO → TX, change 2024-07-02 (leap). daysFormer = 183,
+// daysCurrent = 183 (exact 50/50 split).
+// Hand-calc:
+//   formerAgi (CO) = 100,000 × 183/366 = 50,000
+//   CO std ded (fed-conforming, single 2024) = 14,600 ; pro-rated × 183/366 = 7,300
+//   CO taxable = 50,000 − 7,300 = 42,700 ; CO flat 4.4% → tax = 1,878.80
+//   currentStateTax (TX, no PIT) = 0 ; total = 1,878.80
+//   (Pre-#4 the FULL $14,600 std ded applied to the half-year → taxable 35,400,
+//    tax $1,557.60 — i.e., the engine over-deducted by the full std ded.)
+header("E12+5 — pro-rated std ded: CO half-year, hand-calc $1,878.80");
+{
+  const r = calculateMultiStateTax({
+    residentState: "TX",
+    federalAgi: 100000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "TX", wages: 100000 }],
+    partYearResidency: { formerState: "CO", residencyChangeDate: "2024-07-02" },
+  });
+  check("E12+5", "daysFormer = 183", r.partYearResidency?.daysFormer ?? 0, 183, 0);
+  check("E12+5", "daysCurrent = 183", r.partYearResidency?.daysCurrent ?? 0, 183, 0);
+  check("E12+5", "formerAgi (CO) = $50,000", r.partYearResidency?.formerStateAgi ?? 0, 50000, 0.5);
+  check("E12+5", "formerStateTax (CO) = $1,878.80 (std ded pro-rated to $7,300)",
+    r.partYearResidency?.formerStateTax ?? 0, 1878.80, 0.5);
+  check("E12+5", "totalStateTax = $1,878.80 (TX = 0)", r.totalStateTax, 1878.80, 0.5);
 }
 
 // --- E12 boundary: change date Jan 1 → 0 days former → all current ---
@@ -2212,7 +2241,7 @@ header("E12±2 — Dec 31 change date → 365 days former, 1 day current");
   });
   check("E12±2", "daysFormer = 365", r.partYearResidency?.daysFormer ?? 0, 365, 0);
   check("E12±2", "daysCurrent = 1", r.partYearResidency?.daysCurrent ?? 0, 1, 0);
-  const expectedCaTax = calculateStateTax(120000 * 365 / 366, "CA", "single", 2024);
+  const expectedCaTax = calculateStateTax(120000 * 365 / 366, "CA", "single", 2024, { partYearDeductionProration: 365 / 366 });
   check("E12±2", "formerStateTax ≈ full-year CA",
     r.partYearResidency?.formerStateTax ?? 0, expectedCaTax, 1);
 }

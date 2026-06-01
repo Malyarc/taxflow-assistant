@@ -307,7 +307,13 @@ section("Scenario 6 — Single NY → CO on Jul 1, $120k W-2");
   exact("S6", "Former state code = NY", r.formerStateCode, "NY");
   exact("S6", "Days former state = 182", r.daysFormerStateResident, 182);
   exact("S6", "Days current state = 184", r.daysCurrentStateResident, 184);
-  approx("S6", "Former state (NY) tax ≈ $2,677", r.formerStateTax, 2677, 100);
+  // #4 — part-year std ded now pro-rated by residency days (182/366):
+  //   formerAgi (NY) = 120,000 × 182/366 = 59,672.13
+  //   NY std ded (single) 8,000 × 182/366 = 3,978.14 → NY taxable = 55,693.99
+  //   NY single tax = 4%×8,500 + 4.5%×3,200 + 5.25%×2,200 + 5.5%×41,793.99
+  //                 = 340 + 144 + 115.50 + 2,298.67 = 2,898.17
+  //   (was $2,677 when the full $8,000 std ded was wrongly applied to the part year)
+  approx("S6", "Former state (NY) tax ≈ $2,898 (std ded pro-rated 182/366)", r.formerStateTax, 2898.17, 2);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
