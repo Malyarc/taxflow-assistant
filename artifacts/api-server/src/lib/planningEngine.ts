@@ -1106,6 +1106,15 @@ function detectNiitCliff(args: {
  * For TY2025:
  *   Single / MFS / HoH: threshold $197,300, top $247,300
  *   MFJ / QSS:           threshold $394,600, top $494,600
+ *
+ * For TY2026 (OBBBA P.L. 119-21 made §199A PERMANENT and WIDENED the phase-in
+ * range from $50k→$75k single / $100k→$150k MFJ; Rev. Proc. 2025-32 thresholds):
+ *   Single / MFS / HoH: threshold $201,750, top $276,750 ($75k band)
+ *   MFJ / QSS:           threshold $403,500, top $553,500 ($150k band)
+ * (MFS is published $201,775 — a $25 rounding artifact; we treat MFS = single,
+ * consistent with prior years, immaterial to the heuristic.) OBBBA also adds a
+ * NEW $400 minimum QBI deduction (TY2026, for ≥$1,000 active QBI; indexed after
+ * 2026) — informational here; the core QBI calc floor is a tracked follow-up.
  */
 const QBI_THRESHOLDS: Record<number, Record<string, { threshold: number; top: number }>> = {
   2024: {
@@ -1121,6 +1130,13 @@ const QBI_THRESHOLDS: Record<number, Record<string, { threshold: number; top: nu
     head_of_household: { threshold: 197300, top: 247300 },
     married_filing_jointly: { threshold: 394600, top: 494600 },
     qualifying_widow: { threshold: 394600, top: 494600 },
+  },
+  2026: {
+    single: { threshold: 201750, top: 276750 },
+    married_filing_separately: { threshold: 201750, top: 276750 },
+    head_of_household: { threshold: 201750, top: 276750 },
+    married_filing_jointly: { threshold: 403500, top: 553500 },
+    qualifying_widow: { threshold: 403500, top: 553500 },
   },
 };
 
@@ -6790,20 +6806,10 @@ function detectSection401a17Cap(args: {
 
 // ── G1.88 — §199A SSTB Navigation (heuristic) ───────────────────────────
 
-const G1_88_SSTB_FULL_THRESHOLD_2024: Record<string, number> = {
-  single: 191_950,
-  head_of_household: 191_950,
-  married_filing_jointly: 383_900,
-  qualifying_widow: 383_900,
-  married_filing_separately: 191_950,
-};
-const G1_88_SSTB_PHASEOUT_TOP_2024: Record<string, number> = {
-  single: 241_950,
-  head_of_household: 241_950,
-  married_filing_jointly: 483_900,
-  qualifying_widow: 483_900,
-  married_filing_separately: 241_950,
-};
+// G1.88/G1.89 reuse the year-indexed QBI_THRESHOLDS (threshold = SSTB full
+// phase-out start; top = phase-out end). This year-indexes the SSTB band
+// (TY2024 $191,950 / TY2025 $197,300 / TY2026 $201,750 single) instead of the
+// prior TY2024-only hard-codes.
 const G1_88_TYPICAL_PRESERVED = 2_400;
 
 function detectSstbNavigation(args: {
@@ -6818,8 +6824,10 @@ function detectSstbNavigation(args: {
     (a) => a.adjustmentType === "qbi_income" && a.isApplied !== false && toNum(a.amount) > 0,
   );
   if (!hasQbi) return null;
-  const fullThresh = G1_88_SSTB_FULL_THRESHOLD_2024[computed.filingStatus] ?? G1_88_SSTB_FULL_THRESHOLD_2024.single;
-  const phaseOutTop = G1_88_SSTB_PHASEOUT_TOP_2024[computed.filingStatus] ?? G1_88_SSTB_PHASEOUT_TOP_2024.single;
+  const sstbTier = (QBI_THRESHOLDS[computed.taxYear] ?? QBI_THRESHOLDS[2025]);
+  const sstbBand = sstbTier[computed.filingStatus] ?? sstbTier.single;
+  const fullThresh = sstbBand.threshold;
+  const phaseOutTop = sstbBand.top;
   if (computed.taxableIncome < fullThresh) return null;
   if (computed.taxableIncome > phaseOutTop) return null;
 
@@ -6884,7 +6892,8 @@ function detectSection199aAggregation(args: {
     (a) => a.adjustmentType === "qbi_income" && a.isApplied !== false && toNum(a.amount) > 0,
   );
   if (!hasQbi) return null;
-  const fullThresh = G1_88_SSTB_FULL_THRESHOLD_2024[computed.filingStatus] ?? G1_88_SSTB_FULL_THRESHOLD_2024.single;
+  const aggTier = (QBI_THRESHOLDS[computed.taxYear] ?? QBI_THRESHOLDS[2025]);
+  const fullThresh = (aggTier[computed.filingStatus] ?? aggTier.single).threshold;
   if (computed.taxableIncome < fullThresh) return null;
 
   const estSavings = G1_89_TYPICAL_PRESERVED;
