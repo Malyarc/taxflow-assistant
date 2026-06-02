@@ -1,8 +1,20 @@
 # TaxFlow Assistant — Coverage Matrix
 
-**Status as of 2026-05-27 (Phase H sub-gap closure + C-batch v3 shipped).**
+**Status as of 2026-06-02 (OBBBA planning refresh, catalog v1.19.0).**
 Inventory of what the calc engine models vs. what's not yet covered.
 This is the source of truth for "do we handle X?".
+
+> **OBBBA (2026-06-02):** Core engine — **TY2025 standard deduction corrected to
+> the OBBBA-amended $15,750/$31,500/$23,625** (was pre-OBBBA $15,000/$30,000/$22,500).
+> Planning catalog refreshed to v1.19.0 (TY2026 dollar values, §199A permanence,
+> PTET §164(b)(7) $40k cap + phase-down, 4 NEW deductions G1.97–G1.100 — see
+> `docs/planning-strategy-audit.md`). **Core-engine OBBBA items still tracked
+> (NOT applied):** federal SALT cap still $10k (OBBBA $40k cap + phase-down not in
+> `calculateStateTax`/itemized total — the PTET planning detector works around it
+> off saltUncapped); §199A core SSTB thresholds + the new $400 min QBI deduction;
+> native TY2026 brackets/std-ded ($16,100/$32,200) + `SUPPORTED_TAX_YEARS` (the
+> engine clamps TY2026 → TY2025 today); 4 new OBBBA deductions are planning-only
+> (not modeled as real adjustments in `computeTaxReturnPure`).
 
 **C-batch v3 (2026-05-27 PM)** — extends v2 with full top-10-state-credit
 coverage + bulk PA EIT + bulk OH SDIT + per-K-1/rental sourcing:

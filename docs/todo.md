@@ -125,15 +125,22 @@ Biggest credibility lift:
   a quick win; shipping a shaky model is explicitly off-limits. Carryforward
   depletion is already covered by G4.4/G4.5. Do only with dedicated time for a
   defensible trajectory model + tolerance-based engine-verified tests (H3.G1.3 precedent).
-- **Catalog freshness (#9) — Tier-1 SHIPPED 2026-06-01 session 2 (catalog v1.18.0).**
-  OBBBA (P.L. 119-21) **repealed the clean-energy credits**: G1.33 (§30D/§25E EV),
-  G1.34 (§25D), G1.37 (§25C) → validUntil lowered 2032→2025 so PLAN-08 suppresses
-  them for TY2026+ (the engine was recommending a repealed credit — actively wrong).
-  **Tier-2/3/4 refreshes captured WITH authoritative sources in
-  `docs/planning-strategy-audit.md`** (deferred, not yet applied to protect the
-  test baseline): QBI/QCD/adoption/retirement/§448(c)/std-ded dollar bumps, SALT
-  →§164(b)(7)/$40k, estate $15M permanence, + 4 NEW OBBBA deductions (tips, overtime,
-  car-loan interest, senior bonus). This is the next planning task when picked up.
+- **Catalog freshness (#9) — FULLY SHIPPED.** Tier-1 (catalog v1.18.0, 2026-06-01):
+  OBBBA clean-energy-credit repeal (G1.33/G1.34/G1.37 validUntil 2032→2025).
+  **Tier-2/3/4 — SHIPPED 2026-06-02 (catalog v1.19.0):** QCD/adoption(+refundable)/
+  retirement-cluster/§448(c) dollar bumps; §199A TY2026 thresholds + widened phase-in
+  + $400-floor note + QBI permanence (validUntil→2099); core TY2025 std-ded corrected
+  to OBBBA $15,750/$31,500/$23,625; PTET recoded §164(b)(6)+(7) with $40k cap +
+  phase-down (new `obbbaSaltCap()`); **4 NEW deductions G1.97–G1.100** (tips §224 /
+  overtime §225 / car-loan §163(h)(4) / senior $6k). Catalog now **101 strategies**;
+  planning suite **527 assertions**. Every value hand-calc'd vs the IRS source.
+  See `docs/planning-strategy-audit.md` (OBBBA section). **Follow-ups discovered**
+  (core-engine, deliberately out of the planning-refresh scope): core SALT cap still
+  $10k (OBBBA $40k not applied to the federal itemized total — PTET works around it
+  off saltUncapped); core §199A SSTB thresholds + $400 min-deduction; native TY2026
+  engine support (brackets/std-ded $16,100/$32,200 + SUPPORTED_TAX_YEARS); API-enum +
+  ClientForm UI for the tips/overtime/car-loan markers (G1.97–G1.99 reachable in prod;
+  G1.100 senior fires on age now).
 
 ---
 

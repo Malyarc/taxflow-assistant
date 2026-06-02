@@ -12,41 +12,62 @@ No incorrect IRC citations found. No outdated dollar limits found. No mis-stated
 
 > ⚠️ The verdict above is **PRE-OBBBA (TY2024/2025) and partially STALE.** See the OBBBA update below.
 
-## OBBBA / TY2025–2026 update — catalog v1.18.0 (2026-06-01)
+## OBBBA / TY2025–2026 update — catalog v1.19.0 (2026-06-02) — Tier 1–4 ALL APPLIED
 
 The **One Big Beautiful Bill Act** (OBBBA, P.L. 119-21, enacted 2025-07-04) + the
-TY2025/2026 IRS revenue procedures changed many catalog items. **Shipped this
-session (Tier 1 — the actively-wrong items):**
+TY2025/2026 IRS revenue procedures changed many catalog items.
 
-- **G1.33 (§30D/§25E EV), G1.34 (§25D residential clean energy), G1.37 (§25C):
-  OBBBA REPEALED these.** §30D/§25E end for vehicles acquired after 2025-09-30;
-  §25C/§25D end after 2025-12-31. Their `validUntil` was lowered **2032-12-31 →
-  2025-12-31** so the PLAN-08 gate suppresses them for TY2026+ (they still fire
-  for TY2025). OBBBA-repeal note added to each `trigger`. Source: [IRS OBBB energy
-  FAQ (P.L. 119-21)](https://www.irs.gov/newsroom/faqs-for-modification-of-sections-25c-25d-25e-30c-30d-45l-45w-and-179d-under-public-law-119-21-139-stat-72-july-4-2025-commonly-known-as-the-one-big-beautiful-bill-obbb).
-  (G1.68 §174 was already updated to §174A immediate domestic R&D expensing in a
-  prior catalog rev — no change needed.)
+**Tier 1 (shipped 2026-06-01, catalog v1.18.0):** G1.33 (§30D/§25E EV), G1.34
+(§25D), G1.37 (§25C) clean-energy credits **REPEALED** — `validUntil` lowered
+2032→2025 so PLAN-08 suppresses them for TY2026+. Source: [IRS OBBB energy FAQ](https://www.irs.gov/newsroom/faqs-for-modification-of-sections-25c-25d-25e-30c-30d-45l-45w-and-179d-under-public-law-119-21-139-stat-72-july-4-2025-commonly-known-as-the-one-big-beautiful-bill-obbb).
 
-**Tracked follow-up (Tier 2–4 — authoritative sources captured, not yet applied;
-these are stale-but-not-harmful dollar refreshes + new strategies):**
+**Tier 2–4 — APPLIED 2026-06-02 (catalog v1.19.0).** Every value below was
+independently re-verified against the primary IRS source before encoding; each
+ships with hand-calc'd lock-in tests in `tax-engine-planning-tests.ts`:
 
-| Tier | Item | Action needed | Source |
-|---|---|---|---|
-| 2 | G1.65 Adoption | $17,280 (2025)/$17,670 (2026) + now **$5,000 refundable** | IRS via Accounting Today; GBQ |
-| 2 | G1.11 QCD | $105k → **$108k (2025)/$111k (2026)** | CRS IF11377; Fidelity |
-| 2 | G1.62 §448(c) | $30M → **$31M (2025)/$32M (2026)** (engine §163(j) already correct) | Rev. Proc. 2025-32 |
-| 2 | Retirement cluster G1.1/G1.14/G1.16/G1.87/G1.92 | SEP $70k→**$72k (2026)**, deferral $23k→**$24.5k**, HSA **$4,400/$8,750**, §401(a)(17) **$360k** | IRS IR-2025-111 / Notice 2025-67 |
-| 2 | G1.7/G1.88/G1.89 §199A | TY2026 thresholds **$201,750/$403,500**; widened phase-in ($75k/$150k); new **$400 floor**; QBI now **permanent** (extend validUntil) | RSM; Tax Foundation |
-| 2 | G1.3/G1.8/G4.3 bunching | new std ded **$16,100/$32,200 (2026)** | IRS 2026 release |
-| 3 | G1.2 PTET | recode IRC §164(b)(6) → **§164(b)(7)**; SALT cap **$40k** (phase-down >$500k MAGI) | The Tax Adviser; IRS |
-| 3 | G1.86/G1.90/G1.19/G1.85 estate/mortgage | drop "2026 sunset cliff" urgency — **$15M estate exclusion + §163(h)(3) $750k made permanent** | Pierce Atwood; IRS |
-| 4 | NEW strategies (catalog gaps) | tip (≤$25k), overtime (≤$12.5k/$25k), car-loan interest (≤$10k), **senior bonus deduction ($6,000, 2025–2028)** | IRS — OBBB deductions for workers & seniors |
+| Tier | Item | Applied value | Source | Status |
+|---|---|---|---|---|
+| 2 | G1.65 Adoption | max $17,280 (2025)/$17,670 (2026); **MAGI phase-out $259,190–$299,190 (2025) / $265,080–$305,080 (2026)**; **refundable $5,000 (2025)/$5,120 (2026)** — detector no longer caps below the refundable floor | Rev. Proc. 2025-32; TurboTax/Kiplinger | ✅ |
+| 2 | G1.11 QCD | $108k (2025)/**$111k (2026)** | Notice 2024-80; Rev. Proc. 2025-32 | ✅ |
+| 2 | G1.62 §448(c) | catalog text $31M (2025)/$32M (2026) — engine §163(j) already year-indexed | Rev. Proc. 2025-32 | ✅ |
+| 2 | Retirement G1.1/G1.14/G1.16/G1.87/G1.92 | SEP/§415(c) **$72k**, §402(g) deferral **$24.5k**, HSA **$4,400/$8,750**, §401(a)(17) **$360k** (all TY2026) | IR-2025-111 / Notice 2025-67 / Rev. Proc. 2025-19 | ✅ |
+| 2 | G1.7/G1.88/G1.89 §199A | TY2026 thresholds **$201,750/$403,500**; widened phase-in **$75k/$150k**; **$400 min-deduction note**; QBI **PERMANENT** (validUntil → 2099-12-31) | Rev. Proc. 2025-32; RSM; Tax Foundation | ✅ |
+| 2 | Bunching std ded | core TY2025 std ded corrected to OBBBA **$15,750/$31,500/$23,625** (was pre-OBBBA $15,000/$30,000/$22,500) — the bunching detectors consume it | Rev. Proc. 2025-32 (restating OBBBA TY2025) | ✅ |
+| 3 | G1.2 PTET | recode IRC §164(b)(6) → **§164(b)(6)+(7)**; SALT cap **$40k** ($20k MFS), phase-down 30% of MAGI >$500k ($250k MFS) to $10k floor; new `obbbaSaltCap()` helper fires off saltUncapped | IRC §70120; The Tax Adviser; RSM | ✅ |
+| 3 | G1.85 mortgage / estate | §163(h)(3) **$750k permanent** (already documented prior session); G1.19/G1.86/G1.90 carry no stale estate-sunset urgency (income-tax-deduction-framed; $15M estate is estate-tax — out of engine scope) | Nelson Mullins; Pierce Atwood | ✅ |
+| 4 | NEW strategies G1.97–G1.100 | tips §224 (≤$25k), overtime §225 (≤$12.5k/$25k), car-loan §163(h)(4) (≤$10k, $200/$1k phase-out), **senior $6,000/65+** — all TY2025–2028, above-the-line | IRS "OBBB deductions for workers & seniors" | ✅ |
 
-**Unchanged by OBBBA (verified):** NIIT §1411 3.8% + $200k/$250k/$125k thresholds;
-§199A SSTB mechanics (only the TY-indexed thresholds move). The Tier-2 refreshes
-are dollar-amount staleness (engine over/under-states a credit by a small indexed
-delta) — lower-risk than the Tier-1 repeals, deferred to a dedicated refresh pass
-to avoid destabilizing the 580-assertion planning test baseline in one sweep.
+**Catalog now 101 strategies (96 G1 + 5 G4).** Planning test suite: **527
+assertions** in `tax-engine-planning-tests.ts` (was 474 pre-refresh).
+
+### TY2026 engine-clamp caveat (important)
+
+`computeTaxReturnPure` clamps its tax MATH + output `taxYear` to the latest
+supported year (2025) — there is **no native TY2026 bracket/std-ded set**. The
+planning detectors key their dollar maps on `computed.taxYear`, so the TY2026
+values above are **forward-staged**: they activate when the planning layer is
+handed `taxYear=2026` (the unit tests stamp it, mirroring the #9 energy test;
+native TY2026 engine support would make it automatic). For TY2025 returns (and
+TY2026 clamped to 2025) the planning math uses the verified TY2025 values, which
+are correct today.
+
+### Discovered core-engine follow-ups (out of this planning-refresh scope)
+
+These are **core `computeTaxReturnPure` items**, deliberately not changed here
+(the session scoped the core engine to the TY2025 std-ded fix only):
+- **Core SALT cap** still $10k (TCJA) in `taxCalculator.ts` — the OBBBA $40k cap +
+  phase-down isn't applied to the federal itemized total. The PTET detector works
+  around this off `saltUncapped`; a full core SALT refresh is tracked.
+- **Core §199A SSTB thresholds** in `calculateQbi` may be TY2024-indexed; and the
+  OBBBA **$400 minimum QBI deduction** isn't applied in the core calc (planning
+  documents it).
+- **Native TY2026 support** (brackets, std ded $16,100/$32,200, etc.) + adding 2026
+  to `SUPPORTED_TAX_YEARS`.
+- **API enum + ClientForm UI** for the `qualified_tips` / `qualified_overtime` /
+  `qualified_car_loan_interest` markers so G1.97–G1.99 are reachable in production
+  (G1.100 senior fires on age — production-ready now).
+
+**Unchanged by OBBBA (verified):** NIIT §1411 3.8% + $200k/$250k/$125k thresholds.
 
 ## v1.12 → v1.17 batches (30 new strategies)
 
