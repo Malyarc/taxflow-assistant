@@ -5327,6 +5327,167 @@ header("G1.65 TY2026 — max credit $17,670 / refundable $5,120");
 }
 
 // ============================================================================
+// OBBBA v1.19 — 4 NEW temporary deductions (TY2025–2028): G1.97 tips / G1.98
+// overtime / G1.99 car-loan interest / G1.100 senior bonus. All above-the-line,
+// MAGI-phased. The first three read explicit CPA-supplied markers; the core
+// engine ignores those markers for the tax math (verified: AGI unaffected), so
+// MAGI = the client's real income. Each value hand-calc'd vs the OBBBA rule.
+// ============================================================================
+section("OBBBA v1.19 — tips / overtime / car-loan / senior deductions");
+
+// G1.97 tips — under phase-out: deduction = min(tips, $25k cap); no MAGI reduction.
+// Single FL TY2025 W-2 $80k (MAGI $80k < $150k → no phase-out), qualified_tips $30k
+// → deduction $25,000 (cap). taxable $64,250 → 22% (FL state 0). estSavings $5,500.
+header("G1.97 — tips $30k capped at $25k, MAGI under phase-out: $5,500");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2025 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2025, wagesBox1: 80000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [{ adjustmentType: "qualified_tips", amount: 30000, isApplied: true }] as unknown as TaxReturnInputs["adjustments"],
+  });
+  const hit = findHit(hits, "G1.97");
+  checkTruthy("G1.97+1", "tips deduction fires", hit != null, true);
+  if (hit) {
+    check("G1.97+1", "deductiblePortion = $25,000 (cap)", Number(hit.inputs.deductiblePortion), 25000, 1, "OBBBA §224 cap");
+    check("G1.97+1", "estSavings = $5,500 ($25k × 22%)", hit.estSavings, 5500, 1);
+  }
+}
+
+// G1.97 tips — phase-out: Single TY2025 W-2 $200k (MAGI $200k), qualified_tips $20k.
+// deduction = min($20k,$25k) − $0.10×($200k−$150k) = $20,000 − $5,000 = $15,000.
+// taxable $184,250 → 24%. estSavings = $15,000 × 0.24 = $3,600.
+header("G1.97 — tips phase-out at MAGI $200k: deduction $15k, $3,600");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2025 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2025, wagesBox1: 200000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [{ adjustmentType: "qualified_tips", amount: 20000, isApplied: true }] as unknown as TaxReturnInputs["adjustments"],
+  });
+  const hit = findHit(hits, "G1.97");
+  checkTruthy("G1.97+2", "tips fires in phase-out", hit != null, true);
+  if (hit) {
+    check("G1.97+2", "deductiblePortion = $15,000 ($20k − $5k phase-out)", Number(hit.inputs.deductiblePortion), 15000, 1);
+    check("G1.97+2", "estSavings = $3,600 ($15k × 24%)", hit.estSavings, 3600, 1);
+  }
+}
+
+// G1.97 negative — no qualified_tips marker → no fire.
+header("G1.97- — no tips marker: suppressed");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2025 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2025, wagesBox1: 80000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  checkTruthy("G1.97-", "no tips deduction without marker", findHit(hits, "G1.97") == null, true);
+}
+
+// G1.98 overtime — Single TY2025 W-2 $80k, qualified_overtime $15k. cap single $12,500.
+// MAGI $80k < $150k → no phase-out. deduction $12,500. estSavings $12,500 × 22% = $2,750.
+header("G1.98 — overtime $15k capped at $12,500: $2,750");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2025 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2025, wagesBox1: 80000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [{ adjustmentType: "qualified_overtime", amount: 15000, isApplied: true }] as unknown as TaxReturnInputs["adjustments"],
+  });
+  const hit = findHit(hits, "G1.98");
+  checkTruthy("G1.98+1", "overtime deduction fires", hit != null, true);
+  if (hit) {
+    check("G1.98+1", "deductiblePortion = $12,500 (single cap)", Number(hit.inputs.deductiblePortion), 12500, 1, "OBBBA §225 single cap");
+    check("G1.98+1", "estSavings = $2,750 ($12,500 × 22%)", hit.estSavings, 2750, 1);
+  }
+}
+
+// G1.99 car-loan — Single TY2025 W-2 $80k, qualified_car_loan_interest $8k.
+// MAGI $80k < $100k → no phase-out. deduction $8,000. estSavings $8,000 × 22% = $1,760.
+header("G1.99 — car-loan interest $8k, MAGI under phase-out: $1,760");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2025 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2025, wagesBox1: 80000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [{ adjustmentType: "qualified_car_loan_interest", amount: 8000, isApplied: true }] as unknown as TaxReturnInputs["adjustments"],
+  });
+  const hit = findHit(hits, "G1.99");
+  checkTruthy("G1.99+1", "car-loan deduction fires", hit != null, true);
+  if (hit) {
+    check("G1.99+1", "deductiblePortion = $8,000", Number(hit.inputs.deductiblePortion), 8000, 1);
+    check("G1.99+1", "estSavings = $1,760 ($8,000 × 22%)", hit.estSavings, 1760, 1);
+  }
+}
+
+// G1.99 car-loan — phase-out at DOUBLE rate ($200/$1k). Single TY2025 W-2 $130k,
+// qualified_car_loan_interest $10k. MAGI $130k > $100k. deduction = $10,000 −
+// $0.20×($130k−$100k) = $10,000 − $6,000 = $4,000. taxable $114,250 → 24%.
+// estSavings = $4,000 × 0.24 = $960.
+header("G1.99 — car-loan phase-out ($200/$1k) at MAGI $130k: $4k → $960");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2025 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2025, wagesBox1: 130000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [{ adjustmentType: "qualified_car_loan_interest", amount: 10000, isApplied: true }] as unknown as TaxReturnInputs["adjustments"],
+  });
+  const hit = findHit(hits, "G1.99");
+  checkTruthy("G1.99+2", "car-loan fires in phase-out", hit != null, true);
+  if (hit) {
+    check("G1.99+2", "deductiblePortion = $4,000 ($10k − $6k double-rate phase-out)", Number(hit.inputs.deductiblePortion), 4000, 1);
+    check("G1.99+2", "estSavings = $960 ($4,000 × 24%)", hit.estSavings, 960, 1);
+  }
+}
+
+// G1.100 senior — Single TY2025 age 70, W-2 $90k. MAGI $90k > $75k.
+// deduction = $6,000 − 0.06×($90k−$75k) = $6,000 − $900 = $5,100. taxable
+// (std $15,750 + age-65 addon $2,000 = $17,750) → $72,250 → 22%. estSavings
+// = $5,100 × 0.22 = $1,122.
+header("G1.100 — senior single age 70, MAGI $90k: deduction $5,100 → $1,122");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2025, taxpayerAge: 70 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2025, wagesBox1: 90000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  const hit = findHit(hits, "G1.100");
+  checkTruthy("G1.100+1", "senior deduction fires", hit != null, true);
+  if (hit) {
+    check("G1.100+1", "numSeniors = 1", Number(hit.inputs.numSeniors), 1, 0);
+    check("G1.100+1", "deductiblePortion = $5,100 ($6k − 6%×$15k)", Number(hit.inputs.deductiblePortion), 5100, 1);
+    check("G1.100+1", "estSavings = $1,122 ($5,100 × 22%)", hit.estSavings, 1122, 1);
+  }
+}
+
+// G1.100 senior — MFJ both 65+ (age 70 + spouse 68), W-2 $200k. numSeniors 2,
+// base $12,000. MAGI $200k > $150k. deduction = $12,000 − 0.06×($200k−$150k) =
+// $12,000 − $3,000 = $9,000. taxable (std $31,500 + 2 age boxes × $1,600 =
+// $34,700) → $165,300 → 22%. estSavings = $9,000 × 0.22 = $1,980.
+header("G1.100 — senior MFJ both 65+, MAGI $200k: $12k base → $9k → $1,980");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2025, taxpayerAge: 70, spouseAge: 68 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2025, wagesBox1: 200000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  const hit = findHit(hits, "G1.100");
+  checkTruthy("G1.100+2", "senior fires (MFJ both 65+)", hit != null, true);
+  if (hit) {
+    check("G1.100+2", "numSeniors = 2", Number(hit.inputs.numSeniors), 2, 0);
+    check("G1.100+2", "deductiblePortion = $9,000 ($12k − 6%×$50k)", Number(hit.inputs.deductiblePortion), 9000, 1);
+    check("G1.100+2", "estSavings = $1,980 ($9,000 × 22%)", hit.estSavings, 1980, 1);
+  }
+}
+
+// G1.100 negatives — TY2024 (OBBBA not yet in effect) and under-65 → no fire.
+header("G1.100- — TY2024 (pre-OBBBA) + under-65: suppressed");
+{
+  const hits2024 = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 70 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 90000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  checkTruthy("G1.100-1", "no senior deduction for TY2024 (OBBBA 2025+)", findHit(hits2024, "G1.100") == null, true);
+  const hitsYoung = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2025, taxpayerAge: 60 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2025, wagesBox1: 90000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  checkTruthy("G1.100-2", "no senior deduction under age 65", findHit(hitsYoung, "G1.100") == null, true);
+}
+
+// ============================================================================
 // RESULTS
 // ============================================================================
 

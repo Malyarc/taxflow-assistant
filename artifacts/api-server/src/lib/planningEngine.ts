@@ -7514,6 +7514,212 @@ function detectQualifiedTransportFringe(args: {
   };
 }
 
+// ── G1.97–G1.100 — OBBBA (P.L. 119-21) NEW temporary deductions (TY2025–2028) ──
+// All four are above-the-line (available to itemizers AND non-itemizers), effective
+// TY2025 through TY2028, each phasing out over MAGI:
+//   G1.97  tips §224:           cap $25,000;         phase-out @ $150k/$300k, −$100/$1k
+//   G1.98  overtime §225:       cap $12,500/$25,000; phase-out @ $150k/$300k, −$100/$1k
+//   G1.99  car-loan §163(h)(4): cap $10,000;         phase-out @ $100k/$200k, −$200/$1k (20%)
+//   G1.100 senior (§151(d) add-on): $6,000 / 65+ person; phase-out @ $75k/$150k, −6% of excess
+// The first three read explicit CPA-supplied adjustment markers (qualified_tips /
+// qualified_overtime / qualified_car_loan_interest) — the engine has no occupation /
+// overtime-hours / auto-loan data, so surfacing those markers in the API enum + UI is a
+// tracked production follow-up. G1.100 fires concretely on age (no marker needed).
+const OBBBA_DED_MIN_YEAR = 2025;
+const OBBBA_DED_MAX_YEAR = 2028;
+function obbbaDedActive(taxYear: number): boolean {
+  return taxYear >= OBBBA_DED_MIN_YEAR && taxYear <= OBBBA_DED_MAX_YEAR;
+}
+// Reduce `base` by `ratePerDollar` × (MAGI − threshold), floored at 0.
+function phaseOutLinear(base: number, magi: number, threshold: number, ratePerDollar: number): number {
+  if (magi <= threshold) return base;
+  return Math.max(0, base - ratePerDollar * (magi - threshold));
+}
+const obbbaIsJoint = (fs: string): boolean =>
+  fs === "married_filing_jointly" || fs === "qualifying_widow";
+const obbbaFmt = (n: number) =>
+  n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+
+function detectTipsDeduction(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { client, computed, adjustments } = args;
+  if (!obbbaDedActive(computed.taxYear)) return null;
+  const tips = sumAdjustment(adjustments, "qualified_tips");
+  if (tips <= 0) return null;
+  const magi = computed.adjustedGrossIncome;
+  const threshold = obbbaIsJoint(client.filingStatus) ? 300_000 : 150_000;
+  const cappedTips = Math.min(tips, 25_000);
+  const deduction = phaseOutLinear(cappedTips, magi, threshold, 0.10); // −$100 per $1,000
+  if (deduction <= 0) return null;
+  const fedRate = federalMarginalRate(computed);
+  const stateRate = stateMarginalRate(computed);
+  const estSavings = Math.round(deduction * (fedRate + stateRate));
+  if (estSavings <= 0) return null;
+  const strategy = strategyById("G1.97");
+  const vars: Record<string, number | string> = { deduction: Math.round(deduction), estSavings };
+  return {
+    strategyId: strategy.id, name: strategy.name, category: strategy.category,
+    estSavings, confidence: strategy.confidence, cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client reported ${obbbaFmt(Math.round(tips))} of qualified tips. OBBBA §224 deducts up to ` +
+      `${obbbaFmt(Math.min(tips, 25_000))} (cap $25,000), phased out $100 per $1,000 of MAGI over ` +
+      `${obbbaFmt(threshold)} — deductible portion ${obbbaFmt(Math.round(deduction))} this year, above-the-line.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      filingStatus: client.filingStatus, magi: Math.round(magi), reportedTips: Math.round(tips),
+      cap: 25_000, phaseOutThreshold: threshold, deductiblePortion: Math.round(deduction), estSavings,
+    },
+    assumptions: [
+      `OBBBA (P.L. 119-21) §224 — NEW deduction, TY2025–2028 only; above-the-line (itemizers + non-itemizers).`,
+      `Cap $25,000; phase-out $100 per $1,000 of MAGI over ${obbbaFmt(threshold)} (single $150k / MFJ $300k).`,
+      `Occupation must have customarily + regularly received tips on/before 2024-12-31 (Treasury TTOC list); SSTB excluded. CPA confirms eligibility + the qualified-tip amount.`,
+      `Engine has no occupation data — fires only on an explicit qualified_tips adjustment (CPA-supplied).`,
+    ],
+  };
+}
+
+function detectOvertimeDeduction(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { client, computed, adjustments } = args;
+  if (!obbbaDedActive(computed.taxYear)) return null;
+  const ot = sumAdjustment(adjustments, "qualified_overtime");
+  if (ot <= 0) return null;
+  const magi = computed.adjustedGrossIncome;
+  const isJoint = obbbaIsJoint(client.filingStatus);
+  const cap = isJoint ? 25_000 : 12_500;
+  const threshold = isJoint ? 300_000 : 150_000;
+  const cappedOt = Math.min(ot, cap);
+  const deduction = phaseOutLinear(cappedOt, magi, threshold, 0.10); // −$100 per $1,000
+  if (deduction <= 0) return null;
+  const fedRate = federalMarginalRate(computed);
+  const stateRate = stateMarginalRate(computed);
+  const estSavings = Math.round(deduction * (fedRate + stateRate));
+  if (estSavings <= 0) return null;
+  const strategy = strategyById("G1.98");
+  const vars: Record<string, number | string> = { deduction: Math.round(deduction), estSavings };
+  return {
+    strategyId: strategy.id, name: strategy.name, category: strategy.category,
+    estSavings, confidence: strategy.confidence, cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client reported ${obbbaFmt(Math.round(ot))} of qualified overtime premium. OBBBA §225 deducts up to ` +
+      `${obbbaFmt(cap)} (${isJoint ? "MFJ" : "single"} cap), phased out $100 per $1,000 of MAGI over ` +
+      `${obbbaFmt(threshold)} — deductible portion ${obbbaFmt(Math.round(deduction))} this year, above-the-line.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      filingStatus: client.filingStatus, magi: Math.round(magi), reportedOvertime: Math.round(ot),
+      cap, phaseOutThreshold: threshold, deductiblePortion: Math.round(deduction), estSavings,
+    },
+    assumptions: [
+      `OBBBA (P.L. 119-21) §225 — NEW deduction, TY2025–2028 only; above-the-line (itemizers + non-itemizers).`,
+      `Cap $12,500 single / $25,000 MFJ; phase-out $100 per $1,000 of MAGI over ${obbbaFmt(threshold)}.`,
+      `Only the FLSA premium "half" portion (pay in excess of the regular rate) qualifies — NOT the full time-and-a-half. CPA confirms the qualified-overtime amount from W-2 box reporting.`,
+      `Engine has no overtime-hours data — fires only on an explicit qualified_overtime adjustment (CPA-supplied).`,
+    ],
+  };
+}
+
+function detectCarLoanInterestDeduction(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
+}): OpportunityHit | null {
+  const { client, computed, adjustments } = args;
+  if (!obbbaDedActive(computed.taxYear)) return null;
+  const interest = sumAdjustment(adjustments, "qualified_car_loan_interest");
+  if (interest <= 0) return null;
+  const magi = computed.adjustedGrossIncome;
+  const threshold = obbbaIsJoint(client.filingStatus) ? 200_000 : 100_000;
+  const capped = Math.min(interest, 10_000);
+  const deduction = phaseOutLinear(capped, magi, threshold, 0.20); // −$200 per $1,000 (double rate)
+  if (deduction <= 0) return null;
+  const fedRate = federalMarginalRate(computed);
+  const stateRate = stateMarginalRate(computed);
+  const estSavings = Math.round(deduction * (fedRate + stateRate));
+  if (estSavings <= 0) return null;
+  const strategy = strategyById("G1.99");
+  const vars: Record<string, number | string> = { deduction: Math.round(deduction), estSavings };
+  return {
+    strategyId: strategy.id, name: strategy.name, category: strategy.category,
+    estSavings, confidence: strategy.confidence, cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client reported ${obbbaFmt(Math.round(interest))} of qualified passenger-vehicle loan interest. OBBBA ` +
+      `§163(h)(4) deducts up to ${obbbaFmt(10_000)}, phased out $200 per $1,000 of MAGI over ${obbbaFmt(threshold)} ` +
+      `— deductible portion ${obbbaFmt(Math.round(deduction))} this year, above-the-line.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      filingStatus: client.filingStatus, magi: Math.round(magi), reportedInterest: Math.round(interest),
+      cap: 10_000, phaseOutThreshold: threshold, deductiblePortion: Math.round(deduction), estSavings,
+    },
+    assumptions: [
+      `OBBBA (P.L. 119-21) §163(h)(4) — NEW deduction, TY2025–2028 only; above-the-line (itemizers + non-itemizers).`,
+      `Cap $10,000; phase-out $200 per $1,000 of MAGI over ${obbbaFmt(threshold)} (single $100k / MFJ $200k) — DOUBLE the tips/overtime rate.`,
+      `Vehicle must be NEW (original use begins with taxpayer), personal-use, FINAL ASSEMBLY IN THE U.S., loan secured by first lien, VIN reported. Leases + used vehicles do NOT qualify. Loans originated after 2024-12-31.`,
+      `Engine has no auto-loan data — fires only on an explicit qualified_car_loan_interest adjustment (CPA-supplied).`,
+    ],
+  };
+}
+
+function detectSeniorDeduction(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+}): OpportunityHit | null {
+  const { client, computed } = args;
+  if (!obbbaDedActive(computed.taxYear)) return null;
+  const isJoint = obbbaIsJoint(client.filingStatus);
+  const numSeniors =
+    ((client.taxpayerAge ?? 0) >= 65 ? 1 : 0) +
+    (isJoint && (client.spouseAge ?? 0) >= 65 ? 1 : 0);
+  if (numSeniors <= 0) return null;
+  const magi = computed.adjustedGrossIncome;
+  const threshold = isJoint ? 150_000 : 75_000;
+  const base = 6_000 * numSeniors;
+  const deduction = phaseOutLinear(base, magi, threshold, 0.06); // −6% of MAGI over threshold
+  if (deduction <= 0) return null;
+  const fedRate = federalMarginalRate(computed);
+  const stateRate = stateMarginalRate(computed);
+  const estSavings = Math.round(deduction * (fedRate + stateRate));
+  if (estSavings <= 0) return null;
+  const strategy = strategyById("G1.100");
+  const vars: Record<string, number | string> = { deduction: Math.round(deduction), estSavings };
+  return {
+    strategyId: strategy.id, name: strategy.name, category: strategy.category,
+    estSavings, confidence: strategy.confidence, cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `${numSeniors} taxpayer(s) age 65+ → OBBBA senior bonus deduction base ${obbbaFmt(base)} ` +
+      `(${obbbaFmt(6_000)} each), reduced 6% of MAGI over ${obbbaFmt(threshold)} → ${obbbaFmt(Math.round(deduction))} ` +
+      `deductible this year, above-the-line + on TOP of the existing age-65 additional standard deduction.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      filingStatus: client.filingStatus, magi: Math.round(magi), numSeniors,
+      baseDeduction: base, phaseOutThreshold: threshold, deductiblePortion: Math.round(deduction), estSavings,
+    },
+    assumptions: [
+      `OBBBA (P.L. 119-21) — NEW $6,000 senior deduction per qualifying individual age 65+, TY2025–2028 only.`,
+      `Above-the-line (itemizers + non-itemizers) and STACKS on the existing age-65 additional standard deduction.`,
+      `Phase-out: base reduced by 6% of MAGI over $75,000 single / $150,000 MFJ (fully phased at $175k single for one senior / $350k MFJ for two).`,
+      `Fires concretely on taxpayerAge / spouseAge ≥ 65 — no marker needed.`,
+    ],
+  };
+}
+
 // ── Top-level evaluator ────────────────────────────────────────────────────
 
 export interface PlanningInputs {
@@ -7803,6 +8009,16 @@ export function evaluatePlanningOpportunities(args: PlanningInputs): Opportunity
   if (section1377) hits.push(section1377);
   const transitFringe = detectQualifiedTransportFringe({ computed, baselineInputs });
   if (transitFringe) hits.push(transitFringe);
+  // OBBBA v1.19 — G1.97 tips / G1.98 overtime / G1.99 car-loan interest /
+  // G1.100 senior bonus (NEW temporary deductions, TY2025–2028).
+  const tipsDed = detectTipsDeduction({ client, computed, adjustments });
+  if (tipsDed) hits.push(tipsDed);
+  const overtimeDed = detectOvertimeDeduction({ client, computed, adjustments });
+  if (overtimeDed) hits.push(overtimeDed);
+  const carLoanDed = detectCarLoanInterestDeduction({ client, computed, adjustments });
+  if (carLoanDed) hits.push(carLoanDed);
+  const seniorDed = detectSeniorDeduction({ client, computed });
+  if (seniorDed) hits.push(seniorDed);
   // PLAN-08 — drop hits whose catalog entry has expired for this return's tax
   // year (stale TY-specific thresholds). Today every strategy is validUntil
   // 2026-12-31, so TY2024/2025 returns are unaffected; a TY2027+ return correctly
