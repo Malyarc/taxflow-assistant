@@ -2044,13 +2044,36 @@ export function getStandardDeduction(filingStatus: string, taxYear?: number): nu
 // Real Schedule A breaks itemized deductions into specific categories with
 // caps and AGI-based thresholds.
 //   Line 1: Medical/dental — only the portion exceeding 7.5% of AGI is deductible
-//   Line 5: SALT (state income/property + sales tax) — capped at $10,000 ($5,000 MFS)
+//   Line 5: SALT (state income/property + sales tax) — capped via getSaltCap (TCJA $10k/$5k for TY2024; OBBBA $40k for TY2025+ with >$500k-MAGI phase-down)
 //   Line 8: Mortgage interest (Schedule A line 8a/8e) — Schedule A line item
 //   Line 11: Cash charitable — generally limited to 60% AGI
 //   Line 12: Property charitable — generally limited to 30% AGI
 
 const SALT_CAP = 10000;
 const SALT_CAP_MFS = 5000;
+
+/**
+ * SALT deduction cap, year-indexed with the OBBBA (P.L. 119-21 §70120)
+ * high-income phase-down. TY2024 and earlier = TCJA $10,000 ($5,000 MFS).
+ * TY2025 base $40,000 ($20,000 MFS); TY2026 $40,400 ($20,200 MFS) [+1%/yr
+ * through 2029, reverting to $10,000 after 2029]. Phase-DOWN: reduced by 30%
+ * of MAGI over $500,000 ($250,000 MFS; $505,000/$252,500 for TY2026), floored
+ * at $10,000 ($5,000 MFS). Codified in IRC §164(b)(6) (amended) + §164(b)(7)
+ * (added). MAGI ≈ AGI here (no add-backs modeled — the §164(b)(7) MAGI is AGI
+ * without the foreign-earned-income/housing exclusions, which the engine adds
+ * back elsewhere only for NIIT; for SALT we use AGI, a close + conservative proxy).
+ */
+function getSaltCap(taxYear: number, filingStatus: string, magi: number): number {
+  const isMfs = filingStatus === "married_filing_separately";
+  if (taxYear < 2025) return isMfs ? SALT_CAP_MFS : SALT_CAP;
+  const fullBase = taxYear >= 2026 ? 40_400 : 40_000;
+  const baseCap = isMfs ? fullBase / 2 : fullBase;
+  const threshold = (taxYear >= 2026 ? 505_000 : 500_000) * (isMfs ? 0.5 : 1);
+  const floor = isMfs ? SALT_CAP_MFS : SALT_CAP;
+  if (magi <= threshold) return baseCap;
+  return Math.max(floor, baseCap - 0.30 * (magi - threshold));
+}
+
 const MEDICAL_AGI_THRESHOLD = 0.075;
 const CHARITABLE_CASH_AGI_LIMIT = 0.60;
 const CHARITABLE_PROPERTY_AGI_LIMIT = 0.30;
@@ -2078,7 +2101,7 @@ export interface ScheduleACalculation {
   medicalDeductible: number;
   /** SALT total before cap */
   saltUncapped: number;
-  /** SALT after $10,000 / $5,000 MFS cap */
+  /** SALT after the year-indexed getSaltCap (TCJA $10k/$5k TY2024; OBBBA $40k + phase-down TY2025+) */
   saltDeductible: number;
   /** Mortgage interest deductible (we don't model the $750k loan limit yet) */
   mortgageDeductible: number;
@@ -2110,7 +2133,8 @@ export function calculateScheduleA(params: {
   // SALT: state income tax (or sales tax — taxpayer picks larger) + property tax, capped
   const saltIncomeOrSales = Math.max(stateIncomeTax, stateSalesTax);
   const saltUncapped = saltIncomeOrSales + statePropertyTax;
-  const saltCap = filingStatus === "married_filing_separately" ? SALT_CAP_MFS : SALT_CAP;
+  // OBBBA (§164(b)(7)) year-indexed cap + high-income phase-down (TY2024 = TCJA $10k/$5k).
+  const saltCap = getSaltCap(taxYear, filingStatus, Math.max(0, agi));
   const saltDeductible = Math.min(saltUncapped, saltCap);
 
   // Mortgage interest (simplified — we don't enforce the $750k acquisition debt limit)

@@ -2428,7 +2428,8 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // BP3 — auto-derive Form 6251 line 2g SALT addback when itemizing.
   // SALT deducted on Schedule A reduced regular-tax base; it is disallowed
   // for AMT (Form 6251 line 2g). The auto value uses our computed
-  // saltDeductible (state income/property/sales tax, $10k cap post-TCJA).
+  // saltDeductible (state income/property/sales tax — year-indexed getSaltCap:
+  // TCJA $10k for TY2024; OBBBA $40k for TY2025+ with the >$500k-MAGI phase-down).
   // The `amt_state_tax_addback_override` adjustment, when > 0, replaces the
   // auto value (rare cases — different AMT SALT figure than Schedule A).
   // When taking the standard deduction, no SALT was deducted → addback = 0.

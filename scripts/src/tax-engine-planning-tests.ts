@@ -1760,28 +1760,33 @@ header("H3.G1.3-2 — no baselineInputs → multiYear undefined, estSavings = he
 
 // ── G1.8 DAF multi-year wiring (3-year front-loading) ────────────────────
 //
-// Setup: single CA $400k W-2, TY2024, age 45. State income tax $30k (CA
-// has high state tax — keeps SALT cap binding). Charitable $20k cash.
-// CA marginal at $400k taxable ≈ 9.3% bracket.
+// Setup: single FL $400k W-2, TY2024, age 45. Property tax $8k (no state
+// income tax). Charitable $20k cash. Federal marginal at ~$385k taxable = 35%
+// (TY2024 single: $243,725-$609,350) — satisfies G1.8's >= 32% threshold.
 //
-// Federal: marginal rate at ~$385k taxable income = 32% bracket (TY2024
-// single: $191,950-$243,725 = 32%; $243,725-$609,350 = 35%). So marginal
-// is in 32-35% range — satisfies G1.8's >= 32% threshold.
+// OBBBA-AWARE DESIGN (post the §164(b)(7) $40k SALT cap): for DAF bunching to
+// clear the std-ded cliff, the NON-charity itemized total (SALT + mortgage)
+// must be BELOW the standard deduction — otherwise the client itemizes EVERY
+// year regardless and front-loading saves nothing. Here non-charity itemized =
+// $8k property tax < the ~$15,750 single std ded, so in the front-load
+// scenario the two off-years fall below the cliff and take the std deduction
+// (capturing it "for free") while year 0 absorbs all 3 years' giving. (A high
+// state-income-tax filer like the old CA/$30k-SALT client now itemizes every
+// year under the $40k cap → DAF clears no cliff → ~$0 multi-year savings.)
 //
-// I'm not hand-calc'ing the exact multi-year delta here (too many
-// CA-specific moving parts). Instead I verify:
+// I don't hand-calc the exact multi-year delta (income-scaling + bracket
+// fence-posts). Instead I verify:
 //   - hit fires when charitable > $5k AND marginal >= 32%
 //   - multiYear present with horizonYears = 3
-//   - totalSavings > 0 (front-loading 3 years' giving into year 0 should
-//     push above std-ded cliff in that year)
+//   - totalSavings > 0 (front-loading clears the off-year std-ded cliff)
 //   - estSavings = totalSavings / 3
-header("H3.G1.8+1 — DAF wired, 3-year cycle, totalSavings > 0");
+header("H3.G1.8+1 — DAF wired, 3-year cycle, totalSavings > 0 (OBBBA: low-SALT filer)");
 {
   const hits = runPlanningH3({
-    client: { filingStatus: "single", state: "CA", taxYear: 2024 } as TaxReturnInputs["client"],
-    w2s: [{ taxYear: 2024, wagesBox1: 400000, stateCode: "CA" } as unknown as TaxReturnInputs["w2s"][number]],
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 400000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
     adjustments: [
-      { adjustmentType: "state_income_tax", amount: 30000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+      { adjustmentType: "state_property_tax", amount: 8000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
       { adjustmentType: "charitable_cash", amount: 20000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
     ],
   });

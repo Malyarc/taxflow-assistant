@@ -114,6 +114,39 @@ header("A2. SALT cap at $10,000 single (state tax $9,999 vs $10,001)");
     "IRC §164(b)(6)");
 }
 
+// A2b. OBBBA (P.L. 119-21 §70120 / IRC §164(b)(7)) SALT cap — TY2025+ raised to
+// $40,000 ($20,000 MFS) with a 30%-of-MAGI-over-$500k ($250k MFS) phase-down to
+// a $10,000 ($5,000 MFS) floor. (TY2024 stays the TCJA $10k — see A2.) Asserted
+// directly on scheduleA.saltDeductible.
+header("A2b. OBBBA SALT cap TY2025 $40k + >$500k phase-down (§164(b)(7))");
+{
+  const slt = (taxYear: number, wages: number, salt: number, fs = "single") => run({
+    client: { filingStatus: fs as TaxReturnInputs["client"]["filingStatus"], state: "FL", taxYear },
+    w2s: [{ taxYear, wagesBox1: wages, stateCode: "FL" }],
+    form1099s: [],
+    adjustments: [
+      { adjustmentType: "mortgage_interest", amount: 20000, isApplied: true },
+      { adjustmentType: "state_income_tax", amount: salt, isApplied: true },
+    ],
+    taxYear,
+  });
+  // TY2025, MAGI $120k < $500k, SALT $35k < $40k cap → fully deductible.
+  check("A2b", "TY2025 SALT $35k under $40k cap → $35,000",
+    slt(2025, 120000, 35000).scheduleA.saltDeductible, 35000, 0.5, "OBBBA §164(b)(7) $40k cap");
+  // TY2025, MAGI $120k, SALT $50k > $40k → capped at $40,000.
+  check("A2b", "TY2025 SALT $50k over $40k cap → $40,000 (cap binds)",
+    slt(2025, 120000, 50000).scheduleA.saltDeductible, 40000, 0.5);
+  // TY2025, MAGI $700k > $500k → 40k − 0.30×(700k−500k) = −20k → $10k floor.
+  check("A2b", "TY2025 SALT $50k @ MAGI $700k → $10,000 (phased to floor)",
+    slt(2025, 700000, 50000).scheduleA.saltDeductible, 10000, 0.5, "30% phase-down, $10k floor");
+  // TY2024 contrast: same $35k SALT → still TCJA $10k.
+  check("A2b", "TY2024 SALT $35k → $10,000 (TCJA cap, OBBBA not yet in effect)",
+    slt(2024, 120000, 35000).scheduleA.saltDeductible, 10000, 0.5);
+  // MFS TY2025: $40k base halves to $20k. SALT $30k → capped $20,000.
+  check("A2b", "MFS TY2025 SALT $30k → $20,000 (half cap)",
+    slt(2025, 120000, 30000, "married_filing_separately").scheduleA.saltDeductible, 20000, 0.5, "MFS = half the $40k cap");
+}
+
 // A3. SS wage base 2024 = $168,600 (SS tax = 6.2% on first $168,600).
 // Above that, only Medicare (1.45%) applies. SSA Press Release 2023-10-12.
 header("A3. SS wage base 2024 = $168,600");
