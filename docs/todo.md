@@ -16,11 +16,14 @@ larger **Haven** app, which brings its own auth/tenancy, so we won't build it
 twice. The focus is the **portable engine + planning feature**
 (`computeTaxReturnPure` is already Haven-portable — keep it pure). The live EC2
 box stays a **demo** (no auth/TLS) — do NOT put real client PII on it until the
-Haven fusion lands. **2026-06-01: 12 refinement fixes shipped + verified live**
-(FORM-03, FED-05, PLAN-04, PLAN-06, 16-scenario battery, H2-wire G1.92/G1.96,
-§461(l) Sch-C loss flow, STL-05 MD EITC, K-1 §199A wage/UBIA limit, AMT line 2e
-state-refund recapture, wash-sale §1091(d) holding-period tack, PLAN-08 validUntil
-gate — see `.claude/handoff.md`); **38 no-API suites / 3,106 assertions green**, clean typecheck.
+Haven fusion lands. **2026-06-01 session 2: 8 chunks shipped + deployed + verified
+live** — ALL 7 remaining tax-calc sub-gaps (K-1 depth: Box 4 GP + basis/at-risk +
+per-business SSTB; §163(j) $30M exemption + Form 8990 Sec II/III; AMT line 2i +
+ATNOLD; part-year pro-rated std ded; partial-wash + cross-account; HI/NY retirement
+refinements; IN/KY/OH/NYC-UBT local taxes) + #9 OBBBA energy-credit repeal (catalog
+v1.18.0). Planning #8 (H3 multi-year) + #10 (H2-wire remaining) ASSESSED + DEFERRED.
+**39 no-API suites / 3,234 assertions green**, clean typecheck. (Prior 2026-06-01
+session 1: 12 fixes — see `.claude/handoff.md` history.)
 
 ### Tax CALCULATOR refinement backlog (correctness-first)
 
@@ -44,27 +47,40 @@ Documented engine sub-gaps (ordered by how often they bite a real return):
   (Remaining: engine doesn't auto-generate the NOL when the loss exceeds total
   income — AGI floors at 0, CPA carries the excess via nol_carryforward; and the
   §163(j) ATI proxy still uses the floored value — documented approximations.)
-- **K-1 depth** — ✅ **§199A wage/UBIA limit SHIPPED 2026-06-01** (max(50% wages,
-  25% wages + 2.5% UBIA), phased over the band, when the K-1 supplies positive
-  section199aW2Wages/Ubia; +5 tests). Remaining: true per-business SSTB depth;
-  K-1 basis/at-risk limits not enforced; guaranteed payments (Box 4) flow via the
-  `additional_income` adjustment (income + QBI-excluded) + Box 14A (SE) — a
-  dedicated Box 4 field is a future UX refinement.
-- **§163(j)** — ATI proxy ≈ taxable income before §163(j)/NOL/QBI; for TY2024+
-  (post-2021) this needs NO depreciation addback per §163(j)(8), so the proxy is
-  close. Remaining: $30M small-biz exemption not auto-detected; Form 8990 Sec
-  II/III (pass-through) are zero-placeholders. (Low priority.)
-- **AMT prefs** — ✅ **line 2e state-refund recapture SHIPPED 2026-06-01** (+6
-  tests; AMTI floor moved from prefs to AMTI). Remaining: line 2i MACRS-vs-ADS
-  depreciation diff + AMT NOL (each needs a separate AMT computation).
-- **Part-year residency** — per-income-item sourcing partially shipped (C11: K-1/
-  rental/W-2 stateCode). Remaining: exact NY IT-203 / CA 540NR Sched CA schedules,
-  mid-year resident credit, part-year locality/AMT, pro-rated std ded.
-- **Wash sales** — ✅ **§1091(d) basis add + §1223(3) holding-period tack (ST→LT
-  formBox flip) SHIPPED 2026-06-01** (+5 tests). Remaining: partial wash (engine
-  fully disallows the loss); cross-account wash only when both brokers' txns entered.
-- **State retirement exemptions** — HI / NJ / NY partial exemptions (PA/IL/MS done).
-- **Local** — NYC UBT, KY occupational tax, OH cross-city employment credit, IN/MD per-dependent.
+- **K-1 depth** — ✅ **CLOSED 2026-06-01 (session 2).** §199A wage/UBIA limit
+  (prior session) + NEW: dedicated **guaranteed-payments Box 4** field (AGI + SE
+  via max(14A,Box4), excluded from QBI §199A(c)(4)); **§704(d)/§1366(d) basis +
+  §465 at-risk** loss limits enforced (cap active Box 1 loss; suspended carryforward);
+  **per-business SSTB** phase-out (per-K-1 isSstb, fixes the old whole-QBI phase-out).
+  49 hand-calc'd tests (`tax-engine-k1-depth-tests.ts`). Remaining: per-business
+  (Form 8995-A) wage/UBIA limit is aggregate; basis not reduced by distributions.
+- **§163(j)** — ✅ **CLOSED 2026-06-01 (session 2).** $30M small-biz gross-receipts
+  exemption auto-detected (§448(c): $30M 2024 / $31M 2025 / $32M 2026, web-verified)
+  via `section_163j_gross_receipts`; Form 8990 Sections II/III now rendered with
+  correct individual-filer content. +19 tests.
+- **AMT prefs** — ✅ **CLOSED 2026-06-01 (session 2).** line 2i MACRS-vs-ADS
+  depreciation diff (`amt_depreciation_adjustment`, ±) + AMT NOL/ATNOLD §56(d)
+  (`amt_nol_carryforward`, 90%-of-AMTI cap, web-verified). +14 tests.
+- **Part-year residency** — ✅ **pro-rated std ded SHIPPED 2026-06-01 (session 2)**:
+  std ded + personal exemption now pro-rated by residency days (was full in BOTH
+  periods → ~2× over-deduct). +6 tests. Remaining (documented, larger lift): exact
+  NY IT-203 / CA 540NR Sched CA per-line sourcing, mid-year resident credit,
+  part-year locality/AMT, pro-rated retirement/SS exclusions.
+- **Wash sales** — ✅ **CLOSED 2026-06-01 (session 2).** Partial wash proportional
+  disallowance (loss × min(replQty,soldQty)/soldQty, consumption-tracked) via new
+  `quantity` column; cross-account documented + test-locked (detector is
+  account-agnostic) + new `account` column. +13 tests. Remaining: leftover-share
+  re-flow across input-order-later losses.
+- **State retirement exemptions** — ✅ **CLOSED 2026-06-01 (session 2).** HI
+  employer-funded cap (`hi_employer_funded_pension`); NY govt-pension Line 26 full
+  exclusion + Line 29 $20k/$40k (`ny_government_pension`). NJ verified already
+  correct (no change). +11 tests. (NJ/NY/HI were already wired — todo was stale.)
+- **Local** — ✅ **mostly SHIPPED 2026-06-01 (session 2).** IN per-dependent
+  exemption ($1k/filer + $1k/dep); KY occupational (Louisville/Lexington + Kenton/
+  Boone wage-cap); OH cross-city resident credit (`oh_work_city_tax_paid`); NYC UBT
+  (`calculateNycUbt`, `nyc_ubt_business_income`). +15 tests. **MD per-dependent NOT
+  done** — engine has no MD state-income-tax row (MD is county-localities only) +
+  MD's graduated phase-down exceeds the cliff-only data model. Documented, deferred.
 
 Validation:
 - ✅ **16-scenario real-world battery** — SHIPPED 2026-06-01 as
@@ -93,30 +109,31 @@ Confirmed-open from the audit:
   surfaces nothing until refresh. +7 tests.
 
 Biggest credibility lift:
-- **H2-wire — REMAINING IS MOSTLY QUALITATIVE (survey done 2026-06-01).** Of the
-  ~46 heuristic detectors in G1.46–G1.96, only G1.92 + G1.96 were cleanly wireable
-  (shipped above). The other ~44 are NOT a single current-year engine mutation and
-  should stay heuristic: business credits the individual engine doesn't model
-  (§41 R&D, §45S FMLA, §51 WOTC, §47 historic rehab, §44 disabled access), entity/
-  S-corp elections (§351, §338(h)(10), §1374 BIG, §1377, §263A method), trust
-  vehicles (CLT, PIF, conservation easement), multi-year structures (§453 installment,
-  §72(t) SEPP, §174 amortization, §529→Roth), after-tax contributions with no
-  current deduction (custodial Roth G1.55, Coverdell G1.59 — value is long-term
-  growth), and soft guidance (residency change, hobby loss, wash-sale avoidance, lot
-  selection, year-end timing). **Don't re-attempt these without first modeling the
-  underlying credit/election in the engine.** A `credit` adjustment exists but is
-  treated as REFUNDABLE — wiring a nonrefundable credit (e.g. G1.65 adoption) through
-  it would over-state for low-tax filers; needs a nonrefundable-credit mutation first.
-- **Multi-year-wire more detectors (H3)** — only G1.3 / G1.8 / G1.4 are multi-year-aware.
-  **Assessed 2026-06-01 + DEFERRED:** the strongest candidate (G1.22 pre-RMD Roth
-  ladder) overlaps heavily with the already-wired G1.4 Roth, and a correct ladder
-  needs a ~13-year RMD projection with future-bracket arbitrage — inherently
-  approximate and hard to hand-verify to the project's rigor bar. Carryforward
-  depletion is already covered by the G4.4/G4.5 multi-year detectors. Do this only
-  with dedicated time for a defensible trajectory model + a sound tolerance-based
-  test approach (the H3.G1.3 precedent), not as a quick win.
-- **Catalog freshness** — refresh TY2025/2026 limits + any OBBBA-driven changes across
-  the 97 strategies (`docs/planning-strategy-audit.md` is the per-strategy source of truth).
+- **H2-wire remaining (#10) — ASSESSED + NOT RECOMMENDED (re-confirmed 2026-06-01
+  session 2).** The ~44 remaining G1.46–G1.96 detectors are qualitative-by-nature
+  (business credits the individual engine doesn't model — §41/§45S/§51/§47/§44;
+  entity/S-corp elections — §351/§338(h)(10)/§1374/§1377/§263A; trust vehicles —
+  CLT/PIF/easement; multi-year structures — §453/§72(t)/§174/§529→Roth; after-tax
+  contributions with long-term-only value; soft guidance). NOT a single current-year
+  engine mutation. **Don't force-wire without first modeling the underlying credit/
+  election in the engine** — the generic `credit` adjustment is REFUNDABLE, so it
+  can't model a nonrefundable credit without overstating for low-tax filers.
+- **H3 multi-year wiring (#8) — ASSESSED + DEFERRED again (2026-06-01 session 2).**
+  Only G1.3/G1.8/G1.4 are multi-year-aware. A defensible NEW wire needs either the
+  ~13-yr RMD-projection model (G1.22, overlaps wired G1.4 + inherently approximate)
+  or per-year §453 installment-gain recognition the engine doesn't model. Neither is
+  a quick win; shipping a shaky model is explicitly off-limits. Carryforward
+  depletion is already covered by G4.4/G4.5. Do only with dedicated time for a
+  defensible trajectory model + tolerance-based engine-verified tests (H3.G1.3 precedent).
+- **Catalog freshness (#9) — Tier-1 SHIPPED 2026-06-01 session 2 (catalog v1.18.0).**
+  OBBBA (P.L. 119-21) **repealed the clean-energy credits**: G1.33 (§30D/§25E EV),
+  G1.34 (§25D), G1.37 (§25C) → validUntil lowered 2032→2025 so PLAN-08 suppresses
+  them for TY2026+ (the engine was recommending a repealed credit — actively wrong).
+  **Tier-2/3/4 refreshes captured WITH authoritative sources in
+  `docs/planning-strategy-audit.md`** (deferred, not yet applied to protect the
+  test baseline): QBI/QCD/adoption/retirement/§448(c)/std-ded dollar bumps, SALT
+  →§164(b)(7)/$40k, estate $15M permanence, + 4 NEW OBBBA deductions (tips, overtime,
+  car-loan interest, senior bonus). This is the next planning task when picked up.
 
 ---
 

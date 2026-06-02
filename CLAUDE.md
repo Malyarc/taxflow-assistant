@@ -82,6 +82,7 @@ Future-you will be tempted to "simplify" these. Don't.
   | `tax-engine-edge-cases-tests.ts` | no (boundary/cliff/phase-out edges) |
   | `tax-engine-w2-validation-tests.ts` | no (W-2 box-arithmetic flag rules) |
   | `tax-engine-k1-tests.ts` | no (K-1 partnership + S-corp pass-through) |
+  | `tax-engine-k1-depth-tests.ts` | no (2026-06-01 s2 — 49 hand-calc: Box 4 guaranteed payments AGI+SE/non-QBI, §704(d)/§465 basis+at-risk loss limits, per-business §199A(d)(3) SSTB) |
   | `tax-engine-nyc-tests.ts` | no (NYC personal income tax) |
   | `tax-engine-amt-prefs-tests.ts` | no (Form 6251 SALT addback + ISO bargain) |
   | `tax-engine-state-eitc-tests.ts` | no (CO/IL/NJ/MA piggyback + MN WFC) |
@@ -195,9 +196,9 @@ The api-server serves these static files directly; no nginx.
 Several Phase 2/3 limitations have been resolved (multi-state foundation, MACRS, capital-loss $3k+carryforward, PA/IL/MS retirement exemptions, Oregon Form 40 Line 13). Remaining intentional gaps:
 
 - Per-property rental tracking (Schedule E is aggregate adjustments, not per-property)
-- Schedule D per-transaction detail: per-lot ST/LT routing + broker-reported wash sale + E13 auto-detection now shipped. NOT modeled: §1091(d) auto-formBox flip ST→LT on replacement; partial wash (engine fully disallows the loss); cross-account wash sale only detected when both brokers' transactions are entered.
-- Part-year residency: E12 shipped — pro-rata day-count split with both states' resident tax computed independently. NOT modeled (sub-gaps): per-income-item sourcing (NY IT-203 / CA 540NR Sched CA), mid-year resident credit between former + current, NYC + flat-rate locality tax (skipped), state AMT / WA LTCG surcharge (skipped), pro-rated std ded.
-- Local income taxes for NYC + MD counties (24) + OH cities (10) + IN counties (10): E14 shipped. NOT modeled: NYC UBT, PA local Earned Income Tax (~2000+ municipalities), KY occupational tax, MD personal exemption per dependent, OH cross-city employment credit, IN $1,000 personal exemption.
+- Schedule D per-transaction detail: per-lot ST/LT routing + broker-reported wash sale + E13 auto-detection + §1091(d)/§1223(3) ST→LT tack + **partial-wash proportional disallowance + cross-account (2026-06-01 s2, via `quantity`/`account` columns)** shipped. NOT modeled: leftover-replacement-share re-flow to input-order-later losses.
+- Part-year residency: E12 + **pro-rated std deduction/personal exemption (2026-06-01 s2 — by residency days)** shipped. NOT modeled (sub-gaps): per-income-item sourcing to the exact NY IT-203 / CA 540NR Sched CA, mid-year resident credit between former + current, NYC + flat-rate locality tax (skipped), state AMT / WA LTCG surcharge (skipped), pro-rated retirement/SS exclusions.
+- Local income taxes for NYC + MD counties (24) + OH cities (10) + IN counties (10) + **KY occupational (5 — Louisville/Lexington/Kenton/Boone, 2026-06-01 s2)**. **SHIPPED 2026-06-01 s2: NYC UBT (`calculateNycUbt`), KY occupational tax (wage-capped via LocalityInfo.wageCap), OH cross-city resident credit (creditRate/creditLimitRate + `oh_work_city_tax_paid`), IN per-dependent exemption ($1k/filer + $1k/dep).** NOT modeled: PA local EIT remaining ~1,800 munis, MD per-dependent exemption (no MD state-tax row in engine — county-localities only), KY remaining counties.
 - Most state-specific credits (state EITC: CA, NY, CO, IL, NJ, MA piggyback + MN Working Family Credit wired; CT/DC/DE/IN/IA/KS/LA/ME/MD/MI/MT/NE/NM/OH/OK/OR/RI/VT/VA/WA/WI piggybacks shipped via E10 + WI tiered. State CTCs CA/CO/NJ/IL/NM/VT shipped via E9. State AMT only CA.)
 - **UltraTax CS file-based import** — see `docs/ultratax-audit.md`. No public UltraTax import format exists; our `.gen` file is rebranded as a vendor-neutral CPA-review summary (the URL path + .gen filename are preserved for backward compat). PDF + CSV + the 10-case `docs/validation-packet/` are the design-partner artifacts. Real UltraTax ingestion (SurePrep API / SDE / GUI automation) is Phase 5 — multi-month, do not start speculatively.
 - **State-specific accuracy gaps** (uncovered + documented in 2026-05-23 accuracy audit; see `docs/accuracy-audit/report.md`): NYC EITC sliding scale (engine has NY state EITC at 30% but not the additional NYC sliding-scale credit), MN $1,750/child refundable CTC (engine has MN WFC but not the separate CTC), WA 7% LTCG excise > $262k, CA AMT (Schedule P 540). State CTCs for CA/CO/NJ/IL/NM/VT also not modeled. PA Schedule SP Tax Forgiveness not modeled. IL personal exemption $250k/$500k phase-out not modeled (engine over-deducts by max $137/filer at the top).
@@ -317,13 +318,13 @@ Several Phase 2/3 limitations have been resolved (multi-state foundation, MACRS,
   - Stripe billing flow deferred to D18; the CTA button is a visual
     placeholder. Future: per-firm `proTierEnabled` column after D15
     multi-tenancy lands.
-- AMT preferences modeled: line 2g state-tax addback (auto from itemized SALT, override available), line 2k ISO bargain element. Still not modeled: line 2i MACRS-vs-ADS depreciation difference, line 2e state-refund recapture, AMT NOL.
-- K-1 §199A wage/UBIA limits + SSTB phase-out (engine applies simplified 20% only); K-1 basis / at-risk fields stored but not enforced; K-1 guaranteed payments (Box 4) not modeled
+- AMT preferences modeled: line 2g SALT addback, line 2k ISO bargain, line 2e state-refund recapture, **line 2i MACRS-vs-ADS depreciation (`amt_depreciation_adjustment`, ±) + AMT NOL/ATNOLD §56(d) (`amt_nol_carryforward`, 90%-of-AMTI cap) — 2026-06-01 s2**. All Form 6251 prefs now modeled.
+- K-1: §199A wage/UBIA limit + **per-business SSTB phase-out (isSstb) + §704(d)/§465 basis+at-risk loss limits + guaranteed payments (Box 4, `box4GuaranteedPayments` → AGI+SE, non-QBI) — all 2026-06-01 s2**. Remaining: per-business (Form 8995-A) wage/UBIA limit is aggregate, not per-business; basis not reduced by distributions.
 - Other carryforwards: NOL, AMT credit, charitable (capital loss + §469 PAL + K-1 passive loss carryforward ARE supported)
 - Foreign income exclusion (§911 FEIE), treaty positions
 - Trust/estate (1041), partnership/corporate (1065/1120/1120-S)
 - E-filing — Option A means CPAs e-file through *their* software, not ours
-- HI / NJ / NY partial retirement-income exemptions (PA, IL, MS done)
+- HI / NJ / NY partial retirement-income exemptions: **all wired (HI employer-funded cap via `hi_employer_funded_pension`; NY Line 26 govt pension full + Line 29 $20k/$40k via `ny_government_pension`; NJ verified correct) — 2026-06-01 s2** (PA, IL, MS full). Remaining: HI Schedule J exclusion-ratio auto-split, NY per-spouse $20k.
 - Vermont calc has personal exemption + SS exclusion as of 2026-05-21; prior versions were approximate
 
 ## User context

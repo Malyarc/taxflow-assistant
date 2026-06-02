@@ -115,19 +115,20 @@ Source files referenced:
 
 ### Known federal gaps (not modeled)
 
-<!-- Form 8606 shipped 2026-05-27 (H6 Part I + Part III) — line above. -->
+<!-- 2026-06-01 session 2 closed: K-1 Box 4 GP, K-1 basis/at-risk, per-business
+     SSTB, AMT line 2i, AMT NOL (ATNOLD), §163(j) $30M exemption, partial wash. -->
 - §1202 sub-multipliers for pre-2010-09-27 acquisitions (75% / 50%)
-- §1091(d) auto-flip ST→LT on wash-sale replacement (covered as a sub-gap in the deep audit; partial wash NOT modeled either)
-- AMT line 2i MACRS-vs-ADS depreciation diff; line 2e state-refund recapture; AMT NOL
-- K-1 §199A wage/UBIA limits + SSTB phase-out (engine applies flat 20%)
-- K-1 guaranteed payments (Box 4)
-- K-1 basis / at-risk limits (stored but not enforced)
-- Carryforwards modeled: NOL, AMT credit, charitable cash, capital-loss ST/LT, §469 PAL (rental + K-1 separate), §163(j) disallowed business interest (C7, indefinite). **Not modeled:** SEHI cf, FTC cf
+- ✅ §1091(d) ST→LT tack (2026-06-01 prior) + **partial-wash proportional disallowance + cross-account (2026-06-01 session 2)** — remaining: leftover-replacement-share re-flow to input-order-later losses
+- ✅ AMT line 2e (prior) + **line 2i MACRS-vs-ADS (`amt_depreciation_adjustment`) + AMT NOL/ATNOLD §56(d) (`amt_nol_carryforward`, 90%-of-AMTI cap) — 2026-06-01 session 2**
+- ✅ K-1 §199A wage/UBIA limit (prior) + **per-business SSTB phase-out (isSstb) — 2026-06-01 session 2**. Remaining: per-business (Form 8995-A) wage/UBIA limit is aggregate
+- ✅ **K-1 guaranteed payments (Box 4, `box4GuaranteedPayments`) — 2026-06-01 session 2** (AGI + SE, excluded from QBI)
+- ✅ **K-1 §704(d)/§1366(d) basis + §465 at-risk loss limits enforced — 2026-06-01 session 2** (caps active Box 1 loss; suspended carryforward). Remaining: basis not reduced by distributions/separately-stated deductions
+- Carryforwards modeled: NOL, AMT credit, AMT NOL (ATNOLD), charitable cash, capital-loss ST/LT, §469 PAL (rental + K-1 separate), §163(j) disallowed business interest (C7, indefinite). **Not modeled:** SEHI cf, FTC cf
 - Treaty positions; sourcing for FTC by category
-- **§1031 / §121 recognized gains don't flow into NIIT investment-income base** (sub-gap; consistent with the existing §121 pattern). Fix requires NIIT-base refactor.
-- **§163(j) ATI proxy** ≈ pre-§163(j) ordinary income (not the strict §163(j)(8) "taxable income without §163(j)/NOL/QBI + depreciation addback" — over-restricts the allowance for high-depreciation low-income filers).
-- **§461(l) loss-aggregation** is CPA-supplied (engine doesn't auto-aggregate across Sched C / E / K-1 buckets to compute the excess).
-- **Form 8824 PDF** for §1031 reporting deferred; **Form 8990 PDF** for §163(j) deferred. CPAs hand-file these forms.
+- **§1031 / §121 recognized gains don't flow into NIIT investment-income base** — RECONCILED: §1031 recognized gain DOES flow into NIIT (2026-05-28). §121 remainder also in NIIT.
+- ✅ **§163(j)(3) small-business gross-receipts exemption auto-detected — 2026-06-01 session 2** (`section_163j_gross_receipts` ≤ §448(c) $30M/$31M/$32M). ATI proxy still pre-§163(j) ordinary income (adequate for TY2024+ per §163(j)(8)).
+- ✅ **§461(l) auto-aggregation (C3) + Sch-C loss flow (2026-06-01 prior).**
+- **Form 8824 PDF** (§1031) + **Form 8990 PDF** (§163(j), now incl. Sections II/III + auto-exemption notice) rendered. CPAs transcribe to official forms.
 
 ---
 
@@ -236,12 +237,12 @@ Modeled in `LOCAL_TAX_DATA` ([taxCalculator.ts:602](../artifacts/api-server/src/
 | **NYC PIT** | 1 | Full bracketed PIT (4 brackets per status) + IT-201 line 48 household credit. NYC School Tax Credit (E8) + MCTMT (E8 tiered SE tax) modeled. NYC EITC sliding scale (G1) modeled. |
 | **Yonkers** | 0 | NOT modeled. NY income tax has Yonkers as a flat % of state liability — sub-gap. |
 | **MD counties** | 24 | All 23 counties + Baltimore City. Rates 2.25% (Talbot) to 3.20% (Baltimore City + 11 others). Base = state taxable income. |
-| **OH cities** | 10 | Akron, Canton, Cincinnati, Cleveland, Columbus, Dayton, Lakewood, Parma, Toledo, Youngstown. Base = wages_only. **Cross-city employment credit NOT modeled** — sub-gap. |
+| **OH cities** | 10 | Akron, Canton, Cincinnati, Cleveland, Columbus, Dayton, Lakewood, Parma, Toledo, Youngstown. Base = wages_only. **Cross-city resident credit SHIPPED 2026-06-01 s2** (Columbus/Cleveland/Cincinnati = 100% up to own rate via `creditRate`/`creditLimitRate` + `oh_work_city_tax_paid`). |
 | **OH school districts (SDIT)** | ~226 | C10 v3 (2026-05-27): bulk-loaded via `ohSchoolDistricts.ts` + CSV. Both `earned_income` (wages-only) and `traditional` (OH IT-1040 Line 3 approximation) bases supported. Inline top-15 fast-path preserved. New `oh_sdit_traditional_base` adjustment for CPA-supplied exact value. |
 | **IN counties** | 10 | Allen, Elkhart, Hamilton, Lake, Marion, Monroe, Porter, St. Joseph, Tippecanoe, Vanderburgh. Rates 0.50% – 2.035%. Base = state taxable income. |
 | **PA local EIT** | ~175 | C9 v3 (2026-05-27): top municipalities + Act 32 default. Loaded via `paEitRates.ts` bulk registry + CSV. Lookup by PSD code or name. Inline top-13 fast-path preserved. |
-| **NYC UBT** | 0 | NOT modeled. Separate tax on unincorporated business income. |
-| **KY occupational tax** | 0 | NOT modeled. |
+| **NYC UBT** | 1 | **SHIPPED 2026-06-01 s2.** `calculateNycUbt` — 4% on NYC-allocated net unincorporated business income (Form NYC-202), after min(20%,$10k) services allowance + $5k exemption, minus the sliding Business Tax Credit. Triggered by `nyc_ubt_business_income`; flows to `nycUbt` + localTaxLiability. |
+| **KY occupational tax** | 5 | **SHIPPED 2026-06-01 s2.** Louisville Metro 2.2% (res)/1.45% (non-res), Lexington-Fayette 2.25% (uncapped); Kenton 0.6997% + Boone 0.8% wage-capped (via `LocalityInfo.wageCap`). Base = wages + SE net profit. |
 | **CA SF / LA city** | 0 | NOT modeled. SF has no personal income tax; LA has business license tax only. |
 
 **Total modeled localities: ~446** (NYC + 24 MD + 10 OH cities + 10 IN + ~175 PA EIT + ~226 OH SDIT). All but NYC use a flat rate; NYC uses brackets + credits.
