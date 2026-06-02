@@ -274,11 +274,13 @@ function stateMarginalRate(computed: ComputedTaxReturn): number {
 
 /**
  * §415(c) annual additions limit for defined-contribution plans (SEP, Solo 401k
- * employer-side). Per IRS Notice 2023-75 (TY2024) and Notice 2024-80 (TY2025).
+ * employer-side). Per IRS Notice 2023-75 (TY2024), Notice 2024-80 (TY2025), and
+ * Notice 2025-67 / IR-2025-111 (TY2026 = $72,000).
  */
 const SEP_ANNUAL_LIMIT: Record<number, number> = {
   2024: 69000,
   2025: 70000,
+  2026: 72000,
 };
 
 /**
@@ -1279,11 +1281,13 @@ function detectTaxLossHarvesting(args: {
 
 /**
  * QCD annual cap, indexed for inflation. Per IRC §408(d)(8)(F) starting
- * 2024 (SECURE 2.0 Act §307). 2025 indexing per IRS Notice TBD-2024.
+ * 2024 (SECURE 2.0 Act §307). TY2025 $108,000 per IRS Notice 2024-80;
+ * TY2026 $111,000 (indexed; Rev. Proc. 2025-32).
  */
 const QCD_CAP: Record<number, number> = {
   2024: 105_000,
   2025: 108_000,
+  2026: 111_000,
 };
 
 const QCD_MIN_AGE = 70.5;
@@ -1571,6 +1575,8 @@ function detectAugustaRule(args: {
 const HSA_CAP: Record<number, { self: number; family: number; catchup55: number }> = {
   2024: { self: 4_150, family: 8_300, catchup55: 1_000 },
   2025: { self: 4_300, family: 8_550, catchup55: 1_000 },
+  // TY2026 per Rev. Proc. 2025-19 (§223(b)). $1,000 catch-up is statutory, not indexed.
+  2026: { self: 4_400, family: 8_750, catchup55: 1_000 },
 };
 
 function detectHsaMax(args: {
@@ -1766,10 +1772,12 @@ function detectNua(args: {
 const G1_16_415C_LIMIT: Record<number, number> = {
   2024: 69_000,
   2025: 70_000,
+  2026: 72_000, // Notice 2025-67 / IR-2025-111
 };
 const G1_16_402G_ELECTIVE: Record<number, number> = {
   2024: 23_000,
   2025: 23_500,
+  2026: 24_500, // IR-2025-111 (401(k) elective deferral)
 };
 
 function detectMegaBackdoorRoth(args: {
@@ -5094,8 +5102,16 @@ function detectBonusDepreciationOptOut(args: {
 
 // ── G1.65 — Adoption Credit §23 (heuristic) ─────────────────────────────
 
-const G1_65_AGI_PHASE_OUT_TOP_2024 = 292_150;
-const G1_65_MAX_CREDIT_2024 = 16_810;
+// §23 adoption credit, indexed. Max credit: TY2024 $16,810 (Notice 2023-75) /
+// TY2025 $17,280 / TY2026 $17,670 (Rev. Proc. 2025-32). The MAGI phase-out is a
+// $40k band starting at the threshold; credit fully eliminated above the top:
+//   TY2024 $252,150–$292,150 / TY2025 $259,190–$299,190 / TY2026 $265,080–$305,080.
+// OBBBA (P.L. 119-21) made up to $5,000 (TY2025) / $5,120 (TY2026) of the §23
+// credit REFUNDABLE (was fully non-refundable through TY2024).
+const G1_65_MAX_CREDIT: Record<number, number> = { 2024: 16_810, 2025: 17_280, 2026: 17_670 };
+const G1_65_AGI_PHASE_OUT_TOP: Record<number, number> = { 2024: 292_150, 2025: 299_190, 2026: 305_080 };
+const G1_65_AGI_PHASE_OUT_START: Record<number, number> = { 2024: 252_150, 2025: 259_190, 2026: 265_080 };
+const G1_65_REFUNDABLE: Record<number, number> = { 2024: 0, 2025: 5_000, 2026: 5_120 };
 const G1_65_HEURISTIC_AVG = 5_000;
 
 function detectAdoptionCredit(args: {
@@ -5107,19 +5123,32 @@ function detectAdoptionCredit(args: {
   if (client.filingStatus === "married_filing_separately") return null;
   const kidsUnder17 = client.dependentsUnder17 ?? 0;
   if (kidsUnder17 < 1) return null;
-  if (computed.adjustedGrossIncome > G1_65_AGI_PHASE_OUT_TOP_2024) return null;
+  const year = computed.taxYear;
+  const maxCredit = G1_65_MAX_CREDIT[year] ?? G1_65_MAX_CREDIT[2025];
+  const phaseOutTop = G1_65_AGI_PHASE_OUT_TOP[year] ?? G1_65_AGI_PHASE_OUT_TOP[2025];
+  const phaseOutStart = G1_65_AGI_PHASE_OUT_START[year] ?? G1_65_AGI_PHASE_OUT_START[2025];
+  const refundable = G1_65_REFUNDABLE[year] ?? G1_65_REFUNDABLE[2025];
+  if (computed.adjustedGrossIncome > phaseOutTop) return null;
   void adjustments;
 
-  // Heuristic estSavings = $5k (typical with strong CPA-confirm caveat).
-  // Capped at federal tax liability (non-refundable but 5-yr carryforward).
-  const cappedSavings = Math.min(G1_65_HEURISTIC_AVG, Math.round(computed.federalTaxLiability));
+  // Heuristic estSavings = $5k typical (strong CPA-confirm caveat). Post-OBBBA,
+  // up to `refundable` is available regardless of liability; any heuristic amount
+  // beyond the refundable floor is non-refundable (capped at federal income-tax
+  // liability; 5-yr carryforward per §23(c)). For TY2024 refundable = 0 (the
+  // pre-OBBBA all-non-refundable rule), so this collapses to min(5k, liability).
+  const refundablePart = Math.min(G1_65_HEURISTIC_AVG, refundable);
+  const nonRefundablePart = Math.min(
+    Math.max(0, G1_65_HEURISTIC_AVG - refundable),
+    Math.round(computed.federalTaxLiability),
+  );
+  const cappedSavings = refundablePart + nonRefundablePart;
   if (cappedSavings <= 0) return null;
 
   const strategy = strategyById("G1.65");
   const fmt = (n: number) =>
     n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
   const vars: Record<string, number | string> = {
-    maxCredit: G1_65_MAX_CREDIT_2024,
+    maxCredit,
     estSavings: cappedSavings,
   };
   return {
@@ -5132,9 +5161,9 @@ function detectAdoptionCredit(args: {
     recurring: strategy.recurring,
     rationale:
       `Client has ${kidsUnder17} dependent(s) under 17 + AGI ${fmt(Math.round(computed.adjustedGrossIncome))} ` +
-      `(under ${fmt(G1_65_AGI_PHASE_OUT_TOP_2024)} cap). IF client adopted (or in adoption process), ` +
-      `claim Adoption Credit on Form 8839 — up to ${fmt(G1_65_MAX_CREDIT_2024)}/child. Heuristic typical ` +
-      `~${fmt(cappedSavings)} (capped at federal tax liability; CPA confirms actual adoption).`,
+      `(under ${fmt(phaseOutTop)} TY${year} cap). IF client adopted (or in adoption process), ` +
+      `claim Adoption Credit on Form 8839 — up to ${fmt(maxCredit)}/child. Heuristic typical ` +
+      `~${fmt(cappedSavings)}${refundable > 0 ? ` (up to ${fmt(refundable)} refundable under OBBBA; CPA confirms actual adoption)` : ` (capped at federal tax liability; CPA confirms actual adoption)`}.`,
     action: interpolate(strategy.action, vars),
     prerequisiteData: strategy.prerequisiteData,
     citation: `${strategy.ircSection}; ${strategy.irsPub}`,
@@ -5142,18 +5171,23 @@ function detectAdoptionCredit(args: {
       filingStatus: client.filingStatus,
       dependentsUnder17: kidsUnder17,
       agi: Math.round(computed.adjustedGrossIncome),
-      agiPhaseOutTop: G1_65_AGI_PHASE_OUT_TOP_2024,
-      maxCreditPerChild: G1_65_MAX_CREDIT_2024,
+      taxYear: year,
+      agiPhaseOutStart: phaseOutStart,
+      agiPhaseOutTop: phaseOutTop,
+      maxCreditPerChild: maxCredit,
+      refundablePortion: refundable,
       federalTaxLiability: Math.round(computed.federalTaxLiability),
       heuristicTypicalCredit: G1_65_HEURISTIC_AVG,
       cappedSavings,
     },
     assumptions: [
       `HEURISTIC — engine cannot verify actual adoption status. Fires too broadly for any family with kids — CPA MUST CONFIRM.`,
-      `TY2024 max credit: $16,810 per child (Notice 2023-75).`,
-      `AGI phase-out TY2024: $252,150-$292,150 (Rev. Proc. 2023-34 §3.16).`,
-      `Special needs adoption: full $16,810 credit regardless of expenses per §23(a)(3) — state determines special-needs status.`,
-      `Non-refundable — capped at federal tax liability (engine reports capped value); 5-yr carryforward per §23(c).`,
+      `TY${year} max credit: ${fmt(maxCredit)} per child (TY2024 $16,810 Notice 2023-75; TY2025 $17,280; TY2026 $17,670 Rev. Proc. 2025-32).`,
+      `AGI phase-out TY${year}: ${fmt(phaseOutStart)}-${fmt(phaseOutTop)} ($40k band).`,
+      `Special-needs adoption: full ${fmt(maxCredit)} credit regardless of expenses per §23(a)(3) — state determines special-needs status.`,
+      refundable > 0
+        ? `OBBBA (P.L. 119-21): up to ${fmt(refundable)} REFUNDABLE for TY${year} (available even at $0 liability); the remainder is non-refundable with 5-yr carryforward per §23(c).`
+        : `Non-refundable for TY${year} — capped at federal tax liability (engine reports capped value); 5-yr carryforward per §23(c). (OBBBA adds a refundable portion starting TY2025.)`,
       `MFS — DISQUALIFIED.`,
       `Foreign adoption — credit allowed only in year adoption FINALIZED per Reg §1.23-1.`,
       `Heuristic $5,000 typical — wide range. Real value depends on actual expenses + special-needs status.`,
@@ -6670,8 +6704,13 @@ function detectCharitableLeadTrust(args: {
 
 // ── G1.87 — §401(a)(17) Compensation Cap (heuristic) ────────────────────
 
-const G1_87_CAP_2024 = 345_000;
-const G1_87_CAP_2025 = 350_000;
+// §401(a)(17) annual compensation cap, indexed. TY2024 $345k (Notice 2023-75);
+// TY2025 $350k (Notice 2024-80); TY2026 $360k (Notice 2025-67 / IR-2025-111).
+const G1_87_COMP_CAP: Record<number, number> = {
+  2024: 345_000,
+  2025: 350_000,
+  2026: 360_000,
+};
 const G1_87_MIN_INCOME = 400_000;
 const G1_87_LOST_MATCH_RATE = 0.05;
 
@@ -6683,7 +6722,7 @@ function detectSection401a17Cap(args: {
   if (computed.totalIncome < G1_87_MIN_INCOME) return null;
   const seIncome = computed.detail.se.netSeEarnings ?? 0;
   const wagesProxy = Math.max(0, computed.totalIncome - seIncome);
-  const cap = computed.taxYear >= 2025 ? G1_87_CAP_2025 : G1_87_CAP_2024;
+  const cap = G1_87_COMP_CAP[computed.taxYear] ?? G1_87_COMP_CAP[2025];
   if (wagesProxy < cap && seIncome < cap) return null;
   // Skip if no qualified plan adjustment.
   const hasRetirement = adjustments.some(
@@ -7042,8 +7081,13 @@ function detectDisasterRelief(args: {
 
 const G1_92_MIN_SE = 20_000;
 const G1_92_MAX_SE = 150_000;
-const G1_92_EMPLOYEE_DEFERRAL_2024 = 23_000;
-const G1_92_EMPLOYEE_DEFERRAL_2025 = 23_500;
+// §402(g) elective deferral cap (employee side of a Solo 401(k)), indexed.
+// TY2024 $23,000; TY2025 $23,500; TY2026 $24,500 (IR-2025-111).
+const G1_92_EMPLOYEE_DEFERRAL: Record<number, number> = {
+  2024: 23_000,
+  2025: 23_500,
+  2026: 24_500,
+};
 
 function detectSolo401kDeferral(args: {
   client: ClientFacts;
@@ -7072,10 +7116,12 @@ function detectSolo401kDeferral(args: {
   const baseForContrib = Math.max(0, netSe - halfSe);
   const sepContrib = baseForContrib * 0.20;
 
-  const employeeDeferral = computed.taxYear >= 2025 ? G1_92_EMPLOYEE_DEFERRAL_2025 : G1_92_EMPLOYEE_DEFERRAL_2024;
-  // Solo 401(k) total = employee deferral + employer match (= SEP-equivalent)
+  const employeeDeferral = G1_92_EMPLOYEE_DEFERRAL[computed.taxYear] ?? G1_92_EMPLOYEE_DEFERRAL[2025];
+  // Solo 401(k) total = employee deferral + employer match (= SEP-equivalent),
+  // capped at the §415(c) annual-additions limit for the year.
   const employerMatch = sepContrib;
-  const totalContribution = Math.min(employeeDeferral + employerMatch, 69_000);
+  const section415cCap = SEP_ANNUAL_LIMIT[computed.taxYear] ?? SEP_ANNUAL_LIMIT[2025];
+  const totalContribution = Math.min(employeeDeferral + employerMatch, section415cCap);
 
   // Extra shelter vs SEP
   const extraVsSep = Math.max(0, totalContribution - sepContrib);

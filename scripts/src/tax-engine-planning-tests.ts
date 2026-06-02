@@ -5114,6 +5114,137 @@ header("#9 — OBBBA energy credits (G1.33/G1.34/G1.37) suppressed for TY2026");
 }
 
 // ============================================================================
+// OBBBA / TY2026 dollar refresh — year-indexed lock-ins (catalog v1.19.0)
+// NOTE on TY2026: computeTaxReturnPure clamps the TAX MATH to the latest
+// supported year (2025) — there is no native TY2026 bracket/std-ded set yet, so
+// `computed.taxYear` comes back 2025. The PLANNING layer keys its dollar maps on
+// computed.taxYear, so to exercise the TY2026 entries we stamp taxYear=2026 onto
+// the computed return (the same pattern the #9 OBBBA-energy test uses). This
+// proves the 2026 caps are wired + correct, ready for when native TY2026 engine
+// support lands. Marginal rates here are 2025-bracket-based (the production
+// reality for a clamped 2026 client). Each value hand-calc'd vs the IRS rule.
+// ============================================================================
+section("OBBBA / TY2026 dollar refresh — year-indexed lock-ins");
+
+// Compute at 2025 (records tagged 2025 so they're included + math is the
+// 2025-clamped reality), then stamp taxYear=2026 for the planning layer.
+function planAt2026(inputs: Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] }): OpportunityHit[] {
+  const computed = computeTaxReturnPure({ w2s: [], form1099s: [], adjustments: [], taxYear: 2025, ...inputs });
+  const computed2026 = { ...computed, taxYear: 2026 } as typeof computed;
+  return evaluatePlanningOpportunities({ client: inputs.client, computed: computed2026, adjustments: inputs.adjustments ?? [] });
+}
+
+// G1.1 SEP — TY2026 §415(c) cap = $72,000 (Notice 2025-67 / IR-2025-111).
+//   MFJ $1M SE: contribution capped at $72,000. Marginal 37% (MFJ top bracket).
+//   estSavings = $72,000 × 0.37 = $26,640.
+header("G1.1 TY2026 — MFJ $1M SE: contribution $72,000, savings $26,640");
+{
+  const hits = planAt2026({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2025 } as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2025, formType: "nec", payerName: "Acme Co", nonemployeeCompensation: 1000000 } as unknown as TaxReturnInputs["form1099s"][number]],
+  });
+  const hit = findHit(hits, "G1.1");
+  checkTruthy("G1.1-2026", "hit fires", hit != null, true);
+  if (hit) {
+    check("G1.1-2026", "contribution = $72,000 (TY2026 §415(c) cap)",
+      Number(hit.inputs.contribution), 72000, 1, "Notice 2025-67 / IR-2025-111");
+    check("G1.1-2026", "estSavings = $26,640 ($72,000 × 0.37)", hit.estSavings, 26640, 5);
+  }
+}
+
+// G1.87 §401(a)(17) — TY2026 comp cap = $360,000.
+//   Single W-2 $500k + retirement: compAboveCap = $500k − $360k = $140,000.
+//   lostMatch = $140k × 0.05 = $7,000. Marginal 35% (single $500k, 2025 brackets).
+//   estSavings = $7,000 × 0.35 = $2,450.
+header("G1.87 TY2026 — Single W-2 $500k: estSavings $2,450 (cap $360k)");
+{
+  const hits = planAt2026({
+    client: { filingStatus: "single", state: "FL", taxYear: 2025 } as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2025, wagesBox1: 500000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [{ adjustmentType: "sep_ira_contribution", amount: 30000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number]],
+  });
+  const hit = findHit(hits, "G1.87");
+  checkTruthy("G1.87-2026", "fires (W-2 > $360k cap)", hit != null, true);
+  if (hit) check("G1.87-2026", "estSavings ≈ $2,450", hit.estSavings, 2450, 5,
+    "§401(a)(17) TY2026 $360,000 (Notice 2025-67)");
+}
+
+// G1.11 QCD — TY2026 cap = $111,000 (Rev. Proc. 2025-32).
+//   Age 72, 1099-R $150k retirement income, charitable_cash $120k →
+//   qcdAmount = min($120k, $111k cap, $150k) = $111,000.
+header("G1.11 TY2026 — QCD cap $111,000 binds (min of $120k giving / $150k IRA)");
+{
+  const hits = planAt2026({
+    client: { filingStatus: "single", state: "FL", taxYear: 2025, taxpayerAge: 72 } as unknown as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2025, formType: "r", payerName: "Vanguard IRA", grossDistribution: "150000", taxableAmount: "150000", distributionCode: "7" } as unknown as TaxReturnInputs["form1099s"][number]],
+    adjustments: [{ adjustmentType: "charitable_cash", amount: 120000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number]],
+  });
+  const hit = findHit(hits, "G1.11");
+  checkTruthy("G1.11-2026", "QCD hit fires", hit != null, true);
+  if (hit) {
+    check("G1.11-2026", "qcdCap = $111,000", Number(hit.inputs.qcdCap), 111000, 1, "Rev. Proc. 2025-32");
+    check("G1.11-2026", "qcdAmount = $111,000 (cap binds)", Number(hit.inputs.qcdAmount), 111000, 1);
+  }
+}
+
+// G1.14 HSA — TY2026 family cap = $8,750 (Rev. Proc. 2025-19).
+header("G1.14 TY2026 — family HSA cap $8,750");
+{
+  const hits = planAt2026({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2025, taxpayerAge: 40, hsaIsFamilyCoverage: true } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2025, wagesBox1: 180000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  const hit = findHit(hits, "G1.14");
+  checkTruthy("G1.14-2026", "HSA hit fires (family coverage)", hit != null, true);
+  if (hit) check("G1.14-2026", "cap = $8,750 (family, no catch-up)", Number(hit.inputs.cap), 8750, 1, "Rev. Proc. 2025-19");
+}
+
+// G1.65 Adoption — OBBBA refundability + year-indexed max credit.
+//   (a) TY2025 low-liability single + 1 kid: $0 income tax, but up to $5,000 is
+//       now REFUNDABLE under OBBBA → hit fires at estSavings $5,000 (pre-OBBBA
+//       this was capped at liability = $0 → no hit). TY2025 computes natively.
+header("G1.65 TY2025 — refundable $5,000 fires at $0 liability (OBBBA)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2025, taxpayerAge: 35, dependentsUnder17: 1 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2025, wagesBox1: 10000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  const hit = findHit(hits, "G1.65");
+  checkTruthy("G1.65-2025ref", "fires at $0 liability (refundable)", hit != null, true);
+  if (hit) {
+    check("G1.65-2025ref", "estSavings = $5,000 (refundable, not liability-capped)", hit.estSavings, 5000, 1);
+    check("G1.65-2025ref", "refundablePortion = $5,000", Number(hit.inputs.refundablePortion), 5000, 1);
+    check("G1.65-2025ref", "maxCreditPerChild = $17,280 (TY2025)", Number(hit.inputs.maxCreditPerChild), 17280, 1);
+  }
+}
+
+//   (b) TY2024 SAME low-liability client: pre-OBBBA non-refundable, capped at
+//       $0 liability → NO hit. Proves the refundability is year-gated.
+header("G1.65 TY2024 — same $0-liability client: no hit (non-refundable)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 35, dependentsUnder17: 1 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 10000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  checkTruthy("G1.65-2024nofire", "no hit at $0 liability (pre-OBBBA non-refundable)", findHit(hits, "G1.65") == null, true);
+}
+
+//   (c) TY2026 max credit per child = $17,670; refundable $5,120 (Rev. Proc. 2025-32).
+header("G1.65 TY2026 — max credit $17,670 / refundable $5,120");
+{
+  const hits = planAt2026({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2025, taxpayerAge: 38, dependentsUnder17: 1 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2025, wagesBox1: 150000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+  });
+  const hit = findHit(hits, "G1.65");
+  checkTruthy("G1.65-2026", "fires (kids + AGI under $305,080 cap)", hit != null, true);
+  if (hit) {
+    check("G1.65-2026", "maxCreditPerChild = $17,670", Number(hit.inputs.maxCreditPerChild), 17670, 1, "Rev. Proc. 2025-32");
+    check("G1.65-2026", "refundablePortion = $5,120", Number(hit.inputs.refundablePortion), 5120, 1);
+  }
+}
+
+// ============================================================================
 // RESULTS
 // ============================================================================
 
