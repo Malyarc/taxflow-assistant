@@ -123,8 +123,9 @@ header("Standard deduction — all filing statuses");
   check("HoH 2024 std ded", getFederalStandardDeduction("head_of_household", 2024), 21900);
   check("MFS 2024 std ded", getFederalStandardDeduction("married_filing_separately", 2024), 14600);
   check("QW 2024 std ded", getFederalStandardDeduction("qualifying_widow", 2024), 29200);
-  check("Single 2025 std ded", getFederalStandardDeduction("single", 2025), 15000);
-  check("MFJ 2025 std ded", getFederalStandardDeduction("married_filing_jointly", 2025), 30000);
+  // TY2025 std ded amended by OBBBA (P.L. 119-21): $15,750 single / $31,500 MFJ.
+  check("Single 2025 std ded", getFederalStandardDeduction("single", 2025), 15750);
+  check("MFJ 2025 std ded", getFederalStandardDeduction("married_filing_jointly", 2025), 31500);
 }
 
 // ════════════════════════════════════════════════════════════════════════════

@@ -196,11 +196,11 @@ header("Pure invocation — multi-year (2024 vs 2025 brackets)");
   // 2024: AGI $100k, std ded $14,600, taxable $85,400.
   //   Tax = $1,160 + ($47,150-$11,600)×0.12 + ($85,400-$47,150)×0.22
   //       = $1,160 + $4,266 + $8,415 = $13,841.
-  // 2025: AGI $100k, std ded $15,000, taxable $85,000.
-  //   Tax = $1,192.50 + ($48,475-$11,925)×0.12 + ($85,000-$48,475)×0.22
-  //       = $1,192.50 + $4,386 + $8,035.50 = $13,614.
+  // 2025: AGI $100k, std ded $15,750 (OBBBA P.L. 119-21, raised from $15,000), taxable $84,250.
+  //   Tax = $1,192.50 + ($48,475-$11,925)×0.12 + ($84,250-$48,475)×0.22
+  //       = $1,192.50 + $4,386 + $7,870.50 = $13,449.
   check("2024 federal tax = $13,841", r24.federalTaxLiability, 13841, 2);
-  check("2025 federal tax = $13,614", r25.federalTaxLiability, 13614, 2);
+  check("2025 federal tax = $13,449", r25.federalTaxLiability, 13449, 2);
   if (r25.federalTaxLiability < r24.federalTaxLiability) PASS.push("✓ 2025 brackets lower tax (inflation adjustment)");
   else FAIL.push("✗ 2025 should have lower tax than 2024 for same $100k income");
 }

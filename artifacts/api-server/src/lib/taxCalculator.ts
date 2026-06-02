@@ -147,12 +147,17 @@ const FEDERAL_STANDARD_DEDUCTIONS: Record<TaxYear, Record<string, number>> = {
     head_of_household: 21900,
     qualifying_widow: 29200,
   },
+  // TY2025 standard deduction AS AMENDED BY OBBBA (P.L. 119-21). OBBBA raised
+  // the TCJA standard deduction above the original Rev. Proc. 2024-40 figures
+  // ($15,000 single / $30,000 MFJ / $22,500 HoH) to $15,750 / $31,500 / $23,625.
+  // These OBBBA-amended TY2025 amounts are restated in the IRS Rev. Proc.
+  // 2025-32 release. MFS = single; QSS = MFJ.
   2025: {
-    single: 15000,
-    married_filing_jointly: 30000,
-    married_filing_separately: 15000,
-    head_of_household: 22500,
-    qualifying_widow: 30000,
+    single: 15750,
+    married_filing_jointly: 31500,
+    married_filing_separately: 15750,
+    head_of_household: 23625,
+    qualifying_widow: 31500,
   },
 };
 

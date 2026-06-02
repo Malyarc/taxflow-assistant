@@ -108,11 +108,13 @@ checkExact("MFJ 2024 std", getFederalStandardDeduction("married_filing_jointly",
 checkExact("MFS 2024 std", getFederalStandardDeduction("married_filing_separately", 2024), 14600);
 checkExact("HoH 2024 std", getFederalStandardDeduction("head_of_household", 2024), 21900);
 checkExact("QW 2024 std", getFederalStandardDeduction("qualifying_widow", 2024), 29200);
-checkExact("Single 2025 std", getFederalStandardDeduction("single", 2025), 15000);
-checkExact("MFJ 2025 std", getFederalStandardDeduction("married_filing_jointly", 2025), 30000);
-checkExact("MFS 2025 std", getFederalStandardDeduction("married_filing_separately", 2025), 15000);
-checkExact("HoH 2025 std", getFederalStandardDeduction("head_of_household", 2025), 22500);
-checkExact("QW 2025 std", getFederalStandardDeduction("qualifying_widow", 2025), 30000);
+// TY2025 std ded AS AMENDED BY OBBBA (P.L. 119-21): $15,750 / $31,500 / $23,625
+// (raised from the original Rev. Proc. 2024-40 $15,000 / $30,000 / $22,500).
+checkExact("Single 2025 std", getFederalStandardDeduction("single", 2025), 15750);
+checkExact("MFJ 2025 std", getFederalStandardDeduction("married_filing_jointly", 2025), 31500);
+checkExact("MFS 2025 std", getFederalStandardDeduction("married_filing_separately", 2025), 15750);
+checkExact("HoH 2025 std", getFederalStandardDeduction("head_of_household", 2025), 23625);
+checkExact("QW 2025 std", getFederalStandardDeduction("qualifying_widow", 2025), 31500);
 
 // ── C. Federal known-answer scenarios ───────────────────────────────────────
 header("C. Federal known-answer scenarios");

@@ -480,13 +480,14 @@ header("FED-05. Blind additional std deduction (IRC §63(f)(2))");
   });
   check("FED-05f", "HoH blind std ded = $23,850 (1 box × $1,950)", f.standardDeduction, 23850, 1, "HoH per-box $1,950");
 
-  // (g) TY2025 single blind age 50 → 15,000 + 2,000 = $17,000 (Rev. Proc. 2024-40).
+  // (g) TY2025 single blind age 50 → 15,750 (OBBBA base) + 2,000 blind box = $17,750.
+  //     Base raised by OBBBA (P.L. 119-21); blind per-box $2,000 unchanged (Rev. Proc. 2024-40).
   const g = run({
     client: { filingStatus: "single", state: "FL", taxYear: 2025, taxpayerAge: 50, taxpayerBlind: true },
     w2s: [{ taxYear: 2025, wagesBox1: 40000, stateCode: "FL" }],
     taxYear: 2025,
   });
-  check("FED-05g", "TY2025 single blind std ded = $17,000", g.standardDeduction, 17000, 1, "Rev. Proc. 2024-40 §3.16");
+  check("FED-05g", "TY2025 single blind std ded = $17,750", g.standardDeduction, 17750, 1, "OBBBA base $15,750 + $2,000 blind box (Rev. Proc. 2024-40)");
 
   // (h) CONTROL: single age 50, NOT blind → base $14,600, no add-on.
   const h = run({
@@ -985,28 +986,30 @@ header("D4. Rental loss MFJ $80k AGI active participation");
 // ════════════════════════════════════════════════════════════════════════════
 section("E. YEAR-TRANSITION — TY2024 vs TY2025");
 
-// E1. Std ded TY2025 single per Rev. Proc. 2024-40 §3.16 = $15,000.
-header("E1. Std ded TY2025 single = $15,000");
+// E1. Std ded TY2025 single AS AMENDED BY OBBBA (P.L. 119-21) = $15,750
+//     (raised from the original Rev. Proc. 2024-40 §3.16 amount of $15,000).
+header("E1. Std ded TY2025 single = $15,750 (OBBBA)");
 {
   const r = run({
     client: { filingStatus: "single", state: "FL", taxYear: 2025 },
     w2s: [{ taxYear: 2025, wagesBox1: 50000, stateCode: "FL" }],
     taxYear: 2025,
   });
-  check("E1", "TY2025 single std ded = $15,000", r.standardDeduction, 15000, 1,
-    "Rev. Proc. 2024-40 §3.16");
+  check("E1", "TY2025 single std ded = $15,750", r.standardDeduction, 15750, 1,
+    "OBBBA P.L. 119-21 (raised TCJA std ded; restated in Rev. Proc. 2025-32)");
 }
 
-// E2. Std ded TY2025 MFJ per Rev. Proc. 2024-40 = $30,000.
-header("E2. Std ded TY2025 MFJ = $30,000");
+// E2. Std ded TY2025 MFJ AS AMENDED BY OBBBA (P.L. 119-21) = $31,500
+//     (raised from the original Rev. Proc. 2024-40 amount of $30,000).
+header("E2. Std ded TY2025 MFJ = $31,500 (OBBBA)");
 {
   const r = run({
     client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2025 },
     w2s: [{ taxYear: 2025, wagesBox1: 100000, stateCode: "FL" }],
     taxYear: 2025,
   });
-  check("E2", "TY2025 MFJ std ded = $30,000", r.standardDeduction, 30000, 1,
-    "Rev. Proc. 2024-40 §3.16");
+  check("E2", "TY2025 MFJ std ded = $31,500", r.standardDeduction, 31500, 1,
+    "OBBBA P.L. 119-21 (raised TCJA std ded; restated in Rev. Proc. 2025-32)");
 }
 
 // E3. Single AMT exemption TY2025 = $88,100 (Rev. Proc. 2024-40 §3.07).

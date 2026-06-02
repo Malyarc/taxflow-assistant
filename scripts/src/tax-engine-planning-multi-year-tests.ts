@@ -293,8 +293,11 @@ section("G4.3 Permanent bunching strategy");
 //     MFJ 2025 brackets (Rev. Proc. 2024-40): 10% to $23,850 | 12% to $96,950 |
 //                                              22% to $206,700 | 24% to $394,600.
 //     $150,000 is in the 22% bracket → marginal = 0.22.
-//   estSavings = $30,000 × 0.25 × 0.22 = $1,650.
-header("G4.3+1 — MFJ 2 years at cliff with charity, est $1,650");
+//   MFJ 2025 std ded = $31,500 (OBBBA P.L. 119-21, raised from $30,000).
+//     Current items $10k+$12.5k+$8k = $30,500 ∈ band [0.85×31,500, 1.15×31,500]
+//     = [$26,775, $36,225] → fires.
+//   estSavings = $31,500 × 0.25 × 0.22 = $1,732.50 → $1,733.
+header("G4.3+1 — MFJ 2 years at cliff with charity, est $1,733");
 {
   const hits = evaluateMultiYearOpportunities({
     client: baseClient({ filingStatus: "married_filing_jointly" }),
@@ -314,8 +317,8 @@ header("G4.3+1 — MFJ 2 years at cliff with charity, est $1,650");
   const hit = findHit(hits, "G4.3");
   checkTruthy("G4.3+1", "hit fires", hit != null, true, "IRC §170 — bunching cliff");
   if (hit) {
-    check("G4.3+1", "estSavings = $1,650", hit.estSavings, 1650, 2,
-      "$30,000 stdDed × 0.25 × 0.22 marginal");
+    check("G4.3+1", "estSavings = $1,733", hit.estSavings, 1733, 2,
+      "$31,500 stdDed (OBBBA) × 0.25 × 0.22 marginal");
     check("G4.3+1", "yearsAtCliff = 2", Number(hit.inputs.yearsAtCliff), 2, 0);
     check("G4.3+1", "fed marginal = 0.22", Number(hit.inputs.federalMarginalRate), 0.22, 0.001,
       "MFJ TY2025 $150k taxable is 22% bracket");
@@ -324,15 +327,16 @@ header("G4.3+1 — MFJ 2 years at cliff with charity, est $1,650");
 
 // --- G4.3+2: Single TY2024 + 2025 at cliff ---
 // Hand-calc:
-//   Current (TY2025): Single std ded = $15,000. Band $12,750-$17,250.
-//     Sched A items: salt $5k, mortgage $6.8k, charity $3k = $14.8k (in band).
+//   Current (TY2025): Single std ded = $15,750 (OBBBA P.L. 119-21, raised from $15,000).
+//     Band [0.85×15,750, 1.15×15,750] = [$13,387.50, $18,112.50].
+//     Sched A items: salt $5k, mortgage $6.8k, charity $3k = $14.8k (in band) → fires.
 //   Prior (TY2024): Single std ded = $14,600. Band $12,410-$16,790.
 //     Sched A items: salt $5k, mortgage $6.7k, charity $2.5k = $14.2k (in band).
 //   Charity in current = $3,000.
 //   Marginal: Single 2025 brackets: 10% to $11,925 | 12% to $48,475 | 22% to $103,350.
 //     taxableIncome = $80,000 → 22% marginal.
-//   estSavings = $15,000 × 0.25 × 0.22 = $825.
-header("G4.3+2 — Single 2 years at cliff TY2024+2025, est $825");
+//   estSavings = $15,750 × 0.25 × 0.22 = $866.25 → $866.
+header("G4.3+2 — Single 2 years at cliff TY2024+2025, est $866");
 {
   const hits = evaluateMultiYearOpportunities({
     client: baseClient({ filingStatus: "single" }),
@@ -351,17 +355,18 @@ header("G4.3+2 — Single 2 years at cliff TY2024+2025, est $825");
   });
   const hit = findHit(hits, "G4.3");
   checkTruthy("G4.3+2", "hit fires", hit != null, true);
-  if (hit) check("G4.3+2", "estSavings = $825", hit.estSavings, 825, 2);
+  if (hit) check("G4.3+2", "estSavings = $866", hit.estSavings, 866, 2);
 }
 
 // --- G4.3+3: 3 years all at cliff — uses current year's std ded ---
 // Hand-calc:
-//   3 years at cliff. Current (TY2025): MFJ std ded = $30,000.
-//     Sched A items: salt $10k, mortgage $8k, charity $12k = $30k (right on).
+//   3 years at cliff. Current (TY2025): MFJ std ded = $31,500 (OBBBA, raised from $30,000).
+//     Sched A items: salt $10k, mortgage $8k, charity $12k = $30k ∈ band
+//     [0.85×31,500, 1.15×31,500] = [$26,775, $36,225] → fires.
 //   Prior years all near cliff (sum within +/-15% of their year's std ded).
 //   Marginal: MFJ 2025 taxableIncome $300,000 → 24% bracket (between $206,700 and $394,600).
-//   estSavings = $30,000 × 0.25 × 0.24 = $1,800.
-header("G4.3+3 — MFJ 3 years at cliff, 24% marginal, est $1,800");
+//   estSavings = $31,500 × 0.25 × 0.24 = $1,890.
+header("G4.3+3 — MFJ 3 years at cliff, 24% marginal, est $1,890");
 {
   const hits = evaluateMultiYearOpportunities({
     client: baseClient({ filingStatus: "married_filing_jointly" }),
@@ -386,7 +391,7 @@ header("G4.3+3 — MFJ 3 years at cliff, 24% marginal, est $1,800");
   const hit = findHit(hits, "G4.3");
   checkTruthy("G4.3+3", "hit fires", hit != null, true);
   if (hit) {
-    check("G4.3+3", "estSavings = $1,800", hit.estSavings, 1800, 2);
+    check("G4.3+3", "estSavings = $1,890", hit.estSavings, 1890, 2);
     check("G4.3+3", "yearsAtCliff = 3", Number(hit.inputs.yearsAtCliff), 3, 0);
   }
 }
