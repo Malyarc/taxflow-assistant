@@ -417,7 +417,7 @@ const STATE_RETIREMENT_EXEMPTION_RULES: Record<string, { ageMin?: number; descri
   PA: { ageMin: 60, description: "PA fully exempts qualified retirement income at age 59½+ (we use 60)" },
   IL: { description: "IL fully exempts qualified retirement income (no age requirement)" },
   MS: { ageMin: 60, description: "MS fully exempts qualified retirement income at age 59½+ (we use 60)" },
-  HI: { description: "HI fully exempts qualified employer-funded retirement income (we apply to all retirement income)" },
+  // HI handled by a dedicated branch (employer-funded vs employee-funded split).
 };
 
 /** NJ pension exclusion caps by filing status (TY2024, NJ Form NJ-1040 Line 28a). */
@@ -459,6 +459,22 @@ export function getStateRetirementExemption(params: {
    * over-phase-out filers with significant SS income). Optional for other states.
    */
   njGrossIncomeApprox?: number;
+  /**
+   * HI only — the EMPLOYER-FUNDED portion of pension/annuity income (HRS
+   * §235-7(a)(3) / Schedule J exclusion ratio). HI excludes only this portion;
+   * employee-funded 401(k)/IRA/§457 amounts stay taxable. When supplied, the HI
+   * exclusion is capped at this amount; when absent, the engine excludes ALL
+   * retirement income (documented over-exclusion).
+   */
+  hiEmployerFundedPension?: number;
+  /**
+   * NY only — the GOVERNMENT-pension portion (NYS/local/federal/military) per
+   * NY Tax Law §612(c)(3), IT-201 Line 26. Excluded in FULL with no age limit.
+   * The remaining (private/IRA) retirement income gets the $20k/$40k Line 29
+   * exclusion (age 59½+). When absent, all retirement income is treated as
+   * Line 29 ($20k/$40k cap).
+   */
+  nyGovernmentPension?: number;
 }): { exemption: number; reason?: string } {
   const code = params.stateCode.toUpperCase();
 
@@ -482,22 +498,44 @@ export function getStateRetirementExemption(params: {
     };
   }
 
-  // ── NY: $20k per filer / $40k MFJ; age 59½+ ─────────────────────────
+  // ── NY: Line 26 govt pension (unlimited, no age) + Line 29 $20k/$40k (59½+) ─
   if (code === "NY") {
-    if ((params.taxpayerAge ?? 0) < 60) {
-      return { exemption: 0, reason: "NY $20k exclusion requires age 59½+ (we use 60)" };
-    }
     const status = params.filingStatus ?? "single";
     const isMfj = status === "married_filing_jointly" || status === "qualifying_widow";
     const cap = isMfj ? 40000 : 20000;
-    const exemption = Math.min(Math.max(0, params.retirementIncome), cap);
+    const retIncome = Math.max(0, params.retirementIncome);
+    // Line 26 — NYS/local/federal/military government pension: fully excluded,
+    // no dollar cap, no age requirement.
+    const govtExcluded = Math.min(Math.max(0, params.nyGovernmentPension ?? 0), retIncome);
+    // Line 29 — the remaining private/IRA retirement gets the $20k/$40k cap,
+    // age 59½+ only (we use 60 — integer ages).
+    const nonGovt = Math.max(0, retIncome - govtExcluded);
+    const line29 = (params.taxpayerAge ?? 0) >= 60 ? Math.min(nonGovt, cap) : 0;
     return {
-      exemption,
-      reason: `NY Line 29 pension/IRA exclusion: $${cap.toLocaleString()} ${isMfj ? "MFJ combined" : "per filer"}`,
+      exemption: govtExcluded + line29,
+      reason:
+        `NY: Line 26 govt pension $${govtExcluded.toLocaleString()} (full) + Line 29 ` +
+        `$${line29.toLocaleString()} (cap $${cap.toLocaleString()} ${isMfj ? "MFJ combined" : "per filer"}, age 59½+)`,
     };
   }
 
-  // ── PA/IL/MS/HI: full exemption (age-gated for PA/MS) ──────────────
+  // ── HI: employer-funded pension only (employee 401(k)/IRA stays taxable) ──
+  if (code === "HI") {
+    const retIncome = Math.max(0, params.retirementIncome);
+    if (params.hiEmployerFundedPension != null) {
+      const excl = Math.min(retIncome, Math.max(0, params.hiEmployerFundedPension));
+      return {
+        exemption: excl,
+        reason: `HI excludes employer-funded pension $${excl.toLocaleString()} (HRS §235-7(a)(3)); employee-funded 401(k)/IRA taxable`,
+      };
+    }
+    return {
+      exemption: retIncome,
+      reason: "HI fully exempts retirement income (employer/employee split not supplied — may over-exclude per Schedule J)",
+    };
+  }
+
+  // ── PA/IL/MS: full exemption (age-gated for PA/MS) ──────────────────
   const cfg = STATE_RETIREMENT_EXEMPTION_RULES[code];
   if (!cfg) return { exemption: 0 };
   if (cfg.ageMin != null && (params.taxpayerAge ?? 0) < cfg.ageMin) {
@@ -985,6 +1023,10 @@ export function calculateMultiStateTax(params: {
     retirementIncomeForExemption?: number;
     taxpayerAge?: number;
     njGrossIncomeApprox?: number;
+    /** HI — employer-funded pension portion (caps the HI retirement exclusion). */
+    hiEmployerFundedPension?: number;
+    /** NY — government-pension portion (IT-201 Line 26, fully excluded). */
+    nyGovernmentPension?: number;
     /** K10 — taxable SS from Pub 915. Excluded from state-tax base for the
      *  41 jurisdictions not in STATES_TAXING_SS. */
     taxableSocialSecurity?: number;
@@ -1223,6 +1265,7 @@ export function calculateMultiStateTax(params: {
       filingStatus: params.filingStatus,
       taxpayerAge: params.options?.taxpayerAge,
       njGrossIncomeApprox: params.federalAgi,
+      nyGovernmentPension: params.options?.nyGovernmentPension,
     }).exemption;
     const nysTaxable = Math.max(0, params.federalAgi - nyStdDed - nyRetirementExempt);
     localTax = calculateNycLocalTax({
@@ -1659,6 +1702,10 @@ export function calculateStateTax(
      *  (full-year filer). Does NOT scale the retirement/SS exclusions, which
      *  already track the pro-rated AGI. */
     partYearDeductionProration?: number;
+    /** HI — employer-funded pension portion (caps the HI retirement exclusion). */
+    hiEmployerFundedPension?: number;
+    /** NY — government-pension portion (IT-201 Line 26, fully excluded). */
+    nyGovernmentPension?: number;
   },
 ): number {
   const year = resolveTaxYear(taxYear);
@@ -1718,6 +1765,8 @@ export function calculateStateTax(
     filingStatus,
     taxpayerAge: options?.taxpayerAge,
     njGrossIncomeApprox: options?.njGrossIncomeApprox ?? federalAgi,
+    hiEmployerFundedPension: options?.hiEmployerFundedPension,
+    nyGovernmentPension: options?.nyGovernmentPension,
   }).exemption;
 
   // Part-year: pro-rate the flat allowances (std ded + personal exemption) by

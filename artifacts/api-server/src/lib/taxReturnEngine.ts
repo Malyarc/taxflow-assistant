@@ -2631,6 +2631,12 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
       federalIncomeTaxPaid: federalIncomeTaxForOr,
       retirementIncomeForExemption: form1099Summary.retirementIncome,
       taxpayerAge: client.taxpayerAge ?? undefined,
+      // #6 — HI employer-funded pension cap + NY govt-pension full exclusion
+      // (CPA-supplied portions; absent → prior behavior).
+      hiEmployerFundedPension: sumByType("hi_employer_funded_pension") > 0
+        ? sumByType("hi_employer_funded_pension") : undefined,
+      nyGovernmentPension: sumByType("ny_government_pension") > 0
+        ? sumByType("ny_government_pension") : undefined,
       // NJ pension-exclusion phase-out tests against NJ gross income; for
       // K10 NJ explicitly excludes taxable SS from NJ gross. Use
       // (federal AGI − taxable SS) so NJ filers with retirement income +
@@ -3021,6 +3027,10 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     filingStatus: client.filingStatus,
     taxpayerAge: client.taxpayerAge ?? undefined,
     njGrossIncomeApprox: calc.adjustedGrossIncome,
+    hiEmployerFundedPension: sumByType("hi_employer_funded_pension") > 0
+      ? sumByType("hi_employer_funded_pension") : undefined,
+    nyGovernmentPension: sumByType("ny_government_pension") > 0
+      ? sumByType("ny_government_pension") : undefined,
   });
 
   return {

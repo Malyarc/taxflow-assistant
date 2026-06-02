@@ -336,6 +336,82 @@ header("State retirement exemption — NY (per-filer $20k, age 59½+)");
   check("NY MFJ $30k ret → $30k exempt (under $40k joint cap)", mfjUnder.exemption, 30000);
 }
 
+// ── #6 — HI employer-funded refinement + NY government-pension refinement ────
+header("State retirement exemption — HI employer-funded cap (HRS §235-7(a)(3))");
+{
+  // HI excludes only the EMPLOYER-funded portion; employee 401(k)/IRA stays taxable.
+  // $80k total retirement, $50k employer-funded → exclude $50k only.
+  const partial = getStateRetirementExemption({
+    stateCode: "HI", retirementIncome: 80000, hiEmployerFundedPension: 50000,
+  });
+  check("HI $80k ret, $50k employer-funded → $50k exempt", partial.exemption, 50000);
+  // Employer-funded > total → capped at total.
+  const capped = getStateRetirementExemption({
+    stateCode: "HI", retirementIncome: 40000, hiEmployerFundedPension: 60000,
+  });
+  check("HI employer-funded $60k > $40k ret → $40k exempt", capped.exemption, 40000);
+  // Absent → legacy full exclusion (unchanged).
+  const legacy = getStateRetirementExemption({ stateCode: "HI", retirementIncome: 80000 });
+  check("HI no split supplied → full $80k (legacy)", legacy.exemption, 80000);
+}
+
+header("State retirement exemption — NY Line 26 govt pension + Line 29 $20k/$40k");
+{
+  // Govt pension (Line 26) fully excluded + remaining private gets Line 29 cap.
+  // Single age 65, $50k ret, $30k govt → 30k (Line 26) + min(20k, 20k cap) = 50k.
+  const mix = getStateRetirementExemption({
+    stateCode: "NY", filingStatus: "single", retirementIncome: 50000,
+    taxpayerAge: 65, nyGovernmentPension: 30000,
+  });
+  check("NY single $50k ret, $30k govt → $50k exempt (30k Line26 + 20k Line29)", mix.exemption, 50000);
+  // Line 26 has NO age requirement: age 55 govt pension still fully excluded,
+  // but Line 29 (private) is $0 under 59½.
+  const youngGovt = getStateRetirementExemption({
+    stateCode: "NY", filingStatus: "single", retirementIncome: 40000,
+    taxpayerAge: 55, nyGovernmentPension: 40000,
+  });
+  check("NY age 55 all-govt $40k → $40k exempt (Line 26 no age req)", youngGovt.exemption, 40000);
+  const youngMixed = getStateRetirementExemption({
+    stateCode: "NY", filingStatus: "single", retirementIncome: 50000,
+    taxpayerAge: 55, nyGovernmentPension: 30000,
+  });
+  check("NY age 55 $30k govt + $20k private → $30k exempt (Line 29 = 0 under 59½)", youngMixed.exemption, 30000);
+  // MFJ govt + private mix: $100k ret, $50k govt → 50k + min(50k, 40k) = 90k.
+  const mfjMix = getStateRetirementExemption({
+    stateCode: "NY", filingStatus: "married_filing_jointly", retirementIncome: 100000,
+    taxpayerAge: 65, nyGovernmentPension: 50000,
+  });
+  check("NY MFJ $100k ret, $50k govt → $90k exempt (50k Line26 + 40k Line29 cap)", mfjMix.exemption, 90000);
+}
+
+// End-to-end: HI employer-funded cap flows through the engine via adjustment.
+header("End-to-end: HI $80k pension, $50k employer-funded adjustment → $50k exempt");
+{
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "HI", taxYear: 2024, taxpayerAge: 65 },
+    w2s: [],
+    form1099s: [{ taxYear: 2024, formType: "r", taxableAmount: 80000 }],
+    adjustments: [{ adjustmentType: "hi_employer_funded_pension", amount: 50000, isApplied: true }],
+    taxYear: 2024,
+  });
+  check("HI AGI = $80,000", r.adjustedGrossIncome, 80000, 1);
+  check("HI state retirement exemption = $50,000 (employer-funded only)", r.stateRetirementExemption, 50000, 1);
+}
+
+// End-to-end: NY govt pension flows through the engine via adjustment.
+header("End-to-end: NY $50k pension, $30k govt adjustment → $50k exempt");
+{
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "NY", taxYear: 2024, taxpayerAge: 65 },
+    w2s: [],
+    form1099s: [{ taxYear: 2024, formType: "r", taxableAmount: 50000 }],
+    adjustments: [{ adjustmentType: "ny_government_pension", amount: 30000, isApplied: true }],
+    taxYear: 2024,
+  });
+  check("NY AGI = $50,000", r.adjustedGrossIncome, 50000, 1);
+  check("NY state retirement exemption = $50,000 ($30k Line26 + $20k Line29)", r.stateRetirementExemption, 50000, 1);
+}
+
 // End-to-end: HI retiree's HI tax should be $0 when all retirement income exempted
 header("End-to-end: HI retiree $40k pension → state retirement exemption applied");
 {

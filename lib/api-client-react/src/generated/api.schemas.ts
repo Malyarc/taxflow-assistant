@@ -1221,6 +1221,8 @@ export const AdjustmentAdjustmentType = {
   qbi_sstb_flag: "qbi_sstb_flag",
   roth_conversion_basis: "roth_conversion_basis",
   roth_conversion_basis_within_5yr: "roth_conversion_basis_within_5yr",
+  hi_employer_funded_pension: "hi_employer_funded_pension",
+  ny_government_pension: "ny_government_pension",
 } as const;
 
 export interface Adjustment {
@@ -1337,6 +1339,8 @@ export const CreateAdjustmentBodyAdjustmentType = {
   qbi_sstb_flag: "qbi_sstb_flag",
   roth_conversion_basis: "roth_conversion_basis",
   roth_conversion_basis_within_5yr: "roth_conversion_basis_within_5yr",
+  hi_employer_funded_pension: "hi_employer_funded_pension",
+  ny_government_pension: "ny_government_pension",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -1449,6 +1453,8 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   qbi_sstb_flag: "qbi_sstb_flag",
   roth_conversion_basis: "roth_conversion_basis",
   roth_conversion_basis_within_5yr: "roth_conversion_basis_within_5yr",
+  hi_employer_funded_pension: "hi_employer_funded_pension",
+  ny_government_pension: "ny_government_pension",
 } as const;
 
 export interface UpdateAdjustmentBody {

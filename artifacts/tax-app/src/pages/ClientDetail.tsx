@@ -2536,6 +2536,8 @@ function AdjustmentsTab({ clientId }: { clientId: number }) {
     investment_income: "Investment Income (NIIT)",
     qbi_income: "Qualified Business Income (QBI)",
     qbi_sstb_flag: "QBI — Specified Service Trade/Business (SSTB) flag",
+    hi_employer_funded_pension: "HI — Employer-funded pension (excludable portion; employee 401(k)/IRA stays taxable)",
+    ny_government_pension: "NY — Government pension (NYS/local/federal/military; IT-201 Line 26, fully excluded)",
     amt_preferences: "AMT Preferences (catch-all — line 2 misc)",
     amt_iso_bargain_element: "AMT — ISO Bargain Element (Form 6251 line 2k)",
     amt_state_tax_addback_override: "AMT — SALT Addback Override (Form 6251 line 2g; replaces auto)",
