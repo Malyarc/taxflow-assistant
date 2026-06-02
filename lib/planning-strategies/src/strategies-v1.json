@@ -25,10 +25,10 @@
       "id": "G1.2",
       "name": "Pass-Through Entity Tax (PTET) election to bypass SALT cap",
       "category": "state",
-      "ircSection": "IRC §164(b)(6); Notice 2020-75",
-      "irsPub": "IRS Notice 2020-75; state-specific PTET statute",
-      "trigger": "K-1 pass-through income > 0 AND resident state has PTET regime AND SALT cap binds (saltDeductible == $10,000)",
-      "formula": "estSavings = max(0, actualSALT - $10,000) * federalMarginalRate",
+      "ircSection": "IRC §164(b)(6)+(7); Notice 2020-75",
+      "irsPub": "IRS Notice 2020-75; state-specific PTET statute. OBBBA (P.L. 119-21 §70120) added IRC §164(b)(7): the SALT cap is $40,000 ($20,000 MFS) for TY2025 [$40,400 TY2026, +1%/yr through 2029, reverting to $10,000 after 2029], phasing DOWN 30% of MAGI over $500,000 ($250,000 MFS) to a $10,000 floor.",
+      "trigger": "K-1 pass-through income > 0 AND resident state has PTET regime AND uncapped SALT exceeds the year-indexed federal SALT cap ($10k TCJA TY2024; $40k OBBBA TY2025, phasing down above $500k MAGI)",
+      "formula": "estSavings = max(0, actualSALT - federalSaltCap) * federalMarginalRate, where federalSaltCap is year-indexed + MAGI-phase-down-adjusted (TCJA $10k for TY2024; OBBBA $40k/$40.4k for TY2025/2026 reduced 30% of MAGI over $500k, $10k floor).",
       "confidence": 0.85,
       "cpaEffortHours": 3.0,
       "recurring": true,
@@ -36,9 +36,10 @@
       "prerequisiteData": [
         "Confirm entity is eligible for PTET in its state (typically S-corp or partnership)",
         "Confirm all owners consent to PTET election where state requires unanimous consent",
-        "Estimated state tax payable from the entity"
+        "Estimated state tax payable from the entity",
+        "MAGI (drives the OBBBA SALT-cap phase-down above $500k / $250k MFS)"
       ],
-      "action": "Have the pass-through entity make a PTET election for the next tax year so state income tax is paid + deducted at the entity level, bypassing the $10k federal SALT cap. Estimated federal benefit ~{{estSavings}}.",
+      "action": "Have the pass-through entity make a PTET election for the next tax year so state income tax is paid + deducted at the entity level, bypassing the federal SALT cap (OBBBA §164(b)(7): $40k for TY2025, phasing down to $10k for high earners). Estimated federal benefit ~{{estSavings}}.",
       "formulaRev": 1
     },
     {

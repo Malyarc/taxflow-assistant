@@ -443,6 +443,60 @@ header("G1.2±6 — saltUncapped exactly at $10k cap — does NOT fire");
     findHit(hits, "G1.2") == null, true);
 }
 
+// --- G1.2 OBBBA — TY2025 $40k SALT cap SUPPRESSES moderate-SALT PTET ---
+// OBBBA (P.L. 119-21 §70120) raised the SALT cap to $40,000 for MAGI < $500k.
+// MFJ NY TY2025, K-1 active $350k (MAGI ~$350k → no phase-down), saltUncapped
+// $35k (income $20k + property $15k) + mortgage $25k (itemizes vs $31,500 std).
+// OBBBA cap $40k > saltUncapped $35k → SALT fully deductible → PTET NOT needed.
+// Contrast: the SAME client at TY2024 (cap $10k) DOES fire — proving the
+// suppression is purely the OBBBA $40k cap.
+header("G1.2 OBBBA — TY2025 $40k cap suppresses $35k-SALT PTET");
+{
+  const adjustments = [
+    { adjustmentType: "state_income_tax", amount: 20000, isApplied: true },
+    { adjustmentType: "state_property_tax", amount: 15000, isApplied: true },
+    { adjustmentType: "mortgage_interest", amount: 25000, isApplied: true },
+  ];
+  const hits2025 = runPlanning({
+    client: { filingStatus: "married_filing_jointly", state: "NY", taxYear: 2025 },
+    scheduleK1: [{ taxYear: 2025, entityName: "NY S-Corp", entityType: "s_corp", activityType: "active", box1OrdinaryIncome: 350000 }] as unknown as TaxReturnInputs["scheduleK1"],
+    adjustments: adjustments as unknown as TaxReturnInputs["adjustments"],
+  });
+  checkTruthy("G1.2-obbba1", "TY2025 $35k SALT < $40k OBBBA cap → PTET suppressed", findHit(hits2025, "G1.2") == null, true);
+
+  const hits2024 = runPlanning({
+    client: { filingStatus: "married_filing_jointly", state: "NY", taxYear: 2024 },
+    scheduleK1: [{ taxYear: 2024, entityName: "NY S-Corp", entityType: "s_corp", activityType: "active", box1OrdinaryIncome: 350000 }] as unknown as TaxReturnInputs["scheduleK1"],
+    adjustments: adjustments as unknown as TaxReturnInputs["adjustments"],
+  });
+  checkTruthy("G1.2-obbba1", "TY2024 same client (TCJA cap $10k) → PTET fires (contrast)", findHit(hits2024, "G1.2") != null, true);
+}
+
+// --- G1.2 OBBBA — TY2025 high-MAGI phase-down to the $10k floor ---
+// Once MAGI ≥ $600k the SALT cap fully phases DOWN to the $10k floor
+// (40k − 30% of MAGI over $500k ≤ 10k). MFJ NY TY2025, K-1 active $700k
+// (MAGI ~$700k), saltUncapped $60k (income $45k + property $15k) + mortgage $25k.
+// OBBBA cap = max(10k, 40k − 0.30×($700k−$500k)) = max(10k, −20k) = $10,000.
+// recoverableSalt = $60k − $10k = $50,000.
+header("G1.2 OBBBA — TY2025 MAGI $700k phases SALT cap to $10k floor");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "married_filing_jointly", state: "NY", taxYear: 2025 },
+    scheduleK1: [{ taxYear: 2025, entityName: "NY S-Corp", entityType: "s_corp", activityType: "active", box1OrdinaryIncome: 700000 }] as unknown as TaxReturnInputs["scheduleK1"],
+    adjustments: [
+      { adjustmentType: "state_income_tax", amount: 45000, isApplied: true },
+      { adjustmentType: "state_property_tax", amount: 15000, isApplied: true },
+      { adjustmentType: "mortgage_interest", amount: 25000, isApplied: true },
+    ] as unknown as TaxReturnInputs["adjustments"],
+  });
+  const hit = findHit(hits, "G1.2");
+  checkTruthy("G1.2-obbba2", "PTET fires (high earner, cap phased to floor)", hit != null, true);
+  if (hit) {
+    check("G1.2-obbba2", "saltCap = $10,000 (phased to floor)", Number(hit.inputs.saltCap), 10000, 1, "OBBBA §164(b)(7) phase-down floor");
+    check("G1.2-obbba2", "recoverableSalt = $50,000 ($60k − $10k)", Number(hit.inputs.recoverableSalt), 50000, 1);
+  }
+}
+
 // ============================================================================
 // G1.10 — Foreign Tax Credit unclaimed
 // IRS: IRC §901; Form 1116.

@@ -413,6 +413,30 @@ const PTET_ELECTING_STATES: ReadonlySet<string> = new Set([
   "SC", "UT", "VA", "WV", "WI",
 ]);
 
+/**
+ * SALT deduction cap, year-indexed, including the OBBBA (P.L. 119-21 §70120)
+ * high-income phase-down. TY2024 and earlier = TCJA $10k ($5k MFS). TY2025 base
+ * $40,000 ($20,000 MFS); TY2026 $40,400 ($20,200 MFS) [+1%/yr through 2029,
+ * reverts to $10k after 2029]. Phase-DOWN: reduced by 30% of MAGI over $500,000
+ * ($250,000 MFS; $505,000/$252,500 for TY2026), floored at $10,000 ($5,000 MFS).
+ * Codified in IRC §164(b)(6) (amended) + §164(b)(7) (added).
+ *
+ * NOTE: the CORE engine still applies the TCJA $10k cap when computing the
+ * federal itemized total + saltDeductible (an OBBBA core-engine SALT refresh is
+ * a tracked follow-up). This planning helper computes the OBBBA cap independently
+ * off saltUncapped + MAGI so the PTET recommendation reflects current law.
+ */
+function obbbaSaltCap(taxYear: number, filingStatus: string, magi: number): number {
+  const isMfs = filingStatus === "married_filing_separately";
+  if (taxYear < 2025) return isMfs ? 5_000 : 10_000;
+  const fullBase = taxYear >= 2026 ? 40_400 : 40_000;
+  const baseCap = isMfs ? fullBase / 2 : fullBase;
+  const threshold = (taxYear >= 2026 ? 505_000 : 500_000) * (isMfs ? 0.5 : 1);
+  const floor = isMfs ? 5_000 : 10_000;
+  if (magi <= threshold) return baseCap;
+  return Math.max(floor, baseCap - 0.30 * (magi - threshold));
+}
+
 function detectPtetElection(args: {
   client: ClientFacts;
   computed: ComputedTaxReturn;
@@ -428,11 +452,13 @@ function detectPtetElection(args: {
   const activeK1 = computed.scheduleK1?.totalActiveOrdinaryIncome ?? 0;
   if (activeK1 <= 0) return null;
 
-  // Cap must actually bind: itemizing AND saltDeductible at the cap.
+  // Cap must actually bind: itemizing AND uncapped SALT above the (OBBBA-aware,
+  // year-indexed) federal SALT cap. Using saltUncapped (the pre-cap state+property
+  // total) lets the recommendation reflect the OBBBA $40k cap + phase-down even
+  // though the core engine still computes saltDeductible against the TCJA $10k cap.
   if (computed.itemizedDeductions == null) return null;
-  const saltCap = client.filingStatus === "married_filing_separately" ? 5000 : 10000;
-  const { saltDeductible, saltUncapped } = computed.scheduleA;
-  if (Math.round(saltDeductible) !== saltCap) return null;
+  const saltCap = obbbaSaltCap(computed.taxYear, client.filingStatus, computed.adjustedGrossIncome);
+  const { saltUncapped } = computed.scheduleA;
   if (saltUncapped <= saltCap) return null;
 
   const fedRate = federalMarginalRate(computed);
@@ -472,8 +498,8 @@ function detectPtetElection(args: {
     },
     assumptions: [
       `Resident state ${state} has enacted a PTET regime (AICPA state tracker, as of Phase G).`,
-      `SALT cap binds at ${fmt(saltCap)} (TCJA $10k single/MFJ; $5k MFS — IRC §164(b)(6)).`,
-      `Heuristic estSavings = (saltUncapped − saltCap) × federal marginal rate (recoverable SALT at entity level).`,
+      `SALT cap for TY${computed.taxYear} = ${fmt(saltCap)} (IRC §164(b)(6)+(7)). OBBBA (P.L. 119-21 §70120) raised the cap to $40k ($20k MFS) for TY2025 [$40.4k TY2026, +1%/yr through 2029], phasing DOWN 30% of MAGI over $500k ($250k MFS) to a $10k floor, then reverting to $10k after 2029. TCJA $10k applies for TY2024 and earlier.`,
+      `Heuristic estSavings = (saltUncapped − SALT cap) × federal marginal rate (recoverable SALT deducted at the entity level instead). NOTE: the core engine still computes the federal itemized total against the TCJA $10k cap (OBBBA core SALT refresh tracked) — this detector applies the OBBBA cap to saltUncapped for the recommendation.`,
       `Engine does NOT model the PTET election as a first-class adjustment type — H2 verification deferred (would require multi-mutation: remove personal SALT + add PTE-level deduction + PTE-state-tax credit). Tracked as H1 catalog work.`,
       `Assumes active K-1 income (passive doesn't qualify the same way under most PTET regimes).`,
     ],
