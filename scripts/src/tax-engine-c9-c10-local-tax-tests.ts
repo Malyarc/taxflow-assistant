@@ -152,8 +152,8 @@ header("C10-5 Tri-Valley 1.25% × $45k = $562.50");
 header("LOCAL_TAX_DATA total ≥ 70");
 {
   const totalCount = Object.keys(LOCAL_TAX_DATA).length;
-  // 24 MD + 10 OH cities + 10 IN + 13 PA + 15 OH SDs = 72
-  check("Growth", `total local jurisdictions = ${totalCount}`, totalCount, 72);
+  // 24 MD + 10 OH cities + 10 IN + 13 PA + 15 OH SDs + 5 KY (#7) = 77
+  check("Growth", `total local jurisdictions = ${totalCount}`, totalCount, 77);
 }
 
 header("C10 E2E: OH client with Olentangy SDIT — local tax flows through");

@@ -150,7 +150,7 @@ const FLAT_STATES_2024: Array<[string, number, number]> = [
   ["GA", 0.0539, 12000],
   ["ID", 0.058, 14600],
   ["IL", 0.0495, 2775], // IL personal exemption $2,775/filer (2024) — modeled as deduction
-  ["IN", 0.0305, 0],
+  ["IN", 0.0305, 1000], // IN $1,000 personal exemption (single, 0 deps) modeled as deduction (#7)
   ["KY", 0.04, 3160],
   ["MI", 0.0425, 0],
   ["MS", 0.047, 12300],
@@ -232,8 +232,8 @@ for (const st of ALL_STATES) {
 console.log(`  All ${ALL_STATES.length} states ran without error. Total tax across states (sanity only): $${stateRunTotal.toFixed(0)}`);
 
 header("D. State tax: 2025 — known rate changes from TY2024");
-// IN dropped 3.05% → 3.00% in 2025
-check("IN 2025 $80k single (3.0%)", calculateStateTax(80000, "IN", "single", 2025), 80000 * 0.03);
+// IN dropped 3.05% → 3.00% in 2025; $1,000 personal exemption (single) modeled (#7)
+check("IN 2025 $80k single (3.0%, $1k exemption)", calculateStateTax(80000, "IN", "single", 2025), (80000 - 1000) * 0.03);
 // KY dropped 4.0% → 3.5%, std $3,270
 check("KY 2025 $80k single (3.5% over std $3,270)", calculateStateTax(80000, "KY", "single", 2025), (80000 - 3270) * 0.035);
 // MS dropped to 4.4%

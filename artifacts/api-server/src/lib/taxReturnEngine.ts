@@ -49,6 +49,7 @@ import {
   calculateStateEitc,
   calculateStateCtc,
   calculateStateAdditionalCredits,
+  calculateNycUbt,
   getStateRetirementExemption,
   calculatePassiveActivityLossAllowance,
   calculateMacrsDepreciation,
@@ -878,10 +879,13 @@ export interface ComputedTaxReturn {
   scheduleEPassiveLossSuspended: number;
   /** Schedule K-1 (partnership + S-corp) aggregate summary */
   scheduleK1: ScheduleK1Summary;
-  /** Local-jurisdiction income tax (NYC for now). Zero when no local jurisdiction applies. */
+  /** Local-jurisdiction income tax (NYC PIT + flat localities + NYC UBT). Zero when none. */
   localTaxLiability: number;
   /** The local jurisdiction this tax was computed for ("NYC", etc.). Null when none. */
   localTaxJurisdiction: string | null;
+  /** #7 — NYC Unincorporated Business Tax (4% on NYC business income, after the
+   *  services allowance, $5k exemption, and sliding Business Tax Credit). */
+  nycUbt: number;
   /** Detailed breakdowns for transparency */
   detail: {
     se: SeTaxCalculation;
@@ -2669,6 +2673,11 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
       ohTraditionalBase: sumByType("oh_sdit_traditional_base") > 0
         ? sumByType("oh_sdit_traditional_base")
         : undefined,
+      // #7 — OH cross-city resident credit: CPA-supplied municipal tax paid to
+      // the WORK city (credited against the resident city's tax).
+      ohWorkCityTaxPaid: sumByType("oh_work_city_tax_paid") > 0
+        ? sumByType("oh_work_city_tax_paid")
+        : undefined,
       // C11 deeper — Per-state K-1 + rental sourcing (only used when
       // `part_year_use_full_source_allocation` is enabled AND filer is part-year).
       perStateOtherSourced,
@@ -2861,6 +2870,15 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     multiState.localTax.nycEitcRate = nycEitcRate;
     multiState.localTax.netLocalTax = localTaxLiabilityAfterNycEitc;
   }
+
+  // #7 — NYC Unincorporated Business Tax (separate 4% business-level tax on
+  // NYC-allocated net unincorporated business income; CPA supplies the amount
+  // via the `nyc_ubt_business_income` adjustment). Added to the total local
+  // tax burden. Applies independent of resident locality (NYC residents AND
+  // non-residents doing business in NYC).
+  const nycUbtCalc = calculateNycUbt(sumByType("nyc_ubt_business_income"));
+  const nycUbt = nycUbtCalc.netUbt;
+  const localTaxLiabilityWithUbt = localTaxLiabilityAfterNycEitc + nycUbt;
 
   const acaHouseholdSizeDefault =
     1 +
@@ -3121,8 +3139,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     scheduleERentalAppliedToAgi: rentalNetAppliedToAgi,
     passiveActivityLoss: passiveLossAllowance,
     scheduleEPassiveLossSuspended: passiveLossAllowance?.suspendedToNextYear ?? 0,
-    localTaxLiability: localTaxLiabilityAfterNycEitc,
-    localTaxJurisdiction: multiState.localTax ? multiState.localTax.jurisdiction : null,
+    localTaxLiability: localTaxLiabilityWithUbt,
+    localTaxJurisdiction: multiState.localTax ? multiState.localTax.jurisdiction : (nycUbt > 0 ? "NYC-UBT" : null),
+    nycUbt,
     scheduleK1: {
       k1Count: k1sForYear.length,
       partnershipCount: k1sForYear.filter((k) => (k.entityType ?? "partnership") === "partnership").length,

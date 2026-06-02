@@ -23,6 +23,8 @@ import {
   calculateNycLocalTax,
   calculateMultiStateTax,
   calculateFlatRateLocalTax,
+  calculateStateTax,
+  calculateNycUbt,
   LOCAL_TAX_DATA,
 } from "../../artifacts/api-server/src/lib/taxCalculator";
 import {
@@ -2443,6 +2445,100 @@ header("E12 int — formerState == currentState → full-year (no part-year)");
   check("E12 int", "same-state → formerStateTax = 0",
     computed.formerStateTax, 0, 0.01,
     "Engine guards against same-state pseudo-move");
+}
+
+// ============================================================================
+// #7 — Local taxes: IN per-dependent exemption, KY occupational, OH cross-city
+//      resident credit, NYC UBT
+// ============================================================================
+section("#7 — IN per-dependent exemption / KY occupational / OH credit / NYC UBT");
+
+// IN per-dependent exemption (IC 6-3-1-3.5(a)): $1,000/filer + $1,000/dependent.
+// Single $50k, 2 dependents → exemption $3,000 ; IN taxable $47,000 × 3.05% = $1,433.50.
+header("#7 IN — single $50k, 2 dependents → $1,433.50 (was $1,525 unmodeled)");
+{
+  const tax = calculateStateTax(50000, "IN", "single", 2024, { dependentCount: 2 });
+  check("#7-IN", "IN tax = $1,433.50 (exemption $1k filer + $2k deps)", tax, 1433.50, 0.5);
+  const taxMfj = calculateStateTax(80000, "IN", "married_filing_jointly", 2024, { dependentCount: 3 });
+  // MFJ exemption $2,000 + 3×$1,000 = $5,000 ; taxable $75,000 × 3.05% = $2,287.50
+  check("#7-IN", "IN MFJ $80k, 3 deps → $2,287.50", taxMfj, 2287.50, 0.5);
+}
+
+// KY occupational — Louisville 2.2% uncapped; Kenton SS-capped at $168,600.
+header("#7 KY — Louisville 2.2% (uncapped) + Kenton SS-cap $168,600");
+{
+  const lou = calculateFlatRateLocalTax({
+    localityCode: "KY-LOUISVILLE", residentState: "KY", federalAgi: 100000,
+    totalWages: 100000, filingStatus: "single", taxYear: 2024,
+  });
+  check("#7-KY", "Louisville $100k wages × 2.2% = $2,200", lou?.netLocalTax ?? 0, 2200, 0.5);
+  const ken = calculateFlatRateLocalTax({
+    localityCode: "KY-KENTON", residentState: "KY", federalAgi: 200000,
+    totalWages: 200000, filingStatus: "single", taxYear: 2024,
+  });
+  // Base capped at $168,600 (not $200k) × 0.6997% = $1,179.72.
+  check("#7-KY", "Kenton base capped at $168,600", ken?.taxBase ?? 0, 168600, 0.5);
+  check("#7-KY", "Kenton tax = $1,179.72 (capped × 0.6997%)", ken?.netLocalTax ?? 0, 168600 * 0.006997, 0.5);
+}
+
+// OH cross-city resident credit (ORC ch. 718): Columbus 2.5%, 100% credit up to 2.5%.
+header("#7 OH — Columbus resident, work-city credit");
+{
+  // Work city tax $2,000 (2.0% of $100k): credit = min(100%×2000, 2.5%×100k) = 2000.
+  //   Columbus tax 2,500 − 2,000 = $500 (the residual 0.5%).
+  const partial = calculateFlatRateLocalTax({
+    localityCode: "OH-COLUMBUS", residentState: "OH", federalAgi: 100000,
+    totalWages: 100000, filingStatus: "single", taxYear: 2024, ohWorkCityTaxPaid: 2000,
+  });
+  check("#7-OH", "Columbus net after credit = $500 (0.5% residual)", partial?.netLocalTax ?? 0, 500, 0.5);
+  // Work city tax $3,000 (3.0%): credit capped at 2.5%×100k = 2,500 → net 0.
+  const capped = calculateFlatRateLocalTax({
+    localityCode: "OH-COLUMBUS", residentState: "OH", federalAgi: 100000,
+    totalWages: 100000, filingStatus: "single", taxYear: 2024, ohWorkCityTaxPaid: 3000,
+  });
+  check("#7-OH", "Columbus credit-limit binds → net $0", capped?.netLocalTax ?? 0, 0, 0.5);
+  // No work-city tax → full resident tax $2,500 (backward compat).
+  const noCredit = calculateFlatRateLocalTax({
+    localityCode: "OH-COLUMBUS", residentState: "OH", federalAgi: 100000,
+    totalWages: 100000, filingStatus: "single", taxYear: 2024,
+  });
+  check("#7-OH", "no work-city tax → full $2,500 (legacy)", noCredit?.netLocalTax ?? 0, 2500, 0.5);
+}
+
+// NYC UBT (Form NYC-202): 4% after services allowance (min 20%/$10k) + $5k exemption,
+// minus the sliding Business Tax Credit.
+header("#7 NYC UBT — services allowance + $5k exemption + sliding credit");
+{
+  // $200k: allowance min(40k,10k)=10k ; taxable 185k × 4% = $7,400 (≥$5,400 → no credit).
+  const big = calculateNycUbt(200000);
+  check("#7-UBT", "$200k → UBT $7,400", big.netUbt, 7400, 0.5);
+  // $100k: allowance 10k ; taxable 85k × 4% = $3,400 (≤$3,400 → full credit → $0).
+  const zero = calculateNycUbt(100000);
+  check("#7-UBT", "$100k → UBT $0 (full credit at $3,400)", zero.netUbt, 0, 0.5);
+  // $110k: taxable 95k × 4% = $3,800 ; credit 3,800×(5,400−3,800)/2,000 = 3,040 → $760.
+  const partial = calculateNycUbt(110000);
+  check("#7-UBT", "$110k → UBT $760 (sliding credit)", partial.netUbt, 760, 0.5);
+  // Sliding-credit worked example from NYC-202 instructions: tax $3,900 → credit $2,925.
+  // (taxable for $3,900 tax = $97,500; net income = 97,500 + 5,000 + allowance.)
+  // Verify the credit formula directly via a net that yields tax $3,900: taxable 97,500.
+  // net − min(0.2net,10000) − 5000 = 97,500 → net 112,500 (allowance 10k): 112,500−10,000−5,000=97,500.
+  const ex = calculateNycUbt(112500);
+  check("#7-UBT", "$112.5k → taxable $97,500 → tax $3,900", ex.taxBeforeCredit, 3900, 0.5);
+  check("#7-UBT", "$112.5k → credit $2,925 (NYC-202 example) → UBT $975", ex.netUbt, 975, 0.5);
+}
+
+// End-to-end: NYC UBT flows through the engine via adjustment.
+header("#7 NYC UBT — engine round-trip via nyc_ubt_business_income adjustment");
+{
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "NY", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 50000, federalTaxWithheldBox2: 0, stateCode: "NY" }],
+    form1099s: [],
+    adjustments: [{ adjustmentType: "nyc_ubt_business_income", amount: 200000, isApplied: true }],
+    taxYear: 2024,
+  });
+  check("#7-UBT", "engine nycUbt = $7,400", r.nycUbt, 7400, 0.5);
+  check("#7-UBT", "engine localTaxLiability includes UBT ($7,400)", r.localTaxLiability, 7400, 0.5);
 }
 
 // ============================================================================

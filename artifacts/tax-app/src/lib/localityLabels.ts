@@ -64,6 +64,13 @@ export const LOCALITY_OPTIONS: Record<string, LocalityOption[]> = {
     { code: "IN-TIPPECANOE",  label: "Tippecanoe County" },
     { code: "IN-VANDERBURGH", label: "Vanderburgh County" },
   ],
+  KY: [
+    { code: "KY-LOUISVILLE",        label: "Louisville Metro (occupational, 2.20%)" },
+    { code: "KY-LOUISVILLE-NONRES", label: "Louisville Metro (non-resident, 1.45%)" },
+    { code: "KY-LEXINGTON",         label: "Lexington-Fayette (occupational, 2.25%)" },
+    { code: "KY-KENTON",            label: "Kenton County (SS-capped)" },
+    { code: "KY-BOONE",             label: "Boone County (capped)" },
+  ],
 };
 
 const FLAT_CODE_TO_LABEL: Record<string, string> = Object.fromEntries(

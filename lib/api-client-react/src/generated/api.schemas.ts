@@ -1223,6 +1223,8 @@ export const AdjustmentAdjustmentType = {
   roth_conversion_basis_within_5yr: "roth_conversion_basis_within_5yr",
   hi_employer_funded_pension: "hi_employer_funded_pension",
   ny_government_pension: "ny_government_pension",
+  oh_work_city_tax_paid: "oh_work_city_tax_paid",
+  nyc_ubt_business_income: "nyc_ubt_business_income",
 } as const;
 
 export interface Adjustment {
@@ -1341,6 +1343,8 @@ export const CreateAdjustmentBodyAdjustmentType = {
   roth_conversion_basis_within_5yr: "roth_conversion_basis_within_5yr",
   hi_employer_funded_pension: "hi_employer_funded_pension",
   ny_government_pension: "ny_government_pension",
+  oh_work_city_tax_paid: "oh_work_city_tax_paid",
+  nyc_ubt_business_income: "nyc_ubt_business_income",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -1455,6 +1459,8 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   roth_conversion_basis_within_5yr: "roth_conversion_basis_within_5yr",
   hi_employer_funded_pension: "hi_employer_funded_pension",
   ny_government_pension: "ny_government_pension",
+  oh_work_city_tax_paid: "oh_work_city_tax_paid",
+  nyc_ubt_business_income: "nyc_ubt_business_income",
 } as const;
 
 export interface UpdateAdjustmentBody {

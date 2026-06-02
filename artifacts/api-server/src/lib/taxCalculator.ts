@@ -644,6 +644,24 @@ export interface LocalityInfo {
   rate: number;
   /** Which income amount the rate applies to. */
   base: LocalityTaxBase;
+  /**
+   * Optional annual wage cap (some KY county occupational taxes cap the
+   * `wages_only` base at the OASDI/SS wage base, e.g. Kenton $168,600 (2024),
+   * or a fixed amount, e.g. Boone $75,223). When set, the wages base is
+   * Math.min(wages + SE profit, wageCap).
+   */
+  wageCap?: number;
+  /**
+   * OH cross-city resident credit (ORC ch. 718): fraction of the work-city tax
+   * the RESIDENT city credits (e.g. 1.0 = 100%). Used with creditLimitRate +
+   * the CPA-supplied work-city tax paid. Absent → no resident credit (legacy).
+   */
+  creditRate?: number;
+  /**
+   * OH cross-city resident credit ceiling, as a fraction of the resident-city
+   * base (e.g. 0.025 = 2.5% of income). The credit cannot exceed this.
+   */
+  creditLimitRate?: number;
 }
 
 export const LOCAL_TAX_DATA: Record<string, LocalityInfo> = {
@@ -678,11 +696,15 @@ export const LOCAL_TAX_DATA: Record<string, LocalityInfo> = {
   // Source: Ohio Department of Taxation; RITA member listing; CCA roster.
   // Base = wages earned in city. Engine uses total OH-resident wages as
   // approximation (cross-city employment credit not modeled — sub-gap).
+  // creditRate/creditLimitRate: OH cross-city resident credit (ORC ch. 718).
+  // Columbus / Cleveland / Cincinnati give 100% up to their own rate (verified
+  // 2024/2025; sources: Columbus IR-25, CCA, Cincinnati FAQ). Others omit the
+  // credit (CPA enters it directly when their city grants one).
   "OH-AKRON":         { jurisdictionLabel: "Akron, OH",                 state: "OH", rate: 0.0250, base: "wages_only" },
   "OH-CANTON":        { jurisdictionLabel: "Canton, OH",                state: "OH", rate: 0.0250, base: "wages_only" },
-  "OH-CINCINNATI":    { jurisdictionLabel: "Cincinnati, OH",            state: "OH", rate: 0.0180, base: "wages_only" }, // 2020 ballot reduction from 2.10%
-  "OH-CLEVELAND":     { jurisdictionLabel: "Cleveland, OH",             state: "OH", rate: 0.0250, base: "wages_only" },
-  "OH-COLUMBUS":      { jurisdictionLabel: "Columbus, OH",              state: "OH", rate: 0.0250, base: "wages_only" },
+  "OH-CINCINNATI":    { jurisdictionLabel: "Cincinnati, OH",            state: "OH", rate: 0.0180, base: "wages_only", creditRate: 1.0, creditLimitRate: 0.0180 }, // 2020 ballot reduction from 2.10%
+  "OH-CLEVELAND":     { jurisdictionLabel: "Cleveland, OH",             state: "OH", rate: 0.0250, base: "wages_only", creditRate: 1.0, creditLimitRate: 0.0250 },
+  "OH-COLUMBUS":      { jurisdictionLabel: "Columbus, OH",              state: "OH", rate: 0.0250, base: "wages_only", creditRate: 1.0, creditLimitRate: 0.0250 },
   "OH-DAYTON":        { jurisdictionLabel: "Dayton, OH",                state: "OH", rate: 0.0250, base: "wages_only" },
   "OH-LAKEWOOD":      { jurisdictionLabel: "Lakewood, OH",              state: "OH", rate: 0.0150, base: "wages_only" },
   "OH-PARMA":         { jurisdictionLabel: "Parma, OH",                 state: "OH", rate: 0.0250, base: "wages_only" },
@@ -701,6 +723,19 @@ export const LOCAL_TAX_DATA: Record<string, LocalityInfo> = {
   "IN-ST_JOSEPH":     { jurisdictionLabel: "St. Joseph County, IN",     state: "IN", rate: 0.0175, base: "state_taxable" },
   "IN-TIPPECANOE":    { jurisdictionLabel: "Tippecanoe County, IN",     state: "IN", rate: 0.0128, base: "state_taxable" },
   "IN-VANDERBURGH":   { jurisdictionLabel: "Vanderburgh County, IN",    state: "IN", rate: 0.0120, base: "state_taxable" },
+
+  // ── Kentucky local occupational license taxes (KRS 67.083 / 92) ──────────
+  // Local payroll taxes on wages + SE net profits earned in the jurisdiction.
+  // Each jurisdiction sets its own rate by ordinance; no statewide rate.
+  // Louisville/Lexington are uncapped; some counties cap at the OASDI base
+  // ($168,600 for 2024) or a fixed amount. Resident rate used (Louisville
+  // non-residents pay 1.45% — CPA selects the right code). Sources: Louisville
+  // Metro OL-3 instructions; LFUCG occupational-license page; KACo 2024 rates.
+  "KY-LOUISVILLE":      { jurisdictionLabel: "Louisville Metro, KY (occupational)", state: "KY", rate: 0.0220, base: "wages_only" }, // 1.25% Metro + 0.20% TARC + 0.75% schools
+  "KY-LOUISVILLE-NONRES":{ jurisdictionLabel: "Louisville Metro, KY (non-resident)", state: "KY", rate: 0.0145, base: "wages_only" }, // excludes 0.75% school portion
+  "KY-LEXINGTON":       { jurisdictionLabel: "Lexington-Fayette, KY (occupational)", state: "KY", rate: 0.0225, base: "wages_only" },
+  "KY-KENTON":          { jurisdictionLabel: "Kenton County, KY (occupational, SS-capped)", state: "KY", rate: 0.006997, base: "wages_only", wageCap: 168600 }, // capped at 2024 OASDI base
+  "KY-BOONE":           { jurisdictionLabel: "Boone County, KY (occupational, capped)", state: "KY", rate: 0.0080, base: "wages_only", wageCap: 75223 },
 
   // ── C9 — Pennsylvania local Earned Income Tax (Act 511 / Act 32) ─────────
   // Top 12 PA jurisdictions by population (covers ~50% of PA filers).
@@ -807,6 +842,8 @@ export function calculateFlatRateLocalTax(params: {
   /** STL-02 — net Schedule-C/1099-NEC profit added to the PA EIT / OH SDIT
    *  earned-income (wages_only) base. */
   netSeProfit?: number;
+  /** #7 — OH cross-city resident credit: municipal tax paid to the WORK city. */
+  ohWorkCityTaxPaid?: number;
 }): NycLocalTaxCalculation | null {
   const info = LOCAL_TAX_DATA[params.localityCode];
   if (info) {
@@ -824,6 +861,12 @@ export function calculateFlatRateLocalTax(params: {
       params.taxYear,
       params.ohTraditionalBase,
       params.netSeProfit ?? 0,
+      {
+        wageCap: info.wageCap,
+        creditRate: info.creditRate,
+        creditLimitRate: info.creditLimitRate,
+        workCityTaxPaid: params.ohWorkCityTaxPaid,
+      },
     );
   }
   // C9 — PA bulk registry fallback
@@ -882,6 +925,16 @@ function computeFlatRateLocalTaxFromInfo(
   taxYear: number,
   ohTraditionalBase?: number,
   netSeProfit: number = 0,
+  extra?: {
+    /** KY-style annual wage cap on the wages_only base. */
+    wageCap?: number;
+    /** OH cross-city resident-credit fraction of work-city tax. */
+    creditRate?: number;
+    /** OH cross-city resident-credit ceiling as a fraction of the base. */
+    creditLimitRate?: number;
+    /** CPA-supplied municipal tax paid to the WORK city (for the resident credit). */
+    workCityTaxPaid?: number;
+  },
 ): NycLocalTaxCalculation {
   let base = 0;
   if (baseType === "federal_agi") {
@@ -894,6 +947,8 @@ function computeFlatRateLocalTaxFromInfo(
     // self-employed file the NPT, computed here at the same resident rate,
     // gross of the income-based Schedule SP / SE-tax-equivalent reductions.)
     base = Math.max(0, totalWages) + Math.max(0, netSeProfit);
+    // KY occupational tax: cap the base at the jurisdiction's wage cap.
+    if (extra?.wageCap != null && extra.wageCap > 0) base = Math.min(base, extra.wageCap);
   } else if (baseType === "oh_traditional") {
     // C10 — OH SDIT traditional base = Ohio IT-1040 Line 3 (Ohio taxable
     // income before personal exemption). Engine approximates this as
@@ -920,16 +975,28 @@ function computeFlatRateLocalTaxFromInfo(
     base = Math.max(0, federalAgi - stdDed);
   }
   const tax = base * rate;
+  // OH cross-city resident credit (ORC ch. 718): a RESIDENT city credits tax
+  // paid to the WORK city, = min(creditRate × work-city tax, creditLimitRate ×
+  // base), capped so net resident tax ≥ 0. Only applied when the locality has
+  // credit fields AND the CPA supplied the work-city tax paid.
+  let residentCredit = 0;
+  if (extra?.creditRate != null && extra.creditLimitRate != null && (extra.workCityTaxPaid ?? 0) > 0) {
+    residentCredit = Math.min(
+      extra.creditRate * Math.max(0, extra.workCityTaxPaid ?? 0),
+      extra.creditLimitRate * base,
+    );
+  }
+  const netTax = Math.max(0, tax - residentCredit);
   return {
     jurisdiction: localityCode,
     nysTaxableIncome: 0,
     baselineTax: tax,
-    householdCredit: 0,
+    householdCredit: residentCredit, // reuse field to surface the OH resident credit
     nycEitc: 0,
     nycEitcRate: 0,
     nycSchoolTaxCredit: 0,
     nycMctmt: 0,
-    netLocalTax: tax,
+    netLocalTax: netTax,
     flatRate: rate,
     taxBase: base,
   };
@@ -1027,6 +1094,8 @@ export function calculateMultiStateTax(params: {
     hiEmployerFundedPension?: number;
     /** NY — government-pension portion (IT-201 Line 26, fully excluded). */
     nyGovernmentPension?: number;
+    /** OH — municipal tax paid to the WORK city (resident cross-city credit). */
+    ohWorkCityTaxPaid?: number;
     /** K10 — taxable SS from Pub 915. Excluded from state-tax base for the
      *  41 jurisdictions not in STATES_TAXING_SS. */
     taxableSocialSecurity?: number;
@@ -1292,6 +1361,7 @@ export function calculateMultiStateTax(params: {
       taxYear: params.taxYear,
       ohTraditionalBase: params.options?.ohTraditionalBase,
       netSeProfit: params.options?.netSeProfit ?? 0,
+      ohWorkCityTaxPaid: params.options?.ohWorkCityTaxPaid,
     });
   }
 
@@ -1663,6 +1733,44 @@ export function calculateNycLocalTax(params: {
     nycEitcRate,
     netLocalTax,
   };
+}
+
+// ── NYC Unincorporated Business Tax (UBT) — Form NYC-202 / NYC-204 ─────────
+// A SEPARATE 4% tax on the net income of an unincorporated business (sole
+// proprietorship, single-member LLC, partnership) carried on within NYC. It is
+// NOT the personal income tax and applies to residents AND non-residents doing
+// business in NYC. (S-corps pay the General Corporation Tax instead.)
+//   Line 13 — services allowance: min(20% of net income, $10,000)
+//   Line 15 — exemption: $5,000 (flat)
+//   Line 16 — taxable = net − allowance − $5,000 ; Line 17 tax = 4% × Line 16
+//   Line 18 — Business Tax Credit: full if tax ≤ $3,400; none if tax ≥ $5,400;
+//             partial = tax × ($5,400 − tax) / $2,000 between.
+// Source: NYC Dept of Finance Form NYC-202 instructions (TY2024 = TY2025).
+// NYC Admin. Code §11-503(a). The engine takes the CPA-supplied NYC-allocated
+// net business income (allocation per the NYC-202 Schedule C is the CPA's call).
+export interface NycUbtCalculation {
+  netBusinessIncome: number;
+  servicesAllowance: number;
+  exemption: number;
+  taxableIncome: number;
+  taxBeforeCredit: number;
+  businessTaxCredit: number;
+  netUbt: number;
+}
+export function calculateNycUbt(netBusinessIncome: number): NycUbtCalculation {
+  const net = Math.max(0, netBusinessIncome);
+  const servicesAllowance = Math.min(0.20 * net, 10000);
+  const exemption = 5000;
+  const taxableIncome = Math.max(0, net - servicesAllowance - exemption);
+  const taxBeforeCredit = 0.04 * taxableIncome;
+  let businessTaxCredit = 0;
+  if (taxBeforeCredit <= 3400) {
+    businessTaxCredit = taxBeforeCredit; // full credit → no tax
+  } else if (taxBeforeCredit < 5400) {
+    businessTaxCredit = taxBeforeCredit * (5400 - taxBeforeCredit) / 2000;
+  }
+  const netUbt = Math.max(0, taxBeforeCredit - businessTaxCredit);
+  return { netBusinessIncome: net, servicesAllowance, exemption, taxableIncome, taxBeforeCredit, businessTaxCredit, netUbt };
 }
 
 export function calculateStateTax(

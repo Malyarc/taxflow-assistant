@@ -210,7 +210,11 @@ const STATE_TAX_DATA_2024: Record<string, StateTaxInfo> = {
     name: "Indiana", hasIncomeTax: true,
     brackets: { single: flat(0.0305), married_filing_jointly: flat(0.0305) },
     standardDeduction: { single: 0, married_filing_jointly: 0 },
-    notes: "IN: $1,000 personal exemption per filer (not modeled). Local county taxes also apply.",
+    // IC 6-3-1-3.5(a): $1,000 personal exemption per filer ($2,000 MFJ) + $1,000
+    // per dependent (IT-40 Schedule 3). Amounts are statutory (same 2024/2025).
+    personalExemption: { single: 1000, married_filing_jointly: 2000, head_of_household: 1000, married_filing_separately: 1000, qualifying_widow: 2000 },
+    personalExemptionPerDependent: 1000,
+    notes: "IN: $1,000/filer ($2,000 MFJ) + $1,000/dependent (IC 6-3-1-3.5(a)). Local county taxes also apply. Sub-gaps: additional $1,500/qualifying-child (IT-40 Sched 3 Line 3), $3,000/adopted-child, and age-65+/blind add-ons not modeled.",
   },
   KY: {
     name: "Kentucky", hasIncomeTax: true,
