@@ -2870,6 +2870,8 @@ interface CapitalTxnRow {
   dateSold: string | null;
   proceeds: number;
   costBasis: number;
+  quantity: number | null;
+  account: string | null;
   adjustmentCode: string | null;
   adjustmentAmount: number;
   washSaleDisallowed: number;
@@ -3023,6 +3025,8 @@ function CapitalTransactionForm({
   const [dateSold, setDateSold] = useState(existing?.dateSold ?? "");
   const [proceeds, setProceeds] = useState(existing != null ? String(existing.proceeds) : "");
   const [costBasis, setCostBasis] = useState(existing != null ? String(existing.costBasis) : "");
+  const [quantity, setQuantity] = useState(existing?.quantity != null ? String(existing.quantity) : "");
+  const [account, setAccount] = useState(existing?.account ?? "");
   const [adjustmentCode, setAdjustmentCode] = useState(existing?.adjustmentCode ?? "");
   const [adjustmentAmount, setAdjustmentAmount] = useState(existing != null ? String(existing.adjustmentAmount) : "0");
   const [washSaleDisallowed, setWashSaleDisallowed] = useState(existing != null ? String(existing.washSaleDisallowed) : "0");
@@ -3046,6 +3050,8 @@ function CapitalTransactionForm({
       dateSold: dateSold || null,
       proceeds: proceeds === "" ? 0 : Number(proceeds),
       costBasis: costBasis === "" ? 0 : Number(costBasis),
+      quantity: quantity.trim() === "" ? null : Number(quantity),
+      account: account.trim() === "" ? null : account.trim(),
       adjustmentCode: adjustmentCode.trim() === "" ? null : adjustmentCode.trim().toUpperCase(),
       adjustmentAmount: adjustmentAmount === "" ? 0 : Number(adjustmentAmount),
       washSaleDisallowed: washSaleDisallowed === "" ? 0 : Number(washSaleDisallowed),
@@ -3115,6 +3121,16 @@ function CapitalTransactionForm({
             <div className="space-y-1">
               <Label>Cost basis (col e)</Label>
               <CurrencyInput value={costBasis} onChange={setCostBasis} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label>Shares / units (optional)</Label>
+              <Input value={quantity} onChange={(e) => setQuantity(e.target.value)} placeholder="enables partial-wash proration" inputMode="decimal" />
+            </div>
+            <div className="space-y-1">
+              <Label>Account (optional)</Label>
+              <Input value={account} onChange={(e) => setAccount(e.target.value)} placeholder="brokerage label (cross-account wash)" />
             </div>
           </div>
           <div className="grid grid-cols-3 gap-3">

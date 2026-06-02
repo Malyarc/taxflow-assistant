@@ -67,6 +67,20 @@ export const capitalTransactionsTable = pgTable("capital_transactions", {
   /** Cost or other basis (column e). */
   costBasis: numeric("cost_basis", { precision: 14, scale: 2 }).notNull().default("0"),
 
+  /**
+   * Number of shares/units in this lot. Optional. When BOTH a loss sale and
+   * its replacement purchase supply a positive quantity, the §1091 wash-sale
+   * detector disallows the loss PROPORTIONALLY (disallowed = loss × min(replQty,
+   * soldQty)/soldQty) instead of fully. Absent/0 → full disallowance (legacy).
+   */
+  quantity: numeric("quantity", { precision: 18, scale: 6 }),
+  /**
+   * Optional brokerage account label. §1091 is a per-taxpayer rule, so the
+   * wash-sale detector matches replacements ACROSS accounts (it never keys on
+   * this field) — the label is for reporting/audit trail only.
+   */
+  account: text("account"),
+
   /** Adjustment code(s) — Form 8949 column f. E.g. "W" for wash sale. */
   adjustmentCode: text("adjustment_code"),
   /** Adjustment amount — Form 8949 column g (positive). */

@@ -253,6 +253,10 @@ export interface CapitalTransactionFact {
   dateSold?: string | null;
   proceeds?: Numish;
   costBasis?: Numish;
+  /** Shares/units in this lot — enables proportional partial-wash disallowance. */
+  quantity?: Numish;
+  /** Brokerage account label (reporting only; detector is account-agnostic). */
+  account?: string | null;
   adjustmentCode?: string | null;
   adjustmentAmount?: Numish;
   washSaleDisallowed?: Numish;
@@ -949,12 +953,16 @@ export interface ComputedTaxReturn {
 //         [S.dateSold − 30 days, S.dateSold + 30 days] inclusive
 //     The candidate with the EARLIEST dateAcquired wins (deterministic).
 //
-//  3. When a replacement is found:
-//       - Disallowed amount = |loss| (full disallowance — partial-wash math
-//         based on share counts not modeled, sub-gap documented).
+//  3. When replacement(s) are found:
+//       - PARTIAL WASH: when the loss row and its replacement(s) supply share
+//         `quantity`, disallowed = |loss| × min(replShares, soldShares)/soldShares
+//         (capped at 100%). Replacement capacity is consumed greedily so one
+//         rebuy isn't double-counted across multiple losses. When no quantity is
+//         supplied, the loss is fully disallowed (legacy).
 //       - S.adjustmentAmount += disallowedAmount  (loss reversed on Form 8949)
 //       - S.washSaleAutoDetected = true
-//       - T.costBasis += disallowedAmount         (§1091(d) basis add)
+//       - replacement.costBasis += disallowedAmount (§1091(d) basis add, split
+//         across consumed replacements proportional to shares)
 //
 //  4. §1091(d) holding-period tack-on: when T's `formBox` would now reflect a
 //     longer holding period due to the original shares' acquisition, the box
@@ -965,12 +973,14 @@ export interface ComputedTaxReturn {
 //   - Replacement shares bought-and-held within the year (never sold) are
 //     INVISIBLE to the detector (schema models dispositions only). CPAs
 //     enter those wash sales manually via adjustmentCode = "W".
-//   - Partial wash (rebought fewer replacement shares than sold) — engine
-//     fully disallows; should be share-proportional.
-//   - Cross-account wash (broker A sells, broker B buys) — only detected
-//     when both brokers' transactions are entered into capital_transactions.
-//   - Formal §1091(d) holding-period flip from ST to LT on the replacement
-//     row is not auto-applied to formBox.
+//   - Cross-account wash IS handled (the detector is account-agnostic, matching
+//     by security across all rows) — but both brokers' transactions must be
+//     entered, since the engine can't see a buy it wasn't given.
+//   - Partial-wash consumption matches a loss against multiple in-window
+//     replacements, but does not re-flow a partially-used replacement's
+//     leftover shares to a LATER-dated loss processed earlier in the array
+//     (rows are processed in input order, earliest-replacement-first within
+//     each loss). Adequate for typical broker-ordered data.
 
 function txnGainLossRaw(t: CapitalTransactionFact): number {
   return toNum(t.proceeds) - toNum(t.costBasis) + toNum(t.adjustmentAmount);
@@ -1026,6 +1036,33 @@ export function detectWashSales(
     bucket.push(i);
   }
 
+  // Remaining replacement capacity per row, for proportional partial-wash
+  // consumption. A row with a positive `quantity` can absorb only that many
+  // washed shares total (across ALL loss sales); a row without a quantity has
+  // unlimited capacity (legacy full-wash). The detector is account-agnostic —
+  // it never keys on `account`, so cross-account washes (broker A sells, broker
+  // B buys the same security) are matched whenever both rows are present.
+  const remainingReplQty: number[] = rows.map((r) => {
+    const q = toNum(r.quantity);
+    return q > 0 ? q : Number.POSITIVE_INFINITY;
+  });
+
+  // §1091(d)/§1223(3) holding-period tack: flip a replacement's formBox ST→LT
+  // when its own holding + the washed lot's holding crosses one year and the
+  // replacement is itself sold this year.
+  const ST_TO_LT: Record<string, "D" | "E" | "F"> = { A: "D", B: "E", C: "F" };
+  const applyHoldingTack = (
+    repl: CapitalTransactionFact, washedAcqMs: number, washedSoldMs: number,
+  ): void => {
+    const replAcq = parseISO(repl.dateAcquired ?? null);
+    const replSold = parseISO(repl.dateSold ?? null);
+    const fb = (repl.formBox ?? "").toUpperCase();
+    if (!replAcq || !replSold || !(fb in ST_TO_LT)) return;
+    const tackedDays =
+      (replSold.getTime() - replAcq.getTime() + washedSoldMs - washedAcqMs) / ONE_DAY_MS;
+    if (tackedDays > 365) repl.formBox = ST_TO_LT[fb];
+  };
+
   for (let i = 0; i < rows.length; i++) {
     const s = rows[i];
     // Skip non-loss rows.
@@ -1039,68 +1076,76 @@ export function detectWashSales(
     const candidates = bySecurity.get(sKey);
     if (!candidates) continue;
 
-    // Find earliest replacement purchase in the 61-day window.
+    // Gather in-window replacement purchases, earliest dateAcquired first.
     const windowStart = sSold.getTime() - 30 * ONE_DAY_MS;
     const windowEnd = sSold.getTime() + 30 * ONE_DAY_MS;
     const sAcq = parseISO(s.dateAcquired ?? null);
     const sAcqMs = sAcq ? sAcq.getTime() : null;
-    let bestIdx = -1;
-    let bestAcqMs = Infinity;
+    const inWindow: { idx: number; acqMs: number }[] = [];
     for (const j of candidates) {
       if (j === i) continue;
-      const t = rows[j];
-      // Security match already enforced by the bucket; no need to re-normalize.
-      const tAcq = parseISO(t.dateAcquired ?? null);
+      const tAcq = parseISO(rows[j].dateAcquired ?? null);
       if (!tAcq) continue;
       const acqMs = tAcq.getTime();
       if (acqMs < windowStart || acqMs > windowEnd) continue;
-      // Skip same-day-acquired rows — most commonly these are tax-lot splits
-      // of a single economic purchase, not a replacement buy. Trade-off:
-      // misses the rare case of two separate same-day purchases; CPAs handle
-      // those manually via adjustmentCode = "W".
+      // Skip same-day-acquired rows — usually tax-lot splits of one economic
+      // purchase, not a replacement buy. CPAs handle the rare real case via "W".
       if (sAcqMs != null && acqMs === sAcqMs) continue;
-      // Earliest dateAcquired wins (deterministic).
-      if (acqMs < bestAcqMs) {
-        bestAcqMs = acqMs;
-        bestIdx = j;
-      }
+      inWindow.push({ idx: j, acqMs });
     }
-    if (bestIdx === -1) continue;
+    if (inWindow.length === 0) continue;
+    inWindow.sort((a, b) => a.acqMs - b.acqMs);
 
-    const loss = -txnGainLossRaw(s); // positive disallowed amount
-    // 1) Reverse the loss on Form 8949 via column g (adjustmentAmount).
-    s.adjustmentAmount = toNum(s.adjustmentAmount) + loss;
-    s.washSaleDisallowed = toNum(s.washSaleDisallowed) + loss;
-    // Preserve existing adjustment code(s); add "W" only if not present.
+    const loss = -txnGainLossRaw(s); // positive total loss
+    const soldQty = toNum(s.quantity);
+    const proportional = soldQty > 0;
+    let disallowed = 0;
+    const used: { idx: number; consumed: number }[] = [];
+
+    if (proportional) {
+      // Partial wash (§1091): disallow loss × (replacement shares acquired in
+      // window) / (shares sold), capped at 100%. Consume replacement capacity
+      // greedily (earliest first) so one rebuy isn't counted against two losses.
+      let remainingToCover = soldQty;
+      for (const cand of inWindow) {
+        if (remainingToCover <= 0) break;
+        const avail = remainingReplQty[cand.idx];
+        if (!(avail > 0)) continue;
+        const consume = Math.min(remainingToCover, avail);
+        remainingReplQty[cand.idx] -= consume;
+        remainingToCover -= consume;
+        used.push({ idx: cand.idx, consumed: consume });
+      }
+      const totalConsumed = soldQty - remainingToCover;
+      if (totalConsumed <= 0) continue; // replacements exhausted → no wash
+      disallowed = loss * Math.min(1, totalConsumed / soldQty);
+    } else {
+      // Legacy (no quantity): first replacement, FULL disallowance, no consumption.
+      disallowed = loss;
+      used.push({ idx: inWindow[0].idx, consumed: 0 });
+    }
+    if (disallowed <= 0) continue;
+
+    // 1) Reverse the (possibly partial) disallowed loss on Form 8949 column g.
+    s.adjustmentAmount = toNum(s.adjustmentAmount) + disallowed;
+    s.washSaleDisallowed = toNum(s.washSaleDisallowed) + disallowed;
     const code = (s.adjustmentCode ?? "").toUpperCase();
-    if (!code.includes("W")) {
-      s.adjustmentCode = code.length > 0 ? code + "W" : "W";
-    }
+    if (!code.includes("W")) s.adjustmentCode = code.length > 0 ? code + "W" : "W";
     s.washSaleAutoDetected = true;
-    // 2) §1091(d) basis adjustment on the replacement transaction.
-    const replacement = rows[bestIdx];
-    replacement.costBasis = toNum(replacement.costBasis) + loss;
 
-    // 3) §1091(d) / §1223(3) holding-period TACK-ON: the replacement's holding
-    // period INCLUDES the washed shares' holding period. When the replacement
-    // is ALSO sold this year and the tacked period exceeds one year, its
-    // character flips short-term → long-term (formBox A/B/C → D/E/F), re-routing
-    // its gain from STCG to LTCG. (Only matters when both lots sell same-year;
-    // across years the CPA carries the adjusted basis + holding period forward.)
-    const replSold = parseISO(replacement.dateSold ?? null);
-    const fb = (replacement.formBox ?? "").toUpperCase();
-    const ST_TO_LT: Record<string, "D" | "E" | "F"> = { A: "D", B: "E", C: "F" };
-    if (replSold && sAcq && sSold && Number.isFinite(bestAcqMs) && fb in ST_TO_LT) {
-      const washedHoldingMs = sSold.getTime() - sAcq.getTime();
-      const replOwnHoldingMs = replSold.getTime() - bestAcqMs;
-      const tackedHoldingDays = (replOwnHoldingMs + washedHoldingMs) / ONE_DAY_MS;
-      if (tackedHoldingDays > 365) {
-        replacement.formBox = ST_TO_LT[fb];
-      }
+    // 2) §1091(d) basis add, distributed across the consumed replacements
+    //    (proportional to consumed shares; legacy = all to the one replacement).
+    //    3) holding-period tack applied to each.
+    const consumedTotal = used.reduce((sum, u) => sum + u.consumed, 0);
+    for (const u of used) {
+      const repl = rows[u.idx];
+      const share = proportional && consumedTotal > 0 ? u.consumed / consumedTotal : 1;
+      repl.costBasis = toNum(repl.costBasis) + disallowed * share;
+      if (sAcq) applyHoldingTack(repl, sAcq.getTime(), sSold.getTime());
     }
 
     detected += 1;
-    totalDisallowed += loss;
+    totalDisallowed += disallowed;
   }
 
   return {

@@ -3028,6 +3028,12 @@ components:
           type: number
         costBasis:
           type: number
+        quantity:
+          type: ["number", "null"]
+          description: Shares/units in this lot. When both a loss sale and its replacement supply a positive quantity, §1091 wash-sale disallowance is proportional (min(replQty,soldQty)/soldQty); absent → full disallowance.
+        account:
+          type: ["string", "null"]
+          description: Brokerage account label (reporting only). The wash-sale detector matches across accounts regardless of this field (§1091 is per-taxpayer).
         adjustmentCode:
           type: ["string", "null"]
         adjustmentAmount:
@@ -3069,6 +3075,12 @@ components:
           type: number
         costBasis:
           type: number
+        quantity:
+          type: ["number", "null"]
+          description: Shares/units in this lot. When both a loss sale and its replacement supply a positive quantity, §1091 wash-sale disallowance is proportional (min(replQty,soldQty)/soldQty); absent → full disallowance.
+        account:
+          type: ["string", "null"]
+          description: Brokerage account label (reporting only). The wash-sale detector matches across accounts regardless of this field (§1091 is per-taxpayer).
         adjustmentCode:
           type: ["string", "null"]
         adjustmentAmount:
@@ -3103,6 +3115,12 @@ components:
           type: number
         costBasis:
           type: number
+        quantity:
+          type: ["number", "null"]
+          description: Shares/units in this lot. When both a loss sale and its replacement supply a positive quantity, §1091 wash-sale disallowance is proportional (min(replQty,soldQty)/soldQty); absent → full disallowance.
+        account:
+          type: ["string", "null"]
+          description: Brokerage account label (reporting only). The wash-sale detector matches across accounts regardless of this field (§1091 is per-taxpayer).
         adjustmentCode:
           type: ["string", "null"]
         adjustmentAmount:

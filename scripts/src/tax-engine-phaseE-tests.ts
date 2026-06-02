@@ -2031,6 +2031,94 @@ header("E13± — Single transaction → 0 detected (no replacement candidate)")
   check("E13±", "1 txn → 0 detected", r.washSalesDetected, 0, 0);
 }
 
+// ── #5 — PARTIAL WASH (proportional disallowance) + CROSS-ACCOUNT ──────────
+// §1091: when fewer replacement shares are rebought than sold, only the
+// proportional share of the loss is disallowed.
+
+// E13-PW1 — sell 100, rebuy 40 (buy-only row) → 40% disallowed.
+// Hand-calc: loss = 6000 − 5000 = 1000 ; ratio = min(40,100)/100 = 0.40
+//   disallowed = 400 ; S adj += 400 (allowed loss now 600) ; T basis = 2200 + 400 = 2600.
+header("E13-PW1 — partial wash: sell 100, rebuy 40 → 40% ($400) disallowed");
+{
+  const txns: CapitalTransactionFact[] = [
+    { taxYear: 2024, description: "AAPL", dateAcquired: "2024-01-01", dateSold: "2024-06-01",
+      proceeds: 5000, costBasis: 6000, quantity: 100, adjustmentAmount: 0, formBox: "D" },
+    { taxYear: 2024, description: "AAPL", dateAcquired: "2024-06-15", dateSold: null,
+      proceeds: 0, costBasis: 2200, quantity: 40, adjustmentAmount: 0, formBox: "A" },
+  ];
+  const r = detectWashSales(txns);
+  check("E13-PW1", "1 wash detected", r.washSalesDetected, 1, 0);
+  check("E13-PW1", "disallowed = $400 (40%)", r.washSaleLossDisallowed, 400, 0.01);
+  check("E13-PW1", "S adjustmentAmount = $400 (60% loss allowed)",
+    Number(r.adjustedTransactions[0].adjustmentAmount), 400, 0.01);
+  check("E13-PW1", "T basis = $2,200 + $400 = $2,600",
+    Number(r.adjustedTransactions[1].costBasis), 2600, 0.01);
+}
+
+// E13-PW2 — rebuy MORE than sold (150 vs 100) → ratio capped at 100% (full).
+header("E13-PW2 — rebuy 150 > sold 100 → full $1,000 disallowed (ratio capped)");
+{
+  const txns: CapitalTransactionFact[] = [
+    { taxYear: 2024, description: "AAPL", dateAcquired: "2024-01-01", dateSold: "2024-06-01",
+      proceeds: 5000, costBasis: 6000, quantity: 100, adjustmentAmount: 0, formBox: "D" },
+    { taxYear: 2024, description: "AAPL", dateAcquired: "2024-06-15", dateSold: null,
+      proceeds: 0, costBasis: 8000, quantity: 150, adjustmentAmount: 0, formBox: "A" },
+  ];
+  const r = detectWashSales(txns);
+  check("E13-PW2", "disallowed = $1,000 (capped at 100%)", r.washSaleLossDisallowed, 1000, 0.01);
+}
+
+// E13-PW3 — no quantity supplied → legacy FULL disallowance (backward compat).
+header("E13-PW3 — quantity absent → legacy full disallowance");
+{
+  const txns: CapitalTransactionFact[] = [
+    { taxYear: 2024, description: "AAPL", dateAcquired: "2024-01-01", dateSold: "2024-06-01",
+      proceeds: 5000, costBasis: 6000, adjustmentAmount: 0, formBox: "D" },
+    { taxYear: 2024, description: "AAPL", dateAcquired: "2024-06-15", dateSold: null,
+      proceeds: 0, costBasis: 2200, adjustmentAmount: 0, formBox: "A" },
+  ];
+  const r = detectWashSales(txns);
+  check("E13-PW3", "no quantity → full $1,000 disallowed", r.washSaleLossDisallowed, 1000, 0.01);
+}
+
+// E13-PW4 — replacement consumed by the FIRST loss; second loss gets nothing.
+// S1 (sold 06-01) consumes 60 of T's 60 shares → ratio 60/100 → disallow 600.
+// S2 (sold 06-10) finds T exhausted → no wash. Total detected = 1, disallowed = 600.
+header("E13-PW4 — consumption: 60-share rebuy used by 1st loss only");
+{
+  const txns: CapitalTransactionFact[] = [
+    { taxYear: 2024, description: "AAPL", dateAcquired: "2024-01-01", dateSold: "2024-06-01",
+      proceeds: 5000, costBasis: 6000, quantity: 100, adjustmentAmount: 0, formBox: "D" }, // -1000
+    { taxYear: 2024, description: "AAPL", dateAcquired: "2024-02-01", dateSold: "2024-06-10",
+      proceeds: 4200, costBasis: 5000, quantity: 100, adjustmentAmount: 0, formBox: "D" }, // -800
+    { taxYear: 2024, description: "AAPL", dateAcquired: "2024-06-15", dateSold: null,
+      proceeds: 0, costBasis: 3000, quantity: 60, adjustmentAmount: 0, formBox: "A" },
+  ];
+  const r = detectWashSales(txns);
+  check("E13-PW4", "1 wash detected (S1 only)", r.washSalesDetected, 1, 0);
+  check("E13-PW4", "disallowed = $600 (S1: 60/100 × 1000)", r.washSaleLossDisallowed, 600, 0.01);
+  check("E13-PW4", "S1 adj = $600", Number(r.adjustedTransactions[0].adjustmentAmount), 600, 0.01);
+  check("E13-PW4", "S2 adj = $0 (replacement exhausted)",
+    Number(r.adjustedTransactions[1].adjustmentAmount), 0, 0.01);
+  check("E13-PW4", "T basis = $3,000 + $600 = $3,600",
+    Number(r.adjustedTransactions[2].costBasis), 3600, 0.01);
+}
+
+// E13-CA1 — cross-account: sale in "Schwab", rebuy in "Fidelity" (same security,
+// equal 100 shares) → full $1,000 disallowed. The detector ignores `account`.
+header("E13-CA1 — cross-account wash (Schwab sells, Fidelity buys) → detected");
+{
+  const txns: CapitalTransactionFact[] = [
+    { taxYear: 2024, description: "AAPL", dateAcquired: "2024-01-01", dateSold: "2024-06-01",
+      proceeds: 5000, costBasis: 6000, quantity: 100, account: "Schwab", adjustmentAmount: 0, formBox: "D" },
+    { taxYear: 2024, description: "AAPL", dateAcquired: "2024-06-15", dateSold: null,
+      proceeds: 0, costBasis: 6000, quantity: 100, account: "Fidelity", adjustmentAmount: 0, formBox: "A" },
+  ];
+  const r = detectWashSales(txns);
+  check("E13-CA1", "cross-account wash detected", r.washSalesDetected, 1, 0);
+  check("E13-CA1", "disallowed = $1,000 (account ignored)", r.washSaleLossDisallowed, 1000, 0.01);
+}
+
 // ============================================================================
 // E12 — Part-year residency in multi-state framework
 // Filer moves between states mid-year. Engine pro-rates AGI by days and

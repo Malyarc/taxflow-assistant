@@ -1752,6 +1752,16 @@ export interface CapitalTransaction {
   dateSold?: string | null;
   proceeds: number;
   costBasis: number;
+  /**
+   * Shares/units in this lot. When both a loss sale and its replacement supply a positive quantity, §1091 wash-sale disallowance is proportional (min(replQty,soldQty)/soldQty); absent → full disallowance.
+   * @nullable
+   */
+  quantity?: number | null;
+  /**
+   * Brokerage account label (reporting only). The wash-sale detector matches across accounts regardless of this field (§1091 is per-taxpayer).
+   * @nullable
+   */
+  account?: string | null;
   /** @nullable */
   adjustmentCode?: string | null;
   adjustmentAmount: number;
@@ -1788,6 +1798,16 @@ export interface CreateCapitalTransactionBody {
   dateSold?: string | null;
   proceeds: number;
   costBasis: number;
+  /**
+   * Shares/units in this lot. When both a loss sale and its replacement supply a positive quantity, §1091 wash-sale disallowance is proportional (min(replQty,soldQty)/soldQty); absent → full disallowance.
+   * @nullable
+   */
+  quantity?: number | null;
+  /**
+   * Brokerage account label (reporting only). The wash-sale detector matches across accounts regardless of this field (§1091 is per-taxpayer).
+   * @nullable
+   */
+  account?: string | null;
   /** @nullable */
   adjustmentCode?: string | null;
   adjustmentAmount?: number;
@@ -1822,6 +1842,16 @@ export interface UpdateCapitalTransactionBody {
   dateSold?: string | null;
   proceeds?: number;
   costBasis?: number;
+  /**
+   * Shares/units in this lot. When both a loss sale and its replacement supply a positive quantity, §1091 wash-sale disallowance is proportional (min(replQty,soldQty)/soldQty); absent → full disallowance.
+   * @nullable
+   */
+  quantity?: number | null;
+  /**
+   * Brokerage account label (reporting only). The wash-sale detector matches across accounts regardless of this field (§1091 is per-taxpayer).
+   * @nullable
+   */
+  account?: string | null;
   /** @nullable */
   adjustmentCode?: string | null;
   adjustmentAmount?: number;

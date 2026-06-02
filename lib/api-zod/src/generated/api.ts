@@ -3503,6 +3503,18 @@ export const ListCapitalTransactionsResponseItem = zod.object({
   dateSold: zod.string().nullish(),
   proceeds: zod.number(),
   costBasis: zod.number(),
+  quantity: zod
+    .number()
+    .nullish()
+    .describe(
+      "Shares\/units in this lot. When both a loss sale and its replacement supply a positive quantity, §1091 wash-sale disallowance is proportional (min(replQty,soldQty)\/soldQty); absent → full disallowance.",
+    ),
+  account: zod
+    .string()
+    .nullish()
+    .describe(
+      "Brokerage account label (reporting only). The wash-sale detector matches across accounts regardless of this field (§1091 is per-taxpayer).",
+    ),
   adjustmentCode: zod.string().nullish(),
   adjustmentAmount: zod.number(),
   washSaleDisallowed: zod.number(),
@@ -3536,6 +3548,18 @@ export const CreateCapitalTransactionBody = zod.object({
   dateSold: zod.string().nullish(),
   proceeds: zod.number(),
   costBasis: zod.number(),
+  quantity: zod
+    .number()
+    .nullish()
+    .describe(
+      "Shares\/units in this lot. When both a loss sale and its replacement supply a positive quantity, §1091 wash-sale disallowance is proportional (min(replQty,soldQty)\/soldQty); absent → full disallowance.",
+    ),
+  account: zod
+    .string()
+    .nullish()
+    .describe(
+      "Brokerage account label (reporting only). The wash-sale detector matches across accounts regardless of this field (§1091 is per-taxpayer).",
+    ),
   adjustmentCode: zod.string().nullish(),
   adjustmentAmount: zod.number().optional(),
   washSaleDisallowed: zod.number().optional(),
@@ -3566,6 +3590,18 @@ export const UpdateCapitalTransactionBody = zod.object({
   dateSold: zod.string().nullish(),
   proceeds: zod.number().optional(),
   costBasis: zod.number().optional(),
+  quantity: zod
+    .number()
+    .nullish()
+    .describe(
+      "Shares\/units in this lot. When both a loss sale and its replacement supply a positive quantity, §1091 wash-sale disallowance is proportional (min(replQty,soldQty)\/soldQty); absent → full disallowance.",
+    ),
+  account: zod
+    .string()
+    .nullish()
+    .describe(
+      "Brokerage account label (reporting only). The wash-sale detector matches across accounts regardless of this field (§1091 is per-taxpayer).",
+    ),
   adjustmentCode: zod.string().nullish(),
   adjustmentAmount: zod.number().optional(),
   washSaleDisallowed: zod.number().optional(),
@@ -3590,6 +3626,18 @@ export const UpdateCapitalTransactionResponse = zod.object({
   dateSold: zod.string().nullish(),
   proceeds: zod.number(),
   costBasis: zod.number(),
+  quantity: zod
+    .number()
+    .nullish()
+    .describe(
+      "Shares\/units in this lot. When both a loss sale and its replacement supply a positive quantity, §1091 wash-sale disallowance is proportional (min(replQty,soldQty)\/soldQty); absent → full disallowance.",
+    ),
+  account: zod
+    .string()
+    .nullish()
+    .describe(
+      "Brokerage account label (reporting only). The wash-sale detector matches across accounts regardless of this field (§1091 is per-taxpayer).",
+    ),
   adjustmentCode: zod.string().nullish(),
   adjustmentAmount: zod.number(),
   washSaleDisallowed: zod.number(),
