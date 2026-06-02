@@ -5094,6 +5094,25 @@ header("PLAN-08 — expired catalog → no hits for a future tax year");
   check("PLAN-08", "TY2027 (past validUntil 2026) → 0 hits", hits2027.length, 0, 0);
 }
 
+// PLAN-08 / #9 — OBBBA repealed the clean-energy credits (G1.33 §30D/§25E,
+// G1.34 §25D, G1.37 §25C). Their validUntil was lowered 2032→2025, so they
+// must surface for TY2025 but be SUPPRESSED for TY2026.
+header("#9 — OBBBA energy credits (G1.33/G1.34/G1.37) suppressed for TY2026");
+{
+  const energyIds = new Set(["G1.33", "G1.34", "G1.37"]);
+  const cli = { filingStatus: "single", state: "FL", taxYear: 2025 } as unknown as TaxReturnInputs["client"];
+  const w2 = [{ taxYear: 2025, wagesBox1: 100000, federalTaxWithheldBox2: 0, stateCode: "FL" }] as unknown as TaxReturnInputs["w2s"];
+  const computed2025 = computeTaxReturnPure({ client: cli, w2s: w2, form1099s: [], adjustments: [], taxYear: 2025 });
+  const hits2025 = evaluatePlanningOpportunities({ client: cli, computed: computed2025, adjustments: [] });
+  const energy2025 = hits2025.filter((h) => energyIds.has(h.strategyId)).length;
+  checkTruthy("#9", "TY2025 surfaces ≥1 OBBBA-sunset energy credit", energy2025 > 0, true);
+
+  const computed2026 = { ...computed2025, taxYear: 2026 } as typeof computed2025;
+  const hits2026 = evaluatePlanningOpportunities({ client: cli, computed: computed2026, adjustments: [] });
+  const energy2026 = hits2026.filter((h) => energyIds.has(h.strategyId)).length;
+  check("#9", "TY2026 suppresses all 3 OBBBA-repealed energy credits", energy2026, 0, 0);
+}
+
 // ============================================================================
 // RESULTS
 // ============================================================================

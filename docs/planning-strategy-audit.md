@@ -10,6 +10,44 @@
 
 No incorrect IRC citations found. No outdated dollar limits found. No mis-stated phase-out thresholds found.
 
+> ⚠️ The verdict above is **PRE-OBBBA (TY2024/2025) and partially STALE.** See the OBBBA update below.
+
+## OBBBA / TY2025–2026 update — catalog v1.18.0 (2026-06-01)
+
+The **One Big Beautiful Bill Act** (OBBBA, P.L. 119-21, enacted 2025-07-04) + the
+TY2025/2026 IRS revenue procedures changed many catalog items. **Shipped this
+session (Tier 1 — the actively-wrong items):**
+
+- **G1.33 (§30D/§25E EV), G1.34 (§25D residential clean energy), G1.37 (§25C):
+  OBBBA REPEALED these.** §30D/§25E end for vehicles acquired after 2025-09-30;
+  §25C/§25D end after 2025-12-31. Their `validUntil` was lowered **2032-12-31 →
+  2025-12-31** so the PLAN-08 gate suppresses them for TY2026+ (they still fire
+  for TY2025). OBBBA-repeal note added to each `trigger`. Source: [IRS OBBB energy
+  FAQ (P.L. 119-21)](https://www.irs.gov/newsroom/faqs-for-modification-of-sections-25c-25d-25e-30c-30d-45l-45w-and-179d-under-public-law-119-21-139-stat-72-july-4-2025-commonly-known-as-the-one-big-beautiful-bill-obbb).
+  (G1.68 §174 was already updated to §174A immediate domestic R&D expensing in a
+  prior catalog rev — no change needed.)
+
+**Tracked follow-up (Tier 2–4 — authoritative sources captured, not yet applied;
+these are stale-but-not-harmful dollar refreshes + new strategies):**
+
+| Tier | Item | Action needed | Source |
+|---|---|---|---|
+| 2 | G1.65 Adoption | $17,280 (2025)/$17,670 (2026) + now **$5,000 refundable** | IRS via Accounting Today; GBQ |
+| 2 | G1.11 QCD | $105k → **$108k (2025)/$111k (2026)** | CRS IF11377; Fidelity |
+| 2 | G1.62 §448(c) | $30M → **$31M (2025)/$32M (2026)** (engine §163(j) already correct) | Rev. Proc. 2025-32 |
+| 2 | Retirement cluster G1.1/G1.14/G1.16/G1.87/G1.92 | SEP $70k→**$72k (2026)**, deferral $23k→**$24.5k**, HSA **$4,400/$8,750**, §401(a)(17) **$360k** | IRS IR-2025-111 / Notice 2025-67 |
+| 2 | G1.7/G1.88/G1.89 §199A | TY2026 thresholds **$201,750/$403,500**; widened phase-in ($75k/$150k); new **$400 floor**; QBI now **permanent** (extend validUntil) | RSM; Tax Foundation |
+| 2 | G1.3/G1.8/G4.3 bunching | new std ded **$16,100/$32,200 (2026)** | IRS 2026 release |
+| 3 | G1.2 PTET | recode IRC §164(b)(6) → **§164(b)(7)**; SALT cap **$40k** (phase-down >$500k MAGI) | The Tax Adviser; IRS |
+| 3 | G1.86/G1.90/G1.19/G1.85 estate/mortgage | drop "2026 sunset cliff" urgency — **$15M estate exclusion + §163(h)(3) $750k made permanent** | Pierce Atwood; IRS |
+| 4 | NEW strategies (catalog gaps) | tip (≤$25k), overtime (≤$12.5k/$25k), car-loan interest (≤$10k), **senior bonus deduction ($6,000, 2025–2028)** | IRS — OBBB deductions for workers & seniors |
+
+**Unchanged by OBBBA (verified):** NIIT §1411 3.8% + $200k/$250k/$125k thresholds;
+§199A SSTB mechanics (only the TY-indexed thresholds move). The Tier-2 refreshes
+are dollar-amount staleness (engine over/under-states a credit by a small indexed
+delta) — lower-risk than the Tier-1 repeals, deferred to a dedicated refresh pass
+to avoid destabilizing the 580-assertion planning test baseline in one sweep.
+
 ## v1.12 → v1.17 batches (30 new strategies)
 
 ### v1.12 (5) — Universal individual
