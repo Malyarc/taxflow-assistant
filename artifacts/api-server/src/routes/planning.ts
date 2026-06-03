@@ -31,6 +31,7 @@ import {
   inferMissingData,
   discoverPlanningCandidates,
 } from "../lib/planningMemo";
+import { consentRequired, hasValidConsent, AI_EXTRACTION_SCOPE } from "../lib/consentGate";
 import { computeTaxReturn, loadTaxReturnInputs } from "../lib/taxReturnPipeline";
 import {
   runWhatIfScenario,
@@ -212,6 +213,14 @@ router.get("/clients/:clientId/planning-multi-year", async (req, res): Promise<v
   }
 });
 
+// P0-2 — §7216: an AI memo/email/discovery transmits the client's return
+// information to Google Gemini (a "disclosure"). Block it when consent is
+// required but not on file; the endpoints then use their deterministic
+// (no-LLM) path instead of disclosing.
+async function aiDisclosureBlocked(clientId: number): Promise<boolean> {
+  return consentRequired() && !(await hasValidConsent(clientId, AI_EXTRACTION_SCOPE));
+}
+
 router.get("/clients/:clientId/planning-memo", async (req, res): Promise<void> => {
   const params = GetPlanningMemoParams.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
@@ -220,6 +229,7 @@ router.get("/clients/:clientId/planning-memo", async (req, res): Promise<void> =
     if (!ctx) { res.status(404).json({ error: "Client not found" }); return; }
     const result = await generatePlanningMemo({
       client: ctx.client, computed: ctx.computed, hits: ctx.hits,
+      forceDeterministic: await aiDisclosureBlocked(params.data.clientId),
     });
     res.json({
       clientId: params.data.clientId,
@@ -242,6 +252,7 @@ router.get("/clients/:clientId/planning-email", async (req, res): Promise<void> 
     if (!ctx) { res.status(404).json({ error: "Client not found" }); return; }
     const result = await generateClientOutreachEmail({
       client: ctx.client, computed: ctx.computed, hits: ctx.hits,
+      forceDeterministic: await aiDisclosureBlocked(params.data.clientId),
     });
     res.json({
       clientId: params.data.clientId,
@@ -264,6 +275,7 @@ router.get("/clients/:clientId/planning-missing-data", async (req, res): Promise
     if (!ctx) { res.status(404).json({ error: "Client not found" }); return; }
     const result = await inferMissingData({
       client: ctx.client, computed: ctx.computed, hits: ctx.hits,
+      forceDeterministic: await aiDisclosureBlocked(params.data.clientId),
     });
     res.json({
       clientId: params.data.clientId,
@@ -284,6 +296,11 @@ router.get("/clients/:clientId/planning-discovery", async (req, res): Promise<vo
   try {
     const ctx = await loadPlanningContext(params.data.clientId);
     if (!ctx) { res.status(404).json({ error: "Client not found" }); return; }
+    if (await aiDisclosureBlocked(params.data.clientId)) {
+      // §7216 — no consent on file: skip the LLM disclosure, return no candidates.
+      res.json({ clientId: params.data.clientId, candidates: [], aiUsed: false, model: "stub" });
+      return;
+    }
     const result = await discoverPlanningCandidates({
       client: ctx.client, computed: ctx.computed, hits: ctx.hits,
     });

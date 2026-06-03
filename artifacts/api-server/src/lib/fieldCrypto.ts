@@ -20,7 +20,12 @@ import { logger } from "./logger";
 const PREFIX = "enc:v1:";
 const IV_LEN = 12;
 const TAG_LEN = 16;
-const KEY_ERROR = "[ENCRYPTED — key unavailable]";
+export const DECRYPT_ERROR = "[ENCRYPTED — key unavailable]";
+
+/** True if a value is the decrypt-failure sentinel (must never be persisted). */
+export function isDecryptErrorSentinel(value: string | null | undefined): boolean {
+  return value === DECRYPT_ERROR;
+}
 
 /** True when the value carries the versioned ciphertext prefix. */
 export function isEncrypted(value: string): boolean {
@@ -87,6 +92,14 @@ function warnOnce(msg: string): void {
 export function encryptField(plain: string | null | undefined): string | null {
   if (plain == null || plain === "") return plain ?? null;
   if (isEncrypted(plain)) return plain;
+  if (plain === DECRYPT_ERROR) {
+    // The read path could not decrypt and surfaced the sentinel; a write that
+    // round-trips it back must NOT overwrite intact ciphertext. Fail loud — the
+    // stored value is preserved because the write is aborted.
+    throw new Error(
+      "Refusing to persist the decrypt-failure sentinel — fix PII_ENCRYPTION_KEY; the stored ciphertext is preserved.",
+    );
+  }
   const k = key();
   if (!k) {
     warnOnce(
@@ -109,12 +122,12 @@ export function decryptField(stored: string | null | undefined): string | null {
   const k = key();
   if (!k) {
     warnOnce("SECURITY: found an encrypted PII field but PII_ENCRYPTION_KEY is not set.");
-    return KEY_ERROR;
+    return DECRYPT_ERROR;
   }
   try {
     return decryptWithKey(stored, k);
   } catch (err) {
     logger.error({ err }, "PII field decryption failed — wrong PII_ENCRYPTION_KEY?");
-    return KEY_ERROR;
+    return DECRYPT_ERROR;
   }
 }

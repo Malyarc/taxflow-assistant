@@ -39,14 +39,21 @@ ok("string timestamps (DB form) work", isConsentValid(
   { scope: "ai_extraction", signedAt: "2026-06-01T00:00:00Z", expiresAt: "2027-06-01T00:00:00Z", revokedAt: null },
   "ai_extraction", now) === true);
 
-console.log("── consentRequired() env logic (no API_AUTH_TOKEN in test → demo default OFF) ──");
+console.log("── consentRequired() env logic (default keys off NODE_ENV — fail-closed in prod) ──");
+const savedNodeEnv = process.env.NODE_ENV;
 delete process.env.REQUIRE_7216_CONSENT;
-ok("default OFF in demo (no auth token)", consentRequired() === false);
-process.env.REQUIRE_7216_CONSENT = "true";
-ok("explicit REQUIRE_7216_CONSENT=true → ON", consentRequired() === true);
+process.env.NODE_ENV = "development";
+ok("default OFF in non-prod (demo/dev)", consentRequired() === false);
+process.env.NODE_ENV = "production";
+ok("default ON in production (fail-closed)", consentRequired() === true);
 process.env.REQUIRE_7216_CONSENT = "false";
-ok("explicit REQUIRE_7216_CONSENT=false → OFF", consentRequired() === false);
+ok("explicit =false overrides the prod default → OFF", consentRequired() === false);
+process.env.NODE_ENV = "development";
+process.env.REQUIRE_7216_CONSENT = "true";
+ok("explicit =true overrides the dev default → ON", consentRequired() === true);
 delete process.env.REQUIRE_7216_CONSENT;
+if (savedNodeEnv === undefined) delete process.env.NODE_ENV;
+else process.env.NODE_ENV = savedNodeEnv;
 
 console.log(`\nRESULTS: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

@@ -59,7 +59,8 @@ console.log("\n── TY2026 SSTB return resolves the 2026 band end-to-end ─�
 //   Deduction = min( 20% × 58,066.67 = 11,613.33 , 20% × 243,900 = 48,780 )
 //             = $11,613.33.
 //   PRE-FIX (TY2024 band, end 241,950): AGI 260,000 > 241,950 → fraction 0 →
-//   the SSTB QBI zeroes out, leaving only the $400 OBBBA min deduction.
+//   qbiCombinedIncome = 0 → deduction = $0 (the $400 OBBBA floor does NOT apply
+//   because active QBI is 0, below the $1,000 gate).
 {
   const inputs: TaxReturnInputs = {
     client: { filingStatus: "single", state: "FL", taxYear: 2026 },
@@ -81,9 +82,9 @@ console.log("\n── TY2026 SSTB return resolves the 2026 band end-to-end ─�
   const r = computeTaxReturnPure(inputs);
   check("AGI = $260,000", r.adjustedGrossIncome, 260000, 1);
   check("QBI deduction = $11,613.33 (2026 SSTB band)", r.qbiDeduction ?? 0, 11613.33, 1);
-  // Discriminator: the pre-fix 2024-band bug would have collapsed this to the
-  // $400 OBBBA floor. Anything well above $400 proves the 2026 band is in effect.
-  assert("QBI deduction not collapsed to the $400 floor (bug fixed)", (r.qbiDeduction ?? 0) > 5000);
+  // Discriminator: the pre-fix 2024-band bug collapsed this to $0. Anything well
+  // above the $5,000 guard proves the 2026 band is in effect.
+  assert("QBI deduction not collapsed (bug fixed: 2026 band in effect)", (r.qbiDeduction ?? 0) > 5000);
 }
 
 console.log(`\nRESULTS: ${passed} passed, ${failed} failed`);

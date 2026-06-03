@@ -1,5 +1,5 @@
 import { and, eq, isNull } from "drizzle-orm";
-import { authEnabled } from "../middlewares/auth";
+import { logger } from "./logger";
 
 // P0-2 — IRC §7216 consent gate. Sending a tax document to Google Gemini is a
 // "disclosure of tax return information"; doing so without a statute-compliant,
@@ -17,12 +17,16 @@ function parseBool(value: string | undefined, dflt: boolean): boolean {
 }
 
 /**
- * Whether the consent gate enforces before AI extraction. Default tracks the
- * prod posture — ON whenever the API auth gate is enabled, OFF in pure demo.
+ * Whether the gate enforces before any AI disclosure (extraction OR planning).
+ * Fail-closed in any production deployment, keyed on NODE_ENV — NOT on the app
+ * bearer token: the runbook's recommended posture is edge auth (Cloudflare
+ * Access) with NO API_AUTH_TOKEN, which still handles real PII, so coupling to
+ * the bearer token would silently leave the §7216 gate OFF in prod. Demo/dev
+ * (NODE_ENV !== "production") defaults OFF so the synthetic-data demo flow works.
  * Override explicitly with REQUIRE_7216_CONSENT=true/false.
  */
 export function consentRequired(): boolean {
-  return parseBool(process.env.REQUIRE_7216_CONSENT, authEnabled());
+  return parseBool(process.env.REQUIRE_7216_CONSENT, process.env.NODE_ENV === "production");
 }
 
 export interface ConsentRow {
@@ -54,16 +58,24 @@ export async function hasValidConsent(
 ): Promise<boolean> {
   // Dynamic import so this module (and its pure exports above) can be imported
   // in no-DB unit tests without instantiating the Postgres client.
-  const { db, disclosureConsentsTable } = await import("@workspace/db");
-  const rows = await db
-    .select()
-    .from(disclosureConsentsTable)
-    .where(
-      and(
-        eq(disclosureConsentsTable.clientId, clientId),
-        eq(disclosureConsentsTable.scope, scope),
-        isNull(disclosureConsentsTable.revokedAt),
-      ),
-    );
-  return rows.some((r) => isConsentValid(r, scope, now));
+  try {
+    const { db, disclosureConsentsTable } = await import("@workspace/db");
+    const rows = await db
+      .select()
+      .from(disclosureConsentsTable)
+      .where(
+        and(
+          eq(disclosureConsentsTable.clientId, clientId),
+          eq(disclosureConsentsTable.scope, scope),
+          isNull(disclosureConsentsTable.revokedAt),
+        ),
+      );
+    return rows.some((r) => isConsentValid(r, scope, now));
+  } catch (err) {
+    // Fail CLOSED. If the consent store is unreachable or the table is not yet
+    // provisioned (needs `db push`/migrate), treat as "no consent" so we never
+    // transmit PII to a third party on a DB error.
+    logger.error({ err, clientId, scope }, "§7216 consent lookup failed — failing closed (treating as no consent)");
+    return false;
+  }
 }

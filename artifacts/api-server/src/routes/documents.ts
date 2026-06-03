@@ -155,6 +155,14 @@ router.post("/clients/:clientId/documents", async (req, res): Promise<void> => {
   // Fire-and-forget extraction. Errors are caught and persisted as `failed`.
   (async () => {
     try {
+      // P0-2 defense-in-depth — re-verify §7216 consent at the actual
+      // transmission point, so any future path that reaches the Gemini calls
+      // without the handler gate above still fails closed.
+      if (consentRequired() && !(await hasValidConsent(params.data.clientId, AI_EXTRACTION_SCOPE))) {
+        await db.update(taxDocumentsTable).set({ status: "failed" }).where(eq(taxDocumentsTable.id, doc.id));
+        logger.warn({ docId: doc.id }, "Extraction aborted at transmission — §7216 consent not present");
+        return;
+      }
       const mimeType = detectMimeType(parsed.data.fileName);
       const isVisual = isVisualMimeType(mimeType);
       const extractedText = isVisual

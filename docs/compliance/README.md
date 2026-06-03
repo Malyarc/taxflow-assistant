@@ -27,7 +27,7 @@ represented to a customer.
 | **P0-2** | §7216 consent gate before Gemini | ✅ `disclosure_consents` table + fail-closed extractor gate + consent endpoints | Wire the consent capture into the upload UX; execute the Google DPA; counsel-verify the instrument; set `REQUIRE_7216_CONSENT=true` |
 | **P0-3** | GLBA WISP | ✅ this folder | Name the Qualified Individual; counsel + ownership sign-off; attest at PTIN renewal |
 | **P0-4** | Auth + TLS | ✅ app-layer bearer gate (`API_AUTH_TOKEN`) | Stand up TLS + edge auth per Runbook A; set the token; lock the EC2 security group |
-| **P0-5** | Encrypt PII at rest | ✅ AES-256-GCM field encryption for SSN/TIN | Set `PII_ENCRYPTION_KEY`; run the backfill; move doc blobs to S3+KMS per Runbook B |
+| **P0-5** | Encrypt PII at rest (**PARTIAL**) | ✅ AES-256-GCM field encryption for the SSN/TIN columns | **Field encryption does NOT cover the uploaded document blob** — it is still base64 plaintext in `tax_documents.file_content` and contains the same SSN/TIN, so a leaked DB credential still recovers it. PII-at-rest is **not complete** until the S3+KMS document migration (Runbook B). Set `PII_ENCRYPTION_KEY` + run the backfill; **treat the blob migration as P0-blocking before real PII** |
 | **P0-6** | CI + test typecheck | ✅ `.github/workflows/ci.yml` | Make CI a required status check in branch protection |
 | **P0-7** | Fix false claims + QBI bug | ✅ | — |
 

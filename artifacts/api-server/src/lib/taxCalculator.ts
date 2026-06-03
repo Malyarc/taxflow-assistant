@@ -5453,10 +5453,10 @@ export const QBI_WAGE_LIMIT_BAND: Record<TaxYear, Record<string, { start: number
  * §199A phase-in band [start, end] for a year + filing status — the SINGLE
  * source of truth shared by BOTH §199A mechanics: the wage/UBIA limit phase-in
  * (calculateQbi, below) AND the SSTB phase-out (taxReturnEngine). The year is
- * resolved via resolveTaxYear so an unsupported year clamps exactly like the
- * rest of the engine, and the band map is keyed through the latest supported
- * year — so a future tax year can never silently fall through to a stale band
- * (this previously shipped as a TY2026 return using the TY2024 band). MFS =
+ * resolved via resolveTaxYear so an unsupported FUTURE year clamps to
+ * LATEST_YEAR exactly like the rest of the engine (keep LATEST_YEAR advanced in
+ * lockstep when adding a year). Routing BOTH §199A mechanics through this one
+ * map fixed the prior bug where a TY2026 return used the TY2024 band. MFS =
  * single per §199A(e)(2) (only a JOINT return doubles the threshold amount).
  */
 export function qbiPhaseInBand(

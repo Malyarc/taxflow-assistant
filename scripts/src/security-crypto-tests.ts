@@ -12,6 +12,8 @@ import {
   encryptWithKey,
   decryptWithKey,
   isEncrypted,
+  isDecryptErrorSentinel,
+  DECRYPT_ERROR,
   encryptField,
   decryptField,
 } from "../../artifacts/api-server/src/lib/fieldCrypto";
@@ -54,6 +56,13 @@ ok("encryptField(undefined) === null", encryptField(undefined) === null);
 ok("encryptField is idempotent on already-encrypted input", encryptField(enc) === enc);
 ok("decryptField never returns raw ciphertext when the key is unavailable (no leak, no crash)",
   decryptField(enc) !== enc);
+
+console.log("── decrypt-failure sentinel is never persisted (TIN data-loss guard) ──");
+ok("isDecryptErrorSentinel(sentinel) === true", isDecryptErrorSentinel(DECRYPT_ERROR) === true);
+ok("isDecryptErrorSentinel(real value) === false", isDecryptErrorSentinel(ssn) === false);
+let sentinelThrew = false;
+try { encryptField(DECRYPT_ERROR); } catch { sentinelThrew = true; }
+ok("encryptField REFUSES to encrypt the sentinel (throws → ciphertext preserved on round-trip)", sentinelThrew);
 
 console.log(`\nRESULTS: ${passed} passed, ${failed} failed`);
 if (failed > 0) process.exit(1);

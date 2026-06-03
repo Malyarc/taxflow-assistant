@@ -12,7 +12,7 @@ import {
 import { recalculateAfterMutation } from "../lib/taxReturnPipeline";
 import { writeAudit } from "../lib/auditLog";
 import { validateW2 } from "../lib/w2Validation";
-import { encryptField, decryptField } from "../lib/fieldCrypto";
+import { encryptField, decryptField, isDecryptErrorSentinel } from "../lib/fieldCrypto";
 
 const router: IRouter = Router();
 
@@ -28,7 +28,12 @@ router.get("/clients/:clientId/w2data/flags", async (req, res): Promise<void> =>
     .select()
     .from(w2DataTable)
     .where(eq(w2DataTable.clientId, params.data.clientId)))
-    .map((r) => ({ ...r, employeeSSN: decryptField(r.employeeSSN) }));
+    .map((r) => {
+      // Null a decrypt-error sentinel so the duplicate-SSN cross-check doesn't
+      // treat every unreadable W-2 as sharing one identical SSN (false flags).
+      const ssn = decryptField(r.employeeSSN);
+      return { ...r, employeeSSN: isDecryptErrorSentinel(ssn) ? null : ssn };
+    });
   const [client] = await db
     .select()
     .from(clientsTable)

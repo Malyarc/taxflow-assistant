@@ -150,6 +150,10 @@ export interface PlanningMemoInput {
   client: ClientForLlm;
   computed: ComputedTaxReturn;
   hits: OpportunityHit[];
+  /** P0-2 — when true, force the deterministic (no-LLM) path even if aiEnabled,
+   *  so no return information is disclosed to the AI provider without §7216
+   *  consent on file. Set by the route from the consent gate. */
+  forceDeterministic?: boolean;
 }
 
 export interface PlanningMemoResult {
@@ -167,7 +171,7 @@ export interface PlanningMemoResult {
  * no LLM, so the UI flow stays unblocked in dev / CI.
  */
 export async function generatePlanningMemo(input: PlanningMemoInput): Promise<PlanningMemoResult> {
-  if (!aiEnabled) {
+  if (!aiEnabled || input.forceDeterministic) {
     return { memo: stubMemo(input), aiUsed: false, model: "stub" };
   }
   const payload = {
@@ -180,7 +184,7 @@ export async function generatePlanningMemo(input: PlanningMemoInput): Promise<Pl
 }
 
 export async function generateClientOutreachEmail(input: PlanningMemoInput): Promise<PlanningMemoResult> {
-  if (!aiEnabled) {
+  if (!aiEnabled || input.forceDeterministic) {
     return { memo: stubEmail(input), aiUsed: false, model: "stub" };
   }
   const payload = {
@@ -197,7 +201,7 @@ export async function inferMissingData(input: PlanningMemoInput): Promise<{ item
   const deterministic = Array.from(
     new Set(input.hits.flatMap((h) => h.prerequisiteData)),
   );
-  if (!aiEnabled || deterministic.length === 0) {
+  if (!aiEnabled || input.forceDeterministic || deterministic.length === 0) {
     return { items: deterministic, aiUsed: false, model: "stub" };
   }
   const payload = {
