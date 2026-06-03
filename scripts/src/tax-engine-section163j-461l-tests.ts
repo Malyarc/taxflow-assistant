@@ -129,6 +129,29 @@ function adj(type: string, amount: number, id = Math.floor(Math.random() * 1e9))
   check("Case 3 AGI = $100k − $25,620 allowed", r.adjustedGrossIncome, 74380);
 }
 
+// ── Case 3-TY2026: TY2026 std-ded fall-through regression ─────────────────
+// Same as Case 3 but TY2026. The ATI-proxy std ded must be the NATIVE TY2026
+// $16,100 (via getFederalStandardDeduction), NOT the $14,600 the old inline
+// two-year map fell through to. Hand-calc:
+//   ATI = $100k W-2 − $16,100 std ded = $83,900. Cap = 30% × $83,900 = $25,170.
+//   Gross $50k. Allowed = $25,170. Disallowed = $50,000 − $25,170 = $24,830.
+//   AGI = $100k − $25,170 = $74,830.
+//   (PRE-FIX this produced Case-3's TY2024 numbers: $25,620 / $24,380 / $74,380.)
+{
+  const base = baseInputs();
+  const inputs: TaxReturnInputs = {
+    ...base,
+    taxYear: 2026,
+    client: { ...base.client, taxYear: 2026 },
+    w2s: [{ ...base.w2s[0], taxYear: 2026 }],
+    adjustments: [adj("section_163j_business_interest_expense", 50000, 3099)],
+  };
+  const r = computeTaxReturnPure(inputs);
+  check("Case 3-TY2026 allowed = $25,170 (cap on 2026 std ded $16,100)", r.section163jAllowedDeduction, 25170);
+  check("Case 3-TY2026 disallowed cf = $24,830", r.section163jDisallowedCarryforward, 24830);
+  check("Case 3-TY2026 AGI = $100k − $25,170", r.adjustedGrossIncome, 74830);
+}
+
 // ── Case 4: Prior-year carryforward stacks on current gross ──────────────
 // $5k carryforward + $10k current = $15k subject to cap.
 // ATI ≈ $100k. Cap = $30k. min($15k, $30k) = $15k. Disallowed = $0.

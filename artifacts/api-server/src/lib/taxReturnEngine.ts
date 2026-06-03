@@ -56,6 +56,7 @@ import {
   calculatePassiveActivityLossAllowance,
   calculateMacrsDepreciation,
   getFederalStandardDeduction,
+  getSaltCap,
   type MultiStateTaxResult,
   type StateEitcCalculation,
   type PassiveActivityLossResult,
@@ -1984,29 +1985,24 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // charitable). It doesn't yet honor the charitable %-of-AGI cap or the
   // medical 7.5%-of-AGI floor — the Sched A computation downstream is
   // more precise. This is acceptable as a §163(j) refinement.
-  const fedStdDedTY2024: Record<string, number> = {
-    single: 14_600,
-    married_filing_jointly: 29_200,
-    married_filing_separately: 14_600,
-    head_of_household: 21_900,
-    qualifying_widow: 29_200,
-  };
-  const fedStdDedTY2025: Record<string, number> = {
-    single: 15_000,
-    married_filing_jointly: 30_000,
-    married_filing_separately: 15_000,
-    head_of_household: 22_500,
-    qualifying_widow: 30_000,
-  };
-  const fedStdDedForAti =
-    (taxYear === 2025 ? fedStdDedTY2025 : fedStdDedTY2024)[client.filingStatus] ?? 14_600;
-  // Approximate itemized total from Sched A inputs available at this point
-  // in the pipeline. Sched A object hasn't been computed yet but the
-  // line-item adjustments are summed earlier; use them directly with the
-  // $10k SALT cap.
+  // Std-ded for the ATI proxy — route through the canonical year-indexed helper
+  // (supports TY2024/2025/2026). The old inline two-year map silently used the
+  // TY2024 value for a TY2026 return AND held STALE pre-OBBBA TY2025 values
+  // ($15,000 vs the corrected $15,750) — same fall-through class as the QBI band.
+  const fedStdDedForAti = getFederalStandardDeduction(client.filingStatus, taxYear);
+  // Approximate itemized total from Sched A inputs available at this point in the
+  // pipeline. Uses the YEAR-INDEXED SALT cap (TCJA $10k TY2024; OBBBA $40k TY2025
+  // / $40.4k TY2026 + §164(b)(7) >$500k phase-down) instead of a stale $10k
+  // hardcode. AGI proper isn't computed yet here, so the phase-down MAGI is
+  // approximated from the major income components.
+  const magiProxyForSaltCap = Math.max(
+    0,
+    totalWages + netSeIncome + additionalIncome + investmentIncomeFromAdj,
+  );
+  const saltCapForAti = getSaltCap(taxYear, client.filingStatus, magiProxyForSaltCap);
   const itemizedApproxForAti =
     Math.max(0, medicalExpensesAdj) +
-    Math.min(10_000, stateIncomeTaxAdj + statePropertyTaxAdj + stateSalesTaxAdj) +
+    Math.min(saltCapForAti, stateIncomeTaxAdj + statePropertyTaxAdj + stateSalesTaxAdj) +
     Math.max(0, mortgageInterestAdj) +
     Math.max(0, charitableCashAdj) +
     Math.max(0, charitablePropertyAdj);

@@ -2128,7 +2128,7 @@ const SALT_CAP_MFS = 5000;
  * without the foreign-earned-income/housing exclusions, which the engine adds
  * back elsewhere only for NIIT; for SALT we use AGI, a close + conservative proxy).
  */
-function getSaltCap(taxYear: number, filingStatus: string, magi: number): number {
+export function getSaltCap(taxYear: number, filingStatus: string, magi: number): number {
   const isMfs = filingStatus === "married_filing_separately";
   if (taxYear < 2025) return isMfs ? SALT_CAP_MFS : SALT_CAP;
   const fullBase = taxYear >= 2026 ? 40_400 : 40_000;
