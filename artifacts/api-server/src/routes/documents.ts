@@ -20,6 +20,7 @@ import {
   isVisualMimeType,
   validateAndResolveMimeType,
 } from "../lib/documentExtractor";
+import { encryptField } from "../lib/fieldCrypto";
 import { logger } from "../lib/logger";
 import { setSecureDownloadHeaders } from "../lib/httpSecurity";
 import { recalculateAfterMutation } from "../lib/taxReturnPipeline";
@@ -329,7 +330,7 @@ router.post("/clients/:clientId/documents/:documentId/approve", async (req, res)
           taxYear: parsed.data.taxYear,
           employerName: parsed.data.employerName ?? undefined,
           employerEin: parsed.data.employerEin ?? undefined,
-          employeeSSN: parsed.data.employeeSSN ?? undefined,
+          employeeSSN: encryptField(parsed.data.employeeSSN) ?? undefined,
           wagesBox1: numericToString(parsed.data.wagesBox1),
           federalTaxWithheldBox2: numericToString(parsed.data.federalTaxWithheldBox2),
           socialSecurityWagesBox3: numericToString(parsed.data.socialSecurityWagesBox3),
@@ -394,8 +395,8 @@ router.post("/clients/:clientId/documents/:documentId/approve", async (req, res)
           taxYear: parsed.data.taxYear,
           formType,
           payerName: parsed.data.payerName ?? undefined,
-          payerTin: parsed.data.payerTin ?? undefined,
-          recipientTin: parsed.data.recipientTin ?? undefined,
+          payerTin: encryptField(parsed.data.payerTin) ?? undefined,
+          recipientTin: encryptField(parsed.data.recipientTin) ?? undefined,
           federalTaxWithheld: numericToString(parsed.data.federalTaxWithheld),
           stateTaxWithheld: numericToString(parsed.data.stateTaxWithheld),
           stateCode: parsed.data.stateCode ?? undefined,

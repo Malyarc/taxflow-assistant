@@ -11,6 +11,7 @@ import {
 } from "@workspace/api-zod";
 import { recalculateAfterMutation } from "../lib/taxReturnPipeline";
 import { writeAudit } from "../lib/auditLog";
+import { encryptField, decryptField } from "../lib/fieldCrypto";
 
 const router: IRouter = Router();
 
@@ -32,6 +33,9 @@ function mapRecord(r: typeof form1099DataTable.$inferSelect) {
     const v = (r as Record<string, unknown>)[f];
     out[f] = v != null ? Number(v) : null;
   }
+  // P0-5 — decrypt PII for the response.
+  out.payerTin = decryptField(r.payerTin);
+  out.recipientTin = decryptField(r.recipientTin);
   return out;
 }
 
@@ -68,6 +72,8 @@ router.post("/clients/:clientId/form1099data", async (req, res): Promise<void> =
     return;
   }
   const insertData = stringifyNumerics({ ...parsed.data, clientId: params.data.clientId });
+  if (insertData.payerTin != null) insertData.payerTin = encryptField(insertData.payerTin as string);
+  if (insertData.recipientTin != null) insertData.recipientTin = encryptField(insertData.recipientTin as string);
   const [record] = await db
     .insert(form1099DataTable)
     .values(insertData as typeof form1099DataTable.$inferInsert)
@@ -89,6 +95,8 @@ router.patch("/clients/:clientId/form1099data/:form1099Id", async (req, res): Pr
     return;
   }
   const updateData = stringifyNumerics({ ...parsed.data, updatedAt: new Date() });
+  if (updateData.payerTin != null) updateData.payerTin = encryptField(updateData.payerTin as string);
+  if (updateData.recipientTin != null) updateData.recipientTin = encryptField(updateData.recipientTin as string);
   const [before] = await db
     .select()
     .from(form1099DataTable)

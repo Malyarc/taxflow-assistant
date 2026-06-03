@@ -16,6 +16,7 @@
   ],
   "exclude": [
     "src/ai-benchmark/run.ts",
+    "src/backfill-encrypt-pii.ts",
     "src/build-validation-packet.ts",
     "src/build-validation-packet-v2.ts",
     "src/c3-validation-rerun.ts",

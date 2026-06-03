@@ -12,6 +12,7 @@ import {
 import { recalculateAfterMutation } from "../lib/taxReturnPipeline";
 import { writeAudit } from "../lib/auditLog";
 import { validateW2 } from "../lib/w2Validation";
+import { encryptField, decryptField } from "../lib/fieldCrypto";
 
 const router: IRouter = Router();
 
@@ -23,10 +24,11 @@ router.get("/clients/:clientId/w2data/flags", async (req, res): Promise<void> =>
     res.status(400).json({ error: params.error.message });
     return;
   }
-  const records = await db
+  const records = (await db
     .select()
     .from(w2DataTable)
-    .where(eq(w2DataTable.clientId, params.data.clientId));
+    .where(eq(w2DataTable.clientId, params.data.clientId)))
+    .map((r) => ({ ...r, employeeSSN: decryptField(r.employeeSSN) }));
   const [client] = await db
     .select()
     .from(clientsTable)
@@ -76,6 +78,7 @@ router.get("/clients/:clientId/w2data", async (req, res): Promise<void> => {
   // Convert numeric strings to numbers for response
   const mapped = records.map((r) => ({
     ...r,
+    employeeSSN: decryptField(r.employeeSSN),
     wagesBox1: r.wagesBox1 != null ? Number(r.wagesBox1) : null,
     federalTaxWithheldBox2: r.federalTaxWithheldBox2 != null ? Number(r.federalTaxWithheldBox2) : null,
     socialSecurityWagesBox3: r.socialSecurityWagesBox3 != null ? Number(r.socialSecurityWagesBox3) : null,
@@ -104,12 +107,14 @@ router.post("/clients/:clientId/w2data", async (req, res): Promise<void> => {
   for (const field of numericFields) {
     if (insertData[field] != null) insertData[field] = String(insertData[field]);
   }
+  if (insertData.employeeSSN != null) insertData.employeeSSN = encryptField(insertData.employeeSSN as string);
   const [record] = await db.insert(w2DataTable).values(insertData as typeof w2DataTable.$inferInsert).returning();
   await writeAudit({ clientId: params.data.clientId, action: "create", entityType: "w2", entityId: record.id, after: record });
   await recalculateAfterMutation(params.data.clientId);
   const r = record;
   res.status(201).json({
     ...r,
+    employeeSSN: decryptField(r.employeeSSN),
     wagesBox1: r.wagesBox1 != null ? Number(r.wagesBox1) : null,
     federalTaxWithheldBox2: r.federalTaxWithheldBox2 != null ? Number(r.federalTaxWithheldBox2) : null,
     socialSecurityWagesBox3: r.socialSecurityWagesBox3 != null ? Number(r.socialSecurityWagesBox3) : null,
@@ -137,6 +142,7 @@ router.patch("/clients/:clientId/w2data/:w2Id", async (req, res): Promise<void> 
   for (const field of numericFields) {
     if (updateData[field] != null) updateData[field] = String(updateData[field]);
   }
+  if (updateData.employeeSSN != null) updateData.employeeSSN = encryptField(updateData.employeeSSN as string);
   const [before] = await db
     .select()
     .from(w2DataTable)
@@ -155,6 +161,7 @@ router.patch("/clients/:clientId/w2data/:w2Id", async (req, res): Promise<void> 
   const r = record;
   res.json({
     ...r,
+    employeeSSN: decryptField(r.employeeSSN),
     wagesBox1: r.wagesBox1 != null ? Number(r.wagesBox1) : null,
     federalTaxWithheldBox2: r.federalTaxWithheldBox2 != null ? Number(r.federalTaxWithheldBox2) : null,
     socialSecurityWagesBox3: r.socialSecurityWagesBox3 != null ? Number(r.socialSecurityWagesBox3) : null,
