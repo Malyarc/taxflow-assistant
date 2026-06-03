@@ -2558,6 +2558,11 @@ function AdjustmentsTab({ clientId }: { clientId: number }) {
     ira_contribution_traditional: "Traditional IRA Contribution",
     ira_contribution_roth: "Roth IRA Contribution",
     self_employed_health_insurance_premiums: "Self-Employed Health Insurance Premiums (Form 7206, Sched 1 L17)",
+    // OBBBA NEW deductions (Schedule 1-A → Form 1040 line 13b; reduce taxable income;
+    // TY2025–2028). Senior $6k deduction is age-based (auto-applied from age fields).
+    qualified_tips: "OBBBA — Qualified Tips (§224 'no tax on tips'; ≤$25k, phases out >$150k/$300k MAGI; TY2025–2028)",
+    qualified_overtime: "OBBBA — Qualified Overtime premium (§225; ≤$12.5k single/$25k MFJ; phases out >$150k/$300k; FLSA 'half' only; TY2025–2028)",
+    qualified_car_loan_interest: "OBBBA — Car Loan Interest (§163(h)(4); NEW US-assembled vehicle; ≤$10k, phases out >$100k/$200k; TY2025–2028)",
     home_sale_gross_gain_primary_residence: "Home Sale — Primary Residence Gross Gain (§121 exclusion auto-applied)",
     foreign_earned_income: "Foreign Earned Income — Primary Filer (Form 2555 §911, capped at $126,500 TY2024)",
     foreign_earned_income_spouse: "Foreign Earned Income — Spouse (MFJ only; same per-spouse cap)",

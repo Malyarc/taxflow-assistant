@@ -1225,6 +1225,9 @@ export const AdjustmentAdjustmentType = {
   ny_government_pension: "ny_government_pension",
   oh_work_city_tax_paid: "oh_work_city_tax_paid",
   nyc_ubt_business_income: "nyc_ubt_business_income",
+  qualified_tips: "qualified_tips",
+  qualified_overtime: "qualified_overtime",
+  qualified_car_loan_interest: "qualified_car_loan_interest",
 } as const;
 
 export interface Adjustment {
@@ -1345,6 +1348,9 @@ export const CreateAdjustmentBodyAdjustmentType = {
   ny_government_pension: "ny_government_pension",
   oh_work_city_tax_paid: "oh_work_city_tax_paid",
   nyc_ubt_business_income: "nyc_ubt_business_income",
+  qualified_tips: "qualified_tips",
+  qualified_overtime: "qualified_overtime",
+  qualified_car_loan_interest: "qualified_car_loan_interest",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -1461,6 +1467,9 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   ny_government_pension: "ny_government_pension",
   oh_work_city_tax_paid: "oh_work_city_tax_paid",
   nyc_ubt_business_income: "nyc_ubt_business_income",
+  qualified_tips: "qualified_tips",
+  qualified_overtime: "qualified_overtime",
+  qualified_car_loan_interest: "qualified_car_loan_interest",
 } as const;
 
 export interface UpdateAdjustmentBody {
