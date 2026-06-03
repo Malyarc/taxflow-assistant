@@ -9,6 +9,33 @@ tracker, work it, commit, then remove it from here.
 
 ---
 
+## 🔴 P0 LEGAL/SECURITY GATE (2026-06-03) — in progress
+
+Commissioned after the 2026-06-02 full audit (`docs/product-assessment-2026-06-02.md`).
+Branch `p0-legal-security-gate`. These gate ANY real client PII / first revenue.
+
+- ✅ **P0-7b** — TY2026 §199A SSTB QBI band fall-through fixed (single source of
+  truth `qbiPhaseInBand`; MFS=single). +12 regression assertions.
+- ✅ **P0-6** — CI (`.github/workflows/ci.yml`) + `scripts/tsconfig.tests.json`
+  type-checks the test tree (closes "green-on-wrong-shape"). Covers 34/52 suites.
+  **RATCHET TARGET: drive the `tsconfig.tests.json` quarantine 25 files → 0.**
+  143 pre-existing errors: 93× `T[]|undefined` indexing (add `!`/guard); plus
+  GENUINE wrong-shape fixtures to fix FIRST — `stateWagesBox16`/`stateTaxWithheldBox17`
+  on W2Fact (deep-audit ×8), `interestIncomeBox1`→`interestIncome` (phaseE),
+  `description` on AdjustmentFact (cpa-scenarios), `dependentsForCareCredit` on
+  Archetype (seed), duplicate `calculateStateTax` import (phaseE).
+- ⏳ **P0-7a** — remove false "TLS/encryption-at-rest/read-only-creds" claims from
+  outreach docs (`docs/outreach/partner-faq.md`, `one-pager.md`).
+- ⏳ **P0-4 (app layer)** — bearer-token auth gate on `/api` (TLS = infra runbook).
+- ⏳ **P0-5 (app layer)** — AES-256-GCM field encryption for SSN/TIN (S3 = runbook).
+- ⏳ **P0-2 (app layer)** — §7216 consent gate (extractor fail-closed) + instrument.
+- ⏳ **P0-3** — GLBA WISP draft + §7216 + infra runbooks under `docs/compliance/`.
+- 🔴 **P0-1 (USER)** — rotate the leaked Neon + Gemini creds. Runbook handed off.
+- Infra-side (USER, runbooks in `docs/compliance/`): TLS termination, S3+KMS doc
+  storage, Secrets Manager, Google no-training DPA / off the free Gemini tier.
+
+---
+
 ## ⚡ CURRENT FOCUS (2026-05-30): refine tax calc + tax planning
 
 **2026-06-02 — OBBBA refresh COMPLETE (planning v1.19.0 + CORE conformance).**

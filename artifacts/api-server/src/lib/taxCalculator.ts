@@ -5425,7 +5425,7 @@ export interface QbiCalculation {
 // half; an MFS taxpayer does not file a joint return). (Rev. Proc. 2023-34 /
 // 2024-40 / 2025-32.) OBBBA made §199A permanent and WIDENED the TY2026 phase-in
 // band to $75k single / $150k MFJ (was $50k/$100k).
-const QBI_WAGE_LIMIT_BAND: Record<TaxYear, Record<string, { start: number; end: number }>> = {
+export const QBI_WAGE_LIMIT_BAND: Record<TaxYear, Record<string, { start: number; end: number }>> = {
   2024: {
     single: { start: 191_950, end: 241_950 },
     head_of_household: { start: 191_950, end: 241_950 },
@@ -5448,6 +5448,24 @@ const QBI_WAGE_LIMIT_BAND: Record<TaxYear, Record<string, { start: number; end: 
     qualifying_widow: { start: 403_500, end: 553_500 },
   },
 };
+
+/**
+ * §199A phase-in band [start, end] for a year + filing status — the SINGLE
+ * source of truth shared by BOTH §199A mechanics: the wage/UBIA limit phase-in
+ * (calculateQbi, below) AND the SSTB phase-out (taxReturnEngine). The year is
+ * resolved via resolveTaxYear so an unsupported year clamps exactly like the
+ * rest of the engine, and the band map is keyed through the latest supported
+ * year — so a future tax year can never silently fall through to a stale band
+ * (this previously shipped as a TY2026 return using the TY2024 band). MFS =
+ * single per §199A(e)(2) (only a JOINT return doubles the threshold amount).
+ */
+export function qbiPhaseInBand(
+  taxYear: number | undefined | null,
+  filingStatus: string | undefined | null,
+): { start: number; end: number } {
+  const band = QBI_WAGE_LIMIT_BAND[resolveTaxYear(taxYear)];
+  return band[filingStatus ?? "single"] ?? band.single;
+}
 
 export function calculateQbi(params: {
   qbiIncome: number;
@@ -5488,10 +5506,7 @@ export function calculateQbi(params: {
   let wageUbiaLimit = 0;
   let wageUbiaLimitBinds = false;
   if (w2Wages > 0 || ubia > 0) {
-    const year = resolveTaxYear(params.taxYear);
-    const band =
-      QBI_WAGE_LIMIT_BAND[year][params.filingStatus ?? "single"] ??
-      QBI_WAGE_LIMIT_BAND[year].single;
+    const band = qbiPhaseInBand(params.taxYear, params.filingStatus);
     if (taxableIncomeBeforeQbi > band.start) {
       wageUbiaLimit = Math.max(0.50 * w2Wages, 0.25 * w2Wages + 0.025 * ubia);
       const excessRatio = Math.min(1, Math.max(0,

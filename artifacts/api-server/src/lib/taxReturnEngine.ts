@@ -30,6 +30,7 @@ import {
   calculateNiit,
   calculateAdditionalMedicareTax,
   calculateQbi,
+  qbiPhaseInBand,
   calculateObbbaSchedule1ADeductions,
   calculateAmt,
   calculateFederalTaxWithCapitalGains,
@@ -209,6 +210,9 @@ export interface Form1099Fact {
   longTermGainLoss?: Numish;
   taxableAmount?: Numish;
   grossDistribution?: Numish;
+  /** 1099-R Box 7 distribution code — drives the E5 §72(t) early-withdrawal
+   *  additional tax ("1" → 10%, "S" → 25% SIMPLE in first 2 years). */
+  distributionCode?: string | null;
   unemploymentCompensation?: Numish;
   stateLocalRefund?: Numish;
   grossPaymentAmount?: Numish;
@@ -517,7 +521,7 @@ export function summarize1099s(records: Form1099Fact[]): Form1099Summary {
   // distribution-date is what matters, not year-end age.
   let earlyWithdrawalPenalty = 0;
   for (const r of rRecords) {
-    const code = ((r as { distributionCode?: string | null }).distributionCode ?? "").trim();
+    const code = (r.distributionCode ?? "").trim();
     const taxable = toNum(r.taxableAmount ?? r.grossDistribution);
     if (taxable <= 0) continue;
     if (code === "1") {
@@ -2327,24 +2331,14 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // non-SSTB QBI is unaffected. SSTB is PER-BUSINESS: the Sch C via the
   // `qbi_sstb_flag` adjustment, each K-1 via k.isSstb (k1QbiSstbPortion above).
   const schCIsSstb = sumByType("qbi_sstb_flag") > 0;
-  const QBI_PHASEIN_2024: Record<string, { start: number; end: number }> = {
-    single: { start: 191_950, end: 241_950 },
-    married_filing_separately: { start: 95_975, end: 120_975 },
-    head_of_household: { start: 191_950, end: 241_950 },
-    married_filing_jointly: { start: 383_900, end: 483_900 },
-    qualifying_widow: { start: 383_900, end: 483_900 },
-  };
-  const QBI_PHASEIN_2025: Record<string, { start: number; end: number }> = {
-    // Rev. Proc. 2024-40 inflation adjustments
-    single: { start: 197_300, end: 247_300 },
-    married_filing_separately: { start: 98_650, end: 123_650 },
-    head_of_household: { start: 197_300, end: 247_300 },
-    married_filing_jointly: { start: 394_600, end: 494_600 },
-    qualifying_widow: { start: 394_600, end: 494_600 },
-  };
-  const phaseIn =
-    (taxYear === 2025 ? QBI_PHASEIN_2025 : QBI_PHASEIN_2024)[client.filingStatus] ??
-    (taxYear === 2025 ? QBI_PHASEIN_2025 : QBI_PHASEIN_2024).single;
+  // SSTB phase-in band — routed through the SINGLE source of truth in
+  // taxCalculator (qbiPhaseInBand), shared with the §199A wage/UBIA limit so the
+  // two §199A mechanics can never diverge by year or filing status. This block
+  // previously held a DUPLICATE TY2024/2025-only map selected by
+  // `taxYear === 2025 ? … : 2024`, so a TY2026 return silently used the TY2024
+  // band (and MFS used a non-statutory half-threshold). The canonical map is
+  // keyed through the latest supported year; MFS = single per §199A(e)(2).
+  const phaseIn = qbiPhaseInBand(taxYear, client.filingStatus);
   // Compute the phase-out fraction unconditionally; it is APPLIED only to the
   // SSTB QBI portion below (which is 0 when no business is SSTB), so this is a
   // no-op for non-SSTB returns.

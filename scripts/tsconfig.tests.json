@@ -1,0 +1,44 @@
+{
+  "//1": "Dedicated TYPE-CHECK for the scripts/src test tree. The sibling tsconfig.json excludes every test file from typecheck; combined with tsx (which strips types without checking) that let fixtures reference fields the engine types don't have and still run green — the exact 'tests passing on the wrong shape' failure mode. CI runs `typecheck:tests` so every NON-quarantined suite (and every NEW test file — new files are NOT quarantined) is held to the engine's type contract.",
+  "//2": "moduleDetection=force gives each suite its own module scope (they each declare top-level PASS/FAIL/check helpers that would otherwise collide as globals when the whole tree compiles as one program).",
+  "//3": "QUARANTINE (the `exclude` list): 25 legacy files carry 143 pre-existing type errors (93 are one mechanical `T[] | undefined` indexing pattern; 10 are genuine wrong-shape fixtures e.g. stateWagesBox16 on W2Fact / interestIncomeBox1). This is a TRACKED, RATCHETING quarantine, NOT a blanket exclusion — the goal is to drive it to []. Fix a file's errors, delete it from this list, keep CI green. Ratchet target + per-file error notes live in docs/todo.md. Do NOT add new files here.",
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "types": [
+      "node"
+    ],
+    "noEmit": true,
+    "moduleDetection": "force"
+  },
+  "include": [
+    "src"
+  ],
+  "exclude": [
+    "src/ai-benchmark/run.ts",
+    "src/build-validation-packet.ts",
+    "src/build-validation-packet-v2.ts",
+    "src/c3-validation-rerun.ts",
+    "src/h-deep-audit-2026-05-27.ts",
+    "src/seed-dummy-clients.ts",
+    "src/tax-engine-ai-overlay-tests.ts",
+    "src/tax-engine-c11-deeper-sourcing-tests.ts",
+    "src/tax-engine-capital-transactions-tests.ts",
+    "src/tax-engine-cpa-scenarios-tests.ts",
+    "src/tax-engine-deep-audit-tests.ts",
+    "src/tax-engine-deep-integration-tests.ts",
+    "src/tax-engine-exports-tests.ts",
+    "src/tax-engine-integration-tests.ts",
+    "src/tax-engine-k1-integration-tests.ts",
+    "src/tax-engine-new-features-tests.ts",
+    "src/tax-engine-phase1-integration-tests.ts",
+    "src/tax-engine-phase15-integration-tests.ts",
+    "src/tax-engine-phaseE-tests.ts",
+    "src/tax-engine-planning-integration-tests.ts",
+    "src/tax-engine-planning-scenarios-tests.ts",
+    "src/tax-engine-planning-tests.ts",
+    "src/tax-engine-rental-properties-tests.ts",
+    "src/tax-engine-scenarios.ts",
+    "src/tax-engine-whatif-tests.ts"
+  ]
+}
