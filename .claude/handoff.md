@@ -1,184 +1,101 @@
-# Handoff Note — 2026-06-02 (OBBBA: planning catalog v1.19.0 + CORE engine conformance)
+# Handoff Note — 2026-06-03 (P0 legal/security gate — 6 commits on branch `p0-legal-security-gate`)
 
 Session continuation point for the next Claude (or human) on TaxFlow Assistant.
 
 ## ⚡ Read this first
 
-Durable TODO: **`docs/todo.md`** (CURRENT FOCUS). Coverage map:
-**`docs/coverage-matrix.md`**. Per-strategy planning source of truth:
-**`docs/planning-strategy-audit.md`** (OBBBA section — Tier 1–4 APPLIED + core
-conformance section). Branch: **`main`** (11 commits this session, all pushed;
-api-server + frontend deployed to EC2).
+This session was triggered by a full product/codebase **audit**
+(`docs/product-assessment-2026-06-02.md`) which found a strong engine + planning
+architecture trapped in an unshippable trust layer. We then implemented the
+**P0 legal/security gate**. Durable TODO: **`docs/todo.md`** (the new P0 section
+at top). Compliance backbone: **`docs/compliance/`**. Branch:
+**`p0-legal-security-gate`** (6 commits, pushed; **NOT merged to main, NOT
+deployed** — that's the user's call via PR).
 
-## Headline (latest — core OBBBA conformance)
+## Headline — what landed (all 6 commits green, pushed)
 
-After the planning-catalog refresh (below), completed **all remaining CORE
-`computeTaxReturnPure` OBBBA conformance** (commits `80928c3` + `f22c9c1`):
-**SALT** $40k cap + §164(b)(7) >$500k phase-down (`getSaltCap`); **§199A** TY2026
-thresholds + widened phase-in + the new **$400 minimum QBI deduction** + MFS-threshold
-bug fix; **native TY2026** support (`SUPPORTED_TAX_YEARS` + 2026 added to all 20
-year-indexed maps + `stateTaxData`, incl. the OBBBA AMT **50% exemption phase-out**);
-and the **structural** changes that were also pre-OBBBA-stale for TY2025 — **CTC
-$2,200**, **§179 $2.5M/$4M**, **bonus depreciation 100%** (TY2026). Every TY2026
-value primary-source-verified (3 background research agents off Rev. Proc. 2025-32 /
-Notice 2025-67 / HHS FPL PDFs).
+| Commit | What |
+|---|---|
+| `3406f4e` | **P0-6** CI (`.github/workflows/ci.yml`) + `scripts/tsconfig.tests.json` type-checks the test tree (closes "green-on-wrong-shape"); **P0-7b** TY2026 §199A SSTB QBI band fall-through fixed via one source of truth `qbiPhaseInBand` (MFS=single). +12 hand-calc assertions. |
+| `306326c` | **P0-4** app-layer bearer-token auth gate (`API_AUTH_TOKEN`) on `/api` + frontend token getter; **P0-7a** removed FALSE "TLS/encryption-at-rest/read-only-creds" claims from outreach docs. |
+| `e129ff3` | **P0-3** compliance backbone: `docs/compliance/WISP.md` (GLBA), `section-7216-consent.md` (verbatim consent instrument + spec), `runbook-tls-s3-secrets.md`, README. + the audit report. |
+| `e46c283` | **P0-5** AES-256-GCM field encryption for SSN/TIN (`fieldCrypto.ts`) wired into W-2/1099 routes + document-approve; idempotent + versioned prefix + backfill script. |
+| `f546e51` | **P0-2** fail-closed §7216 consent gate (`consentGate.ts`) before the Gemini call + `disclosure_consents` table + record/list/revoke endpoints. |
+| `291637f` | **Review fixups** — closed 4 issues an adversarial self-review found (CI typecheck was red; consent gate was fail-open in edge-auth prod; planning-AI endpoints were ungated; a decrypt-sentinel could destroy a TIN). |
 
-Then (commits `8831708` + `bedf061`) **modeled the 4 new OBBBA deductions
-(tips/overtime/car-loan/senior) as REAL `computeTaxReturnPure` adjustments** —
-`calculateObbbaSchedule1ADeductions` (verified vs the actual Form 1040 (2025) flow:
-Schedule 1-A → line 13b, reducing TAXABLE income, NOT AGI; offset the ordinary
-portion; TY2025–2028; MAGI phase-outs). The 3 markers (`qualified_tips`/
-`qualified_overtime`/`qualified_car_loan_interest`) are in the openapi enum + codegen
-+ ClientForm dropdown; senior is age-based. Planning G1.97–G1.100 now value them at
-the pre-deduction marginal. **39 no-API suites / 3,320 assertions / 0 failures; clean
-typecheck; complex TY2026 return smoke-tested.** OBBBA is now end-to-end in the engine.
+**Verification:** full workspace `pnpm run typecheck` GREEN; **43 no-API suites /
+3,372 assertions green** (3 new security suites: auth 11, consent 12, crypto 17;
++ the QBI regression 12). api-server + db + tax-app typecheck clean.
 
-## 🔴 USER ACTION STILL PENDING (from the 2026-05-28 session)
+## 🔴 USER ACTION — P0-1 (only you can do)
 
-Rotate the two leaked production credentials (Neon `neondb_owner` password +
-Google Gemini API key). Only you can rotate them in the Neon console + Google AI
-Studio.
+Rotate the leaked **Neon `neondb_owner` password** + **Gemini API key**. Full
+steps: **`docs/compliance/runbook-p0-1-rotate-credentials.md`**. Note: I scanned
+all git history — the creds were **never committed**, so NO history scrub /
+force-push is needed; rotation in the consoles fully closes it.
 
-## Headline
+## New env vars (all default to today's demo behavior when unset)
 
-Completed the **planning catalog Tier-2/3/4 OBBBA refresh** (the #9 follow-up).
-Every TY2025/2026 dollar value was **independently re-verified against the primary
-IRS source** (3 research sub-agents + a targeted web search; no guessing) before
-encoding, and every test expectation is hand-calc'd. One scope decision was put to
-the user (the std-ded — see below) and they chose to also fix the core. **39 no-API
-suites / 3,287 assertions / 0 failures; clean typecheck.** api-server deployed to
-EC2 + verified live.
+- `API_AUTH_TOKEN` — when set, every `/api` route requires `Authorization:
+  Bearer <token>` (else 401). Unset = open demo + a loud startup warning.
+- `PII_ENCRYPTION_KEY` — base64 32-byte AES-256 key (`openssl rand -base64 32`).
+  When set, SSN/TIN are encrypted at rest; unset = plaintext passthrough (demo).
+  After setting it on existing data, run `backfill-encrypt-pii.ts`.
+- `REQUIRE_7216_CONSENT` — gate before AI extraction/planning. **Defaults to ON
+  when `NODE_ENV=production`**, OFF otherwise. Override true/false.
 
-### What landed (6 commits on `main`, all pushed)
+## Deploy (when the user approves the PR → main)
 
-1. **`55c1182` fix(engine): TY2025 std-ded → OBBBA** — core `FEDERAL_STANDARD_DEDUCTIONS[2025]`
-   corrected $15,000/$30,000/$22,500 → **$15,750/$31,500/$23,625** (the bunching
-   detectors consume it). Re-hand-calc'd 11 affected TY2025 assertions across 5
-   suites (std-ded, blind, a $100k fed-tax case, G4.3 bunching estSavings).
-2. **`edadfbc` feat(planning): Tier-2 dollar bumps** — TY2026 year-map entries:
-   SEP/§415(c) **$72k**, §402(g) **$24.5k**, HSA **$4,400/$8,750**, QCD **$111k**,
-   §401(a)(17) **$360k**; adoption year-indexed ($17,280/$17,670) + MAGI phase-out +
-   **OBBBA refundable ($5,000/$5,120 — detector no longer caps below the refundable
-   floor)**; §448(c) catalog text. +18 TY2026 lock-ins.
-3. **`ae60109` feat(planning): §199A** — QBI_THRESHOLDS TY2026 **$201,750/$403,500**
-   + widened phase-in **$75k/$150k**; G1.88/G1.89 refactored off TY2024-hard-codes to
-   the year-indexed map; **$400 min-deduction note**; G1.7/G1.88/G1.89 validUntil →
-   **2099 (PERMANENT)**. +4 PLAN-08 permanence lock-ins.
-4. **`2ca787d` feat(planning): Tier-3 PTET** — new `obbbaSaltCap()` (year-indexed +
-   MAGI phase-down); detector fires off `saltUncapped` vs the OBBBA cap (**$40k**,
-   phasing to a **$10k floor** above $500k MAGI) — recoded §164(b)(6)+(7). G1.85
-   mortgage permanence already documented; estate strategies carry no stale urgency.
-   +5 lock-ins.
-5. **`fc3bf11` feat(planning): Tier-4 — 4 NEW deductions G1.97–G1.100** — tips §224
-   ($25k), overtime §225 ($12.5k/$25k), car-loan §163(h)(4) ($10k, $200/$1k DOUBLE
-   phase-out), senior $6k/65+ (6% phase-out). validUntil 2028. Catalog v1.18→**v1.19.0**
-   (now **101 strategies**). +26 lock-ins (caps, both phase-out rates, negatives).
-6. **`<docs>` docs** — planning-strategy-audit (Tier 1–4 APPLIED table + caveats),
-   coverage-matrix, todo, CLAUDE.md, this handoff.
-
-### Key decisions / gotchas confirmed this session
-
-- **TY2026 engine clamp:** `computeTaxReturnPure` clamps tax MATH **and** its output
-  `taxYear` to the latest supported year (2025) — there is NO native TY2026 bracket/
-  std-ded set, and `SUPPORTED_TAX_YEARS = [2024, 2025]`. So the planning detectors'
-  TY2026 dollar maps are **forward-staged**: reached only when the planning layer is
-  handed `taxYear=2026` (the lock-in tests stamp `{...computed, taxYear: 2026}`, the
-  same pattern the #9 energy test uses). In production today a TY2026 client's planning
-  runs on the (verified-correct) TY2025 values.
-- **Core engine intentionally NOT touched beyond the TY2025 std-ded** (user's scope
-  call): the federal SALT cap is still $10k (PTET works around it off `saltUncapped`);
-  core §199A SSTB thresholds + the $400 min QBI deduction not applied; the 4 new
-  deductions are planning-only. All tracked in `docs/planning-strategy-audit.md`
-  ("Discovered core-engine follow-ups") + `coverage-matrix.md` + CLAUDE.md limitations.
-- `adjustment_type` is FREE-FORM text; the core engine **ignores** unknown markers
-  (verified: a `qualified_tips` adjustment leaves AGI unchanged — no double-count,
-  since tips are already in W-2 wages). The tips/overtime/car-loan markers therefore
-  need an openapi-enum + ClientForm UI to be CPA-enterable in prod.
-- Catalog (`strategies-v1.json`) is imported directly + `validateCatalog` runs on
-  import (a green planning endpoint = valid catalog). `category` must be one of the 7
-  `StrategyCategory` enum values — the 4 new deductions use `credits`.
-
-### Verification
-
-- `pnpm run typecheck` — clean (full workspace).
-- `pnpm --filter @workspace/scripts run test:no-api` — **39 suites, 3,287
-  assertions, 0 failures** (baseline at session start: 3,234). Planning suite 474→527.
-- Live EC2 after deploy: `GET /api/healthz` ok; planning endpoint returns catalog
-  v1.19.0 hits. (See deploy section.)
-
-## Deploy — api-server + frontend (NO DB ALTER)
-
-The core OBBBA conformance + 4-deduction work touched the engine + openapi enum
-(codegen committed) + ClientForm UI — so it needs the api-server cycle **AND** a
-frontend rsync (the box OOMs on Vite, so build locally + rsync). No DB ALTER
-(adjustment_type is free-form text). Done + verified live this session.
+Needs: api-server cycle + **`db push` (new `disclosure_consents` table)** +
+frontend rsync (main.tsx changed). See CLAUDE.md "EC2 deploy". Extra prod env to
+set before real PII: `API_AUTH_TOKEN`, `PII_ENCRYPTION_KEY`,
+`REQUIRE_7216_CONSENT=true`, `NODE_ENV=production`, `ALLOWED_ORIGINS`.
 
 ```bash
-# api-server (on the box)
-ssh -i ~/Downloads/taxflow-key.pem ubuntu@ec2-18-188-192-154.us-east-2.compute.amazonaws.com
-cd ~/taxflow-pro
-git checkout -- pnpm-lock.yaml
-git pull origin main
+# on the box, after git pull of the merged branch
 pnpm install
-export DATABASE_URL=$(pm2 env 0 | awk -F": " '/^DATABASE_URL:/ {print $2; exit}')
-export AI_API_KEY=$(pm2 env 0 | awk -F": " '/^AI_API_KEY:/ {print $2; exit}')
+pnpm --filter @workspace/db run push        # creates disclosure_consents
 pnpm --filter @workspace/api-server run build
-pm2 restart taxflow
+pm2 restart taxflow --update-env
 curl http://localhost:8080/api/healthz
-# frontend (locally → rsync the built bundle)
-pnpm --filter @workspace/tax-app run build
-rsync -e "ssh -i ~/Downloads/taxflow-key.pem" -avz --delete \
-  artifacts/tax-app/dist/public/ \
-  ubuntu@ec2-18-188-192-154.us-east-2.compute.amazonaws.com:~/taxflow-pro/artifacts/tax-app/dist/public/
+# locally: pnpm --filter @workspace/tax-app run build && rsync … (see CLAUDE.md)
 ```
 
-## What's left — prioritized (next session)
+## What's left (prioritized — see docs/todo.md P0 section + the audit roadmap)
 
-OBBBA is now fully end-to-end in the engine (core conformance + the 4 new deductions
-as real adjustments). Remaining:
+1. **P0-1 (user)** — rotate creds.
+2. **Operator/infra (before real PII)** — TLS + edge auth (Runbook A); S3+KMS for
+   the **document blob** (still plaintext base64 in PG — field encryption does
+   NOT cover it; this is P0-blocking, see README P0-5); Secrets Manager;
+   Google DPA; counsel sign-off on WISP + §7216 instrument; name the Qualified
+   Individual; make CI a required status check.
+3. **Frontend fast-follows** — a login form (token is bootstrapped via
+   `?api_token=` / localStorage today) + an in-app §7216 consent-capture step
+   (the `disclosure-consents` endpoints exist; nothing calls them yet, so with
+   `REQUIRE_7216_CONSENT=true` every upload 403s until consent is POSTed).
+4. **Test-typecheck ratchet** — drive the `tsconfig.tests.json` quarantine (25
+   legacy files, 143 pre-existing type errors; genuine wrong-shape fixtures to
+   fix first: `stateWagesBox16`/`interestIncomeBox1`/`description`) → 0.
+5. **Versioned migration for `disclosure_consents`** (currently push-only; the
+   migrate cutover is otherwise blocked per docs/db-migrations.md).
+6. **Then the product roadmap** from the audit (P1: engine-verified planning
+   delta as the headline number; multi-year Roth/distribution optimizer; Form
+   2210; diagnostics engine; per-field extraction confidence; land 1 real CPA
+   partner). See `docs/product-assessment-2026-06-02.md` §7.
 
-1. **Bonus-depreciation TY2025 dual-rate** — the engine keeps the conservative 40%
-   default for TY2025 (OBBBA restored 100% for property acquired after 2025-01-19, but
-   there's no acquisition-date field). Add an acquisition-date or a per-asset
-   `bonus_rate_override` if a customer needs precise early-2025 modeling.
-2. **State conformity to the OBBBA deductions** — the 4 new deductions reduce FEDERAL
-   taxable only; the planning detectors include a state-marginal term in estSavings,
-   but most states don't conform (CA/NY decoupled). Refine if a state-specific
-   customer asks. State 2026 brackets are also held at 2025 (most unpublished).
-3. **Remaining niche tax-calc sub-gaps** (`coverage-matrix.md` §4): MD per-dependent
-   (needs MD state tax modeled first); exact NY IT-203 / CA 540NR per-line sourcing;
-   K-1 per-business (Form 8995-A) wage/UBIA; wash leftover-share re-flow.
-4. **H3 multi-year wiring (#8)** — still deferred (needs a defensible RMD/installment model).
-5. **Haven fusion prep** — keep `computeTaxReturnPure` pure/portable. D15 auth POSTPONED.
-
-D15 (auth + multi-tenancy) is POSTPONED to the Haven fusion — the EC2 box stays a
-demo with no real PII.
-
-## How to start the next Claude session
+## How to start the next session
 
 ```
-Project: TaxFlow Assistant (CPA tax-prep + planning; portable engine
-computeTaxReturnPure fuses into "Haven", which brings its own auth/tenancy — so
-D15 auth is POSTPONED, don't build it).
+Project: TaxFlow Assistant. Read: .claude/handoff.md, docs/todo.md (P0 section),
+docs/product-assessment-2026-06-02.md (the audit + roadmap), docs/compliance/.
 
-Read first: .claude/handoff.md, CLAUDE.md, docs/todo.md (CURRENT FOCUS),
-docs/coverage-matrix.md, docs/planning-strategy-audit.md (OBBBA section).
-
-Where we left off (2026-06-02): OBBBA is now FULLY end-to-end. Shipped: planning
-catalog v1.19.0 (101 strategies); core conformance (SALT $40k + §164(b)(7) phase-down,
-§199A TY2026 thresholds + $400 min QBI deduction + MFS-fix, native TY2026 support
-[SUPPORTED_TAX_YEARS + all 20 year-maps + AMT 50% phase-out], CTC $2,200, §179 $2.5M,
-bonus 100% TY2026); AND the 4 new OBBBA deductions (tips/overtime/car-loan/senior)
-modeled as REAL computeTaxReturnPure adjustments (calculateObbbaSchedule1ADeductions,
-Schedule 1-A → line 13b; markers in the openapi enum + ClientForm). 39 no-API suites /
-3,320 assertions green; api-server + frontend deployed + live-verified. Every value
-primary-source-verified.
-
-Recommended next task: pick from handoff "What's left" — the highest-value remaining
-items are (a) **bonus-depreciation TY2025 dual-rate** (add an acquisition-date or
-per-asset `bonus_rate_override` so post-1/19/2025 property gets 100% vs the current
-conservative 40% default), or (b) the **niche state/K-1 sub-gaps** in
-coverage-matrix.md §4, or (c) **state conformity** to the 4 new OBBBA deductions
-(most states decouple). Hand-calc every value vs the published rule, commit per chunk,
-push to main, deploy + verify live. Keep computeTaxReturnPure pure.
+State (2026-06-03): the P0 legal/security gate is implemented on branch
+p0-legal-security-gate (6 commits, pushed, NOT merged/deployed). Auth gate, PII
+field encryption, §7216 fail-closed consent gate, WISP + consent instrument + CI
+all landed; 43 suites/3,372 assertions green. The user is rotating the leaked
+creds (P0-1). Next: either (a) finish the operator/infra gate (TLS, S3+KMS doc
+blob, DPA, counsel) before real PII, (b) the frontend login + consent-capture UX,
+or (c) start the product roadmap (engine-verified planning delta; multi-year
+optimizer; Form 2210; diagnostics). Hand-calc every tax value; commit per chunk;
+keep computeTaxReturnPure pure.
 ```
