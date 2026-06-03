@@ -39,7 +39,9 @@ export type AuditEntityType =
   | "rental_property"
   | "schedule_k1"
   // Phase H — H5 client asset balances.
-  | "asset_balance";
+  | "asset_balance"
+  // P0-2 — §7216 disclosure consents.
+  | "disclosure_consent";
 
 export interface AuditWriteParams {
   clientId: number;

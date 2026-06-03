@@ -1,0 +1,86 @@
+import { Router, type IRouter } from "express";
+import { and, desc, eq } from "drizzle-orm";
+import { db, disclosureConsentsTable } from "@workspace/db";
+import { writeAudit } from "../lib/auditLog";
+import { AI_EXTRACTION_SCOPE } from "../lib/consentGate";
+
+// P0-2 — record / list / revoke a taxpayer's §7216 disclosure consent. These
+// endpoints sit behind the API auth gate (mounted after requireApiAuth). The
+// consent INSTRUMENT (verbatim text the taxpayer signs) is in
+// docs/compliance/section-7216-consent.md (version "ai_extraction_v1"); the
+// frontend capture UX + OpenAPI/Orval formalization are a fast-follow.
+
+const router: IRouter = Router();
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+router.post("/clients/:clientId/disclosure-consents", async (req, res): Promise<void> => {
+  const clientId = Number(req.params.clientId);
+  if (!Number.isInteger(clientId)) {
+    res.status(400).json({ error: "invalid clientId" });
+    return;
+  }
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const scope = typeof body.scope === "string" && body.scope.trim() ? body.scope.trim() : AI_EXTRACTION_SCOPE;
+  const documentVersion =
+    typeof body.documentVersion === "string" && body.documentVersion.trim()
+      ? body.documentVersion.trim()
+      : "ai_extraction_v1";
+  const signerName = typeof body.signerName === "string" ? body.signerName : null;
+  const signatureRef = typeof body.signatureRef === "string" ? body.signatureRef : null;
+  const durationDays =
+    typeof body.durationDays === "number" && Number.isFinite(body.durationDays) && body.durationDays > 0
+      ? body.durationDays
+      : 365;
+  const signedAt = new Date();
+  const expiresAt = new Date(signedAt.getTime() + durationDays * DAY_MS);
+
+  const [row] = await db
+    .insert(disclosureConsentsTable)
+    .values({ clientId, scope, documentVersion, signerName, signatureRef, signedAt, expiresAt })
+    .returning();
+  await writeAudit({
+    clientId,
+    action: "create",
+    entityType: "disclosure_consent",
+    entityId: row.id,
+    after: { scope: row.scope, documentVersion: row.documentVersion, signedAt: row.signedAt, expiresAt: row.expiresAt },
+  });
+  res.status(201).json(row);
+});
+
+router.get("/clients/:clientId/disclosure-consents", async (req, res): Promise<void> => {
+  const clientId = Number(req.params.clientId);
+  if (!Number.isInteger(clientId)) {
+    res.status(400).json({ error: "invalid clientId" });
+    return;
+  }
+  const rows = await db
+    .select()
+    .from(disclosureConsentsTable)
+    .where(eq(disclosureConsentsTable.clientId, clientId))
+    .orderBy(desc(disclosureConsentsTable.signedAt));
+  res.json(rows);
+});
+
+router.post("/clients/:clientId/disclosure-consents/:id/revoke", async (req, res): Promise<void> => {
+  const clientId = Number(req.params.clientId);
+  const id = Number(req.params.id);
+  if (!Number.isInteger(clientId) || !Number.isInteger(id)) {
+    res.status(400).json({ error: "invalid id" });
+    return;
+  }
+  const [row] = await db
+    .update(disclosureConsentsTable)
+    .set({ revokedAt: new Date() })
+    .where(and(eq(disclosureConsentsTable.id, id), eq(disclosureConsentsTable.clientId, clientId)))
+    .returning();
+  if (!row) {
+    res.status(404).json({ error: "consent not found" });
+    return;
+  }
+  await writeAudit({ clientId, action: "update", entityType: "disclosure_consent", entityId: row.id, after: { revokedAt: row.revokedAt } });
+  res.json(row);
+});
+
+export default router;

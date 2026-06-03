@@ -21,6 +21,7 @@ import {
   validateAndResolveMimeType,
 } from "../lib/documentExtractor";
 import { encryptField } from "../lib/fieldCrypto";
+import { consentRequired, hasValidConsent, AI_EXTRACTION_SCOPE } from "../lib/consentGate";
 import { logger } from "../lib/logger";
 import { setSecureDownloadHeaders } from "../lib/httpSecurity";
 import { recalculateAfterMutation } from "../lib/taxReturnPipeline";
@@ -111,6 +112,20 @@ router.post("/clients/:clientId/documents", async (req, res): Promise<void> => {
     ));
   if (pending.length >= MAX_PENDING_PER_CLIENT) {
     res.status(429).json({ error: `Too many pending documents (max ${MAX_PENDING_PER_CLIENT}); review or delete existing ones first` });
+    return;
+  }
+
+  // P0-2 — §7216 consent gate. AI extraction transmits the document to Google
+  // Gemini, a "disclosure of tax return information" under Treas. Reg.
+  // §301.7216-3. Fail closed: refuse without a recorded, unexpired taxpayer
+  // consent. (Enforced in the prod posture; see consentRequired().)
+  if (consentRequired() && !(await hasValidConsent(params.data.clientId, AI_EXTRACTION_SCOPE))) {
+    res.status(403).json({
+      error:
+        "Taxpayer §7216 consent is required before this document can be sent to the AI provider for extraction. " +
+        "Record consent via POST /clients/:clientId/disclosure-consents first.",
+      code: "CONSENT_REQUIRED",
+    });
     return;
   }
 

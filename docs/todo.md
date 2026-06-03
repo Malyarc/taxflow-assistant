@@ -24,13 +24,24 @@ Branch `p0-legal-security-gate`. These gate ANY real client PII / first revenue.
   on W2Fact (deep-audit ×8), `interestIncomeBox1`→`interestIncome` (phaseE),
   `description` on AdjustmentFact (cpa-scenarios), `dependentsForCareCredit` on
   Archetype (seed), duplicate `calculateStateTax` import (phaseE).
-- ⏳ **P0-7a** — remove false "TLS/encryption-at-rest/read-only-creds" claims from
+- ✅ **P0-7a** — removed false "TLS/encryption-at-rest/read-only-creds" claims from
   outreach docs (`docs/outreach/partner-faq.md`, `one-pager.md`).
-- ⏳ **P0-4 (app layer)** — bearer-token auth gate on `/api` (TLS = infra runbook).
-- ⏳ **P0-5 (app layer)** — AES-256-GCM field encryption for SSN/TIN (S3 = runbook).
-- ⏳ **P0-2 (app layer)** — §7216 consent gate (extractor fail-closed) + instrument.
-- ⏳ **P0-3** — GLBA WISP draft + §7216 + infra runbooks under `docs/compliance/`.
+- ✅ **P0-4 (app layer)** — bearer-token auth gate on `/api` (`API_AUTH_TOKEN`);
+  frontend token getter. TLS = infra runbook (operator). Full per-user auth = D15.
+- ✅ **P0-5 (app layer)** — AES-256-GCM field encryption for SSN/TIN
+  (`fieldCrypto.ts` + wired + backfill). Set `PII_ENCRYPTION_KEY`; S3 = runbook.
+- ✅ **P0-2 (app layer)** — §7216 consent gate (`consentGate.ts`, extractor
+  fail-closed `CONSENT_REQUIRED`) + `disclosure_consents` table + endpoints.
+  Needs DB push; set `REQUIRE_7216_CONSENT=true`; wire consent-capture UX; DPA.
+- ✅ **P0-3** — GLBA WISP + §7216 instrument + infra runbooks under `docs/compliance/`.
 - 🔴 **P0-1 (USER)** — rotate the leaked Neon + Gemini creds. Runbook handed off.
+
+**Operator follow-ups before real PII (not code):** rotate creds (P0-1); set
+`API_AUTH_TOKEN` + `PII_ENCRYPTION_KEY` + `REQUIRE_7216_CONSENT=true` + run
+`backfill-encrypt-pii.ts` + `db push` for `disclosure_consents`; TLS + S3+KMS per
+runbook; Google no-training DPA; counsel sign-off on WISP + §7216 instrument;
+name the Qualified Individual; make CI a required check; wire the consent-capture
++ a polished login into the frontend (fast-follow).
 - Infra-side (USER, runbooks in `docs/compliance/`): TLS termination, S3+KMS doc
   storage, Secrets Manager, Google no-training DPA / off the free Gemini tier.
 

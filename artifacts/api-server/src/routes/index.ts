@@ -14,6 +14,7 @@ import scheduleK1Router from "./schedule-k1";
 import assetBalancesRouter from "./asset-balances";
 import planningRouter from "./planning";
 import settingsRouter from "./settings";
+import disclosureConsentsRouter from "./disclosure-consents";
 import { requireApiAuth } from "../middlewares/auth";
 
 const router: IRouter = Router();
@@ -25,6 +26,7 @@ router.use(requireApiAuth);
 router.use(settingsRouter);
 router.use(clientsRouter);
 router.use(documentsRouter);
+router.use(disclosureConsentsRouter);
 router.use(w2DataRouter);
 router.use(form1099DataRouter);
 router.use(taxReturnsRouter);
