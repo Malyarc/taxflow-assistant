@@ -51,21 +51,32 @@ native TY2026 engine support would make it automatic). For TY2025 returns (and
 TY2026 clamped to 2025) the planning math uses the verified TY2025 values, which
 are correct today.
 
-### Discovered core-engine follow-ups (out of this planning-refresh scope)
+### Core-engine OBBBA conformance — SHIPPED 2026-06-02 (commit `f22c9c1`)
 
-These are **core `computeTaxReturnPure` items**, deliberately not changed here
-(the session scoped the core engine to the TY2025 std-ded fix only):
-- **Core SALT cap** still $10k (TCJA) in `taxCalculator.ts` — the OBBBA $40k cap +
-  phase-down isn't applied to the federal itemized total. The PTET detector works
-  around this off `saltUncapped`; a full core SALT refresh is tracked.
-- **Core §199A SSTB thresholds** in `calculateQbi` may be TY2024-indexed; and the
-  OBBBA **$400 minimum QBI deduction** isn't applied in the core calc (planning
-  documents it).
-- **Native TY2026 support** (brackets, std ded $16,100/$32,200, etc.) + adding 2026
-  to `SUPPORTED_TAX_YEARS`.
-- **API enum + ClientForm UI** for the `qualified_tips` / `qualified_overtime` /
-  `qualified_car_loan_interest` markers so G1.97–G1.99 are reachable in production
-  (G1.100 senior fires on age — production-ready now).
+The core `computeTaxReturnPure` items below were initially deferred from the
+planning refresh, then completed in a follow-up pass (all values primary-source-
+verified vs Rev. Proc. 2025-32 / Notice 2025-67; 39 no-API suites / 3,303
+assertions green; deployed + live-verified):
+- **Core SALT cap** — `getSaltCap` year-indexes the cap (TCJA $10k TY2024; OBBBA
+  $40k TY2025 / $40.4k TY2026 + §164(b)(7) >$500k-MAGI phase-down to a $10k floor);
+  `calculateScheduleA` uses it. ✅
+- **Core §199A** — TY2026 thresholds $201,750/$403,500 + widened $75k/$150k phase-in;
+  the OBBBA **$400 minimum QBI deduction** (TY2026+, ≥$1,000 QBI) now applied in
+  `calculateQbi`; MFS threshold corrected to = single (§199A(e)(2)). ✅
+- **Native TY2026** — `SUPPORTED_TAX_YEARS` includes 2026; all 20 year-indexed maps
+  + `stateTaxData` got 2026 entries (brackets / std-ded / AMT incl. OBBBA 50%
+  phase-out / LTCG / EITC / IRA / Saver's / SLI / SS wage base / kiddie / FEIE /
+  FPL). ✅
+- **Structural (also fixed TY2025):** CTC $2,200, §179 $2.5M/$4M, bonus 100% TY2026. ✅
+
+**Still deferred (genuinely out of core-engine scope):**
+- The 4 new OBBBA deductions (tips/overtime/car-loan/senior) as REAL
+  `computeTaxReturnPure` adjustments — currently planning-only (G1.97–G1.100);
+  need API enum + ClientForm UI for the `qualified_tips` / `qualified_overtime` /
+  `qualified_car_loan_interest` markers (G1.100 senior fires on age).
+- Bonus-depreciation TY2025 dual-rate (40% pre-1/19/2025 vs 100% after — the engine
+  has no acquisition-date field, keeps the conservative 40% default).
+- Estate $15M exclusion (out of engine scope — estate tax / Form 706).
 
 **Unchanged by OBBBA (verified):** NIIT §1411 3.8% + $200k/$250k/$125k thresholds.
 

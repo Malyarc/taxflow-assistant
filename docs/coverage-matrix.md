@@ -4,17 +4,21 @@
 Inventory of what the calc engine models vs. what's not yet covered.
 This is the source of truth for "do we handle X?".
 
-> **OBBBA (2026-06-02):** Core engine — **TY2025 standard deduction corrected to
-> the OBBBA-amended $15,750/$31,500/$23,625** (was pre-OBBBA $15,000/$30,000/$22,500).
-> Planning catalog refreshed to v1.19.0 (TY2026 dollar values, §199A permanence,
-> PTET §164(b)(7) $40k cap + phase-down, 4 NEW deductions G1.97–G1.100 — see
-> `docs/planning-strategy-audit.md`). **Core-engine OBBBA items still tracked
-> (NOT applied):** federal SALT cap still $10k (OBBBA $40k cap + phase-down not in
-> `calculateStateTax`/itemized total — the PTET planning detector works around it
-> off saltUncapped); §199A core SSTB thresholds + the new $400 min QBI deduction;
-> native TY2026 brackets/std-ded ($16,100/$32,200) + `SUPPORTED_TAX_YEARS` (the
-> engine clamps TY2026 → TY2025 today); 4 new OBBBA deductions are planning-only
-> (not modeled as real adjustments in `computeTaxReturnPure`).
+> **OBBBA core conformance — SHIPPED 2026-06-02 (commit `f22c9c1`):** the core
+> engine is now OBBBA-conformant. **SALT** cap year-indexed (`getSaltCap`: TCJA
+> $10k TY2024; OBBBA $40k TY2025 / $40.4k TY2026 + §164(b)(7) >$500k-MAGI phase-down
+> to a $10k floor). **§199A** TY2026 thresholds $201,750/$403,500 + $75k/$150k
+> phase-in + the **$400 minimum QBI deduction** (TY2026+); MFS threshold corrected
+> to = single. **Native TY2026** — `SUPPORTED_TAX_YEARS` includes 2026; all 20
+> year-indexed maps + `stateTaxData` got 2026 entries (brackets, std-ded
+> $16,100/$32,200/$24,150, AMT incl. OBBBA **50% exemption phase-out**, LTCG, EITC,
+> IRA, Saver's, SLI, SS wage base, kiddie, FEIE, FPL). **Structural** (also fixes
+> TY2025): **CTC $2,200**, **§179 $2.5M/$4M**, **bonus depreciation 100%** (TY2026).
+> Plus the planning catalog v1.19.0 (TY2026 dollar values, 4 NEW deductions
+> G1.97–G1.100 — see `docs/planning-strategy-audit.md`). **Still deferred:** the 4
+> new OBBBA deductions (tips/overtime/car-loan/senior) as REAL engine adjustments
+> (planning-only; need API-enum + UI); bonus-depreciation TY2025 dual-rate (no
+> acquisition-date field — keeps 40% default); estate $15M (out of engine scope).
 
 **C-batch v3 (2026-05-27 PM)** — extends v2 with full top-10-state-credit
 coverage + bulk PA EIT + bulk OH SDIT + per-K-1/rental sourcing:
