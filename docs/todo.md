@@ -45,6 +45,19 @@ name the Qualified Individual; make CI a required check; wire the consent-captur
 - Infra-side (USER, runbooks in `docs/compliance/`): TLS termination, S3+KMS doc
   storage, Secrets Manager, Google no-training DPA / off the free Gemini tier.
 
+### Correctness hygiene (2026-06-03)
+- ✅ **§163(j) ATI proxy TY2026 std-ded fall-through** (commit `984702c`, deployed)
+  — same bug class as the QBI band (P0-7b). Routed the ATI std ded through
+  `getFederalStandardDeduction` (fixes TY2026 fall-through + stale TY2025) and
+  year-indexed the SALT cap via `getSaltCap` (now exported). +3 hand-calc'd
+  TY2026 regression assertions.
+- **BACKLOG — sweep the remaining inline year-indexed maps.** The audit flagged
+  ~24 scattered year maps with no compile-time guard. QBI band + §163(j) ATI are
+  fixed; grep the engine for any remaining inline `taxYear === 2025 ? … : 2024`
+  selectors / two-year `Record` maps and route them through the canonical
+  year-indexed helpers, so this whole fall-through class is eliminated rather
+  than fixed one-at-a-time. (~½ day.)
+
 ---
 
 ## ⚡ CURRENT FOCUS (2026-05-30): refine tax calc + tax planning
