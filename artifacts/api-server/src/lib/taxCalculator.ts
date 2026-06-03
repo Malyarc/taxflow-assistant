@@ -5531,6 +5531,61 @@ export function calculateQbi(params: {
   };
 }
 
+// ── OBBBA Schedule 1-A deductions (TY2025–2028) ─────────────────────────────
+// Four NEW temporary deductions created by OBBBA (P.L. 119-21): qualified tips
+// (§224), qualified overtime premium (§225), qualified passenger-vehicle loan
+// interest (§163(h)(4)), and the $6,000 senior bonus (§151(d) add-on). Each is
+// claimed on the new Schedule 1-A and flows to Form 1040 line 13b — i.e. it
+// reduces TAXABLE INCOME (subtracted from AGI alongside the standard/itemized
+// deduction), NOT AGI. Available to itemizers AND non-itemizers. Their MAGI
+// phase-out base is AGI (unaffected by these deductions, so no circularity).
+// Effective TY2025–2028 only. Senior is age-based (no marker); the other three
+// read the CPA-supplied qualified amount.
+export interface ObbbaSchedule1ADeductions {
+  tips: number;
+  overtime: number;
+  carLoanInterest: number;
+  senior: number;
+  total: number;
+}
+function obbbaPhaseOut(base: number, magi: number, threshold: number, ratePerDollar: number): number {
+  if (base <= 0) return 0;
+  if (magi <= threshold) return base;
+  return Math.max(0, base - ratePerDollar * (magi - threshold));
+}
+export function calculateObbbaSchedule1ADeductions(params: {
+  taxYear: number;
+  filingStatus: string;
+  /** MAGI for the phase-outs — AGI (these deductions don't reduce AGI). */
+  magi: number;
+  qualifiedTips?: number;
+  qualifiedOvertime?: number;
+  qualifiedCarLoanInterest?: number;
+  taxpayerAge?: number | null;
+  spouseAge?: number | null;
+}): ObbbaSchedule1ADeductions {
+  const zero: ObbbaSchedule1ADeductions = { tips: 0, overtime: 0, carLoanInterest: 0, senior: 0, total: 0 };
+  // TY2025–2028 only (OBBBA temporary window).
+  if (params.taxYear < 2025 || params.taxYear > 2028) return zero;
+  const isJoint = params.filingStatus === "married_filing_jointly" || params.filingStatus === "qualifying_widow";
+  const magi = Math.max(0, params.magi);
+
+  // §224 tips: cap $25,000 (single + MFJ); phase-out $150k/$300k, −$100 per $1,000.
+  const tips = obbbaPhaseOut(Math.min(Math.max(0, params.qualifiedTips ?? 0), 25_000),
+    magi, isJoint ? 300_000 : 150_000, 0.10);
+  // §225 overtime (FLSA premium): cap $12,500 single / $25,000 MFJ; phase-out $150k/$300k, −$100/$1k.
+  const overtime = obbbaPhaseOut(Math.min(Math.max(0, params.qualifiedOvertime ?? 0), isJoint ? 25_000 : 12_500),
+    magi, isJoint ? 300_000 : 150_000, 0.10);
+  // §163(h)(4) car-loan interest: cap $10,000; phase-out $100k/$200k, −$200/$1k (double rate).
+  const carLoanInterest = obbbaPhaseOut(Math.min(Math.max(0, params.qualifiedCarLoanInterest ?? 0), 10_000),
+    magi, isJoint ? 200_000 : 100_000, 0.20);
+  // §151(d) senior bonus: $6,000 per individual age 65+; phase-out $75k/$150k, −6% of excess.
+  const numSeniors = ((params.taxpayerAge ?? 0) >= 65 ? 1 : 0) + (isJoint && (params.spouseAge ?? 0) >= 65 ? 1 : 0);
+  const senior = obbbaPhaseOut(6_000 * numSeniors, magi, isJoint ? 150_000 : 75_000, 0.06);
+
+  return { tips, overtime, carLoanInterest, senior, total: tips + overtime + carLoanInterest + senior };
+}
+
 // ── AMT (Alternative Minimum Tax) ──────────────────────────────────────────
 // Simplified: AMTI = taxable income + AMT preferences (we accept these from caller).
 // AMT = max(0, AMT_rate × (AMTI − exemption) − regular tax).

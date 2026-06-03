@@ -23,6 +23,7 @@ import {
   calculateQbi,
   calculateAmt,
   calculateFederalTaxWithCapitalGains,
+  calculateObbbaSchedule1ADeductions,
   runTaxCalculation,
   resolveTaxYear,
 } from "../../artifacts/api-server/src/lib/taxCalculator";
@@ -519,6 +520,48 @@ header("K. AMT (Alternative Minimum Tax)");
 {
   const r = calculateAmt({ taxableIncome: 600000, amtPreferences: 0, filingStatus: "single", regularTax: 0, taxYear: 2026 });
   checkExact("AMT TY2026: single $600k AMTI → exemption $40,100 (50% phase-out, OBBBA §70107)", r.exemption, 40100);
+}
+
+// ── K2. OBBBA Schedule 1-A deductions (tips/overtime/car-loan/senior, TY2025–2028) ──
+// Reduce TAXABLE income (Form 1040 line 13b), available to itemizers + non-itemizers.
+// Caps + MAGI phase-outs hand-calc'd vs §224/§225/§163(h)(4)/§151(d).
+header("K2. OBBBA Schedule 1-A deductions (TY2025–2028)");
+{
+  const d = (p: Parameters<typeof calculateObbbaSchedule1ADeductions>[0]) => calculateObbbaSchedule1ADeductions(p);
+  // Tips: cap $25k; no phase-out below $150k single.
+  checkExact("tips $30k @ $80k single → $25,000 (cap)",
+    d({ taxYear: 2025, filingStatus: "single", magi: 80000, qualifiedTips: 30000 }).tips, 25000);
+  // Tips phase-out: $20k tips @ $200k MAGI = $20k − 0.10×($200k−$150k) = $15,000.
+  checkExact("tips $20k @ $200k single → $15,000 (phase-out −$100/$1k)",
+    d({ taxYear: 2025, filingStatus: "single", magi: 200000, qualifiedTips: 20000 }).tips, 15000);
+  // Tips fully phased: $30k tips @ $450k = $25k − 0.10×$300k = −$5k → $0.
+  checkExact("tips $30k @ $450k single → $0 (fully phased)",
+    d({ taxYear: 2025, filingStatus: "single", magi: 450000, qualifiedTips: 30000 }).tips, 0);
+  // Overtime: single cap $12,500; MFJ cap $25,000.
+  checkExact("overtime $15k @ $80k single → $12,500 (single cap)",
+    d({ taxYear: 2025, filingStatus: "single", magi: 80000, qualifiedOvertime: 15000 }).overtime, 12500);
+  checkExact("overtime $30k @ $80k MFJ → $25,000 (MFJ cap)",
+    d({ taxYear: 2025, filingStatus: "married_filing_jointly", magi: 80000, qualifiedOvertime: 30000 }).overtime, 25000);
+  // Car-loan: cap $10k; phase-out $100k/$200k, −$200/$1k (DOUBLE rate).
+  checkExact("car-loan $8k @ $80k single → $8,000",
+    d({ taxYear: 2025, filingStatus: "single", magi: 80000, qualifiedCarLoanInterest: 8000 }).carLoanInterest, 8000);
+  checkExact("car-loan $10k @ $130k single → $4,000 ($10k − $200/$1k × $30k)",
+    d({ taxYear: 2025, filingStatus: "single", magi: 130000, qualifiedCarLoanInterest: 10000 }).carLoanInterest, 4000);
+  // Senior: $6k per 65+ person; phase-out $75k/$150k, −6% of excess.
+  checkExact("senior single age 70 @ $90k → $5,100 ($6k − 6%×$15k)",
+    d({ taxYear: 2025, filingStatus: "single", magi: 90000, taxpayerAge: 70 }).senior, 5100);
+  checkExact("senior MFJ both 65+ @ $200k → $9,000 ($12k − 6%×$50k)",
+    d({ taxYear: 2025, filingStatus: "married_filing_jointly", magi: 200000, taxpayerAge: 70, spouseAge: 68 }).senior, 9000);
+  checkExact("senior single age 60 → $0 (under 65)",
+    d({ taxYear: 2025, filingStatus: "single", magi: 90000, taxpayerAge: 60 }).senior, 0);
+  // Year-gate: OBBBA window is TY2025–2028 only.
+  checkExact("TY2024 → $0 (OBBBA not yet in effect)",
+    d({ taxYear: 2024, filingStatus: "single", magi: 80000, qualifiedTips: 30000, taxpayerAge: 70 }).total, 0);
+  checkExact("TY2029 → $0 (OBBBA window expired)",
+    d({ taxYear: 2029, filingStatus: "single", magi: 80000, qualifiedTips: 30000, taxpayerAge: 70 }).total, 0);
+  // Combined: single age 70 @ $80k MAGI: tips $25k + OT $12.5k + car $8k + senior ($6k−6%×$5k=$5,700) = $51,200.
+  checkExact("combined single age 70 @ $80k → total $51,200",
+    d({ taxYear: 2025, filingStatus: "single", magi: 80000, qualifiedTips: 30000, qualifiedOvertime: 15000, qualifiedCarLoanInterest: 8000, taxpayerAge: 70 }).total, 51200);
 }
 
 // ── L. ACTC (refundable Child Tax Credit) ──────────────────────────────────

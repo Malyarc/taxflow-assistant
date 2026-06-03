@@ -7554,7 +7554,9 @@ function detectTipsDeduction(args: {
   const cappedTips = Math.min(tips, 25_000);
   const deduction = phaseOutLinear(cappedTips, magi, threshold, 0.10); // −$100 per $1,000
   if (deduction <= 0) return null;
-  const fedRate = federalMarginalRate(computed);
+  // The engine now APPLIES this deduction, so computed.taxableIncome is POST-deduction.
+  // Value the deduction at the marginal rate it OFFSETS (pre-deduction taxable).
+  const fedRate = federalMarginalRate({ ...computed, taxableIncome: computed.taxableIncome + deduction });
   const stateRate = stateMarginalRate(computed);
   const estSavings = Math.round(deduction * (fedRate + stateRate));
   if (estSavings <= 0) return null;
@@ -7600,7 +7602,8 @@ function detectOvertimeDeduction(args: {
   const cappedOt = Math.min(ot, cap);
   const deduction = phaseOutLinear(cappedOt, magi, threshold, 0.10); // −$100 per $1,000
   if (deduction <= 0) return null;
-  const fedRate = federalMarginalRate(computed);
+  // Pre-deduction marginal (engine applies the deduction, so computed is post-deduction).
+  const fedRate = federalMarginalRate({ ...computed, taxableIncome: computed.taxableIncome + deduction });
   const stateRate = stateMarginalRate(computed);
   const estSavings = Math.round(deduction * (fedRate + stateRate));
   if (estSavings <= 0) return null;
@@ -7644,7 +7647,8 @@ function detectCarLoanInterestDeduction(args: {
   const capped = Math.min(interest, 10_000);
   const deduction = phaseOutLinear(capped, magi, threshold, 0.20); // −$200 per $1,000 (double rate)
   if (deduction <= 0) return null;
-  const fedRate = federalMarginalRate(computed);
+  // Pre-deduction marginal (engine applies the deduction, so computed is post-deduction).
+  const fedRate = federalMarginalRate({ ...computed, taxableIncome: computed.taxableIncome + deduction });
   const stateRate = stateMarginalRate(computed);
   const estSavings = Math.round(deduction * (fedRate + stateRate));
   if (estSavings <= 0) return null;
@@ -7690,7 +7694,8 @@ function detectSeniorDeduction(args: {
   const base = 6_000 * numSeniors;
   const deduction = phaseOutLinear(base, magi, threshold, 0.06); // −6% of MAGI over threshold
   if (deduction <= 0) return null;
-  const fedRate = federalMarginalRate(computed);
+  // Pre-deduction marginal (engine applies the deduction, so computed is post-deduction).
+  const fedRate = federalMarginalRate({ ...computed, taxableIncome: computed.taxableIncome + deduction });
   const stateRate = stateMarginalRate(computed);
   const estSavings = Math.round(deduction * (fedRate + stateRate));
   if (estSavings <= 0) return null;

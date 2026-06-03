@@ -30,6 +30,7 @@ import {
   calculateNiit,
   calculateAdditionalMedicareTax,
   calculateQbi,
+  calculateObbbaSchedule1ADeductions,
   calculateAmt,
   calculateFederalTaxWithCapitalGains,
   calculateScheduleA,
@@ -2400,10 +2401,27 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
 
   const taxableAfterQbi = Math.max(0, taxableAfterNol - qbi.finalDeduction);
 
+  // OBBBA Schedule 1-A deductions (TY2025–2028): tips §224 / overtime §225 /
+  // car-loan interest §163(h)(4) / senior §151(d). Flow to Form 1040 line 13b —
+  // they reduce TAXABLE income (subtracted from AGI alongside the std/itemized
+  // deduction + QBI), NOT AGI; their MAGI phase-out base is AGI (no circularity).
+  // They offset the ORDINARY portion (the preferential LTCG/QDIV is preserved).
+  const obbbaDeductions = calculateObbbaSchedule1ADeductions({
+    taxYear,
+    filingStatus: client.filingStatus,
+    magi: calc.adjustedGrossIncome,
+    qualifiedTips: sumByType("qualified_tips"),
+    qualifiedOvertime: sumByType("qualified_overtime"),
+    qualifiedCarLoanInterest: sumByType("qualified_car_loan_interest"),
+    taxpayerAge: client.taxpayerAge,
+    spouseAge: client.spouseAge,
+  });
+  const taxableAfterObbba = Math.max(0, taxableAfterQbi - obbbaDeductions.total);
+
   // ── Step 6: Federal tax (ordinary + preferential) ──────────────────
   // Use post-netting LTCG (not raw 1099-B value) for preferential calculation.
   const preferentialIncome = ltcgPreferential + qualifiedDividends;
-  const ordinaryPortionOfTaxable = Math.max(0, taxableAfterQbi - preferentialIncome);
+  const ordinaryPortionOfTaxable = Math.max(0, taxableAfterObbba - preferentialIncome);
 
   // K8 — Kiddie tax (Form 8615) child unearned income.
   // Unearned for our engine = interest + ordinary divs + qualified divs +
@@ -2461,7 +2479,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     amtDepreciationAdjustment - taxableStateRefund;
 
   const amt = calculateAmt({
-    taxableIncome: taxableAfterQbi,
+    taxableIncome: taxableAfterObbba,
     amtPreferences: totalAmtPreferences,
     // K3 — Form 6251 Part III: preserve LTCG/QDIV preferential rates inside AMT.
     // Closed 2026-05-24; previously the engine over-charged AMT on
@@ -2743,7 +2761,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     // preCreditUsTax is the federal income tax before any credits
     // (= 1040 Line 16 + Line 17 = regular tax + AMT).
     foreignSourceTaxableIncome: foreignSourceTaxableIncomeAdj > 0 ? foreignSourceTaxableIncomeAdj : undefined,
-    totalTaxableIncome: taxableAfterQbi,
+    totalTaxableIncome: taxableAfterObbba,
     preCreditUsTax: incomeTaxOnly,
   });
   const foreignTaxApplied = Math.min(foreignTaxCredit.credit, availableForNonRefundable);
@@ -3072,7 +3090,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     standardDeduction: calc.standardDeduction,
     itemizedDeductions: useItemizedDeductions ? itemizedTotal : null,
     qbiDeduction: qbi.finalDeduction,
-    taxableIncome: taxableAfterQbi,
+    taxableIncome: taxableAfterObbba,
     federalTaxLiability: totalFederalLiabilityWithRepayment,
     federalTaxWithheld: totalFederalWithheld + withholdingAdjustments,
     federalRefundOrOwed,

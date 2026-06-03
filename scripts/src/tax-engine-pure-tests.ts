@@ -212,6 +212,43 @@ header("Pure invocation — multi-year (2024 vs 2025 vs 2026 brackets)");
   else FAIL.push("✗ 2026 < 2025 < 2024 federal tax expected for same $100k income");
 }
 
+// OBBBA Schedule 1-A deductions flow end-to-end to taxable income (Form 1040
+// line 13b — they reduce TAXABLE income, not AGI).
+header("Pure invocation — OBBBA Schedule 1-A deductions reduce taxable income");
+{
+  // Tips: single FL TY2025, $80k W-2 + $30k qualified tips marker. AGI unchanged
+  // ($80,000). Taxable = $80,000 − $15,750 std − $25,000 tips (capped) = $39,250.
+  const tipsRet = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "FL", taxYear: 2025 } as any,
+    w2s: [{ taxYear: 2025, wagesBox1: 80000, stateCode: "FL" }] as any,
+    form1099s: [],
+    adjustments: [{ adjustmentType: "qualified_tips", amount: 30000, isApplied: true }] as any,
+    taxYear: 2025 as any,
+  });
+  check("tips: AGI unchanged = $80,000 (deduction is not above-the-line)", tipsRet.adjustedGrossIncome, 80000, 1);
+  check("tips: taxable = $39,250 ($80k − $15,750 std − $25k tips)", tipsRet.taxableIncome, 39250, 1);
+
+  // Senior (age-based, automatic): single FL TY2025, $90k W-2, age 70.
+  // std ded $15,750 + age-65 addon $2,000 = $17,750; senior deduction $6,000 −
+  // 6%×($90k−$75k) = $5,100. Taxable = $90,000 − $17,750 − $5,100 = $67,150.
+  const seniorRet = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "FL", taxYear: 2025, taxpayerAge: 70 } as any,
+    w2s: [{ taxYear: 2025, wagesBox1: 90000, stateCode: "FL" }] as any,
+    form1099s: [], adjustments: [], taxYear: 2025 as any,
+  });
+  check("senior: taxable = $67,150 ($90k − $17,750 std+age − $5,100 senior)", seniorRet.taxableIncome, 67150, 1);
+
+  // Year-gate: same tips marker at TY2024 → no deduction (taxable $64,250).
+  const ty2024 = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as any,
+    w2s: [{ taxYear: 2024, wagesBox1: 80000, stateCode: "FL" }] as any,
+    form1099s: [],
+    adjustments: [{ adjustmentType: "qualified_tips", amount: 30000, isApplied: true }] as any,
+    taxYear: 2024 as any,
+  });
+  check("tips TY2024: no deduction → taxable $65,400 ($80k − $14,600 std)", ty2024.taxableIncome, 65400, 1);
+}
+
 // ── Summary ─────────────────────────────────────────────────────────────────
 console.log("\n══════════════════════ Pure Engine Test Summary ══════════════════════");
 console.log(`PASS: ${PASS.length}`);
