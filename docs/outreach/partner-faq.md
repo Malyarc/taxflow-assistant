@@ -213,25 +213,28 @@ real PII during pilot, full SOC 2 commitment with a defined start
 date contingent on paid contract.
 
 For small/mid firms (Persona 2, 4-20 staff) where procurement is
-less formal: the pilot uses a single-tenant instance with TLS in
-transit, DB-layer encryption at rest, and audit_log on every
-mutation. That's not SOC 2 but it's the level most small firms
-operate at internally.
+less formal: the pilot runs on a single-tenant instance with an
+audit_log on every mutation. TLS in transit, application-layer
+encryption of SSN/TIN at rest, and an access-gated API are being
+stood up under our written information security plan (WISP) and are
+**required before any real taxpayer PII is uploaded**. We do not
+represent a control as live until it is verified — ask us for the
+current status table.
 
 ---
 
 ## "Where do client documents live?"
 
-**Today (pre-D17)**: Base64-encoded in the application Postgres
-database. Single-tenant. TLS in transit, DB-layer disk encryption.
+**Today (demo)**: Base64-encoded in the application Postgres
+database, single-tenant. This demo environment is **not yet hardened
+for real taxpayer PII — do not upload real client documents to it.**
 
-**Production-grade (Phase D17, ~2 weeks of work once a paid pilot
-is signed)**: S3 bucket with KMS encryption at rest, signed URL for
-download, no PII in database after the extraction step.
-
-For the pilot's first 30 days, today's state is sufficient. If you
-ship real PII through the pilot, D17 work starts immediately and
-you get migrated to S3 + KMS before the second 30 days.
+**Before any real PII (security-hardening gate, in progress)**:
+application-layer (AES-256-GCM) encryption of SSN/TIN, document
+blobs moved to an S3 bucket with KMS encryption at rest and
+short-lived signed-URL download, TLS in transit, and an access-gated
+API. Status is tracked in our WISP; we will not accept real PII
+until these controls are live and verified.
 
 ---
 

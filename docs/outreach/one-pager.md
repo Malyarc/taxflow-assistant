@@ -121,4 +121,4 @@ real-time.
 
 **Contact:** [Your name] · [Your email] · [Your phone]
 **Demo URL:** http://ec2-18-188-192-154.us-east-2.compute.amazonaws.com
-**Test credentials:** demo / demo (read-only, full data visible)
+**Demo access:** open demo environment, **synthetic data only** — do not upload real taxpayer documents (production security controls are still being stood up).

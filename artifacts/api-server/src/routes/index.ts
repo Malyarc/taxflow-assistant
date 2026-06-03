@@ -14,10 +14,14 @@ import scheduleK1Router from "./schedule-k1";
 import assetBalancesRouter from "./asset-balances";
 import planningRouter from "./planning";
 import settingsRouter from "./settings";
+import { requireApiAuth } from "../middlewares/auth";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
+// P0-4 — gate everything below behind the bearer-token auth check. No-op in
+// demo mode (API_AUTH_TOKEN unset); healthRouter above stays public for probes.
+router.use(requireApiAuth);
 router.use(settingsRouter);
 router.use(clientsRouter);
 router.use(documentsRouter);

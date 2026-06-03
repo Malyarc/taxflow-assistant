@@ -35,7 +35,7 @@ const NEEDS_API = new Set<string>([
 ]);
 
 const suites = readdirSync(srcDir)
-  .filter((f) => /^tax-engine-.*tests\.ts$/.test(f) && !NEEDS_API.has(f))
+  .filter((f) => (/^tax-engine-.*tests\.ts$/.test(f) || /^security-.*tests\.ts$/.test(f)) && !NEEDS_API.has(f))
   .sort();
 
 /** Best-effort assertion-count parse across the suites' varied summary formats. */
