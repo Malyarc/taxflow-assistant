@@ -69,11 +69,15 @@ assertions green; deployed + live-verified):
   FPL). ✅
 - **Structural (also fixed TY2025):** CTC $2,200, §179 $2.5M/$4M, bonus 100% TY2026. ✅
 
-**Still deferred (genuinely out of core-engine scope):**
-- The 4 new OBBBA deductions (tips/overtime/car-loan/senior) as REAL
-  `computeTaxReturnPure` adjustments — currently planning-only (G1.97–G1.100);
-  need API enum + ClientForm UI for the `qualified_tips` / `qualified_overtime` /
-  `qualified_car_loan_interest` markers (G1.100 senior fires on age).
+**4 new OBBBA deductions — now MODELED as real engine adjustments (commit `8831708`):**
+`calculateObbbaSchedule1ADeductions` applies tips §224 / overtime §225 / car-loan
+§163(h)(4) / senior §151(d) in `computeTaxReturnPure` (Schedule 1-A → Form 1040 line
+13b; reduce TAXABLE income, not AGI; TY2025–2028; MAGI phase-outs). The 3 markers
+(`qualified_tips`/`qualified_overtime`/`qualified_car_loan_interest`) are in the openapi
+enum + ClientForm dropdown; senior is age-based. The G1.97–G1.100 planning detectors now
+value them at the PRE-deduction marginal (computed.taxableIncome is post-deduction). ✅
+
+**Still deferred (genuinely out of scope):**
 - Bonus-depreciation TY2025 dual-rate (40% pre-1/19/2025 vs 100% after — the engine
   has no acquisition-date field, keeps the conservative 40% default).
 - Estate $15M exclusion (out of engine scope — estate tax / Form 706).

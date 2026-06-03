@@ -17,10 +17,14 @@ Planning catalog v1.19.0 (101 strategies: TY2026 values, §199A permanence, PTET
 OBBBA conformance: SALT $40k + §164(b)(7) phase-down; §199A TY2026 thresholds +
 $400 min QBI deduction + MFS-threshold fix; **native TY2026 support** (SUPPORTED_TAX_YEARS
 + 2026 in all 20 year-maps + AMT 50% phase-out + stateTaxData); structural CTC $2,200 /
-§179 $2.5M / bonus 100% TY2026. Every TY2026 value primary-source-verified vs Rev. Proc.
-2025-32 / Notice 2025-67. **39 no-API suites / 3,303 assertions green.** Remaining OBBBA
-work (deferred, out of core scope): model the 4 new deductions as REAL engine adjustments
-(+ API enum + UI); bonus-depr TY2025 dual-rate; estate (out of scope). See `.claude/handoff.md`.
+§179 $2.5M / bonus 100% TY2026. **THEN modeled the 4 new OBBBA deductions
+(tips/overtime/car-loan/senior) as REAL `computeTaxReturnPure` adjustments**
+(`calculateObbbaSchedule1ADeductions`, Schedule 1-A → line 13b; markers in openapi
+enum + ClientForm). Every value primary-source-verified vs Rev. Proc. 2025-32 / Notice
+2025-67 (3 research agents off the IRS PDFs). **39 no-API suites / 3,320 assertions
+green; api-server + frontend deployed + live-verified. OBBBA now fully end-to-end.**
+Remaining (deferred, out of scope): bonus-depr TY2025 dual-rate (no acquisition-date
+field); state conformity to the 4 deductions; estate (out of scope). See `.claude/handoff.md`.
 
 **D15 (auth + multi-tenancy) is POSTPONED** — this app will be fused into the
 larger **Haven** app, which brings its own auth/tenancy, so we won't build it

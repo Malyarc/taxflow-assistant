@@ -7,8 +7,8 @@ Session continuation point for the next Claude (or human) on TaxFlow Assistant.
 Durable TODO: **`docs/todo.md`** (CURRENT FOCUS). Coverage map:
 **`docs/coverage-matrix.md`**. Per-strategy planning source of truth:
 **`docs/planning-strategy-audit.md`** (OBBBA section — Tier 1–4 APPLIED + core
-conformance section). Branch: **`main`** (8 commits this session, all pushed;
-api-server deployed to EC2).
+conformance section). Branch: **`main`** (11 commits this session, all pushed;
+api-server + frontend deployed to EC2).
 
 ## Headline (latest — core OBBBA conformance)
 
@@ -21,9 +21,17 @@ year-indexed maps + `stateTaxData`, incl. the OBBBA AMT **50% exemption phase-ou
 and the **structural** changes that were also pre-OBBBA-stale for TY2025 — **CTC
 $2,200**, **§179 $2.5M/$4M**, **bonus depreciation 100%** (TY2026). Every TY2026
 value primary-source-verified (3 background research agents off Rev. Proc. 2025-32 /
-Notice 2025-67 / HHS FPL PDFs). **39 no-API suites / 3,303 assertions / 0 failures;
-clean typecheck; complex TY2026 return smoke-tested.** Remaining OBBBA gaps are
-genuinely out of core-engine scope (see "What's left").
+Notice 2025-67 / HHS FPL PDFs).
+
+Then (commits `8831708` + `bedf061`) **modeled the 4 new OBBBA deductions
+(tips/overtime/car-loan/senior) as REAL `computeTaxReturnPure` adjustments** —
+`calculateObbbaSchedule1ADeductions` (verified vs the actual Form 1040 (2025) flow:
+Schedule 1-A → line 13b, reducing TAXABLE income, NOT AGI; offset the ordinary
+portion; TY2025–2028; MAGI phase-outs). The 3 markers (`qualified_tips`/
+`qualified_overtime`/`qualified_car_loan_interest`) are in the openapi enum + codegen
++ ClientForm dropdown; senior is age-based. Planning G1.97–G1.100 now value them at
+the pre-deduction marginal. **39 no-API suites / 3,320 assertions / 0 failures; clean
+typecheck; complex TY2026 return smoke-tested.** OBBBA is now end-to-end in the engine.
 
 ## 🔴 USER ACTION STILL PENDING (from the 2026-05-28 session)
 
@@ -98,12 +106,15 @@ EC2 + verified live.
 - Live EC2 after deploy: `GET /api/healthz` ok; planning endpoint returns catalog
   v1.19.0 hits. (See deploy section.)
 
-## Deploy — api-server only (no schema change, no frontend change)
+## Deploy — api-server + frontend (NO DB ALTER)
 
-This refresh touched only `planningEngine.ts` + `strategies-v1.json` + tests — **no
-DB ALTER, no openapi/codegen, no frontend rebuild** needed. Standard api-server cycle:
+The core OBBBA conformance + 4-deduction work touched the engine + openapi enum
+(codegen committed) + ClientForm UI — so it needs the api-server cycle **AND** a
+frontend rsync (the box OOMs on Vite, so build locally + rsync). No DB ALTER
+(adjustment_type is free-form text). Done + verified live this session.
 
 ```bash
+# api-server (on the box)
 ssh -i ~/Downloads/taxflow-key.pem ubuntu@ec2-18-188-192-154.us-east-2.compute.amazonaws.com
 cd ~/taxflow-pro
 git checkout -- pnpm-lock.yaml
@@ -114,31 +125,29 @@ export AI_API_KEY=$(pm2 env 0 | awk -F": " '/^AI_API_KEY:/ {print $2; exit}')
 pnpm --filter @workspace/api-server run build
 pm2 restart taxflow
 curl http://localhost:8080/api/healthz
+# frontend (locally → rsync the built bundle)
+pnpm --filter @workspace/tax-app run build
+rsync -e "ssh -i ~/Downloads/taxflow-key.pem" -avz --delete \
+  artifacts/tax-app/dist/public/ \
+  ubuntu@ec2-18-188-192-154.us-east-2.compute.amazonaws.com:~/taxflow-pro/artifacts/tax-app/dist/public/
 ```
-
-(The frontend renders catalog text it fetches from the API, so no rebuild is needed
-to surface the refreshed strategy descriptions; rebuild+rsync only if you later wire
-the tips/overtime/car-loan ClientForm fields.)
 
 ## What's left — prioritized (next session)
 
-Core OBBBA conformance is DONE (this session). Remaining:
+OBBBA is now fully end-to-end in the engine (core conformance + the 4 new deductions
+as real adjustments). Remaining:
 
-1. **Model the 4 new OBBBA deductions as REAL engine adjustments** (currently
-   planning-only, G1.97–G1.100): add `qualified_tips` / `qualified_overtime` /
-   `qualified_car_loan_interest` to the openapi enum + codegen + ClientForm fields,
-   then apply them as above-the-line deductions in `computeTaxReturnPure` (with the
-   MAGI phase-outs + caps the planning detectors already encode) and H2-wire the
-   detectors to engine-verified deltas. G1.100 senior ($6k, age-based + 6% phase-out)
-   could also be modeled in the core. Each needs hand-calc'd tests.
-2. **Bonus-depreciation TY2025 dual-rate** — the engine keeps the conservative 40%
+1. **Bonus-depreciation TY2025 dual-rate** — the engine keeps the conservative 40%
    default for TY2025 (OBBBA restored 100% for property acquired after 2025-01-19, but
    there's no acquisition-date field). Add an acquisition-date or a per-asset
    `bonus_rate_override` if a customer needs precise early-2025 modeling.
+2. **State conformity to the OBBBA deductions** — the 4 new deductions reduce FEDERAL
+   taxable only; the planning detectors include a state-marginal term in estSavings,
+   but most states don't conform (CA/NY decoupled). Refine if a state-specific
+   customer asks. State 2026 brackets are also held at 2025 (most unpublished).
 3. **Remaining niche tax-calc sub-gaps** (`coverage-matrix.md` §4): MD per-dependent
    (needs MD state tax modeled first); exact NY IT-203 / CA 540NR per-line sourcing;
-   K-1 per-business (Form 8995-A) wage/UBIA; wash leftover-share re-flow. Also: state
-   2026 brackets are held at 2025 (most states unpublished) — refresh when available.
+   K-1 per-business (Form 8995-A) wage/UBIA; wash leftover-share re-flow.
 4. **H3 multi-year wiring (#8)** — still deferred (needs a defensible RMD/installment model).
 5. **Haven fusion prep** — keep `computeTaxReturnPure` pure/portable. D15 auth POSTPONED.
 
@@ -155,21 +164,21 @@ D15 auth is POSTPONED, don't build it).
 Read first: .claude/handoff.md, CLAUDE.md, docs/todo.md (CURRENT FOCUS),
 docs/coverage-matrix.md, docs/planning-strategy-audit.md (OBBBA section).
 
-Where we left off (2026-06-02): shipped the planning catalog v1.19.0 OBBBA refresh
-(101 strategies; TY2026 values, §199A permanence, PTET §164(b)(7) $40k, 4 NEW
-deductions G1.97-G1.100) AND completed ALL core-engine OBBBA conformance: SALT $40k
-+ §164(b)(7) phase-down, §199A TY2026 thresholds + $400 min QBI deduction + MFS-fix,
-native TY2026 support (SUPPORTED_TAX_YEARS + all 20 year-maps + AMT 50% phase-out),
-CTC $2,200, §179 $2.5M, bonus 100% TY2026. 39 no-API suites / 3,303 assertions green;
-api-server deployed + live-verified. Every TY2026 value primary-source-verified.
+Where we left off (2026-06-02): OBBBA is now FULLY end-to-end. Shipped: planning
+catalog v1.19.0 (101 strategies); core conformance (SALT $40k + §164(b)(7) phase-down,
+§199A TY2026 thresholds + $400 min QBI deduction + MFS-fix, native TY2026 support
+[SUPPORTED_TAX_YEARS + all 20 year-maps + AMT 50% phase-out], CTC $2,200, §179 $2.5M,
+bonus 100% TY2026); AND the 4 new OBBBA deductions (tips/overtime/car-loan/senior)
+modeled as REAL computeTaxReturnPure adjustments (calculateObbbaSchedule1ADeductions,
+Schedule 1-A → line 13b; markers in the openapi enum + ClientForm). 39 no-API suites /
+3,320 assertions green; api-server + frontend deployed + live-verified. Every value
+primary-source-verified.
 
-Recommended next task: **model the 4 new OBBBA deductions (tips/overtime/car-loan/
-senior) as REAL computeTaxReturnPure adjustments** — they're planning-only today
-(G1.97-G1.100). Add `qualified_tips`/`qualified_overtime`/`qualified_car_loan_interest`
-to the openapi enum + codegen + ClientForm UI, apply them as above-the-line deductions
-in the engine with the MAGI phase-outs/caps the planning detectors already encode, and
-H2-wire the detectors. Hand-calc every value vs the IRS rule (§224/§225/§163(h)(4) +
-the §151(d) senior add-on), commit per chunk, push to main, deploy + verify live. Keep
-computeTaxReturnPure pure. (Other options in handoff "What's left": bonus-depr TY2025
-dual-rate; niche state/K-1 sub-gaps; H3 multi-year.)
+Recommended next task: pick from handoff "What's left" — the highest-value remaining
+items are (a) **bonus-depreciation TY2025 dual-rate** (add an acquisition-date or
+per-asset `bonus_rate_override` so post-1/19/2025 property gets 100% vs the current
+conservative 40% default), or (b) the **niche state/K-1 sub-gaps** in
+coverage-matrix.md §4, or (c) **state conformity** to the 4 new OBBBA deductions
+(most states decouple). Hand-calc every value vs the published rule, commit per chunk,
+push to main, deploy + verify live. Keep computeTaxReturnPure pure.
 ```

@@ -14,11 +14,13 @@ This is the source of truth for "do we handle X?".
 > $16,100/$32,200/$24,150, AMT incl. OBBBA **50% exemption phase-out**, LTCG, EITC,
 > IRA, Saver's, SLI, SS wage base, kiddie, FEIE, FPL). **Structural** (also fixes
 > TY2025): **CTC $2,200**, **§179 $2.5M/$4M**, **bonus depreciation 100%** (TY2026).
-> Plus the planning catalog v1.19.0 (TY2026 dollar values, 4 NEW deductions
-> G1.97–G1.100 — see `docs/planning-strategy-audit.md`). **Still deferred:** the 4
-> new OBBBA deductions (tips/overtime/car-loan/senior) as REAL engine adjustments
-> (planning-only; need API-enum + UI); bonus-depreciation TY2025 dual-rate (no
-> acquisition-date field — keeps 40% default); estate $15M (out of engine scope).
+> **The 4 new OBBBA deductions (tips §224 / overtime §225 / car-loan §163(h)(4) /
+> senior §151(d)) are now MODELED as real engine adjustments** (commit `8831708`):
+> `calculateObbbaSchedule1ADeductions` (Schedule 1-A → Form 1040 line 13b; reduce
+> TAXABLE income, not AGI; TY2025–2028; MAGI phase-outs). Markers `qualified_tips`/
+> `qualified_overtime`/`qualified_car_loan_interest` are in the openapi enum +
+> ClientForm dropdown; senior is age-based. **Still deferred:** bonus-depreciation
+> TY2025 dual-rate (no acquisition-date field — keeps 40% default); estate $15M (out of scope).
 
 **C-batch v3 (2026-05-27 PM)** — extends v2 with full top-10-state-credit
 coverage + bulk PA EIT + bulk OH SDIT + per-K-1/rental sourcing:
