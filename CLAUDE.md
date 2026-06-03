@@ -4,7 +4,13 @@ Project-level notes for Claude sessions. Things that change every sprint live in
 
 ## Deploy policy (STANDING — set by John 2026-06-03)
 
-**Always merge to `main` and deploy to EC2 (api-server + frontend rsync) after completing a chunk of work — do NOT ask first.** Work may be staged on a feature branch, but finish by fast-forwarding `main`, pushing, and running the full EC2 deploy cycle (see "EC2 deploy" below) + the frontend rsync, then health-check. Run `pnpm --filter @workspace/db run push` whenever the schema changed. **The live box is a synthetic-data demo:** keep `API_AUTH_TOKEN` / `PII_ENCRYPTION_KEY` UNSET and the §7216 consent gate OFF there (set `REQUIRE_7216_CONSENT=false` if `NODE_ENV=production`) so the open demo flow stays working — those P0 controls activate only on a real-PII deployment.
+**Always merge to `main` and deploy EVERYTHING to prod (api-server + frontend rsync + DB schema) after completing a chunk of work — do NOT ask first.** Work may be staged on a feature branch, but finish by fast-forwarding `main`, pushing, running the full EC2 deploy cycle (see "EC2 deploy" below) + the frontend rsync, applying any schema change to the prod DB, then health-check.
+
+**DB schema → prod (the migration baseline is STALE — `lib/db/drizzle` only has `0000`, months behind — so do NOT trust `drizzle-kit push`/`migrate` against prod):**
+- **Additive changes (new table / column / index): apply AUTOMATICALLY** via idempotent additive DDL — `CREATE TABLE IF NOT EXISTS …`, `ALTER TABLE … ADD COLUMN IF NOT EXISTS …`, `CREATE INDEX IF NOT EXISTS …`. These can only add — never drop or lose data. psql isn't installed on the box; run the DDL with the box's `pg` client: a tiny `.mjs` in `~/taxflow-pro/lib/db/` doing `import pg from "pg"` + `new pg.Pool({ connectionString: <DATABASE_URL from pm2 env 0>, ssl: { rejectUnauthorized: false } })` + `pool.query(ddl)`. (Precedent: `disclosure_consents`, applied 2026-06-03.)
+- **Destructive changes (drop/rename column, type change, drop table): NEVER auto-apply.** Show John the exact SQL and get explicit OK first — these can silently lose data, and `drizzle.config.ts` explicitly forbids blind `push` to prod. (Proper long-term fix: baseline the prod DB + finish the versioned-migrate cutover — tracked in `docs/db-migrations.md`.)
+
+**The live box is a synthetic-data demo:** keep `API_AUTH_TOKEN` / `PII_ENCRYPTION_KEY` UNSET and the §7216 consent gate OFF there (set `REQUIRE_7216_CONSENT=false` if `NODE_ENV=production`) so the open demo flow stays working — those P0 controls activate only on a real-PII deployment.
 
 ## What this is
 
