@@ -34,8 +34,11 @@ import {
   OH_SCHOOL_DISTRICT_REGISTRY,
 } from "./ohSchoolDistricts";
 
-export const SUPPORTED_TAX_YEARS = [2024, 2025] as const;
+export const SUPPORTED_TAX_YEARS = [2024, 2025, 2026] as const;
 export type TaxYear = (typeof SUPPORTED_TAX_YEARS)[number];
+// LATEST_YEAR is the default for an unspecified (null) tax year. Held at 2025
+// (the "current" filing year) so adding native TY2026 doesn't shift the default
+// for callers that omit taxYear. An explicit TY2026 now computes natively.
 const LATEST_YEAR: TaxYear = 2025;
 
 // ── Federal brackets per year ─────────────────────────────────────────────────
@@ -137,6 +140,57 @@ const FEDERAL_BRACKETS: Record<TaxYear, Record<string, StateBracket[]>> = {
       { upTo: Infinity, rate: 0.37 },
     ],
   },
+
+  // IRS Rev. Proc. 2025-32 (TY2026). NOTE: MFS top (35%->37%) breakpoint is
+  // $384,350 (= half MFJ), while single's is $640,600; HoH 24%/32% bounds are
+  // $1-$25 below single's (published asymmetries, not typos). QSS = MFJ.
+  2026: {
+    single: [
+      { upTo: 12400, rate: 0.10 },
+      { upTo: 50400, rate: 0.12 },
+      { upTo: 105700, rate: 0.22 },
+      { upTo: 201775, rate: 0.24 },
+      { upTo: 256225, rate: 0.32 },
+      { upTo: 640600, rate: 0.35 },
+      { upTo: Infinity, rate: 0.37 },
+    ],
+    married_filing_jointly: [
+      { upTo: 24800, rate: 0.10 },
+      { upTo: 100800, rate: 0.12 },
+      { upTo: 211400, rate: 0.22 },
+      { upTo: 403550, rate: 0.24 },
+      { upTo: 512450, rate: 0.32 },
+      { upTo: 768700, rate: 0.35 },
+      { upTo: Infinity, rate: 0.37 },
+    ],
+    married_filing_separately: [
+      { upTo: 12400, rate: 0.10 },
+      { upTo: 50400, rate: 0.12 },
+      { upTo: 105700, rate: 0.22 },
+      { upTo: 201775, rate: 0.24 },
+      { upTo: 256225, rate: 0.32 },
+      { upTo: 384350, rate: 0.35 },
+      { upTo: Infinity, rate: 0.37 },
+    ],
+    head_of_household: [
+      { upTo: 17700, rate: 0.10 },
+      { upTo: 67450, rate: 0.12 },
+      { upTo: 105700, rate: 0.22 },
+      { upTo: 201750, rate: 0.24 },
+      { upTo: 256200, rate: 0.32 },
+      { upTo: 640600, rate: 0.35 },
+      { upTo: Infinity, rate: 0.37 },
+    ],
+    qualifying_widow: [
+      { upTo: 24800, rate: 0.10 },
+      { upTo: 100800, rate: 0.12 },
+      { upTo: 211400, rate: 0.22 },
+      { upTo: 403550, rate: 0.24 },
+      { upTo: 512450, rate: 0.32 },
+      { upTo: 768700, rate: 0.35 },
+      { upTo: Infinity, rate: 0.37 },
+    ],
+  },
 };
 
 const FEDERAL_STANDARD_DEDUCTIONS: Record<TaxYear, Record<string, number>> = {
@@ -159,6 +213,14 @@ const FEDERAL_STANDARD_DEDUCTIONS: Record<TaxYear, Record<string, number>> = {
     head_of_household: 23625,
     qualifying_widow: 31500,
   },
+  // TY2026 per Rev. Proc. 2025-32 (OBBBA-permanent + inflation).
+  2026: {
+    single: 16100,
+    married_filing_jointly: 32200,
+    married_filing_separately: 16100,
+    head_of_household: 24150,
+    qualifying_widow: 32200,
+  },
 };
 
 // Age-65 / blind additional standard deduction. Per IRC §63(f) + annual
@@ -174,6 +236,7 @@ const FEDERAL_STANDARD_DEDUCTIONS: Record<TaxYear, Record<string, number>> = {
 const STD_DEDUCTION_AGE_BLIND_ADDON: Record<TaxYear, { perBox_single_hoh: number; perBox_mfj_mfs_qss: number }> = {
   2024: { perBox_single_hoh: 1950, perBox_mfj_mfs_qss: 1550 },
   2025: { perBox_single_hoh: 2000, perBox_mfj_mfs_qss: 1600 },
+  2026: { perBox_single_hoh: 2050, perBox_mfj_mfs_qss: 1650 }, // Rev. Proc. 2025-32 §4.14(3)
 };
 
 /**
@@ -384,6 +447,8 @@ function pickStateStdDeduction(
 const OR_FED_TAX_SUBTRACTION: Record<TaxYear, { capMfs: number; capOther: number; phaseStart: number; phaseEnd: number }> = {
   2024: { capMfs: 4125, capOther: 8250, phaseStart: 125000, phaseEnd: 145000 },
   2025: { capMfs: 4250, capOther: 8500, phaseStart: 125000, phaseEnd: 145000 },
+  // TY2026 held = TY2025 pending official Oregon publication (same approach as 2025).
+  2026: { capMfs: 4250, capOther: 8500, phaseStart: 125000, phaseEnd: 145000 },
 };
 
 // ── State retirement-income exemptions ──────────────────────────────────────
@@ -2246,9 +2311,25 @@ const EITC_TABLE: Record<TaxYear, Record<"single" | "married_filing_jointly", Re
       3: { maxAtIncome: 17880, maxCredit: 8046, creditRate: 0.45, phaseOutStart: 30470, phaseOutComplete: 68675, phaseOutRate: 0.2106 },
     },
   },
+  // TY2026 per Rev. Proc. 2025-32 §3.06. creditRate = maxCredit/maxAtIncome;
+  // phaseOutRate = maxCredit/(complete − start) — the standard statutory slopes.
+  2026: {
+    single: {
+      0: { maxAtIncome: 8680, maxCredit: 664, creditRate: 0.0765, phaseOutStart: 10860, phaseOutComplete: 19540, phaseOutRate: 0.0765 },
+      1: { maxAtIncome: 13020, maxCredit: 4427, creditRate: 0.34, phaseOutStart: 23890, phaseOutComplete: 51593, phaseOutRate: 0.1598 },
+      2: { maxAtIncome: 18290, maxCredit: 7316, creditRate: 0.40, phaseOutStart: 23890, phaseOutComplete: 58629, phaseOutRate: 0.2106 },
+      3: { maxAtIncome: 18290, maxCredit: 8231, creditRate: 0.45, phaseOutStart: 23890, phaseOutComplete: 62974, phaseOutRate: 0.2106 },
+    },
+    married_filing_jointly: {
+      0: { maxAtIncome: 8680, maxCredit: 664, creditRate: 0.0765, phaseOutStart: 18140, phaseOutComplete: 26820, phaseOutRate: 0.0765 },
+      1: { maxAtIncome: 13020, maxCredit: 4427, creditRate: 0.34, phaseOutStart: 31160, phaseOutComplete: 58863, phaseOutRate: 0.1598 },
+      2: { maxAtIncome: 18290, maxCredit: 7316, creditRate: 0.40, phaseOutStart: 31160, phaseOutComplete: 65899, phaseOutRate: 0.2106 },
+      3: { maxAtIncome: 18290, maxCredit: 8231, creditRate: 0.45, phaseOutStart: 31160, phaseOutComplete: 70244, phaseOutRate: 0.2106 },
+    },
+  },
 };
 
-const EITC_INVESTMENT_INCOME_LIMIT: Record<TaxYear, number> = { 2024: 11600, 2025: 11950 };
+const EITC_INVESTMENT_INCOME_LIMIT: Record<TaxYear, number> = { 2024: 11600, 2025: 11950, 2026: 12200 };
 
 export interface EitcCalculation {
   qualifyingChildren: number;
@@ -2373,6 +2454,14 @@ const CA_EITC: Record<TaxYear, CaEitcConfig> = {
   2025: {
     investmentLimit: 5050, // estimated CPI bump
     agiLimit: 31500,        // estimated
+    maxByChildren: [290, 1965, 3243, 3590],
+    peakEarnedIncome: 6900,
+  },
+  // TY2026 held = TY2025 estimate pending FTB Form 3514 publication (CalEITC is
+  // state-indexed; the federal-side TY2026 figures don't drive these).
+  2026: {
+    investmentLimit: 5050,
+    agiLimit: 31500,
     maxByChildren: [290, 1965, 3243, 3590],
     peakEarnedIncome: 6900,
   },
@@ -3808,11 +3897,13 @@ export function calculateEducationCredits(params: {
 const HSA_LIMITS: Record<TaxYear, { selfOnly: number; family: number; catchUp: number }> = {
   2024: { selfOnly: 4150, family: 8300, catchUp: 1000 },
   2025: { selfOnly: 4300, family: 8550, catchUp: 1000 },
+  2026: { selfOnly: 4400, family: 8750, catchUp: 1000 }, // Rev. Proc. 2025-19
 };
 
 const IRA_LIMITS: Record<TaxYear, { base: number; catchUp: number }> = {
   2024: { base: 7000, catchUp: 1000 },
   2025: { base: 7000, catchUp: 1000 },
+  2026: { base: 7500, catchUp: 1100 }, // IR-2025-111 / Notice 2025-67
 };
 
 const IRA_DEDUCTION_PHASE_OUT: Record<TaxYear, Record<string, { start: number; end: number }>> = {
@@ -3829,6 +3920,15 @@ const IRA_DEDUCTION_PHASE_OUT: Record<TaxYear, Record<string, { start: number; e
     married_filing_separately: { start: 0, end: 10000 },
     head_of_household: { start: 79000, end: 89000 },
     qualifying_widow: { start: 126000, end: 146000 },
+  },
+  // TY2026 active-participant ranges per Notice 2025-67 / IR-2025-111. (Spousal
+  // non-covered range $242k-$252k is handled separately; MFS $0-$10k is statutory.)
+  2026: {
+    single: { start: 81000, end: 91000 },
+    married_filing_jointly: { start: 129000, end: 149000 },
+    married_filing_separately: { start: 0, end: 10000 },
+    head_of_household: { start: 81000, end: 91000 },
+    qualifying_widow: { start: 129000, end: 149000 },
   },
 };
 
@@ -3932,6 +4032,14 @@ const SAVERS_CREDIT_TIERS: Record<TaxYear, Record<string, SaversCreditTier[]>> =
     married_filing_separately: [{ agiMax: 23750, rate: 0.50 }, { agiMax: 25750, rate: 0.20 }, { agiMax: 39500, rate: 0.10 }, { agiMax: Infinity, rate: 0 }],
     head_of_household: [{ agiMax: 35625, rate: 0.50 }, { agiMax: 38625, rate: 0.20 }, { agiMax: 59250, rate: 0.10 }, { agiMax: Infinity, rate: 0 }],
     qualifying_widow: [{ agiMax: 23750, rate: 0.50 }, { agiMax: 25750, rate: 0.20 }, { agiMax: 39500, rate: 0.10 }, { agiMax: Infinity, rate: 0 }], // PLAN-01: QSS = single column
+  },
+  // TY2026 §25B tiers per Notice 2025-67 (NOT Rev. Proc. 2025-32 — §25B is in the retirement notice).
+  2026: {
+    single: [{ agiMax: 24250, rate: 0.50 }, { agiMax: 26250, rate: 0.20 }, { agiMax: 40250, rate: 0.10 }, { agiMax: Infinity, rate: 0 }],
+    married_filing_jointly: [{ agiMax: 48500, rate: 0.50 }, { agiMax: 52500, rate: 0.20 }, { agiMax: 80500, rate: 0.10 }, { agiMax: Infinity, rate: 0 }],
+    married_filing_separately: [{ agiMax: 24250, rate: 0.50 }, { agiMax: 26250, rate: 0.20 }, { agiMax: 40250, rate: 0.10 }, { agiMax: Infinity, rate: 0 }],
+    head_of_household: [{ agiMax: 36375, rate: 0.50 }, { agiMax: 39375, rate: 0.20 }, { agiMax: 60375, rate: 0.10 }, { agiMax: Infinity, rate: 0 }],
+    qualifying_widow: [{ agiMax: 24250, rate: 0.50 }, { agiMax: 26250, rate: 0.20 }, { agiMax: 40250, rate: 0.10 }, { agiMax: Infinity, rate: 0 }], // PLAN-01: QSS = single column
   },
 };
 const SAVERS_CREDIT_CONTRIBUTION_CAP_PER_FILER = 2000;
@@ -4110,6 +4218,14 @@ const SLI_PHASE_OUT: Record<TaxYear, Record<string, { start: number; end: number
     head_of_household: { start: 85000, end: 100000 },
     qualifying_widow: { start: 170000, end: 200000 },
     married_filing_jointly: { start: 170000, end: 200000 },
+    married_filing_separately: null,
+  },
+  // TY2026 per Rev. Proc. 2025-32 §3.29: single/HoH $85k-$100k (held); MFJ moved to $175k-$205k.
+  2026: {
+    single: { start: 85000, end: 100000 },
+    head_of_household: { start: 85000, end: 100000 },
+    qualifying_widow: { start: 175000, end: 205000 },
+    married_filing_jointly: { start: 175000, end: 205000 },
     married_filing_separately: null,
   },
 };
@@ -4330,6 +4446,7 @@ export function calculateResidentialEnergyCredits(params: {
 const FPL_GUIDELINE_BY_PTC_YEAR: Record<TaxYear, { base: number; perAdditional: number }> = {
   2024: { base: 14580, perAdditional: 5140 }, // 2023 FPL guidelines
   2025: { base: 15060, perAdditional: 5380 }, // 2024 FPL guidelines
+  2026: { base: 15650, perAdditional: 5500 }, // 2025 HHS FPL guidelines (PTC uses prior-year FPL)
 };
 
 // Excess APTC repayment caps (Rev. Proc. 2023-34 for 2024; assume same struct 2025)
@@ -4728,6 +4845,34 @@ const LTCG_BRACKETS: Record<TaxYear, Record<string, Array<{ upTo: number; rate: 
       { upTo: Infinity, rate: 0.20 },
     ],
   },
+  // TY2026 §1(h)/§1(j)(5) breakpoints per Rev. Proc. 2025-32 §4.03.
+  2026: {
+    single: [
+      { upTo: 49450, rate: 0 },
+      { upTo: 545500, rate: 0.15 },
+      { upTo: Infinity, rate: 0.20 },
+    ],
+    married_filing_jointly: [
+      { upTo: 98900, rate: 0 },
+      { upTo: 613700, rate: 0.15 },
+      { upTo: Infinity, rate: 0.20 },
+    ],
+    married_filing_separately: [
+      { upTo: 49450, rate: 0 },
+      { upTo: 306850, rate: 0.15 },
+      { upTo: Infinity, rate: 0.20 },
+    ],
+    head_of_household: [
+      { upTo: 66200, rate: 0 },
+      { upTo: 579600, rate: 0.15 },
+      { upTo: Infinity, rate: 0.20 },
+    ],
+    qualifying_widow: [
+      { upTo: 98900, rate: 0 },
+      { upTo: 613700, rate: 0.15 },
+      { upTo: Infinity, rate: 0.20 },
+    ],
+  },
 };
 
 export interface CapitalGainsCalculation {
@@ -4888,13 +5033,13 @@ export function calculateFederalTaxWithCapitalGains(params: {
 // SS portion only applies up to the wage base ($168,600 in 2024, $176,100 in 2025).
 // Net earnings = SE income × 0.9235 (the 7.65% employer-equivalent reduction).
 // Half of SE tax is deductible above-the-line on Form 1040.
-export const SS_WAGE_BASE: Record<TaxYear, number> = { 2024: 168600, 2025: 176100 };
+export const SS_WAGE_BASE: Record<TaxYear, number> = { 2024: 168600, 2025: 176100, 2026: 184500 };
 
 // FED-02 — Form 8615 kiddie-tax net-unearned-income threshold = 2× the limited
 // dependent standard deduction (§1(g)(4) + §63(c)(5)(A), inflation-adjusted).
 // TY2024 $2,600 (Rev. Proc. 2023-34); TY2025 $2,700 (Rev. Proc. 2024-40). Drives
 // BOTH the filing trigger and the Form 8615 Line 2 subtraction.
-export const KIDDIE_TAX_THRESHOLD: Record<TaxYear, number> = { 2024: 2600, 2025: 2700 };
+export const KIDDIE_TAX_THRESHOLD: Record<TaxYear, number> = { 2024: 2600, 2025: 2700, 2026: 2700 }; // 2026 = 2×$1,350 dependent floor (Rev. Proc. 2025-32, flat vs 2025)
 const SS_RATE = 0.124;
 const MEDICARE_RATE = 0.029;
 const SE_NET_EARNINGS_FACTOR = 0.9235;
@@ -5012,7 +5157,7 @@ export function calculateSehiDeduction(params: {
 // Eligibility (CPA confirms): bona fide residence in foreign country for
 // uninterrupted full tax year, OR physical presence in foreign countries
 // 330+ days in a 12-month period. Housing exclusion / deduction NOT modeled.
-const FEIE_CAP: Record<TaxYear, number> = { 2024: 126500, 2025: 130000 };
+const FEIE_CAP: Record<TaxYear, number> = { 2024: 126500, 2025: 130000, 2026: 132900 }; // Rev. Proc. 2025-32 §4.39
 
 export interface FeieCalculation {
   taxpayerForeignIncome: number;
@@ -5275,21 +5420,32 @@ export interface QbiCalculation {
 // §199A taxable-income threshold + phase-in band by filing status / year.
 // Below `start`: simplified 20% (no wage/UBIA limit). Above `end`: full
 // wage/UBIA limit. Within: phased per Treas. Reg. §1.199A-1(d)(2)(iv).
-// MFS thresholds are half the single amount. (Rev. Proc. 2023-34 / 2024-40.)
+// Per §199A(e)(2) the "threshold amount" is the base for ALL statuses EXCEPT a
+// JOINT return (which is 200% of the base) — so MFS = the SINGLE amount (NOT
+// half; an MFS taxpayer does not file a joint return). (Rev. Proc. 2023-34 /
+// 2024-40 / 2025-32.) OBBBA made §199A permanent and WIDENED the TY2026 phase-in
+// band to $75k single / $150k MFJ (was $50k/$100k).
 const QBI_WAGE_LIMIT_BAND: Record<TaxYear, Record<string, { start: number; end: number }>> = {
   2024: {
     single: { start: 191_950, end: 241_950 },
     head_of_household: { start: 191_950, end: 241_950 },
-    married_filing_separately: { start: 95_975, end: 120_975 },
+    married_filing_separately: { start: 191_950, end: 241_950 },
     married_filing_jointly: { start: 383_900, end: 483_900 },
     qualifying_widow: { start: 383_900, end: 483_900 },
   },
   2025: {
     single: { start: 197_300, end: 247_300 },
     head_of_household: { start: 197_300, end: 247_300 },
-    married_filing_separately: { start: 98_650, end: 123_650 },
+    married_filing_separately: { start: 197_300, end: 247_300 },
     married_filing_jointly: { start: 394_600, end: 494_600 },
     qualifying_widow: { start: 394_600, end: 494_600 },
+  },
+  2026: {
+    single: { start: 201_750, end: 276_750 },
+    head_of_household: { start: 201_750, end: 276_750 },
+    married_filing_separately: { start: 201_750, end: 276_750 },
+    married_filing_jointly: { start: 403_500, end: 553_500 },
+    qualifying_widow: { start: 403_500, end: 553_500 },
   },
 };
 
@@ -5348,11 +5504,28 @@ export function calculateQbi(params: {
     }
   }
 
+  const cappedDeduction = Math.min(wageLimitedPreliminary, cap);
+
+  // OBBBA §199A(i) — NEW minimum deduction (TY2026+): a taxpayer with at least
+  // $1,000 of QBI from active qualified trades/businesses in which they
+  // materially participate gets a §199A deduction of NOT LESS THAN $400 (both
+  // the $400 and $1,000 are inflation-indexed after 2026). The engine's
+  // qbiIncome is active QBI (Sch C net + active K-1 Box 1), so we apply the
+  // floor when qbiIncome >= $1,000. Gated on the RAW tax year so it applies to a
+  // TY2026 return even before native TY2026 brackets exist (resolveTaxYear would
+  // otherwise clamp). The floor overrides the 20%-of-QBI / wage-limit reductions;
+  // the caller floors taxable income at 0, so a near-zero-income filer can't
+  // over-deduct. (Sub-gap: can't distinguish active vs passive QBI here — uses
+  // the >= $1,000 proxy; CPA overrides for passive-only QBI.)
+  const minQbiDeductionYear = params.taxYear ?? 2025;
+  const minimumDeduction = minQbiDeductionYear >= 2026 && qbiIncome >= 1_000 ? 400 : 0;
+  const finalDeduction = Math.max(cappedDeduction, minimumDeduction);
+
   return {
     qbiAmount: qbiIncome,
     preliminaryDeduction: preliminary,
     taxableIncomeCap: cap,
-    finalDeduction: Math.min(wageLimitedPreliminary, cap),
+    finalDeduction,
     wageUbiaLimit,
     wageUbiaLimitBinds,
   };
@@ -5368,16 +5541,31 @@ const AMT_DATA: Record<TaxYear, {
   exemption: Record<string, number>;
   exemptionPhaseOutStart: Record<string, number>;
   rateBreakpoint: number;
+  /** Exemption phase-out rate (cents per $1 over the start). OBBBA §70107 raised
+   *  it 25% -> 50% effective TY2026. */
+  exemptionPhaseOutRate: number;
 }> = {
   2024: {
     exemption: { single: 85700, married_filing_jointly: 133300, married_filing_separately: 66650, head_of_household: 85700, qualifying_widow: 133300 },
     exemptionPhaseOutStart: { single: 609350, married_filing_jointly: 1218700, married_filing_separately: 609350, head_of_household: 609350, qualifying_widow: 1218700 },
     rateBreakpoint: 232600,
+    exemptionPhaseOutRate: 0.25,
   },
   2025: {
     exemption: { single: 88100, married_filing_jointly: 137000, married_filing_separately: 68500, head_of_household: 88100, qualifying_widow: 137000 },
     exemptionPhaseOutStart: { single: 626350, married_filing_jointly: 1252700, married_filing_separately: 626350, head_of_household: 626350, qualifying_widow: 1252700 },
     rateBreakpoint: 239100,
+    exemptionPhaseOutRate: 0.25,
+  },
+  // TY2026 per Rev. Proc. 2025-32 §4.10. OBBBA §70107 reset the phase-out START
+  // to a fixed $1,000,000 MFJ / $500,000 (others, incl. MFS — NOT halved) and
+  // raised the phase-out RATE to 50%. rateBreakpoint $244,500 ($122,250 MFS, halved
+  // in calculateAmt). Exemptions $140,200 MFJ / $90,100 single / $70,100 MFS.
+  2026: {
+    exemption: { single: 90100, married_filing_jointly: 140200, married_filing_separately: 70100, head_of_household: 90100, qualifying_widow: 140200 },
+    exemptionPhaseOutStart: { single: 500000, married_filing_jointly: 1000000, married_filing_separately: 500000, head_of_household: 500000, qualifying_widow: 1000000 },
+    rateBreakpoint: 244500,
+    exemptionPhaseOutRate: 0.50,
   },
 };
 
@@ -5434,8 +5622,8 @@ export function calculateAmt(params: {
   const atnoldApplied = Math.min(amtNol, 0.90 * amtiBeforeAtnold);
   const atnoldCarryforwardRemaining = Math.max(0, amtNol - atnoldApplied);
   const amti = Math.max(0, amtiBeforeAtnold - atnoldApplied);
-  // Phase out: 25¢ per $1 over threshold
-  const phaseOut = amti > phaseStart ? (amti - phaseStart) * 0.25 : 0;
+  // Phase out: 25¢ per $1 over threshold (50¢ for TY2026+ per OBBBA §70107).
+  const phaseOut = amti > phaseStart ? (amti - phaseStart) * data.exemptionPhaseOutRate : 0;
   const exemption = Math.max(0, baseExemption - phaseOut);
   const amtBase = Math.max(0, amti - exemption);
 
@@ -5492,9 +5680,13 @@ export function calculateAmt(params: {
 //   - Non-refundable portion: reduces tax, but only down to $0
 //   - Refundable Additional Child Tax Credit (ACTC): up to $1,700 per qualifying child
 //     in 2024 ($1,700 in 2025), computed as MIN(unused CTC, 15% × max(0, earned − $2,500))
-const CTC_PER_CHILD = 2000;
+// OBBBA (P.L. 119-21 §70104) raised the §24(a) CTC from $2,000 to $2,200 and
+// made it permanent + inflation-indexed beginning TY2025. TY2026 rounds flat at
+// $2,200 (Rev. Proc. 2025-32). Phase-out thresholds ($200k/$400k) + the $500 ODC
+// were made permanent but are NOT inflation-indexed.
+const CTC_PER_CHILD: Record<TaxYear, number> = { 2024: 2000, 2025: 2200, 2026: 2200 };
 const ODC_PER_DEPENDENT = 500;
-const ACTC_REFUNDABLE_PER_CHILD: Record<TaxYear, number> = { 2024: 1700, 2025: 1700 };
+const ACTC_REFUNDABLE_PER_CHILD: Record<TaxYear, number> = { 2024: 1700, 2025: 1700, 2026: 1700 }; // §24(d)(1)(A) indexed, rounded flat $1,700 for 2026 (Rev. Proc. 2025-32)
 const ACTC_EARNED_INCOME_THRESHOLD = 2500;
 const ACTC_RATE = 0.15;
 
@@ -5534,7 +5726,7 @@ export function calculateChildTaxCredit(params: {
   const safeOther = Math.max(0, Math.floor(otherDependents));
 
   const preliminaryCredit =
-    safeChildren * CTC_PER_CHILD + safeOther * ODC_PER_DEPENDENT;
+    safeChildren * CTC_PER_CHILD[year] + safeOther * ODC_PER_DEPENDENT;
 
   // MFJ uses $400k threshold; everyone else uses $200k. (MFS uses $200k.)
   const phaseOutThreshold = filingStatus === "married_filing_jointly" ? 400000 : 200000;

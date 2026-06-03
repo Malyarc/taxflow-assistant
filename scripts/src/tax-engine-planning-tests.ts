@@ -5202,40 +5202,45 @@ header("#9 — OBBBA energy credits (G1.33/G1.34/G1.37) suppressed for TY2026");
 
 // ============================================================================
 // OBBBA / TY2026 dollar refresh — year-indexed lock-ins (catalog v1.19.0)
-// NOTE on TY2026: computeTaxReturnPure clamps the TAX MATH to the latest
-// supported year (2025) — there is no native TY2026 bracket/std-ded set yet, so
-// `computed.taxYear` comes back 2025. The PLANNING layer keys its dollar maps on
-// computed.taxYear, so to exercise the TY2026 entries we stamp taxYear=2026 onto
-// the computed return (the same pattern the #9 OBBBA-energy test uses). This
-// proves the 2026 caps are wired + correct, ready for when native TY2026 engine
-// support lands. Marginal rates here are 2025-bracket-based (the production
-// reality for a clamped 2026 client). Each value hand-calc'd vs the IRS rule.
+// TY2026 is now NATIVELY supported (resolveTaxYear no longer clamps 2026→2025);
+// planAt2026 computes the return at TY2026 (2026 brackets/std-ded + the 2026
+// planning-map caps). Each value hand-calc'd vs the IRS rule (Rev. Proc. 2025-32
+// / Notice 2025-67), including 2026-bracket marginal rates.
 // ============================================================================
 section("OBBBA / TY2026 dollar refresh — year-indexed lock-ins");
 
-// Compute at 2025 (records tagged 2025 so they're included + math is the
-// 2025-clamped reality), then stamp taxYear=2026 for the planning layer.
+// TY2026 is now natively supported (resolveTaxYear no longer clamps 2026→2025),
+// so compute the return natively at TY2026 (2026 brackets/std-ded/caps). Records
+// are re-tagged to 2026 so the engine's by-year W-2/1099/K-1 filters include them.
 function planAt2026(inputs: Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] }): OpportunityHit[] {
-  const computed = computeTaxReturnPure({ w2s: [], form1099s: [], adjustments: [], taxYear: 2025, ...inputs });
-  const computed2026 = { ...computed, taxYear: 2026 } as typeof computed;
-  return evaluatePlanningOpportunities({ client: inputs.client, computed: computed2026, adjustments: inputs.adjustments ?? [] });
+  const retag = <T,>(arr: T[] | undefined): T[] => (arr ?? []).map((r) => ({ ...r, taxYear: 2026 }));
+  const client = { ...inputs.client, taxYear: 2026 } as TaxReturnInputs["client"];
+  const computed = computeTaxReturnPure({
+    client,
+    w2s: retag(inputs.w2s), form1099s: retag(inputs.form1099s),
+    scheduleK1: retag(inputs.scheduleK1), adjustments: inputs.adjustments ?? [],
+    taxYear: 2026,
+  });
+  return evaluatePlanningOpportunities({ client, computed, adjustments: inputs.adjustments ?? [] });
 }
 
 // G1.1 SEP — TY2026 §415(c) cap = $72,000 (Notice 2025-67 / IR-2025-111).
-//   MFJ $1M SE: contribution capped at $72,000. Marginal 37% (MFJ top bracket).
-//   estSavings = $72,000 × 0.37 = $26,640.
-header("G1.1 TY2026 — MFJ $1M SE: contribution $72,000, savings $26,640");
+//   MFJ $1M SE: contribution capped at $72,000. After SE/halfSE/QBI/std-ded the
+//   baseline taxable (~$754k) lands in the 2026 MFJ 35% band ($512,450-$768,700),
+//   so the marginal is 35% (not 37% — the 37% band starts at $768,700 for 2026).
+//   estSavings = $72,000 × 0.35 = $25,200.
+header("G1.1 TY2026 — MFJ $1M SE: contribution $72,000, savings $25,200");
 {
   const hits = planAt2026({
-    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2025 } as TaxReturnInputs["client"],
-    form1099s: [{ taxYear: 2025, formType: "nec", payerName: "Acme Co", nonemployeeCompensation: 1000000 } as unknown as TaxReturnInputs["form1099s"][number]],
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2026 } as TaxReturnInputs["client"],
+    form1099s: [{ taxYear: 2026, formType: "nec", payerName: "Acme Co", nonemployeeCompensation: 1000000 } as unknown as TaxReturnInputs["form1099s"][number]],
   });
   const hit = findHit(hits, "G1.1");
   checkTruthy("G1.1-2026", "hit fires", hit != null, true);
   if (hit) {
     check("G1.1-2026", "contribution = $72,000 (TY2026 §415(c) cap)",
       Number(hit.inputs.contribution), 72000, 1, "Notice 2025-67 / IR-2025-111");
-    check("G1.1-2026", "estSavings = $26,640 ($72,000 × 0.37)", hit.estSavings, 26640, 5);
+    check("G1.1-2026", "estSavings = $25,200 ($72,000 × 0.35; 2026 MFJ 35% band)", hit.estSavings, 25200, 5);
   }
 }
 

@@ -87,12 +87,24 @@ const FED_STD_DEDUCTION_2024 = {
   qualifying_widow: 29200,
 };
 
+// TY2025 std ded AS AMENDED BY OBBBA (P.L. 119-21) — matches the core engine's
+// FEDERAL_STANDARD_DEDUCTIONS[2025]. Federal-conforming states use this so the
+// invariant `AGI − stateStdDed = federalTaxableIncome` still holds (CLAUDE.md #4).
 const FED_STD_DEDUCTION_2025 = {
-  single: 15000,
-  married_filing_jointly: 30000,
-  married_filing_separately: 15000,
-  head_of_household: 22500,
-  qualifying_widow: 30000,
+  single: 15750,
+  married_filing_jointly: 31500,
+  married_filing_separately: 15750,
+  head_of_household: 23625,
+  qualifying_widow: 31500,
+};
+
+// TY2026 std ded per Rev. Proc. 2025-32 (matches core FEDERAL_STANDARD_DEDUCTIONS[2026]).
+const FED_STD_DEDUCTION_2026 = {
+  single: 16100,
+  married_filing_jointly: 32200,
+  married_filing_separately: 16100,
+  head_of_household: 24150,
+  qualifying_widow: 32200,
 };
 
 // States whose standard deduction is explicitly tied to the federal value (auto-updates each year).
@@ -903,9 +915,28 @@ function build2025Data(): Record<string, StateTaxInfo> {
 
 const STATE_TAX_DATA_2025: Record<string, StateTaxInfo> = build2025Data();
 
+// TY2026 state data: hold the 2025 state brackets (most states have not yet
+// published 2026 brackets) but bump federal-conforming-std-ded states to the
+// 2026 federal value, mirroring build2025Data(). Documented approximation —
+// state-specific 2026 bracket inflation is a future refresh.
+function build2026Data(): Record<string, StateTaxInfo> {
+  const data: Record<string, StateTaxInfo> = {};
+  for (const [code, info] of Object.entries(STATE_TAX_DATA_2025)) {
+    let next = { ...info };
+    if (FED_CONFORMING_STD_DED_STATES.has(code) && next.standardDeduction) {
+      next = { ...next, standardDeduction: { ...FED_STD_DEDUCTION_2026 } };
+    }
+    data[code] = next;
+  }
+  return data;
+}
+
+const STATE_TAX_DATA_2026: Record<string, StateTaxInfo> = build2026Data();
+
 export const STATE_TAX_DATA_BY_YEAR: Record<number, Record<string, StateTaxInfo>> = {
   2024: STATE_TAX_DATA_2024,
   2025: STATE_TAX_DATA_2025,
+  2026: STATE_TAX_DATA_2026,
 };
 
 // Backwards-compat: default to 2024 for any code that imports STATE_TAX_DATA directly.

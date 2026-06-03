@@ -260,7 +260,8 @@ checkExact("Year undefined → 2025 (latest)", resolveTaxYear(undefined), 2025);
 checkExact("Year 2024 → 2024", resolveTaxYear(2024), 2024);
 checkExact("Year 2025 → 2025", resolveTaxYear(2025), 2025);
 checkExact("Year 2023 → 2024 (just below)", resolveTaxYear(2023), 2024);
-checkExact("Year 2026 → 2025 (just above)", resolveTaxYear(2026), 2025);
+checkExact("Year 2026 → 2026 (now natively supported)", resolveTaxYear(2026), 2026);
+checkExact("Year 2027 → 2025 (just above supported range → LATEST_YEAR)", resolveTaxYear(2027), 2025);
 checkExact("Year 2050 → 2025 (far future)", resolveTaxYear(2050), 2025);
 
 // ═══════════════════════════════════════════════════════════════════════════

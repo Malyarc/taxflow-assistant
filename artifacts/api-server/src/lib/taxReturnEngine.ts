@@ -1296,11 +1296,22 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const bonusDeprBasisAdj = sumByType("bonus_depreciation_basis");
   const SECTION_179_CAPS: Record<number, { cap: number; phaseStart: number }> = {
     2024: { cap: 1160000, phaseStart: 2890000 },
-    2025: { cap: 1220000, phaseStart: 3050000 }, // Rev. Proc. 2024-40
+    // OBBBA (P.L. 119-21 §70306) raised §179 to $2.5M cap / $4M phase-out for
+    // property placed in service in TY beginning after 2024-12-31 (TY2025+),
+    // then inflation-indexed: TY2026 $2.56M / $4.09M (Rev. Proc. 2025-32).
+    2025: { cap: 2500000, phaseStart: 4000000 },
+    2026: { cap: 2560000, phaseStart: 4090000 },
   };
   const BONUS_DEPR_RATES: Record<number, number> = {
     2024: 0.60,
+    // OBBBA (§70301) restored 100% bonus depreciation PERMANENTLY for property
+    // acquired AND placed in service after 2025-01-19. TY2026 is 100%. TY2025 is
+    // dual-rate by acquisition date: 40% (TCJA phase-down) for property acquired
+    // on/before 2025-01-19, 100% after — the engine has no acquisition-date field,
+    // so TY2025 keeps the conservative 40% default (CPA overrides for post-1/19
+    // property); documented limitation.
     2025: 0.40,
+    2026: 1.00,
   };
   const s179Cfg = SECTION_179_CAPS[taxYear] ?? SECTION_179_CAPS[2024];
   // Phase-out: §179 limit reduced $-for-$ when total qualified property

@@ -179,10 +179,10 @@ header("Pure invocation — adjustments respect isApplied = false");
   check("AGI unchanged $50,000", r.adjustedGrossIncome, 50000, 1);
 }
 
-header("Pure invocation — multi-year (2024 vs 2025 brackets)");
+header("Pure invocation — multi-year (2024 vs 2025 vs 2026 brackets)");
 {
   // Single, $100k, all years
-  const make = (taxYear: 2024 | 2025) => ({
+  const make = (taxYear: 2024 | 2025 | 2026) => ({
     client: { filingStatus: "single", state: "FL", taxYear } as const,
     w2s: [{ taxYear, wagesBox1: 100000, federalTaxWithheldBox2: 15000, stateCode: "FL" }],
     form1099s: [],
@@ -192,6 +192,7 @@ header("Pure invocation — multi-year (2024 vs 2025 brackets)");
 
   const r24 = computeTaxReturnPure(make(2024) as any);
   const r25 = computeTaxReturnPure(make(2025) as any);
+  const r26 = computeTaxReturnPure(make(2026) as any);
 
   // 2024: AGI $100k, std ded $14,600, taxable $85,400.
   //   Tax = $1,160 + ($47,150-$11,600)×0.12 + ($85,400-$47,150)×0.22
@@ -199,10 +200,16 @@ header("Pure invocation — multi-year (2024 vs 2025 brackets)");
   // 2025: AGI $100k, std ded $15,750 (OBBBA P.L. 119-21, raised from $15,000), taxable $84,250.
   //   Tax = $1,192.50 + ($48,475-$11,925)×0.12 + ($84,250-$48,475)×0.22
   //       = $1,192.50 + $4,386 + $7,870.50 = $13,449.
+  // 2026 (native, Rev. Proc. 2025-32): AGI $100k, std ded $16,100, taxable $83,900.
+  //   Tax = $1,240 + ($50,400-$12,400)×0.12 + ($83,900-$50,400)×0.22
+  //       = $1,240 + $4,560 + $7,370 = $13,170.
   check("2024 federal tax = $13,841", r24.federalTaxLiability, 13841, 2);
   check("2025 federal tax = $13,449", r25.federalTaxLiability, 13449, 2);
-  if (r25.federalTaxLiability < r24.federalTaxLiability) PASS.push("✓ 2025 brackets lower tax (inflation adjustment)");
-  else FAIL.push("✗ 2025 should have lower tax than 2024 for same $100k income");
+  check("2026 federal tax = $13,170 (native TY2026 brackets + std ded)", r26.federalTaxLiability, 13170, 2);
+  check("2026 std ded = $16,100", r26.standardDeduction, 16100, 0.5);
+  if (r25.federalTaxLiability < r24.federalTaxLiability && r26.federalTaxLiability < r25.federalTaxLiability)
+    PASS.push("✓ each year's brackets lower tax for the same $100k (inflation adjustment)");
+  else FAIL.push("✗ 2026 < 2025 < 2024 federal tax expected for same $100k income");
 }
 
 // ── Summary ─────────────────────────────────────────────────────────────────

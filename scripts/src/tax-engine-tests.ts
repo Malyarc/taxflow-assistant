@@ -115,6 +115,12 @@ checkExact("MFJ 2025 std", getFederalStandardDeduction("married_filing_jointly",
 checkExact("MFS 2025 std", getFederalStandardDeduction("married_filing_separately", 2025), 15750);
 checkExact("HoH 2025 std", getFederalStandardDeduction("head_of_household", 2025), 23625);
 checkExact("QW 2025 std", getFederalStandardDeduction("qualifying_widow", 2025), 31500);
+// Native TY2026 std ded (Rev. Proc. 2025-32 — OBBBA-permanent + inflation).
+checkExact("Single 2026 std", getFederalStandardDeduction("single", 2026), 16100);
+checkExact("MFJ 2026 std", getFederalStandardDeduction("married_filing_jointly", 2026), 32200);
+checkExact("MFS 2026 std", getFederalStandardDeduction("married_filing_separately", 2026), 16100);
+checkExact("HoH 2026 std", getFederalStandardDeduction("head_of_household", 2026), 24150);
+checkExact("QW 2026 std", getFederalStandardDeduction("qualifying_widow", 2026), 32200);
 
 // ── C. Federal known-answer scenarios ───────────────────────────────────────
 header("C. Federal known-answer scenarios");
@@ -245,7 +251,7 @@ check("NC 2025 $80k single (4.25%)", calculateStateTax(80000, "NC", "single", 20
 // LA flat 3% with std $12,500
 check("LA 2025 $80k single (3% over std $12,500)", calculateStateTax(80000, "LA", "single", 2025), (80000 - 12500) * 0.03);
 // IA flat 3.8% — std deduction mirrors federal ($15,000 single 2025) post-2023 reform
-check("IA 2025 $80k single (3.8% over federal std $15k)", calculateStateTax(80000, "IA", "single", 2025), (80000 - 15000) * 0.038);
+check("IA 2025 $80k single (3.8% over OBBBA federal std $15,750)", calculateStateTax(80000, "IA", "single", 2025), (80000 - 15750) * 0.038);
 // IA 2024 — progressive brackets, std deduction mirrors federal ($14,600 single 2024)
 // taxable = 80k - 14.6k = 65,400
 //   $0-$6,210 × 4.4% = 273.24
@@ -312,6 +318,13 @@ header("F. Child Tax Credit permutations");
 {
   const r = calculateChildTaxCredit({ qualifyingChildren: 1, otherDependents: 0, agi: 50000, filingStatus: "single", taxYear: 2024 });
   checkExact("1 child @ $50k single → $2,000", r.appliedCredit, 2000);
+}
+// OBBBA (P.L. 119-21 §70104) raised the CTC $2,000 → $2,200 for TY2025+ (permanent + indexed; TY2026 rounds flat $2,200).
+{
+  const r25 = calculateChildTaxCredit({ qualifyingChildren: 1, otherDependents: 0, agi: 50000, filingStatus: "single", taxYear: 2025 });
+  checkExact("1 child @ $50k single TY2025 → $2,200 (OBBBA)", r25.appliedCredit, 2200);
+  const r26 = calculateChildTaxCredit({ qualifyingChildren: 2, otherDependents: 0, agi: 50000, filingStatus: "single", taxYear: 2026 });
+  checkExact("2 children @ $50k single TY2026 → $4,400 ($2,200 each)", r26.appliedCredit, 4400);
 }
 // 3 children @ $80k MFJ
 {
@@ -498,6 +511,14 @@ header("K. AMT (Alternative Minimum Tax)");
   // 26% of 232600 + 28% of (636962.5 - 232600) = 60476 + 113221.5 = 173697.5
   // AMT = max(0, 173697.5 - 200000) = 0 (regular tax larger)
   checkExact("AMT: $700k income with phaseout, regular $200k → $0", r.amtTax, 0);
+}
+// TY2026 AMT: OBBBA §70107 reset the exemption phase-out start to a fixed $500k
+// (single) and RAISED the phase-out rate 25% → 50%. Single AMTI $600k:
+//   phaseOut = ($600,000 − $500,000) × 0.50 = $50,000
+//   exemption = max(0, $90,100 − $50,000) = $40,100  (under the old 25% it'd be $65,100)
+{
+  const r = calculateAmt({ taxableIncome: 600000, amtPreferences: 0, filingStatus: "single", regularTax: 0, taxYear: 2026 });
+  checkExact("AMT TY2026: single $600k AMTI → exemption $40,100 (50% phase-out, OBBBA §70107)", r.exemption, 40100);
 }
 
 // ── L. ACTC (refundable Child Tax Credit) ──────────────────────────────────
