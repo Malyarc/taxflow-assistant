@@ -53,7 +53,7 @@ open roadmap items (`haven/ROADMAP.md`: estimated taxes `B#14`, amended 1040-X
 `B#18`, Schedule C depreciation `B#19`).
 
 ### Quick wins (days each)
-- [ ] **PREP-Q1 — Year-map sweep.** Find + route every remaining inline
+- [x] **✅ PREP-Q1 — Year-map sweep — SHIPPED 2026-06-03** (educator cap, ACA PTC caps, §461(l) threshold → year-indexed; commit on main). Find + route every remaining inline
   `taxYear === 2025 ? … : 2024` / two-year `Record` selector through the canonical
   year-indexed helpers (`getFederalStandardDeduction`, `getSaltCap`,
   `qbiPhaseInBand`, etc.). Two instances fixed already (QBI band, §163(j) ATI);
@@ -69,7 +69,7 @@ open roadmap items (`haven/ROADMAP.md`: estimated taxes `B#14`, amended 1040-X
   std-ded phase-out; VT dependent exemption + Sched IN-112 SS exclusion.
 
 ### Big-value projects
-- [ ] **PREP-B1 — State "modifications" layer. ⭐ highest-value engine work.**
+- [x] **✅ PREP-B1 — State "modifications" layer — CORE SHIPPED 2026-06-03** (muni add-back + US-Treasury subtraction, wired end-to-end + tested; retirement/SS exclusions + per-line NR/part-year sourcing are the next increments). ⭐ highest-value engine work.
   Today the state calc is `federalAGI − stdDed` with NO modifications for 40+
   states. Add: muni-bond interest **add-back**, US-Treasury-interest
   **subtraction**, configurable retirement/SS exclusions, and per-line
@@ -97,7 +97,7 @@ open roadmap items (`haven/ROADMAP.md`: estimated taxes `B#14`, amended 1040-X
 ## 2. TAX PLANNING engine backlog — all pure, all port 1:1
 
 ### The credibility fix (do first — cheap, highest ROI)
-- [ ] **PLAN-Q1 — Make the engine-verified delta the headline number. ⭐**
+- [x] **✅ PLAN-Q1 — Engine-verified delta as the headline — SHIPPED 2026-06-03** (savingsSource + verifiedSavings + headlineSavings; sort + planningScore now rank on the verified delta). ⭐
   Only ~23% of detectors attach a real engine-computed `whatIf` delta, yet the
   hit-list **sorts on the *heuristic* `estSavings`.** For the verified detectors,
   set `estSavings = whatIf.delta`, sort/score on it, and add an "Engine-verified
@@ -114,8 +114,10 @@ open roadmap items (`haven/ROADMAP.md`: estimated taxes `B#14`, amended 1040-X
   a named owner. Don't hand Haven a time-bomb.
 
 ### The flagship advisory features (the wedge)
-- [ ] **PLAN-B1 — Multi-year Roth-conversion + distribution-sequencing
-  optimizer. ⭐** Bracket-fill sweep, RMD / IRMAA / SS-taxability-aware
+- [x] **✅ PLAN-B1 — Multi-year Roth bracket-fill optimizer — v1 CORE SHIPPED
+  2026-06-03** (`rothOptimizer.ts`, engine-computed per-year conversion + cost
+  ladder; RMD/IRMAA/SS-taxability value model + fill-to-target-rate + endpoint
+  wiring are the next increments). ⭐ Bracket-fill sweep, RMD / IRMAA / SS-taxability-aware
   conversion-ladder solver; account-withdrawal sequencing. The one feature that
   moves TaxFlow from "scanner" to "advisory tool." Builds on the H3 multi-year
   primitive (harden it first — PLAN-B3). **~1 qtr. Lands directly on Haven's
