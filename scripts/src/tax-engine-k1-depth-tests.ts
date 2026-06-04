@@ -427,10 +427,11 @@ header("SSTB-2 — SSTB K-1 below band → full QBI");
 
 // SSTB-3 — SSTB K-1 WITHIN the band → linear phase-out.
 // Filer: single 2024, $116,950 W-2, S-corp K-1 Box 1 = $100,000, isSstb=true.
-// Hand-calc: AGI = 216,950 ; fraction = (241,950 − 216,950)/50,000 = 0.5
-//   SSTB QBI = 100,000 × 0.5 = 50,000 → deduction = 20% × 50,000 = 10,000
+// Hand-calc: AGI 216,950; §199A(e)(2) phases on TAXABLE income before QBI =
+//   216,950 − 14,600 std = 202,350; fraction = (241,950 − 202,350)/50,000 = 0.792
+//   SSTB QBI = 100,000 × 0.792 = 79,200 → deduction = 20% × 79,200 = 15,840
 //   (cap 20%×202,350 = 40,470 — not binding).
-header("SSTB-3 — SSTB K-1 within band → 50% phase-out");
+header("SSTB-3 — SSTB K-1 within band → linear phase-out (taxable-income base)");
 {
   const inputs: TaxReturnInputs = {
     client: { filingStatus: "single", state: "FL", taxYear: 2024 },
@@ -445,15 +446,16 @@ header("SSTB-3 — SSTB K-1 within band → 50% phase-out");
   };
   const r = computeTaxReturnPure(inputs);
   check("AGI = $216,950 (band midpoint)", r.adjustedGrossIncome, 216950, 1);
-  check("QBI deduction = $10,000 (50% SSTB phase-out)", r.qbiDeduction ?? 0, 10000, 0.5);
+  check("QBI deduction = $15,840 (SSTB phase-out on taxable income)", r.qbiDeduction ?? 0, 15840, 0.5);
 }
 
 // SSTB-4 — PER-BUSINESS: one SSTB K-1 + one non-SSTB K-1 within the band.
 // Filer: single 2024, $30,000 W-2; S-corp K-1 A = $100,000 SSTB,
 //        S-corp K-1 B = $80,000 non-SSTB.
-// Hand-calc: AGI = 210,000 ; fraction = (241,950 − 210,000)/50,000 = 0.639
-//   SSTB QBI = 100,000 × 0.639 = 63,900 ; non-SSTB QBI = 80,000 (full)
-//   combined QBI = 143,900 → deduction = 20% × 143,900 = 28,780
+// Hand-calc: AGI 210,000; §199A(e)(2) phases on TAXABLE income before QBI =
+//   210,000 − 14,600 std = 195,400; fraction = (241,950 − 195,400)/50,000 = 0.931
+//   SSTB QBI = 100,000 × 0.931 = 93,100 ; non-SSTB QBI = 80,000 (full)
+//   combined QBI = 173,100 → deduction = 20% × 173,100 = 34,620
 //   (cap 20%×195,400 = 39,080 — not binding).
 //   Proves the non-SSTB K-1 keeps full QBI while the SSTB one phases out.
 header("SSTB-4 — per-business: SSTB + non-SSTB K-1 within band");
@@ -471,7 +473,7 @@ header("SSTB-4 — per-business: SSTB + non-SSTB K-1 within band");
   };
   const r = computeTaxReturnPure(inputs);
   check("AGI = $210,000", r.adjustedGrossIncome, 210000, 1);
-  check("QBI deduction = $28,780 (SSTB phased, non-SSTB full)", r.qbiDeduction ?? 0, 28780, 0.5);
+  check("QBI deduction = $34,620 (SSTB phased on taxable income, non-SSTB full)", r.qbiDeduction ?? 0, 34620, 0.5);
 }
 
 // SSTB-5 — FIX: Sch C SSTB flag does NOT phase out a non-SSTB K-1.

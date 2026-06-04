@@ -511,12 +511,16 @@ section("Scenario 12 — Single CA → TX Jul 1, $400k home gain, $250k §121 ex
   approx("S12", "Federal liability ≈ $38,241 (incl $1,900 NIIT)", r.federalTaxLiability, 38241, 200);
   exact("S12", "Former state code = CA", r.formerStateCode, "CA");
   approx("S12", "Former state (CA) tax ≈ $7,710", r.formerStateTax, 7710, 200);
-  // stateTaxLiability = multiState.totalStateTax includes CA NR + former
-  // (engine sums both; resident state TX itself contributes 0 but the
-  // multiState bundle carries the CA components).
-  approx("S12", "Total state tax (incl CA non-resident + part-year) ≈ $15,299",
-    r.stateTaxLiability, 15299, 500,
-    "TX resident state has no tax; total includes CA non-resident + former-state pieces");
+  // E12 double-count FIX (2026-06-03 audit, caught by the NY→FL scenario
+  // battery): the CA W-2 wages were being taxed TWICE — once as the part-year
+  // former-state resident allocation (formerStateTax) AND again as CA
+  // NON-RESIDENT wages — so a part-year mover paid MORE than a full-year CA
+  // resident. Post-fix the former state is excluded from the non-resident
+  // aggregation, so total state tax = formerStateTax only (TX resident = $0,
+  // no spurious CA non-resident line). Day-prorated CA tax on ~half of AGI.
+  approx("S12", "Total state tax = CA part-year only ≈ $7,848 (no NR double-count)",
+    r.stateTaxLiability, 7848, 100,
+    "TX resident state has no tax; CA former-state income is taxed once via the part-year resident allocation");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

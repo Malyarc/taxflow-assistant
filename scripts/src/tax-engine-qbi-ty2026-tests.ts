@@ -52,15 +52,17 @@ console.log("\n── TY2026 SSTB return resolves the 2026 band end-to-end ─�
 // Single, TY2026, S-corp K-1 Box 1 = $260,000, SSTB. S-corp Box 1 is NOT SE
 // income, and there is no W-2, so AGI = $260,000 exactly.
 //   Std ded (TY2026 single) = $16,100 → taxable before QBI = $243,900.
-//   SSTB QBI = $260,000. 2026 band [201,750, 276,750]; AGI is inside the band.
-//   phaseFraction = (276,750 − 260,000) / (276,750 − 201,750)
-//                 = 16,750 / 75,000 = 0.223333…
-//   Phased QBI income = 260,000 × 0.223333 = 58,066.67.
-//   Deduction = min( 20% × 58,066.67 = 11,613.33 , 20% × 243,900 = 48,780 )
-//             = $11,613.33.
-//   PRE-FIX (TY2024 band, end 241,950): AGI 260,000 > 241,950 → fraction 0 →
-//   qbiCombinedIncome = 0 → deduction = $0 (the $400 OBBBA floor does NOT apply
-//   because active QBI is 0, below the $1,000 gate).
+//   SSTB QBI = $260,000. 2026 band [201,750, 276,750]. §199A(e)(2) phases on
+//   TAXABLE INCOME before QBI ($243,900), NOT AGI — taxable is inside the band.
+//   phaseFraction = (276,750 − 243,900) / (276,750 − 201,750)
+//                 = 32,850 / 75,000 = 0.438.
+//   Phased QBI income = 260,000 × 0.438 = 113,880.
+//   Deduction = min( 20% × 113,880 = 22,776 , 20% × 243,900 = 48,780 )
+//             = $22,776.
+//   PRE-FIX-A (AGI-base bug): phased on AGI $260,000 → fraction 0.22333 →
+//     $11,613.33 (too low — AGI exceeds taxable, so SSTB over-phased).
+//   PRE-FIX-B (TY2024 band, end 241,950): AGI 260,000 > 241,950 → fraction 0 →
+//     deduction $0.
 {
   const inputs: TaxReturnInputs = {
     client: { filingStatus: "single", state: "FL", taxYear: 2026 },
@@ -81,7 +83,7 @@ console.log("\n── TY2026 SSTB return resolves the 2026 band end-to-end ─�
   };
   const r = computeTaxReturnPure(inputs);
   check("AGI = $260,000", r.adjustedGrossIncome, 260000, 1);
-  check("QBI deduction = $11,613.33 (2026 SSTB band)", r.qbiDeduction ?? 0, 11613.33, 1);
+  check("QBI deduction = $22,776 (2026 SSTB band, taxable-income phase-out)", r.qbiDeduction ?? 0, 22776, 1);
   // Discriminator: the pre-fix 2024-band bug collapsed this to $0. Anything well
   // above the $5,000 guard proves the 2026 band is in effect.
   assert("QBI deduction not collapsed (bug fixed: 2026 band in effect)", (r.qbiDeduction ?? 0) > 5000);

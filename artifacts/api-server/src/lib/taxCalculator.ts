@@ -1216,10 +1216,20 @@ export function calculateMultiStateTax(params: {
   const resident = params.residentState.toUpperCase();
   const nonresidentTotalsByState = new Map<string, number>();
 
+  // E12 — when the filer made a part-year move, the FORMER state's income is
+  // taxed by the part-year resident allocation below (formerStateTax on its
+  // pro-rated AGI). It must NOT also be aggregated here as a non-resident work
+  // state, or the former-state W-2 wages are taxed TWICE — the part-year mover
+  // would owe MORE than a full-year former-state resident (a regression caught
+  // by the NY→FL scenario battery: $16,708 part-year vs $12,151 full-year NY).
+  const partYearFormerState = params.partYearResidency
+    ? params.partYearResidency.formerState.toUpperCase()
+    : null;
   // Aggregate per-state wages excluding resident state
   for (const entry of params.perStateWages) {
     const code = (entry.stateCode || "").toUpperCase();
     if (!code || code === resident) continue; // resident-state wages are covered by resident calc
+    if (partYearFormerState && code === partYearFormerState) continue; // covered by part-year formerStateTax
     const wages = Math.max(0, entry.wages);
     if (wages === 0) continue;
     nonresidentTotalsByState.set(code, (nonresidentTotalsByState.get(code) ?? 0) + wages);
@@ -4988,6 +4998,19 @@ export function calculateFederalTaxWithCapitalGains(params: {
   const ordinaryWithStcg = Math.max(0, params.ordinaryTaxableIncome) + Math.max(0, params.shortTermGains);
   const feie = Math.max(0, params.feieExclusion ?? 0);
 
+  // IRS Qualified Dividends & Capital Gain Tax Worksheet, line 10: the amount of
+  // net capital gain (LTCG + qualified dividends) taxed at the 0/15/20%
+  // preferential rates is capped at TAXABLE INCOME. When the standard/itemized
+  // deduction exceeds ordinary income, params.ordinaryTaxableIncome arrives
+  // NEGATIVE; that unused deduction reduces the preferential base. Without this
+  // cap, a return living mostly off LTCG/QDIV (a retiree, or a $5M-LTCG seller)
+  // is over-taxed by (unused deduction × top LTCG rate) — the standard deduction
+  // would otherwise be silently "lost". Callers must pass the SIGNED ordinary
+  // portion (it is floored to 0 above for the ordinary-tax computation).
+  const totalTaxableForPref =
+    params.ordinaryTaxableIncome + Math.max(0, params.shortTermGains) + ltcgIncluded;
+  const prefTaxable = Math.max(0, Math.min(ltcgIncluded, totalTaxableForPref));
+
   // Ordinary tax on the ordinary-income portion (incl. STCG).
   // K9 stacking rule: when FEIE > 0, compute tax on (ordinary + FEIE)
   // then subtract tax on FEIE alone — so the remaining income stacks at
@@ -5008,7 +5031,7 @@ export function calculateFederalTaxWithCapitalGains(params: {
   // above (ordinaryWithStcg + feie) so LTCG occupies the right brackets,
   // then no second subtraction is applied (FEIE is ordinary, not LTCG).
   const ltcgStackBase = feie > 0 ? ordinaryWithStcg + feie : ordinaryWithStcg;
-  const prefTax = calculateLtcgQdivStackedTax(ltcgStackBase, ltcgIncluded, status, year);
+  const prefTax = calculateLtcgQdivStackedTax(ltcgStackBase, prefTaxable, status, year);
 
   // K8 — Kiddie tax (Form 8615 Line 18).
   // When the child has net unearned income > $2,600, that excess is taxed
@@ -5020,13 +5043,13 @@ export function calculateFederalTaxWithCapitalGains(params: {
   // FED-02: net-unearned threshold is year-indexed ($2,600 TY2024 / $2,700 TY2025).
   const kiddieThreshold = KIDDIE_TAX_THRESHOLD[year];
   if (params.kiddieTax && params.kiddieTax.isKiddieTaxFiler && params.kiddieTax.unearnedIncome > kiddieThreshold) {
-    const totalTaxable = ordinaryWithStcg + ltcgIncluded;
+    const totalTaxable = ordinaryWithStcg + prefTaxable;
     const netUnearned = params.kiddieTax.unearnedIncome - kiddieThreshold;
     const amountAtParentRate = Math.min(netUnearned, totalTaxable);
     if (amountAtParentRate > 0) {
       // Child's remaining ordinary base (after carving out the parent-rate portion).
       const ordinaryRemaining = Math.max(0, ordinaryWithStcg - amountAtParentRate);
-      const ltcgRemaining = Math.max(0, ltcgIncluded - Math.max(0, amountAtParentRate - ordinaryWithStcg));
+      const ltcgRemaining = Math.max(0, prefTaxable - Math.max(0, amountAtParentRate - ordinaryWithStcg));
       const childOrdinaryTax = feie > 0
         ? Math.max(0, calculateFederalTax(ordinaryRemaining + feie, status, year) - calculateFederalTax(feie, status, year))
         : calculateFederalTax(ordinaryRemaining, status, year);

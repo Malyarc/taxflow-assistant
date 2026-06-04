@@ -351,6 +351,109 @@ function header(t: string) { console.log(`\n── ${t} ──`); }
   check("S13 refund = $784", r.federalRefundOrOwed, 784, 2);
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// S14 — Cap-gains preferential base capped at taxable income (QDCGT wksht L10)
+// ════════════════════════════════════════════════════════════════════════════
+// Profile: Single, FL, $5,000,000 LTCG only (no ordinary income). TY2024.
+// Hand-calc (IRS Qualified Dividends & Cap Gain Tax Worksheet):
+//   AGI $5,000,000; std ded $14,600 → taxable $4,985,400 (ALL preferential).
+//   QDCGT L10 caps the preferential amount taxed at MIN(net cap gain, taxable)
+//     = min($5,000,000, $4,985,400) = $4,985,400 (the std ded reduces the gain
+//     subject to tax because there is no ordinary income to absorb it).
+//   0% to $47,025 → $0
+//   15% on ($518,900 − $47,025 = $471,875) → $70,781.25
+//   20% on ($4,985,400 − $518,900 = $4,466,500) → $893,300.00
+//   capGainsTax = $964,081.25.  (Pre-fix bug taxed the FULL $5,000,000 →
+//   $967,001.25, over by $14,600 × 20% = $2,920 — the "lost" std deduction.)
+{
+  header("S14 — cap-gains preferential base capped at taxable income (single)");
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [],
+    form1099s: [{ taxYear: 2024, formType: "b", longTermGainLoss: 5000000 }],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  check("S14 taxable income = $4,985,400", r.taxableIncome, 4985400, 1);
+  check("S14 capital-gains tax = $964,081.25 (pref base capped, not $967,001.25)", r.capitalGainsTax, 964081.25, 1);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// S15 — Same cap, MFJ (larger std deduction → larger correction)
+// ════════════════════════════════════════════════════════════════════════════
+// Profile: MFJ, FL, $5,000,000 LTCG only. TY2024.
+// Hand-calc: std ded $29,200 → taxable $4,970,800 (preferential cap).
+//   0% to $94,050 → $0 ; 15% on ($583,750 − $94,050 = $489,700) → $73,455
+//   20% on ($4,970,800 − $583,750 = $4,387,050) → $877,410 ; total $950,865.
+//   (Pre-fix taxed full $5M → $956,705, over by $29,200 × 20% = $5,840.)
+{
+  header("S15 — cap-gains preferential base capped at taxable income (MFJ)");
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024 },
+    w2s: [],
+    form1099s: [{ taxYear: 2024, formType: "b", longTermGainLoss: 5000000 }],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  check("S15 capital-gains tax = $950,865 (MFJ pref base capped)", r.capitalGainsTax, 950865, 1);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// S16 — Realistic retiree living off qualified dividends (cap binds at 15%)
+// ════════════════════════════════════════════════════════════════════════════
+// Profile: Single retiree, FL, $120,000 qualified dividends only. TY2024.
+// Hand-calc: AGI $120,000; std ded $14,600 → taxable $105,400 (all QDIV).
+//   QDCGT L10 cap = min($120,000, $105,400) = $105,400.
+//   0% to $47,025 → $0 ; 15% on ($105,400 − $47,025 = $58,375) → $8,756.25.
+//   No 20% (taxable < $518,900). No NIIT (AGI < $200k). capGainsTax $8,756.25.
+//   (Pre-fix taxed full $120,000 → 15% on $72,975 = $10,946.25, over by $2,190.)
+{
+  header("S16 — retiree on $120k QDIV (cap binds in the 15% bracket)");
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [],
+    form1099s: [{ taxYear: 2024, formType: "div", ordinaryDividends: 120000, qualifiedDividends: 120000 }],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  check("S16 taxable income = $105,400", r.taxableIncome, 105400, 1);
+  check("S16 capital-gains tax = $8,756.25 (QDIV pref base capped at taxable)", r.capitalGainsTax, 8756.25, 1);
+  check("S16 federal tax = $8,756.25 (no ordinary tax, no NIIT)", r.federalTaxLiability, 8756.25, 2);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// S17 — Part-year mover: former-state income taxed ONCE, not double-counted
+// ════════════════════════════════════════════════════════════════════════════
+// Profile: Single, NY→FL on 2024-07-01, $200k W-2 (NY-sourced) + $8k QDIV +
+//   $12k LTCG distribution. AGI $220,000.
+// Hand-calc (engine day-proration model, E12):
+//   NY resident days = Jan 1–Jul 1 = 182 of 366. NY pro-rated AGI =
+//     220,000 × 182/366 = $109,398.91. NY tax on (that − pro-rated NY std ded)
+//     ≈ $5,757 (formerStateTax).
+//   Total state tax = NY former-state $5,757 + TX resident $0. The NY W-2 must
+//   NOT ALSO be taxed as NON-RESIDENT NY income (the pre-fix bug summed both →
+//   $16,709, MORE than a full-year NY resident — impossible).
+//   INVARIANT: a part-year resident pays ≤ a full-year former-state resident.
+{
+  header("S17 — part-year former-state income taxed once (no double-count)");
+  const partYear = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, residencyChangedInYear: true, formerState: "NY", residencyChangeDate: "2024-07-01" },
+    w2s: [{ taxYear: 2024, wagesBox1: 200000, federalTaxWithheldBox2: 38000, stateCode: "NY" }],
+    form1099s: [{ taxYear: 2024, formType: "div", ordinaryDividends: 8000, qualifiedDividends: 8000, totalCapitalGainDistribution: 12000 }],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  const fullYearNy = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "NY", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 200000, federalTaxWithheldBox2: 38000, stateCode: "NY" }],
+    form1099s: [{ taxYear: 2024, formType: "div", ordinaryDividends: 8000, qualifiedDividends: 8000, totalCapitalGainDistribution: 12000 }],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  check("S17 part-year state tax = $5,757 (NY former-state only, no NR double-count)", partYear.stateTaxLiability, 5757, 1);
+  checkExact("S17 INVARIANT: part-year ≤ full-year former-state resident", partYear.stateTaxLiability <= fullYearNy.stateTaxLiability, true);
+}
+
 const total = PASS.length + FAIL.length;
 console.log(`\n${"═".repeat(66)}`);
 console.log(`RESULTS: ${PASS.length} passed, ${FAIL.length} failed (${total} total)`);

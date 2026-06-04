@@ -31,6 +31,7 @@ import {
   calculateAdditionalMedicareTax,
   calculateQbi,
   qbiPhaseInBand,
+  resolveTaxYear,
   calculateObbbaSchedule1ADeductions,
   calculateAmt,
   calculateFederalTaxWithCapitalGains,
@@ -1183,6 +1184,15 @@ export function detectWashSales(
  */
 export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn {
   const { client, w2s, form1099s, adjustments, taxYear, overrides = {} } = inputs;
+  // Year used to index §179/bonus/§461(l)/§448(c) maps below. Clamp to the
+  // supported range (resolveTaxYear: <2024→2024, >LATEST→latest) so these maps
+  // resolve IDENTICALLY to every other year-indexed value in the engine. Multi-
+  // year planning projects taxYear past LATEST_YEAR (e.g. a 5-year Roth ladder),
+  // and out-of-range years previously fell back to ad-hoc, mutually inconsistent
+  // defaults (§179→2024, §461(l)→2025, §448(c)→2024) — a drift hazard the engine
+  // was burned by twice. Do NOT reassign the RAW `taxYear`: the OBBBA Schedule
+  // 1-A window + QBI $400-floor gates intentionally test the raw year.
+  const resolvedMapYear = resolveTaxYear(taxYear);
   const rentalProperties = inputs.rentalProperties ?? [];
 
   const additionalIncome = overrides.additionalIncome ?? 0;
@@ -1319,7 +1329,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     2025: 0.40,
     2026: 1.00,
   };
-  const s179Cfg = SECTION_179_CAPS[taxYear] ?? SECTION_179_CAPS[2024];
+  const s179Cfg = SECTION_179_CAPS[resolvedMapYear];
   // Phase-out: §179 limit reduced $-for-$ when total qualified property
   // purchases (approximated as §179 elected + bonus depr basis) exceed
   // the phase-out threshold.
@@ -1330,8 +1340,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // applied later when we have net SE earnings; for now use the cap.
   const section179Preliminary = Math.min(section179ElectedAdj, s179EffectiveCap);
   // Bonus depreciation: % × basis. No income limit.
-  const bonusDepreciationApplied = bonusDeprBasisAdj *
-    (BONUS_DEPR_RATES[taxYear] ?? BONUS_DEPR_RATES[2024]);
+  const bonusDepreciationApplied = bonusDeprBasisAdj * BONUS_DEPR_RATES[resolvedMapYear];
 
   // Income / SE / investment / QBI / AMT
   const seIncomeFromAdj = sumByType("self_employment_income");
@@ -1826,7 +1835,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     2025: { single: 313_000, head_of_household: 313_000, married_filing_separately: 313_000, qualifying_widow: 626_000, married_filing_jointly: 626_000 },
     2026: { single: 313_000, head_of_household: 313_000, married_filing_separately: 313_000, qualifying_widow: 626_000, married_filing_jointly: 626_000 },
   };
-  const section461lThreshold = SECTION_461L_THRESHOLDS[taxYear] ?? SECTION_461L_THRESHOLDS[2025];
+  const section461lThreshold = SECTION_461L_THRESHOLDS[resolvedMapYear];
   // §461(l) auto-aggregation: compute when CPA didn't supply an explicit addback.
   let section461lAutoAddback = 0;
   if (section461lExcessLossAddbackAdj <= 0) {
@@ -2055,7 +2064,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     2024: 30_000_000, 2025: 31_000_000, 2026: 32_000_000,
   };
   const section163jGrossReceipts = Math.max(0, section163jGrossReceiptsAdj);
-  const section163jGrossReceiptsThreshold = SECTION_448C_THRESHOLD[taxYear] ?? 30_000_000;
+  const section163jGrossReceiptsThreshold = SECTION_448C_THRESHOLD[resolvedMapYear];
   const section163jSmallBusinessExempt =
     section163jGrossReceipts > 0 && section163jGrossReceipts <= section163jGrossReceiptsThreshold;
 
@@ -2338,16 +2347,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // band (and MFS used a non-statutory half-threshold). The canonical map is
   // keyed through the latest supported year; MFS = single per §199A(e)(2).
   const phaseIn = qbiPhaseInBand(taxYear, client.filingStatus);
-  // Compute the phase-out fraction unconditionally; it is APPLIED only to the
-  // SSTB QBI portion below (which is 0 when no business is SSTB), so this is a
-  // no-op for non-SSTB returns.
-  let sstbPhaseFraction = 1;
-  if (calc.adjustedGrossIncome >= phaseIn.end) {
-    sstbPhaseFraction = 0;
-  } else if (calc.adjustedGrossIncome > phaseIn.start) {
-    sstbPhaseFraction =
-      (phaseIn.end - calc.adjustedGrossIncome) / (phaseIn.end - phaseIn.start);
-  }
+  // The SSTB phase-out fraction is computed AFTER the NOL step below, keyed on
+  // post-NOL, pre-QBI taxable income (the §199A(e)(2) "threshold amount" base) —
+  // NOT AGI. See the detailed note at its computation site.
 
   // K4 — NOL carryforward (post-TCJA 80% limit, IRC §172(a)(2)). Computed
   // BEFORE QBI (FED-04) so the §199A 20%-of-taxable-income cap is keyed to
@@ -2360,6 +2362,24 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const nolDeduction = Math.min(nolCarryforwardAvailable, Math.max(0, nolLimit));
   const nolCarryforwardRemaining = Math.max(0, nolCarryforwardAvailable - nolDeduction);
   const taxableAfterNol = Math.max(0, calc.taxableIncome - nolDeduction);
+
+  // §199A(e)(2): the SSTB phase-out is keyed to TAXABLE INCOME computed without
+  // regard to §199A (Form 8995-A "taxable income before the QBI deduction" =
+  // post-NOL, pre-QBI taxable income) — NOT AGI. This MUST use the same base as
+  // the §199A(b)(2)(B) wage/UBIA limit (calculateQbi's taxableIncomeBeforeQbi =
+  // taxableAfterNol, below) so the two §199A mechanics can never diverge. Keying
+  // off AGI (which exceeds taxable income by the std/itemized + OBBBA deductions)
+  // phased SSTB owners — doctors, lawyers, consultants, financial advisors — out
+  // of the deduction too early, under-stating QBI and over-stating their tax.
+  // Computed unconditionally; APPLIED only to the SSTB QBI portion (0 for non-
+  // SSTB returns), so it is a no-op when no business is an SSTB.
+  let sstbPhaseFraction = 1;
+  if (taxableAfterNol >= phaseIn.end) {
+    sstbPhaseFraction = 0;
+  } else if (taxableAfterNol > phaseIn.start) {
+    sstbPhaseFraction =
+      (phaseIn.end - taxableAfterNol) / (phaseIn.end - phaseIn.start);
+  }
 
   // Per-business SSTB split: the Sch C QBI is SSTB when schCIsSstb; each K-1's
   // SSTB QBI is in k1QbiSstbPortion. Phase-out applies to the SSTB portion only;
@@ -2414,7 +2434,13 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // ── Step 6: Federal tax (ordinary + preferential) ──────────────────
   // Use post-netting LTCG (not raw 1099-B value) for preferential calculation.
   const preferentialIncome = ltcgPreferential + qualifiedDividends;
-  const ordinaryPortionOfTaxable = Math.max(0, taxableAfterObbba - preferentialIncome);
+  // SIGNED ordinary portion (may be NEGATIVE when the std/itemized deduction +
+  // QBI + OBBBA deductions exceed ordinary income — e.g. a return living mostly
+  // off LTCG/QDIV). calculateFederalTaxWithCapitalGains floors this to 0 for the
+  // ordinary-tax computation but needs the negative to apply the QDCGT line-10
+  // cap (preferential income is limited to taxable income). Do NOT Math.max(0)
+  // here or the unused deduction is lost and the return is over-taxed.
+  const ordinaryPortionOfTaxable = taxableAfterObbba - preferentialIncome;
 
   // K8 — Kiddie tax (Form 8615) child unearned income.
   // Unearned for our engine = interest + ordinary divs + qualified divs +
