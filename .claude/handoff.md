@@ -1,3 +1,37 @@
+# Handoff Note — 2026-06-04b (PLANNING-DETECTOR AUDIT — 7 gating fixes, commit `71306a8`)
+
+Follow-up to the deep audit below: completed the one audit surface that session left
+open (the `tax-state-plan` / planning-detector code review). Fanned out one agent per
+detector to read the real gating code + produce SHOULD-fire/SHOULD-NOT clients, then
+verified every claim against the engine via a ground-truth harness (run each client
+through `evaluatePlanningOpportunities`, check fired strategy IDs). **8 detectors
+audited, 7 had real gating bugs — all fixed + regression-locked. Planning suite
+527→539 assertions; full no-API battery 3,432 green; CI gates green.**
+
+- **False positives** (fired when it shouldn't): G1.4 Roth conversion (no pre-tax-
+  balance check → advised converting a $0 trad IRA; now gates on supplied balances),
+  G1.26 backdoor Roth (stale TY2024 phase-out tops → fired for TY2025/26 clients still
+  able to contribute directly; now year-indexed), G1.31 Saver's Credit (HSA in the
+  §25B gate → phantom credit; HSA isn't Form-8880-eligible), G1.17 S-corp reasonable-
+  comp (no entity gate → fired for active partnerships with no wage/dist lever; added
+  S-corp presence gate + TY2026 SS wage base), G1.7 QBI phase-in (stale "engine
+  doesn't model the wage/UBIA limit" premise + fictional 50%-of-QBI savings → now uses
+  the engine's actual limit impact).
+- **Missed opportunities** (suppressed a qualifying client): G1.1 SEP/Solo-401(k)
+  (hard-excluded MFS, but §408(k)/§415(c) have no filing-status limit), G1.2 PTET
+  (itemizing gate suppressed std-deduction filers — prime candidates when the OBBBA
+  SALT cap phases to the $10k floor).
+- G1.6 NIIT-cliff was the one clean detector (sound gating).
+
+**Methodology note (saved to memory):** the ground-truth harness caught that 8 of the
+scenario-battery's "discrepancies" were agent INPUT errors (double-entered income),
+not engine bugs — always verify agent-traced gating against a real engine run.
+
+Verification harness pattern (delete-after-use temp files) is gone; the 12 new
+`AUDIT-*` regression assertions in `tax-engine-planning-tests.ts` lock every fix.
+
+---
+
 # Handoff Note — 2026-06-04 (DEEP AUDIT — 13 fixes, merged to main + deployed to prod)
 
 Multi-agent deep audit (security / DB-scale / code-quality / tax-correctness) +
