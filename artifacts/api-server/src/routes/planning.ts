@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and, ne, gte, lte, gt } from "drizzle-orm";
 import { db, adjustmentsTable, clientsTable, taxReturnsTable } from "@workspace/db";
 import {
   GetPlanningOpportunitiesParams,
@@ -341,43 +341,58 @@ router.get("/planning-hit-list", async (req, res): Promise<void> => {
       topHits: OpportunityHit[];
     };
     const entries: Entry[] = [];
+    let skippedClients = 0;
     for (const c of allClients) {
       if (stateFilter && (c.state ?? "").toUpperCase() !== stateFilter) continue;
-      const computed = await computeTaxReturn(c.id);
-      if (!computed) continue;
-      const agi = computed.result.adjustedGrossIncome;
-      if (minAgi != null && Number.isFinite(minAgi) && agi < minAgi) continue;
-      if (maxAgi != null && Number.isFinite(maxAgi) && agi > maxAgi) continue;
-      const adjustments = await db
-        .select()
-        .from(adjustmentsTable)
-        .where(eq(adjustmentsTable.clientId, c.id));
-      const hits = evaluatePlanningOpportunities({
-        client: computed.client,
-        computed: computed.result,
-        adjustments: adjustments as AdjustmentFact[],
-      });
-      const visibleHits = categoryFilter
-        ? hits.filter((h) => h.category === categoryFilter)
-        : hits;
-      if (visibleHits.length === 0) continue;
-      const fedRate = federalMarginalRate(computed.result);
-      const score = planningScore({ hits: visibleHits, federalMarginalRate: fedRate });
-      const totalEstSavings = visibleHits.reduce((s, h) => s + h.estSavings, 0);
-      entries.push({
-        clientId: c.id,
-        firstName: c.firstName,
-        lastName: c.lastName,
-        email: c.email ?? null,
-        state: c.state ?? "",
-        taxYear: computed.result.taxYear,
-        agi: Math.round(agi),
-        federalMarginalRate: fedRate,
-        planningScore: Math.round(score),
-        totalEstSavings: Math.round(totalEstSavings),
-        numHits: visibleHits.length,
-        topHits: visibleHits.slice(0, 3),
-      });
+      try {
+        const computed = await computeTaxReturn(c.id);
+        if (!computed) continue;
+        const agi = computed.result.adjustedGrossIncome;
+        if (minAgi != null && Number.isFinite(minAgi) && agi < minAgi) continue;
+        if (maxAgi != null && Number.isFinite(maxAgi) && agi > maxAgi) continue;
+        // Reuse the adjustments computeTaxReturn already loaded (it also includes
+        // the synthesized prior-year carryforwards the engine itself saw) instead
+        // of firing a second per-client query.
+        const hits = evaluatePlanningOpportunities({
+          client: computed.client,
+          computed: computed.result,
+          adjustments: computed.inputs.adjustments,
+        });
+        const visibleHits = categoryFilter
+          ? hits.filter((h) => h.category === categoryFilter)
+          : hits;
+        if (visibleHits.length === 0) continue;
+        const fedRate = federalMarginalRate(computed.result);
+        const score = planningScore({ hits: visibleHits, federalMarginalRate: fedRate });
+        const totalEstSavings = visibleHits.reduce((s, h) => s + h.estSavings, 0);
+        entries.push({
+          clientId: c.id,
+          firstName: c.firstName,
+          lastName: c.lastName,
+          email: c.email ?? null,
+          state: c.state ?? "",
+          taxYear: computed.result.taxYear,
+          agi: Math.round(agi),
+          federalMarginalRate: fedRate,
+          planningScore: Math.round(score),
+          totalEstSavings: Math.round(totalEstSavings),
+          numHits: visibleHits.length,
+          topHits: visibleHits.slice(0, 3),
+        });
+      } catch (clientErr) {
+        // Error isolation: one client with malformed data (or a schema drift on
+        // one of its child tables) must NOT take down the entire firm-wide
+        // hit-list. Log + skip that client; keep ranking the rest. (This is the
+        // class of failure that previously 500'd the whole dashboard widget.)
+        skippedClients += 1;
+        logger.warn(
+          { err: clientErr, clientId: c.id },
+          "Planning hit-list: skipping client (per-client compute failed)",
+        );
+      }
+    }
+    if (skippedClients > 0) {
+      logger.warn({ skippedClients }, "Planning hit-list completed with skipped clients");
     }
     entries.sort((a, b) => b.planningScore - a.planningScore);
     const capped = Number.isFinite(limit) && limit > 0 ? entries.slice(0, limit) : entries;
@@ -448,21 +463,29 @@ router.get("/clients/:clientId/peer-benchmark", async (req, res): Promise<void> 
     const targetAgi = target.result.adjustedGrossIncome;
     const targetEffectiveRate = target.result.effectiveTaxRate;
 
-    // 2. Load all firm clients and compute each one's return + effective rate.
-    // Bounded N expected for firm-scale (hundreds, not thousands) — fine
-    // for an MVP. Future: a materialized cohort_stats table would scale.
-    const allClients = await db.select().from(clientsTable);
-    const peerRates: number[] = [];
-    for (const c of allClients) {
-      if (c.id === params.data.clientId) continue;
-      const peer = await computeTaxReturn(c.id);
-      if (!peer) continue;
-      const peerAgi = peer.result.adjustedGrossIncome;
-      if (Math.abs(peerAgi - targetAgi) > bandWidth) continue;
-      // Skip peers with zero income (effectiveRate undefined / inflated).
-      if (peer.result.totalIncome <= 0) continue;
-      peerRates.push(peer.result.effectiveTaxRate);
-    }
+    // 2. Load the peer cohort with ONE indexed query over the persisted
+    // tax_returns columns (adjusted_gross_income + effective_tax_rate) — these
+    // are written by the same engine via onConflictDoUpdate after every recalc,
+    // so reading them is equivalent to recomputing, at 1 query instead of N full
+    // DB-backed engine passes. The AGI band is pushed into SQL (served by
+    // tax_returns_agi_idx), and the cohort is pinned to the target's tax year so
+    // peers are compared like-for-like. Skip rows with no income (effective rate
+    // undefined/inflated) — mirrors the old total_income > 0 guard.
+    const cohortRows = await db
+      .select({ effRate: taxReturnsTable.effectiveTaxRate })
+      .from(taxReturnsTable)
+      .where(
+        and(
+          eq(taxReturnsTable.taxYear, target.result.taxYear),
+          ne(taxReturnsTable.clientId, params.data.clientId),
+          gt(taxReturnsTable.totalIncome, "0"),
+          gte(taxReturnsTable.adjustedGrossIncome, String(targetAgi - bandWidth)),
+          lte(taxReturnsTable.adjustedGrossIncome, String(targetAgi + bandWidth)),
+        ),
+      );
+    const peerRates: number[] = cohortRows
+      .map((r) => Number(r.effRate))
+      .filter((v) => Number.isFinite(v));
 
     if (peerRates.length === 0) {
       res.json({

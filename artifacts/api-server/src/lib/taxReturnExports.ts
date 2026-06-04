@@ -263,7 +263,15 @@ export function buildTaxReturnJsonExport(client: Client, ret: ComputedTaxReturn)
 // and the Reference Code lets them resolve which IRS line each row points at.
 
 function csvEscape(s: string | number): string {
-  const str = String(s);
+  let str = String(s);
+  // OWASP CSV-injection defense: a cell beginning with = + - @ (or a leading tab
+  // / carriage return) is executed as a FORMULA by Excel / Google Sheets when a
+  // CPA opens the export. Client-controlled text (client name, email, labels)
+  // must not be able to smuggle a formula. Neutralize with a leading single
+  // quote — but leave plain (including negative) numbers untouched so the
+  // numeric value column stays numeric.
+  const looksNumeric = /^-?\d+(\.\d+)?$/.test(str);
+  if (!looksNumeric && /^[=+\-@\t\r]/.test(str)) str = "'" + str;
   if (/[",\n]/.test(str)) return `"${str.replace(/"/g, '""')}"`;
   return str;
 }

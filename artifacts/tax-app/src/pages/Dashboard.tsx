@@ -84,7 +84,7 @@ export default function Dashboard() {
 }
 
 function PlanningHitListWidget() {
-  const { data, isLoading } = useGetPlanningHitList(
+  const { data, isLoading, isError, refetch } = useGetPlanningHitList(
     { limit: 10 },
     { query: { queryKey: getGetPlanningHitListQueryKey({ limit: 10 }) } },
   );
@@ -106,6 +106,18 @@ function PlanningHitListWidget() {
       <CardContent>
         {isLoading ? (
           <Skeleton className="h-32 w-full" />
+        ) : isError ? (
+          <div className="text-sm text-destructive py-4">
+            Couldn't load planning targets — the server returned an error. This is a
+            system problem, not an empty roster, so the data below may be missing.{" "}
+            <button
+              type="button"
+              onClick={() => refetch()}
+              className="underline underline-offset-2 hover:text-destructive/80"
+            >
+              Retry
+            </button>
+          </div>
         ) : !data || data.entries.length === 0 ? (
           <div className="text-sm text-muted-foreground py-4">
             No planning opportunities detected across the client roster yet.

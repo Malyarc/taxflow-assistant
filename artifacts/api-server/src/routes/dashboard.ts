@@ -26,7 +26,12 @@ router.get("/dashboard/summary", async (_req, res): Promise<void> => {
   const col = taxReturnsTable.federalRefundOrOwed;
   const [agg] = await db
     .select({
-      completed: sql<number>`count(*) filter (where ${col} is not null)`,
+      // "Completed" = DISTINCT clients with at least one computed return. Counting
+      // rows here double-counted multi-year clients (e.g. a client with both a
+      // TY2024 and TY2025 row counted twice), pushing completedReturns above
+      // totalClients so `pendingReturns = max(0, totalClients - completed)` was
+      // pinned to 0 by the clamp — masking the true pending count.
+      completed: sql<number>`count(distinct ${taxReturnsTable.clientId}) filter (where ${col} is not null)`,
       refundCount: sql<number>`count(*) filter (where ${col} > 0)`,
       totalRefunds: sql<number>`coalesce(sum(${col}) filter (where ${col} > 0), 0)`,
       totalOwed: sql<number>`coalesce(sum(-${col}) filter (where ${col} < 0), 0)`,

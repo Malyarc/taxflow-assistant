@@ -764,10 +764,32 @@ router.patch("/clients/:clientId/tax-return", async (req, res): Promise<void> =>
     }
   }
 
+  // Resolve the tax year to update. WITHOUT a taxYear predicate the WHERE would
+  // match EVERY year-row for this client (the schema supports one return per
+  // (client, year)), so a single-field manual edit would silently overwrite the
+  // prior-year return too. Default to the client's current tax year; allow an
+  // explicit ?taxYear= override to target a specific year.
+  const [clientRow] = await db
+    .select({ taxYear: clientsTable.taxYear })
+    .from(clientsTable)
+    .where(eq(clientsTable.id, params.data.clientId));
+  if (!clientRow) {
+    res.status(404).json({ error: "Client not found" });
+    return;
+  }
+  const yearParam = typeof req.query.taxYear === "string" ? Number(req.query.taxYear) : null;
+  const resolvedYear =
+    yearParam != null && Number.isFinite(yearParam) ? yearParam : clientRow.taxYear;
+
   const [taxReturn] = await db
     .update(taxReturnsTable)
     .set(updateData)
-    .where(eq(taxReturnsTable.clientId, params.data.clientId))
+    .where(
+      and(
+        eq(taxReturnsTable.clientId, params.data.clientId),
+        eq(taxReturnsTable.taxYear, resolvedYear),
+      ),
+    )
     .returning();
   if (!taxReturn) {
     res.status(404).json({ error: "Tax return not found" });

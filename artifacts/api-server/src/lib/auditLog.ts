@@ -117,7 +117,16 @@ export function redactPii(
   for (const [k, v] of Object.entries(obj)) {
     if (isSensitiveKey(k)) {
       out[k] = maskSensitiveValue(v);
-    } else if (v !== null && typeof v === "object" && !Array.isArray(v)) {
+    } else if (Array.isArray(v)) {
+      // Recurse into array ELEMENTS (e.g., a snapshot wrapping w2s[]/form1099s[]
+      // rows that each carry an SSN/TIN). Without this, sensitive keys nested
+      // inside array items were passed through unredacted — a latent PII leak.
+      out[k] = v.map((el) =>
+        el !== null && typeof el === "object"
+          ? redactPii(el as Record<string, unknown>)
+          : el,
+      );
+    } else if (v !== null && typeof v === "object") {
       // Recurse into nested objects (e.g., audit snapshots that wrap a row).
       out[k] = redactPii(v as Record<string, unknown>);
     } else {
