@@ -1,3 +1,79 @@
+# Handoff Note — 2026-06-04 (DEEP AUDIT — 13 fixes, merged to main + deployed to prod)
+
+Multi-agent deep audit (security / DB-scale / code-quality / tax-correctness) +
+an 18-archetype real-world scenario battery (each independently hand-calc'd from
+IRS rules) + a full live UI click-through. **2 commits on `main`, pushed +
+deployed to EC2 + frontend rsynced + prod recompute-swept.**
+
+## What landed (commits `87db3e4` engine-correctness, `0e92287` hardening)
+
+**3 engine correctness bugs (wrong tax number shipped) — each hand-calc'd + regression-locked:**
+1. **QDCGT line-10 cap** (`calculateFederalTaxWithCapitalGains`): the capital-gains
+   preferential base is now capped at `min(net cap gain, taxable income)`. When
+   deductions exceed ordinary income (retiree/FIRE on LTCG/QDIV, big-LTCG seller),
+   the engine taxed the FULL preferential at 0/15/20% — over-taxing by (unused
+   deduction × top LTCG rate). Call site passes the SIGNED ordinary portion.
+   Regression S14/S15/S16 in `tax-engine-realworld-scenarios-tests.ts`. *Found by
+   manual hand-calc during the live UI click-through.*
+2. **§199A SSTB phase-out base**: keyed on AGI; now keyed on TAXABLE income before
+   QBI per §199A(e)(2) (parity with the wage/UBIA limit). AGI>taxable phased SSTB
+   owners out too early. Moved below NOL, keyed on `taxableAfterNol`. 3 SSTB tests
+   re-hand-calc'd (`-qbi-ty2026`, `-k1-depth`). *Found by the audit (cq-engine-1).*
+3. **Part-year multi-state double-count**: a part-year mover's former-state W-2 was
+   taxed BOTH as the part-year resident allocation AND as non-resident wages — a
+   NY→FL mover paid MORE than a full-year NY resident ($16,709 vs $12,152). Former
+   state now excluded from non-resident aggregation. Regression S17 + cpa-scenarios
+   S12 corrected. *Found by the scenario battery.*
+- Plus **year-map clamp**: §179/bonus/§461(l)/§448(c) now index via `resolveTaxYear`
+  (consistent clamping) instead of ad-hoc per-map fallbacks that drifted on
+  out-of-range years (multi-year projections past LATEST_YEAR).
+
+**10 hardening fixes (`0e92287`):** planning hit-list **per-client error isolation**
+(one bad client no longer 500s the firm-wide list — the failure that was masked as
+"no opportunities" on the dashboard) + drop redundant adjustments query; **peer-
+benchmark** N full-recomputes → ONE indexed SQL read over persisted columns; **PATCH
+/tax-return** scoped to one tax year (was clobbering all year-rows — data loss);
+**dashboard/summary** counts DISTINCT clients (row-count double-counted multi-year →
+pendingReturns masked to 0 by clamp; now shows true pending); **Dashboard widget**
+shows a real error state (not the benign empty state) on API failure; **CSV export**
+formula-injection neutralized; **AI extraction** prompt fenced (injection defense);
+**audit-log** redactPii recurses into arrays (nested SSN/TIN leak).
+
+## Schema drift (FOUND + FIXED)
+The **local dev DB** was behind the Drizzle schema by 4 columns + 1 table
+(`capital_transactions.quantity`/`.account`, `schedule_k1_data.box4_guaranteed_payments`/`.is_sstb`,
+`disclosure_consents`) — this 500'd the local planning hit-list. Applied additive
+DDL locally. **Prod (Neon) was verified CURRENT — no drift, no prod incident.** The
+stale-migration-baseline risk is real: `lib/db/drizzle` still only has `0000`.
+
+## Verification (all green)
+- 46 no-API suites / **3,420 assertions** green; full workspace typecheck + test
+  typecheck (CI gates) green.
+- Scenario battery: 135/144 hand-calc'd fields matched the engine; the 1 real bug
+  (part-year) fixed; the other 8 discrepancies were agent input/harness errors
+  (engine correct — verified by inspecting inputs).
+- **181/181 local + 10/10 prod returns recompute cleanly** through the fixed engine
+  (real-data smoke test, 0 throws).
+- Live click-through: dashboard, client list, all 11 ClientDetail tabs, Tax
+  Calculator, Planning (cross-strategy stacking) all verified working.
+- Deployed: pm2 `taxflow` online + healthz ok; frontend bundle rsynced.
+
+## Recommended next (prioritized)
+1. **DB-scale (still open, low-urgency at demo scale):** `GET /clients` has no
+   pagination (SELECT * whole table) — keyset-paginate + project columns + move
+   ClientList filtering server-side (frontend change; won't port to Haven). The
+   durable hit-list fix is a precomputed `planning_score` column on `tax_returns`
+   ranked by one indexed `ORDER BY ... LIMIT` (replaces the per-client recompute).
+2. **Re-run the lost `tax-state-plan` audit dimension** (its agent failed to emit
+   structured output) for code-level planning-detector + state-math review — the
+   scenario battery covered the intent but not the detector source.
+3. **Migration cutover** — baseline the prod Neon DB + finish versioned migrate
+   (the `0000`-only baseline is the root cause of the drift class; `docs/db-migrations.md`).
+4. God-file split (planningEngine 8.1k / taxCalculator 5.9k / taxReturnEngine 3.2k /
+   ClientDetail 5k lines) — deferred: high-risk, low durable value mid-Haven-migration.
+
+---
+
 # Handoff Note — 2026-06-03 (P0 legal/security gate — 6 commits on branch `p0-legal-security-gate`)
 
 Session continuation point for the next Claude (or human) on TaxFlow Assistant.
