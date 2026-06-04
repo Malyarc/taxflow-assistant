@@ -265,4 +265,18 @@ export interface OpportunityHit {
    * baselineInputs are provided to the planning engine.
    */
   multiYear?: OpportunityMultiYear;
+  /**
+   * PLAN-Q1 — provenance of the headline savings. "engine-verified" = the hit
+   * carries a real engine-computed what-if delta (`verifiedSavings`, also the
+   * ranking number); "estimate" = a heuristic single-multiplier approximation
+   * (`estSavings` only). Set by `annotateVerifiedSavings()` after detection.
+   */
+  savingsSource?: "engine-verified" | "estimate";
+  /**
+   * PLAN-Q1 — the engine-verified current-year savings, |whatIf refund delta|,
+   * present iff savingsSource === "engine-verified". The hit-list sort + the
+   * firm-wide planningScore rank on this (via `headlineSavings`) when present.
+   * `estSavings` is left intact so both numbers + the source travel on the hit.
+   */
+  verifiedSavings?: number;
 }

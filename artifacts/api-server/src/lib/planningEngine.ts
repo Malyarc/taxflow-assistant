@@ -7779,10 +7779,38 @@ export function planningScore(args: {
   const { hits, federalMarginalRate } = args;
   if (hits.length === 0) return 0;
   const weightedSavings = hits.reduce(
-    (s, h) => s + h.estSavings * h.confidence * stickinessWeight(h.recurring),
+    (s, h) => s + headlineSavings(h) * h.confidence * stickinessWeight(h.recurring),
     0,
   );
   return weightedSavings * marginalRateWeight(federalMarginalRate) * engagementComplexityWeight(hits.length);
+}
+
+/**
+ * PLAN-Q1 — the headline / ranking savings for a hit: the engine-verified
+ * what-if delta when present, else the heuristic estimate.
+ */
+export function headlineSavings(hit: OpportunityHit): number {
+  return hit.verifiedSavings ?? hit.estSavings;
+}
+
+/**
+ * PLAN-Q1 — tag each hit's savings provenance and, for a "savings"-semantics hit
+ * carrying an engine-verified what-if, expose the engine-computed delta as
+ * `verifiedSavings`. The hit-list sort + the firm-wide planningScore then rank on
+ * that verified number (via `headlineSavings`) instead of a heuristic
+ * single-multiplier guess. `estSavings` is left intact, so both numbers + the
+ * source travel on the hit and a consumer/UI can show "$X engine-verified" vs
+ * "≈$Y estimate". "cost"-semantics hits (Roth) keep their heuristic headline.
+ */
+export function annotateVerifiedSavings(hits: OpportunityHit[]): void {
+  for (const h of hits) {
+    if (h.whatIf && h.whatIf.semantics === "savings") {
+      h.verifiedSavings = Math.round(Math.abs(h.whatIf.delta.combinedRefundDelta));
+      h.savingsSource = "engine-verified";
+    } else {
+      h.savingsSource = "estimate";
+    }
+  }
 }
 
 /**
@@ -8032,7 +8060,9 @@ export function evaluatePlanningOpportunities(args: PlanningInputs): Opportunity
     const strat = CATALOG_V1.strategies.find((x) => x.id === h.strategyId);
     return !strat || !isStrategyExpiredForYear(strat.validUntil, computed.taxYear);
   });
-  liveHits.sort((a, b) => b.estSavings - a.estSavings);
+  // PLAN-Q1 — rank on the engine-verified delta where present, not the heuristic.
+  annotateVerifiedSavings(liveHits);
+  liveHits.sort((a, b) => headlineSavings(b) - headlineSavings(a));
   return liveHits;
 }
 
