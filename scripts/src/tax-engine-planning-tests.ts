@@ -192,16 +192,29 @@ header("G1.1+3 — MFJ FL TY2025, $1M SE: contribution $70k, savings $25,900");
 }
 
 // --- G1.1 negative Case 4: MFS filer — must NOT trigger ---
-// Per spec: MFS is excluded (SEP not available to MFS in practice; even if it
-// were, planning ROI is poor at MFS bracket compression).
-header("G1.1-4 — MFS suppresses (negative)");
+// G1.1-4 — MFS is ELIGIBLE for SEP-IRA / Solo 401(k). FIX 2026-06-04 (detector
+// audit): the detector previously hard-excluded MFS, but unlike the traditional-
+// IRA deduction (§219(g)) / Roth (§408A), a SEP (§408(k)) and the employer side
+// of a Solo 401(k) (§415(c)) carry NO filing-status restriction (Pub 560) — an
+// MFS sole proprietor is fully entitled. The SE math is filing-status-independent,
+// so MFS $80k SE gives the SAME $13,646 contribution as the single G1.1+1 case;
+// MFS 2024 brackets coincide with single up to ~$100k, so marginal stays 0.22.
+// Hand-calc: net SE 73,880; half-SE 5,651.82; contribution = 20% × (73,880 −
+// 5,651.82) = $13,645.64 ≈ $13,646; taxable $47,798.54 → 22% bracket.
+header("G1.1-4 — MFS is ELIGIBLE (SEP/Solo-401(k) carry no filing-status limit)");
 {
   const hits = runPlanning({
     client: { filingStatus: "married_filing_separately", state: "FL", taxYear: 2024 },
     form1099s: [{ taxYear: 2024, formType: "nec", payerName: "Acme Co", nonemployeeCompensation: 80000 }],
   });
-  checkTruthy("G1.1-4", "no SEP hit for MFS", findHit(hits, "G1.1") == null, true,
-    "Phase G plan: filingStatus != MFS");
+  const hit = findHit(hits, "G1.1");
+  checkTruthy("G1.1-4", "SEP hit FIRES for MFS (no filing-status exclusion)", hit != null, true);
+  if (hit) {
+    check("G1.1-4", "contribution = $13,646 (filing-status-independent SE math)",
+      Number(hit.inputs.contribution), 13646, 2);
+    check("G1.1-4", "federal marginal 0.22 (MFS = single brackets at this income)",
+      Number(hit.inputs.federalMarginalRate), 0.22, 0.001);
+  }
 }
 
 // --- G1.1 negative Case 5: Below $30k threshold — must NOT trigger ---
@@ -5495,6 +5508,94 @@ header("G1.100- — TY2024 (pre-OBBBA) + under-65: suppressed");
     w2s: [{ taxYear: 2025, wagesBox1: 90000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
   });
   checkTruthy("G1.100-2", "no senior deduction under age 65", findHit(hitsYoung, "G1.100") == null, true);
+}
+
+// ============================================================================
+// 2026-06-04 DETECTOR-AUDIT REGRESSIONS — lock the gating fixes
+// (G1.1 MFS is locked in-place at G1.1-4 above.)
+// ============================================================================
+
+// runPlanning variant that threads baselineInputs (mirrors the production hit-
+// list path) — required for detectors that read assetBalances (G1.4).
+function runPlanningWB(inputs: Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] }): OpportunityHit[] {
+  const full = { w2s: [], form1099s: [], adjustments: [], taxYear: inputs.client.taxYear ?? 2024, ...inputs } as TaxReturnInputs;
+  const computed = computeTaxReturnPure(full);
+  return evaluatePlanningOpportunities({ client: full.client, computed, adjustments: full.adjustments, baselineInputs: full });
+}
+
+// G1.2 — PTET fires for a STANDARD-DEDUCTION high earner. At MAGI $600k the OBBBA
+// SALT cap phases to the $10k floor, so capped SALT ($10k) < std ded ($15,750) →
+// the engine picks the std ded (itemizedDeductions == null). Pre-fix the itemizing
+// gate suppressed exactly this prime PTET candidate (Notice 2020-75; §164(b)(7)).
+header("AUDIT G1.2 — std-deduction high earner with stranded SALT fires");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "NY", taxYear: 2025 },
+    scheduleK1: [{ taxYear: 2025, entityType: "s_corp", activityType: "active", box1OrdinaryIncome: 600000 }],
+    adjustments: [
+      { adjustmentType: "state_income_tax", amount: 40000, isApplied: true },
+      { adjustmentType: "state_property_tax", amount: 3000, isApplied: true },
+    ],
+  });
+  const hit = findHit(hits, "G1.2");
+  checkTruthy("AUDIT-G1.2", "PTET fires for std-ded filer (no itemizing gate)", hit != null, true);
+  if (hit) checkTruthy("AUDIT-G1.2", "recoverable SALT > 0", Number(hit.inputs.recoverableSalt) > 0, true);
+}
+
+// G1.4 — Roth conversion SUPPRESSED for an all-Roth saver (no pre-tax balance to
+// convert, §408A(d)(3)); still FIRES when a traditional IRA balance is present.
+// Requires baselineInputs (assetBalances) → runPlanningWB.
+header("AUDIT G1.4 — all-Roth saver suppressed; trad-IRA balance fires");
+{
+  const base = {
+    client: { filingStatus: "single" as const, state: "FL", taxYear: 2025, taxpayerAge: 35 },
+    w2s: [{ taxYear: 2025, wagesBox1: 70000, stateCode: "FL" }],
+  };
+  const allRoth = runPlanningWB({ ...base, assetBalances: [{ taxYear: 2025, assetType: "roth_ira", accountName: "Roth", balance: 120000, afterTaxBasis: 0 }] });
+  checkTruthy("AUDIT-G1.4", "suppressed — all-Roth, nothing to convert", findHit(allRoth, "G1.4") == null, true);
+  const withTrad = runPlanningWB({ ...base, assetBalances: [{ taxYear: 2025, assetType: "traditional_ira", accountName: "Trad", balance: 200000 }] });
+  checkTruthy("AUDIT-G1.4", "fires — pre-tax balance present", findHit(withTrad, "G1.4") != null, true);
+}
+
+// G1.26 — backdoor Roth phase-out is YEAR-INDEXED. TY2025 MFJ top = $246k (Notice
+// 2024-80): AGI $243k is still inside the band (direct contribution allowed) →
+// SUPPRESS; AGI $250k is above → FIRE. Pre-fix used the stale TY2024 $240k top.
+header("AUDIT G1.26 — TY2025 phase-out top $246k (year-indexed, not stale $240k)");
+{
+  const inBand = runPlanning({ client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2025 },
+    w2s: [{ taxYear: 2025, wagesBox1: 243000, stateCode: "FL" }] });
+  checkTruthy("AUDIT-G1.26", "AGI $243k <= $246k TY2025 top → suppressed", findHit(inBand, "G1.26") == null, true);
+  const above = runPlanning({ client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2025 },
+    w2s: [{ taxYear: 2025, wagesBox1: 250000, stateCode: "FL" }] });
+  checkTruthy("AUDIT-G1.26", "AGI $250k > $246k → fires", findHit(above, "G1.26") != null, true);
+}
+
+// G1.31 — Saver's Credit eligibility gate excludes HSA (not §25B-eligible; never
+// on Form 8880; the engine's calculateSaversCredit computes $0). HSA-only → SUPPRESS;
+// an IRA contribution → FIRE.
+header("AUDIT G1.31 — HSA-only suppressed; IRA contribution fires");
+{
+  const hsaOnly = runPlanning({ client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 30 },
+    w2s: [{ taxYear: 2024, wagesBox1: 24000, stateCode: "FL" }],
+    adjustments: [{ adjustmentType: "hsa_contribution", amount: 3000, isApplied: true }] });
+  checkTruthy("AUDIT-G1.31", "HSA-only → suppressed (HSA not §25B-eligible)", findHit(hsaOnly, "G1.31") == null, true);
+  const withIra = runPlanning({ client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 30 },
+    w2s: [{ taxYear: 2024, wagesBox1: 24000, stateCode: "FL" }],
+    adjustments: [{ adjustmentType: "ira_contribution_traditional", amount: 2000, isApplied: true }] });
+  checkTruthy("AUDIT-G1.31", "IRA contribution → fires", findHit(withIra, "G1.31") != null, true);
+}
+
+// G1.17 — S-corp reasonable-comp requires an S-CORP. An active PARTNERSHIP K-1 has
+// no wage/distribution lever (a partner cannot be a W-2 employee of their own
+// partnership, Rev. Rul. 69-184) → must NOT fire; an S-corp K-1 does.
+header("AUDIT G1.17 — partnership-only suppressed; S-corp fires");
+{
+  const partnership = runPlanning({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    scheduleK1: [{ taxYear: 2024, entityType: "partnership", activityType: "active", box1OrdinaryIncome: 150000, selfEmploymentEarnings: 150000 }] });
+  checkTruthy("AUDIT-G1.17", "active partnership-only → suppressed", findHit(partnership, "G1.17") == null, true);
+  const scorp = runPlanning({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    scheduleK1: [{ taxYear: 2024, entityType: "s_corp", activityType: "active", box1OrdinaryIncome: 150000 }] });
+  checkTruthy("AUDIT-G1.17", "S-corp → fires", findHit(scorp, "G1.17") != null, true);
 }
 
 // ============================================================================

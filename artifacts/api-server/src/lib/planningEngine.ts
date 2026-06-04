@@ -320,7 +320,13 @@ function detectSepIra(args: {
   baselineInputs?: TaxReturnInputs;
 }): OpportunityHit | null {
   const { client, computed, adjustments, baselineInputs } = args;
-  if (client.filingStatus === "married_filing_separately") return null;
+  void client; // reserved for future spouse-attribution
+  // NOTE: do NOT exclude married_filing_separately here. Unlike the traditional-
+  // IRA deduction (§219(g)) and the Roth IRA (§408A) — which impose a punishing
+  // $0–$10k MFS phase-out — a SEP-IRA (§408(k)) and the employer side of a Solo
+  // 401(k) (§415(c)) carry NO filing-status restriction (Pub 560). An MFS sole
+  // proprietor is fully entitled to the contribution/deduction, so suppressing
+  // them here was a missed opportunity (mis-applied IRA instinct).
 
   const netSe = computed.detail.se.netSeEarnings;
   if (netSe < SEP_NET_SE_TRIGGER) return null;
@@ -452,11 +458,18 @@ function detectPtetElection(args: {
   const activeK1 = computed.scheduleK1?.totalActiveOrdinaryIncome ?? 0;
   if (activeK1 <= 0) return null;
 
-  // Cap must actually bind: itemizing AND uncapped SALT above the (OBBBA-aware,
-  // year-indexed) federal SALT cap. Using saltUncapped (the pre-cap state+property
-  // total) lets the recommendation reflect the OBBBA $40k cap + phase-down even
-  // though the core engine still computes saltDeductible against the TCJA $10k cap.
-  if (computed.itemizedDeductions == null) return null;
+  // The cap must strand SALT: uncapped state+property tax above the (OBBBA-aware,
+  // year-indexed) federal SALT cap.
+  // MISSED-OPPORTUNITY FIX (2026-06-04 detector audit): do NOT gate on itemizing.
+  // PTET moves the state-tax deduction to the ENTITY level (deducted on the
+  // 1120-S/1065, reducing the K-1 income that flows to the 1040), which bypasses
+  // the individual SALT cap entirely and is INDEPENDENT of whether the owner
+  // itemizes (Notice 2020-75; §164(b)(6)+(7)). A standard-deduction filer is in
+  // fact a PRIME candidate — especially a high earner whose OBBBA cap is phased
+  // DOWN toward the $10k floor so their capped SALT drops below the std deduction
+  // and the engine picks the std ded (itemizedDeductions == null). The old
+  // itemizing gate suppressed exactly those clients. The saltUncapped > saltCap
+  // test below correctly detects stranded SALT for itemizers AND std-ded filers.
   const saltCap = obbbaSaltCap(computed.taxYear, client.filingStatus, computed.adjustedGrossIncome);
   const { saltUncapped } = computed.scheduleA;
   if (saltUncapped <= saltCap) return null;
@@ -499,7 +512,7 @@ function detectPtetElection(args: {
     assumptions: [
       `Resident state ${state} has enacted a PTET regime (AICPA state tracker, as of Phase G).`,
       `SALT cap for TY${computed.taxYear} = ${fmt(saltCap)} (IRC §164(b)(6)+(7)). OBBBA (P.L. 119-21 §70120) raised the cap to $40k ($20k MFS) for TY2025 [$40.4k TY2026, +1%/yr through 2029], phasing DOWN 30% of MAGI over $500k ($250k MFS) to a $10k floor, then reverting to $10k after 2029. TCJA $10k applies for TY2024 and earlier.`,
-      `Heuristic estSavings = (saltUncapped − SALT cap) × federal marginal rate (recoverable SALT deducted at the entity level instead). NOTE: the core engine still computes the federal itemized total against the TCJA $10k cap (OBBBA core SALT refresh tracked) — this detector applies the OBBBA cap to saltUncapped for the recommendation.`,
+      `Heuristic estSavings = (saltUncapped − SALT cap) × federal marginal rate (recoverable SALT deducted at the entity level instead). For a standard-deduction filer this is a CONSERVATIVE estimate — they currently get no federal benefit from any of their state tax, and PTET recovers the entity-level portion regardless of itemizing.`,
       `Engine does NOT model the PTET election as a first-class adjustment type — H2 verification deferred (would require multi-mutation: remove personal SALT + add PTE-level deduction + PTE-state-tax credit). Tracked as H1 catalog work.`,
       `Assumes active K-1 income (passive doesn't qualify the same way under most PTET regimes).`,
     ],
@@ -825,6 +838,27 @@ function detectRothConversion(args: {
   const age = client.taxpayerAge;
   // Unknown age → fire (CPA judgment call). Known age outside range → suppress.
   if (age != null && (age < G1_4_MIN_AGE || age > G1_4_MAX_AGE)) return null;
+
+  // FALSE-POSITIVE FIX (2026-06-04 detector audit): a Roth conversion requires a
+  // PRE-TAX balance to convert (§408A(d)(3)) — a Roth account cannot be Roth-
+  // converted. When the CPA HAS supplied asset balances and NONE are pre-tax
+  // (the young all-Roth saver), there is nothing to convert, so advising "convert
+  // ~$X of traditional IRA" is affirmatively wrong → suppress. When no balances
+  // were supplied at all, fire informationally (no signal the balance is zero;
+  // prerequisiteData surfaces the traditional-IRA requirement to the CPA). Only a
+  // POSITIVE no-pre-tax signal suppresses, so this never over-suppresses on
+  // missing data.
+  const balances = baselineInputs?.assetBalances ?? [];
+  if (balances.length > 0) {
+    const preTaxTypes = new Set([
+      "traditional_ira", "sep_ira", "simple_ira", "rollover_ira",
+      "401k", "403b", "457b", "pretax_401k", "pension",
+    ]);
+    const preTaxBalance = balances
+      .filter((a) => preTaxTypes.has((a.assetType ?? "").toLowerCase()))
+      .reduce((s, a) => s + toNum(a.balance), 0);
+    if (preTaxBalance <= 0) return null;
+  }
 
   // Headroom to the top of the current bracket. Use calculateFederalTaxWith-
   // Breakdown to find the last bracket hit; cap on the 37% bracket is Infinity
@@ -1184,12 +1218,27 @@ function detectQbiPhaseIn(args: {
   if (taxableBeforeQbi > tier.top) return null;
 
   const fedRate = federalMarginalRate(computed);
-  // Phase G plan proxy: 50% of QBI income is at risk of wage/UBIA-limit
-  // erosion when in the phase-in band. The engine doesn't model the limit
-  // (it applies the simplified flat 20%); proper Form 8995-A might reduce
-  // the QBI deduction. Recoverable estSavings = lost_qbi × 0.20 × marginalRate.
-  const lostQbi = qbi * 0.5;
-  const estSavings = lostQbi * 0.20 * fedRate;
+  // STALE-PREMISE FIX (2026-06-04 detector audit): the engine NOW applies the
+  // §199A(b)(2)(B) wage/UBIA limit (calculateQbi) when the K-1 supplies W-2 wages
+  // / UBIA — the old "engine applies flat 20%, restructuring recovers ~50% of QBI"
+  // proxy was a fictional headline number. Base the estimate on the engine's
+  // ACTUAL limit impact.
+  const qbiDetail = computed.detail.qbi;
+  let lostQbiDeduction: number;
+  if (qbiDetail?.wageUbiaLimitBinds === true) {
+    // The wage/UBIA limit already reduced the deduction below the 20% tentative.
+    // Recoverable = the engine-computed shortfall (what raising W-2 wages inside
+    // the entity could restore, up to the taxable-income cap).
+    lostQbiDeduction = Math.max(0, (qbiDetail.preliminaryDeduction ?? 0) - (qbiDetail.finalDeduction ?? 0));
+  } else {
+    // Limit did not bind: either the K-1 supplied no W-2 wages/UBIA (engine
+    // applied the flat 20%, so the deduction MAY be overstated vs a real Form
+    // 8995-A) or wages are already adequate. No engine-quantified current loss —
+    // surface a conservative forward-looking estimate (the assumptions flag that
+    // the entity's W-2 wages/UBIA must be confirmed).
+    lostQbiDeduction = (qbiDetail?.preliminaryDeduction ?? qbi * 0.20) * 0.5;
+  }
+  const estSavings = lostQbiDeduction * fedRate;
   if (estSavings <= 0) return null;
 
   const strategy = strategyById("G1.7");
@@ -1206,25 +1255,31 @@ function detectQbiPhaseIn(args: {
     recurring: strategy.recurring,
     rationale:
       `Taxable-before-QBI ${fmt(Math.round(taxableBeforeQbi))} is in the §199A phase-in band ` +
-      `(${fmt(tier.threshold)}-${fmt(tier.top)}). Engine applies simplified 20% × QBI; proper ` +
-      `Form 8995-A wage/UBIA structuring could recover up to ~${fmt(Math.round(estSavings))} of ` +
-      `federal tax.`,
+      `(${fmt(tier.threshold)}-${fmt(tier.top)}), where the §199A(b)(2)(B) wage/UBIA limit ` +
+      `progressively applies. ` +
+      (qbiDetail?.wageUbiaLimitBinds === true
+        ? `The engine's wage/UBIA limit is reducing the deduction by ~${fmt(Math.round(lostQbiDeduction))}; ` +
+          `raising the entity's W-2 wages (or documenting UBIA) could restore up to ~${fmt(Math.round(estSavings))} of federal tax.`
+        : `Confirm the entity's W-2 wages / UBIA on the K-1 — if low, a Form 8995-A would limit the deduction ` +
+          `below the engine's flat 20%; structuring W-2 wages preserves it (est. ~${fmt(Math.round(estSavings))}).`),
     action: interpolate(strategy.action, vars),
     prerequisiteData: strategy.prerequisiteData,
     citation: `${strategy.ircSection}; ${strategy.irsPub}`,
     inputs: {
       taxableBeforeQbi: Math.round(taxableBeforeQbi),
       qbiAmount: Math.round(qbi),
-      lostQbi: Math.round(lostQbi),
+      lostQbiDeduction: Math.round(lostQbiDeduction),
+      wageUbiaLimitBinds: qbiDetail?.wageUbiaLimitBinds === true ? 1 : 0,
       threshold: tier.threshold,
       phaseInTop: tier.top,
       federalMarginalRate: fedRate,
     },
     assumptions: [
-      `§199A wage/UBIA limit (Form 8995-A) is NOT modeled by the engine — it applies the simplified flat 20% × QBI.`,
-      `Heuristic: assumes ~50% of QBI is at risk of erosion in the phase-in band; recoverable savings ≈ lost_qbi × 20% × marginal rate.`,
-      `H2 verification deferred — would require the engine to model the wage-cap formula (Form 8995-A worksheet 12B). Engine sub-gap tracked in CLAUDE.md.`,
-      `Phase-in band thresholds: TY${computed.taxYear}, ${client.filingStatus === "married_filing_jointly" || client.filingStatus === "qualifying_widow" ? "MFJ/QSS" : "single/HoH/MFS"} per Rev. Proc. 2023-34 / 2024-40.`,
+      qbiDetail?.wageUbiaLimitBinds === true
+        ? `The engine's §199A(b)(2)(B) wage/UBIA limit (calculateQbi) BINDS here; the estimate is the engine-computed shortfall the deduction lost to the limit — restorable by raising the entity's W-2 wages, up to the 20%-of-taxable cap.`
+        : `The engine DOES model the §199A wage/UBIA limit, but it did not bind here (the K-1 supplied no W-2 wages/UBIA so the flat 20% applied, OR wages are already adequate). The estimate is a conservative forward-looking proxy — CONFIRM the entity's W-2 wages/UBIA on the K-1.`,
+      `Recoverable savings ≈ (20% tentative − wage-limited deduction) × marginal rate when the limit binds; otherwise a conservative ~50%-of-tentative forward-looking figure.`,
+      `Phase-in band thresholds: TY${computed.taxYear}, ${client.filingStatus === "married_filing_jointly" || client.filingStatus === "qualifying_widow" ? "MFJ/QSS" : "single/HoH/MFS"} per Rev. Proc. 2023-34 / 2024-40 / 2025-32.`,
     ],
   };
 }
@@ -1921,6 +1976,14 @@ function detectScorpReasonableComp(args: {
   void client; // unused — reserved for future spouse-attribution
   const k1Summary = computed.scheduleK1;
   if (!k1Summary) return null;
+  // FALSE-POSITIVE FIX (2026-06-04 detector audit): this strategy applies ONLY to
+  // S-CORPORATIONS. The reasonable-comp / wage-vs-distribution lever (Rev. Rul.
+  // 74-44) does not exist for a partnership or active LLC member — a partner
+  // cannot be a W-2 employee of their own partnership (Rev. Rul. 69-184) and their
+  // distributive share is already fully SE-taxed. `totalActiveOrdinaryIncome` pools
+  // active partnership + S-corp Box 1, so gate on actual S-corp presence (mirrors
+  // the §1377 G1.95 guard) or this fires for partnership-only clients.
+  if ((k1Summary.sCorpCount ?? 0) < 1) return null;
   // Estimate S-corp income from active K-1 ordinary income. The engine
   // doesn't currently track per-K-1 entity type cleanly in summary, so we
   // use totalActiveOrdinaryIncome as proxy (assumes most active income
@@ -1938,7 +2001,7 @@ function detectScorpReasonableComp(args: {
   // savings by the full 12.4% SS portion for high-comp owners.
   const SS_RATE = 0.124;
   const MED_RATE = 0.029;
-  const ssWageBase = SS_WAGE_BASE[computed.taxYear === 2024 ? 2024 : 2025];
+  const ssWageBase = SS_WAGE_BASE[computed.taxYear === 2024 ? 2024 : computed.taxYear === 2026 ? 2026 : 2025];
   const ssBaseRemaining = Math.max(0, ssWageBase - reasonableComp);
   const ssSavings = Math.min(distributions, ssBaseRemaining) * SS_RATE;
   const medSavings = distributions * MED_RATE;
@@ -2456,12 +2519,17 @@ function detectOpportunityZone(args: {
 
 // ── G1.26 — Backdoor Roth IRA (high-income filer) ────────────────────────
 
-const G1_26_ROTH_PHASEOUT_TOP: Record<string, number> = {
-  single: 161_000,
-  head_of_household: 161_000,
-  married_filing_jointly: 240_000,
-  qualifying_widow: 240_000,
-  married_filing_separately: 10_000,
+// Roth IRA MAGI phase-out TOP (above this, no direct contribution is allowed →
+// the backdoor route applies). YEAR-INDEXED (was a single TY2024-only map, which
+// produced a FALSE POSITIVE for TY2025/2026 clients whose AGI sat between the
+// stale TY2024 top and the true current-year top — they were told "above the
+// phase-out, do a backdoor" when they could still contribute directly).
+// Notice 2024-80 (TY2025) / Rev. Proc. 2025-32 (TY2026). MFS top is the
+// statutory un-indexed $10k (lived-with-spouse).
+const G1_26_ROTH_PHASEOUT_TOP: Record<number, Record<string, number>> = {
+  2024: { single: 161_000, head_of_household: 161_000, married_filing_jointly: 240_000, qualifying_widow: 240_000, married_filing_separately: 10_000 },
+  2025: { single: 165_000, head_of_household: 165_000, married_filing_jointly: 246_000, qualifying_widow: 246_000, married_filing_separately: 10_000 },
+  2026: { single: 168_000, head_of_household: 168_000, married_filing_jointly: 252_000, qualifying_widow: 252_000, married_filing_separately: 10_000 },
 };
 const G1_26_IRA_CAP_BASE = 7_000;
 const G1_26_IRA_CAP_CATCHUP = 8_000;
@@ -2473,8 +2541,11 @@ function detectBackdoorRoth(args: {
   assetBalances?: AssetBalanceFact[];
 }): OpportunityHit | null {
   const { client, computed, adjustments, assetBalances } = args;
-  // AGI must exceed direct-Roth contribution phase-out top.
-  const phaseOutTop = G1_26_ROTH_PHASEOUT_TOP[client.filingStatus] ?? G1_26_ROTH_PHASEOUT_TOP.single;
+  // AGI must exceed the direct-Roth contribution phase-out TOP for the return's
+  // tax year (year-indexed so a TY2025/2026 client inside the current band is not
+  // wrongly told to use the backdoor when a direct contribution is still allowed).
+  const topsForYear = G1_26_ROTH_PHASEOUT_TOP[computed.taxYear] ?? G1_26_ROTH_PHASEOUT_TOP[2025];
+  const phaseOutTop = topsForYear[client.filingStatus] ?? topsForYear.single;
   if (computed.adjustedGrossIncome <= phaseOutTop) return null;
 
   // Skip if client already has a nondeductible IRA contribution this year
@@ -3131,12 +3202,18 @@ function detectSaversCredit(args: {
   if (age != null && age < G1_31_MIN_AGE) return null;
   // Suppress if already claimed.
   if (sumAdjustment(adjustments, "retirement_contributions_savers") > 0) return null;
-  // Need some sign of retirement contribution (so the credit applies to something).
+  // Need an actual §25B-eligible contribution for the credit to apply to.
+  // FALSE-POSITIVE FIX (2026-06-04 detector audit): §25B(d)(1) / Form 8880 count
+  // IRA contributions + elective deferrals (401(k)/403(b)/457/SIMPLE/SARSEP) —
+  // NOT HSA contributions (HSA never appears on Form 8880). The engine's own
+  // `calculateSaversCredit` sums ONLY ira_traditional + ira_roth +
+  // retirement_contributions_savers, so including hsa_contribution here surfaced a
+  // non-zero heuristic credit + "Credit ~$X" rationale for a client whose only
+  // contribution is an HSA, while the engine computes $0. (`self_employed_retirement`
+  // is not a real adjustment enum either — removed as dead, misleading signal.)
   const anyRetirement =
     sumAdjustment(adjustments, "ira_contribution_traditional") +
-    sumAdjustment(adjustments, "ira_contribution_roth") +
-    sumAdjustment(adjustments, "self_employed_retirement") +
-    sumAdjustment(adjustments, "hsa_contribution");
+    sumAdjustment(adjustments, "ira_contribution_roth");
   if (anyRetirement <= 0) return null;
 
   // Determine applicable rate from AGI bracket.
