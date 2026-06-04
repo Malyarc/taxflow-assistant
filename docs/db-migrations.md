@@ -1,8 +1,28 @@
 # Database migrations — versioned, not push
 
-**Status (2026-05-28):** versioned-migration infrastructure is now in place. A
-baseline migration capturing the *current* schema has been generated. The prod
-deploy still uses `push` until the one-time cutover below is signed off.
+**Status (2026-06-04): CUTOVER COMPLETE.** Dev + prod (Neon) are both baselined to
+`0000` + `0001` and `drizzle-kit migrate` is a verified no-op on each. The EC2
+deploy now uses `migrate` (see CLAUDE.md → "EC2 deploy"). `push` is local-dev-only.
+
+What the cutover did (2026-06-04):
+- Fixed the drizzle-kit **snapshot-path bug** that had blocked `generate`:
+  `drizzle.config.ts`'s `out` was an absolute path, which drizzle-kit 0.31.9
+  prepended `./` to → malformed `.//…/0000_snapshot.json` → ENOENT. Now relative.
+- Generated **`0001_tiresome_mastermind.sql`** (purely additive) capturing the
+  drift since the 2026-05-28 `0000` baseline (FED-05 blind cols, FORM-02 col, the
+  `quantity`/`account` + `box4_guaranteed_payments`/`is_sstb` cols, the
+  `disclosure_consents` table + FK, and 4 indexes). Validated against a fresh
+  throwaway DB (builds all 14 tables cleanly). hash `441f713f…` = file sha256.
+- **Caught a real prod gap:** prod was missing 3 perf indexes
+  (`clients_updated_at_idx`, `clients_email_idx`, `tax_returns_agi_idx` — applied
+  to dev/schema in the 2026-05-29 audit but never to prod). Created them
+  (additive) so prod's physical schema fully matches `0001`. Prod's 318-column
+  fingerprint now matches dev exactly.
+- Baselined both DBs (`__drizzle_migrations` rows for `0000` + `0001`) and
+  confirmed `migrate` applies nothing on each.
+
+**Status (2026-05-28, historical):** versioned-migration infrastructure put in
+place; `0000` baseline generated; dev baselined; prod still on `push`.
 
 ## Why this changed
 

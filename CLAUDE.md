@@ -8,7 +8,7 @@ Project-level notes for Claude sessions. Things that change every sprint live in
 
 **Always merge to `main` and deploy EVERYTHING to prod (api-server + frontend rsync + DB schema) after completing a chunk of work — do NOT ask first.** Work may be staged on a feature branch, but finish by fast-forwarding `main`, pushing, running the full EC2 deploy cycle (see "EC2 deploy" below) + the frontend rsync, applying any schema change to the prod DB, then health-check.
 
-**DB schema → prod (the migration baseline is STALE — `lib/db/drizzle` only has `0000`, months behind — so do NOT trust `drizzle-kit push`/`migrate` against prod):**
+**DB schema → prod — VERSIONED MIGRATIONS are now the source of truth (cutover COMPLETE 2026-06-04: dev + prod baselined to `0000`+`0001`; the EC2 deploy runs `drizzle-kit migrate`).** Normal path: edit `lib/db/src/schema/*` → `pnpm --filter @workspace/db run generate` → **REVIEW the generated SQL** (catch any drop/rename) → commit → the deploy's `migrate` step applies it. The additive/destructive rules below still govern any *out-of-band* hotfix DDL (when you can't do a full deploy):**
 - **Additive changes (new table / column / index): apply AUTOMATICALLY** via idempotent additive DDL — `CREATE TABLE IF NOT EXISTS …`, `ALTER TABLE … ADD COLUMN IF NOT EXISTS …`, `CREATE INDEX IF NOT EXISTS …`. These can only add — never drop or lose data. psql isn't installed on the box; run the DDL with the box's `pg` client: a tiny `.mjs` in `~/taxflow-pro/lib/db/` doing `import pg from "pg"` + `new pg.Pool({ connectionString: <DATABASE_URL from pm2 env 0>, ssl: { rejectUnauthorized: false } })` + `pool.query(ddl)`. (Precedent: `disclosure_consents`, applied 2026-06-03.)
 - **Destructive changes (drop/rename column, type change, drop table): NEVER auto-apply.** Show John the exact SQL and get explicit OK first — these can silently lose data, and `drizzle.config.ts` explicitly forbids blind `push` to prod. (Proper long-term fix: baseline the prod DB + finish the versioned-migrate cutover — tracked in `docs/db-migrations.md`.)
 
@@ -170,11 +170,11 @@ git pull origin main
 pnpm install
 export DATABASE_URL=$(pm2 env 0 | awk -F": " '/^DATABASE_URL:/ {print $2; exit}')
 export AI_API_KEY=$(pm2 env 0 | awk -F": " '/^AI_API_KEY:/ {print $2; exit}')
-pnpm --filter @workspace/db run push      # only if schema changed
-# MIGRATION CUTOVER (see docs/db-migrations.md): versioned migrations are ready
-# and the dev DB is baselined. After a ONE-TIME baseline of the Neon prod DB
-# (canonical 0000 hash in that doc), replace the `push` line above with:
-#   pnpm --filter @workspace/db run migrate   # applies pending versioned migrations
+pnpm --filter @workspace/db run migrate   # applies pending versioned migrations
+# CUTOVER COMPLETE (2026-06-04, see docs/db-migrations.md): dev + prod are baselined
+# to 0000+0001 and `migrate` is a verified no-op. Going forward: edit schema → `pnpm
+# --filter @workspace/db run generate` → REVIEW the generated SQL → commit → the
+# deploy's `migrate` step applies it. NEVER run `push` against prod (local-dev only).
 pnpm --filter @workspace/api-server run build
 pm2 restart taxflow
 curl http://localhost:8080/api/healthz

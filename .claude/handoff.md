@@ -1,3 +1,33 @@
+# Handoff Note — 2026-06-04c (DB MIGRATION CUTOVER — COMPLETE, commit `8e95184`)
+
+The stale-`0000`-baseline drift class (root cause of the local hit-list 500) is
+CLOSED. Dev + prod (Neon) are now baselined to versioned migrations and the EC2
+deploy runs `drizzle-kit migrate`.
+
+- **Unblocked the documented blocker:** `drizzle.config.ts` `out` was an ABSOLUTE
+  path; drizzle-kit 0.31.9 prepends `./` when reading meta snapshots → malformed
+  `.//…/0000_snapshot.json` → ENOENT, which had blocked `generate`. Made `out`
+  relative.
+- **Generated `0001_tiresome_mastermind.sql`** (purely additive — reviewed) for the
+  drift since the 2026-05-28 `0000` baseline. Validated the full chain (0000→0001)
+  on a fresh throwaway DB (builds all 14 tables cleanly). hash `441f713f…` = sha256.
+- **Caught + fixed a real prod gap:** prod was missing 3 perf indexes
+  (`clients_updated_at_idx`, `clients_email_idx`, `tax_returns_agi_idx` — added to
+  dev/schema in the 2026-05-29 audit but never to prod). Created them (additive).
+  Prod's 318-column fingerprint now matches dev exactly; all 4 indexes present.
+- **Baselined dev + prod** (`__drizzle_migrations` rows for 0000+0001) and confirmed
+  `migrate` is a verified NO-OP on each (it would have errored on the existing
+  `disclosure_consents` table if it tried to apply 0001). Prod app health OK post-
+  cutover (recent-clients + hit-list verified).
+- **Going forward:** edit schema → `generate` → REVIEW the SQL → commit → deploy's
+  `migrate` applies it. `push` is local-dev-only. CLAUDE.md "EC2 deploy" + deploy
+  policy updated; `docs/db-migrations.md` marked CUTOVER COMPLETE.
+
+Canonical hashes: `0000` = `3383733c…` (when 1780003127842), `0001` = `441f713f…`
+(when 1780558502276).
+
+---
+
 # Handoff Note — 2026-06-04b (PLANNING-DETECTOR AUDIT — 7 gating fixes, commit `71306a8`)
 
 Follow-up to the deep audit below: completed the one audit surface that session left
