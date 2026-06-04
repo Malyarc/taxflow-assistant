@@ -1,5 +1,10 @@
 # TaxFlow Assistant — Open TODO list
 
+> **➡️ FORWARD-LOOKING WORK NOW LIVES IN `docs/haven-migration-roadmap.md`**
+> (created 2026-06-03) — the canonical, migration-aware roadmap for all tax-prep
+> + tax-planning enhancements to do BEFORE migrating this app into the Haven app.
+> THIS file remains the historical log + the P0 legal/security gate record.
+
 **Status as of 2026-05-28 (Brookhaven UI/UX revamp shipped; Phase H + C-batch + C3 follow-ups all complete).** This is the durable, git-tracked TODO list.
 Read this in every new session before picking up work. The Claude task
 tool inside any single session is ephemeral — only this file persists.

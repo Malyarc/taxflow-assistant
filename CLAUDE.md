@@ -2,6 +2,8 @@
 
 Project-level notes for Claude sessions. Things that change every sprint live in `.claude/handoff.md` (a session-handoff doc, may be stale) or `ONBOARDING.md` (the original kick-off doc).
 
+**This app is being MIGRATED into the Haven app** (`/Users/johntang/Documents/haven` — NestJS + Prisma + Next.js portals + Expo mobile, multi-tenant). The pure engine (`computeTaxReturnPure`) + planning engine + their tests port 1:1; auth/frontend/infra do NOT (Haven has its own). The canonical forward-looking roadmap for what to enhance in tax prep + tax planning BEFORE migrating is **`docs/haven-migration-roadmap.md`** — read it before picking up calc/planning work. Keep `computeTaxReturnPure` PURE (it's the migration interface).
+
 ## Deploy policy (STANDING — set by John 2026-06-03)
 
 **Always merge to `main` and deploy EVERYTHING to prod (api-server + frontend rsync + DB schema) after completing a chunk of work — do NOT ask first.** Work may be staged on a feature branch, but finish by fast-forwarding `main`, pushing, running the full EC2 deploy cycle (see "EC2 deploy" below) + the frontend rsync, applying any schema change to the prod DB, then health-check.
