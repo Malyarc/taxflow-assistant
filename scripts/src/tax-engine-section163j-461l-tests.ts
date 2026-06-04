@@ -333,6 +333,24 @@ function adj(type: string, amount: number, id = Math.floor(Math.random() * 1e9))
   check("Case L2 AGI = $195k (loss capped at $305k allowed)", r.adjustedGrossIncome, 195000);
 }
 
+// ── Case L2-TY2025/26: §461(l) threshold is year-indexed (was stale TY2024) ──
+// Same $500k Sch C loss vs $500k W-2, but TY2025/TY2026 → threshold $313,000
+// (Rev. Proc. 2024-40), NOT the stale TY2024 $305,000. addback = 500,000 −
+// 313,000 = $187,000; AGI = 500,000 − 500,000 + 187,000 = $187,000.
+// (PRE-FIX both years used the hard-coded TY2024 $305k → $195k, Case-L2's number.)
+for (const ty of [2025, 2026]) {
+  const base = baseInputs({ adjustments: [adj("self_employment_income", -500000)] });
+  const inp: TaxReturnInputs = {
+    ...base,
+    taxYear: ty,
+    client: { ...base.client, taxYear: ty },
+    w2s: [{ ...base.w2s[0], taxYear: ty, wagesBox1: "500000" }],
+  };
+  const r = computeTaxReturnPure(inp);
+  check(`Case L2-TY${ty} §461(l) addback = $187k (threshold $313k, not $305k)`, r.section461lExcessLossAddback, 187000);
+  check(`Case L2-TY${ty} AGI = $187k`, r.adjustedGrossIncome, 187000);
+}
+
 // ── Case L3: MFJ §461(l) higher threshold ($610k) ────────────────────────
 // MFJ, W-2 $800,000 + self_employment_income −$700,000. addback = 700,000 −
 // 610,000 = 90,000. AGI = 800,000 − 700,000 + 90,000 = 190,000.

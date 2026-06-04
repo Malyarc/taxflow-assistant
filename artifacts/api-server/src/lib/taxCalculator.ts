@@ -4168,8 +4168,9 @@ export function calculateDependentCareCredit(params: {
 // $300 above-the-line per eligible K-12 educator (teacher, instructor, counselor,
 // principal, aide working 900+ hours). MFJ with two eligible educators can
 // deduct up to $600 combined. 2024 and 2025: $300/educator.
-const EDUCATOR_PER_FILER_CAP_2024 = 300;
-const EDUCATOR_PER_FILER_CAP_2025 = 300;
+// Educator-expense per-filer cap (§62(a)(2)(D)). Flat $300 since TY2023; year-
+// indexed so a future year can't silently fall through to a stale value.
+const EDUCATOR_PER_FILER_CAP: Record<TaxYear, number> = { 2024: 300, 2025: 300, 2026: 300 };
 
 export interface EducatorExpensesCalculation {
   expenses: number;
@@ -4184,7 +4185,7 @@ export function calculateEducatorExpenses(params: {
   taxYear: number;
 }): EducatorExpensesCalculation {
   const year = resolveTaxYear(params.taxYear);
-  const perFilerCap = year === 2025 ? EDUCATOR_PER_FILER_CAP_2025 : EDUCATOR_PER_FILER_CAP_2024;
+  const perFilerCap = EDUCATOR_PER_FILER_CAP[year];
   const count = Math.max(0, Math.min(2, Math.floor(params.eligibleEducatorCount)));
   const cap = count * perFilerCap;
   const deductible = Math.min(Math.max(0, params.expenses), cap);
@@ -4557,7 +4558,10 @@ export function calculatePremiumTaxCredit(params: {
   let netPtc = computedPtc - advanceAptc;
   let repaymentCap = Infinity;
   if (netPtc < 0) {
-    const caps = year === 2025 ? PTC_REPAYMENT_CAPS_2025 : PTC_REPAYMENT_CAPS_2024;
+    // TY2025+ uses the TY2025 caps (latest published); a TY2026 Rev. Proc. value
+    // should add PTC_REPAYMENT_CAPS_2026 + bump this. Prevents a TY2026 return
+    // from silently using the stale TY2024 caps.
+    const caps = year >= 2025 ? PTC_REPAYMENT_CAPS_2025 : PTC_REPAYMENT_CAPS_2024;
     const isMfj =
       params.filingStatus === "married_filing_jointly" ||
       params.filingStatus === "qualifying_widow";

@@ -1817,13 +1817,16 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   //   * Active K-1 losses are already net of the §704(d)/§1366(d) basis +
   //     §465 at-risk limit (k1ActiveOrdinary uses the capped loss), so the
   //     §461(l) aggregation correctly excludes basis/at-risk-disallowed losses.
-  const SECTION_461L_THRESHOLD_TY2024: Record<string, number> = {
-    single: 305_000,
-    head_of_household: 305_000,
-    married_filing_separately: 305_000,
-    qualifying_widow: 610_000,
-    married_filing_jointly: 610_000,
+  // §461(l)(3)(B) excess-business-loss threshold, inflation-indexed: TY2024
+  // $305k/$610k; TY2025 $313k/$626k (Rev. Proc. 2024-40). TY2026 not yet
+  // published — held at TY2025. Year-indexed so it can't fall through to a stale
+  // year (was hard-coded to TY2024 for EVERY year, so TY2025+ under-threshold'd).
+  const SECTION_461L_THRESHOLDS: Record<number, Record<string, number>> = {
+    2024: { single: 305_000, head_of_household: 305_000, married_filing_separately: 305_000, qualifying_widow: 610_000, married_filing_jointly: 610_000 },
+    2025: { single: 313_000, head_of_household: 313_000, married_filing_separately: 313_000, qualifying_widow: 626_000, married_filing_jointly: 626_000 },
+    2026: { single: 313_000, head_of_household: 313_000, married_filing_separately: 313_000, qualifying_widow: 626_000, married_filing_jointly: 626_000 },
   };
+  const section461lThreshold = SECTION_461L_THRESHOLDS[taxYear] ?? SECTION_461L_THRESHOLDS[2025];
   // §461(l) auto-aggregation: compute when CPA didn't supply an explicit addback.
   let section461lAutoAddback = 0;
   if (section461lExcessLossAddbackAdj <= 0) {
@@ -1837,7 +1840,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     const k1ActiveLoss = Math.max(0, -k1ActiveOrdinary);
     const aggregateBizLoss = schCLoss + rentalLossPrePal + k1ActiveLoss;
     const threshold =
-      SECTION_461L_THRESHOLD_TY2024[client.filingStatus] ?? 305_000;
+      section461lThreshold[client.filingStatus] ?? section461lThreshold.single;
     if (aggregateBizLoss > threshold) {
       section461lAutoAddback = aggregateBizLoss - threshold;
     }
