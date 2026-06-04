@@ -2681,6 +2681,11 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
       // Only applied when resident state is CA. SALT addback + ISO bargain
       // + legacy catch-all.
       amtPreferences: totalAmtPreferences,
+      // PREP-B1 — state-base modifications: out-of-state muni interest is
+      // state-taxable (added); US-Treasury interest is state-exempt (subtracted).
+      // CPA-supplied via adjustments; 0 → undefined → no-op.
+      muniBondAddBack: sumByType("out_of_state_muni_interest") || undefined,
+      usTreasurySubtraction: sumByType("us_treasury_interest") || undefined,
       // E11 — Dependent count for PA Schedule SP Tax Forgiveness bracket
       // adjustment ($9,500 per dependent). Only applied when resident is PA.
       dependentCount: (client.dependentsUnder17 ?? 0) + (client.otherDependents ?? 0),

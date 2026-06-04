@@ -1179,6 +1179,11 @@ export function calculateMultiStateTax(params: {
      *  legacy catch-all) for CA AMT (Schedule P 540). Only applied when
      *  resident state is CA. */
     amtPreferences?: number;
+    /** PREP-B1 — state-base modifications, passed through to the resident
+     *  calculateStateTax. muniBondAddBack: out-of-state muni interest (state-
+     *  taxable); usTreasurySubtraction: US-Treasury interest (state-exempt). */
+    muniBondAddBack?: number;
+    usTreasurySubtraction?: number;
     /** E11 — Dependent count for PA Schedule SP Tax Forgiveness brackets
      *  ($9,500 per dependent added to eligibility thresholds). Pass
      *  client.dependentsUnder17 + client.otherDependents. */
@@ -1884,6 +1889,13 @@ export function calculateStateTax(
     hiEmployerFundedPension?: number;
     /** NY — government-pension portion (IT-201 Line 26, fully excluded). */
     nyGovernmentPension?: number;
+    /** PREP-B1 — state-base modifications (CPA-supplied; default 0).
+     *  `muniBondAddBack`: out-of-state municipal-bond interest (federally
+     *  tax-exempt but TAXABLE to the resident state) ADDED to the state base.
+     *  `usTreasurySubtraction`: interest on US Treasury / federal obligations
+     *  (federally taxable but state-EXEMPT by federal preemption) SUBTRACTED. */
+    muniBondAddBack?: number;
+    usTreasurySubtraction?: number;
   },
 ): number {
   const year = resolveTaxYear(taxYear);
@@ -1955,7 +1967,12 @@ export function calculateStateTax(
   const allowanceProration = Math.min(1, Math.max(0, options?.partYearDeductionProration ?? 1));
   const proratedStdDed = stdDed * allowanceProration;
   const proratedPersonalExemption = personalExemption * allowanceProration;
-  const stateTaxable = Math.max(0, federalAgi - proratedStdDed - proratedPersonalExemption - oregonSubtraction - retirementExemption - ssExclusion);
+  // PREP-B1 — state-base modifications: + out-of-state muni interest (state-
+  // taxable, not in federal AGI), − US-Treasury interest (state-exempt by
+  // federal preemption but present in federal AGI).
+  const stateBaseModifications =
+    Math.max(0, options?.muniBondAddBack ?? 0) - Math.max(0, options?.usTreasurySubtraction ?? 0);
+  const stateTaxable = Math.max(0, federalAgi + stateBaseModifications - proratedStdDed - proratedPersonalExemption - oregonSubtraction - retirementExemption - ssExclusion);
   const brackets = pickStateBrackets(info.brackets, status);
   let tax = applyBrackets(stateTaxable, brackets);
 
