@@ -27,6 +27,8 @@ import {
 } from "../lib/form1040x";
 import { buildForm8824Pdf, type Form8824Data } from "../lib/form8824";
 import { buildForm8990Pdf, type Form8990Data } from "../lib/form8990";
+import { computeReturnDiagnostics } from "../lib/returnDiagnostics";
+import { decryptField, isDecryptErrorSentinel } from "../lib/fieldCrypto";
 import {
   buildTaxReturnCsvExport,
   buildTaxReturnJsonExport,
@@ -351,6 +353,39 @@ router.get("/clients/:clientId/tax-return/form-2210/pdf", async (req, res): Prom
     logger.error({ err }, "Failed to build Form 2210 PDF");
     res.status(500).json({ error: "Failed to build Form 2210 PDF" });
   }
+});
+
+// ── P2-16 — Return-level diagnostics (pre-filing checklist) ───────────────
+router.get("/clients/:clientId/tax-return/diagnostics", async (req, res): Promise<void> => {
+  const params = GetTaxReturnParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const yearRaw = req.query.taxYear;
+  const overrideYear = typeof yearRaw === "string" && Number.isFinite(Number(yearRaw))
+    ? Number(yearRaw)
+    : undefined;
+  const computed = await computeTaxReturn(params.data.clientId, overrideYear ? { taxYear: overrideYear } : {});
+  if (!computed) {
+    res.status(404).json({ error: "Client not found" });
+    return;
+  }
+  // The engine inputs carry the full W-2 DB rows (all boxes) at runtime, but
+  // the SSN column is encrypted at rest. Decrypt it for the duplicate-SSN
+  // cross-check and null the decrypt-error sentinel so it can't masquerade as
+  // a real (mismatching) SSN. 1099s are used only for presence counts here.
+  const w2sForDiag = (computed.inputs.w2s as unknown as Array<Record<string, unknown>>).map((r) => {
+    const ssn = decryptField(r.employeeSSN as string | null | undefined);
+    return { ...r, employeeSSN: isDecryptErrorSentinel(ssn) ? null : ssn };
+  });
+  const diagnostics = computeReturnDiagnostics({
+    client: computed.client,
+    w2s: w2sForDiag,
+    form1099s: computed.inputs.form1099s,
+    computed: computed.result,
+  });
+  res.json(diagnostics);
 });
 
 // ── Phase H — H6 — Form 8606 (nondeductible IRA basis) ────────────────────

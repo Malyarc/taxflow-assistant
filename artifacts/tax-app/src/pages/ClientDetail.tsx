@@ -73,6 +73,7 @@ import {
   FileText, FileSpreadsheet, Files, CandlestickChart, Building2, Network,
   Wallet, Calculator, GitCompareArrows, SlidersHorizontal, Target,
   FileDown, Briefcase, Pencil, ArrowLeft,
+  CheckCircle2, AlertTriangle, AlertCircle, Info,
 } from "lucide-react";
 
 const FILING_STATUS_LABELS: Record<string, string> = {
@@ -1463,6 +1464,107 @@ function Form2210Card({ clientId, taxYear }: { clientId: number; taxYear: number
   );
 }
 
+// ── P2-16 — Return-level diagnostics ("ready to hand off" panel) ───────────
+type DiagnosticSeverity = "critical" | "warning" | "info";
+interface ReturnDiagnostic {
+  id: string;
+  severity: DiagnosticSeverity;
+  category: string;
+  title: string;
+  detail: string;
+  field?: string | null;
+}
+interface ReturnDiagnosticsResult {
+  diagnostics: ReturnDiagnostic[];
+  counts: { critical: number; warning: number; info: number; total: number };
+  readyToHandOff: boolean;
+}
+
+const DIAG_STYLE: Record<DiagnosticSeverity, { icon: typeof Info; box: string; text: string; label: string }> = {
+  critical: { icon: AlertCircle, box: "border-destructive/40 bg-destructive/5", text: "text-destructive", label: "Critical" },
+  warning: { icon: AlertTriangle, box: "border-amber-300 bg-amber-50", text: "text-amber-700", label: "Warning" },
+  info: { icon: Info, box: "border-brand/30 bg-brand/5", text: "text-brand-ink", label: "Info" },
+};
+
+function DiagnosticsCard({ clientId, taxYear }: { clientId: number; taxYear: number }) {
+  const query = useQuery<ReturnDiagnosticsResult>({
+    queryKey: ["diagnostics", clientId, taxYear],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${clientId}/tax-return/diagnostics?taxYear=${taxYear}`);
+      if (!res.ok) throw new Error("Diagnostics failed");
+      return res.json();
+    },
+    retry: false,
+  });
+  const data = query.data;
+
+  return (
+    <Card className="print:hidden">
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          {data?.readyToHandOff ? (
+            <CheckCircle2 className="h-5 w-5 text-success" />
+          ) : (
+            <AlertCircle className="h-5 w-5 text-destructive" />
+          )}
+          Pre-filing diagnostics
+        </CardTitle>
+        <p className="text-xs text-muted-foreground mt-1">
+          The critical / warning / informational checklist to run before handing the return off for filing.
+          Criticals block "ready to hand off"; warnings and info are advisory.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {data ? (
+          <>
+            <div
+              className={`rounded-md border p-4 ${data.readyToHandOff ? "border-success/40 bg-success/5" : "border-destructive/40 bg-destructive/5"}`}
+            >
+              <div className={`text-sm font-semibold ${data.readyToHandOff ? "text-success" : "text-destructive"}`}>
+                {data.readyToHandOff
+                  ? "Ready to hand off — no critical issues"
+                  : `${data.counts.critical} critical issue${data.counts.critical === 1 ? "" : "s"} must be resolved before filing`}
+              </div>
+              <div className="text-xs text-muted-foreground mt-1">
+                {data.counts.critical} critical · {data.counts.warning} warning · {data.counts.info} info
+              </div>
+            </div>
+
+            {data.diagnostics.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No issues detected.</p>
+            ) : (
+              <ul className="space-y-2">
+                {data.diagnostics.map((d) => {
+                  const style = DIAG_STYLE[d.severity];
+                  const Icon = style.icon;
+                  return (
+                    <li key={d.id} className={`rounded-md border p-3 ${style.box}`}>
+                      <div className="flex items-start gap-2">
+                        <Icon className={`h-4 w-4 mt-0.5 shrink-0 ${style.text}`} />
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`text-sm font-medium ${style.text}`}>{d.title}</span>
+                            <Badge variant="outline" className="text-[10px]">{d.category}</Badge>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-0.5">{d.detail}</p>
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </>
+        ) : query.error ? (
+          <p className="text-xs text-destructive">Could not load diagnostics: {String((query.error as Error).message)}</p>
+        ) : (
+          <p className="text-sm text-muted-foreground">Loading diagnostics…</p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: number }) {
   const { data: taxReturn, isLoading } = useGetTaxReturn(clientId, {
     query: { queryKey: getGetTaxReturnQueryKey(clientId), retry: false },
@@ -1743,6 +1845,7 @@ function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: nu
             </Button>
           </div>
 
+          <DiagnosticsCard clientId={clientId} taxYear={taxYear} />
           <Section1031Card clientId={clientId} taxYear={taxYear} taxReturn={taxReturn as unknown as Parameters<typeof Section1031Card>[0]["taxReturn"]} />
           <EsppIsoCard taxReturn={taxReturn as unknown as Parameters<typeof EsppIsoCard>[0]["taxReturn"]} />
           <Section163j461lCard clientId={clientId} taxYear={taxYear} taxReturn={taxReturn as unknown as Parameters<typeof Section163j461lCard>[0]["taxReturn"]} />
