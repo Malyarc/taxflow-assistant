@@ -5562,6 +5562,22 @@ export function calculateAdditionalMedicareTax(params: {
 // The full §199A has W-2-wages limits + SSTB phase-outs above income thresholds — we
 // model the simple case (low/middle-income, non-SSTB). For high earners or SSTBs the
 // real number can be lower.
+/** FED-04 / P2-4 — Form 8995-A Schedule A/C per-business wage/UBIA limit row. */
+export interface PerBusinessQbiLimit {
+  label?: string;
+  /** This business's QBI (post-SSTB-phase). */
+  qbiIncome: number;
+  /** 20% × QBI before the wage/UBIA limit. */
+  tentativeDeduction: number;
+  /** max(50% W-2 wages, 25% wages + 2.5% UBIA) — 0 when no wage/UBIA data supplied. */
+  wageUbiaLimit: number;
+  /** False when this business has no supplied wage/UBIA data (unlimited 20% — the
+   *  CPA-applies-it-externally escape, preserved from the aggregate path). */
+  limitApplied: boolean;
+  /** This business's deductible amount after the (phased) wage/UBIA limit. */
+  deductibleAmount: number;
+}
+
 export interface QbiCalculation {
   qbiAmount: number;
   preliminaryDeduction: number;
@@ -5571,6 +5587,10 @@ export interface QbiCalculation {
   wageUbiaLimit?: number;
   /** True when the wage/UBIA limit reduced the deduction below the 20% tentative. */
   wageUbiaLimitBinds?: boolean;
+  /** FED-04 / P2-4 — Form 8995-A per-business wage/UBIA limit detail (when the
+   *  caller supplies `perBusiness`). Each business's limit is computed and
+   *  summed independently, so a high-wage business cannot rescue a low-wage one. */
+  perBusiness?: PerBusinessQbiLimit[];
 }
 
 // §199A taxable-income threshold + phase-in band by filing status / year.
@@ -5640,6 +5660,17 @@ export function calculateQbi(params: {
   /** Filing status + tax year — needed for the §199A threshold + phase-in band. */
   filingStatus?: string;
   taxYear?: number;
+  /**
+   * FED-04 / P2-4 — Form 8995-A per-business detail. When supplied (and
+   * non-empty), the §199A(b)(2)(B) wage/UBIA limit is computed PER BUSINESS and
+   * the limited deductions are summed — the correct multi-entity treatment,
+   * which prevents a high-wage business from "rescuing" a low-wage one. The sum
+   * of `perBusiness[].qbiIncome` MUST equal `qbiIncome` (the caller builds it
+   * post-SSTB-phase). A business with no supplied wage/UBIA data stays UNLIMITED
+   * (the aggregate path's CPA-applies-it-externally escape, per business).
+   * When absent, the aggregate `w2Wages`/`ubia` path runs unchanged.
+   */
+  perBusiness?: Array<{ qbiIncome: number; w2Wages: number; ubia: number; label?: string }>;
 }): QbiCalculation {
   const { qbiIncome, taxableIncomeBeforeQbi, netCapitalGain = 0 } = params;
   if (qbiIncome <= 0) {
@@ -5652,21 +5683,50 @@ export function calculateQbi(params: {
   // threshold, phased in over the band, and only when the CPA supplied the
   // business's W-2 wages / UBIA (positive). Absent that data, fall back to the
   // simplified 20% — the prior behavior (CPA applies the limit externally).
-  // Sub-gap: when QBI combines a Sch C (no wages entered) WITH a wage-bearing
-  // K-1, the engine applies one AGGREGATE limit to the combined QBI rather than
-  // a per-business §199A(b)(1) computation (the CPA enters all businesses' wages
-  // or overrides for the mixed case).
   const w2Wages = Math.max(0, params.w2Wages ?? 0);
   const ubia = Math.max(0, params.ubia ?? 0);
+  const band = qbiPhaseInBand(params.taxYear, params.filingStatus);
+  const overThreshold = taxableIncomeBeforeQbi > band.start;
+  const excessRatio = Math.min(1, Math.max(0,
+    (taxableIncomeBeforeQbi - band.start) / (band.end - band.start)));
   let wageLimitedPreliminary = preliminary;
   let wageUbiaLimit = 0;
   let wageUbiaLimitBinds = false;
-  if (w2Wages > 0 || ubia > 0) {
-    const band = qbiPhaseInBand(params.taxYear, params.filingStatus);
-    if (taxableIncomeBeforeQbi > band.start) {
+  let perBusinessDetail: PerBusinessQbiLimit[] | undefined;
+
+  if (params.perBusiness && params.perBusiness.length > 0) {
+    // ── FED-04 / P2-4 — Form 8995-A per-business wage/UBIA limit ──────────
+    // Each business's 20%-of-QBI is limited by ITS OWN max(50% wages, 25% wages
+    // + 2.5% UBIA), phased over the band; businesses with no supplied wage data
+    // stay unlimited (escape hatch). The limited deductions are then summed.
+    let sumDeduction = 0;
+    let sumLimit = 0;
+    perBusinessDetail = params.perBusiness.map((b) => {
+      const bQbi = Math.max(0, b.qbiIncome);
+      const bTentative = 0.20 * bQbi;
+      const bW2 = Math.max(0, b.w2Wages);
+      const bUbia = Math.max(0, b.ubia);
+      const hasWageData = bW2 > 0 || bUbia > 0;
+      let bLimit = 0;
+      let bDeduction = bTentative;
+      let limitApplied = false;
+      if (hasWageData && overThreshold) {
+        bLimit = Math.max(0.50 * bW2, 0.25 * bW2 + 0.025 * bUbia);
+        const reduction = Math.max(0, bTentative - bLimit) * excessRatio;
+        bDeduction = bTentative - reduction;
+        limitApplied = reduction > 0;
+      }
+      sumDeduction += bDeduction;
+      sumLimit += hasWageData ? bLimit : bTentative;
+      return { label: b.label, qbiIncome: bQbi, tentativeDeduction: bTentative, wageUbiaLimit: bLimit, limitApplied, deductibleAmount: bDeduction };
+    });
+    wageLimitedPreliminary = sumDeduction;
+    wageUbiaLimit = sumLimit;
+    wageUbiaLimitBinds = sumDeduction < preliminary - 0.005;
+  } else if (w2Wages > 0 || ubia > 0) {
+    // ── Aggregate path (single business, or CPA-supplied aggregate) ──────
+    if (overThreshold) {
       wageUbiaLimit = Math.max(0.50 * w2Wages, 0.25 * w2Wages + 0.025 * ubia);
-      const excessRatio = Math.min(1, Math.max(0,
-        (taxableIncomeBeforeQbi - band.start) / (band.end - band.start)));
       // Reduction = (tentative − limit) × excess-ratio, only when the limit
       // is below the tentative 20%. At the band top the full limit applies.
       const reduction = Math.max(0, preliminary - wageUbiaLimit) * excessRatio;
@@ -5699,6 +5759,7 @@ export function calculateQbi(params: {
     finalDeduction,
     wageUbiaLimit,
     wageUbiaLimitBinds,
+    perBusiness: perBusinessDetail,
   };
 }
 

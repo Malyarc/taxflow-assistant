@@ -30,6 +30,7 @@ import {
   calculateNiit,
   calculateAdditionalMedicareTax,
   calculateQbi,
+  type PerBusinessQbiLimit,
   qbiPhaseInBand,
   resolveTaxYear,
   calculateObbbaSchedule1ADeductions,
@@ -696,6 +697,10 @@ export interface ComputedTaxReturn {
   itemizedDeductions: number | null;
   /** QBI deduction (Section 199A), reduces taxable income further */
   qbiDeduction: number;
+  /** FED-04 / P2-4 — Form 8995-A per-business §199A wage/UBIA limit detail.
+   *  null when there is no QBI. One entry per qualified business (Sch C + each
+   *  K-1), each limited independently then summed. */
+  qbiPerBusiness: PerBusinessQbiLimit[] | null;
   taxableIncome: number;
   federalTaxLiability: number;
   federalTaxWithheld: number;
@@ -2411,6 +2416,48 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     (s, k) => s + Math.max(0, toNum(k.section199aW2Wages)), 0);
   const k1Section199aUbia = k1sForYear.reduce(
     (s, k) => s + Math.max(0, toNum(k.section199aUbia)), 0);
+
+  // FED-04 / P2-4 — Form 8995-A per-business wage/UBIA limit. Build one entry per
+  // qualified business (Sch C + each K-1 with positive QBI), each carrying its
+  // POST-SSTB-phase QBI and its OWN §199A W-2 wages / UBIA, so the wage/UBIA
+  // limit is applied per business and the limited deductions summed — the
+  // correct §199A(b)(1)/Form 8995-A treatment. The sum of per-business QBI
+  // equals qbiCombinedIncome by construction, so a single business (or a return
+  // with no supplied wage data) reproduces the aggregate path EXACTLY. Sch C
+  // §199A wages/UBIA come from optional `qbi_w2_wages`/`qbi_ubia` adjustments
+  // (a sole prop WITH employees); default 0 → Sch C stays unlimited (escape).
+  const phaseQbi = (raw: number, isSstb: boolean) => (isSstb ? raw * sstbPhaseFraction : raw);
+  const qbiBusinesses: Array<{ qbiIncome: number; w2Wages: number; ubia: number; label?: string }> = [];
+  if (qbiIncomeEffective > 0) {
+    qbiBusinesses.push({
+      qbiIncome: phaseQbi(qbiIncomeEffective, schCIsSstb),
+      w2Wages: Math.max(0, sumByType("qbi_w2_wages")),
+      ubia: Math.max(0, sumByType("qbi_ubia")),
+      label: "Schedule C",
+    });
+  }
+  {
+    // Mirror the aggregate effective-QBI logic per K-1: explicit §199A QBI wins;
+    // otherwise the Box 1/2/3 auto-default applies only when NO K-1 supplied an
+    // explicit figure (matches k1QbiContributionEffective above).
+    const useK1Auto = k1QbiContribution <= 0;
+    for (const k of k1sForYear) {
+      const explicitQbi = toNum(k.section199aQbi);
+      let raw = 0;
+      if (explicitQbi > 0) raw = explicitQbi;
+      else if (useK1Auto && (k.activityType ?? "active") !== "passive") {
+        raw = Math.max(0, toNum(k.box1OrdinaryIncome) + toNum(k.box2RentalRealEstate) + toNum(k.box3OtherRentalIncome));
+      }
+      if (raw <= 0) continue;
+      qbiBusinesses.push({
+        qbiIncome: phaseQbi(raw, k.isSstb === true),
+        w2Wages: Math.max(0, toNum(k.section199aW2Wages)),
+        ubia: Math.max(0, toNum(k.section199aUbia)),
+        label: k.entityName ?? undefined,
+      });
+    }
+  }
+
   const qbi = calculateQbi({
     qbiIncome: qbiCombinedIncome,
     // FED-04: cap base is POST-NOL taxable income, per Form 8995 Line 11.
@@ -2420,8 +2467,11 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     // dividends. Omitting it lets QBI wrongly shelter preferential-rate income.
     netCapitalGain: ltcgPreferential + qualifiedDividends,
     // §199A(b)(2)(B) wage/UBIA limit (K-1 depth) — only binds above the threshold.
+    // Aggregate values kept for the no-perBusiness fallback path; perBusiness
+    // (when non-empty) supersedes them with the per-business §199A(b)(1) limit.
     w2Wages: k1Section199aW2Wages,
     ubia: k1Section199aUbia,
+    perBusiness: qbiBusinesses,
     filingStatus: client.filingStatus,
     taxYear,
   });
@@ -3128,6 +3178,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     standardDeduction: calc.standardDeduction,
     itemizedDeductions: useItemizedDeductions ? itemizedTotal : null,
     qbiDeduction: qbi.finalDeduction,
+    qbiPerBusiness: qbi.perBusiness ?? null,
     taxableIncome: taxableAfterObbba,
     federalTaxLiability: totalFederalLiabilityWithRepayment,
     federalTaxWithheld: totalFederalWithheld + withholdingAdjustments,
