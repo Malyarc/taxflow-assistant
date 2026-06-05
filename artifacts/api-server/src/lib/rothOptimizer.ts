@@ -1,5 +1,5 @@
 import { computeTaxReturnPure, type TaxReturnInputs } from "./taxReturnEngine";
-import { projectYearForward } from "./multiYearEngine";
+import { projectYearForward, requiredMinimumDistribution, RMD_TRIGGER_AGE } from "./multiYearEngine";
 import { applyWhatIfMutations } from "./whatIfEngine";
 import { calculateFederalTaxWithBreakdown } from "./taxCalculator";
 
@@ -37,6 +37,26 @@ export interface RothLadderYear {
   iraBalanceRemaining: number;
 }
 
+/**
+ * Lifetime RMD-avoidance value: total federal tax over a long horizon comparing
+ * a no-conversion BASELINE (full RMDs at 73+) against the SCENARIO where the
+ * ladder's conversions shrink the traditional IRA, lowering future RMDs.
+ */
+export interface RmdAvoidanceProjection {
+  valueHorizonYears: number;
+  /** First projected tax year an RMD is required (baseline), or null if none in horizon. */
+  firstRmdTaxYear: number | null;
+  baselineLifetimeFederalTax: number;
+  scenarioLifetimeFederalTax: number;
+  /** baseline − scenario federal tax over the horizon. POSITIVE = converting wins. */
+  lifetimeFederalTaxSaved: number;
+  baselineRmdTotal: number;
+  scenarioRmdTotal: number;
+  baselineFinalIraBalance: number;
+  scenarioFinalIraBalance: number;
+  assumptions: string[];
+}
+
 export interface RothLadderPlan {
   years: RothLadderYear[];
   /** Total converted across the horizon (now growing tax-free in the Roth). */
@@ -49,7 +69,91 @@ export interface RothLadderPlan {
   horizonYears: number;
   incomeGrowth: number;
   iraGrowth: number;
+  /**
+   * Lifetime RMD-avoidance value model — only present when client.taxpayerAge
+   * is known (otherwise we can't tell when RMDs hit). Null when unavailable.
+   */
+  rmdAvoidance: RmdAvoidanceProjection | null;
   assumptions: string[];
+}
+
+/**
+ * Project the lifetime RMD-avoidance value of a conversion ladder. PURE.
+ * Compares total federal tax over `valueHorizonYears` between a BASELINE (no
+ * conversions; the full traditional IRA grows and is drained by RMDs at age
+ * 73+) and a SCENARIO where `conversionsByYear` shrink the IRA, so later RMDs —
+ * and the tax on them — are smaller. Returns null when the client's age is
+ * unknown (RMD timing is then unknowable). Testable in isolation with explicit
+ * conversions (the optimizer calls it with its computed ladder).
+ */
+export function projectRmdAvoidance(
+  baseline: TaxReturnInputs,
+  opts: {
+    startingIraBalance: number;
+    conversionsByYear: number[];
+    valueHorizonYears: number;
+    incomeGrowth?: number;
+    iraGrowth?: number;
+  },
+): RmdAvoidanceProjection | null {
+  const baseAge = baseline.client.taxpayerAge;
+  if (baseAge == null) return null;
+  const incomeGrowth = opts.incomeGrowth ?? 1.03;
+  const iraGrowth = opts.iraGrowth ?? 1.05;
+  const horizon = Math.max(1, Math.floor(opts.valueHorizonYears));
+
+  const addIncome = (inputs: TaxReturnInputs, amt: number): TaxReturnInputs =>
+    amt > 0
+      ? applyWhatIfMutations(inputs, [
+          { kind: "add_adjustment", adjustmentType: "additional_income", amount: Math.round(amt) },
+        ])
+      : inputs;
+
+  let sIra = Math.max(0, opts.startingIraBalance);
+  let bIra = Math.max(0, opts.startingIraBalance);
+  let sTax = 0;
+  let bTax = 0;
+  let sRmdTotal = 0;
+  let bRmdTotal = 0;
+  let firstRmdTaxYear: number | null = null;
+
+  for (let y = 0; y < horizon; y++) {
+    const age = baseAge + y;
+    const projected = projectYearForward(baseline, y, { incomeGrowth });
+    const conv = y < opts.conversionsByYear.length ? Math.max(0, opts.conversionsByYear[y]) : 0;
+
+    // SCENARIO: conversion + RMD on the conversion-reduced IRA.
+    const sRmd = requiredMinimumDistribution(sIra, age);
+    sTax += computeTaxReturnPure(addIncome(projected, conv + sRmd)).federalTaxLiability;
+    sRmdTotal += sRmd;
+    sIra = Math.max(0, sIra - conv - sRmd) * iraGrowth;
+
+    // BASELINE: RMD only, on the full un-converted IRA.
+    const bRmd = requiredMinimumDistribution(bIra, age);
+    bTax += computeTaxReturnPure(addIncome(projected, bRmd)).federalTaxLiability;
+    bRmdTotal += bRmd;
+    bIra = Math.max(0, bIra - bRmd) * iraGrowth;
+
+    if (firstRmdTaxYear == null && bRmd > 0) firstRmdTaxYear = projected.taxYear;
+  }
+
+  return {
+    valueHorizonYears: horizon,
+    firstRmdTaxYear,
+    baselineLifetimeFederalTax: Math.round(bTax),
+    scenarioLifetimeFederalTax: Math.round(sTax),
+    lifetimeFederalTaxSaved: Math.round(bTax - sTax),
+    baselineRmdTotal: Math.round(bRmdTotal),
+    scenarioRmdTotal: Math.round(sRmdTotal),
+    baselineFinalIraBalance: Math.round(bIra),
+    scenarioFinalIraBalance: Math.round(sIra),
+    assumptions: [
+      `Total federal tax over ${horizon} yrs: BASELINE (no conversions, full RMDs at age ${RMD_TRIGGER_AGE}+) vs SCENARIO (the ladder shrinks the traditional IRA → smaller future RMDs).`,
+      `RMD per IRS Uniform Lifetime Table (Pub 590-B). Un-converted IRA grows ${Math.round((iraGrowth - 1) * 100)}%/yr.`,
+      `CONSERVATIVE: counts RMD-tax avoidance NET of conversion cost only — does NOT credit the tax-free growth of converted Roth dollars, so the real lifetime value is higher.`,
+      `Future brackets clamp to the latest supported year; the baseline-vs-scenario delta stays meaningful even as absolute figures drift on long horizons.`,
+    ],
+  };
 }
 
 export function optimizeRothConversionLadder(
@@ -116,6 +220,22 @@ export function optimizeRothConversionLadder(
     iraBalance = Math.round(iraBalance * iraGrowth); // grow the remainder for next year
   }
 
+  // Lifetime RMD-avoidance value model — only when the client's age is known
+  // (we need it to time RMDs). Projected to ~age 92, at least the conversion
+  // horizon. This is the long-term VALUE of converting; the per-year ladder
+  // above is the near-term COST.
+  const baseAge = baseline.client.taxpayerAge;
+  const rmdAvoidance =
+    baseAge != null
+      ? projectRmdAvoidance(baseline, {
+          startingIraBalance: opts.traditionalIraBalance,
+          conversionsByYear: years.map((yr) => yr.conversion),
+          valueHorizonYears: Math.max(opts.horizonYears, Math.min(40, Math.max(1, 92 - baseAge))),
+          incomeGrowth,
+          iraGrowth,
+        })
+      : null;
+
   return {
     years,
     totalConverted: Math.round(totalConverted),
@@ -125,6 +245,7 @@ export function optimizeRothConversionLadder(
     horizonYears: opts.horizonYears,
     incomeGrowth,
     iraGrowth,
+    rmdAvoidance,
     assumptions: [
       "Fills to the TOP of the current federal ordinary bracket each year (no spill into the next bracket).",
       `Income projected forward at ${Math.round((incomeGrowth - 1) * 100)}%/yr; un-converted trad-IRA grows at ${Math.round((iraGrowth - 1) * 100)}%/yr.`,

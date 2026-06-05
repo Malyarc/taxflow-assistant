@@ -4108,6 +4108,44 @@ components:
           type: number
         iraGrowth:
           type: number
+        rmdAvoidance:
+          description: >
+            Lifetime RMD-avoidance value model — only present when the client's
+            age is known (needed to time RMDs); null otherwise.
+          anyOf:
+            - $ref: "#/components/schemas/RmdAvoidanceProjection"
+            - type: "null"
+        assumptions:
+          type: array
+          items:
+            type: string
+
+    RmdAvoidanceProjection:
+      type: object
+      required: [valueHorizonYears, firstRmdTaxYear, baselineLifetimeFederalTax, scenarioLifetimeFederalTax, lifetimeFederalTaxSaved, baselineRmdTotal, scenarioRmdTotal, baselineFinalIraBalance, scenarioFinalIraBalance, assumptions]
+      properties:
+        valueHorizonYears:
+          type: integer
+        firstRmdTaxYear:
+          description: First projected tax year an RMD is required, or null if none in horizon.
+          type: [integer, "null"]
+        baselineLifetimeFederalTax:
+          description: Total federal tax over the horizon with NO conversions (full RMDs).
+          type: number
+        scenarioLifetimeFederalTax:
+          description: Total federal tax over the horizon WITH the conversion ladder (smaller RMDs).
+          type: number
+        lifetimeFederalTaxSaved:
+          description: baseline − scenario federal tax. POSITIVE = converting wins over the horizon.
+          type: number
+        baselineRmdTotal:
+          type: number
+        scenarioRmdTotal:
+          type: number
+        baselineFinalIraBalance:
+          type: number
+        scenarioFinalIraBalance:
+          type: number
         assumptions:
           type: array
           items:

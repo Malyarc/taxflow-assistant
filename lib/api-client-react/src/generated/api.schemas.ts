@@ -2447,6 +2447,26 @@ export interface RothLadderYear {
   iraBalanceRemaining: number;
 }
 
+export interface RmdAvoidanceProjection {
+  valueHorizonYears: number;
+  /**
+   * First projected tax year an RMD is required, or null if none in horizon.
+   * @nullable
+   */
+  firstRmdTaxYear: number | null;
+  /** Total federal tax over the horizon with NO conversions (full RMDs). */
+  baselineLifetimeFederalTax: number;
+  /** Total federal tax over the horizon WITH the conversion ladder (smaller RMDs). */
+  scenarioLifetimeFederalTax: number;
+  /** baseline − scenario federal tax. POSITIVE = converting wins over the horizon. */
+  lifetimeFederalTaxSaved: number;
+  baselineRmdTotal: number;
+  scenarioRmdTotal: number;
+  baselineFinalIraBalance: number;
+  scenarioFinalIraBalance: number;
+  assumptions: string[];
+}
+
 export interface RothLadderPlan {
   years: RothLadderYear[];
   /** Total converted across the horizon (now growing tax-free in the Roth). */
@@ -2459,6 +2479,9 @@ export interface RothLadderPlan {
   horizonYears: number;
   incomeGrowth: number;
   iraGrowth: number;
+  /** Lifetime RMD-avoidance value model — only present when the client's age is known (needed to time RMDs); null otherwise.
+   */
+  rmdAvoidance?: RmdAvoidanceProjection | null;
   assumptions: string[];
 }
 

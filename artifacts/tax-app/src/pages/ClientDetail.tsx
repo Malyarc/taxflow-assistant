@@ -5075,6 +5075,27 @@ function RothOptimizerCard({ clientId }: { clientId: number }) {
               <div className="text-lg font-semibold text-violet-900 tabular-nums">{pct(Number(plan.blendedConversionRate ?? 0))}</div>
             </div>
           </div>
+          {plan.rmdAvoidance ? (
+            <div className="rounded border border-violet-300 bg-violet-100/40 p-3 text-xs text-violet-900 space-y-1">
+              <div className="font-semibold">
+                Lifetime RMD-avoidance ({plan.rmdAvoidance.valueHorizonYears}-yr horizon to ~age 92)
+              </div>
+              <div className="flex flex-wrap gap-x-6 gap-y-1">
+                <span>No-conversion lifetime tax: <span className="tabular-nums font-medium">{fmt(Number(plan.rmdAvoidance.baselineLifetimeFederalTax))}</span></span>
+                <span>With-ladder lifetime tax: <span className="tabular-nums font-medium">{fmt(Number(plan.rmdAvoidance.scenarioLifetimeFederalTax))}</span></span>
+                <span>
+                  Net lifetime tax {Number(plan.rmdAvoidance.lifetimeFederalTaxSaved) >= 0 ? "saved" : "extra cost"}:{" "}
+                  <span className={`tabular-nums font-semibold ${Number(plan.rmdAvoidance.lifetimeFederalTaxSaved) >= 0 ? "text-success" : "text-destructive"}`}>
+                    {fmt(Math.abs(Number(plan.rmdAvoidance.lifetimeFederalTaxSaved)))}
+                  </span>
+                </span>
+              </div>
+              <div className="text-[11px] text-violet-700">
+                Lifetime RMDs: {fmt(Number(plan.rmdAvoidance.baselineRmdTotal))} (no conversion) →{" "}
+                {fmt(Number(plan.rmdAvoidance.scenarioRmdTotal))} (with ladder). Conservative — excludes tax-free Roth growth.
+              </div>
+            </div>
+          ) : null}
           <div className="rounded border border-violet-200 bg-white/40 overflow-hidden">
             <table className="w-full text-xs">
               <thead className="bg-violet-100/50 text-violet-900">

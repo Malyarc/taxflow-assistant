@@ -2433,6 +2433,43 @@ export const RunRothOptimizerResponse = zod.object({
     horizonYears: zod.number(),
     incomeGrowth: zod.number(),
     iraGrowth: zod.number(),
+    rmdAvoidance: zod
+      .union([
+        zod.object({
+          valueHorizonYears: zod.number(),
+          firstRmdTaxYear: zod
+            .number()
+            .nullable()
+            .describe(
+              "First projected tax year an RMD is required, or null if none in horizon.",
+            ),
+          baselineLifetimeFederalTax: zod
+            .number()
+            .describe(
+              "Total federal tax over the horizon with NO conversions (full RMDs).",
+            ),
+          scenarioLifetimeFederalTax: zod
+            .number()
+            .describe(
+              "Total federal tax over the horizon WITH the conversion ladder (smaller RMDs).",
+            ),
+          lifetimeFederalTaxSaved: zod
+            .number()
+            .describe(
+              "baseline − scenario federal tax. POSITIVE = converting wins over the horizon.",
+            ),
+          baselineRmdTotal: zod.number(),
+          scenarioRmdTotal: zod.number(),
+          baselineFinalIraBalance: zod.number(),
+          scenarioFinalIraBalance: zod.number(),
+          assumptions: zod.array(zod.string()),
+        }),
+        zod.null(),
+      ])
+      .optional()
+      .describe(
+        "Lifetime RMD-avoidance value model — only present when the client's age is known (needed to time RMDs); null otherwise.\n",
+      ),
     assumptions: zod.array(zod.string()),
   }),
 });
