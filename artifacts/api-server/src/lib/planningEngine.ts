@@ -39,10 +39,12 @@ import {
   calculateStateTaxWithBreakdown,
   getFederalStandardDeduction,
   getFederalBracketBreakpoints,
+  getSaltCap,
   KIDDIE_TAX_THRESHOLD,
   resolveTaxYear,
   SS_WAGE_BASE,
   calculateStudentLoanInterest,
+  type TaxYear,
 } from "./taxCalculator";
 import { runWhatIfScenarios } from "./whatIfEngine";
 import {
@@ -280,7 +282,7 @@ function stateMarginalRate(computed: ComputedTaxReturn): number {
  * employer-side). Per IRS Notice 2023-75 (TY2024), Notice 2024-80 (TY2025), and
  * Notice 2025-67 / IR-2025-111 (TY2026 = $72,000).
  */
-const SEP_ANNUAL_LIMIT: Record<number, number> = {
+const SEP_ANNUAL_LIMIT: Record<TaxYear, number> = {
   2024: 69000,
   2025: 70000,
   2026: 72000,
@@ -336,7 +338,7 @@ function detectSepIra(args: {
   if (hasExistingSepOrSolo(adjustments)) return null;
 
   const halfSe = computed.detail.se.deductibleHalf;
-  const sepCap = SEP_ANNUAL_LIMIT[computed.taxYear] ?? SEP_ANNUAL_LIMIT[2025];
+  const sepCap = SEP_ANNUAL_LIMIT[resolveTaxYear(computed.taxYear)];
   // Pub 560: contribution = 20% of (net SE earnings − half-SE-tax deduction)
   // for the self-employed individual (the rate-conversion of the 25%-of-net-
   // compensation employer rule). Capped at the §415(c) annual additions limit.
@@ -422,30 +424,6 @@ const PTET_ELECTING_STATES: ReadonlySet<string> = new Set([
   "SC", "UT", "VA", "WV", "WI",
 ]);
 
-/**
- * SALT deduction cap, year-indexed, including the OBBBA (P.L. 119-21 §70120)
- * high-income phase-down. TY2024 and earlier = TCJA $10k ($5k MFS). TY2025 base
- * $40,000 ($20,000 MFS); TY2026 $40,400 ($20,200 MFS) [+1%/yr through 2029,
- * reverts to $10k after 2029]. Phase-DOWN: reduced by 30% of MAGI over $500,000
- * ($250,000 MFS; $505,000/$252,500 for TY2026), floored at $10,000 ($5,000 MFS).
- * Codified in IRC §164(b)(6) (amended) + §164(b)(7) (added).
- *
- * NOTE: the CORE engine still applies the TCJA $10k cap when computing the
- * federal itemized total + saltDeductible (an OBBBA core-engine SALT refresh is
- * a tracked follow-up). This planning helper computes the OBBBA cap independently
- * off saltUncapped + MAGI so the PTET recommendation reflects current law.
- */
-function obbbaSaltCap(taxYear: number, filingStatus: string, magi: number): number {
-  const isMfs = filingStatus === "married_filing_separately";
-  if (taxYear < 2025) return isMfs ? 5_000 : 10_000;
-  const fullBase = taxYear >= 2026 ? 40_400 : 40_000;
-  const baseCap = isMfs ? fullBase / 2 : fullBase;
-  const threshold = (taxYear >= 2026 ? 505_000 : 500_000) * (isMfs ? 0.5 : 1);
-  const floor = isMfs ? 5_000 : 10_000;
-  if (magi <= threshold) return baseCap;
-  return Math.max(floor, baseCap - 0.30 * (magi - threshold));
-}
-
 function detectPtetElection(args: {
   client: ClientFacts;
   computed: ComputedTaxReturn;
@@ -473,7 +451,9 @@ function detectPtetElection(args: {
   // and the engine picks the std ded (itemizedDeductions == null). The old
   // itemizing gate suppressed exactly those clients. The saltUncapped > saltCap
   // test below correctly detects stranded SALT for itemizers AND std-ded filers.
-  const saltCap = obbbaSaltCap(computed.taxYear, client.filingStatus, computed.adjustedGrossIncome);
+  // OBBBA-aware, year-indexed SALT cap — single source of truth shared with the
+  // core engine's Schedule A computation (taxCalculator.getSaltCap).
+  const saltCap = getSaltCap(computed.taxYear, client.filingStatus, computed.adjustedGrossIncome);
   const { saltUncapped } = computed.scheduleA;
   if (saltUncapped <= saltCap) return null;
 
@@ -1179,7 +1159,7 @@ function detectNiitCliff(args: {
  * NEW $400 minimum QBI deduction (TY2026, for ≥$1,000 active QBI; indexed after
  * 2026) — informational here; the core QBI calc floor is a tracked follow-up.
  */
-const QBI_THRESHOLDS: Record<number, Record<string, { threshold: number; top: number }>> = {
+const QBI_THRESHOLDS: Record<TaxYear, Record<string, { threshold: number; top: number }>> = {
   2024: {
     single: { threshold: 191950, top: 241950 },
     married_filing_separately: { threshold: 191950, top: 241950 },
@@ -1213,7 +1193,7 @@ function detectQbiPhaseIn(args: {
   // Only fires for K-1 / pass-through clients with QBI income.
   if (k1Active <= 0 || qbi <= 0) return null;
 
-  const cfg = QBI_THRESHOLDS[computed.taxYear];
+  const cfg = QBI_THRESHOLDS[resolveTaxYear(computed.taxYear)];
   if (!cfg) return null;
   const tier = cfg[computed.filingStatus] ?? cfg.single;
   const taxableBeforeQbi = computed.taxableIncome + computed.qbiDeduction;
@@ -1384,7 +1364,7 @@ function detectTaxLossHarvesting(args: {
  * 2024 (SECURE 2.0 Act §307). TY2025 $108,000 per IRS Notice 2024-80;
  * TY2026 $111,000 (indexed; Rev. Proc. 2025-32).
  */
-const QCD_CAP: Record<number, number> = {
+const QCD_CAP: Record<TaxYear, number> = {
   2024: 105_000,
   2025: 108_000,
   2026: 111_000,
@@ -1422,7 +1402,7 @@ function detectQcd(args: {
   const charitableCash = sumAdjustment(adjustments, "charitable_cash");
   if (charitableCash <= 0) return null;
 
-  const cap = QCD_CAP[computed.taxYear] ?? QCD_CAP[2025];
+  const cap = QCD_CAP[resolveTaxYear(computed.taxYear)];
   // QCD amount = lesser of (giving, cap, retirement income — can't QCD more
   // than the IRA distribution).
   const qcdAmount = Math.min(charitableCash, cap, retIncome);
@@ -1672,7 +1652,7 @@ function detectAugustaRule(args: {
 
 // ── G1.14 — HSA maximization ──────────────────────────────────────────────
 
-const HSA_CAP: Record<number, { self: number; family: number; catchup55: number }> = {
+const HSA_CAP: Record<TaxYear, { self: number; family: number; catchup55: number }> = {
   2024: { self: 4_150, family: 8_300, catchup55: 1_000 },
   2025: { self: 4_300, family: 8_550, catchup55: 1_000 },
   // TY2026 per Rev. Proc. 2025-19 (§223(b)). $1,000 catch-up is statutory, not indexed.
@@ -1698,7 +1678,7 @@ function detectHsaMax(args: {
   const hasAnyHsa = existingHsa + existingEmployer > 0;
   if (!isFamily && !hasAnyHsa) return null;
 
-  const cfg = HSA_CAP[computed.taxYear] ?? HSA_CAP[2025];
+  const cfg = HSA_CAP[resolveTaxYear(computed.taxYear)];
   const baseCap = isFamily ? cfg.family : cfg.self;
   const age = client.taxpayerAge ?? 0;
   const catchup = age >= 55 ? cfg.catchup55 : 0;
@@ -1869,12 +1849,12 @@ function detectNua(args: {
 
 // ── G1.16 — Mega-Backdoor Roth ───────────────────────────────────────────
 
-const G1_16_415C_LIMIT: Record<number, number> = {
+const G1_16_415C_LIMIT: Record<TaxYear, number> = {
   2024: 69_000,
   2025: 70_000,
   2026: 72_000, // Notice 2025-67 / IR-2025-111
 };
-const G1_16_402G_ELECTIVE: Record<number, number> = {
+const G1_16_402G_ELECTIVE: Record<TaxYear, number> = {
   2024: 23_000,
   2025: 23_500,
   2026: 24_500, // IR-2025-111 (401(k) elective deferral)
@@ -1894,8 +1874,8 @@ function detectMegaBackdoorRoth(args: {
   const afterTaxAsset = assetBalances.find((a) => a.assetType === "401k_after_tax");
   if (!afterTaxAsset) return null;
 
-  const cap415c = G1_16_415C_LIMIT[computed.taxYear] ?? G1_16_415C_LIMIT[2025];
-  const electiveCap = G1_16_402G_ELECTIVE[computed.taxYear] ?? G1_16_402G_ELECTIVE[2025];
+  const cap415c = G1_16_415C_LIMIT[resolveTaxYear(computed.taxYear)];
+  const electiveCap = G1_16_402G_ELECTIVE[resolveTaxYear(computed.taxYear)];
   // Assume employee elective contribution = full $23k elective cap (most
   // high-comp clients in this scenario are maxing). Assume employer match
   // ≈ 5% of W-2 wages (reasonable cohort assumption).
@@ -2004,7 +1984,7 @@ function detectScorpReasonableComp(args: {
   // savings by the full 12.4% SS portion for high-comp owners.
   const SS_RATE = 0.124;
   const MED_RATE = 0.029;
-  const ssWageBase = SS_WAGE_BASE[computed.taxYear === 2024 ? 2024 : computed.taxYear === 2026 ? 2026 : 2025];
+  const ssWageBase = SS_WAGE_BASE[resolveTaxYear(computed.taxYear)];
   const ssBaseRemaining = Math.max(0, ssWageBase - reasonableComp);
   const ssSavings = Math.min(distributions, ssBaseRemaining) * SS_RATE;
   const medSavings = distributions * MED_RATE;
@@ -2397,9 +2377,12 @@ function detectPreRmdRothLadder(args: {
 const G1_23_MIN_RENTAL_GROSS = 100_000;
 const G1_23_MIN_MARGINAL = 0.24;
 const G1_23_ACCELERATED_FRACTION = 0.25;
-const G1_23_BONUS_RATE: Record<number, number> = {
+const G1_23_BONUS_RATE: Record<TaxYear, number> = {
   2024: 0.60,
   2025: 0.40,
+  // OBBBA (§70301) restored 100% bonus depreciation for property placed in
+  // service after 2025-01-19 — matches the core engine's BONUS_DEPR_RATES.
+  2026: 1.0,
 };
 
 function detectCostSegregation(args: {
@@ -2410,7 +2393,7 @@ function detectCostSegregation(args: {
   if (rentalGross < G1_23_MIN_RENTAL_GROSS) return null;
   const fedRate = federalMarginalRate(computed);
   if (fedRate < G1_23_MIN_MARGINAL) return null;
-  const bonusRate = G1_23_BONUS_RATE[computed.taxYear] ?? 0.40;
+  const bonusRate = G1_23_BONUS_RATE[resolveTaxYear(computed.taxYear)];
 
   // estSavings = rentalGross × 0.25 (accelerated portion) × bonus × marginal
   const acceleratedBasis = rentalGross * G1_23_ACCELERATED_FRACTION;
@@ -2529,13 +2512,16 @@ function detectOpportunityZone(args: {
 // phase-out, do a backdoor" when they could still contribute directly).
 // Notice 2024-80 (TY2025) / Rev. Proc. 2025-32 (TY2026). MFS top is the
 // statutory un-indexed $10k (lived-with-spouse).
-const G1_26_ROTH_PHASEOUT_TOP: Record<number, Record<string, number>> = {
+const G1_26_ROTH_PHASEOUT_TOP: Record<TaxYear, Record<string, number>> = {
   2024: { single: 161_000, head_of_household: 161_000, married_filing_jointly: 240_000, qualifying_widow: 240_000, married_filing_separately: 10_000 },
   2025: { single: 165_000, head_of_household: 165_000, married_filing_jointly: 246_000, qualifying_widow: 246_000, married_filing_separately: 10_000 },
   2026: { single: 168_000, head_of_household: 168_000, married_filing_jointly: 252_000, qualifying_widow: 252_000, married_filing_separately: 10_000 },
 };
-const G1_26_IRA_CAP_BASE = 7_000;
-const G1_26_IRA_CAP_CATCHUP = 8_000;
+// IRA contribution limit (§219(b)) + 50+ catch-up (§219(b)(5)(B), indexed by
+// SECURE 2.0 §108 from 2024). 2026 per IRS Notice 2025-67: base $7,500,
+// catch-up $1,100 -> $8,600 total for age 50+.
+const G1_26_IRA_CAP_BASE: Record<TaxYear, number> = { 2024: 7_000, 2025: 7_000, 2026: 7_500 };
+const G1_26_IRA_CAP_CATCHUP: Record<TaxYear, number> = { 2024: 8_000, 2025: 8_000, 2026: 8_600 };
 
 function detectBackdoorRoth(args: {
   client: ClientFacts;
@@ -2547,7 +2533,7 @@ function detectBackdoorRoth(args: {
   // AGI must exceed the direct-Roth contribution phase-out TOP for the return's
   // tax year (year-indexed so a TY2025/2026 client inside the current band is not
   // wrongly told to use the backdoor when a direct contribution is still allowed).
-  const topsForYear = G1_26_ROTH_PHASEOUT_TOP[computed.taxYear] ?? G1_26_ROTH_PHASEOUT_TOP[2025];
+  const topsForYear = G1_26_ROTH_PHASEOUT_TOP[resolveTaxYear(computed.taxYear)];
   const phaseOutTop = topsForYear[client.filingStatus] ?? topsForYear.single;
   if (computed.adjustedGrossIncome <= phaseOutTop) return null;
 
@@ -2564,7 +2550,8 @@ function detectBackdoorRoth(args: {
   const proRataTrap = preTaxBalance > 1_000;
 
   const age = client.taxpayerAge ?? 0;
-  const contribAmount = age >= 50 ? G1_26_IRA_CAP_CATCHUP : G1_26_IRA_CAP_BASE;
+  const contribAmount =
+    (age >= 50 ? G1_26_IRA_CAP_CATCHUP : G1_26_IRA_CAP_BASE)[resolveTaxYear(computed.taxYear)];
   // Long-term benefit similar to G1.16: 7%/yr growth × 20 yrs × 32%
   // future rate, discounted at 5%. PV = contrib × (1.07^20 - 1) × 0.32 / 1.05^20.
   const growth = Math.pow(1.07, 20);
@@ -2865,18 +2852,13 @@ function detectEvCredit(args: {
 // ── G1.34 — Residential Clean Energy §25D ─────────────────────────────────
 
 const G1_34_ASSUMED_INSTALL = 20_000;
-const G1_34_CREDIT_RATE: Record<number, number> = {
+// §25D residential clean energy credit rate. OBBBA repealed §25D for property
+// placed in service after 2025-12-31, so the G1.34 strategy's validUntil (2025)
+// suppresses it for TY2026+ regardless — only the supported years are kept here.
+const G1_34_CREDIT_RATE: Record<TaxYear, number> = {
   2024: 0.30,
   2025: 0.30,
   2026: 0.30,
-  2027: 0.30,
-  2028: 0.30,
-  2029: 0.30,
-  2030: 0.30,
-  2031: 0.30,
-  2032: 0.30,
-  2033: 0.26,
-  2034: 0.22,
 };
 const G1_34_MIN_AGI = 50_000;
 
@@ -2896,7 +2878,7 @@ function detectResidentialCleanEnergy(args: {
   const hasMortgage = sumAdjustment(adjustments, "mortgage_interest") > 0;
   if (!hasResidence && !hasMortgage) return null;
 
-  const rate = G1_34_CREDIT_RATE[computed.taxYear] ?? 0.30;
+  const rate = G1_34_CREDIT_RATE[resolveTaxYear(computed.taxYear)];
   const credit = Math.round(G1_34_ASSUMED_INSTALL * rate);
   // Must have enough federal tax to use the (non-refundable) credit. Engine
   // allows carryforward, so partial benefit is OK — but suppress for very
@@ -5237,10 +5219,10 @@ function detectBonusDepreciationOptOut(args: {
 //   TY2024 $252,150–$292,150 / TY2025 $259,190–$299,190 / TY2026 $265,080–$305,080.
 // OBBBA (P.L. 119-21) made up to $5,000 (TY2025) / $5,120 (TY2026) of the §23
 // credit REFUNDABLE (was fully non-refundable through TY2024).
-const G1_65_MAX_CREDIT: Record<number, number> = { 2024: 16_810, 2025: 17_280, 2026: 17_670 };
-const G1_65_AGI_PHASE_OUT_TOP: Record<number, number> = { 2024: 292_150, 2025: 299_190, 2026: 305_080 };
-const G1_65_AGI_PHASE_OUT_START: Record<number, number> = { 2024: 252_150, 2025: 259_190, 2026: 265_080 };
-const G1_65_REFUNDABLE: Record<number, number> = { 2024: 0, 2025: 5_000, 2026: 5_120 };
+const G1_65_MAX_CREDIT: Record<TaxYear, number> = { 2024: 16_810, 2025: 17_280, 2026: 17_670 };
+const G1_65_AGI_PHASE_OUT_TOP: Record<TaxYear, number> = { 2024: 292_150, 2025: 299_190, 2026: 305_080 };
+const G1_65_AGI_PHASE_OUT_START: Record<TaxYear, number> = { 2024: 252_150, 2025: 259_190, 2026: 265_080 };
+const G1_65_REFUNDABLE: Record<TaxYear, number> = { 2024: 0, 2025: 5_000, 2026: 5_120 };
 const G1_65_HEURISTIC_AVG = 5_000;
 
 function detectAdoptionCredit(args: {
@@ -5253,10 +5235,11 @@ function detectAdoptionCredit(args: {
   const kidsUnder17 = client.dependentsUnder17 ?? 0;
   if (kidsUnder17 < 1) return null;
   const year = computed.taxYear;
-  const maxCredit = G1_65_MAX_CREDIT[year] ?? G1_65_MAX_CREDIT[2025];
-  const phaseOutTop = G1_65_AGI_PHASE_OUT_TOP[year] ?? G1_65_AGI_PHASE_OUT_TOP[2025];
-  const phaseOutStart = G1_65_AGI_PHASE_OUT_START[year] ?? G1_65_AGI_PHASE_OUT_START[2025];
-  const refundable = G1_65_REFUNDABLE[year] ?? G1_65_REFUNDABLE[2025];
+  const ry = resolveTaxYear(year);
+  const maxCredit = G1_65_MAX_CREDIT[ry];
+  const phaseOutTop = G1_65_AGI_PHASE_OUT_TOP[ry];
+  const phaseOutStart = G1_65_AGI_PHASE_OUT_START[ry];
+  const refundable = G1_65_REFUNDABLE[ry];
   if (computed.adjustedGrossIncome > phaseOutTop) return null;
   void adjustments;
 
@@ -5345,7 +5328,7 @@ function detectRolloverIraTo401k(args: {
   // TOP for the return's tax year). Reuse the YEAR-INDEXED G1.26 map — a stale
   // TY2024-only map here gates fire/no-fire wrong for TY2025/26 returns (a
   // filer inside the current band can still contribute directly → no backdoor).
-  const phaseOutTops = G1_26_ROTH_PHASEOUT_TOP[computed.taxYear] ?? G1_26_ROTH_PHASEOUT_TOP[2025];
+  const phaseOutTops = G1_26_ROTH_PHASEOUT_TOP[resolveTaxYear(computed.taxYear)];
   const phaseOutTop = phaseOutTops[client.filingStatus] ?? phaseOutTops.single;
   if (computed.adjustedGrossIncome <= phaseOutTop) return null;
 
@@ -6827,7 +6810,7 @@ function detectCharitableLeadTrust(args: {
 
 // §401(a)(17) annual compensation cap, indexed. TY2024 $345k (Notice 2023-75);
 // TY2025 $350k (Notice 2024-80); TY2026 $360k (Notice 2025-67 / IR-2025-111).
-const G1_87_COMP_CAP: Record<number, number> = {
+const G1_87_COMP_CAP: Record<TaxYear, number> = {
   2024: 345_000,
   2025: 350_000,
   2026: 360_000,
@@ -6843,7 +6826,7 @@ function detectSection401a17Cap(args: {
   if (computed.totalIncome < G1_87_MIN_INCOME) return null;
   const seIncome = computed.detail.se.netSeEarnings ?? 0;
   const wagesProxy = Math.max(0, computed.totalIncome - seIncome);
-  const cap = G1_87_COMP_CAP[computed.taxYear] ?? G1_87_COMP_CAP[2025];
+  const cap = G1_87_COMP_CAP[resolveTaxYear(computed.taxYear)];
   if (wagesProxy < cap && seIncome < cap) return null;
   // Skip if no qualified plan adjustment.
   const hasRetirement = adjustments.some(
@@ -6929,7 +6912,7 @@ function detectSstbNavigation(args: {
     (a) => a.adjustmentType === "qbi_income" && a.isApplied !== false && toNum(a.amount) > 0,
   );
   if (!hasQbi) return null;
-  const sstbTier = (QBI_THRESHOLDS[computed.taxYear] ?? QBI_THRESHOLDS[2025]);
+  const sstbTier = (QBI_THRESHOLDS[resolveTaxYear(computed.taxYear)]);
   const sstbBand = sstbTier[computed.filingStatus] ?? sstbTier.single;
   const fullThresh = sstbBand.threshold;
   const phaseOutTop = sstbBand.top;
@@ -6997,7 +6980,7 @@ function detectSection199aAggregation(args: {
     (a) => a.adjustmentType === "qbi_income" && a.isApplied !== false && toNum(a.amount) > 0,
   );
   if (!hasQbi) return null;
-  const aggTier = (QBI_THRESHOLDS[computed.taxYear] ?? QBI_THRESHOLDS[2025]);
+  const aggTier = (QBI_THRESHOLDS[resolveTaxYear(computed.taxYear)]);
   const fullThresh = (aggTier[computed.filingStatus] ?? aggTier.single).threshold;
   if (computed.taxableIncome < fullThresh) return null;
 
@@ -7197,7 +7180,7 @@ const G1_92_MIN_SE = 20_000;
 const G1_92_MAX_SE = 150_000;
 // §402(g) elective deferral cap (employee side of a Solo 401(k)), indexed.
 // TY2024 $23,000; TY2025 $23,500; TY2026 $24,500 (IR-2025-111).
-const G1_92_EMPLOYEE_DEFERRAL: Record<number, number> = {
+const G1_92_EMPLOYEE_DEFERRAL: Record<TaxYear, number> = {
   2024: 23_000,
   2025: 23_500,
   2026: 24_500,
@@ -7230,11 +7213,11 @@ function detectSolo401kDeferral(args: {
   const baseForContrib = Math.max(0, netSe - halfSe);
   const sepContrib = baseForContrib * 0.20;
 
-  const employeeDeferral = G1_92_EMPLOYEE_DEFERRAL[computed.taxYear] ?? G1_92_EMPLOYEE_DEFERRAL[2025];
+  const employeeDeferral = G1_92_EMPLOYEE_DEFERRAL[resolveTaxYear(computed.taxYear)];
   // Solo 401(k) total = employee deferral + employer match (= SEP-equivalent),
   // capped at the §415(c) annual-additions limit for the year.
   const employerMatch = sepContrib;
-  const section415cCap = SEP_ANNUAL_LIMIT[computed.taxYear] ?? SEP_ANNUAL_LIMIT[2025];
+  const section415cCap = SEP_ANNUAL_LIMIT[resolveTaxYear(computed.taxYear)];
   const totalContribution = Math.min(employeeDeferral + employerMatch, section415cCap);
 
   // Extra shelter vs SEP
@@ -7506,8 +7489,9 @@ function detectSection1377Election(args: {
 
 // ── G1.96 — §132(f) Qualified Transportation Fringe (heuristic) ─────────
 
-const G1_96_MONTHLY_CAP_2024 = 315;
-const G1_96_MONTHLY_CAP_2025 = 325;
+// §132(f) monthly qualified-transportation-fringe cap (transit + parking each).
+// 2026 = $340 per Rev. Proc. 2025-32.
+const G1_96_MONTHLY_CAP: Record<TaxYear, number> = { 2024: 315, 2025: 325, 2026: 340 };
 const G1_96_MIN_INCOME = 50_000;
 
 function detectQualifiedTransportFringe(args: {
@@ -7521,7 +7505,7 @@ function detectQualifiedTransportFringe(args: {
   const wagesProxy = Math.max(0, computed.totalIncome - seIncome);
   if (wagesProxy < G1_96_MIN_INCOME) return null;
 
-  const monthlyCap = computed.taxYear >= 2025 ? G1_96_MONTHLY_CAP_2025 : G1_96_MONTHLY_CAP_2024;
+  const monthlyCap = G1_96_MONTHLY_CAP[resolveTaxYear(computed.taxYear)];
   const annualAmount = monthlyCap * 12;
   const fedRate = federalMarginalRate(computed);
   const estSavings = Math.round(annualAmount * fedRate);
@@ -7578,6 +7562,7 @@ function detectQualifiedTransportFringe(args: {
     assumptions: [
       `TY2024 monthly cap $315 (transit + parking each, Notice 2023-75).`,
       `TY2025 monthly cap $325 (Notice 2024-80).`,
+      `TY2026 monthly cap $340 (Rev. Proc. 2025-32).`,
       `Transit pass per §132(f)(5)(A) — token, fare card, voucher, similar instrument.`,
       `Commuter highway vehicle per §132(f)(5)(B) — vehicle seat ≥ 6 adults; 50%+ of mileage transports employees between home + workplace.`,
       `Qualified parking per §132(f)(5)(C) — on/near employer premises or near transit terminal employee uses for commute.`,

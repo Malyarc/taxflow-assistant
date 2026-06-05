@@ -5138,9 +5138,10 @@ header("PLAN-07 G1.17 — S-corp reasonable comp: SS savings net of wage base");
 // ============================================================================
 section("PLAN-08 — catalog validUntil expiry gate");
 // Direct logic: a strategy is expired when the RETURN's tax year is past its
-// validUntil year. Most strategies are validUntil "2026-12-31"; the §199A
-// strategies (G1.7/G1.88/G1.89) are validUntil "2099-12-31" because OBBBA
-// (P.L. 119-21) made §199A PERMANENT (no sunset).
+// validUntil year. After the 2026-06 catalog refresh (v1.20), strategies built
+// on PERMANENT IRC provisions are validUntil "2099-12-31"; only genuine OBBBA
+// sunsets keep near-term dates (clean-energy credits 2025; tips/OT/car-loan/
+// senior deductions 2028).
 header("PLAN-08 — isStrategyExpiredForYear logic");
 {
   checkTruthy("PLAN-08", "2026-12-31 valid for TY2024", isStrategyExpiredForYear("2026-12-31", 2024), false);
@@ -5162,21 +5163,19 @@ header("PLAN-08 — expired catalog → no hits for a future tax year");
   const hits2024 = evaluatePlanningOpportunities({ client: inputs.client, computed: computed2024, adjustments: [] });
   checkTruthy("PLAN-08", "TY2024 SEP filer surfaces ≥1 hit", hits2024.length > 0, true);
 
-  // Same computed return, but stamp the tax year past the 2026 validUntils.
-  // This SE-only client (no K-1, no explicit qbi_income adj) triggers none of
-  // the now-permanent §199A strategies, so 0 hits still holds.
-  const computed2027 = { ...computed2024, taxYear: 2027 } as typeof computed2024;
-  const hits2027 = evaluatePlanningOpportunities({ client: inputs.client, computed: computed2027, adjustments: [] });
-  check("PLAN-08", "TY2027 (past validUntil 2026) → 0 hits", hits2027.length, 0, 0);
+  // Same computed return, but stamp the tax year past EVERY validUntil (2099).
+  // At TY2100 every strategy — even the now-permanent ones — is suppressed.
+  const computed2100 = { ...computed2024, taxYear: 2100 } as typeof computed2024;
+  const hits2100 = evaluatePlanningOpportunities({ client: inputs.client, computed: computed2100, adjustments: [] });
+  check("PLAN-08", "TY2100 (past every validUntil 2099) → 0 hits", hits2100.length, 0, 0);
 }
 
-// PLAN-08 permanence — §199A made PERMANENT by OBBBA (validUntil 2099) keeps
-// firing past 2026 while sunsetting strategies (e.g. SEP, validUntil 2026) are
-// suppressed. Client: single SE $280k + explicit qbi_income $258,580 → taxable
-// ~$200,670 (TY2025 std ded $15,750), within the §199A SSTB band, so G1.88
-// fires. Stamp taxYear=2027: G1.88 (validUntil 2099) survives; G1.1 SEP
-// (validUntil 2026) is suppressed.
-header("PLAN-08 permanence — §199A survives TY2027; SEP suppressed");
+// PLAN-08 permanence — post-refresh (v1.20) both §199A (G1.88) and SEP (G1.1)
+// are validUntil 2099, so both keep firing at TY2027. The gate itself is proven
+// by stamping a year past 2099 (TY2100), where every strategy is suppressed.
+// Client: single SE $280k + explicit qbi_income $258,580 → taxable ~$200,670
+// (TY2025 std ded $15,750), within the §199A SSTB band, so G1.88 fires.
+header("PLAN-08 permanence — §199A + SEP survive TY2027 (permanent); all suppressed TY2100");
 {
   const inputs = {
     client: { filingStatus: "single", state: "FL", taxYear: 2025 } as unknown as TaxReturnInputs["client"],
@@ -5191,7 +5190,14 @@ header("PLAN-08 permanence — §199A survives TY2027; SEP suppressed");
   const computed2027 = { ...computed2025, taxYear: 2027 } as typeof computed2025;
   const hits2027 = evaluatePlanningOpportunities({ client: inputs.client, computed: computed2027, adjustments: inputs.adjustments });
   checkTruthy("PLAN-08perm", "TY2027: G1.88 §199A STILL fires (permanent, validUntil 2099)", findHit(hits2027, "G1.88") != null, true);
-  checkTruthy("PLAN-08perm", "TY2027: G1.1 SEP SUPPRESSED (validUntil 2026)", findHit(hits2027, "G1.1") == null, true);
+  checkTruthy("PLAN-08perm", "TY2027: G1.1 SEP STILL fires (now permanent, validUntil 2099)", findHit(hits2027, "G1.1") != null, true);
+
+  // Past the 2099 horizon, even permanent strategies are gated off — proves the
+  // validUntil suppression still works after the refresh.
+  const computed2100 = { ...computed2025, taxYear: 2100 } as typeof computed2025;
+  const hits2100 = evaluatePlanningOpportunities({ client: inputs.client, computed: computed2100, adjustments: inputs.adjustments });
+  checkTruthy("PLAN-08perm", "TY2100: G1.88 §199A SUPPRESSED (past validUntil 2099)", findHit(hits2100, "G1.88") == null, true);
+  checkTruthy("PLAN-08perm", "TY2100: G1.1 SEP SUPPRESSED (past validUntil 2099)", findHit(hits2100, "G1.1") == null, true);
 }
 
 // PLAN-08 / #9 — OBBBA repealed the clean-energy credits (G1.33 §30D/§25E,

@@ -17,6 +17,7 @@
  */
 
 import {
+  SUPPORTED_TAX_YEARS,
   calculateStateTax,
   calculateFederalTax,
   calculateNiit,
@@ -85,14 +86,25 @@ for (const state of NO_INCOME_TAX_STATES) {
   }
 }
 
-header("Income-tax states — every state has positive tax at $80k single, both years");
-for (const state of STATES_WITH_INCOME_TAX) {
-  const tax2024 = calculateStateTax(80000, state, "single", 2024);
-  const tax2025 = calculateStateTax(80000, state, "single", 2025);
-  if (tax2024 > 0) PASS.push(`✓ ${state} 2024 single $80k → $${tax2024.toFixed(0)} state tax`);
-  else FAIL.push(`✗ ${state} 2024 single $80k → expected positive, got $${tax2024.toFixed(2)}`);
-  if (tax2025 > 0) PASS.push(`✓ ${state} 2025 single $80k → $${tax2025.toFixed(0)} state tax`);
-  else FAIL.push(`✗ ${state} 2025 single $80k → expected positive, got $${tax2025.toFixed(2)}`);
+header("Income-tax states — every state has positive tax at $80k single, EVERY supported year");
+// Data-driven across SUPPORTED_TAX_YEARS so a newly-activated year (2026, and any
+// future year appended to the registry) is exercised automatically — a state that
+// loses its bracket / std-deduction data for the new year fails here loudly.
+for (const year of SUPPORTED_TAX_YEARS) {
+  for (const state of STATES_WITH_INCOME_TAX) {
+    const tax = calculateStateTax(80000, state, "single", year);
+    if (tax > 0) PASS.push(`✓ ${state} ${year} single $80k → $${tax.toFixed(0)} state tax`);
+    else FAIL.push(`✗ ${state} ${year} single $80k → expected positive, got $${tax.toFixed(2)}`);
+  }
+}
+
+header("Next-year-readiness — no-income-tax states stay $0 for EVERY supported year");
+for (const year of SUPPORTED_TAX_YEARS) {
+  for (const state of NO_INCOME_TAX_STATES) {
+    const tax = calculateStateTax(80000, state, "single", year);
+    if (tax === 0) PASS.push(`✓ ${state} ${year} no-income-tax → $0`);
+    else FAIL.push(`✗ ${state} ${year} → expected $0, got $${tax.toFixed(2)}`);
+  }
 }
 
 header("Income-tax states — higher income produces ≥ tax (monotonic) for single, 2024");

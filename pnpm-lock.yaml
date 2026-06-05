@@ -419,6 +419,9 @@ importers:
 
   scripts:
     dependencies:
+      '@workspace/db':
+        specifier: workspace:*
+        version: link:../lib/db
       '@workspace/integrations-openai-ai-server':
         specifier: workspace:*
         version: link:../lib/integrations-openai-ai-server
@@ -428,6 +431,9 @@ importers:
       '@workspace/validation':
         specifier: workspace:*
         version: link:../lib/validation
+      drizzle-orm:
+        specifier: 'catalog:'
+        version: 0.45.2(@types/pg@8.18.0)(pg@8.20.0)
       pdfkit:
         specifier: ^0.18.0
         version: 0.18.0

@@ -70,6 +70,9 @@
     "src/tax-engine-c11-deeper-sourcing-tests.ts",
     "src/c3-validation-rerun.ts",
     "src/build-validation-packet-v2.ts",
-    "src/seed-dummy-clients.ts"
+    "src/seed-dummy-clients.ts",
+    "src/recompute-planning-scores.ts",
+    "src/tax-engine-year-coverage-tests.ts",
+    "src/tax-engine-catalog-freshness-tests.ts"
   ]
 }

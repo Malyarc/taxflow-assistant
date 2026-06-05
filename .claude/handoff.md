@@ -1,3 +1,69 @@
+# Handoff Note — 2026-06-05c (TAX-LAW FRESHNESS HARDENING — items 1–9, shipped + deployed)
+
+Made stale/missing tax years **fail loudly** instead of silently returning a wrong
+number, fixed three live TY2026 values, and defused the planning-catalog time-bomb.
+The freshness guarantee is now three-layered: **compile-time** (`Record<TaxYear>`
+typing — a missing supported-year key is a build error), **CI tests** (year-coverage
++ catalog-freshness), and **maintenance tooling** (a re-score sweep).
+
+**Live bugs fixed (were wrong for an activated year TODAY):**
+- **G1.23 cost-seg bonus depreciation** — `G1_23_BONUS_RATE` had no TY2026 key, so a
+  2026 rental return fell back to the 40% default. OBBBA (§70301) restored **100%**
+  bonus for property placed in service after 2025-01-19 → added `2026: 1.0`.
+- **G1.96 §132(f) transit** — used the TY2025 $325 cap for 2026. Added the **$340**
+  cap (Rev. Proc. 2025-32) as a `Record<TaxYear>` map.
+- **G1.26 backdoor-Roth IRA cap** — hardcoded $7,000/$8,000. 2026 is **$7,500** base /
+  **$8,600** with the 50+ catch-up ($1,100) per IRS Notice 2025-67 → year-indexed.
+
+**Compile-time guard (`Record<number>` → `Record<TaxYear>`):** all 15 planning
+year-maps in `planningEngine.ts`, `STATE_TAX_DATA_BY_YEAR` (`stateTaxData.ts`),
+`SECTION_6654_ANNUAL_RATE` (`form2210.ts`). New leaf module **`taxYears.ts`** owns
+`SUPPORTED_TAX_YEARS` / `TaxYear` / `LATEST_YEAR` / `resolveTaxYear` (re-exported from
+`taxCalculator` for back-compat) so `stateTaxData` can import `TaxYear` without an
+import cycle. De-duped `obbbaSaltCap` → the shared `taxCalculator.getSaltCap`
+(line-for-line identical); killed the open-ended `SS_WAGE_BASE` ternary; **KY-Kenton
+occupational wage cap** now tracks the year's OASDI/SS base (was frozen at the 2024
+$168,600); fixed the **dead `irsForm1040Pdf` ternary** (`2024 ? "2024" : "2024"`) →
+explicit, extensible template-year map.
+
+**Catalog v1.20 (time-bomb defused):** re-dated 90 permanent-IRC strategies (+G1.64)
+`validUntil 2026-12-31` → `2099-12-31`; genuine OBBBA sunsets keep real dates (energy
+G1.33/34/37 = 2025; tips/OT/car-loan/senior G1.97–100 = 2028). PLAN-08 still suppresses
+those on schedule.
+
+**New CI freshness tests (+215 assertions; now 49 suites / 3,713 green):**
+- `tax-engine-year-coverage-tests.ts` (114) — every public year-indexed engine fn
+  returns a sane value for **every** SUPPORTED year; inflation-indexed values strictly
+  monotonic (catches a stale copy); registry + `resolveTaxYear` invariants; **the three
+  live-bug regressions at exact IRS values** (G1.23 bonus, G1.96 cap, G1.26 IRA — and
+  2024/2025 preserved).
+- `tax-engine-catalog-freshness-tests.ts` (30) — F1–F4 above.
+- `tax-engine-50state-tests.ts` extended to loop `SUPPORTED_TAX_YEARS` (covers 2026 +
+  any future year automatically) + a no-income-tax $0 smoke per year.
+
+**New tooling:** `scripts/src/recompute-planning-scores.ts` — sweeps every persisted
+return and re-derives ONLY the two ranking columns (`planning_score` /
+`planning_marginal_rate`) via the exact live scoring path; `--dry-run` previews; numeric
+(not string) change-detection so a re-run is a no-op. Run it after any catalog/score
+change. (`scripts/package.json` gained `@workspace/db` + `drizzle-orm`.)
+
+**Deferred (documented):** item 6 (extract per-year numbers into `tax-year-data/<year>.ts`)
+— pure organizational reorg of the core engine; the freshness GOAL is already met by the
+`Record<TaxYear>` typing + CI tests, and `taxYears.ts` is the seam if/when it's done. Not
+worth the core-engine churn now.
+
+**Verify:** `pnpm run typecheck` + `typecheck:tests` clean; **49 no-API suites / 3,713
+assertions green**; api-server esbuild clean. **No schema change** (catalog is bundled
+JSON; planning columns already exist). Post-deploy: ran the re-score sweep on prod.
+
+**Maintenance going forward:** to activate a new tax year, append it to
+`SUPPORTED_TAX_YEARS` in `taxYears.ts` — the compiler then flags every `Record<TaxYear>`
+map missing the key, and the year-coverage test flags any function that doesn't cover it.
+Fill the IRS values (Notice/Rev. Proc.), refresh catalog `validUntil`s if any provision
+sunset, run the sweep.
+
+---
+
 # Handoff Note — 2026-06-05b (FORM 2210 / §6654 — audit P1-6, shipped + deployed)
 
 Picked the next concrete audit P1 after confirming the obvious candidates were

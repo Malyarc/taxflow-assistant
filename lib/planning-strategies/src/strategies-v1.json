@@ -1,6 +1,6 @@
 {
-  "version": "v1.19.0",
-  "reviewedAt": "2026-06-02",
+  "version": "v1.20.0",
+  "reviewedAt": "2026-06-05",
   "strategies": [
     {
       "id": "G1.1",
@@ -13,7 +13,7 @@
       "confidence": 0.95,
       "cpaEffortHours": 1.5,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Whether the client has any other retirement plan (SIMPLE, 401(k))",
         "Whether the client wants employee-deferral capacity (Solo 401(k)) vs employer-only (SEP)"
@@ -32,7 +32,7 @@
       "confidence": 0.85,
       "cpaEffortHours": 3.0,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Confirm entity is eligible for PTET in its state (typically S-corp or partnership)",
         "Confirm all owners consent to PTET election where state requires unanimous consent",
@@ -53,7 +53,7 @@
       "confidence": 0.8,
       "cpaEffortHours": 1.0,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Whether client can prepay next-year charitable gifts in December (cash basis)",
         "Whether client has flexibility on property-tax timing"
@@ -72,7 +72,7 @@
       "confidence": 0.6,
       "cpaEffortHours": 2.0,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Traditional IRA balance",
         "Expected future marginal rate (CPA judgment call)",
@@ -92,7 +92,7 @@
       "confidence": 0.9,
       "cpaEffortHours": 2.5,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "ISO exercise schedule and grant dates",
         "Whether client is willing to do a same-year disqualifying sale (loses LTCG character)"
@@ -111,7 +111,7 @@
       "confidence": 0.8,
       "cpaEffortHours": 1.5,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Deferrable income (year-end bonus, RSU vest timing)",
         "Acceleratable deductions (charitable cash, HSA, 401(k) employee deferral)"
@@ -150,7 +150,7 @@
       "confidence": 0.85,
       "cpaEffortHours": 2.0,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Whether the client already has a DAF account",
         "Cash-flow capacity for a 2-3 year forward gift"
@@ -169,7 +169,7 @@
       "confidence": 0.6,
       "cpaEffortHours": 1.5,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Unrealized loss inventory in brokerage account(s)",
         "Whether client trades in a wash-sale-prone way (would defeat the harvest)"
@@ -188,7 +188,7 @@
       "confidence": 0.95,
       "cpaEffortHours": 0.5,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Country-by-country foreign tax paid (for Form 1116 Schedule B if > $20k)",
         "Foreign-source taxable income for the actual Form 1116 limit"
@@ -207,7 +207,7 @@
       "confidence": 0.95,
       "cpaEffortHours": 1.0,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Confirm IRA owner is age 70½+ on the distribution date (Form 8606 / DOB)",
         "Confirm charity is a 501(c)(3) public charity (NOT a private foundation or DAF)",
@@ -227,7 +227,7 @@
       "confidence": 0.8,
       "cpaEffortHours": 0.5,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Lots of appreciated stock with >1 year holding period",
         "Cost basis of donated lots (for Form 8283)",
@@ -247,7 +247,7 @@
       "confidence": 0.7,
       "cpaEffortHours": 2.0,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Document fair market rental rate for area (Airbnb / venue comps)",
         "Calendar legitimate business purpose for each rental day (board meetings, client events)",
@@ -267,7 +267,7 @@
       "confidence": 0.85,
       "cpaEffortHours": 4.0,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Plan document confirming NUA-eligible lump-sum distribution permitted",
         "Cost basis of employer stock in 401(k) — usually from plan statement",
@@ -288,7 +288,7 @@
       "confidence": 0.85,
       "cpaEffortHours": 2.0,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Plan document confirming after-tax contributions + in-service rollover OR in-plan Roth conversion permitted",
         "Current year pre-tax + employer match contributions (subtract from §415(c) cap to find headroom)",
@@ -309,7 +309,7 @@
       "confidence": 0.75,
       "cpaEffortHours": 3.0,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Reasonable comp benchmark for client's role (RC Reports / BLS / industry surveys)",
         "Time spent on business (full-time vs part-time)",
@@ -330,7 +330,7 @@
       "confidence": 0.75,
       "cpaEffortHours": 6.0,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Documented 750+ hours/year in real-property trade or business",
         "More than 50% of total work time in real estate",
@@ -351,7 +351,7 @@
       "confidence": 0.6,
       "cpaEffortHours": 12.0,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Asset to donate (real estate / appreciated stock / closely-held business interest)",
         "Cost basis and FMV — must have substantial appreciation to justify",
@@ -374,7 +374,7 @@
       "confidence": 0.4,
       "cpaEffortHours": 6.0,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Confirm 3-yr average gross receipts under the §448(c) threshold ($30M TY2024 / $31M TY2025 / $32M TY2026 — indexed per Rev. Proc.; was $25M pre-2018)",
         "Confirm business actually carries inventory (vs pure service)",
@@ -397,7 +397,7 @@
       "confidence": 0.55,
       "cpaEffortHours": 3.0,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Confirm projected total retirement annual spend",
         "Compute RMD age (73 SECURE 2.0; pushed to 75 in TY2033)",
@@ -422,7 +422,7 @@
       "confidence": 0.55,
       "cpaEffortHours": 1.5,
       "recurring": false,
-      "validUntil": "2027-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Verify client has §168(k) bonus-eligible property placed in service this year",
         "POST-OBBBA bonus rate (property placed in service AFTER 2025-01-19): 100% PERMANENT per §168(k) as amended",
@@ -446,7 +446,7 @@
       "confidence": 0.25,
       "cpaEffortHours": 1.0,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Confirm actual adoption occurred (or in process) — engine cannot verify; CPA confirms.",
         "Qualified adoption expenses (Form 8839): adoption fees, attorney fees, court costs, travel — for adoption of a child under 18 or disabled adult",
@@ -470,7 +470,7 @@
       "confidence": 0.55,
       "cpaEffortHours": 2.0,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Confirm 401(k) plan ACCEPTS incoming rollovers (most do, but plan-specific)",
         "Verify plan-specific paperwork: rollover form, custodian-to-custodian direct transfer (recommended)",
@@ -494,7 +494,7 @@
       "confidence": 0.45,
       "cpaEffortHours": 4.0,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Confirm employer offers an NQDC plan (most Fortune 500 + many startups do)",
         "Initial election timing: must elect BEFORE start of service year per §409A(a)(4)(B). New-participant election within 30 days of plan eligibility.",
@@ -519,7 +519,7 @@
       "confidence": 0.55,
       "cpaEffortHours": 8.0,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Domicile vs residency tests vary by state. CA Rev & Tax Code §17014: 183-day test PLUS facts-and-circumstances domicile test.",
         "Physical relocation + intent (driver's license, voter registration, primary residence purchase, doctor/dentist relocation, social ties)",
@@ -544,7 +544,7 @@
       "confidence": 0.55,
       "cpaEffortHours": 0.5,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Beneficiary under 18 (or special needs to age 21)",
         "Contribution cap $2,000/yr per BENEFICIARY (not per contributor) — aggregate of all contributors",
@@ -569,7 +569,7 @@
       "confidence": 0.4,
       "cpaEffortHours": 3.0,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "ELIGIBILITY (§41(h)(3)): qualified small business — gross receipts < $5M AND in business < 5 years (gross receipts must be < $5M in any of the 5 prior years to count)",
         "Compute R&D credit per §41 (Alternative Simplified Method = 14% of current QRE − 50% of 3-yr avg, or 6% for first-time)",
@@ -593,7 +593,7 @@
       "confidence": 0.85,
       "cpaEffortHours": 0.25,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Actual interest paid on qualified student loan in the tax year (Form 1098-E from servicer)",
         "Loan must be qualified: incurred SOLELY to pay qualified higher education expenses for taxpayer / spouse / dependent",
@@ -618,7 +618,7 @@
       "confidence": 0.55,
       "cpaEffortHours": 0.5,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Prior year's TOTAL TAX (line 24 Form 1040) for the 100/110% calc",
         "Year-to-date withholding (W-2 box 2 + 1099 withholding) for the shortfall calc",
@@ -641,7 +641,7 @@
       "confidence": 0.6,
       "cpaEffortHours": 2.0,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Child's age (kiddie tax applies under 18; OR 18-23 if full-time student dependent; OR 18 if no earned income > half support)",
         "Child's unearned income (interest, dividends, capital gains in their name)",
@@ -664,7 +664,7 @@
       "confidence": 0.5,
       "cpaEffortHours": 2.0,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Profit history: profitable in how many of last 5 years? (3-of-5 safe harbor)",
         "Documented business plan + profit motive",
@@ -690,7 +690,7 @@
       "confidence": 0.65,
       "cpaEffortHours": 0.5,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Child has earned income — W-2 wages or self-employment net (NOT investment income, gifts, allowances)",
         "Contribution cap: lesser of $7,000 (TY2024) or child's earned income",
@@ -714,7 +714,7 @@
       "confidence": 0.65,
       "cpaEffortHours": 0.5,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Per-lot cost basis records from broker (1099-B shows by lot or aggregate depending on broker)",
         "Holding period of each lot (LT vs ST — substantial rate differential)",
@@ -737,7 +737,7 @@
       "confidence": 0.5,
       "cpaEffortHours": 1.5,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Confirm client has marketplace QHP coverage (vs employer-sponsored coverage which disqualifies)",
         "1095-A (Marketplace Health Insurance Statement) — provides advance PTC + actual premiums",
@@ -760,7 +760,7 @@
       "confidence": 0.35,
       "cpaEffortHours": 5.0,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Confirm sold stock was QUALIFIED §1202 QSBS at sale (all 6 §1202 requirements)",
         "Confirm original stock held > 6 months (vs §1202's > 5 years for outright exclusion)",
@@ -784,7 +784,7 @@
       "confidence": 0.85,
       "cpaEffortHours": 0.5,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Confirm SE filer is NOT eligible to participate in employer-subsidized health plan via OWN or SPOUSE'S employer per §162(l)(2)(B)",
         "Premium amount paid for the year (medical + dental + vision + qualified LTC)",
@@ -806,7 +806,7 @@
       "confidence": 0.55,
       "cpaEffortHours": 0.5,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "List of holdings client plans to sell for tax loss",
         "List of any pending purchases of those (or substantially-identical) securities",
@@ -829,7 +829,7 @@
       "confidence": 0.55,
       "cpaEffortHours": 4.0,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Confirm client intends to retire / withdraw before age 59½ (else no benefit vs simple withdrawal)",
         "Choose ONE method (RMD / amortization / annuitization) per Notice 2022-6 — election is locked in for the SEPP period",
@@ -852,7 +852,7 @@
       "confidence": 0.65,
       "cpaEffortHours": 0.5,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Confirm filing status MFJ (single + MFS NOT eligible)",
         "Confirm non-working spouse's earned income for the year ($0 to claim full spousal benefit)",
@@ -874,7 +874,7 @@
       "confidence": 0.55,
       "cpaEffortHours": 4.0,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Confirm sale of property type qualifies (real property + most personal property OK; PUBLICLY-TRADED SECURITIES + DEALER DISPOSITIONS do NOT qualify per §453(b)(2))",
         "Confirm at least one payment received AFTER close of taxable year (Form 6252 required)",
@@ -897,7 +897,7 @@
       "confidence": 0.55,
       "cpaEffortHours": 2.0,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Strict 30-DAY DEADLINE from GRANT date (NOT vest date) — see Reg. §1.83-2(a)",
         "Election form filed with IRS service center (NO electronic filing) + copy to employer + attach to next return",
@@ -919,7 +919,7 @@
       "confidence": 0.7,
       "cpaEffortHours": 3.0,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Business MUST be SOLE PROP or husband-wife PARTNERSHIP — S-CORP or C-CORP wages to children ARE subject to FICA",
         "Child must actually PERFORM real work + receive reasonable wages (no sham employment)",
@@ -943,7 +943,7 @@
       "confidence": 0.6,
       "cpaEffortHours": 0.5,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Student must be enrolled at least half-time, working toward degree, in first 4 years of post-secondary education (AOC requirements)",
         "Has not claimed AOC for this student in 4 prior tax years",
@@ -966,7 +966,7 @@
       "confidence": 0.5,
       "cpaEffortHours": 1.5,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Date 529 account was opened (must be 15+ years old)",
         "Date of contributions being rolled (must be at least 5 years old per §529(c)(3)(E)(iii))",
@@ -989,7 +989,7 @@
       "confidence": 0.85,
       "cpaEffortHours": 0.5,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Confirm client age >= 18",
         "Confirm client is NOT a full-time student (5+ months) and NOT claimed as dependent",
@@ -1011,7 +1011,7 @@
       "confidence": 0.75,
       "cpaEffortHours": 1.0,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Confirm employer offers DCFSA enrollment (most do; verify with HR)",
         "Number of qualifying children + qualifying expenses",
@@ -1032,7 +1032,7 @@
       "confidence": 0.4,
       "cpaEffortHours": 12.0,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Identify Qualified Research Expenses (QREs): wages for R&D activities, supplies, 65% of contract research",
         "Four-part test (§41(d)): permitted purpose, technological in nature, elimination of uncertainty, process of experimentation",
@@ -1080,7 +1080,7 @@
       "confidence": 0.45,
       "cpaEffortHours": 3.0,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Stock must be DOMESTIC C-CORP (not S-corp, not LLC, not partnership)",
         "At time of issuance: corporation must have raised ≤ $1,000,000 in equity (small business plan-of-financing requirement)",
@@ -1104,7 +1104,7 @@
       "confidence": 0.4,
       "cpaEffortHours": 3.0,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Is this an inherited IRA from a NON-SPOUSE decedent who died after 2019-12-31? (Spouse beneficiaries can still treat as own / use lifetime stretch.)",
         "Date of decedent's death (drives the 10-year clock start)",
@@ -1126,7 +1126,7 @@
       "confidence": 0.8,
       "cpaEffortHours": 8.0,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Engagement with a third-party actuary to design the DB/CB plan (~$3-5k setup; ~$2-3k/yr maintenance)",
         "Plan sponsor election: DB (defined benefit), CB (cash balance hybrid), or DB+401(k) combined",
@@ -1193,7 +1193,7 @@
       "confidence": 0.3,
       "cpaEffortHours": 4.0,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Confirm stock is C-corp (NOT LLC, S-corp, or partnership)",
         "Stock issuance date determines applicable rules: PRE-OBBBA (≤ 2025-07-04) → $50M cap + $10M gain cap + 5-yr 100%; POST-OBBBA (> 2025-07-04) → $75M cap + $15M gain cap + tiered 50%/75%/100%",
@@ -1218,7 +1218,7 @@
       "confidence": 0.6,
       "cpaEffortHours": 1.5,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Cost basis of home (purchase price + capital improvements + selling costs)",
         "Date moved in + date plans to sell (2-of-last-5-years use-test)",
@@ -1240,7 +1240,7 @@
       "confidence": 0.65,
       "cpaEffortHours": 6.0,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Specific property being sold + estimated FMV + adjusted basis",
         "Qualified Intermediary engagement (cannot touch the sale proceeds)",
@@ -1261,7 +1261,7 @@
       "confidence": 0.7,
       "cpaEffortHours": 4.0,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Confirm projected income trajectory through age 73 (SS, pensions, RMDs)",
         "Estimated future marginal rate at RMD age (Pub 590-B life-expectancy table drives RMD %)",
@@ -1282,7 +1282,7 @@
       "confidence": 0.75,
       "cpaEffortHours": 8.0,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Most recent purchase price + closing date of each property",
         "Engineering-based cost segregation study (qualified provider — Marshall & Stevens / KBKG / etc.)",
@@ -1303,7 +1303,7 @@
       "confidence": 0.6,
       "cpaEffortHours": 5.0,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Date and amount of the eligible gain — 180-day clock starts at the sale date",
         "QOF selection (publicly available registry; private QOF or self-organized)",
@@ -1325,7 +1325,7 @@
       "confidence": 0.85,
       "cpaEffortHours": 1.0,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Confirm $0 balance in all pre-tax IRAs (traditional / SEP / SIMPLE) at year-end — otherwise §408(d)(2) pro-rata applies and most of the conversion is taxable",
         "Form 8606 filing for both the nondeductible contribution AND the conversion (Part I + Part II)",
@@ -1346,7 +1346,7 @@
       "confidence": 0.4,
       "cpaEffortHours": 20.0,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "**HIGH IRS AUDIT RISK** — syndicated conservation easements are LISTED TRANSACTIONS under IRS Notice 2017-10. Strong scrutiny + penalties.",
         "Qualified appraisal (must satisfy §170(h)(1)(A) qualified-organization recipient)",
@@ -1369,7 +1369,7 @@
       "confidence": 0.95,
       "cpaEffortHours": 0.5,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Confirm HDHP enrollment for the full year (or pro-rate per last-month rule)",
         "Existing employer HSA contribution (W-2 Box 12 code W) — counts against the cap",
@@ -1389,7 +1389,7 @@
       "confidence": 0.55,
       "cpaEffortHours": 1.5,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Confirm 401(k) plan offers designated Roth account (most modern plans do — required for in-plan conversion)",
         "Confirm 401(k) plan permits in-plan conversion (some plans require separation from service; Notice 2010-84 expanded to allow in-service for pre-tax sub-account)",
@@ -1413,7 +1413,7 @@
       "confidence": 0.4,
       "cpaEffortHours": 5.0,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Detailed breakdown of R&D-tagged expenses: pre-development design + experimentation (true §174) vs post-development support + marketing + sales (§162)",
         "Foreign R&D portion (15-yr amortization vs 5-yr domestic — Reg §1.174-2)",
@@ -1437,7 +1437,7 @@
       "confidence": 0.5,
       "cpaEffortHours": 1.0,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Projected next-year income trajectory (rising, falling, same)",
         "Discretionary income items: SE invoicing timing (cash-method client), bonus deferral availability (W-2 employer-dependent), gain realization (sell now vs January)",
@@ -1461,7 +1461,7 @@
       "confidence": 0.4,
       "cpaEffortHours": 4.0,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Qualified appraisal per §170(f)(11)(C) — required for ALL non-cash gifts > $5,000 (Form 8283 Sec B for > $5,000; appraiser signs Part III for > $5,000)",
         "Property type (real estate, art, securities, intellectual property — each has §170 valuation rules)",
@@ -1486,7 +1486,7 @@
       "confidence": 0.6,
       "cpaEffortHours": 1.5,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Per-lot grant dates (Form 3921 box 1) — qualified disposition requires > 2 yrs from grant",
         "Per-lot exercise dates (Form 3921 box 2) — qualified disposition requires > 1 yr from exercise",
@@ -1511,7 +1511,7 @@
       "confidence": 0.5,
       "cpaEffortHours": 1.0,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Actual RSU income amount (W-2 Box 1 includes; Box 12 code V reports RSU only)",
         "Year-to-date wages — at $1M YTD, supplemental rate jumps to 37% per §3402(g)(1)(B)",
@@ -1535,7 +1535,7 @@
       "confidence": 0.55,
       "cpaEffortHours": 3.0,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Cost basis of employer stock within 401(k) (employer-provided statement)",
         "Current FMV of employer stock (broker statement at distribution)",
@@ -1562,7 +1562,7 @@
       "confidence": 0.4,
       "cpaEffortHours": 3.0,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Written §45S policy — must exist in writing BEFORE leave taken",
         "Policy must cover all qualifying employees (no discrimination)",
@@ -1589,7 +1589,7 @@
       "confidence": 0.35,
       "cpaEffortHours": 3.0,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Form 8850 IRS pre-screening form — completed BY EMPLOYEE on or BEFORE day of job offer (28-day window after start to submit to state DOL)",
         "ETA Form 9061 (Individual Characteristics Form) — submitted with 8850 to state workforce agency",
@@ -1614,7 +1614,7 @@
       "confidence": 0.55,
       "cpaEffortHours": 12.0,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Qualified APPRAISAL per §170(f)(11)(C) — required for ALL non-cash > $5,000. For easements > $5,000, appraiser signs Form 8283 Sec B Part III + IRS receives appraisal copy.",
         "Qualified organization per §170(h)(3): government unit, public charity, or §170(h)(3)(B) qualified land trust",
@@ -1641,7 +1641,7 @@
       "confidence": 0.55,
       "cpaEffortHours": 3.0,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Material participation in the trade/business (one of 7 tests per Reg §1.469-5T)",
         "Rental property rented to the same trade/business (or related party) — self-rental rule §1.469-2(f)(6)",
@@ -1666,7 +1666,7 @@
       "confidence": 0.5,
       "cpaEffortHours": 4.0,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Work-location calendar — days physically worked in each state (PRECISION CRITICAL for NY/NJ allocations)",
         "Convenience-of-employer rule states: NY, NJ, DE, NE, PA (CT for COVID-period; AR partial). Days 'voluntarily' worked outside the employer state may STILL be sourced there.",
@@ -1691,7 +1691,7 @@
       "confidence": 0.45,
       "cpaEffortHours": 2.0,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Sale qualifies for installment treatment per §453(a) — disposition of property where ANY payment is received in tax year AFTER year of sale",
         "Gross-profit ratio per §453(c) = (selling price - basis - selling expenses) / (selling price - mortgages assumed by buyer)",
@@ -1716,7 +1716,7 @@
       "confidence": 0.4,
       "cpaEffortHours": 8.0,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Structure must be CERTIFIED HISTORIC STRUCTURE per §47(c)(3) — listed on National Register OR contributing to registered historic district",
         "Rehabilitation must be CERTIFIED REHABILITATION per §47(c)(2)(C) — Secretary of Interior approval via NPS Form 10-168 Parts 1/2/3",
@@ -1742,7 +1742,7 @@
       "confidence": 0.4,
       "cpaEffortHours": 1.5,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Eligible small business per §44(b): prior-yr gross receipts ≤ $1,000,000 OR ≤ 30 full-time employees",
         "Eligible access expenditures per §44(c)(2): (a) remove architectural / physical barriers; (b) provide qualified interpreters / readers for hearing/visual impaired; (c) modify equipment; (d) provide alternative formats; (e) other reasonable accommodations",
@@ -1768,7 +1768,7 @@
       "confidence": 0.35,
       "cpaEffortHours": 5.0,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "S-corp election date (Form 2553) — 5-yr recognition period runs from FIRST DAY of first S-corp year",
         "FMV of EACH asset at conversion date (basis for built-in gain/loss tracking)",
@@ -1794,7 +1794,7 @@
       "confidence": 0.3,
       "cpaEffortHours": 12.0,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Sale is QUALIFIED STOCK PURCHASE per §338(d)(3) — 80%+ stock purchase within 12-mo period",
         "Joint election BY BOTH BUYER (corporation) AND ALL S-corp shareholders — Form 8023 within 8.5 mo of acquisition",
@@ -1820,7 +1820,7 @@
       "confidence": 0.4,
       "cpaEffortHours": 6.0,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Transferor (or group) must control ≥ 80% voting + ≥ 80% other classes per §368(c) IMMEDIATELY AFTER transfer",
         "Property transferred (not services per §351(d)(1) — services don't qualify; receive stock taxable as comp)",
@@ -1847,7 +1847,7 @@
       "confidence": 0.45,
       "cpaEffortHours": 2.5,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Mortgage origination date — loans before 2017-12-15 GRANDFATHERED at $1M acquisition cap per §163(h)(3)(F)(i)(I)",
         "Loan use TRACING per Reg §1.163-8T — proceeds must be traced to USE (acquisition, improvement, equity)",
@@ -1874,7 +1874,7 @@
       "confidence": 0.35,
       "cpaEffortHours": 15.0,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "GRANTOR CLT vs Non-grantor CLT distinction: GRANTOR gives donor immediate income-tax deduction BUT donor pays tax on trust income; Non-grantor gives no immediate deduction but trust pays its own tax",
         "Trust term + annuity rate determine PV deduction per §7520 rate (published monthly by IRS — use lowest available rate for highest deduction)",
@@ -1901,7 +1901,7 @@
       "confidence": 0.55,
       "cpaEffortHours": 3.0,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Compensation cap §401(a)(17): TY2024 $345,000 (Notice 2023-75); TY2025 $350,000 (Notice 2024-80); TY2026 $360,000 (Notice 2025-67 / IR-2025-111)",
         "Employer matching formula (% × first X of comp — cap applies)",
@@ -1977,7 +1977,7 @@
       "confidence": 0.4,
       "cpaEffortHours": 6.0,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Qualified charity that maintains PIF per Reg §1.642(c)-5 (universities, hospitals, large land trusts commonly do)",
         "Property contribution (cash, securities, real estate — appraisal req'd if > $5k non-cash per §170(f)(11)(C))",
@@ -2004,7 +2004,7 @@
       "confidence": 0.35,
       "cpaEffortHours": 2.0,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "FEMA declaration database (fema.gov/disasters) confirms FEDERALLY-DECLARED disaster (per Stafford Act §401)",
         "Excludable per §139(b): reasonable/necessary personal/family/living/funeral expenses incurred as result of disaster",
@@ -2031,7 +2031,7 @@
       "confidence": 0.65,
       "cpaEffortHours": 2.0,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Plan administration cost (Solo 401(k) ~$1k/yr vs SEP ~$0); Form 5500-EZ at $250k+ assets",
         "Employee deferral TY2024 $23,000 (§402(g)(1)(B)); TY2025 $23,500 per Notice 2024-80; TY2026 $24,500 per IR-2025-111",
@@ -2057,7 +2057,7 @@
       "confidence": 0.5,
       "cpaEffortHours": 1.5,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Form 4952 to track + report investment interest expense",
         "Investment interest expense per §163(d)(3) — interest on debt to PURCHASE / CARRY investment property",
@@ -2082,7 +2082,7 @@
       "confidence": 0.35,
       "cpaEffortHours": 0.5,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "1099-G Box 1 unemployment compensation amount",
         "§85 unemployment income FULLY federal-taxable per TY2021+ (post-ARP sunset)",
@@ -2107,7 +2107,7 @@
       "confidence": 0.3,
       "cpaEffortHours": 4.0,
       "recurring": false,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Termination event per §1377(a)(2): shareholder disposes ENTIRE interest in S-corp (sale, redemption, gift, death)",
         "Election BY ALL AFFECTED shareholders (terminating + continuing) per Reg §1.1377-1(b)(2)",
@@ -2133,7 +2133,7 @@
       "confidence": 0.5,
       "cpaEffortHours": 1.0,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "TY2024 monthly cap $315 (transit + parking each, Notice 2023-75)",
         "TY2025 monthly cap $325 (Notice 2024-80)",
@@ -2238,7 +2238,7 @@
       "confidence": 0.7,
       "cpaEffortHours": 2.0,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Investment income breakdown by source (dividends, interest, capital gains, rental)",
         "Whether client has flexibility on entity structure (S-corp election, real-estate professional status)",
@@ -2258,7 +2258,7 @@
       "confidence": 0.65,
       "cpaEffortHours": 2.5,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Source of AMT preferences (ISO bargain, depreciation, state tax addback)",
         "Whether client has flexibility on ISO exercise timing in future years",
@@ -2278,7 +2278,7 @@
       "confidence": 0.9,
       "cpaEffortHours": 1.5,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Whether client has flexibility to prepay 2 years of charitable cash in December",
         "Whether client has flexibility on property-tax timing (acceleration)",
@@ -2298,7 +2298,7 @@
       "confidence": 0.65,
       "cpaEffortHours": 1.5,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Whether client has appreciated positions that could be realized",
         "Whether client's investment strategy is consistent with realizing gains (rebalancing, gifting basis-stepped, sale)",
@@ -2318,7 +2318,7 @@
       "confidence": 0.6,
       "cpaEffortHours": 2.5,
       "recurring": true,
-      "validUntil": "2026-12-31",
+      "validUntil": "2099-12-31",
       "prerequisiteData": [
         "Whether client has any passive INCOME activities to apply against the loss",
         "Whether client would qualify for real-estate-professional status (750 hours, > 50% of personal services)",

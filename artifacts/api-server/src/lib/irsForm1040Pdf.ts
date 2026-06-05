@@ -29,10 +29,14 @@ type Client = typeof clientsTable.$inferSelect;
 
 /** Resolve the bundled IRS template by tax year + form name. */
 function templatePath(formName: "1040" | "1040s1" | "1040s2" | "1040s3", taxYear: number): string {
-  // For now we only ship TY2024 templates. Older returns get the TY2024 form
-  // (CPAs will recognize a year-mismatched form; we surface a warning in the
-  // route response when this happens).
-  const yearDir = `irs-forms-${taxYear === 2024 ? "2024" : "2024"}`;
+  // We currently ship only TY2024 IRS fillable templates (with TY2024 AcroForm
+  // field maps). Any other return year falls back to the 2024 form on purpose —
+  // the route surfaces a year-mismatch warning. This explicit map (rather than a
+  // no-op ternary) documents the limitation and the extension path: when TY2025+
+  // templates land, add the directory here AND a year-specific field map + the
+  // f*-<year>.pdf filenames below.
+  const TEMPLATE_YEAR_DIR: Record<number, string> = { 2024: "irs-forms-2024" };
+  const yearDir = TEMPLATE_YEAR_DIR[taxYear] ?? "irs-forms-2024";
   const baseName = formName === "1040" ? "f1040-2024.pdf" : `f${formName}-2024.pdf`;
   return path.join(globalThis.__dirname ?? "", "assets", yearDir, baseName);
 }

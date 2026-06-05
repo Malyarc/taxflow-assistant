@@ -51,6 +51,8 @@ export interface StateStandardDeduction {
   qualifying_widow?: number;
 }
 
+import type { TaxYear } from "./taxYears";
+
 export interface StateTaxInfo {
   name: string;
   hasIncomeTax: boolean;
@@ -933,7 +935,7 @@ function build2026Data(): Record<string, StateTaxInfo> {
 
 const STATE_TAX_DATA_2026: Record<string, StateTaxInfo> = build2026Data();
 
-export const STATE_TAX_DATA_BY_YEAR: Record<number, Record<string, StateTaxInfo>> = {
+export const STATE_TAX_DATA_BY_YEAR: Record<TaxYear, Record<string, StateTaxInfo>> = {
   2024: STATE_TAX_DATA_2024,
   2025: STATE_TAX_DATA_2025,
   2026: STATE_TAX_DATA_2026,

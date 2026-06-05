@@ -10,9 +10,11 @@
     "typecheck:tests": "tsc -p tsconfig.tests.json --noEmit"
   },
   "dependencies": {
+    "@workspace/db": "workspace:*",
     "@workspace/integrations-openai-ai-server": "workspace:*",
     "@workspace/planning-strategies": "workspace:*",
     "@workspace/validation": "workspace:*",
+    "drizzle-orm": "catalog:",
     "pdfkit": "^0.18.0"
   },
   "devDependencies": {

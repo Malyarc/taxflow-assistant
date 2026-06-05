@@ -34,12 +34,19 @@ import {
   OH_SCHOOL_DISTRICT_REGISTRY,
 } from "./ohSchoolDistricts";
 
-export const SUPPORTED_TAX_YEARS = [2024, 2025, 2026] as const;
-export type TaxYear = (typeof SUPPORTED_TAX_YEARS)[number];
-// LATEST_YEAR is the default for an unspecified (null) tax year. Held at 2025
-// (the "current" filing year) so adding native TY2026 doesn't shift the default
-// for callers that omit taxYear. An explicit TY2026 now computes natively.
-const LATEST_YEAR: TaxYear = 2025;
+// Tax-year registry + clamping helper live in a leaf module (./taxYears) so they
+// can be imported anywhere without an import cycle (stateTaxData et al. need
+// TaxYear, and taxCalculator imports stateTaxData). Re-exported here so existing
+// `import { SUPPORTED_TAX_YEARS, TaxYear, resolveTaxYear } from "./taxCalculator"`
+// call sites keep working.
+import {
+  SUPPORTED_TAX_YEARS,
+  LATEST_YEAR,
+  resolveTaxYear,
+  type TaxYear,
+} from "./taxYears";
+export { SUPPORTED_TAX_YEARS, LATEST_YEAR, resolveTaxYear };
+export type { TaxYear };
 
 // ── Federal brackets per year ─────────────────────────────────────────────────
 const FEDERAL_BRACKETS: Record<TaxYear, Record<string, StateBracket[]>> = {
@@ -278,15 +285,7 @@ export function getFederalStdDedAgeBlindAddOn(params: {
   return boxes * perBox;
 }
 
-export function resolveTaxYear(input: number | undefined | null): TaxYear {
-  if (input == null) return LATEST_YEAR;
-  if ((SUPPORTED_TAX_YEARS as readonly number[]).includes(input)) {
-    return input as TaxYear;
-  }
-  // Unsupported: fall back to nearest available year
-  if (input < 2024) return 2024;
-  return LATEST_YEAR;
-}
+// resolveTaxYear now lives in ./taxYears (imported + re-exported above).
 
 /** Apply progressive brackets to taxable income. */
 function applyBrackets(taxableIncome: number, brackets: StateBracket[]): number {
@@ -729,11 +728,17 @@ export interface LocalityInfo {
   base: LocalityTaxBase;
   /**
    * Optional annual wage cap (some KY county occupational taxes cap the
-   * `wages_only` base at the OASDI/SS wage base, e.g. Kenton $168,600 (2024),
-   * or a fixed amount, e.g. Boone $75,223). When set, the wages base is
-   * Math.min(wages + SE profit, wageCap).
+   * `wages_only` base at a FIXED amount, e.g. Boone $75,223). When set, the wages
+   * base is Math.min(wages + SE profit, wageCap).
    */
   wageCap?: number;
+  /**
+   * When true, the wage cap TRACKS the year's OASDI/SS wage base instead of a
+   * fixed `wageCap` (e.g. Kenton County, KY caps at the SS wage base: $168,600
+   * (2024) / $176,100 (2025) / $184,500 (2026)). Year-indexed so it stays current
+   * automatically — supersedes any static `wageCap` on the same entry.
+   */
+  wageCapTracksSsBase?: boolean;
   /**
    * OH cross-city resident credit (ORC ch. 718): fraction of the work-city tax
    * the RESIDENT city credits (e.g. 1.0 = 100%). Used with creditLimitRate +
@@ -817,7 +822,7 @@ export const LOCAL_TAX_DATA: Record<string, LocalityInfo> = {
   "KY-LOUISVILLE":      { jurisdictionLabel: "Louisville Metro, KY (occupational)", state: "KY", rate: 0.0220, base: "wages_only" }, // 1.25% Metro + 0.20% TARC + 0.75% schools
   "KY-LOUISVILLE-NONRES":{ jurisdictionLabel: "Louisville Metro, KY (non-resident)", state: "KY", rate: 0.0145, base: "wages_only" }, // excludes 0.75% school portion
   "KY-LEXINGTON":       { jurisdictionLabel: "Lexington-Fayette, KY (occupational)", state: "KY", rate: 0.0225, base: "wages_only" },
-  "KY-KENTON":          { jurisdictionLabel: "Kenton County, KY (occupational, SS-capped)", state: "KY", rate: 0.006997, base: "wages_only", wageCap: 168600 }, // capped at 2024 OASDI base
+  "KY-KENTON":          { jurisdictionLabel: "Kenton County, KY (occupational, SS-capped)", state: "KY", rate: 0.006997, base: "wages_only", wageCapTracksSsBase: true }, // capped at the year's OASDI/SS wage base
   "KY-BOONE":           { jurisdictionLabel: "Boone County, KY (occupational, capped)", state: "KY", rate: 0.0080, base: "wages_only", wageCap: 75223 },
 
   // ── C9 — Pennsylvania local Earned Income Tax (Act 511 / Act 32) ─────────
@@ -946,6 +951,7 @@ export function calculateFlatRateLocalTax(params: {
       params.netSeProfit ?? 0,
       {
         wageCap: info.wageCap,
+        wageCapTracksSsBase: info.wageCapTracksSsBase,
         creditRate: info.creditRate,
         creditLimitRate: info.creditLimitRate,
         workCityTaxPaid: params.ohWorkCityTaxPaid,
@@ -1009,8 +1015,10 @@ function computeFlatRateLocalTaxFromInfo(
   ohTraditionalBase?: number,
   netSeProfit: number = 0,
   extra?: {
-    /** KY-style annual wage cap on the wages_only base. */
+    /** KY-style FIXED annual wage cap on the wages_only base (e.g. Boone). */
     wageCap?: number;
+    /** When true, the cap tracks the year's OASDI/SS wage base (e.g. Kenton). */
+    wageCapTracksSsBase?: boolean;
     /** OH cross-city resident-credit fraction of work-city tax. */
     creditRate?: number;
     /** OH cross-city resident-credit ceiling as a fraction of the base. */
@@ -1030,8 +1038,12 @@ function computeFlatRateLocalTaxFromInfo(
     // self-employed file the NPT, computed here at the same resident rate,
     // gross of the income-based Schedule SP / SE-tax-equivalent reductions.)
     base = Math.max(0, totalWages) + Math.max(0, netSeProfit);
-    // KY occupational tax: cap the base at the jurisdiction's wage cap.
-    if (extra?.wageCap != null && extra.wageCap > 0) base = Math.min(base, extra.wageCap);
+    // KY occupational tax: cap the wages_only base. Kenton tracks the year's
+    // OASDI/SS wage base (year-indexed); other jurisdictions use a fixed cap.
+    const effectiveWageCap = extra?.wageCapTracksSsBase
+      ? SS_WAGE_BASE[resolveTaxYear(taxYear)]
+      : extra?.wageCap;
+    if (effectiveWageCap != null && effectiveWageCap > 0) base = Math.min(base, effectiveWageCap);
   } else if (baseType === "oh_traditional") {
     // C10 — OH SDIT traditional base = Ohio IT-1040 Line 3 (Ohio taxable
     // income before personal exemption). Engine approximates this as

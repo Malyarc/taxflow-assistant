@@ -33,6 +33,7 @@
 import PDFDocument from "pdfkit";
 import type { ComputedTaxReturn } from "./taxReturnEngine";
 import type { clientsTable } from "@workspace/db";
+import { SUPPORTED_TAX_YEARS, type TaxYear } from "./taxYears";
 
 type Client = typeof clientsTable.$inferSelect;
 
@@ -51,7 +52,7 @@ const FILING_STATUS_LABELS: Record<string, string> = {
  * target still computed). YEAR-INDEXED — add a year here once the IRS publishes
  * its quarterly underpayment rates (Rev. Rul. under §6621).
  */
-const SECTION_6654_ANNUAL_RATE: Record<number, number | null> = {
+const SECTION_6654_ANNUAL_RATE: Record<TaxYear, number | null> = {
   2024: 0.08,
   2025: 0.07,
   2026: null,
@@ -191,7 +192,13 @@ export function computeForm2210(args: { ret: ComputedTaxReturn; input?: Form2210
   const additionalToSafeHarbor = Math.max(0, requiredAnnualPayment - totalPaid);
   const underpayment = penaltyApplies ? additionalToSafeHarbor : 0;
 
-  const penaltyRateUsed = SECTION_6654_ANNUAL_RATE[taxYear] ?? null;
+  // Year-indexed, but tolerant of an out-of-range stored taxYear: only a
+  // SUPPORTED year reads the table (TY2026 is intentionally null = rate not yet
+  // published); anything else yields null (penalty-$ estimate omitted) rather
+  // than a stale clamp to another year's rate.
+  const penaltyRateUsed: number | null = (SUPPORTED_TAX_YEARS as readonly number[]).includes(taxYear)
+    ? SECTION_6654_ANNUAL_RATE[taxYear as TaxYear]
+    : null;
   let estimatedPenalty: number | null;
   if (!penaltyApplies) estimatedPenalty = 0;
   else if (penaltyRateUsed != null) {
