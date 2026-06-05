@@ -357,6 +357,14 @@ export interface ScheduleK1Fact {
   basisAtYearStart?: Numish;
   basisAtYearEnd?: Numish;
   atRiskAmount?: Numish;
+  /** P2-6 (b) — current-year distributions (1065 Box 19 / 1120-S Box 16D). Per
+   *  §1367/§1368, distributions reduce outside basis BEFORE losses, so they
+   *  shrink the basis available to absorb the Box 1 ordinary loss. */
+  distributions?: Numish;
+  /** P2-6 (b) — separately-stated DEDUCTIONS that also draw down basis before
+   *  the Box 1 loss (e.g. §179, charitable, investment interest). Enter as a
+   *  positive number; reduces the loss-absorbing basis. */
+  separatelyStatedDeductions?: Numish;
   /**
    * C11 — Optional 2-letter state code for the K-1's pass-through state.
    * When the filer is part-year (E12) and full-source allocation marker is
@@ -1363,19 +1371,32 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // property; engine computes the actual deduction.
   const section179ElectedAdj = sumByType("section_179_expense_election");
   const bonusDeprBasisAdj = sumByType("bonus_depreciation_basis");
+  // P2-6 (c) — TY2025 bonus-depreciation DUAL RATE by acquisition date. OBBBA
+  // (§70301) restored 100% bonus for property acquired AND placed in service
+  // AFTER 2025-01-19; property acquired on/before that date keeps the TCJA 40%
+  // phase-down. The engine has no acquisition-date field on the aggregate
+  // `bonus_depreciation_basis` (year-default rate), so the CPA enters the cost
+  // basis of POST-1/19/2025 property via `bonus_depreciation_basis_obbba`,
+  // which gets 100% in TY2025+ (and the year rate in earlier years as a
+  // defensive fallback — pre-OBBBA years had no 100% option).
+  const bonusDeprBasisObbbaAdj = sumByType("bonus_depreciation_basis_obbba");
   // SECTION_179_CAPS / BONUS_DEPR_RATES are module-scope (typed Record<TaxYear>).
   const s179Cfg = SECTION_179_CAPS[resolvedMapYear];
   // Phase-out: §179 limit reduced $-for-$ when total qualified property
   // purchases (approximated as §179 elected + bonus depr basis) exceed
   // the phase-out threshold.
-  const totalQualifiedPropertyApprox = section179ElectedAdj + bonusDeprBasisAdj;
+  const totalQualifiedPropertyApprox = section179ElectedAdj + bonusDeprBasisAdj + bonusDeprBasisObbbaAdj;
   const s179PhaseOut = Math.max(0, totalQualifiedPropertyApprox - s179Cfg.phaseStart);
   const s179EffectiveCap = Math.max(0, s179Cfg.cap - s179PhaseOut);
   // §179 applied = min(elected, cap, net business income) — income limit
   // applied later when we have net SE earnings; for now use the cap.
   const section179Preliminary = Math.min(section179ElectedAdj, s179EffectiveCap);
-  // Bonus depreciation: % × basis. No income limit.
-  const bonusDepreciationApplied = bonusDeprBasisAdj * BONUS_DEPR_RATES[resolvedMapYear];
+  // Bonus depreciation: % × basis. No income limit. P2-6 (c): the OBBBA
+  // post-1/19/2025 basis gets 100% in TY2025+ (the year-default rate otherwise).
+  const obbbaBonusRate = resolvedMapYear >= 2025 ? 1.0 : BONUS_DEPR_RATES[resolvedMapYear];
+  const bonusDepreciationApplied =
+    bonusDeprBasisAdj * BONUS_DEPR_RATES[resolvedMapYear] +
+    bonusDeprBasisObbbaAdj * obbbaBonusRate;
 
   // Income / SE / investment / QBI / AMT
   const seIncomeFromAdj = sumByType("self_employment_income");
@@ -1631,7 +1652,13 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     const tracksBasis = k.basisAtYearStart != null;
     const tracksAtRisk = k.atRiskAmount != null;
     if (!tracksBasis && !tracksAtRisk) return s + box1; // not tracked → unlimited
-    const basisLimit = tracksBasis ? Math.max(0, toNum(k.basisAtYearStart)) : Infinity;
+    // P2-6 (b) — §1367/§1368 ordering: distributions + separately-stated
+    // deductions reduce outside basis BEFORE the Box 1 ordinary loss, so the
+    // basis available to absorb the loss is beginning basis net of both. (The
+    // engine doesn't yet model excess-distribution gain when distributions
+    // exceed basis — a further sub-gap; basis floors at 0 here.)
+    const basisDrawdown = Math.max(0, toNum(k.distributions)) + Math.max(0, toNum(k.separatelyStatedDeductions));
+    const basisLimit = tracksBasis ? Math.max(0, toNum(k.basisAtYearStart) - basisDrawdown) : Infinity;
     const atRiskLimit = tracksAtRisk ? Math.max(0, toNum(k.atRiskAmount)) : Infinity;
     const allowedMag = Math.min(Math.abs(box1), basisLimit, atRiskLimit);
     k1BasisAtRiskLossSuspended += Math.abs(box1) - allowedMag;
@@ -1819,15 +1846,31 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const homeSaleSection121Exclusion = Math.min(homeSaleGrossGain, section121Cap);
   const homeSaleTaxableGain = Math.max(0, homeSaleGrossGain - section121Cap);
 
-  // K7 — §1202 QSBS exclusion. Computed before LTCG netting so the taxable
-  // remainder can join LTCG. Exclusion = min(gross, max($10M, 10×basis)).
-  // Engine assumes 100% post-2010-09-27 acquisition (most common case);
-  // for older 75%/50% acquisitions the CPA can pre-multiply the entered gross.
+  // K7 / P2-6 (a) — §1202 QSBS exclusion with acquisition-date EXCLUSION
+  // PERCENTAGE. The per-issuer cap (greater of $10M or 10× basis) bounds the
+  // ELIGIBLE gain; the exclusion percentage — 50% (acquired before 2009-02-18),
+  // 75% (2009-02-18 to 2010-09-27), or 100% (after 2010-09-27) — then applies to
+  // that capped eligible gain. The CPA supplies the percentage via the
+  // `qsbs_exclusion_pct` adjustment (50/75/100); absent/0 defaults to 100%
+  // (the post-9/27/2010 common case — unchanged from before).
+  //   excluded  = pct × min(gross, cap)
+  //   taxable   = gross − excluded   (over-cap excess + the non-excluded %)
   const qsbsGrossGain = Math.max(0, qsbsGrossGainAdj);
   const qsbsAdjustedBasis = Math.max(0, qsbsAdjustedBasisAdj);
+  const qsbsExclusionPctAdj = sumByType("qsbs_exclusion_pct");
+  const qsbsExclusionPct = qsbsExclusionPctAdj > 0 ? Math.min(100, qsbsExclusionPctAdj) / 100 : 1.0;
   const qsbsCap = Math.max(10_000_000, 10 * qsbsAdjustedBasis);
-  const qsbsSection1202Exclusion = Math.min(qsbsGrossGain, qsbsCap);
-  const qsbsTaxableGain = Math.max(0, qsbsGrossGain - qsbsCap);
+  const qsbsCappedEligible = Math.min(qsbsGrossGain, qsbsCap);
+  const qsbsSection1202Exclusion = qsbsExclusionPct * qsbsCappedEligible;
+  const qsbsTaxableGain = Math.max(0, qsbsGrossGain - qsbsSection1202Exclusion);
+  // §57(a)(7) AMT preference — 7% of the EXCLUDED gain is an AMT preference for
+  // 50%/75%-exclusion stock (NOT for 100% post-9/27/2010 stock, which carries no
+  // preference). Added to the Form 6251 preference total below.
+  // Sub-gap (documented): the TAXABLE §1202 remainder is "28%-rate gain" (§1(h))
+  // — taxed at a maximum 28% rate. The engine routes it to ordinary LTCG
+  // (0/15/20%), so for a top-bracket seller the engine slightly UNDER-taxes the
+  // taxable §1202 remainder. A dedicated 28%-rate bucket is the remaining gap.
+  const qsbs1202AmtPreference = qsbsExclusionPct < 1.0 ? 0.07 * qsbsSection1202Exclusion : 0;
 
   // C5 — §1031 like-kind exchange: recognized = min(realized, boot).
   // Both inputs floor at 0 to defend against malformed adjustments. If
@@ -2576,10 +2619,10 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // last year → taxableStateRefund > 0.)
   // Total Form 6251 AMTI adjustment = legacy catch-all + ISO bargain + SALT
   // addback (line 2g) + MACRS-vs-ADS depreciation (line 2i, ±) − taxable state
-  // refund (line 2e).
+  // refund (line 2e) + §57(a)(7) 7%-of-excluded §1202 QSBS preference (50%/75%).
   const totalAmtPreferences =
     amtPreferencesLegacy + amtIsoBargainElement + saltAddbackForAmt +
-    amtDepreciationAdjustment - taxableStateRefund;
+    amtDepreciationAdjustment - taxableStateRefund + qsbs1202AmtPreference;
 
   const amt = calculateAmt({
     taxableIncome: taxableAfterObbba,

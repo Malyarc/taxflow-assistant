@@ -109,6 +109,12 @@ export const scheduleK1DataTable = pgTable("schedule_k1_data", {
   basisAtYearEnd: numeric("basis_at_year_end", { precision: 14, scale: 2 }),
   /** Amount at risk per §465. */
   atRiskAmount: numeric("at_risk_amount", { precision: 14, scale: 2 }),
+  /** P2-6 (b) — current-year distributions (1065 Box 19 / 1120-S Box 16D).
+   *  Reduce outside basis before losses per §1367/§1368. */
+  distributions: numeric("distributions", { precision: 14, scale: 2 }),
+  /** P2-6 (b) — separately-stated deductions (§179/charitable/etc.) that draw
+   *  down basis before the Box 1 ordinary loss. Positive number. */
+  separatelyStatedDeductions: numeric("separately_stated_deductions", { precision: 14, scale: 2 }),
 
   /** Optional CPA notes. */
   notes: text("notes"),
