@@ -770,6 +770,10 @@ export interface ComputedTaxReturn {
   amtCreditGenerated: number;
   /** E2 — Form 8801 unused minimum-tax credit carried forward to next year. */
   amtCreditCarryforwardRemaining: number;
+  /** P2-3 — Form 1116 Schedule B / §904(c) unused foreign tax credit carried
+   *  forward to next year (combined current + prior in excess of the §904 limit).
+   *  10-year forward life; vintage not tracked. */
+  foreignTaxCreditCarryforwardRemaining: number;
   /** FORM-02 — total non-refundable credits applied against income tax this
    *  year (CTC-nonref + FTC + dependent-care + AOC-nonref + LLC + savers +
    *  residential energy + AMT credit). federalTaxLiability is PRE-credit, so
@@ -1535,6 +1539,13 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
    * If absent, the engine falls back to the approximate (credit ≈ paid).
    */
   const foreignSourceTaxableIncomeAdj = sumByType("foreign_source_taxable_income");
+  // P2-3 — FTC carryover (Form 1116 Schedule B, §904(c): 1-year back / 10-year
+  // forward). Prior-year unused foreign tax auto-loaded by the pipeline from
+  // tax_returns.foreignTaxCreditCarryforwardRemaining as a synthetic
+  // `foreign_tax_credit_carryforward` adjustment; CPA can override directly.
+  // The combined (current + carryover) foreign tax is run through the §904
+  // limit; the excess over the limit becomes next year's carryforward.
+  const foreignTaxCreditCarryforwardAdj = sumByType("foreign_tax_credit_carryforward");
   const residentialCleanEnergyAdj = sumByType("residential_clean_energy");
   const energyEfficientHomeAdj = sumByType("energy_efficient_home");
   const energyEfficientHeatpumpAdj = sumByType("energy_efficient_heatpump");
@@ -1771,6 +1782,15 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // gross premiums; engine applies the cap. Goes above-the-line (subtracts
   // from AGI alongside half-SE). Eligibility (employer plan availability)
   // is the CPA's responsibility — engine assumes the adjustment is valid.
+  //
+  // P2-3 note — there is NO SEHI CARRYFORWARD in the law. §162(l)(2)(A) limits
+  // the above-the-line SEHI deduction to the trade/business's earned income
+  // (net SE − half-SE); premiums in EXCESS of that cap are NOT deductible as
+  // SEHI and do NOT carry to a later year. They are instead deductible (same
+  // year) as itemized medical on Schedule A subject to the 7.5%-of-AGI floor
+  // (§213) — the CPA enters that via Schedule A, not a carryforward. (The
+  // P2-3 task title paired "FTC carryforward + SEHI carryforward"; only the FTC
+  // §904(c) carryover is a real carryforward, shipped above.)
   const sehi = calculateSehiDeduction({
     premiumsPaid: sehiPremiumsAdj,
     seNetEarnings: se.netSeEarnings,
@@ -2840,8 +2860,12 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   });
   availableForNonRefundable = Math.max(0, availableForNonRefundable - ctc.nonRefundablePortion);
 
+  // P2-3 — combine current-year foreign tax with the prior-year §904(c)
+  // carryover before applying the Form 1116 limit. The §904 limit is computed
+  // on the combined amount; the excess becomes next year's carryforward.
+  const foreignTaxCombinedPaid = Math.max(0, foreignTaxPaidAdj) + Math.max(0, foreignTaxCreditCarryforwardAdj);
   const foreignTaxCredit = calculateForeignTaxCredit({
-    foreignTaxPaid: foreignTaxPaidAdj,
+    foreignTaxPaid: foreignTaxCombinedPaid,
     filingStatus: client.filingStatus,
     // Form 1116 limit inputs — only meaningful when foreignTaxPaid exceeds the
     // simplified $300/$600 limit. Otherwise the calculator ignores them.
@@ -2854,6 +2878,12 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   });
   const foreignTaxApplied = Math.min(foreignTaxCredit.credit, availableForNonRefundable);
   availableForNonRefundable = Math.max(0, availableForNonRefundable - foreignTaxApplied);
+  // P2-3 — §904(c) carryforward to next year = combined foreign tax in excess of
+  // the §904 limit (= combined − the limited credit). Keyed to the §904 limit,
+  // NOT the engine's credit-ordering room (a sub-gap for the rare case where
+  // other nonrefundable credits fully absorb the tax). 10-year vintage not
+  // tracked (consistent with the charitable 5-year carryforward).
+  const foreignTaxCreditCarryforwardRemaining = Math.max(0, foreignTaxCombinedPaid - foreignTaxCredit.credit);
 
   const isMfj =
     client.filingStatus === "married_filing_jointly" ||
@@ -3237,6 +3267,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     amtCreditApplied,
     amtCreditGenerated,
     amtCreditCarryforwardRemaining,
+    foreignTaxCreditCarryforwardRemaining,
     totalNonRefundableApplied,
     charitableCarryforwardCashRemaining: scheduleA.charitableCarryforwardCashRemaining,
     earlyWithdrawalPenalty: form1099Summary.earlyWithdrawalPenalty,

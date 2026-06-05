@@ -68,6 +68,10 @@ export const taxReturnsTable = pgTable(
     amtCreditCarryforwardRemaining: numeric("amt_credit_carryforward_remaining", { precision: 14, scale: 2 }),
     /** E2 — Form 8801 minimum-tax credit applied against regular tax this year. */
     amtCreditApplied: numeric("amt_credit_applied", { precision: 14, scale: 2 }),
+  /** P2-3 — Form 1116 Schedule B / §904(c) unused foreign tax credit carried
+   *  forward to next year. Auto-loaded by the pipeline as a synthetic
+   *  `foreign_tax_credit_carryforward` adjustment. */
+  foreignTaxCreditCarryforwardRemaining: numeric("foreign_tax_credit_carryforward_remaining", { precision: 14, scale: 2 }),
     /**
      * E2 — Form 8801 minimum-tax credit generated this year (IRC §53(b)).
      * Simplified model: equals `amtTax` (treats all AMT as deferral). CPA can

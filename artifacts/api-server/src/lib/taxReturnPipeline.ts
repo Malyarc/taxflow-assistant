@@ -316,6 +316,18 @@ async function synthesizePriorYearCarryforwards(
     });
   }
 
+  // P2-3 — Form 1116 Schedule B / §904(c) foreign-tax-credit carryover
+  // (1-back / 10-forward). Auto-load the prior-year unused FTC; the engine
+  // folds it into this year's combined foreign tax before the §904 limit.
+  const ftcCarry = Number(priorReturn.foreignTaxCreditCarryforwardRemaining ?? 0);
+  if (ftcCarry > 0 && !hasManualOverride("foreign_tax_credit_carryforward")) {
+    synthetic.push({
+      adjustmentType: "foreign_tax_credit_carryforward",
+      amount: ftcCarry,
+      isApplied: true,
+    });
+  }
+
   return synthetic;
 }
 
@@ -418,6 +430,7 @@ export async function recalculateAndUpsertTaxReturn(
     amtCreditApplied: String(result.amtCreditApplied),
     amtCreditGenerated: String(result.amtCreditGenerated),
     amtCreditCarryforwardRemaining: String(result.amtCreditCarryforwardRemaining),
+    foreignTaxCreditCarryforwardRemaining: String(result.foreignTaxCreditCarryforwardRemaining),
     totalNonRefundableApplied: String(result.totalNonRefundableApplied),
     charitableCarryforwardCashRemaining: String(result.charitableCarryforwardCashRemaining),
     qsbsGrossGain: String(result.qsbsGrossGain),
