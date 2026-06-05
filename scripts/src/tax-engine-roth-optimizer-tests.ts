@@ -4,7 +4,7 @@
  * Run: pnpm --filter @workspace/scripts exec tsx src/tax-engine-roth-optimizer-tests.ts
  */
 import { type TaxReturnInputs } from "../../artifacts/api-server/src/lib/taxReturnEngine";
-import { optimizeRothConversionLadder, projectRmdAvoidance } from "../../artifacts/api-server/src/lib/rothOptimizer";
+import { optimizeRothConversionLadder, projectRmdAvoidance, irmaaAnnualSurchargePerPerson } from "../../artifacts/api-server/src/lib/rothOptimizer";
 
 let passed = 0;
 let failed = 0;
@@ -123,6 +123,58 @@ console.log("── RMD-avoidance value model (controlled 2-year hand-calc) ─�
     check("lifetimeFederalTaxSaved = −$8,395 (2-yr window; cost up-front)", v.lifetimeFederalTaxSaved, -8395, 5);
     assert("scenario IRA < baseline IRA (conversions drain the traditional)", v.scenarioFinalIraBalance < v.baselineFinalIraBalance);
     assert("scenario RMD total < baseline RMD total", v.scenarioRmdTotal < v.baselineRmdTotal);
+    // New value-model fields. AGIs here (40k/90k) are below the $106k IRMAA
+    // threshold → $0 IRMAA both ways; netLifetimeValue == lifetimeFederalTaxSaved.
+    check("baseline lifetime IRMAA = $0 (AGI < $106k)", v.baselineLifetimeIrmaa, 0, 0.5);
+    check("scenario lifetime IRMAA = $0 (AGI < $106k)", v.scenarioLifetimeIrmaa, 0, 0.5);
+    check("netLifetimeValue == tax saved when no IRMAA", v.netLifetimeValue, v.lifetimeFederalTaxSaved, 0.5);
+    // Roth balance: $50k converted year 0, no growth (1.0) → $50,000 tax-free.
+    check("scenario Roth balance final = $50,000 (tax-free)", v.scenarioRothBalanceFinal, 50000, 1);
+  }
+}
+
+// ── Medicare IRMAA surcharge helper (2025 SSA POMS table) ──────────────────
+console.log("── IRMAA annual surcharge (Part B + Part D), per person ──");
+{
+  // single thresholds $106k/$133k/$167k/$200k/$500k; annual = (PartB+PartD)×12.
+  check("IRMAA single $90k → $0 (below first tier)", irmaaAnnualSurchargePerPerson(90000, "single"), 0, 0.01);
+  check("IRMAA single $120k → $1,052.40 (tier 1: (74+13.70)×12)", irmaaAnnualSurchargePerPerson(120000, "single"), 1052.40, 0.01);
+  check("IRMAA single $150k → $2,643.60 (tier 2)", irmaaAnnualSurchargePerPerson(150000, "single"), 2643.60, 0.01);
+  check("IRMAA single $250k → $5,826.00 (tier 4)", irmaaAnnualSurchargePerPerson(250000, "single"), 5826.00, 0.01);
+  check("IRMAA single $600k → $6,356.40 (top tier)", irmaaAnnualSurchargePerPerson(600000, "single"), 6356.40, 0.01);
+  // MFJ thresholds doubled: $250k MFJ is only tier 1.
+  check("IRMAA MFJ $250k → $1,052.40 (tier 1; threshold $212k)", irmaaAnnualSurchargePerPerson(250000, "married_filing_jointly"), 1052.40, 0.01);
+  check("IRMAA MFJ $200k → $0 (below $212k)", irmaaAnnualSurchargePerPerson(200000, "married_filing_jointly"), 0, 0.01);
+}
+
+// ── IRMAA in the value model — big conversions trigger surcharges 2 yrs out ──
+// Single, age 65, $20k pension, $400k IRA, convert $150k years 0-1 (MAGI ~$170k
+// in those years → tier 3 $4,234.80). 4-yr horizon (ages 65-68, no RMD yet).
+// IRMAA's 2-yr lookback: y0/y1 use pre-conversion MAGI ($20k → $0); y2 uses
+// year-0 MAGI ($170k → $4,234.80); y3 uses year-1 MAGI ($170k → $4,234.80).
+// scenario lifetime IRMAA = 2 × $4,234.80 = $8,469.60; baseline = $0.
+console.log("── IRMAA in value model: conversions raise Medicare premiums ──");
+{
+  const aged65: TaxReturnInputs = {
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 65 },
+    w2s: [], form1099s: [{ taxYear: 2024, formType: "r", payerName: "Pension", taxableAmount: 20000, grossDistribution: 20000 }],
+    adjustments: [], taxYear: 2024,
+  };
+  const v = projectRmdAvoidance(aged65, {
+    startingIraBalance: 400000,
+    conversionsByYear: [150000, 150000, 0, 0],
+    valueHorizonYears: 4,
+    incomeGrowth: 1.0,
+    iraGrowth: 1.0,
+  });
+  assert("rmdAvoidance present", v != null);
+  if (v) {
+    check("baseline lifetime IRMAA = $0 (low MAGI throughout)", v.baselineLifetimeIrmaa, 0, 1);
+    check("scenario lifetime IRMAA = $8,470 (2 yrs × tier-3 $4,234.80, 2-yr lag)", v.scenarioLifetimeIrmaa, 8470, 1);
+    assert("conversions raise IRMAA (scenario > baseline)", v.scenarioLifetimeIrmaa > v.baselineLifetimeIrmaa);
+    assert("netLifetimeValue is LOWER than tax-saved alone (IRMAA is a real cost)",
+      v.netLifetimeValue === v.lifetimeFederalTaxSaved - (v.scenarioLifetimeIrmaa - v.baselineLifetimeIrmaa));
+    assert("Roth balance accumulates the $300k converted (grown)", v.scenarioRothBalanceFinal >= 300000);
   }
 }
 

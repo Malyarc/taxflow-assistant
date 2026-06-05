@@ -2462,6 +2462,26 @@ export const RunRothOptimizerResponse = zod.object({
           scenarioRmdTotal: zod.number(),
           baselineFinalIraBalance: zod.number(),
           scenarioFinalIraBalance: zod.number(),
+          baselineLifetimeIrmaa: zod
+            .number()
+            .describe(
+              "Lifetime Medicare IRMAA surcharge (Part B+D) with no conversions.",
+            ),
+          scenarioLifetimeIrmaa: zod
+            .number()
+            .describe(
+              "Lifetime IRMAA with the ladder — conversions raise MAGI and can bump tiers.",
+            ),
+          netLifetimeValue: zod
+            .number()
+            .describe(
+              "Federal tax saved minus the extra IRMAA the conversions cost. POSITIVE = converting wins.",
+            ),
+          scenarioRothBalanceFinal: zod
+            .number()
+            .describe(
+              "Tax-free Roth balance at the horizon (the converted dollars, grown) — upside the tax-only figure omits.",
+            ),
           assumptions: zod.array(zod.string()),
         }),
         zod.null(),

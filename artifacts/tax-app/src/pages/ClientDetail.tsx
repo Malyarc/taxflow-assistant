@@ -5084,15 +5084,16 @@ function RothOptimizerCard({ clientId }: { clientId: number }) {
                 <span>No-conversion lifetime tax: <span className="tabular-nums font-medium">{fmt(Number(plan.rmdAvoidance.baselineLifetimeFederalTax))}</span></span>
                 <span>With-ladder lifetime tax: <span className="tabular-nums font-medium">{fmt(Number(plan.rmdAvoidance.scenarioLifetimeFederalTax))}</span></span>
                 <span>
-                  Net lifetime tax {Number(plan.rmdAvoidance.lifetimeFederalTaxSaved) >= 0 ? "saved" : "extra cost"}:{" "}
-                  <span className={`tabular-nums font-semibold ${Number(plan.rmdAvoidance.lifetimeFederalTaxSaved) >= 0 ? "text-success" : "text-destructive"}`}>
-                    {fmt(Math.abs(Number(plan.rmdAvoidance.lifetimeFederalTaxSaved)))}
+                  Net lifetime value {Number(plan.rmdAvoidance.netLifetimeValue) >= 0 ? "(saved)" : "(extra cost)"}:{" "}
+                  <span className={`tabular-nums font-semibold ${Number(plan.rmdAvoidance.netLifetimeValue) >= 0 ? "text-success" : "text-destructive"}`}>
+                    {fmt(Math.abs(Number(plan.rmdAvoidance.netLifetimeValue)))}
                   </span>
                 </span>
               </div>
               <div className="text-[11px] text-violet-700">
-                Lifetime RMDs: {fmt(Number(plan.rmdAvoidance.baselineRmdTotal))} (no conversion) →{" "}
-                {fmt(Number(plan.rmdAvoidance.scenarioRmdTotal))} (with ladder). Conservative — excludes tax-free Roth growth.
+                Lifetime RMDs: {fmt(Number(plan.rmdAvoidance.baselineRmdTotal))} → {fmt(Number(plan.rmdAvoidance.scenarioRmdTotal))} ·{" "}
+                Medicare IRMAA: {fmt(Number(plan.rmdAvoidance.baselineLifetimeIrmaa))} → {fmt(Number(plan.rmdAvoidance.scenarioLifetimeIrmaa))} ·{" "}
+                tax-free Roth at horizon: <span className="font-medium">{fmt(Number(plan.rmdAvoidance.scenarioRothBalanceFinal))}</span> (omitted from net — upside).
               </div>
             </div>
           ) : null}

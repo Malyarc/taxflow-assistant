@@ -2464,6 +2464,14 @@ export interface RmdAvoidanceProjection {
   scenarioRmdTotal: number;
   baselineFinalIraBalance: number;
   scenarioFinalIraBalance: number;
+  /** Lifetime Medicare IRMAA surcharge (Part B+D) with no conversions. */
+  baselineLifetimeIrmaa: number;
+  /** Lifetime IRMAA with the ladder — conversions raise MAGI and can bump tiers. */
+  scenarioLifetimeIrmaa: number;
+  /** Federal tax saved minus the extra IRMAA the conversions cost. POSITIVE = converting wins. */
+  netLifetimeValue: number;
+  /** Tax-free Roth balance at the horizon (the converted dollars, grown) — upside the tax-only figure omits. */
+  scenarioRothBalanceFinal: number;
   assumptions: string[];
 }
 

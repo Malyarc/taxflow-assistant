@@ -54,6 +54,21 @@ export interface RmdAvoidanceProjection {
   scenarioRmdTotal: number;
   baselineFinalIraBalance: number;
   scenarioFinalIraBalance: number;
+  /** Lifetime Medicare IRMAA surcharge (Part B+D) with no conversions. */
+  baselineLifetimeIrmaa: number;
+  /** Lifetime IRMAA WITH the ladder — conversions raise MAGI → can bump tiers. */
+  scenarioLifetimeIrmaa: number;
+  /**
+   * Net lifetime value = federal tax saved − extra IRMAA the conversions cost.
+   * POSITIVE = converting wins (income-tax + Medicare-premium terms combined).
+   */
+  netLifetimeValue: number;
+  /**
+   * Tax-free Roth balance at the horizon (the laddered conversions, grown). This
+   * is the UPSIDE the tax-only comparison omits — these dollars are never taxed
+   * again, unlike the traditional IRA which owes tax on withdrawal.
+   */
+  scenarioRothBalanceFinal: number;
   assumptions: string[];
 }
 
@@ -75,6 +90,29 @@ export interface RothLadderPlan {
    */
   rmdAvoidance: RmdAvoidanceProjection | null;
   assumptions: string[];
+}
+
+// ── Medicare IRMAA (2025, SSA POMS HI 01101.020) ───────────────────────────
+// Annual Part B + Part D income-related surcharge PER PERSON by MAGI tier. The
+// single thresholds also cover HoH + MFS-lived-apart; MFJ uses the joint bands.
+// IRMAA has a 2-YEAR lookback (a year's surcharge uses MAGI from 2 years prior)
+// and applies once on Medicare (age 65+). MAGI ≈ AGI + tax-exempt interest.
+const IRMAA_2025_TIERS: ReadonlyArray<{ singleLB: number; mfjLB: number; annual: number }> = [
+  { singleLB: 106000, mfjLB: 212000, annual: (74.0 + 13.7) * 12 },   // $1,052.40
+  { singleLB: 133000, mfjLB: 266000, annual: (185.0 + 35.3) * 12 },  // $2,643.60
+  { singleLB: 167000, mfjLB: 334000, annual: (295.9 + 57.0) * 12 },  // $4,234.80
+  { singleLB: 200000, mfjLB: 400000, annual: (406.9 + 78.6) * 12 },  // $5,826.00
+  { singleLB: 500000, mfjLB: 750000, annual: (443.9 + 85.8) * 12 },  // $6,356.40
+];
+
+/** Annual Medicare IRMAA surcharge (Part B + Part D) for ONE person at a MAGI. */
+export function irmaaAnnualSurchargePerPerson(magi: number, filingStatus: string): number {
+  const isMfj = filingStatus === "married_filing_jointly" || filingStatus === "qualifying_widow";
+  let surcharge = 0;
+  for (const t of IRMAA_2025_TIERS) {
+    if (magi > (isMfj ? t.mfjLB : t.singleLB)) surcharge = t.annual;
+  }
+  return surcharge;
 }
 
 /**
@@ -115,7 +153,10 @@ export function projectRmdAvoidance(
   let bTax = 0;
   let sRmdTotal = 0;
   let bRmdTotal = 0;
+  let rothBalance = 0; // tax-free Roth: the laddered conversions, grown
   let firstRmdTaxYear: number | null = null;
+  const sMagi: number[] = []; // per-year scenario MAGI (≈ AGI) for IRMAA lookback
+  const bMagi: number[] = [];
 
   for (let y = 0; y < horizon; y++) {
     const age = baseAge + y;
@@ -124,34 +165,72 @@ export function projectRmdAvoidance(
 
     // SCENARIO: conversion + RMD on the conversion-reduced IRA.
     const sRmd = requiredMinimumDistribution(sIra, age);
-    sTax += computeTaxReturnPure(addIncome(projected, conv + sRmd)).federalTaxLiability;
+    const sReturn = computeTaxReturnPure(addIncome(projected, conv + sRmd));
+    sTax += sReturn.federalTaxLiability;
+    sMagi.push(Math.max(0, sReturn.adjustedGrossIncome));
     sRmdTotal += sRmd;
     sIra = Math.max(0, sIra - conv - sRmd) * iraGrowth;
+    // Converted dollars enter the Roth (tax paid from outside funds, the standard
+    // ladder assumption) and grow tax-free.
+    rothBalance = (rothBalance + conv) * iraGrowth;
 
     // BASELINE: RMD only, on the full un-converted IRA.
     const bRmd = requiredMinimumDistribution(bIra, age);
-    bTax += computeTaxReturnPure(addIncome(projected, bRmd)).federalTaxLiability;
+    const bReturn = computeTaxReturnPure(addIncome(projected, bRmd));
+    bTax += bReturn.federalTaxLiability;
+    bMagi.push(Math.max(0, bReturn.adjustedGrossIncome));
     bRmdTotal += bRmd;
     bIra = Math.max(0, bIra - bRmd) * iraGrowth;
 
     if (firstRmdTaxYear == null && bRmd > 0) firstRmdTaxYear = projected.taxYear;
   }
 
+  // Medicare IRMAA: each year the client is 65+, the surcharge uses MAGI from 2
+  // years prior (the IRMAA lookback; for the first two years we fall back to the
+  // earliest projected year). MFJ assumes both spouses are on Medicare (×2).
+  const fs = baseline.client.filingStatus;
+  const numOnMedicare = fs === "married_filing_jointly" || fs === "qualifying_widow" ? 2 : 1;
+  let sIrmaa = 0;
+  let bIrmaa = 0;
+  for (let y = 0; y < horizon; y++) {
+    if (baseAge + y < 65) continue;
+    if (y >= 2) {
+      sIrmaa += irmaaAnnualSurchargePerPerson(sMagi[y - 2], fs) * numOnMedicare;
+      bIrmaa += irmaaAnnualSurchargePerPerson(bMagi[y - 2], fs) * numOnMedicare;
+    } else {
+      // Years 0-1 look back to PRE-projection income (before any conversions), so
+      // both trajectories use the baseline year-0 MAGI — the conversions' IRMAA
+      // impact correctly appears only 2 years out (y >= 2).
+      const preMagi = bMagi[0] ?? 0;
+      const surcharge = irmaaAnnualSurchargePerPerson(preMagi, fs) * numOnMedicare;
+      sIrmaa += surcharge;
+      bIrmaa += surcharge;
+    }
+  }
+
+  const taxSaved = bTax - sTax;
+  const extraIrmaa = sIrmaa - bIrmaa; // conversions raise MAGI → ≥ 0 usually
+
   return {
     valueHorizonYears: horizon,
     firstRmdTaxYear,
     baselineLifetimeFederalTax: Math.round(bTax),
     scenarioLifetimeFederalTax: Math.round(sTax),
-    lifetimeFederalTaxSaved: Math.round(bTax - sTax),
+    lifetimeFederalTaxSaved: Math.round(taxSaved),
     baselineRmdTotal: Math.round(bRmdTotal),
     scenarioRmdTotal: Math.round(sRmdTotal),
     baselineFinalIraBalance: Math.round(bIra),
     scenarioFinalIraBalance: Math.round(sIra),
+    baselineLifetimeIrmaa: Math.round(bIrmaa),
+    scenarioLifetimeIrmaa: Math.round(sIrmaa),
+    netLifetimeValue: Math.round(taxSaved - extraIrmaa),
+    scenarioRothBalanceFinal: Math.round(rothBalance),
     assumptions: [
       `Total federal tax over ${horizon} yrs: BASELINE (no conversions, full RMDs at age ${RMD_TRIGGER_AGE}+) vs SCENARIO (the ladder shrinks the traditional IRA → smaller future RMDs).`,
       `RMD per IRS Uniform Lifetime Table (Pub 590-B). Un-converted IRA grows ${Math.round((iraGrowth - 1) * 100)}%/yr.`,
-      `CONSERVATIVE: counts RMD-tax avoidance NET of conversion cost only — does NOT credit the tax-free growth of converted Roth dollars, so the real lifetime value is higher.`,
-      `Future brackets clamp to the latest supported year; the baseline-vs-scenario delta stays meaningful even as absolute figures drift on long horizons.`,
+      `netLifetimeValue = federal tax saved − the EXTRA Medicare IRMAA the conversions trigger. IRMAA per the 2025 SSA table (Part B+D), 2-year MAGI lookback, applied at age 65+ (MFJ assumes both spouses on Medicare).`,
+      `scenarioRothBalanceFinal is the tax-free Roth at the horizon (the converted dollars, grown) — an UPSIDE the tax-only netLifetimeValue omits, so the true benefit of converting is higher still.`,
+      `Future brackets + the IRMAA table are held at the latest published year; the baseline-vs-scenario delta stays meaningful even as absolute figures drift on long horizons.`,
     ],
   };
 }

@@ -4122,7 +4122,7 @@ components:
 
     RmdAvoidanceProjection:
       type: object
-      required: [valueHorizonYears, firstRmdTaxYear, baselineLifetimeFederalTax, scenarioLifetimeFederalTax, lifetimeFederalTaxSaved, baselineRmdTotal, scenarioRmdTotal, baselineFinalIraBalance, scenarioFinalIraBalance, assumptions]
+      required: [valueHorizonYears, firstRmdTaxYear, baselineLifetimeFederalTax, scenarioLifetimeFederalTax, lifetimeFederalTaxSaved, baselineRmdTotal, scenarioRmdTotal, baselineFinalIraBalance, scenarioFinalIraBalance, baselineLifetimeIrmaa, scenarioLifetimeIrmaa, netLifetimeValue, scenarioRothBalanceFinal, assumptions]
       properties:
         valueHorizonYears:
           type: integer
@@ -4145,6 +4145,18 @@ components:
         baselineFinalIraBalance:
           type: number
         scenarioFinalIraBalance:
+          type: number
+        baselineLifetimeIrmaa:
+          description: Lifetime Medicare IRMAA surcharge (Part B+D) with no conversions.
+          type: number
+        scenarioLifetimeIrmaa:
+          description: Lifetime IRMAA with the ladder — conversions raise MAGI and can bump tiers.
+          type: number
+        netLifetimeValue:
+          description: Federal tax saved minus the extra IRMAA the conversions cost. POSITIVE = converting wins.
+          type: number
+        scenarioRothBalanceFinal:
+          description: Tax-free Roth balance at the horizon (the converted dollars, grown) — upside the tax-only figure omits.
           type: number
         assumptions:
           type: array
