@@ -144,6 +144,111 @@ export function projectYearForward(
   };
 }
 
+// ── RMD — IRS Uniform Lifetime Table (Pub 590-B Table III) ─────────────────
+// SECURE Act 2.0: RMDs begin at age 73 (those born 1951–1959). The RMD for a
+// year = (prior Dec-31 account balance) / (Uniform Lifetime divisor for the age
+// attained that year). Roth IRAs are EXEMPT during the owner's lifetime — which
+// is the whole point of a conversion ladder: converted dollars leave the RMD
+// base permanently. Divisors cross-verified against IRS Pub 590-B + 3 sources.
+
+/** SECURE 2.0 first-RMD age (born 1951–1959). */
+export const RMD_TRIGGER_AGE = 73;
+
+/** IRS Uniform Lifetime Table (Pub 590-B Table III), distribution-period divisors. */
+export const UNIFORM_LIFETIME_DIVISORS: Readonly<Record<number, number>> = {
+  72: 27.4, 73: 26.5, 74: 25.5, 75: 24.6, 76: 23.7, 77: 22.9, 78: 22.0, 79: 21.1,
+  80: 20.2, 81: 19.4, 82: 18.5, 83: 17.7, 84: 16.8, 85: 16.0, 86: 15.2, 87: 14.4,
+  88: 13.7, 89: 12.9, 90: 12.2, 91: 11.5, 92: 10.8, 93: 10.1, 94: 9.5, 95: 8.9,
+  96: 8.4, 97: 7.8, 98: 7.3, 99: 6.8, 100: 6.4,
+};
+
+/**
+ * Uniform Lifetime Table divisor for an age, or null when no RMD is required
+ * (under age 73). Ages past 100 clamp to the age-100 divisor (the table
+ * continues in Pub 590-B but is irrelevant for planning horizons).
+ */
+export function rmdDivisorForAge(age: number): number | null {
+  if (!Number.isFinite(age) || age < RMD_TRIGGER_AGE) return null;
+  const a = Math.min(100, Math.floor(age));
+  return UNIFORM_LIFETIME_DIVISORS[a] ?? UNIFORM_LIFETIME_DIVISORS[100];
+}
+
+/**
+ * Required Minimum Distribution = prior-year-end balance / divisor. Returns 0
+ * when no RMD is required (age < 73) or the balance is non-positive.
+ */
+export function requiredMinimumDistribution(priorYearEndBalance: number, age: number): number {
+  const d = rmdDivisorForAge(age);
+  if (d == null || priorYearEndBalance <= 0) return 0;
+  return priorYearEndBalance / d;
+}
+
+// ── Carryforward threading (pure) ──────────────────────────────────────────
+// The engine OUTPUTS each remaining carryforward after a year's return; an
+// accurate multi-year trajectory must START the next year from those depleted
+// remainders rather than re-using the frozen year-0 amounts. captureCarryforwards
+// reads the remainders off a computed return; applyCarryforwards rewrites the
+// carryforward adjustments on the next year's inputs.
+
+export interface CarryforwardState {
+  nol: number;
+  capitalLossShort: number;
+  capitalLossLong: number;
+  charitableCash: number;
+  section163j: number;
+  amtCredit: number;
+  amtNol: number;
+  passiveLossScheduleE: number;
+}
+
+/** Map each CarryforwardState field to its INPUT adjustmentType string. */
+const CARRYFORWARD_ADJ_TYPE: Readonly<Record<keyof CarryforwardState, string>> = {
+  nol: "nol_carryforward",
+  capitalLossShort: "capital_loss_carryforward_short",
+  capitalLossLong: "capital_loss_carryforward_long",
+  charitableCash: "charitable_carryforward_cash",
+  section163j: "section_163j_carryforward_from_prior",
+  amtCredit: "amt_credit_carryforward",
+  amtNol: "amt_nol_carryforward",
+  passiveLossScheduleE: "schedule_e_passive_loss_carryforward",
+};
+
+/** Extract the carryforwards that roll to next year from a computed return. */
+export function captureCarryforwards(r: ComputedTaxReturn): CarryforwardState {
+  return {
+    nol: Math.max(0, r.nolCarryforwardRemaining ?? 0),
+    capitalLossShort: Math.max(0, r.capitalLossCarryforwardShort ?? 0),
+    capitalLossLong: Math.max(0, r.capitalLossCarryforwardLong ?? 0),
+    charitableCash: Math.max(0, r.charitableCarryforwardCashRemaining ?? 0),
+    section163j: Math.max(0, r.section163jDisallowedCarryforward ?? 0),
+    amtCredit: Math.max(0, r.amtCreditCarryforwardRemaining ?? 0),
+    amtNol: Math.max(0, r.amtNolCarryforwardRemaining ?? 0),
+    passiveLossScheduleE: Math.max(0, r.scheduleEPassiveLossSuspended ?? 0),
+  };
+}
+
+/**
+ * Replace the carryforward adjustments in `inputs` with the threaded state
+ * (dropping any existing/frozen carryforward adjustments first; only positive
+ * amounts are re-added). Pure — returns a fresh inputs object.
+ */
+export function applyCarryforwards(inputs: TaxReturnInputs, state: CarryforwardState): TaxReturnInputs {
+  const cfTypes = new Set<string>(Object.values(CARRYFORWARD_ADJ_TYPE));
+  const others = inputs.adjustments.filter((a) => !cfTypes.has(a.adjustmentType));
+  const threaded: AdjustmentFact[] = [];
+  for (const key of Object.keys(CARRYFORWARD_ADJ_TYPE) as (keyof CarryforwardState)[]) {
+    const amt = state[key];
+    if (amt > 0) {
+      threaded.push({
+        adjustmentType: CARRYFORWARD_ADJ_TYPE[key],
+        amount: Math.round(amt * 100) / 100,
+        isApplied: true,
+      });
+    }
+  }
+  return { ...inputs, adjustments: [...others, ...threaded] };
+}
+
 // ── Multi-year trajectory runner ───────────────────────────────────────────
 
 export interface MultiYearOptions {
@@ -156,6 +261,22 @@ export interface MultiYearOptions {
    * (e.g., year-0 Roth conversion).
    */
   mutationsByYear?: ReadonlyArray<readonly WhatIfMutation[] | undefined>;
+  /**
+   * OPT-IN: thread each year's REMAINING carryforwards (NOL, cap-loss short/long,
+   * charitable cash, §163(j), AMT credit, AMT NOL, Sched-E PAL) into the next
+   * year — i.e. deplete them year over year instead of re-using the frozen
+   * year-0 amounts. Default false (back-compat: every existing consumer + the
+   * freeze-dependent tests are unchanged; only opt-in callers see depletion).
+   */
+  chainCarryforwards?: boolean;
+  /**
+   * OPT-IN: model Required Minimum Distributions. Each projection year the client
+   * is >= age 73 (per client.taxpayerAge + the year offset), the RMD
+   * (prior-year-end IRA balance / Uniform Lifetime divisor) is injected as
+   * ordinary income; the balance grows at iraGrowth (default 1.05) and is reduced
+   * by each year's RMD. No-op without client.taxpayerAge. Default off.
+   */
+  rmd?: { startingIraBalance: number; iraGrowth?: number };
 }
 
 export interface MultiYearProjection {
@@ -173,6 +294,8 @@ export interface MultiYearProjection {
   yearsAhead: number;
   /** Growth factor used (default 1.03). */
   incomeGrowth: number;
+  /** RMD injected as income in each year (0 when RMD modeling is off / under 73). */
+  rmdByYear: number[];
 }
 
 /**
@@ -187,18 +310,51 @@ export function runMultiYearTrajectory(
   if (yearsAhead < 1) throw new Error("yearsAhead must be >= 1");
   const growth = options?.incomeGrowth ?? DEFAULT_INCOME_GROWTH;
   const muts = options?.mutationsByYear ?? [];
+  const chain = options?.chainCarryforwards ?? false;
+  const rmdOpt = options?.rmd;
+  const baseAge = baseline.client.taxpayerAge ?? null;
+  const iraGrowth = rmdOpt?.iraGrowth ?? 1.05;
 
   const yearInputs: TaxReturnInputs[] = [];
   const yearReturns: ComputedTaxReturn[] = [];
+  const rmdByYear: number[] = [];
+  let priorCf: CarryforwardState | null = null;
+  let iraBalance = rmdOpt ? Math.max(0, rmdOpt.startingIraBalance) : 0;
 
   for (let y = 0; y < yearsAhead; y++) {
     let inputs = projectYearForward(baseline, y, { incomeGrowth: growth });
+
+    // Carryforward threading: start from last year's depleted remainders.
+    if (chain && priorCf) inputs = applyCarryforwards(inputs, priorCf);
+
+    // RMD: inject the required distribution as ordinary income at age >= 73.
+    // (prior-year-end balance / divisor). The balance is the running iraBalance,
+    // which represents the Dec-31 balance going into this year.
+    let rmdThisYear = 0;
+    if (rmdOpt && baseAge != null) {
+      rmdThisYear = requiredMinimumDistribution(iraBalance, baseAge + y);
+      if (rmdThisYear > 0) {
+        inputs = applyWhatIfMutations(inputs, [
+          { kind: "add_adjustment", adjustmentType: "additional_income", amount: Math.round(rmdThisYear) },
+        ]);
+      }
+    }
+    rmdByYear.push(Math.round(rmdThisYear));
+
+    // Per-year strategy mutations layer on top (e.g. a Roth conversion).
     const yearMuts = muts[y];
     if (yearMuts && yearMuts.length > 0) {
       inputs = applyWhatIfMutations(inputs, yearMuts);
     }
+
     yearInputs.push(inputs);
-    yearReturns.push(computeTaxReturnPure(inputs));
+    const computed = computeTaxReturnPure(inputs);
+    yearReturns.push(computed);
+
+    if (chain) priorCf = captureCarryforwards(computed);
+    // Evolve the IRA: withdraw this year's RMD from the prior-year-end balance,
+    // then grow the remainder to next year's prior-year-end balance.
+    if (rmdOpt) iraBalance = Math.max(0, iraBalance - rmdThisYear) * iraGrowth;
   }
 
   const totalFederalTax = yearReturns.reduce((s, r) => s + r.federalTaxLiability, 0);
@@ -216,6 +372,7 @@ export function runMultiYearTrajectory(
     totalStateTax,
     yearsAhead,
     incomeGrowth: growth,
+    rmdByYear,
   };
 }
 
