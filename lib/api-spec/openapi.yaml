@@ -890,6 +890,54 @@ paths:
         "404":
           description: Client not found
 
+  /clients/{clientId}/roth-optimizer:
+    post:
+      operationId: runRothOptimizer
+      tags: [planning]
+      summary: Multi-year Roth-conversion bracket-fill ladder (PLAN-B1)
+      description: >
+        Computes the recommended Roth-conversion ladder over a horizon: in each
+        projected year it converts just enough traditional-IRA money to fill the
+        TOP of the client's current federal ordinary bracket (capped by the
+        remaining IRA balance) and uses the tax engine to compute the EXACT
+        current-year federal tax cost — no heuristic. Pure; does not write to the DB.
+
+        v1 core models the bracket-fill ladder + engine-exact conversion cost.
+        The long-term-value model (RMD avoidance, IRMAA Part-B/D surcharges,
+        Social-Security taxability interaction) is the next increment and is
+        disclosed in the response `assumptions`. Multi-year projections clamp
+        bracket tables to the latest supported year (absolute figures drift past
+        that; year-over-year deltas remain meaningful).
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RothOptimizerBody"
+      responses:
+        "200":
+          description: Roth-conversion ladder plan
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RothOptimizerResponse"
+        "400":
+          description: Invalid request body
+        "402":
+          description: Pro tier disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProTierRequired"
+        "404":
+          description: Client not found
+
   /clients/{clientId}/what-if:
     post:
       operationId: runWhatIfScenario
@@ -3987,6 +4035,94 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/StateComparisonResult"
+
+    RothOptimizerBody:
+      type: object
+      required: [horizonYears, traditionalIraBalance]
+      properties:
+        horizonYears:
+          description: Number of years to ladder conversions over (>= 1).
+          type: integer
+          minimum: 1
+        traditionalIraBalance:
+          description: Current traditional/SEP/SIMPLE IRA balance available to convert.
+          type: number
+          minimum: 0
+        incomeGrowth:
+          description: Annual income-growth factor for the projection (1.03 = 3%/yr). Default 1.03.
+          type: number
+        iraGrowth:
+          description: Annual growth factor for the un-converted IRA balance (1.05 = 5%/yr). Default 1.05.
+          type: number
+
+    RothLadderYear:
+      type: object
+      required: [yearIndex, taxYear, taxableIncomeBeforeConversion, bracketCeiling, marginalRate, conversion, conversionTaxCost, iraBalanceRemaining]
+      properties:
+        yearIndex:
+          description: 0-based offset from the baseline year.
+          type: integer
+        taxYear:
+          type: integer
+        taxableIncomeBeforeConversion:
+          description: Ordinary taxable income before any conversion this year.
+          type: number
+        bracketCeiling:
+          description: Top of the current federal ordinary bracket (the fill target).
+          type: number
+        marginalRate:
+          description: Marginal rate the conversion is taxed at (current bracket's rate).
+          type: number
+        conversion:
+          description: Recommended conversion — fill the bracket, capped by the IRA balance.
+          type: number
+        conversionTaxCost:
+          description: Engine-computed current-year federal tax cost of the conversion.
+          type: number
+        iraBalanceRemaining:
+          description: Traditional-IRA balance remaining after this year's conversion.
+          type: number
+
+    RothLadderPlan:
+      type: object
+      required: [years, totalConverted, totalConversionTaxCost, blendedConversionRate, startingIraBalance, horizonYears, incomeGrowth, iraGrowth, assumptions]
+      properties:
+        years:
+          type: array
+          items:
+            $ref: "#/components/schemas/RothLadderYear"
+        totalConverted:
+          description: Total converted across the horizon (now growing tax-free in the Roth).
+          type: number
+        totalConversionTaxCost:
+          description: Total current-year federal tax paid on the laddered conversions.
+          type: number
+        blendedConversionRate:
+          description: Blended rate paid on the conversions (cost / converted).
+          type: number
+        startingIraBalance:
+          type: number
+        horizonYears:
+          type: integer
+        incomeGrowth:
+          type: number
+        iraGrowth:
+          type: number
+        assumptions:
+          type: array
+          items:
+            type: string
+
+    RothOptimizerResponse:
+      type: object
+      required: [clientId, taxYear, plan]
+      properties:
+        clientId:
+          type: integer
+        taxYear:
+          type: integer
+        plan:
+          $ref: "#/components/schemas/RothLadderPlan"
 
     WhatIfResponse:
       type: object

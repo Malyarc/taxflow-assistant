@@ -12,6 +12,8 @@ import {
   RunWhatIfScenarioBody,
   RunStateComparisonParams,
   RunStateComparisonBody,
+  RunRothOptimizerParams,
+  RunRothOptimizerBody,
   GetPeerBenchmarkParams,
 } from "@workspace/api-zod";
 import { CATALOG_V1, type OpportunityHit } from "@workspace/planning-strategies";
@@ -33,6 +35,7 @@ import {
 } from "../lib/planningMemo";
 import { consentRequired, hasValidConsent, AI_EXTRACTION_SCOPE } from "../lib/consentGate";
 import { computeTaxReturn, loadTaxReturnInputs } from "../lib/taxReturnPipeline";
+import { optimizeRothConversionLadder } from "../lib/rothOptimizer";
 import {
   runWhatIfScenario,
   runWhatIfScenarios,
@@ -676,6 +679,44 @@ router.post("/clients/:clientId/state-comparison", async (req, res): Promise<voi
   } catch (err) {
     logger.error({ err, clientId: params.data.clientId }, "State comparison failed");
     res.status(500).json({ error: "State comparison failed" });
+  }
+});
+
+// ── PLAN-B1 — Multi-year Roth-conversion bracket-fill optimizer ────────────
+router.post("/clients/:clientId/roth-optimizer", async (req, res): Promise<void> => {
+  const params = RunRothOptimizerParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const body = RunRothOptimizerBody.safeParse(req.body ?? {});
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+
+  try {
+    const loaded = await loadTaxReturnInputs(params.data.clientId);
+    if (!loaded) {
+      res.status(404).json({ error: "Client not found" });
+      return;
+    }
+
+    const plan = optimizeRothConversionLadder(loaded.inputs, {
+      horizonYears: body.data.horizonYears,
+      traditionalIraBalance: body.data.traditionalIraBalance,
+      incomeGrowth: body.data.incomeGrowth ?? undefined,
+      iraGrowth: body.data.iraGrowth ?? undefined,
+    });
+
+    res.json({
+      clientId: params.data.clientId,
+      taxYear: loaded.inputs.taxYear,
+      plan,
+    });
+  } catch (err) {
+    logger.error({ err, clientId: params.data.clientId }, "Roth optimizer failed");
+    res.status(500).json({ error: "Roth optimizer failed" });
   }
 });
 

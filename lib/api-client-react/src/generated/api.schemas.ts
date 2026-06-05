@@ -2412,6 +2412,62 @@ export interface StateComparisonResponse {
   results: StateComparisonResult[];
 }
 
+export interface RothOptimizerBody {
+  /**
+   * Number of years to ladder conversions over (>= 1).
+   * @minimum 1
+   */
+  horizonYears: number;
+  /**
+   * Current traditional/SEP/SIMPLE IRA balance available to convert.
+   * @minimum 0
+   */
+  traditionalIraBalance: number;
+  /** Annual income-growth factor for the projection (1.03 = 3%/yr). Default 1.03. */
+  incomeGrowth?: number;
+  /** Annual growth factor for the un-converted IRA balance (1.05 = 5%/yr). Default 1.05. */
+  iraGrowth?: number;
+}
+
+export interface RothLadderYear {
+  /** 0-based offset from the baseline year. */
+  yearIndex: number;
+  taxYear: number;
+  /** Ordinary taxable income before any conversion this year. */
+  taxableIncomeBeforeConversion: number;
+  /** Top of the current federal ordinary bracket (the fill target). */
+  bracketCeiling: number;
+  /** Marginal rate the conversion is taxed at (current bracket's rate). */
+  marginalRate: number;
+  /** Recommended conversion — fill the bracket, capped by the IRA balance. */
+  conversion: number;
+  /** Engine-computed current-year federal tax cost of the conversion. */
+  conversionTaxCost: number;
+  /** Traditional-IRA balance remaining after this year's conversion. */
+  iraBalanceRemaining: number;
+}
+
+export interface RothLadderPlan {
+  years: RothLadderYear[];
+  /** Total converted across the horizon (now growing tax-free in the Roth). */
+  totalConverted: number;
+  /** Total current-year federal tax paid on the laddered conversions. */
+  totalConversionTaxCost: number;
+  /** Blended rate paid on the conversions (cost / converted). */
+  blendedConversionRate: number;
+  startingIraBalance: number;
+  horizonYears: number;
+  incomeGrowth: number;
+  iraGrowth: number;
+  assumptions: string[];
+}
+
+export interface RothOptimizerResponse {
+  clientId: number;
+  taxYear: number;
+  plan: RothLadderPlan;
+}
+
 export interface WhatIfResponse {
   clientId: number;
   taxYear: number;

@@ -2340,6 +2340,104 @@ export const RunStateComparisonResponse = zod.object({
 });
 
 /**
+ * Computes the recommended Roth-conversion ladder over a horizon: in each projected year it converts just enough traditional-IRA money to fill the TOP of the client's current federal ordinary bracket (capped by the remaining IRA balance) and uses the tax engine to compute the EXACT current-year federal tax cost — no heuristic. Pure; does not write to the DB.
+v1 core models the bracket-fill ladder + engine-exact conversion cost. The long-term-value model (RMD avoidance, IRMAA Part-B/D surcharges, Social-Security taxability interaction) is the next increment and is disclosed in the response `assumptions`. Multi-year projections clamp bracket tables to the latest supported year (absolute figures drift past that; year-over-year deltas remain meaningful).
+
+ * @summary Multi-year Roth-conversion bracket-fill ladder (PLAN-B1)
+ */
+export const RunRothOptimizerParams = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const runRothOptimizerBodyTraditionalIraBalanceMin = 0;
+
+export const RunRothOptimizerBody = zod.object({
+  horizonYears: zod
+    .number()
+    .min(1)
+    .describe("Number of years to ladder conversions over (>= 1)."),
+  traditionalIraBalance: zod
+    .number()
+    .min(runRothOptimizerBodyTraditionalIraBalanceMin)
+    .describe(
+      "Current traditional\/SEP\/SIMPLE IRA balance available to convert.",
+    ),
+  incomeGrowth: zod
+    .number()
+    .optional()
+    .describe(
+      "Annual income-growth factor for the projection (1.03 = 3%\/yr). Default 1.03.",
+    ),
+  iraGrowth: zod
+    .number()
+    .optional()
+    .describe(
+      "Annual growth factor for the un-converted IRA balance (1.05 = 5%\/yr). Default 1.05.",
+    ),
+});
+
+export const RunRothOptimizerResponse = zod.object({
+  clientId: zod.number(),
+  taxYear: zod.number(),
+  plan: zod.object({
+    years: zod.array(
+      zod.object({
+        yearIndex: zod
+          .number()
+          .describe("0-based offset from the baseline year."),
+        taxYear: zod.number(),
+        taxableIncomeBeforeConversion: zod
+          .number()
+          .describe("Ordinary taxable income before any conversion this year."),
+        bracketCeiling: zod
+          .number()
+          .describe(
+            "Top of the current federal ordinary bracket (the fill target).",
+          ),
+        marginalRate: zod
+          .number()
+          .describe(
+            "Marginal rate the conversion is taxed at (current bracket's rate).",
+          ),
+        conversion: zod
+          .number()
+          .describe(
+            "Recommended conversion — fill the bracket, capped by the IRA balance.",
+          ),
+        conversionTaxCost: zod
+          .number()
+          .describe(
+            "Engine-computed current-year federal tax cost of the conversion.",
+          ),
+        iraBalanceRemaining: zod
+          .number()
+          .describe(
+            "Traditional-IRA balance remaining after this year's conversion.",
+          ),
+      }),
+    ),
+    totalConverted: zod
+      .number()
+      .describe(
+        "Total converted across the horizon (now growing tax-free in the Roth).",
+      ),
+    totalConversionTaxCost: zod
+      .number()
+      .describe(
+        "Total current-year federal tax paid on the laddered conversions.",
+      ),
+    blendedConversionRate: zod
+      .number()
+      .describe("Blended rate paid on the conversions (cost \/ converted)."),
+    startingIraBalance: zod.number(),
+    horizonYears: zod.number(),
+    incomeGrowth: zod.number(),
+    iraGrowth: zod.number(),
+    assumptions: zod.array(zod.string()),
+  }),
+});
+
+/**
  * Loads the client's current TaxReturnInputs (same source as the persisted return), applies the requested mutations, re-runs computeTaxReturnPure, and returns the federal+state tax delta vs the baseline. Pure — does not write to the DB.
 Generalizes the C4 amendment-diff pattern. Foundation primitive for Phase H planning quantification — turns every G1/G4 rule into actual delta-dollar values.
 

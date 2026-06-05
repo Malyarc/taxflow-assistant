@@ -55,6 +55,8 @@ import type {
   ProTierRequired,
   RejectExtractionBody,
   RentalProperty,
+  RothOptimizerBody,
+  RothOptimizerResponse,
   ScheduleK1,
   Settings,
   StateComparisonBody,
@@ -3020,6 +3022,96 @@ export const useRunStateComparison = <
   TContext
 > => {
   return useMutation(getRunStateComparisonMutationOptions(options));
+};
+
+/**
+ * Computes the recommended Roth-conversion ladder over a horizon: in each projected year it converts just enough traditional-IRA money to fill the TOP of the client's current federal ordinary bracket (capped by the remaining IRA balance) and uses the tax engine to compute the EXACT current-year federal tax cost — no heuristic. Pure; does not write to the DB.
+v1 core models the bracket-fill ladder + engine-exact conversion cost. The long-term-value model (RMD avoidance, IRMAA Part-B/D surcharges, Social-Security taxability interaction) is the next increment and is disclosed in the response `assumptions`. Multi-year projections clamp bracket tables to the latest supported year (absolute figures drift past that; year-over-year deltas remain meaningful).
+
+ * @summary Multi-year Roth-conversion bracket-fill ladder (PLAN-B1)
+ */
+export const getRunRothOptimizerUrl = (clientId: number) => {
+  return `/api/clients/${clientId}/roth-optimizer`;
+};
+
+export const runRothOptimizer = async (
+  clientId: number,
+  rothOptimizerBody: RothOptimizerBody,
+  options?: RequestInit,
+): Promise<RothOptimizerResponse> => {
+  return customFetch<RothOptimizerResponse>(getRunRothOptimizerUrl(clientId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(rothOptimizerBody),
+  });
+};
+
+export const getRunRothOptimizerMutationOptions = <
+  TError = ErrorType<void | ProTierRequired>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runRothOptimizer>>,
+    TError,
+    { clientId: number; data: BodyType<RothOptimizerBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof runRothOptimizer>>,
+  TError,
+  { clientId: number; data: BodyType<RothOptimizerBody> },
+  TContext
+> => {
+  const mutationKey = ["runRothOptimizer"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof runRothOptimizer>>,
+    { clientId: number; data: BodyType<RothOptimizerBody> }
+  > = (props) => {
+    const { clientId, data } = props ?? {};
+
+    return runRothOptimizer(clientId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RunRothOptimizerMutationResult = NonNullable<
+  Awaited<ReturnType<typeof runRothOptimizer>>
+>;
+export type RunRothOptimizerMutationBody = BodyType<RothOptimizerBody>;
+export type RunRothOptimizerMutationError = ErrorType<void | ProTierRequired>;
+
+/**
+ * @summary Multi-year Roth-conversion bracket-fill ladder (PLAN-B1)
+ */
+export const useRunRothOptimizer = <
+  TError = ErrorType<void | ProTierRequired>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof runRothOptimizer>>,
+    TError,
+    { clientId: number; data: BodyType<RothOptimizerBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof runRothOptimizer>>,
+  TError,
+  { clientId: number; data: BodyType<RothOptimizerBody> },
+  TContext
+> => {
+  return useMutation(getRunRothOptimizerMutationOptions(options));
 };
 
 /**

@@ -26,6 +26,7 @@ import {
   useGetPlanningMissingData,
   useGetPlanningMultiYear,
   useRunStateComparison,
+  useRunRothOptimizer,
   useGetPeerBenchmark,
   useGetPlanningDiscovery,
   useGetSettings,
@@ -4411,6 +4412,8 @@ function PlanningTab({ clientId }: { clientId: number }) {
 
       <StateResidencyComparisonCard clientId={clientId} />
 
+      <RothOptimizerCard clientId={clientId} />
+
       <PeerBenchmarkCard clientId={clientId} />
 
       <MultiYearPlanningSection clientId={clientId} />
@@ -5002,6 +5005,122 @@ function StateResidencyComparisonCard({ clientId }: { clientId: number }) {
           Click "Compare states" to run the analysis.
         </CardContent>
       ) : null}
+    </Card>
+  );
+}
+
+// ── PLAN-B1 — Multi-year Roth-conversion ladder optimizer card ───────────
+
+function RothOptimizerCard({ clientId }: { clientId: number }) {
+  const mutation = useRunRothOptimizer();
+  const [iraBalance, setIraBalance] = React.useState("");
+  const [horizon, setHorizon] = React.useState("5");
+  const plan = mutation.data?.plan;
+
+  const handleRun = () => {
+    const bal = Number(String(iraBalance).replace(/[^0-9.]/g, "")) || 0;
+    const yrs = Math.max(1, Math.min(30, Math.round(Number(horizon) || 5)));
+    mutation.mutate({ clientId, data: { horizonYears: yrs, traditionalIraBalance: bal } });
+  };
+
+  const pct = (r: number) => `${(r * 100).toFixed(1)}%`;
+
+  return (
+    <Card className="border-violet-200 bg-violet-50/30">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base text-violet-900">
+          Roth-conversion ladder optimizer
+        </CardTitle>
+        <div className="text-xs text-violet-700 mt-1">
+          Fills the top of the client's current federal bracket with traditional-IRA
+          conversions each year — locking in today's low rate before RMDs force higher-taxed
+          withdrawals later. The current-year tax cost is engine-computed (not estimated).
+        </div>
+        <div className="flex flex-wrap items-end gap-3 mt-3">
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-violet-800">Traditional IRA balance</label>
+            <div className="w-44">
+              <CurrencyInput value={iraBalance} onChange={setIraBalance} placeholder="$0" />
+            </div>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-violet-800">Horizon (years)</label>
+            <Input
+              type="number"
+              min={1}
+              max={30}
+              value={horizon}
+              onChange={(e) => setHorizon(e.target.value)}
+              className="w-24"
+            />
+          </div>
+          <Button size="sm" onClick={handleRun} disabled={mutation.isPending}>
+            {mutation.isPending ? "Running..." : plan ? "Re-run" : "Build ladder"}
+          </Button>
+        </div>
+      </CardHeader>
+      {plan ? (
+        <CardContent className="text-sm space-y-3">
+          <div className="grid grid-cols-3 gap-3">
+            <div className="rounded border border-violet-200 bg-white/50 p-3">
+              <div className="text-[10px] uppercase tracking-wide text-violet-600">Total converted</div>
+              <div className="text-lg font-semibold text-violet-900 tabular-nums">{fmt(Number(plan.totalConverted ?? 0))}</div>
+            </div>
+            <div className="rounded border border-violet-200 bg-white/50 p-3">
+              <div className="text-[10px] uppercase tracking-wide text-violet-600">Total tax cost</div>
+              <div className="text-lg font-semibold text-violet-900 tabular-nums">{fmt(Number(plan.totalConversionTaxCost ?? 0))}</div>
+            </div>
+            <div className="rounded border border-violet-200 bg-white/50 p-3">
+              <div className="text-[10px] uppercase tracking-wide text-violet-600">Blended rate</div>
+              <div className="text-lg font-semibold text-violet-900 tabular-nums">{pct(Number(plan.blendedConversionRate ?? 0))}</div>
+            </div>
+          </div>
+          <div className="rounded border border-violet-200 bg-white/40 overflow-hidden">
+            <table className="w-full text-xs">
+              <thead className="bg-violet-100/50 text-violet-900">
+                <tr>
+                  <th className="text-left px-3 py-2">Year</th>
+                  <th className="text-right px-3 py-2">Taxable before</th>
+                  <th className="text-right px-3 py-2">Bracket top</th>
+                  <th className="text-right px-3 py-2">Rate</th>
+                  <th className="text-right px-3 py-2 font-medium">Convert</th>
+                  <th className="text-right px-3 py-2">Tax cost</th>
+                  <th className="text-right px-3 py-2">IRA left</th>
+                </tr>
+              </thead>
+              <tbody className="text-violet-900">
+                {(plan.years ?? []).map((y, i) => (
+                  <tr key={i} className="border-t border-violet-100">
+                    <td className="px-3 py-2 font-medium">{y.taxYear}</td>
+                    <td className="text-right tabular-nums px-3 py-2">{fmt(Number(y.taxableIncomeBeforeConversion ?? 0))}</td>
+                    <td className="text-right tabular-nums px-3 py-2">{Number.isFinite(Number(y.bracketCeiling)) ? fmt(Number(y.bracketCeiling)) : "—"}</td>
+                    <td className="text-right tabular-nums px-3 py-2">{pct(Number(y.marginalRate ?? 0))}</td>
+                    <td className="text-right tabular-nums px-3 py-2 font-medium text-brand-ink">{fmt(Number(y.conversion ?? 0))}</td>
+                    <td className="text-right tabular-nums px-3 py-2">{fmt(Number(y.conversionTaxCost ?? 0))}</td>
+                    <td className="text-right tabular-nums px-3 py-2">{fmt(Number(y.iraBalanceRemaining ?? 0))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <details className="text-xs text-violet-800">
+            <summary className="cursor-pointer font-medium">Assumptions &amp; v1 limitations</summary>
+            <ul className="mt-2 list-disc pl-5 space-y-1">
+              {(plan.assumptions ?? []).map((a, i) => (
+                <li key={i}>{a}</li>
+              ))}
+            </ul>
+          </details>
+        </CardContent>
+      ) : mutation.isError ? (
+        <CardContent className="text-sm text-destructive">
+          Error building the conversion ladder. Check the server logs.
+        </CardContent>
+      ) : (
+        <CardContent className="text-xs text-violet-700">
+          Enter the client's traditional-IRA balance and a horizon, then click "Build ladder".
+        </CardContent>
+      )}
     </Card>
   );
 }
