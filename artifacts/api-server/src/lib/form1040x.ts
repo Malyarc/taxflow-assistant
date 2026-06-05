@@ -68,6 +68,24 @@ export interface FiledSnapshot {
     stateRefundOrOwed: number;
     /** FORM-02 — non-refundable credits applied (income-tax offset). */
     totalNonRefundableApplied: number;
+    // ── P2-7 amendment depth — nonrefundable-credit component detail + the
+    //    preferential-rate tax component. All ADDITIVE (schemaVersion stays 1);
+    //    a pre-P2-7 snapshot that lacks them coerces each to 0 via num(), so
+    //    existing locked returns keep diffing correctly. ──────────────────────
+    /** Tax on LTCG + qualified dividends at preferential rates (part of Line 6). */
+    capitalGainsTax: number;
+    /** Child & dependent care credit (Form 2441) — nonrefundable. */
+    dependentCareCredit: number;
+    /** Saver's credit (Form 8880) — nonrefundable. */
+    saversCredit: number;
+    /** Foreign tax credit (Form 1116) — nonrefundable. */
+    foreignTaxCredit: number;
+    /** Residential energy credits (Form 5695) — nonrefundable. */
+    residentialEnergyCredits: number;
+    /** American Opportunity Credit total (Form 8863); nonref portion = total − refundable. */
+    aocCredit: number;
+    /** Lifetime Learning Credit (Form 8863) — nonrefundable. */
+    llcCredit: number;
   };
 }
 
@@ -110,6 +128,14 @@ export function captureFiledSnapshot(row: TaxReturnRow | ComputedTaxReturn): Fil
       stateTaxWithheld: num((row as TaxReturnRow).stateTaxWithheld),
       stateRefundOrOwed: num((row as TaxReturnRow).stateRefundOrOwed),
       totalNonRefundableApplied: num((row as TaxReturnRow).totalNonRefundableApplied),
+      // P2-7 — nonrefundable-credit component detail (flat DB columns).
+      capitalGainsTax: num((row as TaxReturnRow).capitalGainsTax),
+      dependentCareCredit: num((row as TaxReturnRow).dependentCareCredit),
+      saversCredit: num((row as TaxReturnRow).saversCredit),
+      foreignTaxCredit: num((row as TaxReturnRow).foreignTaxCredit),
+      residentialEnergyCredits: num((row as TaxReturnRow).residentialEnergyCredits),
+      aocCredit: num((row as TaxReturnRow).aocCredit),
+      llcCredit: num((row as TaxReturnRow).llcCredit),
     },
   };
 }
@@ -132,6 +158,20 @@ export interface Form1040xResult {
   lockedAt: string | null;
   explanation: string;
   lines: Form1040xLine[];
+  /**
+   * P2-7 — supplementary nonrefundable-credit component breakdown. NOT part of
+   * the Line 7 footing (Line 7 stays the authoritative aggregate); this just
+   * shows WHICH credit changed on an amendment (dependent care, education,
+   * saver's, FTC, energy) plus the preferential-rate tax component. Only
+   * components with a nonzero original OR amended value are included.
+   */
+  creditDetail: Form1040xLine[];
+  /**
+   * P2-7 — amended STATE return summary lines (state tax, withholding,
+   * refund/owed). Lets the CPA produce the amended-state delta line-by-line,
+   * not just the headline netStateRefundChange.
+   */
+  stateLines: Form1040xLine[];
   /**
    * Bottom-line federal refund/owed delta. Positive = additional refund
    * (Line 20 increase); negative = additional tax owed (Line 19 increase).
@@ -176,6 +216,13 @@ export function computeAmendmentDiff(args: {
     stateTaxWithheld: num((current as TaxReturnRow).stateTaxWithheld),
     stateRefundOrOwed: num((current as TaxReturnRow).stateRefundOrOwed),
     totalNonRefundableApplied: num((current as TaxReturnRow).totalNonRefundableApplied),
+    capitalGainsTax: num((current as TaxReturnRow).capitalGainsTax),
+    dependentCareCredit: num((current as TaxReturnRow).dependentCareCredit),
+    saversCredit: num((current as TaxReturnRow).saversCredit),
+    foreignTaxCredit: num((current as TaxReturnRow).foreignTaxCredit),
+    residentialEnergyCredits: num((current as TaxReturnRow).residentialEnergyCredits),
+    aocCredit: num((current as TaxReturnRow).aocCredit),
+    llcCredit: num((current as TaxReturnRow).llcCredit),
   };
 
   // ── Helper: chosen deduction (the one actually taken; per CLAUDE.md
@@ -279,7 +326,13 @@ export function computeAmendmentDiff(args: {
     line("3", "Subtract line 2 from line 1", o.adjustedGrossIncome - oDed, cur.adjustedGrossIncome - cDed),
     line("4b", "Qualified business income deduction", o.qbiDeduction, cur.qbiDeduction),
     line("5", "Taxable income", o.taxableIncome, cur.taxableIncome),
-    // Tax Liability
+    // Tax Liability — P2-7: break out the real Form 1040-X Line 6 → 7 → 8 chain
+    // (the form previously jumped straight to the net Line 8). Line 6 is the
+    // income tax including AMT, BEFORE nonrefundable credits; Line 7 is the
+    // nonrefundable credits; Line 8 = Line 6 − Line 7 (the value the FORM-02
+    // tests already lock — unchanged).
+    line("6", "Tax (regular + AMT), before nonrefundable credits", o.federalTaxLiability - oOther, cur.federalTaxLiability - cOther),
+    line("7", "Nonrefundable credits", o.totalNonRefundableApplied, cur.totalNonRefundableApplied),
     line("8", "Subtract nonrefundable credits from tax (incl. AMT)", oLine8, cLine8),
     line("9", "Other taxes (Sch 2 Line 21: SE + NIIT + AddlMed)", oOther, cOther),
     // FORM-02: Total tax = tax + AMT − non-refundable credits + other taxes
@@ -298,6 +351,34 @@ export function computeAmendmentDiff(args: {
     reconLine("20", "Refund with this amended return", 0, additionalRefund),
   ];
 
+  // ── P2-7 — nonrefundable-credit component breakdown (supplementary) ──────
+  // AOC nonrefundable portion = total AOC − refundable 40%. Other credits are
+  // wholly nonrefundable. Each component is included only when it has a nonzero
+  // original or amended value (keeps the breakdown tight). NOT part of Line 7
+  // footing — Line 7 stays the authoritative aggregate.
+  // NOTE: read the P2-7 snapshot fields through num() — a pre-P2-7 (old) locked
+  // snapshot lacks these keys, so a raw read would yield undefined → NaN and
+  // wrongly include the component. num(undefined) = 0 keeps old snapshots clean.
+  const creditComponents: Array<{ ref: string; label: string; o: number; c: number }> = [
+    { ref: "6a", label: "  Tax on capital gains / qualified dividends (preferential)", o: num(o.capitalGainsTax), c: cur.capitalGainsTax },
+    { ref: "7a", label: "  Child & dependent care credit (Form 2441)", o: num(o.dependentCareCredit), c: cur.dependentCareCredit },
+    { ref: "7b", label: "  American Opportunity Credit, nonrefundable (Form 8863)", o: Math.max(0, num(o.aocCredit) - num(o.aocRefundablePortion)), c: Math.max(0, cur.aocCredit - cur.aocRefundablePortion) },
+    { ref: "7c", label: "  Lifetime Learning Credit (Form 8863)", o: num(o.llcCredit), c: cur.llcCredit },
+    { ref: "7d", label: "  Saver's credit (Form 8880)", o: num(o.saversCredit), c: cur.saversCredit },
+    { ref: "7e", label: "  Foreign tax credit (Form 1116)", o: num(o.foreignTaxCredit), c: cur.foreignTaxCredit },
+    { ref: "7f", label: "  Residential energy credits (Form 5695)", o: num(o.residentialEnergyCredits), c: cur.residentialEnergyCredits },
+  ];
+  const creditDetail: Form1040xLine[] = creditComponents
+    .filter((cc) => Math.round(cc.o) !== 0 || Math.round(cc.c) !== 0)
+    .map((cc) => line(cc.ref, cc.label, cc.o, cc.c));
+
+  // ── P2-7 — amended STATE return summary lines ───────────────────────────
+  const stateLines: Form1040xLine[] = [
+    line("S1", "State tax liability", o.stateTaxLiability, cur.stateTaxLiability),
+    line("S2", "State tax withheld", o.stateTaxWithheld, cur.stateTaxWithheld),
+    line("S3", "State refund (+) / owed (−)", o.stateRefundOrOwed, cur.stateRefundOrOwed),
+  ];
+
   // Bottom-line delta — used for the headline UI display.
   const netFederalRefundChange = Math.round(cur.federalRefundOrOwed - o.federalRefundOrOwed);
   const netStateRefundChange = Math.round(cur.stateRefundOrOwed - o.stateRefundOrOwed);
@@ -307,6 +388,8 @@ export function computeAmendmentDiff(args: {
     lockedAt,
     explanation,
     lines,
+    creditDetail,
+    stateLines,
     netFederalRefundChange,
     netStateRefundChange,
   };
@@ -393,23 +476,40 @@ export function buildForm1040xPdf(options: BuildForm1040xPdfOptions): Promise<Bu
 
     // Lines
     doc.font("Helvetica").fontSize(9);
-    for (const l of form.lines) {
+    const renderRow = (l: Form1040xLine, headline: boolean) => {
       const y = doc.y;
-      const isHeadline = l.lineRef === "10" || l.lineRef === "16" || l.lineRef === "20";
-      doc.fillColor(isHeadline ? "#000" : "#444");
-      if (isHeadline) doc.font("Helvetica-Bold");
+      doc.fillColor(headline ? "#000" : "#444");
+      if (headline) doc.font("Helvetica-Bold");
       doc.text(l.lineRef, lineRefX, y, { width: 26, align: "right" });
       doc.text(l.label, labelX, y, { width: 300 });
       doc.text(fmt$(l.original), colAX, y, { width: colWidth, align: "right" });
-      // Net change with red/green color cue
-      const netChangeColor = l.netChange > 0 ? "#aa3300" : l.netChange < 0 ? "#0a5d2a" : (isHeadline ? "#000" : "#444");
+      const netChangeColor = l.netChange > 0 ? "#aa3300" : l.netChange < 0 ? "#0a5d2a" : (headline ? "#000" : "#444");
       doc.fillColor(netChangeColor);
       doc.text(fmt$(l.netChange), colBX, y, { width: colWidth, align: "right" });
-      doc.fillColor(isHeadline ? "#000" : "#444");
+      doc.fillColor(headline ? "#000" : "#444");
       doc.text(fmt$(l.amended), colCX, y, { width: colWidth, align: "right" });
-      if (isHeadline) doc.font("Helvetica");
+      if (headline) doc.font("Helvetica");
       doc.moveDown(0.2);
+    };
+    for (const l of form.lines) {
+      renderRow(l, l.lineRef === "10" || l.lineRef === "16" || l.lineRef === "20");
     }
+
+    // P2-7 — nonrefundable-credit component breakdown (only when present).
+    if (form.creditDetail.length > 0) {
+      doc.moveDown(0.2);
+      doc.font("Helvetica-Bold").fontSize(8).fillColor("#555").text("Nonrefundable credit detail (supplementary)", labelX, doc.y);
+      doc.font("Helvetica").fontSize(9);
+      doc.moveDown(0.1);
+      for (const l of form.creditDetail) renderRow(l, false);
+    }
+
+    // P2-7 — amended state return summary.
+    doc.moveDown(0.2);
+    doc.font("Helvetica-Bold").fontSize(8).fillColor("#555").text("Amended state return summary", labelX, doc.y);
+    doc.font("Helvetica").fontSize(9);
+    doc.moveDown(0.1);
+    for (const l of form.stateLines) renderRow(l, false);
 
     doc.moveDown(0.5);
 

@@ -956,6 +956,8 @@ interface Form1040xResult {
   lockedAt: string | null;
   explanation: string;
   lines: Form1040xLine[];
+  creditDetail: Form1040xLine[];
+  stateLines: Form1040xLine[];
   netFederalRefundChange: number;
   netStateRefundChange: number;
 }
@@ -1154,6 +1156,48 @@ function Form1040xCard({ clientId, taxYear }: { clientId: number; taxYear: numbe
                 </tbody>
               </table>
             </div>
+
+            {form.creditDetail.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground mb-1">Nonrefundable credit detail (supplementary)</p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <tbody>
+                      {form.creditDetail.map((l) => (
+                        <tr key={l.lineRef} className="border-b border-border">
+                          <td className="py-1 pr-2 text-muted-foreground w-10">{l.lineRef}</td>
+                          <td className="py-1 pr-2">{l.label.trim()}</td>
+                          <td className="py-1 pr-2 font-mono text-right">{fmtAmendCol(l.original)}</td>
+                          <td className={`py-1 pr-2 font-mono text-right ${l.netChange > 0 ? "text-destructive" : l.netChange < 0 ? "text-success" : ""}`}>{fmtAmendCol(l.netChange)}</td>
+                          <td className="py-1 pr-2 font-mono text-right">{fmtAmendCol(l.amended)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {form.stateLines.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground mb-1">Amended state return summary</p>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <tbody>
+                      {form.stateLines.map((l) => (
+                        <tr key={l.lineRef} className="border-b border-border">
+                          <td className="py-1 pr-2 text-muted-foreground w-10">{l.lineRef}</td>
+                          <td className="py-1 pr-2">{l.label}</td>
+                          <td className="py-1 pr-2 font-mono text-right">{fmtAmendCol(l.original)}</td>
+                          <td className={`py-1 pr-2 font-mono text-right ${l.netChange > 0 ? "text-destructive" : l.netChange < 0 ? "text-success" : ""}`}>{fmtAmendCol(l.netChange)}</td>
+                          <td className="py-1 pr-2 font-mono text-right">{fmtAmendCol(l.amended)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
 
             <div>
               <Label htmlFor="form1040x-explanation">Part III — Explanation of changes (required by IRS)</Label>

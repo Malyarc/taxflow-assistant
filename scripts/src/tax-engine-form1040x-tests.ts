@@ -28,6 +28,11 @@ function checkStr(label: string, actual: string | null, expected: string | null)
   else FAIL.push(`✗ ${label}: expected ${expected}, got ${actual}`);
 }
 
+function checkBool(label: string, actual: boolean, expected: boolean): void {
+  if (actual === expected) PASS.push(`✓ ${label}`);
+  else FAIL.push(`✗ ${label}: expected ${expected}, got ${actual}`);
+}
+
 interface FlatComputed {
   taxYear: number;
   adjustedGrossIncome: number;
@@ -50,6 +55,14 @@ interface FlatComputed {
   stateTaxWithheld: number;
   stateRefundOrOwed: number;
   totalNonRefundableApplied: number;
+  // P2-7 credit-component detail (optional in older fixtures → default 0).
+  capitalGainsTax: number;
+  dependentCareCredit: number;
+  saversCredit: number;
+  foreignTaxCredit: number;
+  residentialEnergyCredits: number;
+  aocCredit: number;
+  llcCredit: number;
 }
 
 function stub(args: Partial<FlatComputed> & { taxYear?: number } = {}): ComputedTaxReturn {
@@ -62,6 +75,8 @@ function stub(args: Partial<FlatComputed> & { taxYear?: number } = {}): Computed
     eitc: 0, additionalChildTaxCredit: 0, aocRefundablePortion: 0, premiumTaxCredit: 0,
     stateTaxLiability: 0, stateTaxWithheld: 0, stateRefundOrOwed: 0,
     totalNonRefundableApplied: 0,
+    capitalGainsTax: 0, dependentCareCredit: 0, saversCredit: 0,
+    foreignTaxCredit: 0, residentialEnergyCredits: 0, aocCredit: 0, llcCredit: 0,
   };
   return { ...blank, ...args } as unknown as ComputedTaxReturn;
 }
@@ -388,6 +403,107 @@ function findLine(lines: ReturnType<typeof computeAmendmentDiff>["lines"], ref: 
     findLine(form.lines, "20").amended - findLine(form.lines, "19").amended, form.netFederalRefundChange);
   // Line 16 standalone footing preserved (FORM-02 invariant): payments − tax = owed.
   check("FORM-03 Compound Line 16 amended footing", findLine(form.lines, "16").amended - findLine(form.lines, "10").amended, -5000);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// P2-7 — amendment depth: Line 6/7 breakout, credit detail, state lines
+// ════════════════════════════════════════════════════════════════════════════
+function findIn(arr: ReturnType<typeof computeAmendmentDiff>["creditDetail"], ref: string) {
+  const l = arr.find((x) => x.lineRef === ref);
+  if (!l) throw new Error(`detail line ${ref} not found`);
+  return l;
+}
+
+// ── P2-7 Case A — Line 6 (tax) / Line 7 (nonref credits) / Line 8 footing ──
+// Original: federalTaxLiability $30,000 (engine total, pre-nonref, bundles
+// other taxes); SE tax $5,000 → other taxes $5,000; nonref credits $4,000;
+// capital-gains tax $3,000 (a component of the income tax).
+//   Line 6 (a) = 30,000 − 5,000 = 25,000.  Line 7 (a) = 4,000.  Line 8 (a) = 21,000.
+// Amended: federalTaxLiability $32,000; SE tax $5,000; nonref credits $4,500.
+//   Line 6 (c) = 27,000 (+2,000).  Line 7 (c) = 4,500 (+500).  Line 8 (c) = 22,500 (+1,500).
+{
+  const original = stub({ federalTaxLiability: 30000, selfEmploymentTax: 5000, totalNonRefundableApplied: 4000, capitalGainsTax: 3000 });
+  const amended = stub({ federalTaxLiability: 32000, selfEmploymentTax: 5000, totalNonRefundableApplied: 4500, capitalGainsTax: 3000 });
+  const form = computeAmendmentDiff({ current: amended, snapshot: captureFiledSnapshot(original) });
+  const l6 = findLine(form.lines, "6");
+  const l7 = findLine(form.lines, "7");
+  const l8 = findLine(form.lines, "8");
+  check("P2-7 A Line 6 (a) tax pre-credit", l6.original, 25000);
+  check("P2-7 A Line 6 (c) tax pre-credit", l6.amended, 27000);
+  check("P2-7 A Line 6 net change", l6.netChange, 2000);
+  check("P2-7 A Line 7 (a) nonref credits", l7.original, 4000);
+  check("P2-7 A Line 7 net change", l7.netChange, 500);
+  check("P2-7 A Line 8 footing (a) = L6 − L7", l8.original, l6.original - l7.original);
+  check("P2-7 A Line 8 footing (c) = L6 − L7", l8.amended, l6.amended - l7.amended);
+  check("P2-7 A Line 8 net change", l8.netChange, 1500);
+  // capital-gains tax surfaces as detail line 6a (= $3,000) but is NOT
+  // subtracted anywhere — Line 6/8 are unaffected (no double-count).
+  check("P2-7 A detail 6a cap-gains tax", findIn(form.creditDetail, "6a").original, 3000);
+}
+
+// ── P2-7 Case B — nonrefundable-credit component detail ───────────────────
+// Original: dependent care $1,200; FTC $800; AOC total $2,500 w/ $1,000
+// refundable → AOC nonref $1,500. Amended: dependent care removed ($0); FTC
+// dropped to $500; AOC unchanged.
+{
+  const original = stub({ dependentCareCredit: 1200, foreignTaxCredit: 800, aocCredit: 2500, aocRefundablePortion: 1000 });
+  const amended = stub({ dependentCareCredit: 0, foreignTaxCredit: 500, aocCredit: 2500, aocRefundablePortion: 1000 });
+  const form = computeAmendmentDiff({ current: amended, snapshot: captureFiledSnapshot(original) });
+  check("P2-7 B detail dependent-care (7a) net", findIn(form.creditDetail, "7a").netChange, -1200);
+  check("P2-7 B detail FTC (7e) net", findIn(form.creditDetail, "7e").netChange, -300);
+  check("P2-7 B detail AOC nonref (7b) original", findIn(form.creditDetail, "7b").original, 1500);
+  check("P2-7 B detail AOC nonref (7b) net (unchanged)", findIn(form.creditDetail, "7b").netChange, 0);
+  // saver's / energy / LLC / cap-gains all $0 → excluded from the breakdown.
+  checkBool("P2-7 B saver's excluded", form.creditDetail.some((d) => d.lineRef === "7d"), false);
+  check("P2-7 B detail count = 3", form.creditDetail.length, 3, 0);
+}
+
+// ── P2-7 Case C — amended STATE return summary lines ──────────────────────
+// Original: state tax $4,000, withheld $4,500, refund $500.
+// Amended: state tax $4,800, withheld $4,500, owed $300 (refundOrOwed −300).
+{
+  const original = stub({ stateTaxLiability: 4000, stateTaxWithheld: 4500, stateRefundOrOwed: 500 });
+  const amended = stub({ stateTaxLiability: 4800, stateTaxWithheld: 4500, stateRefundOrOwed: -300 });
+  const form = computeAmendmentDiff({ current: amended, snapshot: captureFiledSnapshot(original) });
+  check("P2-7 C S1 state tax net (+800)", findIn(form.stateLines, "S1").netChange, 800);
+  check("P2-7 C S2 state withheld net (0)", findIn(form.stateLines, "S2").netChange, 0);
+  check("P2-7 C S3 state refund/owed net (−800)", findIn(form.stateLines, "S3").netChange, -800);
+  check("P2-7 C net state refund change", form.netStateRefundChange, -800);
+}
+
+// ── P2-7 Case D — identical amendment: every new line/detail nets 0 ───────
+{
+  const ret = stub({
+    federalTaxLiability: 28000, selfEmploymentTax: 3000, totalNonRefundableApplied: 3500,
+    dependentCareCredit: 600, foreignTaxCredit: 400, saversCredit: 200,
+    stateTaxLiability: 3000, stateTaxWithheld: 3200, stateRefundOrOwed: 200,
+  });
+  const form = computeAmendmentDiff({ current: ret, snapshot: captureFiledSnapshot(ret) });
+  check("P2-7 D Line 6 nets 0 (identical)", findLine(form.lines, "6").netChange, 0);
+  check("P2-7 D Line 7 nets 0 (identical)", findLine(form.lines, "7").netChange, 0);
+  let allZero = true;
+  for (const d of form.creditDetail) if (d.netChange !== 0) allZero = false;
+  for (const s of form.stateLines) if (s.netChange !== 0) allZero = false;
+  checkBool("P2-7 D all credit-detail + state lines net 0", allZero, true);
+}
+
+// ── P2-7 Case E — backward-compat: a pre-P2-7 snapshot (no new fields) ────
+// A snapshot captured before P2-7 lacks the new fields; num() coerces them to
+// 0, so the credit detail is empty and Line 6/7/8 still foot.
+{
+  const legacySnapshot = captureFiledSnapshot(stub({ federalTaxLiability: 20000, totalNonRefundableApplied: 2000 }));
+  // Simulate an OLD snapshot by stripping the P2-7 fields from the captured one.
+  const stripped = JSON.parse(JSON.stringify(legacySnapshot));
+  delete stripped.fields.capitalGainsTax;
+  delete stripped.fields.dependentCareCredit;
+  delete stripped.fields.foreignTaxCredit;
+  delete stripped.fields.aocCredit;
+  delete stripped.fields.aocRefundablePortion;
+  const amended = stub({ federalTaxLiability: 22000, totalNonRefundableApplied: 2000 });
+  const form = computeAmendmentDiff({ current: amended, snapshot: stripped });
+  check("P2-7 E legacy Line 6 (a) = 20,000", findLine(form.lines, "6").original, 20000);
+  check("P2-7 E legacy Line 8 footing", findLine(form.lines, "8").original, 18000);
+  check("P2-7 E legacy credit detail empty (all 0 components)", form.creditDetail.length, 0, 0);
 }
 
 console.log(`\nForm 1040-X (C4) tests:`);
