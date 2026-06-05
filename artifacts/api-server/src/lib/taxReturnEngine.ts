@@ -56,6 +56,8 @@ import {
   calculateNycUbt,
   getStateRetirementExemption,
   calculatePassiveActivityLossAllowance,
+  computeForm8582Breakdown,
+  type Form8582Breakdown,
   calculateMacrsDepreciation,
   getFederalStandardDeduction,
   getSaltCap,
@@ -900,6 +902,9 @@ export interface ComputedTaxReturn {
   scheduleERentalAppliedToAgi: number;
   /** §469 passive activity loss allowance result (null if no rental loss) */
   passiveActivityLoss: PassiveActivityLossResult | null;
+  /** P2-1 — Form 8582 per-activity worksheet: per-property net + ratably-
+   *  allocated allowed/suspended loss. null when no per-property rows. */
+  form8582: Form8582Breakdown | null;
   /** Schedule E passive loss suspended to next year */
   scheduleEPassiveLossSuspended: number;
   /** Schedule K-1 (partnership + S-corp) aggregate summary */
@@ -1587,22 +1592,31 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   let scheduleERentalIncomeAdj: number;
   let scheduleERentalExpensesAdj: number;
   let scheduleEMacrsDepreciationAdj: number;
+  // P2-1 — per-property net (income − expenses − MACRS) for the Form 8582
+  // per-activity worksheet. Empty when no per-property rows (legacy aggregate).
+  const perPropertyNets: Array<{ address: string; netIncome: number }> = [];
   if (propertiesForYear.length > 0) {
     scheduleERentalIncomeAdj = propertiesForYear.reduce((s, p) => s + toNum(p.rentalIncome), 0);
     scheduleERentalExpensesAdj = propertiesForYear.reduce((s, p) => s + toNum(p.totalExpenses), 0);
-    scheduleEMacrsDepreciationAdj = propertiesForYear.reduce((s, p) => {
+    scheduleEMacrsDepreciationAdj = propertiesForYear.reduce((s, p, idx) => {
       const basis = toNum(p.basis);
       const placedYear = p.placedInServiceYear ?? 0;
       const placedMonth = p.placedInServiceMonth ?? 0;
-      if (basis <= 0 || placedYear <= 0 || placedMonth < 1 || placedMonth > 12) return s;
-      const dep = calculateMacrsDepreciation({
-        basis,
-        propertyType: p.propertyType === "commercial" ? "commercial" : "residential",
-        monthPlacedInService: placedMonth,
-        yearPlacedInService: placedYear,
-        taxYear,
+      let dep = 0;
+      if (basis > 0 && placedYear > 0 && placedMonth >= 1 && placedMonth <= 12) {
+        dep = calculateMacrsDepreciation({
+          basis,
+          propertyType: p.propertyType === "commercial" ? "commercial" : "residential",
+          monthPlacedInService: placedMonth,
+          yearPlacedInService: placedYear,
+          taxYear,
+        }).currentYearDepreciation;
+      }
+      perPropertyNets.push({
+        address: p.address?.trim() || `Property ${idx + 1}`,
+        netIncome: toNum(p.rentalIncome) - toNum(p.totalExpenses) - dep,
       });
-      return s + dep.currentYearDepreciation;
+      return s + dep;
     }, 0);
   } else {
     scheduleERentalIncomeAdj = sumByType("schedule_e_rental_income");
@@ -2210,6 +2224,17 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     });
     rentalNetAppliedToAgi = -passiveLossAllowance.allowedThisYear; // negative = reduces AGI
   }
+
+  // P2-1 — Form 8582 per-activity worksheet (only when per-property rows exist).
+  // The aggregate tax result is unchanged; this ratably allocates the allowed /
+  // suspended loss back to each property for the CPA's Form 8582 + per-property
+  // suspended-loss visibility. Per-property carryforward STORAGE (release on
+  // disposition) is the remaining increment — the aggregate
+  // `schedule_e_passive_loss_carryforward` continues to drive the tax result.
+  const form8582: Form8582Breakdown | null =
+    perPropertyNets.length > 0
+      ? computeForm8582Breakdown({ properties: perPropertyNets, palResult: passiveLossAllowance })
+      : null;
 
   const ordinaryAdditionalIncome = ordinaryAdditionalIncomeBeforeRental + rentalNetAppliedToAgi;
 
@@ -3331,6 +3356,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     scheduleERentalGrossNet: grossRentalNet,
     scheduleERentalAppliedToAgi: rentalNetAppliedToAgi,
     passiveActivityLoss: passiveLossAllowance,
+    form8582,
     scheduleEPassiveLossSuspended: passiveLossAllowance?.suspendedToNextYear ?? 0,
     localTaxLiability: localTaxLiabilityWithUbt,
     localTaxJurisdiction: multiState.localTax ? multiState.localTax.jurisdiction : (nycUbt > 0 ? "NYC-UBT" : null),

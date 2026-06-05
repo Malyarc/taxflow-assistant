@@ -4911,6 +4911,83 @@ export function calculatePassiveActivityLossAllowance(params: {
   return result;
 }
 
+// ── Form 8582 — per-activity passive-loss allocation (P2-1) ──────────────────
+// The §469(i) $25k allowance is a single PER-TAXPAYER cap across ALL rental real
+// estate (NOT per activity). Form 8582 nets the activities, applies the
+// allowance to the net loss, then RATABLY ALLOCATES the allowed/suspended loss
+// back to each loss activity in proportion to its gross loss (Worksheet 5). The
+// aggregate tax result is unchanged — this is the per-property breakdown CPAs
+// file on Form 8582 + the basis for per-property suspended-loss tracking.
+export interface Form8582ActivityRow {
+  address: string;
+  /** income − expenses − depreciation (signed). */
+  netIncome: number;
+  /** Deductible against ordinary income this year (signed; income rows positive). */
+  allowedThisYear: number;
+  /** Suspended to next year (>= 0). */
+  suspendedToNextYear: number;
+}
+export interface Form8582Breakdown {
+  activities: Form8582ActivityRow[];
+  /** Aggregate net (signed) across all activities. */
+  totalNetIncome: number;
+  /** Aggregate allowed (signed; negative = reduces AGI). */
+  totalAllowed: number;
+  /** Aggregate suspended to next year (>= 0). */
+  totalSuspended: number;
+  allowanceCap: number;
+  allowanceAfterPhaseOut: number;
+}
+
+export function computeForm8582Breakdown(params: {
+  properties: Array<{ address: string; netIncome: number }>;
+  palResult: PassiveActivityLossResult | null;
+}): Form8582Breakdown {
+  const { properties, palResult } = params;
+  const totalNetIncome = properties.reduce((s, p) => s + p.netIncome, 0);
+
+  // No aggregate loss (or no PAL applied) → every activity is fully allowed.
+  if (!palResult || palResult.suspendedToNextYear <= 0) {
+    return {
+      activities: properties.map((p) => ({
+        address: p.address,
+        netIncome: p.netIncome,
+        allowedThisYear: p.netIncome,
+        suspendedToNextYear: 0,
+      })),
+      totalNetIncome,
+      totalAllowed: totalNetIncome >= 0 ? totalNetIncome : -(palResult?.allowedThisYear ?? Math.abs(totalNetIncome)),
+      totalSuspended: 0,
+      allowanceCap: palResult?.allowanceCap ?? 0,
+      allowanceAfterPhaseOut: palResult?.allowanceAfterPhaseOut ?? 0,
+    };
+  }
+
+  // Aggregate loss with a suspended portion → ratably allocate the suspended
+  // loss to the LOSS activities by their share of total gross loss (Worksheet 5).
+  const totalGrossLoss = properties.reduce((s, p) => s + (p.netIncome < 0 ? -p.netIncome : 0), 0);
+  const suspendedTotal = palResult.suspendedToNextYear;
+  const activities: Form8582ActivityRow[] = properties.map((p) => {
+    if (p.netIncome >= 0) {
+      return { address: p.address, netIncome: p.netIncome, allowedThisYear: p.netIncome, suspendedToNextYear: 0 };
+    }
+    const grossLoss = -p.netIncome;
+    const suspended = totalGrossLoss > 0 ? suspendedTotal * (grossLoss / totalGrossLoss) : 0;
+    // allowedThisYear (signed) = netIncome + suspended (adds back the suspended
+    // portion of the loss; the remainder is the deductible loss, still <= 0).
+    return { address: p.address, netIncome: p.netIncome, allowedThisYear: p.netIncome + suspended, suspendedToNextYear: suspended };
+  });
+
+  return {
+    activities,
+    totalNetIncome,
+    totalAllowed: -palResult.allowedThisYear,
+    totalSuspended: suspendedTotal,
+    allowanceCap: palResult.allowanceCap,
+    allowanceAfterPhaseOut: palResult.allowanceAfterPhaseOut,
+  };
+}
+
 // ── Schedule E rental net income summary ────────────────────────────────────
 // Aggregates per-property income/expense/depreciation into a single net amount
 // that flows to Form 1040 Line 8 (other income) via Schedule 1 Line 5.
