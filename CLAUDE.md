@@ -361,7 +361,8 @@ Several Phase 2/3 limitations have been resolved (multi-state foundation, MACRS,
 ## Where to look first when picking up a session
 
 1. `.claude/handoff.md` — last session's state. May be stale; check `git log` to corroborate.
-2. `git log --oneline -10` — recent commits.
-3. `ONBOARDING.md` — original kick-off doc; may have context the handoff doesn't.
+2. **`docs/product-todo.md` — the prioritized working to-do (enhancements + fixes), consolidated 2026-06-05 from the audit + Haven roadmap + the engine/planning/extraction/UltraTax analyses.** Start here for "what should I build next."
+3. `git log --oneline -10` — recent commits.
+4. `ONBOARDING.md` — original kick-off doc (NOTE: not currently committed — pointer may be stale); the forward roadmap is `docs/haven-migration-roadmap.md`.
 4. `git status` — uncommitted WIP.
 5. Run the standalone test suites to confirm baseline: `pnpm --filter @workspace/scripts exec tsx ./src/tax-engine-tests.ts` (also `-deep-tests` and `-phase1-unit-tests`).
