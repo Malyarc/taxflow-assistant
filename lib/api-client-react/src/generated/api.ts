@@ -23,6 +23,7 @@ import type {
   CalculateTaxReturnBody,
   CapitalTransaction,
   Client,
+  ClientListPage,
   CreateAdjustmentBody,
   CreateAssetBalanceBody,
   CreateCapitalTransactionBody,
@@ -43,6 +44,7 @@ import type {
   GetPeerBenchmarkParams,
   GetPlanningHitListParams,
   HealthStatus,
+  ListClientsParams,
   PeerBenchmarkResponse,
   PlanningDiscovery,
   PlanningHitList,
@@ -234,41 +236,61 @@ export function useGetSettings<
 }
 
 /**
- * @summary List all clients
+ * Returns one page of clients ordered by updatedAt DESC (id DESC tiebreak). Pass the previous response's nextCursor back as `cursor` to fetch the next page; nextCursor is null on the last page. Search (`q`) and `filingStatus` are applied server-side.
+
+ * @summary List clients (keyset-paginated, most-recently-updated first)
  */
-export const getListClientsUrl = () => {
-  return `/api/clients`;
+export const getListClientsUrl = (params?: ListClientsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/clients?${stringifiedParams}`
+    : `/api/clients`;
 };
 
-export const listClients = async (options?: RequestInit): Promise<Client[]> => {
-  return customFetch<Client[]>(getListClientsUrl(), {
+export const listClients = async (
+  params?: ListClientsParams,
+  options?: RequestInit,
+): Promise<ClientListPage> => {
+  return customFetch<ClientListPage>(getListClientsUrl(params), {
     ...options,
     method: "GET",
   });
 };
 
-export const getListClientsQueryKey = () => {
-  return [`/api/clients`] as const;
+export const getListClientsQueryKey = (params?: ListClientsParams) => {
+  return [`/api/clients`, ...(params ? [params] : [])] as const;
 };
 
 export const getListClientsQueryOptions = <
   TData = Awaited<ReturnType<typeof listClients>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof listClients>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}) => {
+>(
+  params?: ListClientsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listClients>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getListClientsQueryKey();
+  const queryKey = queryOptions?.queryKey ?? getListClientsQueryKey(params);
 
   const queryFn: QueryFunction<Awaited<ReturnType<typeof listClients>>> = ({
     signal,
-  }) => listClients({ signal, ...requestOptions });
+  }) => listClients(params, { signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
     Awaited<ReturnType<typeof listClients>>,
@@ -283,21 +305,24 @@ export type ListClientsQueryResult = NonNullable<
 export type ListClientsQueryError = ErrorType<unknown>;
 
 /**
- * @summary List all clients
+ * @summary List clients (keyset-paginated, most-recently-updated first)
  */
 
 export function useListClients<
   TData = Awaited<ReturnType<typeof listClients>>,
   TError = ErrorType<unknown>,
->(options?: {
-  query?: UseQueryOptions<
-    Awaited<ReturnType<typeof listClients>>,
-    TError,
-    TData
-  >;
-  request?: SecondParameter<typeof customFetch>;
-}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getListClientsQueryOptions(options);
+>(
+  params?: ListClientsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listClients>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListClientsQueryOptions(params, options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

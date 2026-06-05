@@ -953,14 +953,23 @@ async function seedOne(a: Archetype): Promise<{ slug: string; clientId: number; 
 }
 
 async function reset() {
-  const list = await api<Array<{ id: number; email: string }>>("/clients");
+  // GET /clients is keyset-paginated now ({ items, nextCursor }); page through
+  // ALL clients (limit 200/page) so we delete every prior-seed row. Deleting
+  // already-passed rows doesn't disturb the (updatedAt,id) cursor window.
   let deleted = 0;
-  for (const c of list) {
-    if (c.email.startsWith(`${TAG}.`)) {
-      await api(`/clients/${c.id}`, { method: "DELETE" });
-      deleted++;
+  let cursor: string | undefined;
+  do {
+    const page = await api<{ items: Array<{ id: number; email: string }>; nextCursor: string | null }>(
+      `/clients?limit=200${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+    );
+    for (const c of page.items) {
+      if (c.email.startsWith(`${TAG}.`)) {
+        await api(`/clients/${c.id}`, { method: "DELETE" });
+        deleted++;
+      }
     }
-  }
+    cursor = page.nextCursor ?? undefined;
+  } while (cursor);
   console.log(`Deleted ${deleted} prior-seed clients.`);
 }
 

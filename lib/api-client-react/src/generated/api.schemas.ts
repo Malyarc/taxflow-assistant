@@ -176,6 +176,29 @@ match the locality's parent state.
   updatedAt: string;
 }
 
+/**
+ * Projected client row returned by the paginated list endpoint.
+ */
+export interface ClientListItem {
+  id: number;
+  firstName: string;
+  lastName: string;
+  email: string;
+  state: string;
+  filingStatus: string;
+  taxYear: number;
+  updatedAt: string;
+}
+
+export interface ClientListPage {
+  items: ClientListItem[];
+  /**
+   * Opaque cursor for the next page, or null when this is the last page.
+   * @nullable
+   */
+  nextCursor: string | null;
+}
+
 export type CreateClientBodyFilingStatus =
   (typeof CreateClientBodyFilingStatus)[keyof typeof CreateClientBodyFilingStatus];
 
@@ -2400,6 +2423,27 @@ export interface WhatIfResponse {
   baseline: WhatIfSummary;
   scenario: WhatIfSummary;
 }
+
+export type ListClientsParams = {
+  /**
+   * Page size (default 50, hard cap 200).
+   * @minimum 1
+   * @maximum 200
+   */
+  limit?: number;
+  /**
+   * Opaque keyset cursor from a prior response's nextCursor.
+   */
+  cursor?: string;
+  /**
+   * Case-insensitive substring match across first name, last name, and email.
+   */
+  q?: string;
+  /**
+   * Exact filing-status filter.
+   */
+  filingStatus?: string;
+};
 
 export type GetPlanningHitListParams = {
   category?: GetPlanningHitListCategory;

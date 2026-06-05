@@ -28,174 +28,60 @@ export const GetSettingsResponse = zod.object({
 });
 
 /**
- * @summary List all clients
+ * Returns one page of clients ordered by updatedAt DESC (id DESC tiebreak). Pass the previous response's nextCursor back as `cursor` to fetch the next page; nextCursor is null on the last page. Search (`q`) and `filingStatus` are applied server-side.
+
+ * @summary List clients (keyset-paginated, most-recently-updated first)
  */
-export const ListClientsResponseItem = zod.object({
-  id: zod.number(),
-  firstName: zod.string(),
-  lastName: zod.string(),
-  email: zod.string(),
-  phone: zod.string().nullish(),
-  filingStatus: zod.enum([
-    "single",
-    "married_filing_jointly",
-    "married_filing_separately",
-    "head_of_household",
-    "qualifying_widow",
-  ]),
-  state: zod.string(),
-  taxYear: zod.number(),
-  dependentsUnder17: zod
+export const listClientsQueryLimitDefault = 50;
+export const listClientsQueryLimitMax = 200;
+
+export const ListClientsQueryParams = zod.object({
+  limit: zod.coerce
     .number()
-    .describe(
-      "Number of qualifying children under 17 with SSN (drives Child Tax Credit).",
-    ),
-  otherDependents: zod
-    .number()
-    .describe(
-      "Other qualifying dependents (drives the $500 Credit for Other Dependents).",
-    ),
-  dependentsForCareCredit: zod
-    .number()
-    .optional()
-    .describe(
-      "Children age 12 and under (drives Dependent Care Credit eligibility).",
-    ),
-  taxpayerAge: zod.number().nullish(),
-  spouseAge: zod.number().nullish(),
-  taxpayerBlind: zod
-    .boolean()
-    .optional()
-    .describe(
-      "Taxpayer is legally blind at year end (extra standard-deduction box, IRC §63(f)).",
-    ),
-  spouseBlind: zod
-    .boolean()
-    .optional()
-    .describe(
-      "Spouse is legally blind at year end (MFJ\/QSS extra standard-deduction box).",
-    ),
-  spouseEarnedIncome: zod.number().nullish(),
-  hsaIsFamilyCoverage: zod.boolean().optional(),
-  iraCoveredByWorkplacePlan: zod.boolean().optional(),
-  eligibleEducatorCount: zod
-    .number()
-    .optional()
-    .describe(
-      "Count of eligible K-12 educators on the return (0\/1\/2). Each gets up to $300 above-the-line.",
-    ),
-  acaAnnualPremium: zod
-    .number()
-    .nullish()
-    .describe("Form 1095-A annual premium total (Marketplace plan)."),
-  acaAnnualSlcsp: zod
-    .number()
-    .nullish()
-    .describe("Form 1095-A Second Lowest Cost Silver Plan annual benchmark."),
-  acaAdvanceAptc: zod
-    .number()
-    .nullish()
-    .describe("Advance premium tax credit payments received during the year."),
-  acaHouseholdSize: zod
-    .number()
-    .nullish()
-    .describe(
-      "Household size used for FPL determination. Defaults to filer + dependents if null.",
-    ),
-  rentalActiveParticipant: zod
-    .boolean()
-    .optional()
-    .describe(
-      "§469 active participation flag for rental real estate ($25k special allowance).",
-    ),
-  rentalRealEstateProfessional: zod
-    .boolean()
-    .optional()
-    .describe(
-      "§469 real estate professional (750+ hours, >50% of time) — no PAL limit.",
-    ),
-  localityCode: zod
+    .min(1)
+    .max(listClientsQueryLimitMax)
+    .default(listClientsQueryLimitDefault)
+    .describe("Page size (default 50, hard cap 200)."),
+  cursor: zod.coerce
     .string()
-    .nullish()
-    .describe(
-      'Local income tax jurisdiction code. Modeled values:\n  \"NYC\" (state=NY, bracketed via IT-201);\n  MD counties (state=MD): \"MD-MONTGOMERY\", \"MD-HOWARD\",\n  \"MD-PRINCE_GEORGES\", \"MD-BALTIMORE_CITY\", \"MD-BALTIMORE_CO\",\n  \"MD-ANNE_ARUNDEL\", \"MD-HARFORD\", \"MD-CARROLL\", \"MD-FREDERICK\",\n  \"MD-CHARLES\", \"MD-WASHINGTON\", \"MD-CECIL\", \"MD-CALVERT\",\n  \"MD-ST_MARYS\", \"MD-WICOMICO\", \"MD-WORCESTER\", \"MD-DORCHESTER\",\n  \"MD-ALLEGANY\", \"MD-CAROLINE\", \"MD-GARRETT\", \"MD-KENT\",\n  \"MD-QUEEN_ANNES\", \"MD-SOMERSET\", \"MD-TALBOT\";\n  OH cities (state=OH): \"OH-CINCINNATI\", \"OH-CLEVELAND\",\n  \"OH-COLUMBUS\", \"OH-TOLEDO\", \"OH-AKRON\", \"OH-DAYTON\",\n  \"OH-YOUNGSTOWN\", \"OH-CANTON\", \"OH-PARMA\", \"OH-LAKEWOOD\";\n  IN counties (state=IN): \"IN-MARION\", \"IN-LAKE\", \"IN-ALLEN\",\n  \"IN-HAMILTON\", \"IN-ST_JOSEPH\", \"IN-ELKHART\", \"IN-VANDERBURGH\",\n  \"IN-PORTER\", \"IN-MONROE\", \"IN-TIPPECANOE\".\nNull = no local PIT. Engine silently skips when state doesn\'t\nmatch the locality\'s parent state.\n',
-    ),
-  socialSecurityBenefits: zod
-    .number()
-    .nullish()
-    .describe(
-      "Total Social Security benefits received (Box 5 SSA-1099 + RRB-1099). Drives Pub 915 0\/50\/85% taxability calc.",
-    ),
-  mfsLivedApartAllYear: zod
-    .boolean()
+    .optional()
+    .describe("Opaque keyset cursor from a prior response's nextCursor."),
+  q: zod.coerce
+    .string()
     .optional()
     .describe(
-      "MFS filers only — true if the filer lived APART from their spouse for the entire tax year. Per Pub 915, default false treats MFS-with-spouse case (85% of SS taxable).",
+      "Case-insensitive substring match across first name, last name, and email.",
     ),
-  isKiddieTaxFiler: zod
-    .boolean()
+  filingStatus: zod.coerce
+    .string()
     .optional()
-    .describe(
-      "K8 — true when this return is for a child whose unearned income > $2,600 is taxed at the parent's marginal rate (Form 8615).",
-    ),
-  parentsTopMarginalRate: zod
-    .number()
-    .nullish()
-    .describe(
-      "K8 — parent's top marginal rate (decimal, e.g. 0.32) used in Form 8615 for the kiddie tax computation.",
-    ),
-  priorYearItemized: zod
-    .boolean()
-    .nullish()
-    .describe(
-      "E6 — Pub 525 tax-benefit rule. true when prior year itemized (Sched A > std ded) → state refund federal-taxable. Null = pipeline auto-derives from prior tax_returns row.",
-    ),
-  residencyChangedInYear: zod
-    .boolean()
-    .describe(
-      "E12 — TRUE when filer moved between states during the tax year. Requires formerState + residencyChangeDate to be set; engine pro-rates AGI by days and computes both states' resident tax.",
-    ),
-  formerState: zod
-    .string()
-    .nullish()
-    .describe(
-      "E12 — Two-letter code of the prior resident state (BEFORE the move). clients.state is the post-move state. Null when full-year resident.",
-    ),
-  residencyChangeDate: zod
-    .string()
-    .nullish()
-    .describe(
-      "E12 — ISO date (YYYY-MM-DD) when residency changed. Filer was former-state resident from Jan 1 to this date (exclusive); current-state resident from this date (inclusive) to Dec 31.",
-    ),
-  riskTolerance: zod
-    .string()
-    .nullish()
-    .describe(
-      'Phase H — H9. \"conservative\" | \"moderate\" | \"aggressive\". Drives planning recommendations (Roth conversion sizing, charitable bunching frequency, etc.).',
-    ),
-  targetRetirementAge: zod
-    .number()
-    .nullish()
-    .describe(
-      "Phase H — H9. Target retirement age (integer years). Used for time-horizon-sensitive recommendations.",
-    ),
-  estatePlanStage: zod
-    .string()
-    .nullish()
-    .describe(
-      'Phase H — H9. \"none\" | \"will_only\" | \"trust_in_place\" | \"complex\". Drives estate-tax \/ gifting strategy recommendations.',
-    ),
-  planningGoals: zod
-    .string()
-    .nullish()
-    .describe(
-      'Phase H — H9. Free-text client-specific planning goals (e.g., \"buy a house in 2 years\"). Passed to AI memo synthesis.',
-    ),
-  notes: zod.string().nullish(),
-  createdAt: zod.coerce.date(),
-  updatedAt: zod.coerce.date(),
+    .describe("Exact filing-status filter."),
 });
-export const ListClientsResponse = zod.array(ListClientsResponseItem);
+
+export const ListClientsResponse = zod.object({
+  items: zod.array(
+    zod
+      .object({
+        id: zod.number(),
+        firstName: zod.string(),
+        lastName: zod.string(),
+        email: zod.string(),
+        state: zod.string(),
+        filingStatus: zod.string(),
+        taxYear: zod.number(),
+        updatedAt: zod.coerce.date(),
+      })
+      .describe(
+        "Projected client row returned by the paginated list endpoint.",
+      ),
+  ),
+  nextCursor: zod
+    .string()
+    .nullable()
+    .describe(
+      "Opaque cursor for the next page, or null when this is the last page.",
+    ),
+});
 
 /**
  * @summary Create a new client

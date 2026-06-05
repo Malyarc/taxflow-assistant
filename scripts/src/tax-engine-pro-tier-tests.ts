@@ -69,14 +69,15 @@ async function run() {
     console.log("\n[Pro tier ON — running on-state assertions]");
 
     // ── 2. Planning endpoints return 200 ─────────────────────────────────
-    // Need an existing client; pick the first one from the list.
+    // Need an existing client; pick the first one from the (paginated) list.
     const clientsRes = await get("/clients");
+    const clientItems = (clientsRes.body as { items?: Array<{ id: number }> } | null)?.items;
     if (
       clientsRes.status === 200 &&
-      Array.isArray(clientsRes.body) &&
-      clientsRes.body.length > 0
+      Array.isArray(clientItems) &&
+      clientItems.length > 0
     ) {
-      const sampleClient = (clientsRes.body as Array<{ id: number }>)[0];
+      const sampleClient = clientItems[0];
       const cid = sampleClient.id;
 
       const opps = await get(`/clients/${cid}/planning-opportunities`);
