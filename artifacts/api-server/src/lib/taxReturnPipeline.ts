@@ -41,6 +41,7 @@ import {
   type TaxReturnInputs,
 } from "./taxReturnEngine";
 import { logger } from "./logger";
+import { evaluatePlanningOpportunities, federalMarginalRate, planningScore } from "./planningEngine";
 
 // Re-export engine types for backward-compatible imports from this module.
 export type {
@@ -329,6 +330,28 @@ export async function recalculateAndUpsertTaxReturn(
   }
   const { result } = computed;
 
+  // #14 (DB-02/03) — precompute the firm-wide planning-ranking columns ONCE here,
+  // per recalc, so the hit-list + dashboard Top-10 can rank by a single indexed
+  // `ORDER BY planning_score DESC LIMIT n` instead of running the planning engine
+  // for every client on every request. Computed WITHOUT baselineInputs (no
+  // what-if re-runs) to match the hit-list's own scoring and keep this write path
+  // light. ISOLATED: a planning-eval failure must never block persisting the
+  // return itself (the row's primary job) — fall back to null planning columns.
+  let planningScoreValue: string | null = null;
+  let planningMarginalRateValue: string | null = null;
+  try {
+    const hits = evaluatePlanningOpportunities({
+      client: computed.client,
+      computed: result,
+      adjustments: computed.inputs.adjustments,
+    });
+    const fedRate = federalMarginalRate(result);
+    planningMarginalRateValue = String(fedRate);
+    planningScoreValue = String(Math.round(planningScore({ hits, federalMarginalRate: fedRate })));
+  } catch (err) {
+    logger.warn({ err, clientId }, "Planning-score precompute failed; persisting return with null planning columns");
+  }
+
   // Multi-year: keyed by the (clientId, taxYear) composite unique constraint,
   // so each client can have one row per tax year (not one row total).
 
@@ -440,6 +463,9 @@ export async function recalculateAndUpsertTaxReturn(
     formerStateCode: result.formerStateCode,
     daysFormerStateResident: result.daysFormerStateResident,
     daysCurrentStateResident: result.daysCurrentStateResident,
+    // #14 — precomputed planning-ranking columns (see the computation above).
+    planningScore: planningScoreValue,
+    planningMarginalRate: planningMarginalRateValue,
   };
 
   // Atomic upsert on the (clientId, taxYear) unique constraint. Replaces a

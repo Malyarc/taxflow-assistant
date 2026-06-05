@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, desc, and, ne, gte, lte, gt } from "drizzle-orm";
+import { eq, desc, and, ne, gte, lte, gt, sql, type SQL } from "drizzle-orm";
 import { db, adjustmentsTable, clientsTable, taxReturnsTable } from "@workspace/db";
 import {
   GetPlanningOpportunitiesParams,
@@ -324,69 +324,116 @@ router.get("/planning-hit-list", async (req, res): Promise<void> => {
   const maxAgi = typeof req.query.maxAgi === "string" ? Number(req.query.maxAgi) : null;
   const limit = typeof req.query.limit === "string" ? Number(req.query.limit) : 50;
 
-  try {
-    const allClients = await db.select().from(clientsTable);
-    type Entry = {
-      clientId: number;
-      firstName: string;
-      lastName: string;
-      email: string | null;
-      state: string;
-      taxYear: number;
-      agi: number;
-      federalMarginalRate: number;
-      planningScore: number;
-      totalEstSavings: number;
-      numHits: number;
-      topHits: OpportunityHit[];
+  const effectiveLimit = Number.isFinite(limit) && limit > 0 ? limit : 50;
+
+  type Entry = {
+    clientId: number;
+    firstName: string;
+    lastName: string;
+    email: string | null;
+    state: string;
+    taxYear: number;
+    agi: number;
+    federalMarginalRate: number;
+    planningScore: number;
+    totalEstSavings: number;
+    numHits: number;
+    topHits: OpportunityHit[];
+  };
+
+  // Build a full hit-list entry for one client by running the detectors (the
+  // display details — topHits/totalEstSavings/numHits — can't be served from the
+  // precomputed columns alone). Shared by the fast + slow paths. Returns null
+  // when the client has no return, is out of the AGI band, or has no visible hits.
+  const buildEntry = async (clientId: number): Promise<Entry | null> => {
+    const computed = await computeTaxReturn(clientId);
+    if (!computed) return null;
+    const agi = computed.result.adjustedGrossIncome;
+    if (minAgi != null && Number.isFinite(minAgi) && agi < minAgi) return null;
+    if (maxAgi != null && Number.isFinite(maxAgi) && agi > maxAgi) return null;
+    const hits = evaluatePlanningOpportunities({
+      client: computed.client,
+      computed: computed.result,
+      adjustments: computed.inputs.adjustments,
+    });
+    const visibleHits = categoryFilter ? hits.filter((h) => h.category === categoryFilter) : hits;
+    if (visibleHits.length === 0) return null;
+    const fedRate = federalMarginalRate(computed.result);
+    const score = planningScore({ hits: visibleHits, federalMarginalRate: fedRate });
+    const totalEstSavings = visibleHits.reduce((s, h) => s + h.estSavings, 0);
+    return {
+      clientId,
+      firstName: computed.client.firstName,
+      lastName: computed.client.lastName,
+      email: computed.client.email ?? null,
+      state: computed.client.state ?? "",
+      taxYear: computed.result.taxYear,
+      agi: Math.round(agi),
+      federalMarginalRate: fedRate,
+      planningScore: Math.round(score),
+      totalEstSavings: Math.round(totalEstSavings),
+      numHits: visibleHits.length,
+      topHits: visibleHits.slice(0, 3),
     };
+  };
+
+  try {
+    // Pick the candidate client set.
+    let candidateClientIds: number[];
+    if (categoryFilter) {
+      // SLOW PATH — a category filter changes which hits count toward the score,
+      // so the all-category precomputed planning_score can't rank it correctly.
+      // Evaluate every client (still error-isolated per client). This filter is
+      // not used by the dashboard widget (the hot path); it's an API power-feature.
+      const allClients = await db
+        .select({ id: clientsTable.id, state: clientsTable.state })
+        .from(clientsTable);
+      candidateClientIds = allClients
+        .filter((c) => !stateFilter || (c.state ?? "").toUpperCase() === stateFilter)
+        .map((c) => c.id);
+    } else {
+      // FAST PATH (dashboard Top-10 + default hit-list) — rank by the precomputed
+      // planning_score with a SINGLE indexed query (tax_returns_planning_score_idx),
+      // pushing the state/AGI filters into SQL, and take the top-N. Display details
+      // are then computed for ONLY those N clients — not the whole firm. The join
+      // pins each client to their current-year return (clients.tax_year).
+      const conditions: SQL[] = [gt(taxReturnsTable.planningScore, "0")];
+      if (stateFilter) conditions.push(eq(sql`upper(${clientsTable.state})`, stateFilter));
+      if (minAgi != null && Number.isFinite(minAgi)) {
+        conditions.push(gte(taxReturnsTable.adjustedGrossIncome, String(minAgi)));
+      }
+      if (maxAgi != null && Number.isFinite(maxAgi)) {
+        conditions.push(lte(taxReturnsTable.adjustedGrossIncome, String(maxAgi)));
+      }
+      const ranked = await db
+        .select({ clientId: taxReturnsTable.clientId })
+        .from(taxReturnsTable)
+        .innerJoin(
+          clientsTable,
+          and(
+            eq(clientsTable.id, taxReturnsTable.clientId),
+            eq(clientsTable.taxYear, taxReturnsTable.taxYear),
+          ),
+        )
+        .where(and(...conditions))
+        .orderBy(desc(taxReturnsTable.planningScore))
+        .limit(effectiveLimit);
+      candidateClientIds = ranked.map((r) => r.clientId);
+    }
+
     const entries: Entry[] = [];
     let skippedClients = 0;
-    for (const c of allClients) {
-      if (stateFilter && (c.state ?? "").toUpperCase() !== stateFilter) continue;
+    for (const clientId of candidateClientIds) {
       try {
-        const computed = await computeTaxReturn(c.id);
-        if (!computed) continue;
-        const agi = computed.result.adjustedGrossIncome;
-        if (minAgi != null && Number.isFinite(minAgi) && agi < minAgi) continue;
-        if (maxAgi != null && Number.isFinite(maxAgi) && agi > maxAgi) continue;
-        // Reuse the adjustments computeTaxReturn already loaded (it also includes
-        // the synthesized prior-year carryforwards the engine itself saw) instead
-        // of firing a second per-client query.
-        const hits = evaluatePlanningOpportunities({
-          client: computed.client,
-          computed: computed.result,
-          adjustments: computed.inputs.adjustments,
-        });
-        const visibleHits = categoryFilter
-          ? hits.filter((h) => h.category === categoryFilter)
-          : hits;
-        if (visibleHits.length === 0) continue;
-        const fedRate = federalMarginalRate(computed.result);
-        const score = planningScore({ hits: visibleHits, federalMarginalRate: fedRate });
-        const totalEstSavings = visibleHits.reduce((s, h) => s + h.estSavings, 0);
-        entries.push({
-          clientId: c.id,
-          firstName: c.firstName,
-          lastName: c.lastName,
-          email: c.email ?? null,
-          state: c.state ?? "",
-          taxYear: computed.result.taxYear,
-          agi: Math.round(agi),
-          federalMarginalRate: fedRate,
-          planningScore: Math.round(score),
-          totalEstSavings: Math.round(totalEstSavings),
-          numHits: visibleHits.length,
-          topHits: visibleHits.slice(0, 3),
-        });
+        const entry = await buildEntry(clientId);
+        if (entry) entries.push(entry);
       } catch (clientErr) {
         // Error isolation: one client with malformed data (or a schema drift on
         // one of its child tables) must NOT take down the entire firm-wide
-        // hit-list. Log + skip that client; keep ranking the rest. (This is the
-        // class of failure that previously 500'd the whole dashboard widget.)
+        // hit-list. Log + skip that client; keep ranking the rest.
         skippedClients += 1;
         logger.warn(
-          { err: clientErr, clientId: c.id },
+          { err: clientErr, clientId },
           "Planning hit-list: skipping client (per-client compute failed)",
         );
       }
@@ -394,9 +441,10 @@ router.get("/planning-hit-list", async (req, res): Promise<void> => {
     if (skippedClients > 0) {
       logger.warn({ skippedClients }, "Planning hit-list completed with skipped clients");
     }
+    // Re-sort by the freshly-computed score (the SQL pre-rank may lag a hair
+    // behind the live engine) and cap to the requested page size.
     entries.sort((a, b) => b.planningScore - a.planningScore);
-    const capped = Number.isFinite(limit) && limit > 0 ? entries.slice(0, limit) : entries;
-    res.json({ catalogVersion: CATALOG_V1.version, entries: capped });
+    res.json({ catalogVersion: CATALOG_V1.version, entries: entries.slice(0, effectiveLimit) });
   } catch (err) {
     logger.error({ err }, "Planning hit list failed");
     res.status(500).json({ error: "Planning hit list failed" });

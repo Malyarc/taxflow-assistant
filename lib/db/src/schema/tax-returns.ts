@@ -221,6 +221,17 @@ export const taxReturnsTable = pgTable(
     amendmentExplanation: text("amendment_explanation"),
     /** C4 — Timestamp the original snapshot was captured. Null when no amendment in progress. */
     amendmentLockedAt: timestamp("amendment_locked_at", { withTimezone: true }),
+    /**
+     * DB-02/03 (#14) — precomputed firm-wide planning-ranking columns. Written at
+     * recalc time (taxReturnPipeline) by running the planning detectors ONCE per
+     * client recalc, so the firm-wide hit-list + dashboard Top-10 widget can rank
+     * with a single indexed `ORDER BY planning_score DESC LIMIT n` instead of
+     * running the planning engine for every client on every request. Null until
+     * the first recalc populates them (or if planning eval failed for the row).
+     */
+    planningScore: numeric("planning_score", { precision: 14, scale: 2 }),
+    /** #14 — Client's federal marginal rate at this return (a planningScore weight); stored for display + audit. */
+    planningMarginalRate: numeric("planning_marginal_rate", { precision: 5, scale: 4 }),
     notes: text("notes"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
@@ -237,6 +248,10 @@ export const taxReturnsTable = pgTable(
     // DB-03: supports the peer-benchmark AGI-band cohort query (and any analytic
     // read filtering/ordering by AGI). Becomes (firm_id, agi) once tenancy lands.
     agiIdx: index("tax_returns_agi_idx").on(table.adjustedGrossIncome),
+    // DB-02/03 (#14): the firm-wide hit-list / dashboard widget rank by
+    // `ORDER BY planning_score DESC LIMIT n`. Index it so that's an index scan,
+    // not a full-table sort. Becomes (firm_id, planning_score) once tenancy lands.
+    planningScoreIdx: index("tax_returns_planning_score_idx").on(table.planningScore),
   }),
 );
 

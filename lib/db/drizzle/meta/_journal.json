@@ -15,6 +15,13 @@
       "when": 1780558502276,
       "tag": "0001_tiresome_mastermind",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1780633960312,
+      "tag": "0002_abnormal_kree",
+      "breakpoints": true
     }
   ]
 }
