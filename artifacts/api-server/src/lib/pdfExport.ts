@@ -190,7 +190,7 @@ export function buildTaxReturnPdf(client: Client, ret: ComputedTaxReturn): Promi
         if (nr.reciprocityApplied) {
           stateRows.push([`Non-resident ${nr.state} (reciprocity, no tax)`, fmt(0)]);
         } else {
-          stateRows.push([`Non-resident ${nr.state} tax on $${nr.wages.toFixed(0)} wages`, fmt(nr.tax)]);
+          stateRows.push([`Non-resident ${nr.state} tax on $${nr.wages.toFixed(0)} source income`, fmt(nr.tax)]);
         }
       }
       if (ret.multiState.residentCreditApplied > 0) {

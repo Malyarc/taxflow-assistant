@@ -1147,6 +1147,13 @@ export interface PartYearResidencyResult {
   currentStateTax: number;
 }
 
+// States whose NON-RESIDENT return uses the proportional ("as-if-resident ×
+// source-fraction") method — NY IT-203 (Line 45 income %) + CA 540NR Schedule CA.
+// Most states use this method; enabled for the two validated with worked examples
+// (NY/CA, the named targets). Other states fall back to direct brackets on the
+// source income (a conservative approximation, documented).
+const NR_AS_IF_RESIDENT_STATES = new Set<string>(["CA", "NY"]);
+
 export function calculateMultiStateTax(params: {
   residentState: string;
   federalAgi: number;
@@ -1242,10 +1249,18 @@ export function calculateMultiStateTax(params: {
      * state by days — the standard residency rule for intangible income.
      */
     perStateOtherSourced?: Readonly<Record<string, number>>;
+    /**
+     * PREP-B1 per-line NR sourcing — per-state NON-WAGE income sourced to a state
+     * for a NON-RESIDENT filer (NR business / rental / real-property gains). Keys
+     * are uppercase 2-letter state codes. Added to that state's W-2-wage source for
+     * the IT-203 / 540NR proportional NR tax. Intangibles (interest/dividends/
+     * intangible capital gains) and retirement (pension/IRA/401(k)/SS — 4 U.S.C.
+     * §114) are NEVER non-resident source, so the CPA never places them here.
+     */
+    perStateNonResidentOtherSourced?: Readonly<Record<string, number>>;
   };
 }): MultiStateTaxResult {
   const resident = params.residentState.toUpperCase();
-  const nonresidentTotalsByState = new Map<string, number>();
 
   // E12 — when the filer made a part-year move, the FORMER state's income is
   // taxed by the part-year resident allocation below (formerStateTax on its
@@ -1256,57 +1271,72 @@ export function calculateMultiStateTax(params: {
   const partYearFormerState = params.partYearResidency
     ? params.partYearResidency.formerState.toUpperCase()
     : null;
-  // Aggregate per-state wages excluding resident state
-  for (const entry of params.perStateWages) {
-    const code = (entry.stateCode || "").toUpperCase();
-    if (!code || code === resident) continue; // resident-state wages are covered by resident calc
-    if (partYearFormerState && code === partYearFormerState) continue; // covered by part-year formerStateTax
-    const wages = Math.max(0, entry.wages);
-    if (wages === 0) continue;
-    nonresidentTotalsByState.set(code, (nonresidentTotalsByState.get(code) ?? 0) + wages);
+
+  // ── Non-resident SOURCE income per state (PREP-B1 per-line NR sourcing) ───
+  // Build each non-resident state's SOURCE income: W-2 wages (by stateCode) PLUS
+  // any CPA-supplied per-state non-wage source (NR business / rental / real-
+  // property gains, via options.perStateNonResidentOtherSourced). What is NOT in
+  // this base, by federal sourcing law, and so is never taxed by a non-resident
+  // state: interest/dividends/intangible capital gains (4 U.S.C. §114(a) —
+  // intangibles follow the owner's DOMICILE) and pension/IRA/401(k)/SS
+  // (4 U.S.C. §114(b) — a state may not tax a non-resident's retirement income).
+  // The CPA simply never places those in perStateNonResidentOtherSourced.
+  const nrSourceByState = new Map<string, number>();
+  const addNrSource = (rawCode: string | undefined, amount: number): void => {
+    const code = (rawCode || "").toUpperCase();
+    if (!code || code === resident) return; // resident-state income is covered by the resident calc
+    if (partYearFormerState && code === partYearFormerState) return; // covered by part-year formerStateTax
+    const v = Math.max(0, amount);
+    if (v === 0) return;
+    nrSourceByState.set(code, (nrSourceByState.get(code) ?? 0) + v);
+  };
+  for (const entry of params.perStateWages) addNrSource(entry.stateCode, entry.wages);
+  for (const [code, amt] of Object.entries(params.options?.perStateNonResidentOtherSourced ?? {})) {
+    addNrSource(code, amt);
   }
 
   // Compute non-resident state tax for each (skip reciprocity pairs)
   const nonresidentStateTaxes: MultiStateTaxResult["nonresidentStateTaxes"] = [];
   let totalNrTax = 0;
-  let totalNrWages = 0; // Track total NR wages for credit cap
+  let totalNrWages = 0; // total NR-SOURCE income (wages + non-wage source) — credit cap base
 
-  for (const [nrState, nrWages] of nonresidentTotalsByState.entries()) {
+  for (const [nrState, nrSource] of nrSourceByState.entries()) {
     const reciprocity = hasReciprocity(resident, nrState);
     if (reciprocity) {
       // Reciprocity: NR state does not tax. Resident state taxes the wages.
-      nonresidentStateTaxes.push({ state: nrState, tax: 0, wages: nrWages, reciprocityApplied: true });
+      nonresidentStateTaxes.push({ state: nrState, tax: 0, wages: nrSource, reciprocityApplied: true });
       continue;
     }
 
-    // ── CA 540NR formula (FTB Form 540NR Schedule CA, Part III) ─────────────
-    // NR tax = Tax(total income as if CA resident) × (CA-source income / total income).
-    // This produces a higher NR tax than applying CA brackets directly to NR wages
-    // because CA is progressive: the resident-equivalent calculation uses the higher
-    // marginal rate corresponding to total income, and we then allocate proportionally.
+    // ── NY IT-203 / CA 540NR proportional ("as-if-resident") method ──────────
+    // NR tax = Tax(TOTAL income as if a full-year resident) × (state-source income
+    // / total income). This preserves the progressive marginal rate of the full
+    // income and is the method both NY (IT-203 Line 45 income %) and CA (540NR
+    // Schedule CA ratio) actually use — it produces a higher (correct) NR tax than
+    // applying the state's brackets directly to the source income alone.
     let nrTax: number;
-    if (nrState === "CA" && params.federalAgi > 0) {
+    if (NR_AS_IF_RESIDENT_STATES.has(nrState) && params.federalAgi > 0) {
       const taxAsIfResident = calculateStateTax(
         params.federalAgi,
-        "CA",
+        nrState,
         params.filingStatus,
         params.taxYear,
-        // K10 — preserve SS exclusion for the CA-as-resident sub-computation
-        // (CA is not in STATES_TAXING_SS). Other options stay scoped to the
-        // resident-state call below to avoid OR-subtraction / NJ-pension
-        // double-counting.
+        // K10 — preserve SS exclusion for the as-if-resident sub-computation.
+        // Other options stay scoped to the resident-state call below to avoid
+        // OR-subtraction / NJ-pension double-counting.
         { taxableSocialSecurity: params.options?.taxableSocialSecurity },
       );
-      const sourceFraction = Math.min(1, Math.max(0, nrWages / params.federalAgi));
+      const sourceFraction = Math.min(1, Math.max(0, nrSource / params.federalAgi));
       nrTax = taxAsIfResident * sourceFraction;
     } else {
-      // Other NR states: simplified — apply NR state's brackets directly to NR wages.
-      // Real NR returns often have additional adjustments we don't model.
-      nrTax = calculateStateTax(nrWages, nrState, params.filingStatus, params.taxYear, {});
+      // States we haven't validated the proportional method for: apply the NR
+      // state's brackets directly to the source income (a conservative
+      // approximation — usually lower than the proportional method).
+      nrTax = calculateStateTax(nrSource, nrState, params.filingStatus, params.taxYear, {});
     }
-    nonresidentStateTaxes.push({ state: nrState, tax: nrTax, wages: nrWages, reciprocityApplied: false });
+    nonresidentStateTaxes.push({ state: nrState, tax: nrTax, wages: nrSource, reciprocityApplied: false });
     totalNrTax += nrTax;
-    totalNrWages += nrWages;
+    totalNrWages += nrSource;
   }
 
   // ── E12 — Part-year residency branch ────────────────────────────────────

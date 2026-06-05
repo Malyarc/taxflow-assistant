@@ -76,6 +76,7 @@
     "src/tax-engine-catalog-freshness-tests.ts",
     "src/tax-engine-detector-coverage-tests.ts",
     "src/tax-engine-state-wins-2026-tests.ts",
-    "src/tax-engine-multiyear-hardening-tests.ts"
+    "src/tax-engine-multiyear-hardening-tests.ts",
+    "src/tax-engine-nr-sourcing-tests.ts"
   ]
 }

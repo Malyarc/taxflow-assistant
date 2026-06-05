@@ -687,10 +687,11 @@ header("CA 540NR — MFJ TX resident, $30k CA + $70k TX");
   check("CA 540NR MFJ tax (30% × $2,490) ≈ $747", caEntry?.tax ?? -1, 747.10, 2);
 }
 
-header("CA 540NR — CA as resident state doesn't use 540NR formula");
+header("NY IT-203 — CA resident with $50k NY wages uses the as-if-resident method");
 {
-  // CA resident with NY wages — NY uses simple NR formula (not CA 540NR).
-  // Just confirms the 540NR branch only fires when CA is the NR state.
+  // PREP-B1: NY now uses the IT-203 proportional method (like CA 540NR), not a
+  // direct bracket on the NR wages. NY NR tax = NY-tax-as-if-resident($100k) ×
+  // (50,000 / 100,000). This is HIGHER than the old direct-bracket-on-$50k value.
   const r = calculateMultiStateTax({
     residentState: "CA",
     federalAgi: 100000,
@@ -698,9 +699,10 @@ header("CA 540NR — CA as resident state doesn't use 540NR formula");
     taxYear: 2024,
     perStateWages: [{ stateCode: "CA", wages: 50000 }, { stateCode: "NY", wages: 50000 }],
   });
-  const nyTax = calculateStateTax(50000, "NY", "single", 2024);
+  const nyAsResident = calculateStateTax(100000, "NY", "single", 2024);
   const nyEntry = r.nonresidentStateTaxes.find((s) => s.state === "NY");
-  check("NY uses simple bracket-on-wages (no 540NR for non-CA)", nyEntry?.tax ?? -1, nyTax, 1);
+  check("NY NR tax = NY-as-resident($100k) × 50% (IT-203 income %)", nyEntry?.tax ?? -1, nyAsResident * 0.5, 0.5);
+  checkExact("IT-203 method > old direct-bracket-on-$50k", (nyEntry?.tax ?? 0) > calculateStateTax(50000, "NY", "single", 2024), true);
 }
 
 header("CA 540NR — Very low CA-source share (1%) still uses CA bracket on full income");
