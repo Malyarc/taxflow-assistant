@@ -1,3 +1,76 @@
+# Handoff Note — 2026-06-05 (DEFERRED BACKLOG CLEARED — Batch A 12 + Batch B 2, deployed)
+
+Cleared the deferred backlog from the 2026-06-04 multi-agent audit. **5 commits on
+`main` (`14aa2ed` → `597302d`), pushed + deployed to EC2 (api-server rebuilt,
+migration 0002 applied, prod recompute-swept, frontend rsynced) + verified.**
+Full no-API battery **3,453 assertions green** (was 3,432; +21); typecheck +
+typecheck:tests green.
+
+## Batch A — 12 low-severity cleanups (commits `14aa2ed` security, `50e4877` correctness)
+- **#1** documents.ts: extraction now routes off the content-verified (magic-byte)
+  MIME, not the filename. **#2** doc-content endpoint → `Cache-Control: no-store`
+  (was `private, max-age=300`) for the PII bytes. **#3** CORS reflect-any-origin now
+  needs an explicit `CORS_ALLOW_ALL=true` (was keyed off `NODE_ENV!==production`;
+  the box ships with NODE_ENV unset → was reflecting any origin w/ credentials);
+  disallowed cross-origin → `callback(null,false)` so same-origin mutations don't
+  500. **#4** prompt-injection fence extended to the W-2 image/PDF + 1099 vision
+  paths. **#5** ClientDetail masks the 1099 payer TIN (`maskTin`). **#8** post-
+  approve recompute pinned to the approved record's tax year.
+- **#6** tax-returns `mapReturn` coerces EVERY numeric column to number (schema-
+  driven via `getTableColumns`→PgNumeric; was a 12-field list leaving ~70 cols as
+  strings) + integration assert `typeof amtTax==='number'`. **#7** W-2/1099 delete
+  clears the polymorphic `tax_documents` back-pointer in-txn + pins recompute year.
+  **#9** disclosure-consents 404s when the client doesn't exist (was a FK 500).
+  **#10** four §179/bonus/§461(l)/§448(c) year-maps hoisted to module scope, typed
+  `Record<TaxYear,…>` (missing year now = typecheck error). **#11** Form 2441
+  applicable-% uses `Math.ceil` ("or fraction thereof", §21(a)(2)) + dropped the
+  off-by-one `agi>=43000` override; **corrected 5 stale test expectations that
+  encoded the bug** ($30k→27%, $40k→22%, $43k→21%) + a 9-point boundary battery.
+  **#12** year-indexed the residual stale TY2024 planning constants (G1.66 reuses
+  the year-indexed G1.26 Roth phase-out — gates fire/no-fire; G1.53 kiddie
+  threshold from `KIDDIE_TAX_THRESHOLD`; G1.69 via new `getFederalBracketBreakpoints`).
+
+## Batch B — 2 scale items
+- **#13 `perf(clients)` (`6fe576d` + fix `597302d`):** GET /clients keyset-paginated
+  (`?limit` default 50/cap 200, `?cursor`, `?q` ILIKE name/email, `?filingStatus`),
+  column-projected, returns `{items,nextCursor}`; ClientList drives search/filter/
+  "Load more" off the server (`useInfiniteQuery`). OpenAPI + codegen updated.
+  **Post-deploy verification caught a real keyset bug** (`597302d`): the cursor
+  carried updatedAt as a millisecond JS Date (pg truncates timestamptz to ms), so
+  rows sharing the cursor's ms but a smaller microsecond were SKIPPED — on prod, 3
+  clients batch-inserted at the same microsecond made limit<8 return 6 of 8. Fixed
+  by carrying a UTC **microsecond** ISO cursor compared via
+  `$cursor::timestamp at time zone 'UTC'` (still index-usable). Verified: forced
+  3-way same-µs collision paged at limit=2 returns all 97 (no skips/dupes); prod
+  limit=3 now 8/8.
+- **#14 `perf(planning)` (`2b87ed6`, migration 0002):** tax_returns gains
+  `planning_score` + `planning_marginal_rate` (+ `tax_returns_planning_score_idx`),
+  written at recalc time in taxReturnPipeline (isolated try/catch — a planning
+  failure never blocks persisting the return). The firm-wide hit-list + dashboard
+  Top-10 now rank via one indexed `ORDER BY planning_score DESC LIMIT n` + build
+  details for only the top-N (was running the engine for EVERY client). Category
+  filter keeps the per-client path (all-category score can't rank a subset; unused
+  by the dashboard). Verified: fast-path top-10 IDENTICAL to the precomputed
+  ranking; dashboard widget renders the same scores; topHits contract preserved.
+
+## Verification (high bar)
+- Local browser (ClientList): renders from {items}, "Load more" 50→97, server
+  search 97→2, no console errors; Dashboard Top-10 widget scores render.
+- Prod API (public path): clients pagination (8/8, collision-safe), q-filter,
+  bad-cursor 400, hit-list ranked w/ topHits, healthz 200, new bundle served.
+- **`planning_score` MUST be recompute-swept after any deploy that changes the
+  planning catalog/score** (rows with null score are excluded from the fast path).
+  Done this deploy (8/8 prod clients).
+
+## Recommended next
+1. H2-wire the remaining heuristic planning detectors (≈G1.67–G1.96) — the durable
+   product value (engine-verified deltas). 2. God-file refactor (planningEngine 8k /
+   taxCalculator 6k / ClientDetail 5k) — deferred, mid-Haven-migration. 3. The
+   two-nullable-FK refactor for `tax_documents.linkedRecord*` (replaces the in-txn
+   back-pointer clear). 4. Auth + multi-tenancy (D15, Haven fusion).
+
+---
+
 # Handoff Note — 2026-06-04c (DB MIGRATION CUTOVER — COMPLETE, commit `8e95184`)
 
 The stale-`0000`-baseline drift class (root cause of the local hit-list 500) is
