@@ -100,6 +100,16 @@ function maskSSN(ssn: string | null | undefined): string {
   return `XXX-XX-${digits.slice(-4)}`;
 }
 
+/** Mask all but the last 4 digits of a TIN (payer EIN or recipient SSN/EIN):
+ *  "12-3456789" → "XX-XXX6789". Mirrors maskSSN — only the last 4 are shown,
+ *  regardless of the TIN's length/format. */
+function maskTin(tin: string | null | undefined): string {
+  if (!tin) return "—";
+  const digits = tin.replace(/\D/g, "");
+  if (digits.length < 4) return "XX-XXXXXXX";
+  return `XX-XXX${digits.slice(-4)}`;
+}
+
 /** Shared className for the ClientDetail tab triggers (icon + label).
  *  On lg+ the triggers sit in a vertical rail (full-width, left-aligned rows);
  *  below lg they stay as pills in a horizontal scroll strip. */
@@ -2284,7 +2294,7 @@ function Form1099Tab({ clientId, taxYear }: { clientId: number; taxYear: number 
                 {rec.payerTin && (
                   <div>
                     <div className="text-xs text-muted-foreground">Payer TIN</div>
-                    <div className="font-mono font-semibold">{rec.payerTin}</div>
+                    <div className="font-mono font-semibold">{maskTin(rec.payerTin)}</div>
                   </div>
                 )}
               </div>

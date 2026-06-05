@@ -93,9 +93,12 @@ router.post("/clients/:clientId/documents", async (req, res): Promise<void> => {
 
   // Deep-audit security finding: validate file content matches the
   // claimed extension (magic-bytes sniffing). Rejects malicious uploads
-  // that pretend to be PDFs / images.
+  // that pretend to be PDFs / images. Capture the content-verified MIME so
+  // extraction routes off the SNIFFED type, not a re-derived filename guess
+  // (a valid-but-mis-extensioned file lands in the correct extractor).
+  let verifiedMimeType: string;
   try {
-    validateAndResolveMimeType(parsed.data.fileContent, parsed.data.fileName);
+    verifiedMimeType = validateAndResolveMimeType(parsed.data.fileContent, parsed.data.fileName);
   } catch (err) {
     res.status(415).json({
       error: err instanceof Error ? err.message : "Unsupported file type",
@@ -163,7 +166,7 @@ router.post("/clients/:clientId/documents", async (req, res): Promise<void> => {
         logger.warn({ docId: doc.id }, "Extraction aborted at transmission — §7216 consent not present");
         return;
       }
-      const mimeType = detectMimeType(parsed.data.fileName);
+      const mimeType = verifiedMimeType;
       const isVisual = isVisualMimeType(mimeType);
       const extractedText = isVisual
         ? `[${mimeType}: ${parsed.data.fileName}]`
@@ -246,7 +249,11 @@ router.get("/clients/:clientId/documents/:documentId/content", async (req, res):
     disposition: "inline",
     length: buffer.length,
   });
-  res.setHeader("Cache-Control", "private, max-age=300");
+  // This streams the raw document bytes — the uploaded W-2/1099 carrying the
+  // taxpayer's SSN/EIN and dollar amounts. Forbid any persistence in browser
+  // or intermediary caches (`no-store`, not `private, max-age=300`) so PII
+  // isn't written to disk caches on shared machines.
+  res.setHeader("Cache-Control", "no-store");
   res.send(buffer);
 });
 
@@ -394,7 +401,10 @@ router.post("/clients/:clientId/documents/:documentId/approve", async (req, res)
       after: { status: updatedDoc.status, linkedRecordId: updatedDoc.linkedRecordId, linkedRecordType: updatedDoc.linkedRecordType },
       source: auditSource,
     });
-    await recalculateAfterMutation(params.data.clientId);
+    // Pin the recompute to the APPROVED record's tax year (not the client's
+    // default year). Approving a prior-year W-2/1099 must refresh THAT year's
+    // return row; passing the year also avoids recomputing an unrelated year.
+    await recalculateAfterMutation(params.data.clientId, parsed.data.taxYear);
     res.json(updatedDoc);
     return;
   }
@@ -479,7 +489,10 @@ router.post("/clients/:clientId/documents/:documentId/approve", async (req, res)
       after: { status: updatedDoc.status, linkedRecordId: updatedDoc.linkedRecordId, linkedRecordType: updatedDoc.linkedRecordType },
       source: auditSource,
     });
-    await recalculateAfterMutation(params.data.clientId);
+    // Pin the recompute to the APPROVED record's tax year (not the client's
+    // default year). Approving a prior-year W-2/1099 must refresh THAT year's
+    // return row; passing the year also avoids recomputing an unrelated year.
+    await recalculateAfterMutation(params.data.clientId, parsed.data.taxYear);
     res.json(updatedDoc);
     return;
   }

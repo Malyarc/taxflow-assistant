@@ -81,25 +81,34 @@ app.use(
     },
   }),
 );
-// CORS allowlist (deep-audit security finding). Defaults to no cross-origin
-// in production; in dev (when ALLOWED_ORIGINS unset and NODE_ENV !== production)
-// we allow all so local Vite proxy + Storybook style workflows work.
+// CORS allowlist (deep-audit security finding). Secure-by-default: cross-origin
+// is locked down UNLESS an explicit allowlist is configured. The wide-open
+// reflect-any-origin mode now requires an explicit opt-in flag (CORS_ALLOW_ALL=
+// true) rather than keying off `NODE_ENV !== production` — the prod box ships
+// with NODE_ENV unset, which previously left it silently reflecting arbitrary
+// origins with credentials. Set CORS_ALLOW_ALL=true only for local dev that
+// needs cross-origin (e.g. a Vite dev server on a different port).
 // Configure ALLOWED_ORIGINS as a comma-separated list, e.g.
 //   ALLOWED_ORIGINS=https://app.taxflow.example,https://staging.taxflow.example
 const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? "")
   .split(",")
   .map((s) => s.trim())
   .filter((s) => s.length > 0);
-const corsAllowAll = allowedOrigins.length === 0 && process.env.NODE_ENV !== "production";
+const corsAllowAll = allowedOrigins.length === 0 && process.env.CORS_ALLOW_ALL === "true";
 app.use(
   cors({
     origin: corsAllowAll
-      ? true // dev / unset: reflect request origin
+      ? true // explicit dev opt-in: reflect request origin
       : (origin, callback) => {
-          // No origin → same-origin or curl: allow (already not subject to CORS).
+          // No Origin header → same-origin GET/HEAD, curl, or server-to-server:
+          // allow (not subject to CORS anyway).
           if (!origin) return callback(null, true);
           if (allowedOrigins.includes(origin)) return callback(null, true);
-          return callback(new Error("Origin not allowed by CORS"));
+          // Disallowed cross-origin: omit the Access-Control-Allow-Origin header
+          // (the browser then blocks the cross-origin read) but do NOT raise an
+          // error. Erroring would 500 same-origin POST/PUT/DELETE too (those
+          // carry an Origin header), breaking the same-origin SPA the API serves.
+          return callback(null, false);
         },
     credentials: true,
   }),
