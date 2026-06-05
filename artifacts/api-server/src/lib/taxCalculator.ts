@@ -683,6 +683,12 @@ export interface PerStateWageAllocation {
   wages: number;
 }
 
+// Yonkers resident income-tax surcharge = 16.75% of NET New York STATE tax
+// liability (NY IT-201 Yonkers worksheet; NOT a tax on income). Flat rate, stable
+// 2017-2026. Nonresident Yonkers earnings tax (0.50% on Yonkers-source wages) is
+// a separate, employer-withheld item we don't model. localityCode "YONKERS".
+const YONKERS_SURCHARGE_RATE = 0.1675;
+
 // ── E14 — Local income tax catalog (non-NYC) ──────────────────────────────
 // NYC has its own bracketed tax computed by calculateNycLocalTax (household
 // credit, EITC piggyback, school credit, MCTMT). All other modeled localities
@@ -1456,6 +1462,24 @@ export function calculateMultiStateTax(params: {
       federalEitcApplied: params.options?.federalEitcApplied ?? 0,
       netSeEarnings: params.options?.netSeEarnings ?? 0,
     });
+  } else if (localityUpper === "YONKERS" && resident === "NY") {
+    // Yonkers resident surcharge: 16.75% of the NET NY State resident tax
+    // (after the resident credit for taxes paid to other states), per the
+    // IT-201 Yonkers worksheet. residentStateTax is exactly that net figure.
+    const surcharge = Math.max(0, residentStateTax * YONKERS_SURCHARGE_RATE);
+    localTax = {
+      jurisdiction: "YONKERS",
+      nysTaxableIncome: 0,
+      baselineTax: surcharge,
+      householdCredit: 0,
+      nycEitc: 0,
+      nycEitcRate: 0,
+      nycSchoolTaxCredit: 0,
+      nycMctmt: 0,
+      netLocalTax: surcharge,
+      flatRate: YONKERS_SURCHARGE_RATE,
+      taxBase: Math.round(residentStateTax),
+    };
   } else if (params.localityCode) {
     // E14 — Flat-rate locality dispatch (MD counties, OH cities, IN counties).
     // C9 — Falls back to PA bulk registry when localityCode starts "PA-".
