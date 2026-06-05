@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, desc, and, or, lt, ilike, type SQL } from "drizzle-orm";
+import { eq, desc, and, or, ilike, sql, type SQL } from "drizzle-orm";
 import { db, clientsTable, taxReturnsTable, w2DataTable, form1099DataTable, adjustmentsTable, taxDocumentsTable } from "@workspace/db";
 import {
   CreateClientBody,
@@ -31,21 +31,31 @@ function normalizeState(raw: string | undefined | null): string | null {
 const CLIENTS_DEFAULT_LIMIT = 50;
 const CLIENTS_MAX_LIMIT = 200;
 
-// Keyset cursor over (updatedAt, id): the millisecond epoch + id of the last row
-// on the prior page, base64url-encoded so it's URL-safe and opaque to clients.
-// id is the unique tiebreaker for rows sharing a millisecond (at this scale,
-// distinct clients never collide on the millisecond — the tiebreaker is belt-
-// and-suspenders).
-function encodeClientsCursor(updatedAt: Date, id: number): string {
-  return Buffer.from(`${updatedAt.getTime()}.${id}`).toString("base64url");
+// Keyset cursor over (updatedAt, id). We carry updatedAt as a UTC *microsecond*
+// ISO string (NOT a JS Date), because node-postgres truncates a timestamptz to
+// MILLISECOND precision when it builds the JS Date. A millisecond cursor would
+// then SKIP rows that share the cursor's millisecond but have a smaller
+// microsecond — a real keyset bug (e.g. several clients batch-inserted in the
+// same microsecond, truncated to the same millisecond). The string is compared
+// against the column via `$cursor::timestamp at time zone 'UTC'`, which stays
+// index-usable on clients_updated_at_idx. Base64url-encoded so it's opaque.
+const UPDATED_AT_CURSOR_SQL = sql<string>`to_char(${clientsTable.updatedAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US')`;
+const CURSOR_TS_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?$/;
+
+function encodeClientsCursor(tsUtc: string, id: number): string {
+  return Buffer.from(`${tsUtc}|${id}`).toString("base64url");
 }
-function decodeClientsCursor(raw: string): { ts: Date; id: number } | null {
+function decodeClientsCursor(raw: string): { tsUtc: string; id: number } | null {
   try {
-    const [millis, id] = Buffer.from(raw, "base64url").toString("utf8").split(".");
-    const m = Number(millis);
-    const i = Number(id);
-    if (!Number.isFinite(m) || !Number.isInteger(i)) return null;
-    return { ts: new Date(m), id: i };
+    const decoded = Buffer.from(raw, "base64url").toString("utf8");
+    const sep = decoded.lastIndexOf("|");
+    if (sep < 0) return null;
+    const tsUtc = decoded.slice(0, sep);
+    const id = Number(decoded.slice(sep + 1));
+    // Shape-validate the timestamp (the value is parameterized, but reject
+    // malformed cursors with a clean 400 rather than a SQL cast error).
+    if (!Number.isInteger(id) || !CURSOR_TS_RE.test(tsUtc)) return null;
+    return { tsUtc, id };
   } catch {
     return null;
   }
@@ -83,19 +93,22 @@ router.get("/clients", async (req, res): Promise<void> => {
       res.status(400).json({ error: "Invalid cursor" });
       return;
     }
-    // Rows strictly after the cursor in (updatedAt DESC, id DESC) order.
-    const keyset = or(
-      lt(clientsTable.updatedAt, cur.ts),
-      and(eq(clientsTable.updatedAt, cur.ts), lt(clientsTable.id, cur.id)),
+    // Rows strictly after the cursor in (updatedAt DESC, id DESC) order. The
+    // cursor timestamp is microsecond-precise, so the equality branch correctly
+    // matches the rest of a same-microsecond group (id tiebreaker).
+    const cursorTs = sql`${cur.tsUtc}::timestamp at time zone 'UTC'`;
+    conditions.push(
+      sql`(${clientsTable.updatedAt} < ${cursorTs} or (${clientsTable.updatedAt} = ${cursorTs} and ${clientsTable.id} < ${cur.id}))`,
     );
-    if (keyset) conditions.push(keyset);
   }
 
   const where = conditions.length > 0 ? and(...conditions) : undefined;
 
   // Project only the columns the list view needs (avoids shipping the 60+-column
-  // row — including PII/jsonb-heavy fields — for every client).
-  const items = await db
+  // row — including PII/jsonb-heavy fields — for every client). cursorTs is the
+  // microsecond UTC timestamp used to build nextCursor; it's stripped from the
+  // response items below.
+  const rows = await db
     .select({
       id: clientsTable.id,
       firstName: clientsTable.firstName,
@@ -105,6 +118,7 @@ router.get("/clients", async (req, res): Promise<void> => {
       filingStatus: clientsTable.filingStatus,
       taxYear: clientsTable.taxYear,
       updatedAt: clientsTable.updatedAt,
+      cursorTs: UPDATED_AT_CURSOR_SQL,
     })
     .from(clientsTable)
     .where(where)
@@ -112,8 +126,9 @@ router.get("/clients", async (req, res): Promise<void> => {
     .limit(limit);
 
   // A full page implies there may be more; a partial page is the last one.
-  const last = items.length === limit ? items[items.length - 1] : null;
-  const nextCursor = last ? encodeClientsCursor(last.updatedAt, last.id) : null;
+  const last = rows.length === limit ? rows[rows.length - 1] : null;
+  const nextCursor = last ? encodeClientsCursor(last.cursorTs, last.id) : null;
+  const items = rows.map(({ cursorTs: _cursorTs, ...rest }) => rest);
   res.json({ items, nextCursor });
 });
 
