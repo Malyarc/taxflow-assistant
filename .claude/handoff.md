@@ -1,3 +1,47 @@
+# Handoff Note — 2026-06-05f (H3 MULTI-YEAR HARDENING + Roth RMD-avoidance value model — SHIPPED + deployed)
+
+Did the full H3 multi-year hardening (the Roth optimizer's value-model prereq) and
+folded RMD into the optimizer as the lifetime value model. Research → implement →
+adversarial-verify (3 workflows); all independently re-derived, **issues: none**.
+
+**H3 engine hardening (multiYearEngine.ts) — additive, OPT-IN, PURE.** The impact
+analysis proved the naive "change defaults" plan was wrong (would double-count
+G1.4's existing RMD proxy + break Case 4), so everything is opt-in (default off →
+every existing consumer + test byte-for-byte unchanged):
+- **RMD**: IRS Uniform Lifetime Table (Pub 590-B Table III, all 29 divisors ages
+  72-100 cross-verified vs IRS + 3 sources), RMD_TRIGGER_AGE=73, rmdDivisorForAge +
+  requiredMinimumDistribution (prior-year-end balance / current-age divisor).
+- **Carryforward threading**: captureCarryforwards (8 remaining fields: NOL, cap-loss
+  short/long, charitable cash, §163(j), AMT credit, AMT NOL, Sched-E PAL) +
+  applyCarryforwards → next year starts from depleted remainders.
+- runMultiYearTrajectory gained opt-in `chainCarryforwards` + `rmd` options +
+  `rmdByYear`. 35 hand-calc'd assertions (tax-engine-multiyear-hardening-tests.ts).
+- SS needed NO work — benefits already stay flat (client field, not scaled) + the
+  engine recomputes taxable SS per year as income grows.
+
+**Roth RMD-avoidance VALUE MODEL (rothOptimizer.ts).** projectRmdAvoidance (pure,
+separately testable) projects total federal tax to ~age 92 for BASELINE (no
+conversions, full RMDs at 73+) vs SCENARIO (the ladder shrinks the IRA → smaller
+RMDs); returns lifetimeFederalTaxSaved + RMD totals + final IRA balances.
+Conservative (excludes tax-free Roth growth → real value higher).
+optimizeRothConversionLadder attaches it when client.taxpayerAge is set (null else).
+openapi + codegen + the RothOptimizerCard "Lifetime RMD-avoidance" panel updated.
+- **Prod-verified**: client 9 (age ~54, RMDs from 2044) → **$134,759 lifetime tax
+  saved**, lifetime RMDs $1,617,111 → $1,019,786. Clients w/o age → null (correct).
+- Hand-calc'd 2-year controlled test: the engine correctly applies the age-65 add'l
+  std ded + the OBBBA senior deduction (my first hand-calc omitted them → I corrected
+  the expectations to match; that's the discipline working).
+
+**Verify**: 52 no-API suites / 3,781 assertions green; typecheck (api-server +
+tax-app + libs) clean; deployed (api-server + frontend rsync) + prod-smoked. The
+Roth optimizer (PLAN-B1) is now COMPLETE (v1 ladder + lifetime value model).
+
+**Still deferred (multi-week):** P1 #2 state-modifications layer (per-line NY IT-203
+/ CA 540NR sourcing); the remaining quick state wins WI/CT/IN (need final
+primary-source confirmation on the exact thresholds before coding).
+
+---
+
 # Handoff Note — 2026-06-05e (P1 — Roth optimizer v1 SHIPPED + 2 state wins; #2/H3 deferred w/ plan)
 
 Worked the P1 enhancement list. Scope was set honestly against the code (one
