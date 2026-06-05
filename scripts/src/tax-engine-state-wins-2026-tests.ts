@@ -11,6 +11,7 @@ import {
   computeTaxReturnPure,
   type TaxReturnInputs,
 } from "../../artifacts/api-server/src/lib/taxReturnEngine";
+import { calculateStateTax } from "../../artifacts/api-server/src/lib/taxCalculator";
 
 const PASS: string[] = [];
 const FAIL: string[] = [];
@@ -86,6 +87,55 @@ header("Yonkers — 16.75% surcharge on NY State tax");
   check("Yonkers surcharge = 16.75% × NY State tax", yonkers.localTaxLiability, nyTax * 0.1675, 0.5);
   check("NY State tax itself is unchanged by the surcharge", yonkers.stateTaxLiability, nyTax, 0.5);
   checkExact("Yonkers jurisdiction reported", yonkers.localTaxJurisdiction, "YONKERS");
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// WISCONSIN — sliding-scale standard deduction, SINGLE (Wis. Stat. §71.05(22)).
+// 2024 single: max $13,230, reduced 12% of WAGI over $19,070, → $0 at ~$129,319.
+// WI single brackets: 3.54% to $14,320 / 4.65% to $28,640 / 5.30% to $315,310.
+//   AGI $50,000: stdDed = 13,230 − 0.12×(50,000−19,070) = 13,230 − 3,711.60 = 9,518.40
+//                taxable = 40,481.60 → 0.0354×14,320 + 0.0465×14,320 + 0.0530×11,841.60
+//                        = 506.93 + 665.88 + 627.60 = $1,800.41
+//   AGI $19,070 (threshold): full $13,230 → taxable 5,840 → 0.0354×5,840 = $206.74
+//   AGI $10,000 (below): full std ded > income → $0
+// ════════════════════════════════════════════════════════════════════════════
+header("WI — single sliding-scale standard deduction phase-out");
+{
+  check("WI single $50k: std-ded phased to $9,518.40 → tax $1,800.41",
+    calculateStateTax(50000, "WI", "single", 2024), 1800.41, 0.5);
+  check("WI single at $19,070 threshold: full $13,230 std ded → tax $206.74",
+    calculateStateTax(19070, "WI", "single", 2024), 206.74, 0.5);
+  checkTruthy("WI single $10k (below threshold): $0 tax (full std ded > income)",
+    calculateStateTax(10000, "WI", "single", 2024) === 0);
+  // Phase-out makes high-AGI single owe MORE than the full-std-ded baseline.
+  checkTruthy("WI single phase-out increases tax vs full std ded at $50k",
+    calculateStateTax(50000, "WI", "single", 2024) > 1603.70);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// CONNECTICUT — Social Security exclusion (CT-1040 + DRS). 100% exempt below the
+// federal-AGI threshold ($75k single/MFS, $100k MFJ/QW/HoH); above, CT taxes no
+// more than ~25% of benefits (we exempt 75% of the federally-taxable SS). Tested
+// relationally: tax(AGI, {SS}) must equal tax(AGI − exclusion) — i.e. the right
+// amount of SS leaves the CT base. (Engine CT tax = brackets on taxable.)
+// ════════════════════════════════════════════════════════════════════════════
+header("CT — Social Security exclusion (100% below threshold; 75% above)");
+{
+  // Below threshold (single $50k < $75k): 100% of the $20k taxable SS exempt.
+  check("CT single $50k AGI, $20k taxable SS → fully exempt (base $30k)",
+    calculateStateTax(50000, "CT", "single", 2024, { taxableSocialSecurity: 20000 }),
+    calculateStateTax(30000, "CT", "single", 2024), 0.5);
+  // Above threshold (single $80k > $75k): exempt 75% of $20k = $15k → base $65k.
+  check("CT single $80k AGI, $20k taxable SS → 75% exempt (base $65k)",
+    calculateStateTax(80000, "CT", "single", 2024, { taxableSocialSecurity: 20000 }),
+    calculateStateTax(65000, "CT", "single", 2024), 0.5);
+  checkTruthy("CT above threshold is NOT 100% exempt (base ≠ $60k)",
+    Math.abs(calculateStateTax(80000, "CT", "single", 2024, { taxableSocialSecurity: 20000 })
+      - calculateStateTax(60000, "CT", "single", 2024)) > 1);
+  // MFJ threshold is $100k: $90k AGI < $100k → 100% exempt → base $70k.
+  check("CT MFJ $90k AGI, $20k taxable SS → fully exempt (base $70k)",
+    calculateStateTax(90000, "CT", "married_filing_jointly", 2024, { taxableSocialSecurity: 20000 }),
+    calculateStateTax(70000, "CT", "married_filing_jointly", 2024), 0.5);
 }
 
 console.log(`\n========================================`);

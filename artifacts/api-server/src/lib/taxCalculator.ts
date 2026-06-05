@@ -1965,14 +1965,41 @@ export function calculateStateTax(
     return 0;
   }
   const status = filingStatus as StateFilingStatus;
-  const stdDed = pickStateStdDeduction(info.standardDeduction, status);
+  let stdDed = pickStateStdDeduction(info.standardDeduction, status);
+  // WI sliding-scale standard deduction (Wis. Stat. §71.05(22); WI Form 1 / LFB
+  // 2024): single max $13,230 reduced by 12% of WAGI over $19,070, reaching $0
+  // at ~$129,319. Applied for SINGLE only — that threshold + the 12% rate are
+  // primary-source-confirmed (WI Legislative Fiscal Bureau); MFJ/HoH/MFS retain
+  // the max pending their indexed thresholds (documented sub-gap). WAGI ≈
+  // federalAgi (the engine's existing WI approximation).
+  if (code === "WI" && status === "single") {
+    stdDed = Math.max(0, 13230 - 0.12 * Math.max(0, federalAgi - 19070));
+  }
   // K10 — for states that exempt SS from their tax base, subtract the
   // federally-taxable SS amount BEFORE applying state brackets. (For the 9
   // SS-taxing states in STATES_TAXING_SS, federal AGI inherently includes
   // taxable SS and we leave it in the state base.)
-  const ssExclusion = !STATES_TAXING_SS.has(code)
+  let ssExclusion = !STATES_TAXING_SS.has(code)
     ? Math.max(0, options?.taxableSocialSecurity ?? 0)
     : 0;
+  // CT — Social Security is 100% exempt below the federal-AGI threshold ($75k
+  // single/MFS, $100k MFJ/QW/HoH; CT-1040 + DRS), and above it CT taxes no more
+  // than ~25% of benefits. We exempt 75% of the federally-taxable SS above the
+  // threshold. (The exact rule caps CT-includible SS at 25% of GROSS benefits;
+  // for very-high-income filers whose SS is ~85%-taxable this slightly
+  // under-taxes — documented sub-gap — but it is far more accurate than taxing
+  // 100% as the engine did before. CT pension/annuity + IRA exclusions are NOT
+  // yet modeled: they need the exact bracketed phase-out table + a pension-vs-IRA
+  // split the engine's single retirement bucket can't make.)
+  if (code === "CT") {
+    const taxableSS = Math.max(0, options?.taxableSocialSecurity ?? 0);
+    const isJointish =
+      status === "married_filing_jointly" ||
+      status === "qualifying_widow" ||
+      status === "head_of_household";
+    const ctThreshold = isJointish ? 100000 : 75000;
+    ssExclusion = federalAgi < ctThreshold ? taxableSS : taxableSS * 0.75;
+  }
   // VT (and any future state) — per-filer personal exemption deducted from taxable.
   // IL-1040 Line 10b cliff: when federalAgi exceeds the personalExemptionAgiCliff
   // threshold (single/HoH/MFS/QSS $250k, MFJ $500k for IL TY2024), the exemption
