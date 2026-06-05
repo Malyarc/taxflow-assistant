@@ -1,3 +1,49 @@
+# Handoff Note — 2026-06-05h (STATE-MOD LAYER — per-line non-resident sourcing, NY IT-203 / CA 540NR — SHIPPED + deployed)
+
+Built P1 #2 — the #1 correctness gap. Research (worked examples) → implement →
+adversarially verify (3 verifiers, issues: none). Every value re-derived against
+the ENGINE's own brackets; the hand-calc caught a research arithmetic error.
+
+**What shipped (`calculateMultiStateTax` non-resident branch rewrite):**
+- **Proportional ("as-if-resident × source-fraction") method generalized to {CA, NY}**
+  (`NR_AS_IF_RESIDENT_STATES`). NR tax = tax-as-if-a-full-year-resident on TOTAL
+  income × (state-source / total income) — the method NY IT-203 (Line 45 income %)
+  and CA 540NR (Schedule CA ratio) actually use; it preserves the progressive
+  marginal rate. CA already did this for wages; **NY now does too** — fixes the very
+  common NJ/CT-resident-working-in-NY case (was under-taxing via direct brackets).
+- **Per-income-type NR source base** — new option `perStateNonResidentOtherSourced`
+  (NR business / rental / real-property gains). A non-resident state with ONLY
+  non-wage source (e.g. NY rental, no NY wages) is now taxed.
+- **4 U.S.C. §114 enforced BY DESIGN** — interest/dividends/intangible gains (§114(a))
+  + pension/IRA/401(k)/SS (§114(b)) are NEVER auto-added to the source base (no
+  algorithmic path includes them; the CPA must explicitly place sourceable income).
+  The resident credit-for-tax-paid cap now uses NR-source (not wages-only).
+- **Backward-compatible**: CA NR unchanged when the new option is absent; the
+  part-year path + the former-state double-count guard are untouched.
+- **10 hand-calc'd tests** (`tax-engine-nr-sourcing-tests.ts`): NY $80k+$40k →
+  $4,101.17; CA $100k+$50k → $6,651.43 (engine value — an external worked example
+  had a $1,006 addition error, caught + corrected); per-type rental; §114 exclusion.
+- Prod-verified: the NR-sourcing test passes 10/10 on the deployed box.
+
+**Remaining sub-increments (the layer is substantially done; these are smaller):**
+- **Pipeline wiring** — `perStateNonResidentOtherSourced` is engine-function-level
+  + tested there. The METHOD generalization (NY IT-203) flows end-to-end already
+  (via W-2 stateCodes through computeTaxReturnPure); the per-type NR source
+  (business/rental/real-property gains) needs a CPA-input plumbing path (a new
+  adjustment / per-state-per-type input) to be settable end-to-end.
+- **Part-year as-if-resident method** — the part-year path (`computePartYearAllocation`)
+  already sources per-type (`perStateOtherSourced`) but still uses direct
+  `calculateStateTax` on the allocated AGI rather than the IT-203 income-% method.
+- **Real-property-situs metadata** on capital transactions (a `CapitalGainTransaction`
+  schema field) to AUTO-route real-estate gains (today CPA-supplied via the option).
+- **More states** in `NR_AS_IF_RESIDENT_STATES` (only CA + NY validated with worked
+  examples; most states use the same method — add as verified).
+
+Verify: typecheck (api-server + libs) + typecheck:tests clean; **53 no-API suites /
+3,817 assertions green**; deployed + prod-smoked.
+
+---
+
 # Handoff Note — 2026-06-05g (Rest of P1 — WI/CT wins + Roth IRMAA + growth model; state-mod layer scoped)
 
 Worked "the rest of P1." Research → implement → verify, with every tax value
