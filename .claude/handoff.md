@@ -1,3 +1,31 @@
+# Handoff Note — 2026-06-05d (P0 quick-fixes — doc-drift + detector-coverage guard)
+
+Closed the 5 P0 "quick fixes" from `docs/product-todo.md` (verified each against code,
+not docs):
+- **tax-returns.ts:647** stale "UltraTax CS / Lacerte / ProConnect / Drake friendly"
+  CSV comment → "vendor-neutral CPA-review format".
+- **coverage-matrix.md** refreshed: §199A wage/UBIA limit marked MODELED
+  (`wageUbiaLimit`, taxCalculator.ts:5489); §1411 NIIT base note corrected (§121
+  remainder + §1031 recognized + QSBS + passive rental + K-1 now in the NII base);
+  removed NYC UBT / KY occupational / OH cross-city / IN per-dependent from the
+  "deferred" list (all shipped); IL dependent exemption ($2,775/dep) marked shipped.
+- **CLAUDE.md** dropped both `ONBOARDING.md` pointers (file never committed; roadmap
+  is `docs/haven-migration-roadmap.md`) + fixed the duplicate "4." numbering.
+- **§121-remainder → NIIT** confirmed CLOSED in code (taxReturnEngine.ts:1885/2562,
+  regression realworld S4 = $15,200); cleared the stale "open" notes in `docs/todo.md`.
+- **Detector-registry guard** — NEW `scripts/src/tax-engine-detector-coverage-tests.ts`
+  (9 assertions): static set-equality of `strategyById("...")` literals across
+  planningEngine.ts + planningEngineMultiYear.ts vs the catalog (catches "added
+  catalog entry, forgot the detector"), plus a dynamic floor (a rich client fires
+  ≥6 distinct — actually 17). **The audit's "4 catalog IDs unreachable" was a FALSE
+  POSITIVE** (adversarially disproved): G4.1–G4.5 are wired in the separate
+  multi-year module; real coverage is **101/101**.
+
+Verify: typecheck + typecheck:tests clean; **50 no-API suites / 3,722 assertions
+green**. Only a code COMMENT changed (no runtime behavior); docs + 1 new test.
+
+---
+
 # Handoff Note — 2026-06-05c (TAX-LAW FRESHNESS HARDENING — items 1–9, shipped + deployed)
 
 Made stale/missing tax years **fail loudly** instead of silently returning a wrong

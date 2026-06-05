@@ -1,6 +1,6 @@
 # CLAUDE.md — TaxFlow Assistant
 
-Project-level notes for Claude sessions. Things that change every sprint live in `.claude/handoff.md` (a session-handoff doc, may be stale) or `ONBOARDING.md` (the original kick-off doc).
+Project-level notes for Claude sessions. Things that change every sprint live in `.claude/handoff.md` (a session-handoff doc, may be stale). The canonical forward-looking roadmap is `docs/haven-migration-roadmap.md`.
 
 **This app is being MIGRATED into the Haven app** (`/Users/johntang/Documents/haven` — NestJS + Prisma + Next.js portals + Expo mobile, multi-tenant). The pure engine (`computeTaxReturnPure`) + planning engine + their tests port 1:1; auth/frontend/infra do NOT (Haven has its own). The canonical forward-looking roadmap for what to enhance in tax prep + tax planning BEFORE migrating is **`docs/haven-migration-roadmap.md`** — read it before picking up calc/planning work. Keep `computeTaxReturnPure` PURE (it's the migration interface).
 
@@ -376,6 +376,5 @@ Several Phase 2/3 limitations have been resolved (multi-state foundation, MACRS,
 1. `.claude/handoff.md` — last session's state. May be stale; check `git log` to corroborate.
 2. **`docs/product-todo.md` — the prioritized working to-do (enhancements + fixes), consolidated 2026-06-05 from the audit + Haven roadmap + the engine/planning/extraction/UltraTax analyses.** Start here for "what should I build next."
 3. `git log --oneline -10` — recent commits.
-4. `ONBOARDING.md` — original kick-off doc (NOTE: not currently committed — pointer may be stale); the forward roadmap is `docs/haven-migration-roadmap.md`.
 4. `git status` — uncommitted WIP.
 5. Run the standalone test suites to confirm baseline: `pnpm --filter @workspace/scripts exec tsx ./src/tax-engine-tests.ts` (also `-deep-tests` and `-phase1-unit-tests`).

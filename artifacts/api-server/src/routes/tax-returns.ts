@@ -644,7 +644,7 @@ router.get("/clients/:clientId/tax-return/form-1040x/pdf", async (req, res): Pro
   }
 });
 
-// CSV export — UltraTax CS / Lacerte / ProConnect / Drake friendly
+// CSV export — vendor-neutral CPA-review format (no vendor lock-in)
 router.get("/clients/:clientId/tax-return/csv", async (req, res): Promise<void> => {
   const params = GetTaxReturnParams.safeParse(req.params);
   if (!params.success) {

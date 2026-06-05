@@ -111,7 +111,7 @@ Source files referenced:
 
 ### IRC sections explicitly modeled
 
-§55-§59 (AMT, including K3 LTCG-preferential MIN, line 2g/2k), §72(t) (early-withdrawal penalty, E5), §85 (unemployment), §111 (1099-G tax-benefit rule, E6), §121 (home-sale exclusion, K6), §163(j) (C7 + C3 follow-up — 30%-of-ATI cap with **§163(j)(8)-refined ATI** + indefinite carryforward; Form 8990 PDF), §168(k) (bonus depreciation, E7), §170 (charitable + §170(d)(1) 5-year cf, E3), §172 (NOL + post-TCJA 80% limit, K4), §179 (E7), **§199A (C3 follow-up — QBI now AUTO-DEFAULTS from Sch C net + K-1 active Box 1; SSTB phase-in respected via `qbi_sstb_flag` adjustment; wage/UBIA cap still not modeled but inapplicable below phase-in)**, §408(d)(2) (backdoor Roth pro-rata) ❌, §409A (NQDC) ❌, §421(b)/§422 (C6 — ISO disqualifying disposition ordinary comp), §423 (C6 — ESPP disqualifying disposition ordinary comp), **§461(l) (C7 + C3 follow-up — engine AUTO-AGGREGATES Sch C/E/K-1 active losses; CPA-supplied addback still wins)**, §469 (PAL — rental bucket + K-1 bucket separate, $25k allowance + REP exception), §1031 (C5 — like-kind exchange recognized/deferred gain; Form 8824 PDF), §1091 + §1091(d) basis adjustment (wash sale + E13 auto-detection), §1202 (QSBS, assumes 100% post-2010-09-27), §1211/§1212 (cap-loss limit + $3k offset + carryforward), §1374 ❌, §1411 (NIIT — sub-gap: §121/§1031 recognized gains don't yet flow into NIIT investment-income base), §911 (FEIE, K9), §4973(g) (HSA excess excise, E4)
+§55-§59 (AMT, including K3 LTCG-preferential MIN, line 2g/2k), §72(t) (early-withdrawal penalty, E5), §85 (unemployment), §111 (1099-G tax-benefit rule, E6), §121 (home-sale exclusion, K6), §163(j) (C7 + C3 follow-up — 30%-of-ATI cap with **§163(j)(8)-refined ATI** + indefinite carryforward; Form 8990 PDF), §168(k) (bonus depreciation, E7), §170 (charitable + §170(d)(1) 5-year cf, E3), §172 (NOL + post-TCJA 80% limit, K4), §179 (E7), **§199A (C3 follow-up — QBI now AUTO-DEFAULTS from Sch C net + K-1 active Box 1; SSTB phase-in respected via `qbi_sstb_flag` adjustment; wage/UBIA cap MODELED per §199A(b)(2)(B) = max(50% W-2 wages, 25% wages + 2.5% UBIA), phased over `taxCalculator.qbiPhaseInBand`)**, §408(d)(2) (backdoor Roth pro-rata) ❌, §409A (NQDC) ❌, §421(b)/§422 (C6 — ISO disqualifying disposition ordinary comp), §423 (C6 — ESPP disqualifying disposition ordinary comp), **§461(l) (C7 + C3 follow-up — engine AUTO-AGGREGATES Sch C/E/K-1 active losses; CPA-supplied addback still wins)**, §469 (PAL — rental bucket + K-1 bucket separate, $25k allowance + REP exception), §1031 (C5 — like-kind exchange recognized/deferred gain; Form 8824 PDF), §1091 + §1091(d) basis adjustment (wash sale + E13 auto-detection), §1202 (QSBS, assumes 100% post-2010-09-27), §1211/§1212 (cap-loss limit + $3k offset + carryforward), §1374 ❌, §1411 (NIIT — base rebuilt from component buckets 2026-05-28/29; §121 remainder + §1031 recognized gains + QSBS + passive rental + K-1 portfolio/royalties all flow into the NII base), §911 (FEIE, K9), §4973(g) (HSA excess excise, E4)
 
 ### Credits modeled (in IRS order)
 
@@ -283,7 +283,7 @@ Listed in rough customer-frequency order. The top of this list is what to ship n
 
 6. **State AMT for NY, NJ, MN** (none modeled outside CA).
 7. **NJ retirement-income exemption — refine the cap + phase-out** (currently approximate).
-8. **IL dependent exemption** ($2,775/dep — modeled only for filers, not dependents — over-deduction max ~$137/filer).
+8. ~~**IL dependent exemption**~~ — SHIPPED ($2,775/dep applied via `personalExemptionPerDependent`, stateTaxData.ts:219 + taxCalculator.ts:1959).
 9. **WI std-ded high-AGI phase-out** (currently uses max value).
 10. **IL personal exemption $250k/$500k cliff** — modeled (E1).
 
@@ -293,11 +293,7 @@ Listed in rough customer-frequency order. The top of this list is what to ship n
 - AL std ded phases out at higher AGI (currently uses max)
 - AR complex bracket switching above $89,600 (currently simplified)
 - VT dependent personal exemption + Sched IN-112 Part II Line 9 SS exclusion
-- KY occupational tax
-- NYC UBT
 - MD personal exemption per dependent
-- OH cross-city employment credit
-- IN $1,000/filer personal exemption
 - CT pension exemption gradual phase-out (currently approximated as fully-taxing — conservative)
 - TN/NH have no wage tax but TN has Hall tax repealed 2021 (✓ correctly modeled as no-tax)
 

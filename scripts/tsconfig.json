@@ -73,6 +73,7 @@
     "src/seed-dummy-clients.ts",
     "src/recompute-planning-scores.ts",
     "src/tax-engine-year-coverage-tests.ts",
-    "src/tax-engine-catalog-freshness-tests.ts"
+    "src/tax-engine-catalog-freshness-tests.ts",
+    "src/tax-engine-detector-coverage-tests.ts"
   ]
 }

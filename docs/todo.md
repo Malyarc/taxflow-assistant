@@ -257,7 +257,7 @@ The shadow-CPA validation (Marge Reynolds, CPA) flagged 5 engine findings + reco
 
 **Remaining sub-gaps (newly documented during shipping):**
 
-- **§1031 / §121 / NIIT investment-income base** — recognized gains still don't flow into NIIT base (existing sub-gap, noted in Form 8824 PDF footnote).
+- ~~**§1031 / §121 / NIIT investment-income base**~~ — **CLOSED 2026-05-28/29.** Both the §121 home-sale remainder and §1031 recognized (boot) gains now flow into the §1411 NIIT base via `netLTCG` → `ltcgPreferential` → `totalInvestmentIncomeForNiit` (taxReturnEngine.ts:1885 + 2562). The stale Form 8824 PDF footnote was corrected (FORM-01). Regression: realworld S4 (§121) + S-cases.
 - ~~**§461(l) Sch C loss flow**~~ — **CLOSED 2026-06-01.** Signed `scheduleCNetSigned` flows the Sch C loss to AGI, capped by the §461(l) addback; `netSeIncome` stays floored for SE-tax/QBI/local/earned-income. (NOL not auto-generated when loss > income; §163(j) ATI proxy still floored — documented approximations.)
 - **§163(j) Sections II/III** (partnership / S-corp pass-through) — Form 8990 PDF rendered as zero-placeholder sections (typical for individual filers).
 - **§163(j) small-business exemption** — engine doesn't auto-detect `gross receipts < $30M` exemption per §163(j)(3); CPA must determine whether the form is required.
@@ -353,7 +353,7 @@ Remaining open:
 
 - §163(j) ATI proxy is approximate; over-restricts for high-depreciation low-income filers. True ATI per §163(j)(8) needs depreciation addback + pre-§163(j)/NOL/QBI taxable-income base.
 - §461(l) loss-aggregation is CPA-supplied; engine doesn't auto-aggregate across Sched C / E / K-1 buckets.
-- §1031 / §121 recognized gains don't flow into NIIT investment-income base. Consistent with the existing §121 pattern; fix requires broader NIIT-base refactor.
+- ~~§1031 / §121 recognized gains don't flow into NIIT investment-income base.~~ **CLOSED 2026-05-28/29** — NIIT base rebuilt from component buckets; both now included (taxReturnEngine.ts:1885 + 2562).
 - Form 8824 PDF for §1031 reporting and Form 8990 PDF for §163(j) NOT yet rendered; CPAs hand-file from the engine's computed values.
 
 ---
