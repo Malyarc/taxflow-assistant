@@ -1,3 +1,54 @@
+# Handoff Note — 2026-06-05g (Rest of P1 — WI/CT wins + Roth IRMAA + growth model; state-mod layer scoped)
+
+Worked "the rest of P1." Research → implement → verify, with every tax value
+confirmed against the PRIMARY source before shipping (the no-guessing rule).
+
+**State wins (PREP-Q3) — shipped + deployed + hand-calc'd:**
+- **WI single sliding-scale std deduction** (Wis. Stat. §71.05(22) / WI Legislative
+  Fiscal Bureau): $13,230 max − 12% of WAGI over $19,070 → $0 at ~$129,319. Engine
+  used the max for all AGIs before (over-deducting high earners). **MFJ/HoH/MFS kept
+  at max** — couldn't cleanly source their indexed thresholds, so NOT shipped (no
+  guessing; the LFB single threshold + 12% rate are confirmed). WI single $50k →
+  std ded $9,518.40 → tax $1,800.41 (exact).
+- **CT Social Security exclusion** (CT-1040 + DRS): 100% exempt below $75k single/
+  MFS / $100k MFJ-QW-HoH; 75% exempt (≤25% taxed) above. Engine taxed 100% of CT SS
+  before (over-taxed every CT retiree). CT pension/IRA exclusion still NOT modeled
+  (needs the exact bracketed phase-out table + a pension-vs-IRA split the single
+  retirement bucket can't make — documented).
+- **IN**: SS is already correctly excluded (IN not in STATES_TAXING_SS) — no change
+  needed. The minor IN unemployment-comp deduction is a small remaining sub-gap.
+
+**Roth "future increments" — both shipped (the value model is now complete):**
+- **Medicare IRMAA** — verified the 2025 table myself (SSA POMS HI 01101.020; the
+  research agent's table was year-mixed). Part B+D annual surcharge per person by
+  MAGI tier. The value model now charges the EXTRA IRMAA conversions trigger, with
+  IRMAA's 2-year MAGI lookback (years 0-1 use pre-conversion MAGI), at age 65+
+  (MFJ ×2). New `netLifetimeValue = tax saved − extra IRMAA`. Prod (client 9):
+  net $148,940 = $142,575 tax saved + $6,365 IRMAA saved (converting also LOWERED
+  lifetime IRMAA — smaller RMDs → lower later MAGI: $235k→$229k).
+- **Tax-free Roth-growth** — tracks the laddered conversions growing tax-free;
+  surfaces `scenarioRothBalanceFinal` ($1.42M for client 9) as the upside the
+  tax-only figure omits. openapi + codegen + UI panel updated. 17 new hand-calc'd
+  assertions (exact IRMAA tiers + the $8,470 2-yr-lag scenario + Roth growth).
+
+**P1 #2 state-modifications layer (per-line NY IT-203 / CA 540NR sourcing) —
+SCOPED, NOT shipped (genuinely multi-week).** The engine ALREADY has a strong
+multi-state foundation: C11 per-W-2-stateCode + per-K-1/rental sourcing
+(`useW2SourceAllocation`/`perStateOtherSourced`), the CA 540NR "as-if-resident"
+formula (taxCalculator.ts:1288-1301), days-prorated deductions (E12), the
+former-state double-count fix. The remaining FULL per-income-type sourcing
+(interest/div/cap-gains/business/rental routed per-state, with real-property-situs
+vs intangible-domicile distinction) is **Phase 2** — it needs a schema change
+(`CapitalGainTransaction.propertyStateSitus`) + per-type plumbing through
+`computePartYearAllocation`, ~2-3 weeks. The ordered plan + the 4 U.S.C. §114
+retirement-preemption analysis are in the 2026-06-05g scope investigation
+(workflow w4quowsu4). I did NOT fake-complete it.
+
+Verify: typecheck (api-server + tax-app + libs) clean; **52 no-API suites / 3,806
+assertions green**; deployed (api-server + frontend rsync) + prod-smoked.
+
+---
+
 # Handoff Note — 2026-06-05f (H3 MULTI-YEAR HARDENING + Roth RMD-avoidance value model — SHIPPED + deployed)
 
 Did the full H3 multi-year hardening (the Roth optimizer's value-model prereq) and

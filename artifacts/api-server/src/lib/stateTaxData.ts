@@ -120,9 +120,11 @@ const FED_CONFORMING_STD_DED_STATES = new Set([
 // federally-taxable portion). Federal AGI includes the federally-taxable
 // portion of SS; states NOT in this set exempt SS from their state-tax base.
 // Source: Tax Foundation state-by-state SS taxation table (TY2024 current).
-// CT: phases out — full exclusion below $75k single / $100k MFJ; partial up
-//   to higher AGI; we approximate as fully-taxing (conservative — over-taxes
-//   CT filers below $75k single). Sub-gap documented.
+// CT: SS exclusion now MODELED in calculateStateTax — 100% exempt below $75k
+//   single/MFS / $100k MFJ-QW-HoH, 75% exempt (≤25% taxed) above. (Exact rule
+//   caps at 25% of GROSS benefits; we use 25% of the federally-taxable amount —
+//   slight under-tax for 85%-taxable filers, documented. CT pension/IRA exclusion
+//   still not modeled — needs the bracketed table + pension/IRA split.)
 // All other 41 jurisdictions (40 states + DC) exempt SS at the state level.
 export const STATES_TAXING_SS = new Set([
   "CO", "CT", "KS", "MN", "MT", "NM", "RI", "UT", "VT",
@@ -822,7 +824,7 @@ const STATE_TAX_DATA_2024: Record<string, StateTaxInfo> = {
       ],
     },
     standardDeduction: { single: 13230, married_filing_jointly: 24490, head_of_household: 17090, married_filing_separately: 12575 },
-    notes: "WI std deduction phases out at higher AGI; we use the maximum (low-income) value.",
+    notes: "WI sliding-scale std deduction: SINGLE now modeled ($13,230 max − 12% of WAGI over $19,070, per Wis. Stat. §71.05(22) / LFB 2024; in calculateStateTax). MFJ/HoH/MFS retain the max pending their indexed phase-out thresholds (sub-gap).",
   },
 };
 
