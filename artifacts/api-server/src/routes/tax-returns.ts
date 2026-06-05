@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, getTableColumns } from "drizzle-orm";
 import { db, taxReturnsTable, clientsTable, adjustmentsTable, assetBalancesTable } from "@workspace/db";
 import {
   GetTaxReturnParams,
@@ -42,22 +42,25 @@ import {
 
 const router: IRouter = Router();
 
+// Every numeric (decimal) column on tax_returns comes back from the pg driver
+// as a STRING. The OpenAPI contract types these as `number`, so coerce them all
+// to `number | null`. Driven off the schema (PgNumeric columns) rather than a
+// hand-maintained list, so a newly-added numeric column is covered
+// automatically — the prior 12-field list silently left ~70 columns as strings
+// (e.g. amtTax, niitTax, qbiDeduction, every Schedule-A line, every credit).
+const NUMERIC_RETURN_COLUMNS: readonly string[] = Object.entries(
+  getTableColumns(taxReturnsTable),
+)
+  .filter(([, col]) => col.columnType === "PgNumeric")
+  .map(([key]) => key);
+
 function mapReturn(r: typeof taxReturnsTable.$inferSelect) {
-  return {
-    ...r,
-    totalIncome: r.totalIncome != null ? Number(r.totalIncome) : null,
-    adjustedGrossIncome: r.adjustedGrossIncome != null ? Number(r.adjustedGrossIncome) : null,
-    standardDeduction: r.standardDeduction != null ? Number(r.standardDeduction) : null,
-    itemizedDeductions: r.itemizedDeductions != null ? Number(r.itemizedDeductions) : null,
-    taxableIncome: r.taxableIncome != null ? Number(r.taxableIncome) : null,
-    federalTaxLiability: r.federalTaxLiability != null ? Number(r.federalTaxLiability) : null,
-    federalTaxWithheld: r.federalTaxWithheld != null ? Number(r.federalTaxWithheld) : null,
-    federalRefundOrOwed: r.federalRefundOrOwed != null ? Number(r.federalRefundOrOwed) : null,
-    stateTaxLiability: r.stateTaxLiability != null ? Number(r.stateTaxLiability) : null,
-    stateTaxWithheld: r.stateTaxWithheld != null ? Number(r.stateTaxWithheld) : null,
-    stateRefundOrOwed: r.stateRefundOrOwed != null ? Number(r.stateRefundOrOwed) : null,
-    effectiveTaxRate: r.effectiveTaxRate != null ? Number(r.effectiveTaxRate) : null,
-  };
+  const out: Record<string, unknown> = { ...r };
+  for (const key of NUMERIC_RETURN_COLUMNS) {
+    const v = (r as Record<string, unknown>)[key];
+    out[key] = v != null ? Number(v) : null;
+  }
+  return out;
 }
 
 router.get("/clients/:clientId/tax-return", async (req, res): Promise<void> => {

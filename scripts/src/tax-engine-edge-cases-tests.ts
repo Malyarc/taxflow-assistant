@@ -24,6 +24,7 @@ import {
   calculateStateEitc,
   calculateForeignTaxCredit,
   getFederalStandardDeduction,
+  getFederalBracketBreakpoints,
 } from "../../artifacts/api-server/src/lib/taxCalculator";
 
 const PASS: string[] = [];
@@ -304,12 +305,74 @@ header("Dep care credit AGI rate transitions");
   // At $15,001-$17,000 AGI: 34% (one $2k bracket up from $15k → 34%)
   const at17k = calculateDependentCareCredit({ ...base, agi: 17000 });
   check("AGI $17k → 34% × $3k = $1,020", at17k.appliedCredit, 1020);
-  // At $43k AGI: 20% floor
+  // At exactly $43k AGI: Form 2441 puts $43,000 in the $41k-$43k band → 21%
+  // (NOT 20% — only AGI strictly OVER $43,000 reaches the 20% floor). $630.
   const at43k = calculateDependentCareCredit({ ...base, agi: 43000 });
-  check("AGI $43k → 20% × $3k = $600", at43k.appliedCredit, 600);
-  // At $100k AGI: still 20% floor
+  check("AGI $43k → 21% × $3k = $630", at43k.appliedCredit, 630);
+  // At $100k AGI: 20% floor (AGI > $43,000)
   const at100k = calculateDependentCareCredit({ ...base, agi: 100000 });
   check("AGI $100k → 20% floor still applies = $600", at100k.appliedCredit, 600);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 13b. Form 2441 applicable-percentage band boundaries (§21(a)(2) "or fraction
+//      thereof"). The 35% rate drops 1 point per $2,000 — OR FRACTION — of AGI
+//      over $15,000, floored at 20%. Locks the ceil() fix: AGI $16,000 and
+//      $17,001 are already one band down (Math.floor wrongly kept the prior
+//      rate), and $43,000 is the LAST 21% band — only AGI strictly OVER $43k
+//      reaches the 20% floor. Hand-calc'd against the published Form 2441 (2024)
+//      "Decimal Amount" table.
+// ════════════════════════════════════════════════════════════════════════════
+header("Form 2441 applicable-percentage band boundaries (ceil, fraction-thereof)");
+{
+  // 1 child, $3,000 expenses, single, earned income ≥ AGI so eligible = $3,000.
+  const f2441 = (agi: number) =>
+    calculateDependentCareCredit({
+      expenses: 3000, qualifyingDependents: 1, earnedIncomeTaxpayer: agi, agi,
+      filingStatus: "single",
+    }).appliedCredit;
+  // AGI ≤ $15,000 → 35% (no phase-down). $3,000 × 35% = $1,050.
+  check("AGI $15,000 → 35% × $3k = $1,050", f2441(15000), 1050);
+  // AGI $15,001 → ceil(1/2000)=1 → 34% (the > $15k guard + fraction-thereof).
+  check("AGI $15,001 → 34% × $3k = $1,020", f2441(15001), 1020);
+  // AGI $16,000 → ceil(0.5)=1 → 34% (Math.floor would have wrongly given 35%).
+  check("AGI $16,000 → 34% × $3k = $1,020", f2441(16000), 1020);
+  // AGI $17,000 → ceil(1)=1 → 34% (top of the $15k-$17k band).
+  check("AGI $17,000 → 34% × $3k = $1,020", f2441(17000), 1020);
+  // AGI $17,001 → ceil(1.0005)=2 → 33% (Math.floor would have wrongly given 34%).
+  check("AGI $17,001 → 33% × $3k = $990", f2441(17001), 990);
+  // AGI $42,000 → ceil(13.5)=14 → 21% ($41k-$43k band).
+  check("AGI $42,000 → 21% × $3k = $630", f2441(42000), 630);
+  // AGI $43,000 → ceil(14)=14 → 21% (NOT 20%; only AGI > $43k is the floor).
+  check("AGI $43,000 → 21% × $3k = $630", f2441(43000), 630);
+  // AGI $43,001 → ceil(14.0005)=15 → 20% floor.
+  check("AGI $43,001 → 20% × $3k = $600", f2441(43001), 600);
+  // AGI $45,000 → 20% floor.
+  check("AGI $45,000 → 20% × $3k = $600", f2441(45000), 600);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 13c. getFederalBracketBreakpoints — year-aware bracket-geometry accessor.
+//      Added so the G1.69 year-end-timing planning detector reads the RETURN's
+//      actual bracket breaks instead of a hard-coded TY2024 snapshot. Returns
+//      the finite bracket tops (the open-ended top bracket / Infinity excluded).
+// ════════════════════════════════════════════════════════════════════════════
+header("getFederalBracketBreakpoints — finite bracket tops, year-aware");
+{
+  const single2024 = getFederalBracketBreakpoints("single", 2024);
+  checkExact("TY2024 single → 6 finite breaks (Infinity top excluded)", single2024.length, 6);
+  checkBool("TY2024 single breakpoints = the published 2024 single bracket tops",
+    JSON.stringify(single2024) === JSON.stringify([11600, 47150, 100525, 191950, 243725, 609350]), true);
+  const mfj2024 = getFederalBracketBreakpoints("married_filing_jointly", 2024);
+  checkBool("TY2024 MFJ breakpoints = the published 2024 MFJ bracket tops",
+    JSON.stringify(mfj2024) === JSON.stringify([23200, 94300, 201050, 383900, 487450, 731200]), true);
+  // Year-aware: 2026 brackets inflation-adjust UP from 2024 — locks that the
+  // accessor is NOT a hard-coded 2024 snapshot regardless of the year passed.
+  const single2026 = getFederalBracketBreakpoints("single", 2026);
+  checkBool("TY2026 single first break > TY2024 (inflation-adjusted up)", single2026[0] > single2024[0], true);
+  // Unknown filing status falls back to single (mirrors the engine's bracket pick).
+  checkBool("unknown status falls back to single brackets",
+    JSON.stringify(getFederalBracketBreakpoints("nonsense", 2024)) === JSON.stringify(single2024), true);
 }
 
 // ════════════════════════════════════════════════════════════════════════════

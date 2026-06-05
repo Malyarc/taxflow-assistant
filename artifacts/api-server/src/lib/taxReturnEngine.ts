@@ -58,6 +58,7 @@ import {
   calculateMacrsDepreciation,
   getFederalStandardDeduction,
   getSaltCap,
+  type TaxYear,
   type MultiStateTaxResult,
   type StateEitcCalculation,
   type PassiveActivityLossResult,
@@ -1168,6 +1169,49 @@ export function detectWashSales(
 
 // ── Pure engine ─────────────────────────────────────────────────────────────
 
+// Year-indexed structural limits used inside computeTaxReturnPure. Hoisted to
+// module scope (were declared inline, rebuilt on every engine call) and typed
+// `Record<TaxYear, …>` (were `Record<number, …>`) so a missing supported-year
+// entry is a TYPE ERROR, not a silent runtime `undefined`. All four are indexed
+// via resolveTaxYear(taxYear) → a supported TaxYear, so every key is present.
+
+// §179 expensing cap + phase-out start.
+//   - §179 cap TY2024: $1,160,000 (Rev. Proc. 2023-34); phase-out $-for-$ above
+//     $2,890,000 of qualified property.
+//   - OBBBA (P.L. 119-21 §70306) raised §179 to $2.5M cap / $4M phase-out for
+//     property placed in service in TY beginning after 2024-12-31 (TY2025+),
+//     then inflation-indexed: TY2026 $2.56M / $4.09M (Rev. Proc. 2025-32).
+const SECTION_179_CAPS: Record<TaxYear, { cap: number; phaseStart: number }> = {
+  2024: { cap: 1160000, phaseStart: 2890000 },
+  2025: { cap: 2500000, phaseStart: 4000000 },
+  2026: { cap: 2560000, phaseStart: 4090000 },
+};
+// Bonus depreciation rate × cost basis (no income limit). OBBBA (§70301)
+// restored 100% bonus depreciation PERMANENTLY for property acquired AND placed
+// in service after 2025-01-19. TY2026 is 100%. TY2025 is dual-rate by
+// acquisition date: 40% (TCJA phase-down) for property acquired on/before
+// 2025-01-19, 100% after — the engine has no acquisition-date field, so TY2025
+// keeps the conservative 40% default (CPA overrides for post-1/19 property);
+// documented limitation.
+const BONUS_DEPR_RATES: Record<TaxYear, number> = {
+  2024: 0.60,
+  2025: 0.40,
+  2026: 1.00,
+};
+// §461(l)(3)(B) excess-business-loss threshold, inflation-indexed: TY2024
+// $305k/$610k; TY2025 $313k/$626k (Rev. Proc. 2024-40). TY2026 not yet
+// published — held at TY2025.
+const SECTION_461L_THRESHOLDS: Record<TaxYear, Record<string, number>> = {
+  2024: { single: 305_000, head_of_household: 305_000, married_filing_separately: 305_000, qualifying_widow: 610_000, married_filing_jointly: 610_000 },
+  2025: { single: 313_000, head_of_household: 313_000, married_filing_separately: 313_000, qualifying_widow: 626_000, married_filing_jointly: 626_000 },
+  2026: { single: 313_000, head_of_household: 313_000, married_filing_separately: 313_000, qualifying_widow: 626_000, married_filing_jointly: 626_000 },
+};
+// §448(c) gross-receipts small-business threshold for the §163(j) exemption
+// (Rev. Proc. 2023-34 / 2024-40 / 2025-32): TY2024 $30M · TY2025 $31M · TY2026 $32M.
+const SECTION_448C_THRESHOLD: Record<TaxYear, number> = {
+  2024: 30_000_000, 2025: 31_000_000, 2026: 32_000_000,
+};
+
 /**
  * Pure compute — no DB, no I/O. Inputs in, ComputedTaxReturn out.
  *
@@ -1310,25 +1354,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // property; engine computes the actual deduction.
   const section179ElectedAdj = sumByType("section_179_expense_election");
   const bonusDeprBasisAdj = sumByType("bonus_depreciation_basis");
-  const SECTION_179_CAPS: Record<number, { cap: number; phaseStart: number }> = {
-    2024: { cap: 1160000, phaseStart: 2890000 },
-    // OBBBA (P.L. 119-21 §70306) raised §179 to $2.5M cap / $4M phase-out for
-    // property placed in service in TY beginning after 2024-12-31 (TY2025+),
-    // then inflation-indexed: TY2026 $2.56M / $4.09M (Rev. Proc. 2025-32).
-    2025: { cap: 2500000, phaseStart: 4000000 },
-    2026: { cap: 2560000, phaseStart: 4090000 },
-  };
-  const BONUS_DEPR_RATES: Record<number, number> = {
-    2024: 0.60,
-    // OBBBA (§70301) restored 100% bonus depreciation PERMANENTLY for property
-    // acquired AND placed in service after 2025-01-19. TY2026 is 100%. TY2025 is
-    // dual-rate by acquisition date: 40% (TCJA phase-down) for property acquired
-    // on/before 2025-01-19, 100% after — the engine has no acquisition-date field,
-    // so TY2025 keeps the conservative 40% default (CPA overrides for post-1/19
-    // property); documented limitation.
-    2025: 0.40,
-    2026: 1.00,
-  };
+  // SECTION_179_CAPS / BONUS_DEPR_RATES are module-scope (typed Record<TaxYear>).
   const s179Cfg = SECTION_179_CAPS[resolvedMapYear];
   // Phase-out: §179 limit reduced $-for-$ when total qualified property
   // purchases (approximated as §179 elected + bonus depr basis) exceed
@@ -1826,15 +1852,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   //   * Active K-1 losses are already net of the §704(d)/§1366(d) basis +
   //     §465 at-risk limit (k1ActiveOrdinary uses the capped loss), so the
   //     §461(l) aggregation correctly excludes basis/at-risk-disallowed losses.
-  // §461(l)(3)(B) excess-business-loss threshold, inflation-indexed: TY2024
-  // $305k/$610k; TY2025 $313k/$626k (Rev. Proc. 2024-40). TY2026 not yet
-  // published — held at TY2025. Year-indexed so it can't fall through to a stale
-  // year (was hard-coded to TY2024 for EVERY year, so TY2025+ under-threshold'd).
-  const SECTION_461L_THRESHOLDS: Record<number, Record<string, number>> = {
-    2024: { single: 305_000, head_of_household: 305_000, married_filing_separately: 305_000, qualifying_widow: 610_000, married_filing_jointly: 610_000 },
-    2025: { single: 313_000, head_of_household: 313_000, married_filing_separately: 313_000, qualifying_widow: 626_000, married_filing_jointly: 626_000 },
-    2026: { single: 313_000, head_of_household: 313_000, married_filing_separately: 313_000, qualifying_widow: 626_000, married_filing_jointly: 626_000 },
-  };
+  // SECTION_461L_THRESHOLDS is module-scope (typed Record<TaxYear>).
   const section461lThreshold = SECTION_461L_THRESHOLDS[resolvedMapYear];
   // §461(l) auto-aggregation: compute when CPA didn't supply an explicit addback.
   let section461lAutoAddback = 0;
@@ -2056,13 +2074,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // §163(j)(3) small-business exemption: a taxpayer that meets the §448(c)
   // gross-receipts test (3-prior-year average ≤ the inflation-adjusted
   // threshold) is NOT subject to §163(j) — all business interest is allowed.
-  // §448(c) thresholds (Rev. Proc. 2023-34 / 2024-40 / 2025-32):
-  //   TY2024 $30,000,000 · TY2025 $31,000,000 · TY2026 $32,000,000.
-  // Auto-detected only when the CPA supplies a positive gross-receipts figure;
-  // 0/absent preserves prior behavior (engine applies the 30% cap).
-  const SECTION_448C_THRESHOLD: Record<number, number> = {
-    2024: 30_000_000, 2025: 31_000_000, 2026: 32_000_000,
-  };
+  // SECTION_448C_THRESHOLD is module-scope (typed Record<TaxYear>). Auto-detected
+  // only when the CPA supplies a positive gross-receipts figure; 0/absent
+  // preserves prior behavior (engine applies the 30% §163(j) cap).
   const section163jGrossReceipts = Math.max(0, section163jGrossReceiptsAdj);
   const section163jGrossReceiptsThreshold = SECTION_448C_THRESHOLD[resolvedMapYear];
   const section163jSmallBusinessExempt =

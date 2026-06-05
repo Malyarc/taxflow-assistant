@@ -273,8 +273,8 @@ header("Dep care credit — AGI band boundaries");
   check("Dep care AGI $14k → 35% × $3k = $1,050", calculateDependentCareCredit(params(14000)).appliedCredit, 1050);
   // AGI $17k: reductions = floor((17000-15000)/2000) = 1, rate = 34%
   check("Dep care AGI $17k → 34% × $3k = $1,020", calculateDependentCareCredit(params(17000)).appliedCredit, 1020);
-  // AGI $43k: rate = 20%
-  check("Dep care AGI $43k → 20% × $3k = $600", calculateDependentCareCredit(params(43000)).appliedCredit, 600);
+  // AGI $43k: Form 2441 band $41k-$43k → 21% (only AGI OVER $43k is the 20% floor)
+  check("Dep care AGI $43k → 21% × $3k = $630", calculateDependentCareCredit(params(43000)).appliedCredit, 630);
   // AGI $50k: rate = 20%
   check("Dep care AGI $50k → 20% × $3k = $600", calculateDependentCareCredit(params(50000)).appliedCredit, 600);
 }

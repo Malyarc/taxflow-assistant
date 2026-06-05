@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, and } from "drizzle-orm";
-import { db, w2DataTable, clientsTable } from "@workspace/db";
+import { db, w2DataTable, clientsTable, taxDocumentsTable } from "@workspace/db";
 import {
   ListW2DataParams,
   CreateW2DataParams,
@@ -184,16 +184,34 @@ router.delete("/clients/:clientId/w2data/:w2Id", async (req, res): Promise<void>
     res.status(400).json({ error: params.error.message });
     return;
   }
-  const [record] = await db
-    .delete(w2DataTable)
-    .where(and(eq(w2DataTable.id, params.data.w2Id), eq(w2DataTable.clientId, params.data.clientId)))
-    .returning();
+  // Delete the W-2 AND clear any source document's back-pointer to it in one
+  // transaction. tax_documents.linkedRecordId/linkedRecordType is a polymorphic
+  // pointer with no FK, so a bare delete would leave the approved document
+  // pointing at a now-deleted W-2 (dangling pointer). The durable fix is the
+  // two-nullable-FK refactor; clearing the pointer here keeps it consistent.
+  const record = await db.transaction(async (tx) => {
+    const [deleted] = await tx
+      .delete(w2DataTable)
+      .where(and(eq(w2DataTable.id, params.data.w2Id), eq(w2DataTable.clientId, params.data.clientId)))
+      .returning();
+    if (!deleted) return null;
+    await tx
+      .update(taxDocumentsTable)
+      .set({ linkedRecordId: null, linkedRecordType: null })
+      .where(and(
+        eq(taxDocumentsTable.clientId, params.data.clientId),
+        eq(taxDocumentsTable.linkedRecordType, "w2"),
+        eq(taxDocumentsTable.linkedRecordId, params.data.w2Id),
+      ));
+    return deleted;
+  });
   if (!record) {
     res.status(404).json({ error: "W-2 record not found" });
     return;
   }
   await writeAudit({ clientId: params.data.clientId, action: "delete", entityType: "w2", entityId: record.id, before: record });
-  await recalculateAfterMutation(params.data.clientId);
+  // Pin the recompute to the deleted W-2's tax year (not the client default).
+  await recalculateAfterMutation(params.data.clientId, record.taxYear);
   res.sendStatus(204);
 });
 

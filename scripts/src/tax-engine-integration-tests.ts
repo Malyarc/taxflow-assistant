@@ -124,6 +124,25 @@ async function run() {
     });
   }
 
+  console.log("\n── Integration: numeric response columns are numbers, not strings (#6) ──");
+  // BATCH-A #6 — mapReturn now coerces EVERY numeric (decimal) column to
+  // `number`, not just the ~12 it used to. The pg driver returns numeric()
+  // columns as strings; before the fix amtTax (and ~70 others: niitTax,
+  // qbiDeduction, saltDeductible, eitc, …) leaked through as strings, violating
+  // the OpenAPI `number` typing. Assert the response shape directly. All fields
+  // below are always-populated (0 here) so `typeof === "number"` is exact.
+  await withTempClient("numtype", "single", "FL", 2024, async (cid) => {
+    await api(`/clients/${cid}/w2data`, { method: "POST", body: JSON.stringify({ taxYear: 2024, wagesBox1: 80000, federalTaxWithheldBox2: 12000, stateCode: "FL" }) });
+    await new Promise(r => setTimeout(r, 200));
+    const ret = await api<Record<string, unknown>>(`/clients/${cid}/tax-return`);
+    // The finding's named field (0 here, but MUST be a number — was the string "0").
+    checkExact("typeof amtTax === 'number' (was a raw string pre-fix)", typeof ret.amtTax, "number");
+    // Representative columns the old 12-field coercion list missed.
+    for (const f of ["saltDeductible", "eitc", "hsaDeduction", "dependentCareCredit", "scheduleCExpenses"]) {
+      checkExact(`typeof ${f} === 'number'`, typeof ret[f], "number");
+    }
+  });
+
   console.log("\n── Integration: changing state recomputes state tax (multi-state aware) ──");
   // With Phase 2d multi-state: when client.state changes but the W-2 stateCode
   // stays, the engine now correctly treats the W-2 wages as non-resident-state

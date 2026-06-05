@@ -677,13 +677,14 @@ async function main() {
       // Federal = 1160 + ($25,400 - $11,600) × 12% = 1160 + 1656 = $2,816
       // Dep care: 1 kid, $4k expenses, AGI $40k.
       //   Eligible = min($4k, $3k 1-kid cap, $40k earned) = $3k.
-      //   Rate at AGI $40k: floor(($40k - $15k) / $2k) = 12. Rate = 35% - 12% = 23%.
-      //   Credit = $3k × 23% = $690.
-      // Applied = min($690, $2,816) = $690.
-      // Refund = $4k - $2,816 + $690 = $1,874
+      //   Rate at AGI $40k: ceil(($40k - $15k) / $2k) = ceil(12.5) = 13 ("or
+      //   fraction thereof"). Rate = 35% - 13% = 22% ($40k in the $39k-$41k band).
+      //   Credit = $3k × 22% = $660.
+      // Applied = min($660, $2,816) = $660.
+      // Refund = $4k - $2,816 + $660 = $1,844
       assert(ctx, "Federal tax $2,816", Number(r.federalTaxLiability), 2816, 5);
-      assert(ctx, "Dep care credit $690 (23% × $3k cap)", Number(r.dependentCareCredit), 690, 1);
-      assert(ctx, "Refund $1,874", Number(r.federalRefundOrOwed), 1874, 5);
+      assert(ctx, "Dep care credit $660 (22% × $3k cap)", Number(r.dependentCareCredit), 660, 1);
+      assert(ctx, "Refund $1,844", Number(r.federalRefundOrOwed), 1844, 5);
     } finally { await delClient(cid); }
   });
 

@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { and, desc, eq } from "drizzle-orm";
-import { db, disclosureConsentsTable } from "@workspace/db";
+import { db, disclosureConsentsTable, clientsTable } from "@workspace/db";
 import { writeAudit } from "../lib/auditLog";
 import { AI_EXTRACTION_SCOPE } from "../lib/consentGate";
 
@@ -14,10 +14,25 @@ const router: IRouter = Router();
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
+/** Verify the client row exists. The disclosure_consents FK would otherwise
+ *  turn a bad clientId into a 500 on insert; client-scoped routes elsewhere
+ *  return a clean 404 — match that. */
+async function clientExists(clientId: number): Promise<boolean> {
+  const [row] = await db
+    .select({ id: clientsTable.id })
+    .from(clientsTable)
+    .where(eq(clientsTable.id, clientId));
+  return !!row;
+}
+
 router.post("/clients/:clientId/disclosure-consents", async (req, res): Promise<void> => {
   const clientId = Number(req.params.clientId);
   if (!Number.isInteger(clientId)) {
     res.status(400).json({ error: "invalid clientId" });
+    return;
+  }
+  if (!(await clientExists(clientId))) {
+    res.status(404).json({ error: "client not found" });
     return;
   }
   const body = (req.body ?? {}) as Record<string, unknown>;
@@ -55,6 +70,10 @@ router.get("/clients/:clientId/disclosure-consents", async (req, res): Promise<v
     res.status(400).json({ error: "invalid clientId" });
     return;
   }
+  if (!(await clientExists(clientId))) {
+    res.status(404).json({ error: "client not found" });
+    return;
+  }
   const rows = await db
     .select()
     .from(disclosureConsentsTable)
@@ -68,6 +87,10 @@ router.post("/clients/:clientId/disclosure-consents/:id/revoke", async (req, res
   const id = Number(req.params.id);
   if (!Number.isInteger(clientId) || !Number.isInteger(id)) {
     res.status(400).json({ error: "invalid id" });
+    return;
+  }
+  if (!(await clientExists(clientId))) {
+    res.status(404).json({ error: "client not found" });
     return;
   }
   const [row] = await db

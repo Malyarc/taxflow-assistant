@@ -398,6 +398,19 @@ export function getFederalStandardDeduction(filingStatus: string, taxYear: numbe
 }
 
 /**
+ * Federal ordinary-rate bracket breakpoints — the taxable-income thresholds
+ * where the marginal rate steps up — for a filing status + year. Excludes the
+ * open-ended top bracket (Infinity). Lets year-aware planning detectors read the
+ * RETURN's actual bracket geometry instead of a hard-coded single-year snapshot.
+ */
+export function getFederalBracketBreakpoints(filingStatus: string, taxYear: number): number[] {
+  const year = resolveTaxYear(taxYear);
+  const yearBrackets = FEDERAL_BRACKETS[year];
+  const brackets = yearBrackets[filingStatus] ?? yearBrackets.single;
+  return brackets.map((b) => b.upTo).filter((u) => Number.isFinite(u));
+}
+
+/**
  * Pick the best-fit bracket set from the state data, falling back to single
  * for MFS/HoH and to MFJ for QW when the state doesn't publish separate ones.
  */
@@ -4173,13 +4186,19 @@ export function calculateDependentCareCredit(params: {
 
   const eligibleExpenses = Math.min(Math.max(0, expenses), expenseLimit, earnedIncomeLimit);
 
-  // Rate phase-down: every $2,000 of AGI above $15,000 reduces rate by 1%, floor at 20%
+  // §21(a)(2) applicable-percentage phase-down: the 35% rate drops by 1
+  // percentage point for each $2,000 — OR FRACTION THEREOF — of AGI over
+  // $15,000, not below 20%. "Fraction thereof" ⇒ Math.ceil, not Math.floor:
+  // e.g. AGI $16,000 is already in the $15,000–$17,000 band (34%), and AGI
+  // $43,000 is the last 21% band ($41,000–$43,000) — only AGI > $43,000 reaches
+  // the 20% floor. The Math.max clamps to 20% once reductions ≥ 15, so no
+  // separate cutoff is needed (the prior `agi >= 43000 → 20%` line was off by
+  // one band: it forced 20% at exactly $43,000, which Form 2441 puts at 21%).
   let rate = DEPCARE_MAX_RATE;
   if (agi > 15000) {
-    const reductions = Math.floor((agi - 15000) / 2000);
+    const reductions = Math.ceil((agi - 15000) / 2000);
     rate = Math.max(DEPCARE_MIN_RATE, DEPCARE_MAX_RATE - reductions * 0.01);
   }
-  if (agi >= 43000) rate = DEPCARE_MIN_RATE;
 
   return {
     expenses, qualifyingChildren: qualifyingDependents, expenseLimit, earnedIncomeLimit,

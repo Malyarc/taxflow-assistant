@@ -556,9 +556,9 @@ async function testDependentCareCredit() {
   // W-2 $30k combined, spouseEarnedIncome $10k → taxpayer's portion = $30k - $10k = $20k.
   // For dep-care MFJ earned-income limit: min(taxpayer $20k, spouse $10k) = $10k.
   // Eligible expenses = min($7k actual, $6k 2-child cap, $10k earned limit) = $6k.
-  // AGI = $30k → reductions = floor((30000-15000)/2000) = 7 → rate = 35% - 7% = 28%.
-  // Credit = $6k × 28% = $1,680.
-  console.log("── 7a. MFJ 2 kids, $7k daycare, AGI $30k both work → $1,680 ──");
+  // AGI = $30k → reductions = ceil((30000-15000)/2000) = ceil(7.5) = 8 → rate =
+  // 35% - 8% = 27% ($30k in the $29k-$31k band). Credit = $6k × 27% = $1,620.
+  console.log("── 7a. MFJ 2 kids, $7k daycare, AGI $30k both work → $1,620 ──");
   {
     const cid = await makeClient({
       firstName: "DepCare1", filingStatus: "married_filing_jointly", state: "FL",
@@ -569,7 +569,7 @@ async function testDependentCareCredit() {
       await api(`/clients/${cid}/adjustments`, { method: "POST", body: JSON.stringify({ adjustmentType: "dependent_care_expenses", amount: 7000, description: "Daycare", isApplied: true }) });
       await settle();
       const r = await getReturn(cid);
-      check("Dep care: 28% × $6k = $1,680 at AGI $30k (MFJ split)", Number(r.dependentCareCredit), 1680, 1);
+      check("Dep care: 27% × $6k = $1,620 at AGI $30k (MFJ split)", Number(r.dependentCareCredit), 1620, 1);
     } finally {
       await delClient(cid);
     }

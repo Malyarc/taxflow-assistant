@@ -294,13 +294,14 @@ header("Saver's Credit");
 // ── Dependent care credit ──
 header("Dependent Care Credit");
 {
-  // 1 child, $5k expenses, AGI $30k, 1 worker @ $30k earned. Limit = $3k. Rate = 35% - 7×1% = 28%? Let me recompute
-  // Actually $30k - $15k = $15k over. Reductions = floor(15000/2000) = 7. 35% - 7% = 28%.
-  // Eligible = min($5k, $3k, $30k) = $3k. Credit = $3k × 28% = $840
+  // 1 child, $5k expenses, AGI $30k, 1 worker @ $30k earned. Limit = $3k.
+  // Form 2441 §21(a)(2): reductions = ceil(($30k - $15k)/$2k) = ceil(7.5) = 8
+  // ("OR fraction thereof"). Rate = 35% - 8% = 27% ($30k sits in the $29k-$31k
+  // band). Eligible = min($5k, $3k, $30k) = $3k. Credit = $3k × 27% = $810.
   const r = calculateDependentCareCredit({
     expenses: 5000, qualifyingDependents: 1, earnedIncomeTaxpayer: 30000, agi: 30000, filingStatus: "single",
   });
-  check("Dependent care: 1 child, $5k exp, AGI $30k, rate 28%", r.appliedCredit, 840);
+  check("Dependent care: 1 child, $5k exp, AGI $30k, rate 27%", r.appliedCredit, 810);
 }
 {
   // 2 children, $7k expenses, AGI $50k MFJ both work. Limit = $6k. Rate = 20% (above $43k AGI).

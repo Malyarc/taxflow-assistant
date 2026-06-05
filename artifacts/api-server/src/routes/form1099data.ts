@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, and } from "drizzle-orm";
-import { db, form1099DataTable } from "@workspace/db";
+import { db, form1099DataTable, taxDocumentsTable } from "@workspace/db";
 import {
   ListForm1099DataParams,
   CreateForm1099DataParams,
@@ -126,21 +126,39 @@ router.delete("/clients/:clientId/form1099data/:form1099Id", async (req, res): P
     res.status(400).json({ error: params.error.message });
     return;
   }
-  const [record] = await db
-    .delete(form1099DataTable)
-    .where(
-      and(
-        eq(form1099DataTable.id, params.data.form1099Id),
-        eq(form1099DataTable.clientId, params.data.clientId),
-      ),
-    )
-    .returning();
+  // Delete the 1099 AND clear any source document's back-pointer to it in one
+  // transaction. tax_documents.linkedRecordId/linkedRecordType is a polymorphic
+  // pointer with no FK, so a bare delete would leave the approved document
+  // pointing at a now-deleted 1099 (dangling pointer). The durable fix is the
+  // two-nullable-FK refactor; clearing the pointer here keeps it consistent.
+  const record = await db.transaction(async (tx) => {
+    const [deleted] = await tx
+      .delete(form1099DataTable)
+      .where(
+        and(
+          eq(form1099DataTable.id, params.data.form1099Id),
+          eq(form1099DataTable.clientId, params.data.clientId),
+        ),
+      )
+      .returning();
+    if (!deleted) return null;
+    await tx
+      .update(taxDocumentsTable)
+      .set({ linkedRecordId: null, linkedRecordType: null })
+      .where(and(
+        eq(taxDocumentsTable.clientId, params.data.clientId),
+        eq(taxDocumentsTable.linkedRecordType, "form1099"),
+        eq(taxDocumentsTable.linkedRecordId, params.data.form1099Id),
+      ));
+    return deleted;
+  });
   if (!record) {
     res.status(404).json({ error: "1099 record not found" });
     return;
   }
   await writeAudit({ clientId: params.data.clientId, action: "delete", entityType: "form1099", entityId: record.id, before: record });
-  await recalculateAfterMutation(params.data.clientId);
+  // Pin the recompute to the deleted 1099's tax year (not the client default).
+  await recalculateAfterMutation(params.data.clientId, record.taxYear);
   res.sendStatus(204);
 });
 

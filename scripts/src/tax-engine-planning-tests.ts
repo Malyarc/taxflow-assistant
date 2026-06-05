@@ -5598,6 +5598,60 @@ header("AUDIT G1.17 — partnership-only suppressed; S-corp fires");
   checkTruthy("AUDIT-G1.17", "S-corp → fires", findHit(scorp, "G1.17") != null, true);
 }
 
+// ── Batch-A #12 — residual stale TY2024 constants on "year-agnostic" detectors ──
+
+// G1.66 — the Rollover-IRA→401(k) phase-out top is now YEAR-INDEXED (reuses the
+// G1.26 Roth-phase-out map) instead of a stale TY2024-only $161k/$240k table,
+// and it GATES fire/no-fire. Single AGI $163k + $100k trad IRA sits BETWEEN the
+// TY2024 single top ($161k → a backdoor candidate) and the TY2025 single top
+// ($165k → can still contribute to a Roth directly). So the SAME client fires
+// as a TY2024 return but suppresses as TY2025. Pre-fix, the stale $161k map
+// fired for BOTH years (a false positive in TY2025).
+header("AUDIT G1.66 — phase-out top year-indexed ($161k TY2024 vs $165k TY2025)");
+{
+  const ty2024 = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 40 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 163000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    assetBalances: [
+      { assetType: "traditional_ira", balance: "100000", accountName: "x", taxYear: 2024 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  checkTruthy("AUDIT-G1.66", "TY2024 AGI $163k > $161k top → fires", findHit(ty2024, "G1.66") != null, true);
+  const ty2025 = runPlanningH3({
+    client: { filingStatus: "single", state: "FL", taxYear: 2025, taxpayerAge: 40 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2025, wagesBox1: 163000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    assetBalances: [
+      { assetType: "traditional_ira", balance: "100000", accountName: "x", taxYear: 2025 } as unknown as TaxReturnInputs["assetBalances"][number],
+    ],
+  } as Partial<TaxReturnInputs> & { client: TaxReturnInputs["client"] });
+  checkTruthy("AUDIT-G1.66", "TY2025 AGI $163k <= $165k top → suppressed", findHit(ty2025, "G1.66") == null, true);
+}
+
+// G1.53 — the kiddie-tax unearned-income threshold in the rationale + inputs is
+// now read from the engine's year-indexed KIDDIE_TAX_THRESHOLD map ($2,600
+// TY2024 / $2,700 TY2025-26), not hard-coded $2,600. (Informational — it does
+// not gate fire/no-fire; the detector gates on AGI ≥ $200k + a dependent child.)
+header("AUDIT G1.53 — kiddie threshold year-correct ($2,600 TY2024 / $2,700 TY2026)");
+{
+  const ty2024 = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, dependentsUnder17: 1 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 250000, stateCode: "FL" }],
+  });
+  const hit24 = findHit(ty2024, "G1.53");
+  checkTruthy("AUDIT-G1.53", "fires (AGI $250k + dependent child)", hit24 != null, true);
+  if (hit24) check("AUDIT-G1.53", "TY2024 unearnedThreshold = $2,600", Number(hit24.inputs.unearnedThreshold), 2600, 0);
+  const ty2026 = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2026, dependentsUnder17: 1 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2026, wagesBox1: 250000, stateCode: "FL" }],
+  });
+  const hit26 = findHit(ty2026, "G1.53");
+  checkTruthy("AUDIT-G1.53", "fires TY2026", hit26 != null, true);
+  if (hit26) {
+    check("AUDIT-G1.53", "TY2026 unearnedThreshold = $2,700 (not stale $2,600)", Number(hit26.inputs.unearnedThreshold), 2700, 0);
+    check("AUDIT-G1.53", "TY2026 kiddieThresholdYear = 2026", Number(hit26.inputs.kiddieThresholdYear), 2026, 0);
+  }
+}
+
 // ============================================================================
 // RESULTS
 // ============================================================================

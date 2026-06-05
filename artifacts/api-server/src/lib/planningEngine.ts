@@ -38,6 +38,9 @@ import {
   calculateFederalTaxWithBreakdown,
   calculateStateTaxWithBreakdown,
   getFederalStandardDeduction,
+  getFederalBracketBreakpoints,
+  KIDDIE_TAX_THRESHOLD,
+  resolveTaxYear,
   SS_WAGE_BASE,
   calculateStudentLoanInterest,
 } from "./taxCalculator";
@@ -4427,7 +4430,6 @@ function detectEstimatedTaxSafeHarbor(args: {
 // ── G1.53 — Kiddie Tax §1(g) minimization (heuristic) ────────────────────
 
 const G1_53_MIN_AGI = 200_000;
-const G1_53_UNEARNED_THRESHOLD = 2_600;
 const G1_53_ASSUMED_EXCESS = 5_000;
 const G1_53_RATE_DIFFERENTIAL = 0.32 - 0.10;
 
@@ -4443,6 +4445,13 @@ function detectKiddieTax(args: {
   const eligibleChildren = countEligibleChildren(client);
   if (eligibleChildren <= 0) return null;
   if (computed.adjustedGrossIncome < G1_53_MIN_AGI) return null;
+
+  // Year-correct §1(g) net-unearned-income threshold (= 2× the dependent floor:
+  // $2,600 TY2024 / $2,700 TY2025-26) from the engine's map, not a hard-coded
+  // TY2024 value. Informational only here — it does not gate fire/no-fire.
+  const kiddieYear = resolveTaxYear(computed.taxYear);
+  const unearnedThreshold = KIDDIE_TAX_THRESHOLD[kiddieYear];
+  const childFloorHalf = Math.round(unearnedThreshold / 2);
 
   // estSavings per affected child × num kids (conservatively assume 1 affected).
   const numAffected = Math.min(eligibleChildren, 1);
@@ -4463,7 +4472,7 @@ function detectKiddieTax(args: {
     rationale:
       `Client AGI ${fmt(Math.round(computed.adjustedGrossIncome))} + ${eligibleChildren} dependent child(ren) ` +
       `(incl. any 17-yr-olds / 18-23 full-time students). If a child subject to kiddie tax has unearned income ` +
-      `> $2,600 (TY2024 threshold), the excess is taxed at the parent's marginal rate via Form 8615. Shift to ` +
+      `> ${fmt(unearnedThreshold)} (TY${kiddieYear} threshold), the excess is taxed at the parent's marginal rate via Form 8615. Shift to ` +
       `growth-oriented or tax-deferred investments to minimize current-year unearned income. Per affected ` +
       `child: ~${fmt(estSavings)}/year.`,
     action: interpolate(strategy.action, vars),
@@ -4475,19 +4484,20 @@ function detectKiddieTax(args: {
       otherDependents: client.otherDependents ?? 0,
       numAffectedAssumed: numAffected,
       agi: Math.round(computed.adjustedGrossIncome),
-      unearnedThreshold: G1_53_UNEARNED_THRESHOLD,
+      unearnedThreshold,
+      kiddieThresholdYear: kiddieYear,
       assumedExcessUnearned: G1_53_ASSUMED_EXCESS,
       rateDifferential: G1_53_RATE_DIFFERENTIAL,
     },
     assumptions: [
       `HEURISTIC — engine cannot track a child's unearned income. Fires for HNW families with dependent children (under-18, or 18-23 full-time students — both reached via dependentsUnder17 + otherDependents).`,
       `CPA filters otherDependents for non-child relatives (e.g. an elderly parent dependent isn't a kiddie-tax subject).`,
-      `TY2024 unearned-income thresholds (Rev. Proc. 2023-34): $1,300 (no tax) + $1,300 (child's rate) = $2,600 free.`,
+      `TY${kiddieYear} unearned-income thresholds (Rev. Proc.): ${fmt(childFloorHalf)} (no tax) + ${fmt(childFloorHalf)} (child's rate) = ${fmt(unearnedThreshold)} free.`,
       `Excess unearned income taxed at PARENT's marginal rate per IRC §1(g)(7)(A) and Form 8615.`,
       `Kiddie tax applies under 18 (or 18-23 if full-time student dependent, or 18 with no earned income > half support).`,
       `Rate differential heuristic ${(G1_53_RATE_DIFFERENTIAL * 100).toFixed(0)}% = parent 32% − child 10%. Real differential varies (could be 27% at top brackets).`,
       `Mitigation: shift child investments to growth-oriented (LTCG-favored), tax-deferred wrappers (529 / custodial Roth), or delay realization until child turns 18.`,
-      `Election: Form 8814 lets parent report on parent's return (only if child's income < $13,000 TY2024).`,
+      `Election: Form 8814 lets parent report on parent's return (only if the child's gross income is under the Form 8814 cap for the year, ~$13k).`,
     ],
   };
 }
@@ -5317,13 +5327,6 @@ function detectAdoptionCredit(args: {
 // ── G1.66 — Rollover-IRA → 401(k) §408(d)(2) pro-rata fix (heuristic) ───
 
 const G1_66_MIN_TRAD_IRA = 1_000;
-const G1_66_BACKDOOR_PHASE_OUT: Record<string, number> = {
-  single: 161_000,
-  head_of_household: 161_000,
-  married_filing_jointly: 240_000,
-  qualifying_widow: 240_000,
-  married_filing_separately: 10_000,
-};
 const G1_66_BACKDOOR_AMOUNT = 7_000;
 
 function detectRolloverIraTo401k(args: {
@@ -5338,8 +5341,12 @@ function detectRolloverIraTo401k(args: {
     .filter((a) => tradTypes.has(a.assetType))
     .reduce((s, a) => s + toNum(a.balance), 0);
   if (tradBalance < G1_66_MIN_TRAD_IRA) return null;
-  // Only matters for backdoor Roth candidates (AGI > phase-out top).
-  const phaseOutTop = G1_66_BACKDOOR_PHASE_OUT[client.filingStatus] ?? G1_66_BACKDOOR_PHASE_OUT.single;
+  // Only matters for backdoor Roth candidates (AGI > the direct-Roth phase-out
+  // TOP for the return's tax year). Reuse the YEAR-INDEXED G1.26 map — a stale
+  // TY2024-only map here gates fire/no-fire wrong for TY2025/26 returns (a
+  // filer inside the current band can still contribute directly → no backdoor).
+  const phaseOutTops = G1_26_ROTH_PHASEOUT_TOP[computed.taxYear] ?? G1_26_ROTH_PHASEOUT_TOP[2025];
+  const phaseOutTop = phaseOutTops[client.filingStatus] ?? phaseOutTops.single;
   if (computed.adjustedGrossIncome <= phaseOutTop) return null;
 
   const fedRate = federalMarginalRate(computed);
@@ -5567,13 +5574,6 @@ const G1_69_MIN_AGI = 50_000;
 const G1_69_MIN_MARGINAL = 0.22;
 const G1_69_BRACKET_PROXIMITY = 20_000;
 const G1_69_TYPICAL_SHIFT = 10_000;
-const G1_69_BRACKET_BREAKS_2024: Record<string, ReadonlyArray<number>> = {
-  single: [11_600, 47_150, 100_525, 191_950, 243_725, 609_350],
-  head_of_household: [16_550, 63_100, 100_500, 191_950, 243_700, 609_350],
-  married_filing_jointly: [23_200, 94_300, 201_050, 383_900, 487_450, 731_200],
-  qualifying_widow: [23_200, 94_300, 201_050, 383_900, 487_450, 731_200],
-  married_filing_separately: [11_600, 47_150, 100_525, 191_950, 243_725, 365_600],
-};
 
 function detectYearEndTiming(args: {
   computed: ComputedTaxReturn;
@@ -5582,7 +5582,9 @@ function detectYearEndTiming(args: {
   if (computed.adjustedGrossIncome < G1_69_MIN_AGI) return null;
   const fedRate = federalMarginalRate(computed);
   if (fedRate < G1_69_MIN_MARGINAL) return null;
-  const breaks = G1_69_BRACKET_BREAKS_2024[computed.filingStatus] ?? G1_69_BRACKET_BREAKS_2024.single;
+  // Use the RETURN's actual year/status bracket geometry (was a hard-coded
+  // TY2024 snapshot that gated proximity on stale breakpoints for TY2025/26).
+  const breaks = getFederalBracketBreakpoints(computed.filingStatus, computed.taxYear);
   // Find nearest bracket break to current taxable income.
   let nearestBreak = Infinity;
   let distanceToBreak = Infinity;
@@ -5620,7 +5622,7 @@ function detectYearEndTiming(args: {
     recurring: strategy.recurring,
     rationale:
       `Client taxable income ${fmt(Math.round(computed.taxableIncome))} is within ${fmt(G1_69_BRACKET_PROXIMITY)} ` +
-      `of bracket break at ${fmt(nearestBreak)} (TY2024 ${computed.filingStatus} brackets). Year-end income/` +
+      `of bracket break at ${fmt(nearestBreak)} (TY${resolveTaxYear(computed.taxYear)} ${computed.filingStatus} brackets). Year-end income/` +
       `deduction shift of ~${fmt(G1_69_TYPICAL_SHIFT)} can avoid bracket creep. Estimated annual benefit ${fmt(estSavings)}.`,
     action: interpolate(strategy.action, vars),
     prerequisiteData: strategy.prerequisiteData,
