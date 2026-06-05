@@ -1,3 +1,44 @@
+# Handoff Note — 2026-06-05b (FORM 2210 / §6654 — audit P1-6, shipped + deployed)
+
+Picked the next concrete audit P1 after confirming the obvious candidates were
+done: H2-wiring the remaining G1.46–G1.96 detectors was already **assessed +
+not-recommended** (qualitative — business credits/elections/trusts the individual
+engine doesn't model; force-wiring via the refundable `credit` adjustment would
+overstate), and **P1-2 "engine delta as headline" was already shipped** as PLAN-Q1
+(`annotateVerifiedSavings` → `verifiedSavings`/`savingsSource`, `headlineSavings`
+ranks on it, "Engine-verified (H2)" badge). So shipped **P1-6: Form 2210 / §6654**
+(commit `ea26fa5`).
+
+- **lib/form2210.ts** — `computeForm2210()`: the EXACT required-annual-payment /
+  estimated-tax safe-harbor target (§6654(d): lesser of 90% current-year tax or
+  100%/110% prior-year tax; 110% when prior AGI > $150k / $75k MFS) + the
+  under-$1,000 and prior-year-zero exceptions (§6654(e)). Current-year tax (Line 4)
+  derived exactly from the engine refund identity (federalTaxLiability − nonref −
+  refundable credits). Penalty $ is a clearly-labeled ESTIMATE (underpayment ×
+  year-rate [8% TY2024 / 7% TY2025, year-indexed `SECTION_6654_ANNUAL_RATE`] × ⅔,
+  the even-quarterly-installment average) — the modern Form 2210 dropped the
+  short-method multiplier and needs per-quarter payment dates we don't track. +
+  `buildForm2210Pdf()` substitute PDF.
+- **routes/tax-returns.ts** — GET `/tax-return/form-2210` (+ `/pdf`); prior-year
+  tax + AGI derived from the prior-year tax_returns row, with
+  ?priorYearTax/?priorYearAgi/?estimatedPayments overrides.
+- **ClientDetail** — `Form2210Card` on the Tax Calculator tab (safe-harbor verdict
+  + "pay $X to avoid" + PDF download), beside the Form 4868 card.
+- **45 hand-calc'd assertions** (`tax-engine-form2210-tests.ts`) — all safe-harbor /
+  exception / MFS-threshold / TY2024-25-26 paths + an end-to-end case.
+
+Verified: **47 no-API suites / 3,498 assertions green**; live endpoint (prior-year
+derivation + override + PDF) + the rendered card (client 6107: underpayment $1,469
+→ est. penalty $78 @ 8%) confirmed in the browser; deployed to EC2 + prod-smoked
+(Han: required $120,396 = 90% × $133,773). **No schema change** (no migration).
+
+**Maintenance note:** add the next year's flat §6654 rate to
+`SECTION_6654_ANNUAL_RATE` in form2210.ts once the IRS publishes its quarterly
+underpayment rates (currently TY2026 = null → safe-harbor target shown, penalty $
+omitted).
+
+---
+
 # Handoff Note — 2026-06-05 (DEFERRED BACKLOG CLEARED — Batch A 12 + Batch B 2, deployed)
 
 Cleared the deferred backlog from the 2026-06-04 multi-agent audit. **5 commits on
