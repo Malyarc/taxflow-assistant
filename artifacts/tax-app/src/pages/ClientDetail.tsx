@@ -1325,6 +1325,143 @@ function Form4868Card({ clientId, taxYear }: { clientId: number; taxYear: number
   );
 }
 
+interface Form2210Preview {
+  taxYear: number;
+  currentYearTax: number;
+  ninetyPercentCurrent: number;
+  priorYearTax: number | null;
+  priorYearSafeHarborPct: number;
+  priorYearSafeHarbor: number | null;
+  withholding: number;
+  estimatedPayments: number;
+  totalPaid: number;
+  requiredAnnualPayment: number;
+  underpayment: number;
+  additionalToSafeHarbor: number;
+  penaltyApplies: boolean;
+  penaltyWaivedReason: "prior_year_zero" | "under_1000" | "met_safe_harbor" | null;
+  estimatedPenalty: number | null;
+  penaltyRateUsed: number | null;
+}
+
+const FORM2210_WAIVED_LABELS: Record<string, string> = {
+  prior_year_zero: "No penalty — the prior year had no tax liability (§6654(e)(2)).",
+  under_1000: "No penalty — current-year tax minus withholding is under $1,000 (§6654(e)(1)).",
+  met_safe_harbor: "No penalty — payments met the required annual payment (safe harbor).",
+};
+
+function Form2210Card({ clientId, taxYear }: { clientId: number; taxYear: number }) {
+  const [estimatedPayments, setEstimatedPayments] = useState("");
+
+  function buildQuery(): string {
+    const p = new URLSearchParams({ taxYear: String(taxYear) });
+    if (estimatedPayments !== "") p.set("estimatedPayments", estimatedPayments);
+    return p.toString();
+  }
+
+  const previewQuery = useQuery<Form2210Preview>({
+    queryKey: ["form-2210", clientId, taxYear, estimatedPayments],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${clientId}/tax-return/form-2210?${buildQuery()}`);
+      if (!res.ok) throw new Error("Form 2210 preview failed");
+      return res.json();
+    },
+    retry: false,
+  });
+
+  function handleDownload() {
+    const link = document.createElement("a");
+    link.href = `/api/clients/${clientId}/tax-return/form-2210/pdf?${buildQuery()}`;
+    link.download = "";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  const data = previewQuery.data;
+  const penaltyLabel = data?.estimatedPenalty != null ? fmt4868(data.estimatedPenalty) : "—";
+
+  return (
+    <Card className="print:hidden">
+      <CardHeader>
+        <CardTitle className="text-base">Form 2210 — Underpayment Penalty (§6654)</CardTitle>
+        <p className="text-xs text-muted-foreground mt-1">
+          Estimated-tax safe-harbor target + whether an underpayment penalty applies. Required annual payment = lesser of 90% of this year's tax or 100%/110% of last year's. The penalty $ is an estimate (exact amount depends on per-quarter payment timing).
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="max-w-xs">
+          <Label htmlFor="form2210-est-payments">Estimated tax payments (not in withholding)</Label>
+          <CurrencyInput value={estimatedPayments} onChange={setEstimatedPayments} placeholder="0" />
+          <p className="text-xs text-muted-foreground mt-1">
+            Q1–Q4 estimated payments made directly, not via W-2/1099 withholding.
+          </p>
+        </div>
+
+        {data ? (
+          <div
+            className={`rounded-md border p-4 ${data.penaltyApplies ? "border-destructive/40 bg-destructive/5" : "border-success/40 bg-success/5"}`}
+          >
+            {data.penaltyApplies ? (
+              <>
+                <div className="text-sm font-semibold text-destructive">
+                  Underpayment penalty applies — est. {penaltyLabel}
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  Pay {fmt4868(data.additionalToSafeHarbor)} more (withholding + estimates) to reach the{" "}
+                  {fmt4868(data.requiredAnnualPayment)} safe-harbor target and avoid the penalty.
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="text-sm font-semibold text-success">No underpayment penalty</div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  {data.penaltyWaivedReason ? FORM2210_WAIVED_LABELS[data.penaltyWaivedReason] : ""}
+                </div>
+              </>
+            )}
+          </div>
+        ) : null}
+
+        <div className="rounded-md border bg-muted/50 p-4">
+          <div className="grid grid-cols-2 gap-y-2 text-sm">
+            <span className="text-muted-foreground">Current-year tax (§6654)</span>
+            <span className="font-mono text-right">{data ? fmt4868(data.currentYearTax) : "—"}</span>
+            <span className="text-muted-foreground">90% of current-year tax</span>
+            <span className="font-mono text-right">{data ? fmt4868(data.ninetyPercentCurrent) : "—"}</span>
+            <span className="text-muted-foreground">
+              Prior-year safe harbor{data ? ` (${Math.round(data.priorYearSafeHarborPct * 100)}%)` : ""}
+            </span>
+            <span className="font-mono text-right">{data && data.priorYearSafeHarbor != null ? fmt4868(data.priorYearSafeHarbor) : "—"}</span>
+            <span className="text-primary font-semibold">Required annual payment (safe-harbor target)</span>
+            <span className="font-mono text-right text-primary font-semibold">{data ? fmt4868(data.requiredAnnualPayment) : "—"}</span>
+            <span className="text-muted-foreground">Withholding + estimated payments</span>
+            <span className="font-mono text-right">{data ? fmt4868(data.totalPaid) : "—"}</span>
+            <span className="text-muted-foreground font-medium">Underpayment</span>
+            <span className={`font-mono text-right font-medium ${data && data.underpayment > 0 ? "text-destructive" : ""}`}>
+              {data ? fmt4868(data.underpayment) : "—"}
+            </span>
+            <span className="text-muted-foreground">Estimated §6654 penalty</span>
+            <span className={`font-mono text-right ${data && data.penaltyApplies ? "text-destructive" : ""}`}>{penaltyLabel}</span>
+          </div>
+        </div>
+
+        {previewQuery.error ? (
+          <p className="text-xs text-destructive">
+            Could not load Form 2210 preview: {String((previewQuery.error as Error).message)}
+          </p>
+        ) : null}
+
+        <div>
+          <Button onClick={handleDownload} disabled={previewQuery.isLoading || !data}>
+            Download Form 2210 (PDF)
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: number }) {
   const { data: taxReturn, isLoading } = useGetTaxReturn(clientId, {
     query: { queryKey: getGetTaxReturnQueryKey(clientId), retry: false },
@@ -1609,6 +1746,7 @@ function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: nu
           <EsppIsoCard taxReturn={taxReturn as unknown as Parameters<typeof EsppIsoCard>[0]["taxReturn"]} />
           <Section163j461lCard clientId={clientId} taxYear={taxYear} taxReturn={taxReturn as unknown as Parameters<typeof Section163j461lCard>[0]["taxReturn"]} />
           <Form4868Card clientId={clientId} taxYear={taxYear} />
+          <Form2210Card clientId={clientId} taxYear={taxYear} />
           <Form1040xCard clientId={clientId} taxYear={taxYear} />
         </div>
       ) : (

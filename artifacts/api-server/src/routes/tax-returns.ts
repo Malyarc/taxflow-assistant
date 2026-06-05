@@ -12,6 +12,7 @@ import { recalculateAndUpsertTaxReturn, computeTaxReturn } from "../lib/taxRetur
 import { buildTaxReturnPdf } from "../lib/pdfExport";
 import { buildIrsForm1040Pdf } from "../lib/irsForm1040Pdf";
 import { calculateForm4868, buildForm4868Pdf, type Form4868Input } from "../lib/form4868";
+import { computeForm2210, buildForm2210Pdf, type Form2210Input } from "../lib/form2210";
 import {
   computeForm8606ProRata,
   computeForm8606PartIII,
@@ -252,6 +253,103 @@ router.get("/clients/:clientId/tax-return/form-4868/pdf", async (req, res): Prom
   } catch (err) {
     logger.error({ err }, "Failed to build Form 4868 PDF");
     res.status(500).json({ error: "Failed to build Form 4868 PDF" });
+  }
+});
+
+// ── P1-6 — Form 2210 / §6654 underpayment penalty + safe-harbor target ────
+// Derive the §6654 prior-year inputs from the prior-year tax_returns row (the
+// prior-year tax for the safe harbor + prior-year AGI for the 110% test), with
+// optional ?priorYearTax / ?priorYearAgi / ?estimatedPayments query overrides.
+async function deriveForm2210Input(
+  clientId: number,
+  taxYear: number,
+  query: import("express").Request["query"],
+): Promise<Form2210Input> {
+  const num = (v: unknown): number | undefined => {
+    if (typeof v !== "string" || v === "") return undefined;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : undefined;
+  };
+  const c = (v: string | number | null | undefined): number => {
+    const n = Number(v ?? 0);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  const estimatedPaymentsAdditional = num(query.estimatedPayments);
+  let priorYearTax = num(query.priorYearTax);
+  let priorYearAgi = num(query.priorYearAgi);
+  let priorYearAvailable = priorYearTax != null;
+
+  if (priorYearTax == null) {
+    const [prior] = await db
+      .select()
+      .from(taxReturnsTable)
+      .where(and(eq(taxReturnsTable.clientId, clientId), eq(taxReturnsTable.taxYear, taxYear - 1)));
+    if (prior) {
+      // Prior-year §6654 tax = same Line-4 derivation as the current year.
+      const priorRefundable =
+        c(prior.additionalChildTaxCredit) +
+        c(prior.aocRefundablePortion) +
+        c(prior.eitc) +
+        Math.max(0, c(prior.premiumTaxCredit));
+      priorYearTax = Math.max(
+        0,
+        Math.round(c(prior.federalTaxLiability) - c(prior.totalNonRefundableApplied) - priorRefundable),
+      );
+      priorYearAgi = priorYearAgi ?? c(prior.adjustedGrossIncome);
+      priorYearAvailable = true;
+    }
+  }
+  return { priorYearTax, priorYearAgi, priorYearAvailable, estimatedPaymentsAdditional };
+}
+
+router.get("/clients/:clientId/tax-return/form-2210", async (req, res): Promise<void> => {
+  const params = GetTaxReturnParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const yearRaw = req.query.taxYear;
+  const overrideYear = typeof yearRaw === "string" && Number.isFinite(Number(yearRaw))
+    ? Number(yearRaw)
+    : undefined;
+  const computed = await computeTaxReturn(params.data.clientId, overrideYear ? { taxYear: overrideYear } : {});
+  if (!computed) {
+    res.status(404).json({ error: "Client not found" });
+    return;
+  }
+  const input = await deriveForm2210Input(params.data.clientId, computed.result.taxYear, req.query);
+  res.json(computeForm2210({ ret: computed.result, input }));
+});
+
+router.get("/clients/:clientId/tax-return/form-2210/pdf", async (req, res): Promise<void> => {
+  const params = GetTaxReturnParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const yearRaw = req.query.taxYear;
+  const overrideYear = typeof yearRaw === "string" && Number.isFinite(Number(yearRaw))
+    ? Number(yearRaw)
+    : undefined;
+  const computed = await computeTaxReturn(params.data.clientId, overrideYear ? { taxYear: overrideYear } : {});
+  if (!computed) {
+    res.status(404).json({ error: "Client not found" });
+    return;
+  }
+  try {
+    const input = await deriveForm2210Input(params.data.clientId, computed.result.taxYear, req.query);
+    const form = computeForm2210({ ret: computed.result, input });
+    const pdf = await buildForm2210Pdf({ client: computed.client, ret: computed.result, form });
+    const fileName = `form-2210-${computed.client.firstName}-${computed.client.lastName}-${computed.result.taxYear}.pdf`;
+    setSecureDownloadHeaders(res, {
+      fileName, contentType: "application/pdf", disposition: "attachment",
+      length: pdf.length, fallbackExt: ".pdf",
+    });
+    res.send(pdf);
+  } catch (err) {
+    logger.error({ err }, "Failed to build Form 2210 PDF");
+    res.status(500).json({ error: "Failed to build Form 2210 PDF" });
   }
 });
 
