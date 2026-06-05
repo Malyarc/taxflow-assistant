@@ -1,3 +1,51 @@
+# Handoff Note — 2026-06-05e (P1 — Roth optimizer v1 SHIPPED + 2 state wins; #2/H3 deferred w/ plan)
+
+Worked the P1 enhancement list. Scope was set honestly against the code (one
+investigation workflow grounded it): #3 was already done; #1's solver was already
+built; #2 + the Roth *value model* are genuinely multi-week.
+
+**⭐ #1 Multi-year Roth-conversion optimizer — v1 SHIPPED end-to-end + deployed.**
+`rothOptimizer.ts` (`optimizeRothConversionLadder`) was already built, pure, and
+unit-tested but wired to nothing. Now live:
+- POST `/api/clients/:id/roth-optimizer` (openapi + codegen → `useRunRothOptimizer`;
+  Pro-tier-gated; 400/404). routes/planning.ts loads the client's inputs → solver.
+- `RothOptimizerCard` in the Planning tab (IRA-balance + horizon inputs, per-year
+  ladder table, summary tiles, v1-assumptions disclosure).
+- Prod-verified: client 3 (12% retiree) fills the 12% bracket — converts $8,200,
+  engine-exact cost $984 = 8,200 × 0.12; client 7 (35%) fills to $626,350, cost
+  $57,703 = 164,866 × 0.35. Bracket ceilings advance with inflation; IRA depletes.
+- **v1 models the bracket-fill ladder with engine-EXACT current-year cost.** The
+  long-term value model (RMD avoidance, IRMAA, SS-taxability) needs the **H3
+  multi-year hardening** — see the deferred plan below.
+
+**#4 Quick state wins — VT + Yonkers SHIPPED (hand-calc'd).**
+- VT dependent personal exemption `$4,850/dep` (was $0 for VT dependents).
+- Yonkers resident surcharge = 16.75% of net NY State tax (localityCode "YONKERS",
+  mirrors the NYC path; web-verified 16.75% via NY DTF).
+- 8 hand-calc'd assertions (`tax-engine-state-wins-2026-tests.ts`).
+- NJ retirement exclusion verified already-correct (no change).
+
+**#3 Catalog refresh — VERIFIED already done** (v1.20, 94@2099; CI test green). No work.
+
+**DEFERRED (multi-week — NOT faked; concrete plans captured):**
+- **H3 multi-year hardening** (the Roth optimizer's advanced value model): carryforward
+  depletion (NOL 80% §172 / cap-loss $3k §1212 / charitable 5-yr §170(d) / §163j),
+  RMD recognition at age 73 (§401(a)(9), Pub 590-B Table III), SS-taxability scaling
+  (§86). ~6–8 wks, multiYearEngine.ts. Full ordered plan + IRS cites in the scope
+  investigation result (workflow wvnhs2g8r).
+- **#2 State "modifications" layer** — configurable retirement/SS exclusions + per-line
+  NY IT-203 / CA 540NR sourcing (replace the day-proration approximation). Multi-week.
+- **#4 remaining state wins — WI std-ded phase-out, CT SS/pension phase-out, IN-112.**
+  The agent's exact thresholds need final primary-source confirmation before coding
+  (I won't ship a guessed WI phase-out rate over today's documented approximation).
+  Values + wiring plans captured in the investigation result.
+
+Verify: typecheck (api-server + tax-app + libs) + typecheck:tests clean; **51 no-API
+suites / 3,730 assertions green**; frontend builds; deployed (api-server + frontend
+rsync) + prod-smoked.
+
+---
+
 # Handoff Note — 2026-06-05d (P0 quick-fixes — doc-drift + detector-coverage guard)
 
 Closed the 5 P0 "quick fixes" from `docs/product-todo.md` (verified each against code,
