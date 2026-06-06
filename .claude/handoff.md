@@ -1,3 +1,63 @@
+# Handoff Note — 2026-06-06g (G1.2 PTET regime table + §51/§45S carryforward — shipped + deployed)
+
+Cleared the two real remaining P2 items (the PTET data task + the WOTC/FMLA
+carryforward parity gap). **2 commits on `main` (`831b21c`, `d4ec69a`), pushed,
+deployed to EC2 (migration 0007 applied, api-server rebuilt, pm2 restarted,
+frontend rsynced, re-score 0-drift, prod-smoked). Full no-API battery 71 suites /
+4,315 assertions green (+61).** Task 3 (Schedule C asset-level depreciation
+calculator) was deliberately SKIPPED per the batch's "lower value — skip if tight"
+instruction (see below).
+
+- **G1.2 PTET per-state regime table** (`831b21c`): replaced the flat
+  `PTET_ELECTING_STATES` set with `STATE_PTET_REGIMES` (all 50 states + DC,
+  `{ hasPtet, topPtetRate, notes }`) — 36 PTET states, each rate hand-verified
+  against the statute/DOR (AICPA tracker cross-checked with CrossLink / Smith &
+  Howard / EisnerAmper; AZ 2.5%, OH 3%, CO 4.4% confirmed against DOR; per-state
+  source in `notes`; verified 2026-06). `detectPtetElection` now values the
+  workaround at the REAL rate: `recoverable = min(stranded SALT, active K-1 ×
+  state PTET rate)`, fixing the prior all-stranded overstatement for low-rate
+  states (CA flat 9.3% on $500k = $46.5k can't recover $50k stranded → G1.2+2
+  $12,000 → $11,160). Coordinated with the year-indexed §164(b)(6)+(7) OBBBA
+  SALT-cap phase-down. New `tax-engine-ptet-regimes-tests.ts` (48 assertions) +
+  freshness note (PTET rates change yearly — re-verify each filing season).
+- **§51 WOTC + §45S FMLA carryforward persistence** (`d4ec69a`, migration 0007):
+  brought the §51/§45S general-business-credit carryforward to full §39 parity
+  with §41/§163(d). New `general_business_credit_carryforward` adjustment added to
+  the §51/§45S available BEFORE the §38(c) limit (mirrors `rd_credit_carryforward`);
+  new nullable `tax_returns.other_general_business_credit_carryforward_remaining`
+  column; `mapReturn` persists + `buildSyntheticPriorYearAdjustments` re-seeds the
+  prior-year value (FTC/adoption/rd pattern). openapi (3 enums) + codegen +
+  ClientDetail label. +10 hand-calc'd tests in `tax-engine-gbc-wotc-fmla-tests.ts`
+  (W4-W6: carryforward-in applied, aggregates with current WOTC, full year-N→N+1
+  roll-forward with §39 re-carry; §38 limit measured via the shared §41 path).
+
+## NOT done / deferred (honest)
+- **Task 3 — Schedule C asset-level §179/bonus/MACRS calculator on the SE side**
+  — DELIBERATELY SKIPPED (the batch ranked it lowest + "skip if context/quality is
+  tight"). The tax-relevant core already shipped (`schedule_c_depreciation` reduces
+  the SE base, P2-5 2026-06-06f); the CPA enters the computed Form 4562 figure.
+  **Why deferred, not rushed:** the existing `calculateMacrsDepreciation`
+  (taxCalculator.ts:5020) is REAL-PROPERTY ONLY (27.5/39-yr SL, mid-month). A
+  Schedule C calculator needs personal-property MACRS classes (3/5/7/15-yr, 200%DB,
+  half-year/mid-quarter), §179 with the **business-income limitation** + disallowed
+  carryforward, AND bonus — a correctness-sensitive new subsystem with LOW reuse,
+  plus a `TaxReturnInputs` structured-asset input (a migration-seam contract change).
+  A half-built §179-only version would be *worse* than the CPA entering the figure.
+  Clean scoped follow-up: add `scheduleCAssets: [{cost, classLife, placedInService,
+  section179, bonus}]` to TaxReturnInputs → a pure `computeScheduleCAssetDepreciation`
+  → route the total into `schedule_c_depreciation` (already SE-base-wired). The
+  per-EXPENSE-category P&L breakdown stays out (cosmetic; documented).
+- **Schedule C per-EXPENSE-category P&L** — NOT building (aggregate net is the
+  tax-relevant figure; documented).
+
+## Verify
+typecheck (api-server + tax-app + db + libs + tests) clean; 71 no-API suites /
+4,315 assertions green; api-server esbuild + frontend Vite build clean; deployed +
+prod-smoked (healthz ok, migration 0007 column present + serializes, planning-opps/
+hit-list HTTP 200 over real data, re-score 0-drift across 10 prod returns).
+
+---
+
 # Handoff Note — 2026-06-06f (REST OF P2 — 5 items shipped + deployed)
 
 Cleared the remaining P2 backlog: carryforward auto-seeds, §51/§45S WOTC, the §36B
