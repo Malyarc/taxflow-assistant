@@ -14,6 +14,7 @@
  */
 import {
   computeScheduleCAssetDepreciation,
+  computeMacrsSchedule,
   type ScheduleCAsset,
   type ScheduleCAssetDepreciationParams,
 } from "../../artifacts/api-server/src/lib/taxCalculator";
@@ -224,6 +225,59 @@ header("MQ4: no placedInServiceQuarter → midQuarterApplies = false");
     { cost: 40000, recoveryYears: 5, placedInServiceYear: 2024 },
   ]);
   checkBool("MQ4 midQuarterApplies = false (no quarter data)", r.midQuarterApplies, false);
+}
+
+// ════════════════════════ Programmatic MACRS (Pub 946 DB→SL algorithm) ════════════════════════
+// computeMacrsSchedule reproduces Pub 946 Table A-1 (half-year) EXACTLY for all 6
+// classes — the airtight verification of the round-each-year-and-carry algorithm —
+// and the SAME algorithm generates the mid-quarter schedules (A-2..A-5).
+const HALF_YEAR_PUBLISHED: Record<number, number[]> = {
+  3: [0.3333, 0.4445, 0.1481, 0.0741],
+  5: [0.2, 0.32, 0.192, 0.1152, 0.1152, 0.0576],
+  7: [0.1429, 0.2449, 0.1749, 0.1249, 0.0893, 0.0892, 0.0893, 0.0446],
+  10: [0.1, 0.18, 0.144, 0.1152, 0.0922, 0.0737, 0.0655, 0.0655, 0.0656, 0.0655, 0.0328],
+  15: [0.05, 0.095, 0.0855, 0.077, 0.0693, 0.0623, 0.059, 0.059, 0.0591, 0.059, 0.0591, 0.059, 0.0591, 0.059, 0.0591, 0.0295],
+  20: [0.0375, 0.07219, 0.06677, 0.06177, 0.05713, 0.05285, 0.04888, 0.04522, 0.04462, 0.04461, 0.04462, 0.04461, 0.04462, 0.04461, 0.04462, 0.04461, 0.04462, 0.04461, 0.04462, 0.04461, 0.02231],
+};
+header("MACRS-HY: computeMacrsSchedule reproduces Pub 946 Table A-1 (half-year) exactly");
+for (const L of [3, 5, 7, 10, 15, 20]) {
+  const computed = computeMacrsSchedule(L, "half_year");
+  const pub = HALF_YEAR_PUBLISHED[L];
+  check(`MACRS-HY ${L}-yr length = ${pub.length}`, computed.length, pub.length, 0);
+  let maxDiff = 0;
+  for (let i = 0; i < pub.length; i++) maxDiff = Math.max(maxDiff, Math.abs((computed[i] ?? -9) - pub[i]));
+  check(`MACRS-HY ${L}-yr matches A-1 (max per-year diff)`, maxDiff, 0, 0.00005);
+}
+header("MACRS-MQ: mid-quarter year-1 values (DB rate × quarter fraction)");
+// 5-yr (rate 40%): Q1 35.00, Q2 25.00, Q3 15.00, Q4 5.00.
+check("MQ 5-yr Q1 yr1 = 35.00%", computeMacrsSchedule(5, 1)[0], 0.35, 0.0001);
+check("MQ 5-yr Q2 yr1 = 25.00%", computeMacrsSchedule(5, 2)[0], 0.25, 0.0001);
+check("MQ 5-yr Q3 yr1 = 15.00%", computeMacrsSchedule(5, 3)[0], 0.15, 0.0001);
+check("MQ 5-yr Q4 yr1 = 5.00%", computeMacrsSchedule(5, 4)[0], 0.05, 0.0001);
+// 7-yr (rate 2/7): Q1 25.00, Q4 3.57.
+check("MQ 7-yr Q1 yr1 = 25.00%", computeMacrsSchedule(7, 1)[0], 0.25, 0.0001);
+check("MQ 7-yr Q4 yr1 = 3.57%", computeMacrsSchedule(7, 4)[0], 0.0357, 0.0001);
+// 3-yr (rate 2/3): Q1 58.33.
+check("MQ 3-yr Q1 yr1 = 58.33%", computeMacrsSchedule(3, 1)[0], 0.5833, 0.0001);
+header("MACRS-MQ: every mid-quarter array sums to 100%");
+for (const L of [3, 5, 7, 10, 15, 20]) {
+  for (const q of [1, 2, 3, 4] as const) {
+    const sum = computeMacrsSchedule(L, q).reduce((s, x) => s + x, 0);
+    check(`MQ ${L}-yr Q${q} sums to 100%`, sum, 1.0, 0.0002);
+  }
+}
+// ── MQ-e2e: a mid-quarter year computes per-quarter schedules ──
+// Two 5-yr 2024 assets: A $60k Q4 + B $40k Q1 (60% Q4 → mid-quarter). A: Q4 yr-1
+// 5% × $60k = $3,000. B: Q1 yr-1 35% × $40k = $14,000. MACRS = $17,000.
+header("MQ-e2e: $60k Q4 + $40k Q1 5-yr mid-quarter → $3k + $14k = $17,000");
+{
+  const r = calc([
+    { cost: 60000, recoveryYears: 5, placedInServiceYear: 2024, placedInServiceQuarter: 4 },
+    { cost: 40000, recoveryYears: 5, placedInServiceYear: 2024, placedInServiceQuarter: 1 },
+  ]);
+  checkBool("MQ-e2e midQuarterApplies = true", r.midQuarterApplies, true);
+  check("MQ-e2e MACRS = $17,000 (Q4 5%×60k + Q1 35%×40k)", r.macrsDeduction, 17000, 0.5);
+  check("MQ-e2e total = $17,000", r.totalDepreciation, 17000, 0.5);
 }
 
 // ════════════════════════ End-to-end (SE base) ════════════════════════

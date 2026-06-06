@@ -5091,11 +5091,11 @@ export function calculateMacrsDepreciation(p: MacrsDepreciationParams): MacrsDep
 // Each class's Table A-1 percentages are verified against IRS Pub 946 and sum to
 // 100%. MODELING BOUNDS (documented sub-gaps; CPA overrides via the
 // schedule_c_depreciation adjustment when they apply):
-//   - HALF-YEAR MACRS computation only. The §168(d)(3) mid-quarter convention
-//     (>40% of non-§179 basis placed in Q4) is DETECTED — the result's
-//     `midQuarterApplies` flags when the CPA must recompute MACRS mid-quarter
-//     (Pub 946 Tables A-2..A-5) and override via `schedule_c_depreciation` — but
-//     the mid-quarter percentages themselves are not yet computed.
+//   - HALF-YEAR and MID-QUARTER conventions are both computed (§168(d)(3): when
+//     >40% of a year's non-§179 basis is placed in Q4, that year's assets use the
+//     mid-quarter schedule). Both schedules come from the same Pub 946 DB→SL
+//     algorithm (computeMacrsSchedule). A mid-quarter-year asset MISSING a
+//     `placedInServiceQuarter` falls back to half-year (flagged by midQuarterApplies).
 //   - An asset is EITHER fully §179-elected (no MACRS basis) OR depreciated via
 //     bonus+MACRS — not a partial §179 + bonus/MACRS on the SAME asset (split it
 //     into two asset rows if needed).
@@ -5110,6 +5110,79 @@ const MACRS_HALF_YEAR_TABLE: Readonly<Record<number, readonly number[]>> = {
   15: [0.05, 0.095, 0.0855, 0.077, 0.0693, 0.0623, 0.059, 0.059, 0.0591, 0.059, 0.0591, 0.059, 0.0591, 0.059, 0.0591, 0.0295],
   20: [0.0375, 0.07219, 0.06677, 0.06177, 0.05713, 0.05285, 0.04888, 0.04522, 0.04462, 0.04461, 0.04462, 0.04461, 0.04462, 0.04461, 0.04462, 0.04461, 0.04462, 0.04461, 0.04462, 0.04461, 0.02231],
 };
+
+/** §168 declining-balance factor by recovery period (200% for 3-10yr, 150% for 15/20yr). */
+function macrsDbFactor(recoveryYears: number): number {
+  return recoveryYears >= 15 ? 1.5 : 2.0;
+}
+
+/** First-year service fraction by convention. Half-year = 0.5; mid-quarter
+ *  Q1-Q4 = 10.5/7.5/4.5/1.5 months ÷ 12 (Pub 946 — property treated as placed in
+ *  service at the midpoint of its quarter). */
+function macrsFirstYearFraction(convention: "half_year" | 1 | 2 | 3 | 4): number {
+  switch (convention) {
+    case "half_year": return 0.5;
+    case 1: return 10.5 / 12; // 0.875
+    case 2: return 7.5 / 12;  // 0.625
+    case 3: return 4.5 / 12;  // 0.375
+    case 4: return 1.5 / 12;  // 0.125
+  }
+}
+
+/**
+ * Programmatic MACRS GDS percentage schedule (fraction of original basis per
+ * recovery year) — the deterministic IRS algorithm that GENERATES Pub 946 Tables
+ * A-1..A-5: declining balance at `db`/L, switching to straight-line when SL ≥ DB,
+ * with the convention's first-year fraction and a final partial year (L+1 entries).
+ * Uses the IRS round-each-year-and-carry-the-rounded-book method (working in
+ * percent) so it reproduces the published tables EXACTLY (incl. the 7-yr
+ * 8.93/8.92/8.93 rounding). Verified against MACRS_HALF_YEAR_TABLE in tests.
+ */
+export function computeMacrsSchedule(
+  recoveryYears: number,
+  convention: "half_year" | 1 | 2 | 3 | 4,
+): number[] {
+  const L = recoveryYears;
+  const rate = macrsDbFactor(L) / L;
+  const f = macrsFirstYearFraction(convention);
+  // Pub 946 publishes the 20-year table to 3 decimal places of PERCENT and all
+  // shorter classes to 2 (and the 7-yr 8.93 rounding requires exactly 2). Match
+  // that precision so the round-and-carry reproduces each table exactly.
+  const dp = L === 20 ? 3 : 2;
+  const m = Math.pow(10, dp);
+  const roundP = (n: number) => Math.round(n * m) / m;
+  const pct: number[] = [];
+  let book = 100; // remaining basis in percent
+  for (let y = 1; y <= L + 1; y++) {
+    let dep: number;
+    if (y === 1) {
+      dep = roundP(100 * rate * f);
+    } else if (y === L + 1) {
+      dep = roundP(book); // final partial year — remaining basis
+    } else {
+      const remainingService = L - f - (y - 2); // service-years left at start of y
+      const dbDep = book * rate;
+      const slDep = remainingService > 0 ? book / remainingService : book;
+      dep = roundP(Math.max(dbDep, slDep));
+    }
+    dep = Math.min(dep, book);
+    pct.push(dep / 100);
+    book = roundP(book - dep);
+  }
+  return pct;
+}
+
+/** Memoized mid-quarter schedules: key `${recoveryYears}:${quarter}`. */
+const midQuarterScheduleCache = new Map<string, number[]>();
+function midQuarterSchedule(recoveryYears: number, quarter: 1 | 2 | 3 | 4): number[] {
+  const key = `${recoveryYears}:${quarter}`;
+  let s = midQuarterScheduleCache.get(key);
+  if (!s) {
+    s = computeMacrsSchedule(recoveryYears, quarter);
+    midQuarterScheduleCache.set(key, s);
+  }
+  return s;
+}
 
 export type MacrsRecoveryYears = 3 | 5 | 7 | 10 | 15 | 20;
 
@@ -5172,12 +5245,12 @@ export interface ScheduleCAssetDepreciationResult {
   /** §179 disallowed by the income limit (or dollar cap) → carries to next year (§179(b)(3)(B)). */
   section179Carryforward: number;
   /**
-   * §168(d)(3) mid-quarter convention TEST result: true when > 40% of this year's
-   * non-§179 depreciable basis was placed in service in Q4. The MACRS figures
-   * above are computed half-year regardless; when this is true the CPA must
-   * recompute MACRS under the mid-quarter convention (Pub 946 Tables A-2..A-5) and
-   * override via the `schedule_c_depreciation` adjustment. Requires per-asset
-   * `placedInServiceQuarter` to fire (defaults false without quarter data).
+   * §168(d)(3) mid-quarter convention applied to the CURRENT tax year's placements
+   * (> 40% of the year's non-§179 basis placed in Q4). The MACRS above is computed
+   * under the correct convention per the asset's placed-in-service year (mid-quarter
+   * via the Pub 946 algorithm when the asset has a `placedInServiceQuarter`; a
+   * mid-quarter-year asset MISSING a quarter falls back to half-year — supply the
+   * quarter for an exact figure). Informational flag for CPA review.
    */
   midQuarterApplies: boolean;
 }
@@ -5187,15 +5260,34 @@ export function computeScheduleCAssetDepreciation(
 ): ScheduleCAssetDepreciationResult {
   const r2 = (n: number) => Math.round(n * 100) / 100;
   const carryIn = Math.max(0, p.section179CarryforwardIn ?? 0);
+
+  // PASS 1 — §168(d)(3) mid-quarter test PER placed-in-service year: is > 40% of
+  // that year's NON-§179 depreciable basis placed in service in Q4? §179-expensed
+  // property is excluded from the test. The convention is FIXED in an asset's
+  // placed-in-service year, so a multi-year register tests each year independently
+  // (a prior-year asset keeps the convention from its own placement year).
+  const byYear = new Map<number, { total: number; q4: number }>();
+  for (const a of p.assets) {
+    const cost = Math.max(0, a.cost);
+    if (cost <= 0 || a.section179 || a.placedInServiceYear > p.taxYear) continue;
+    const acc = byYear.get(a.placedInServiceYear) ?? { total: 0, q4: 0 };
+    acc.total += cost;
+    if (a.placedInServiceQuarter === 4) acc.q4 += cost;
+    byYear.set(a.placedInServiceYear, acc);
+  }
+  const midQuarterYears = new Set<number>();
+  for (const [year, acc] of byYear) {
+    if (acc.total > 0 && acc.q4 > 0.4 * acc.total) midQuarterYears.add(year);
+  }
+  const midQuarterApplies = midQuarterYears.has(p.taxYear);
+
+  // PASS 2 — depreciation: §179 accumulation + bonus + MACRS (each asset uses its
+  // own placed-in-service year's convention — half-year, or mid-quarter when that
+  // year triggered the 40% test AND the asset has a quarter).
   let bonusTotal = 0;
   let macrsTotal = 0;
   let currentYearSection179Elected = 0;
   let currentYearQualifiedPropertyCost = 0; // drives the §179 investment phase-out
-  // §168(d)(3) mid-quarter 40% test — basis of current-year NON-§179 depreciable
-  // property (§179-expensed property is excluded from the test), and the Q4 share.
-  let currentYearTestBasis = 0;
-  let currentYearQ4TestBasis = 0;
-
   for (const a of p.assets) {
     const cost = Math.max(0, a.cost);
     if (cost <= 0 || a.placedInServiceYear > p.taxYear) continue; // not in service
@@ -5213,8 +5305,8 @@ export function computeScheduleCAssetDepreciation(
 
     // Bonus + MACRS asset (neither is income-limited). Bonus is taken only in the
     // acquisition year at that year's §168(k) rate; MACRS runs on the post-bonus
-    // basis over the recovery period (half-year convention). OBBBA post-1/19/2025
-    // property uses 100% (bonusFullObbba) rather than the conservative year default.
+    // basis over the recovery period. OBBBA post-1/19/2025 property uses 100%
+    // (bonusFullObbba) rather than the conservative year default.
     const bonusRate = !a.bonus
       ? 0
       : a.bonusFullObbba
@@ -5222,21 +5314,23 @@ export function computeScheduleCAssetDepreciation(
         : Math.max(0, Math.min(1, p.bonusRateByYear[a.placedInServiceYear] ?? 0));
     const bonusBasis = bonusRate * cost;
     const macrsBasis = cost - bonusBasis;
-    const table = MACRS_HALF_YEAR_TABLE[a.recoveryYears] ?? [];
+    // Convention: mid-quarter (computed via the Pub 946 algorithm) when the asset's
+    // placed-in-service year triggered the 40% test AND a quarter is supplied; else
+    // the half-year Table A-1. (A mid-quarter-year asset with no quarter falls back
+    // to half-year — flagged by midQuarterApplies for CPA review.)
+    const q = a.placedInServiceQuarter;
+    const schedule =
+      midQuarterYears.has(a.placedInServiceYear) && q != null
+        ? midQuarterSchedule(a.recoveryYears, q)
+        : MACRS_HALF_YEAR_TABLE[a.recoveryYears] ?? [];
     const yearIndex = p.taxYear - a.placedInServiceYear; // 0 = recovery year 1
-    const macrsPct = yearIndex >= 0 && yearIndex < table.length ? table[yearIndex] : 0;
+    const macrsPct = yearIndex >= 0 && yearIndex < schedule.length ? schedule[yearIndex] : 0;
     macrsTotal += macrsPct * macrsBasis;
     if (isCurrentYear) {
       bonusTotal += bonusBasis;
       currentYearQualifiedPropertyCost += cost;
-      currentYearTestBasis += cost;
-      if (a.placedInServiceQuarter === 4) currentYearQ4TestBasis += cost;
     }
   }
-  // §168(d)(3): mid-quarter convention required when > 40% of the year's
-  // (non-§179) depreciable basis is placed in service in the last quarter.
-  const midQuarterApplies =
-    currentYearTestBasis > 0 && currentYearQ4TestBasis > 0.4 * currentYearTestBasis;
 
   // §179 aggregate: dollar cap (with the investment phase-out) + the §179(b)(3)
   // business-income limit. The carryforward-in is added AFTER the dollar cap (it
