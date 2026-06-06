@@ -1255,6 +1255,8 @@ export const AdjustmentAdjustmentType = {
   adoption_special_needs: "adoption_special_needs",
   adoption_credit_carryforward: "adoption_credit_carryforward",
   long_term_capital_gain: "long_term_capital_gain",
+  investment_interest_expense: "investment_interest_expense",
+  investment_interest_election_amount: "investment_interest_election_amount",
 } as const;
 
 export interface Adjustment {
@@ -1382,6 +1384,8 @@ export const CreateAdjustmentBodyAdjustmentType = {
   adoption_special_needs: "adoption_special_needs",
   adoption_credit_carryforward: "adoption_credit_carryforward",
   long_term_capital_gain: "long_term_capital_gain",
+  investment_interest_expense: "investment_interest_expense",
+  investment_interest_election_amount: "investment_interest_election_amount",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -1505,6 +1509,8 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   adoption_special_needs: "adoption_special_needs",
   adoption_credit_carryforward: "adoption_credit_carryforward",
   long_term_capital_gain: "long_term_capital_gain",
+  investment_interest_expense: "investment_interest_expense",
+  investment_interest_election_amount: "investment_interest_election_amount",
 } as const;
 
 export interface UpdateAdjustmentBody {

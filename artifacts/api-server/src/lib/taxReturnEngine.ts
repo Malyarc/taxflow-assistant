@@ -738,8 +738,16 @@ export interface ComputedTaxReturn {
   additionalChildTaxCredit: number;
   /** Federal tax owed on long-term capital gains + qualified dividends (preferential rate) */
   capitalGainsTax: number;
-  /** Long-term capital gains + qualified dividends (preferential-rate income) */
+  /** Long-term capital gains + qualified dividends (preferential-rate income),
+   *  net of any §163(d)(4)(B) elected amount re-bucketed to ordinary rates. */
   preferentialIncome: number;
+  /** §163(d) investment interest deduction allowed this year (Schedule A,
+   *  Form 4952) — capped at net investment income (+ any elected amount). */
+  investmentInterestDeduction: number;
+  /** §163(d)(2) investment interest disallowed → carries forward indefinitely. */
+  investmentInterestDisallowed: number;
+  /** §163(d)(4)(B) QDIV/LTCG amount elected as ordinary investment income. */
+  investmentInterestElectionAmount: number;
   /** Summary of all 1099 records included in this return */
   form1099Summary: Form1099Summary;
   // ── Phase 1 line items ─────────────────────────────────────────────────
@@ -2036,6 +2044,47 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const longTermGains = ltcgPreferential;
   const shortTermGains = stcgInOrdinary;
 
+  // ── §163(d) Investment interest expense + §163(d)(4)(B) election (Form 4952) ──
+  // Investment interest (margin interest on debt to carry investment property)
+  // is an ITEMIZED deduction allowed only up to NET INVESTMENT INCOME; the excess
+  // carries forward indefinitely (§163(d)(2)). NII here = ordinary investment
+  // income: interest + NON-qualified dividends + net STCG + royalties (investment
+  // expenses netting is a documented sub-gap → treated as 0). The §163(d)(4)(B)
+  // ELECTION lets the taxpayer treat up to `investment_interest_election_amount`
+  // of QDIV/net-LTCG as investment income — which (a) raises the NII cap (frees
+  // more interest deduction) and (b) re-buckets that amount from preferential to
+  // ORDINARY rates (the cost of the election). The elected amount STAYS in the
+  // §1411 NIIT base (the election is a §163(d) characterization, not a §1411 one),
+  // so the NIIT base below keeps reading the pre-election `ltcgPreferential`.
+  // Gated entirely on the adjustments — both 0 ⇒ no change to any existing return.
+  const investmentInterestExpenseAdj = Math.max(0, sumByType("investment_interest_expense"));
+  const nonQualifiedDividends = Math.max(
+    0,
+    (form1099Summary.ordinaryDividends + k1OrdinaryDividends) -
+      (form1099Summary.qualifiedDividends + k1QualifiedDividends),
+  );
+  const baseNetInvestmentIncome = Math.max(
+    0,
+    form1099Summary.interestIncome + k1InterestIncome +
+      nonQualifiedDividends +
+      form1099Summary.royalties + k1Royalties +
+      Math.max(0, stcgInOrdinary),
+  );
+  const preferentialAvailableForElection = Math.max(0, ltcgPreferential) + qualifiedDividends;
+  const investmentInterestElectionAmount = Math.min(
+    Math.max(0, sumByType("investment_interest_election_amount")),
+    preferentialAvailableForElection,
+  );
+  const investmentInterestNiiWithElection = baseNetInvestmentIncome + investmentInterestElectionAmount;
+  const allowedInvestmentInterest = Math.min(investmentInterestExpenseAdj, investmentInterestNiiWithElection);
+  const investmentInterestDisallowed = Math.max(0, investmentInterestExpenseAdj - allowedInvestmentInterest);
+  // Re-bucket the elected amount out of the preferential buckets (LTCG first,
+  // then QDIV) so it is taxed at ordinary rates by calculateFederalTaxWithCapitalGains.
+  const electFromLtcg = Math.min(investmentInterestElectionAmount, Math.max(0, ltcgPreferential));
+  const electFromQdiv = investmentInterestElectionAmount - electFromLtcg;
+  const ltcgPreferentialAfterElection = Math.max(0, ltcgPreferential - electFromLtcg);
+  const qualifiedDividendsAfterElection = Math.max(0, qualifiedDividends - electFromQdiv);
+
   // ── Phase 2e: Schedule E rental net income/loss + §469 PAL limit ──
   // Step 1: Compute gross rental position (income - expenses - depreciation)
   // Step 2: Add prior-year suspended passive losses (carryforward)
@@ -2361,12 +2410,15 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     },
   });
 
-  const itemizedTotal = Math.max(scheduleA.totalItemized, additionalDeductions);
+  // §163(d) investment interest is a Schedule A line — fold the allowed amount
+  // into the itemized total (it only benefits the client if they itemize).
+  const scheduleAItemizedWithInvInt = scheduleA.totalItemized + allowedInvestmentInterest;
+  const itemizedTotal = Math.max(scheduleAItemizedWithInvInt, additionalDeductions);
   const stdDed = getFederalStandardDeduction(client.filingStatus, taxYear);
   const useItemizedDeductions =
     useItemizedDeductionsOverride === true
       ? true
-      : useItemizedDeductionsOverride === false && additionalDeductions === 0 && scheduleA.totalItemized === 0
+      : useItemizedDeductionsOverride === false && additionalDeductions === 0 && scheduleAItemizedWithInvInt === 0
         ? false
         : itemizedTotal > stdDed;
 
@@ -2599,7 +2651,10 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
 
   // ── Step 6: Federal tax (ordinary + preferential) ──────────────────
   // Use post-netting LTCG (not raw 1099-B value) for preferential calculation.
-  const preferentialIncome = ltcgPreferential + qualifiedDividends;
+  // AFTER the §163(d)(4)(B) election: the elected QDIV/LTCG has been re-bucketed
+  // to ordinary rates, so the preferential income (and the ordinary portion that
+  // derives from it) reflect the election.
+  const preferentialIncome = ltcgPreferentialAfterElection + qualifiedDividendsAfterElection;
   // SIGNED ordinary portion (may be NEGATIVE when the std/itemized deduction +
   // QBI + OBBBA deductions exceed ordinary income — e.g. a return living mostly
   // off LTCG/QDIV). calculateFederalTaxWithCapitalGains floors this to 0 for the
@@ -2620,8 +2675,8 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     : 0;
   const capGains = calculateFederalTaxWithCapitalGains({
     ordinaryTaxableIncome: ordinaryPortionOfTaxable,
-    longTermGains: ltcgPreferential,
-    qualifiedDividends,
+    longTermGains: ltcgPreferentialAfterElection,
+    qualifiedDividends: qualifiedDividendsAfterElection,
     shortTermGains: 0, // post-netting STCG already in ordinaryPortionOfTaxable
     filingStatus: client.filingStatus,
     taxYear,
@@ -3328,6 +3383,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     additionalChildTaxCredit: ctc.refundableActc,
     capitalGainsTax: capGains.preferentialRateTax,
     preferentialIncome,
+    investmentInterestDeduction: allowedInvestmentInterest,
+    investmentInterestDisallowed,
+    investmentInterestElectionAmount,
     form1099Summary,
     scheduleA,
     scheduleCExpenses,

@@ -2886,6 +2886,8 @@ function AdjustmentsTab({ clientId }: { clientId: number }) {
     adoption_special_needs: "Adoption — Special Needs (full credit, enter 1)",
     adoption_credit_carryforward: "Adoption Credit Carryforward (prior-year §23(c))",
     long_term_capital_gain: "Long-Term Capital Gain (additional — not on 1099-B/Sch D)",
+    investment_interest_expense: "Investment Interest Expense (§163(d), Form 4952)",
+    investment_interest_election_amount: "§163(d)(4)(B) Election — QDIV/LTCG as investment income",
     // Phase 1.5
     educator_expenses: "Educator Expenses (K-12, $300/educator)",
     student_loan_interest: "Student Loan Interest (1098-E)",

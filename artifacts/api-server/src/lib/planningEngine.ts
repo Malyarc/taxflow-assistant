@@ -7510,8 +7510,9 @@ const G1_93_ORD_LTCG_SPREAD = 0.132;
 function detectInvestmentInterestElection(args: {
   computed: ComputedTaxReturn;
   adjustments: AdjustmentFact[];
+  baselineInputs?: TaxReturnInputs;
 }): OpportunityHit | null {
-  const { computed, adjustments } = args;
+  const { computed, adjustments, baselineInputs } = args;
   const qdivPlusLtcg = computed.preferentialIncome;
   if (qdivPlusLtcg < G1_93_MIN_QDIV_LTCG) return null;
   const invInt = sumAdjustment(adjustments, "investment_interest_expense");
@@ -7527,6 +7528,28 @@ function detectInvestmentInterestElection(args: {
   const interestGain = electedAmount * fedRate;
   const estSavings = Math.round(interestGain - ratePaid);
   if (estSavings <= 0) return null;
+
+  // H2 (PLAN-Q2) — engine-verified §163(d)(4)(B) election. Recommend electing
+  // enough QDIV/LTCG to free the engine-computed DISALLOWED investment interest
+  // (§163(d)(2)), capped at the available preferential income. The what-if treats
+  // that amount as ordinary investment income (Form 4952 Line 4g) → the engine
+  // recomputes the freed deduction AND the rate cost exactly, including the
+  // std-vs-itemized floor + SALT cap the 13.2% heuristic ignores. Suppress when
+  // the engine shows the election is NOT beneficial (e.g. too little OTHER
+  // itemized deduction → the freed interest is wasted against the std deduction).
+  const disallowed = computed.investmentInterestDisallowed ?? 0;
+  const recommendedElection = Math.round(Math.min(qdivPlusLtcg, disallowed > 0 ? disallowed : electedAmount));
+  const whatIf = runDetectorWhatIf({
+    baselineInputs,
+    scenarioId: "G1.93-163d-election",
+    label: `§163(d)(4)(B) elect $${recommendedElection.toLocaleString("en-US")}`,
+    mutations: [
+      { kind: "add_adjustment", adjustmentType: "investment_interest_election_amount", amount: recommendedElection },
+    ],
+    semantics: "savings",
+    varyAmount: true,
+  });
+  if (whatIf && whatIf.delta.combinedRefundDelta <= 0) return null;
 
   const strategy = strategyById("G1.93");
   const fmt = (n: number) =>
@@ -7556,21 +7579,25 @@ function detectInvestmentInterestElection(args: {
       investmentInterest: Math.round(invInt),
       federalMarginalRate: fedRate,
       electedAmount: Math.round(electedAmount),
+      disallowedInterest: Math.round(disallowed),
+      recommendedElection,
       ratePaid: Math.round(ratePaid),
       interestGain: Math.round(interestGain),
       estSavings,
     },
     assumptions: [
+      whatIf
+        ? `ENGINE-VERIFIED via Form 4952: electing $${recommendedElection.toLocaleString("en-US")} of QDIV/LTCG as ordinary investment income frees the §163(d)(2)-disallowed interest; the engine recomputes the exact net benefit (incl. the std-vs-itemized floor + SALT cap). Heuristic was ${fmt(estSavings)}.`
+        : `Heuristic spread 13.2% = (37% ord − 23.8% LTCG+NIIT) on the elected amount (no baselineInputs for engine verification; the engine deduction is ITEMIZED — worthless if the client takes the std deduction).`,
       `Form 4952 to track + report investment interest expense.`,
       `Investment interest expense per §163(d)(3) — interest on debt to PURCHASE / CARRY investment property.`,
-      `Net investment income per §163(d)(4): ordinary investment income (interest, royalties, net ST gain) − investment expenses.`,
+      `Net investment income per §163(d)(4): ordinary investment income (interest, NON-qualified dividends, royalties, net ST gain) − investment expenses (engine treats investment expenses as 0 — sub-gap).`,
       `Excess investment interest carries forward INDEFINITELY per §163(d)(2).`,
       `Election made annually on Form 4952 Line 4g — irrevocable for that year.`,
-      `Beneficial when marginal rate >> LTCG rate AND investment-interest expense is large.`,
-      `Coordinate with G1.6 NIIT (electing in adds to NIIT base too).`,
+      `The elected amount STAYS in the §1411 NIIT base (the election is a §163(d) characterization, not §1411).`,
       `Trade-or-business interest is §163(j) territory (C7) — different rules.`,
-      `Heuristic spread 13.2% = (37% ord − 23.8% LTCG+NIIT). Real spread varies.`,
     ],
+    whatIf,
   };
 }
 
@@ -8307,7 +8334,7 @@ export function evaluatePlanningOpportunities(args: PlanningInputs): Opportunity
   // G1.94 §85 UI / G1.95 §1377(a)(2) S-corp close / G1.96 §132(f) transit.
   const solo401kDeferral = detectSolo401kDeferral({ client, computed, adjustments, baselineInputs });
   if (solo401kDeferral) hits.push(solo401kDeferral);
-  const invInterestElection = detectInvestmentInterestElection({ computed, adjustments });
+  const invInterestElection = detectInvestmentInterestElection({ computed, adjustments, baselineInputs });
   if (invInterestElection) hits.push(invInterestElection);
   const uiAnalysis = detectUnemploymentAnalysis({ computed });
   if (uiAnalysis) hits.push(uiAnalysis);
