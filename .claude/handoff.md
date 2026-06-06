@@ -42,9 +42,13 @@ asset-load path is built). Full no-API battery 72 suites / 4,352 assertions gree
   year. +8 hand-calc'd tests (C1-C3: deduct-with-no-new-assets, re-limited re-carry,
   full year-N→N+1 roll-forward). The Schedule C §179 carryforward is now at full
   §41/§51 multi-year parity.
-- **Modeling bounds (documented in code):** half-year convention only (mid-quarter
-  not modeled — niche + 4 verified Pub 946 tables, deferred); an asset is either
-  fully §179'd OR bonus+MACRS (not partial-§179 + bonus on the same asset); basis = cost.
+- **Modeling bounds (documented in code):** MACRS computed half-year. **Mid-quarter
+  (§168(d)(3)) is now DETECTED 2026-06-06i (commit `62dc739`): a per-asset
+  `placedInServiceQuarter` + the >40%-of-non-§179-Q4-basis test → a
+  `midQuarterApplies` result flag (CPA overrides via `schedule_c_depreciation`); the
+  mid-quarter PERCENTAGES (Pub 946 A-2..A-5, ~150 verified values) are the deferred
+  completion.** +4 tests (MQ1-MQ4, incl. the §179-exclusion). An asset is either
+  fully §179'd OR bonus+MACRS (not partial-§179 + bonus on one asset); basis = cost.
 - **✅ OBBBA 100% bonus — DONE 2026-06-06i (commit `94f6dba`, deployed).** New
   per-asset `bonusFullObbba` flag forces 100% §168(k) bonus for post-1/19/2025
   property (OBBBA §70301), removing the conservative-40%-for-all-TY2025 bound
