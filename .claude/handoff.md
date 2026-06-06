@@ -43,8 +43,21 @@ asset-load path is built). Full no-API battery 72 suites / 4,352 assertions gree
   full year-N→N+1 roll-forward). The Schedule C §179 carryforward is now at full
   §41/§51 multi-year parity.
 - **Modeling bounds (documented in code):** half-year convention only (mid-quarter
-  not modeled); an asset is either fully §179'd OR bonus+MACRS (not partial-§179 +
-  bonus on the same asset); basis = cost.
+  not modeled — niche + 4 verified Pub 946 tables, deferred); an asset is either
+  fully §179'd OR bonus+MACRS (not partial-§179 + bonus on the same asset); basis = cost.
+- **✅ OBBBA 100% bonus — DONE 2026-06-06i (commit `94f6dba`, deployed).** New
+  per-asset `bonusFullObbba` flag forces 100% §168(k) bonus for post-1/19/2025
+  property (OBBBA §70301), removing the conservative-40%-for-all-TY2025 bound
+  (mirrors the engine's `bonus_depreciation_basis_obbba`). +6 tests (A9/A9b).
+- **H2-wire remaining G1.46–G1.96 — RE-ASSESSED 2026-06-06i (fresh per-detector
+  triage): still NOT recommended.** The remaining heuristic detectors are
+  qualitative (business credits the individual engine can't compute, trusts,
+  multi-entity/§469 elections, multi-year sequencing) or would only re-express a
+  GUESSED input amount through the engine (G1.62/G1.76/G1.85 — the agent's
+  candidates), which is the "force-wire without modeling the mechanic → risk a
+  wrong value" trap. The genuinely-modelable ones were already done
+  (§1244/§453/§163(d)/§41/§23/§36B/§51/§45S). Don't force-wire; model the mechanic
+  first or leave heuristic.
 - **✅ FIXED 2026-06-06i (commit `4fca6aa`, deployed): SECTION_179_CAPS[2024]**
   was holding 2023's values ($1.16M/$2.89M) → corrected to $1,220,000/$3,050,000
   (Rev. Proc. 2023-34 §3.27); both inline comments fixed; map exported. +7 regression
