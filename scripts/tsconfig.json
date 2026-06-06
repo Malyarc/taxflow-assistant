@@ -93,6 +93,7 @@
     "src/tax-engine-section453-multiyear-tests.ts",
     "src/tax-engine-section163d-tests.ts",
     "src/tax-engine-section41-rd-tests.ts",
-    "src/tax-engine-gbc-wotc-fmla-tests.ts"
+    "src/tax-engine-gbc-wotc-fmla-tests.ts",
+    "src/tax-engine-schedule-c-depreciation-tests.ts"
   ]
 }

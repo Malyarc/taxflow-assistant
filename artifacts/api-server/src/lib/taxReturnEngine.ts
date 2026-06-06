@@ -755,6 +755,8 @@ export interface ComputedTaxReturn {
   // ── Phase 1 line items ─────────────────────────────────────────────────
   scheduleA: ScheduleACalculation;
   scheduleCExpenses: number;
+  /** P2 — Schedule C asset depreciation (Form 4562) reducing the SE base. */
+  scheduleCDepreciation: number;
   retirementDeductions: RetirementDeductionsCalculation;
   eitc: EitcCalculation;
   educationCredits: EducationCreditsCalculation;
@@ -1485,6 +1487,13 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const iraRothAdj = sumByType("ira_contribution_roth"); // not deductible, counts for saver's
   // Schedule C
   const scheduleCExpensesInput = sumByType("schedule_c_expenses");
+  // P2 — Schedule C asset DEPRECIATION (Form 4562 → Sch C line 13: §179 + bonus +
+  // MACRS on the sole-prop's own business assets). UNLIKE the above-the-line
+  // `section_179_expense_election` / `bonus_depreciation_basis` (kept for rental /
+  // pass-through contexts), this reduces the Schedule C NET PROFIT → and therefore
+  // the SE-tax base, §199A QBI, earned income, and local EIT (the CPA supplies the
+  // computed Form 4562 figure). Floored at 0; can drive a Schedule C loss.
+  const scheduleCDepreciationAdj = Math.max(0, sumByType("schedule_c_depreciation"));
   // K5: Self-Employed Health Insurance premiums (Form 7206) — above-the-line.
   // Capped at (net SE earnings − half-SE) by the engine; the CPA-entered
   // adjustment represents gross premiums paid for the year.
@@ -1780,7 +1789,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // so expenses > gross also produce a deductible loss, consistent with the
   // §461(l) schCLoss derivation below. `Math.max(0, scheduleCNetSigned)` is
   // arithmetically identical to the prior `grossSeIncome - scheduleCExpenses`.
-  const scheduleCNetSigned = grossSeIncome - Math.max(0, scheduleCExpensesInput);
+  const scheduleCNetSigned = grossSeIncome - Math.max(0, scheduleCExpensesInput) - scheduleCDepreciationAdj;
   const netSeIncome = Math.max(0, scheduleCNetSigned);
   // SE-tax base = Schedule C net + K-1 partnership Box 14A SE earnings
   // (K-1 SE loss nets against positive amounts; floor at 0).
@@ -1974,7 +1983,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // §461(l) auto-aggregation: compute when CPA didn't supply an explicit addback.
   let section461lAutoAddback = 0;
   if (section461lExcessLossAddbackAdj <= 0) {
-    const schCLoss = Math.max(0, scheduleCExpensesInput - grossSeIncome);
+    const schCLoss = Math.max(0, scheduleCExpensesInput + scheduleCDepreciationAdj - grossSeIncome);
     // Rental: compute pre-PAL net (income − expenses − MACRS) from properties / aggregate adjustments.
     // grossRentalNet isn't yet computed; use the inputs we know.
     const aggregateRentalIncome = scheduleERentalIncomeAdj;
@@ -3454,6 +3463,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     form1099Summary,
     scheduleA,
     scheduleCExpenses,
+    scheduleCDepreciation: scheduleCDepreciationAdj,
     retirementDeductions: retirement,
     eitc,
     educationCredits,

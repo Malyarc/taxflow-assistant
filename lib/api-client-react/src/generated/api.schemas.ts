@@ -1265,6 +1265,7 @@ export const AdjustmentAdjustmentType = {
   wotc_credit: "wotc_credit",
   fmla_credit: "fmla_credit",
   scorp_reasonable_comp: "scorp_reasonable_comp",
+  schedule_c_depreciation: "schedule_c_depreciation",
 } as const;
 
 export interface Adjustment {
@@ -1402,6 +1403,7 @@ export const CreateAdjustmentBodyAdjustmentType = {
   wotc_credit: "wotc_credit",
   fmla_credit: "fmla_credit",
   scorp_reasonable_comp: "scorp_reasonable_comp",
+  schedule_c_depreciation: "schedule_c_depreciation",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -1535,6 +1537,7 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   wotc_credit: "wotc_credit",
   fmla_credit: "fmla_credit",
   scorp_reasonable_comp: "scorp_reasonable_comp",
+  schedule_c_depreciation: "schedule_c_depreciation",
 } as const;
 
 export interface UpdateAdjustmentBody {
