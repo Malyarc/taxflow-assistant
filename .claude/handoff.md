@@ -1,3 +1,50 @@
+# Handoff Note — 2026-06-06h (Schedule C asset-level depreciation calculator — shipped + deployed)
+
+Completed the last item of the 3-task batch (the one 2026-06-06g had deferred):
+the Schedule C asset-level §179/bonus/MACRS calculator on the SE side. **1 commit
+(`17b8bab`) on `main`, pushed, deployed to EC2 (api-server rebuilt, pm2 restarted,
+prod-smoked — NO migration/frontend/re-score: it's inert in prod until the
+asset-load path is built). Full no-API battery 72 suites / 4,352 assertions green
+(+37).**
+
+- **`computeScheduleCAssetDepreciation`** (taxCalculator.ts) — pure calculator:
+  takes a Schedule C asset register (`{cost, recoveryYears, placedInServiceYear,
+  section179?, bonus?}`) and computes §179 (dollar cap + investment phase-out
+  reusing SECTION_179_CAPS, + the §179(b)(3) BUSINESS-INCOME limit with the
+  income-disallowed carryforward) + §168(k) bonus + personal-property MACRS
+  (Pub 946 Table A-1, half-year, 3/5/7/10/15/20-yr; every % verified, sums to 100%).
+  Reconstructs prior-year bonus via a new `BONUS_RATE_BY_ACQUISITION_YEAR` map to
+  get correct multi-year MACRS basis. The total folds into the SE-base-reducing
+  `schedule_c_depreciation` total.
+- **New `scheduleCAssets` on TaxReturnInputs** (migration-seam contract addition,
+  PURE) + **`ComputedTaxReturn.scheduleCAssetDepreciation`** breakdown.
+  `scheduleCDepreciation` is now manual `schedule_c_depreciation` + the asset total.
+  INERT when no assets supplied (`scheduleCAssetDepreciation` null → unchanged).
+- 37 hand-calc'd tests (`tax-engine-schedule-c-asset-depreciation-tests.ts`):
+  bonus/MACRS/§179/income-limit/carry-in/multi-year/prior-year-bonus-basis + e2e
+  SE-tax delta ($20k §179 → SE tax −$2,825.91), income-limit floor, W-2-lifted
+  §179 limit (Reg §1.179-2(c)(6)(iv) → AGI $50k), inert no-assets case.
+
+## Documented follow-ups (engine capability shipped; these are the live-app + parity tails)
+- **Live-app input path for `scheduleCAssets`** — a `schedule_c_assets` DB table +
+  CRUD API + entry form + a `loadTaxReturnInputs` load path (like scheduleK1).
+  NOT built — per the strategic frame the SPA is being wound down and the engine
+  ports to Haven 1:1, so Haven builds its own asset-entry UI/persistence. Until
+  then the calculator is reachable only via direct `computeTaxReturnPure` calls;
+  CPAs enter the computed figure via the live `schedule_c_depreciation` adjustment.
+- **§179 carryforward persist + auto-seed** — the §179(b)(3) income-limit
+  carryforward is COMPUTED + exposed (`section179Carryforward`); the calculator
+  accepts `section179CarryforwardIn`. Persisting + re-seeding it (the §41/§51 GBC
+  pattern from 2026-06-06g) is a clean follow-up.
+- **Modeling bounds (documented in code):** half-year convention only (mid-quarter
+  not modeled); an asset is either fully §179'd OR bonus+MACRS (not partial-§179 +
+  bonus on the same asset); basis = cost.
+- **Noticed (separate, NOT this task): SECTION_179_CAPS[2024] holds 2023's values**
+  ($1.16M/$2.89M; real 2024 = $1.22M/$3.05M per Rev. Proc. 2023-34). Above-the-line
+  §179 path; non-binding for Schedule C. Flagged for a separate fix.
+
+---
+
 # Handoff Note — 2026-06-06g (G1.2 PTET regime table + §51/§45S carryforward — shipped + deployed)
 
 Cleared the two real remaining P2 items (the PTET data task + the WOTC/FMLA
