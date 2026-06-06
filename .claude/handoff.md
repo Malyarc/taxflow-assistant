@@ -1,3 +1,67 @@
+# Handoff Note — 2026-06-06b (P2-13/14/15 — planning CREDIT MECHANICS — shipped + deployed)
+
+Worked `docs/product-todo.md` P2 "Planning engine" — the credit/election mechanics
+that block what-if wiring. **3 commits fast-forwarded to `main`, pushed, deployed to
+EC2 (migration 0005 applied, api-server rebuilt, pm2 restarted, frontend rsynced,
+prod-smoked, re-score 0-drift). Full no-API battery 65 suites / 4,144 assertions green
+(+119 this session).** Every tax value hand-calc'd against IRS rules before asserting.
+
+## What shipped (each its own commit; hand-calc'd tests)
+- **P2-13 — §23 Adoption Credit as a REAL engine credit** (`060a9d7`): new
+  `calculateAdoptionCredit` (taxCalculator) — per-child dollar limit (2024 $16,810 /
+  2025 $17,280 / 2026 $17,670), ratable $40k MAGI phase-out, §23(a)(3) special-needs
+  full-limit deeming, OBBBA refundable split ($0/$5,000/$5,120), §23(c) 5-year
+  nonrefundable carryforward. Wired into the credit pipeline after the §25–§25D
+  credits and before the §53 AMT credit; refundable portion → refundable total.
+  MAGI = AGI + FEIE add-back (§23(b)(2)(B)). MFS disqualified (v1). 3 new adjustment
+  inputs (`qualified_adoption_expenses` / `adoption_special_needs` flag /
+  `adoption_credit_carryforward`) + openapi/codegen + ClientForm labels. Carryforward
+  persisted (`tax_returns.adoption_credit_carryforward_remaining`, migration 0005) +
+  auto-seeded from the prior year (FTC pattern). G1.65 detector now reports the
+  engine-verified credit when a marker is present (heuristic CPA-prompt otherwise);
+  `annotateVerifiedSavings` now preserves a detector's direct engine-verified
+  annotation. 74 hand-calc'd tests (`tax-engine-adoption-credit-tests.ts`).
+- **P2-14 — wire calculatePremiumTaxCredit into G1.30** (`67253e4`): the ACA PTC
+  detector now reports the engine's ACTUAL Form 8962 §36B reconciliation
+  (`computed.premiumTaxCredit`) when the client has Marketplace coverage — netPtc > 0 =
+  additional refundable PTC; netPtc < 0 = excess-APTC repayment exposure (with the
+  §36B(f)(2)(B) cap) that MAGI management can reduce. savingsSource "engine-verified",
+  verifiedSavings = |netPtc|; full PTC detail in inputs. The forward-looking SE-income
+  $1,000 heuristic is PRESERVED for clients with no 1095-A data. 26 hand-calc'd tests
+  (`tax-engine-ptc-detector-tests.ts`; TY2024 FPL $14,580, fplFraction 2.50, AF 0.04).
+- **P2-15 — H2-wire §1244 (G1.40); document §453 (G1.47) deferral** (`22fbb82`):
+  G1.40 attaches an engine-verified what-if measuring the CURRENT-YEAR refund benefit
+  of electing §1244 ordinary treatment (recharacterize the loss out of the
+  capital-loss carryforward → deduct in full above the line); the engine captures the
+  real bracket/NOL limits the fixed 17% rate-spread heuristic can't. estSavings stays
+  the conservative lifetime rate-spread; verifiedSavings is the current-year delta.
+  **§453 NOT single-year-wired** — its value is purely multi-year bracket-smoothing, so
+  a single-year what-if would falsely book the deferred-year tax as a saving; honest
+  wiring needs an installment-gain input lever via runDetectorMultiYear (the engine has
+  no general capital-gain adjustment to inject yet) — documented in the detector +
+  exposes the engine's actual marginal rate. 19 hand-calc'd tests (the what-if delta is
+  cross-checked against an INDEPENDENT engine run; `tax-engine-section1244-whatif-tests.ts`).
+
+## NOT done / deferred (honest)
+- **§453 (G1.47) full H2/H3 wiring** — needs a new installment-gain input lever
+  (inject recognized gain/N per year into a multi-year trajectory). Scoped, documented
+  in the detector's assumptions. The single-year shortcut was deliberately NOT taken
+  (it overstates).
+- **Remaining credit mechanics** (still heuristic): §41 R&D (G1.36), §45S FMLA (G1.74),
+  §51 WOTC (G1.75), §530 Coverdell (G1.59), §36B-full reconciliation optimizer, §163(d)
+  investment-interest election (G1.93). Each needs its calculate* support modeled first.
+- **UI dropdown** (3 new adoption adjustment labels) verified by typecheck + clean Vite
+  build + rsync (identical render path to the 100+ existing entries) — not re-rendered
+  in a live browser (low risk; flagged for transparency).
+
+## Verify
+typecheck (api-server + tax-app + db + libs + tests) clean; 65 no-API suites / 4,144
+assertions green; api-server esbuild + frontend Vite build clean; deployed +
+prod-smoked (healthz ok, migration 0005 column present + serializes, planning-opps
+HTTP 200 over real data, re-score 0-drift across 10 prod returns).
+
+---
+
 # Handoff Note — 2026-06-06 (P2 BATCH — 10 items shipped + deep audit + deployed)
 
 Worked `docs/product-todo.md` P2 (medium enhancements) + the requested deep audit.
