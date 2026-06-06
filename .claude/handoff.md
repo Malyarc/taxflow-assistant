@@ -1,3 +1,40 @@
+# Handoff Note — 2026-06-06e (§41 R&D credit — engine model + G1.36 H2 — shipped + deployed)
+
+Continued the credit-mechanics theme (§23-adoption pattern). The engine had NO §41
+modeling; this adds the ASC research credit + the §38 GBC limit, then promotes G1.36.
+**1 commit (`91b7105`) on `main`, pushed, deployed to EC2 (api-server rebuilt, pm2
+restarted, frontend rsynced, prod-smoked, re-score 0-drift). No migration. Full no-API
+battery 68 suites / 4,220 assertions green (+36 this increment).**
+
+- **ENGINE — `calculateRdCredit`** (taxCalculator): Alternative Simplified Credit —
+  14% × max(0, currentQRE − 50% × prior-3-yr-avg QRE), or 6% × QRE with no 3-year base
+  (startup); the §280C(c)(3) reduced-credit election applied by default (gross ×
+  (1 − 21%)) to avoid the QRE-deduction add-back. Wired into the credit pipeline as the
+  general business credit (LAST in the nonrefundable order) under the **§38(c)(1)
+  liability limit** — the GBC can't reduce regular tax below the tentative minimum tax;
+  the excess carries forward (§39). 2 new adjustments (`qualified_research_expenses` /
+  `qualified_research_expenses_prior_avg`) + openapi + codegen + ClientForm. **Fully
+  gated → zero change to returns without the adjustments** (verified: 214-test core +
+  planning suites green). §41(h) payroll-tax election + the regular (non-ASC) method
+  documented as out-of-scope sub-gaps.
+- **G1.36 promoted**: engine-verified (full §280C-reduced credit, with the
+  applied-this-year vs §39-carryforward split shown) when QRE is supplied; heuristic
+  netSe-proxy ($3,000) preserved otherwise.
+- `ComputedTaxReturn` gains rdCredit / rdCreditApplied / rdCreditCarryforwardRemaining.
+- 36 hand-calc'd tests (`tax-engine-section41-rd-tests.ts`): ASC ($11,200 gross →
+  $8,848), startup ($6,000 → $4,740), §280C toggle, below-base $0, e2e refund-delta
+  identity, the §38(c) TMT-floor limit binding (conservation + bound on a $47,400
+  credit), detector engine-verified + heuristic-preserved.
+
+**Credit-mechanics progress:** §23 adoption (P2-13) + §36B PTC reconciliation (P2-14) +
+§41 R&D (this) are now real engine credits / engine-verified detectors. The PLAN-Q2
+engine-modelable trio (§1244/§453/§163(d)) is also complete. **Remaining credit
+mechanics:** §530 Coverdell (G1.59), §45S FMLA (G1.74), §51 WOTC (G1.75), §36B-full
+optimizer. **Documented follow-ups:** the §163(d) + §41(§39) carryforward AUTO-SEED
+(DB column + pipeline, like FTC/adoption); §41(h) payroll election; §41 regular method.
+
+---
+
 # Handoff Note — 2026-06-06d (§163(d) investment interest + election — engine model + G1.93 H2 — shipped + deployed)
 
 Completed the PLAN-Q2 engine-modelable trio (§1244 / §453 / §163(d)). The engine had
