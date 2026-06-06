@@ -160,6 +160,28 @@ header("A8: $30k §179 + $10k bonus, income $32k → §179 $25,200 (ceiling nets
   check("A8 total = $32,000", r.totalDepreciation, 32000);
 }
 
+// ── A9: OBBBA 100% bonus (post-1/19/2025 property) vs the conservative default ──
+// cost $50,000, 5-yr, placed 2025, bonus + bonusFullObbba, taxYear 2025.
+// 100% bonus = $50,000; MACRS basis 0 → no MACRS. total = $50,000.
+header("A9: 2025 $50k bonus + bonusFullObbba → 100% = $50,000 (no MACRS)");
+{
+  const r = calc([{ cost: 50000, recoveryYears: 5, placedInServiceYear: 2025, bonus: true, bonusFullObbba: true }],
+    { taxYear: 2025 });
+  check("A9 bonus = $50,000 (OBBBA 100%)", r.bonusDeduction, 50000);
+  check("A9 MACRS = 0", r.macrsDeduction, 0);
+  check("A9 total = $50,000", r.totalDepreciation, 50000);
+}
+// ── A9b: SAME asset WITHOUT the flag → conservative 40% TCJA default ──
+// 40% bonus = $20,000; MACRS basis $30,000; yr-1 (5-yr) 20% = $6,000. total = $26,000.
+header("A9b: 2025 $50k bonus, no OBBBA flag → 40% = $20k + $6k MACRS = $26,000");
+{
+  const r = calc([{ cost: 50000, recoveryYears: 5, placedInServiceYear: 2025, bonus: true }],
+    { taxYear: 2025 });
+  check("A9b bonus = $20,000 (40% TCJA default)", r.bonusDeduction, 20000);
+  check("A9b MACRS = $6,000 (20% × $30k post-bonus basis)", r.macrsDeduction, 6000);
+  check("A9b total = $26,000", r.totalDepreciation, 26000);
+}
+
 // ════════════════════════ End-to-end (SE base) ════════════════════════
 function mkReturn(scheduleCAssets: ScheduleCAsset[], adj: AdjustmentFact[], w2 = 0): TaxReturnInputs {
   return {

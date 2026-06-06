@@ -5121,6 +5121,16 @@ export interface ScheduleCAsset {
   section179?: boolean;
   /** Apply §168(k) bonus to the basis (acquisition year only). Ignored when section179 is set. */
   bonus?: boolean;
+  /**
+   * OBBBA (P.L. 119-21 §70301) restored 100% bonus for property acquired AND
+   * placed in service AFTER 2025-01-19. The placed-in-service YEAR alone can't
+   * distinguish a TY2025 asset before vs after that date (the year-default rate
+   * is the conservative 40% TCJA phase-down), so set this flag for OBBBA-
+   * qualifying post-1/19/2025 property to force the 100% rate (mirrors the
+   * engine's `bonus_depreciation_basis_obbba` adjustment). No-op for 2026+
+   * (already 100%) and ignored unless `bonus` is set.
+   */
+  bonusFullObbba?: boolean;
 }
 
 export interface ScheduleCAssetDepreciationParams {
@@ -5180,10 +5190,13 @@ export function computeScheduleCAssetDepreciation(
 
     // Bonus + MACRS asset (neither is income-limited). Bonus is taken only in the
     // acquisition year at that year's §168(k) rate; MACRS runs on the post-bonus
-    // basis over the recovery period (half-year convention).
-    const bonusRate = a.bonus
-      ? Math.max(0, Math.min(1, p.bonusRateByYear[a.placedInServiceYear] ?? 0))
-      : 0;
+    // basis over the recovery period (half-year convention). OBBBA post-1/19/2025
+    // property uses 100% (bonusFullObbba) rather than the conservative year default.
+    const bonusRate = !a.bonus
+      ? 0
+      : a.bonusFullObbba
+        ? 1.0
+        : Math.max(0, Math.min(1, p.bonusRateByYear[a.placedInServiceYear] ?? 0));
     const bonusBasis = bonusRate * cost;
     const macrsBasis = cost - bonusBasis;
     const table = MACRS_HALF_YEAR_TABLE[a.recoveryYears] ?? [];
