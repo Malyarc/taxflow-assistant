@@ -41,10 +41,18 @@ async function run(): Promise<void> {
     }),
   });
   try {
+    // SE base $100k → SE tax = 100,000 × 0.9235 × 0.153 = $14,129.55 (baseline).
     await api(`/clients/${c.id}/adjustments`, {
       method: "POST",
-      body: JSON.stringify({ adjustmentType: "self_employment_income", amount: 100000, isApplied: true }),
+      body: JSON.stringify({ adjustmentType: "self_employment_income", amount: 100000, description: "SE income", isApplied: true }),
     });
+    await settle();
+    const r0 = await api<{ selfEmploymentTax: number | string }>(`/clients/${c.id}/tax-return`);
+    check("baseline SE tax ($100k SE) = $14,129.55", Number(r0.selfEmploymentTax), 14129.55);
+
+    // §179 $20k asset reduces the SE base by $20k → SE tax = 80,000 × 0.9235 ×
+    // 0.153 = $11,303.64 (i.e. −$2,825.91). (scheduleCDepreciation isn't a
+    // persisted column, so we observe the flow via the persisted SE tax.)
     const asset = await api<{ id: number }>(`/clients/${c.id}/schedule-c-assets`, {
       method: "POST",
       body: JSON.stringify({
@@ -53,14 +61,14 @@ async function run(): Promise<void> {
       }),
     });
     await settle();
-    const r1 = await api<{ scheduleCDepreciation: number | string }>(`/clients/${c.id}/tax-return`);
-    check("§179 asset flows to scheduleCDepreciation ($20,000)", Number(r1.scheduleCDepreciation), 20000);
+    const r1 = await api<{ selfEmploymentTax: number | string }>(`/clients/${c.id}/tax-return`);
+    check("§179 asset reduces SE tax to $11,303.64 (SE base −$20k)", Number(r1.selfEmploymentTax), 11303.64);
 
-    // Delete it → scheduleCDepreciation returns to 0.
+    // Delete it → SE tax returns to the $14,129.55 baseline.
     await api(`/clients/${c.id}/schedule-c-assets/${asset.id}`, { method: "DELETE" });
     await settle();
-    const r2 = await api<{ scheduleCDepreciation: number | string }>(`/clients/${c.id}/tax-return`);
-    check("after delete, scheduleCDepreciation = 0", Number(r2.scheduleCDepreciation), 0);
+    const r2 = await api<{ selfEmploymentTax: number | string }>(`/clients/${c.id}/tax-return`);
+    check("after delete, SE tax back to $14,129.55", Number(r2.selfEmploymentTax), 14129.55);
   } finally {
     await api(`/clients/${c.id}`, { method: "DELETE" }).catch(() => {});
   }
