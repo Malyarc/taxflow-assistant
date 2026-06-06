@@ -4000,7 +4000,11 @@ function detectAocVsLlc(args: {
   };
 }
 
-// ── G1.30 — ACA PTC §36B reconciliation (heuristic) ─────────────────────
+// ── G1.30 — ACA PTC §36B reconciliation ─────────────────────────────────
+// Two-track: when the client has real Marketplace coverage (1095-A → the engine
+// ran Form 8962), report the ENGINE-VERIFIED §36B reconciliation. Otherwise
+// fall back to the forward-looking SE-income heuristic (a prompt to project
+// next-year MAGI accurately).
 
 const G1_30_AGI_MIN = 30_000;
 const G1_30_AGI_MAX = 120_000;
@@ -4011,6 +4015,74 @@ function detectAcaPtc(args: {
   adjustments: AdjustmentFact[];
 }): OpportunityHit | null {
   const { computed, adjustments } = args;
+
+  // ENGINE-VERIFIED path (P2-14): the client has Marketplace coverage
+  // (acaAnnualPremium/Slcsp populated from a 1095-A → calculatePremiumTaxCredit
+  // ran). Report the engine's ACTUAL Form 8962 reconciliation rather than the
+  // $1,000 heuristic. netPtc > 0 = additional refundable PTC to claim; netPtc < 0
+  // = excess advance APTC that must be repaid (capped) — the planning value is
+  // the exposure that pre-year-end MAGI management can reduce.
+  const ptc = computed.premiumTaxCredit;
+  if (ptc && ptc.annualPremium > 0 && ptc.annualSlcsp > 0 && Math.abs(ptc.netPtc) >= 1) {
+    const strategy = strategyById("G1.30");
+    const fmt = (n: number) =>
+      n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+    const pct = (n: number) => `${(n * 100).toFixed(0)}%`;
+    const verified = Math.round(Math.abs(ptc.netPtc));
+    const isClawback = ptc.netPtc < 0;
+    const capNote =
+      isClawback && Number.isFinite(ptc.repaymentCap)
+        ? ` Repayment is capped at ${fmt(ptc.repaymentCap)} under §36B(f)(2)(B) at ${pct(ptc.fplFraction)} FPL.`
+        : isClawback
+          ? ` At ${pct(ptc.fplFraction)} FPL (≥400%) the repayment is UNCAPPED — full ${fmt(verified)} is owed.`
+          : ``;
+    const vars: Record<string, number | string> = { estSavings: verified, taxYear: computed.taxYear };
+    return {
+      strategyId: strategy.id,
+      name: strategy.name,
+      category: strategy.category,
+      estSavings: verified,
+      verifiedSavings: verified,
+      savingsSource: "engine-verified",
+      confidence: strategy.confidence,
+      cpaEffortHours: strategy.cpaEffortHours,
+      recurring: strategy.recurring,
+      rationale: isClawback
+        ? `Engine-verified Form 8962: client received ${fmt(Math.round(ptc.advanceAptc))} advance APTC but ` +
+          `qualifies for only ${fmt(Math.round(ptc.computedPtc))} at ${pct(ptc.fplFraction)} FPL → ${fmt(verified)} ` +
+          `excess must be REPAID.${capNote} A pre-year-end deductible contribution (traditional IRA / HSA / SEP) ` +
+          `that lowers MAGI raises the PTC steeply near a band edge and can reduce or eliminate this clawback.`
+        : `Engine-verified Form 8962: client qualifies for ${fmt(Math.round(ptc.computedPtc))} PTC but received only ` +
+          `${fmt(Math.round(ptc.advanceAptc))} advance APTC → ${fmt(verified)} additional refundable credit to claim ` +
+          `at ${pct(ptc.fplFraction)} FPL. Confirm the 1095-A figures on Form 8962.`,
+      action: interpolate(strategy.action, vars),
+      prerequisiteData: strategy.prerequisiteData,
+      citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+      inputs: {
+        modifiedAgi: Math.round(ptc.modifiedAgi),
+        householdSize: ptc.householdSize,
+        fplFraction: Number(ptc.fplFraction.toFixed(4)),
+        applicableFigure: Number(ptc.applicableFigure.toFixed(4)),
+        expectedContribution: Math.round(ptc.expectedContribution),
+        annualPremium: Math.round(ptc.annualPremium),
+        annualSlcsp: Math.round(ptc.annualSlcsp),
+        computedPtc: Math.round(ptc.computedPtc),
+        advanceAptc: Math.round(ptc.advanceAptc),
+        netPtc: Math.round(ptc.netPtc),
+        repaymentCap: Number.isFinite(ptc.repaymentCap) ? Math.round(ptc.repaymentCap) : -1,
+      },
+      assumptions: [
+        `ENGINE-VERIFIED — value is the engine's computed Form 8962 net reconciliation (computed PTC − advance APTC), not a heuristic.`,
+        isClawback
+          ? `netPtc < 0 → excess advance APTC repayment. The ${fmt(verified)} is the exposure; how much is AVOIDABLE depends on the MAGI lever available before year-end (an IRA/HSA/SEP deduction that drops MAGI toward a lower applicable-figure band).`
+          : `netPtc > 0 → additional refundable PTC the client is owed on Form 8962 Line 26.`,
+        `MAGI = AGI + tax-exempt interest + the §911/§931/§933 foreign exclusions per §36B(d)(2)(B) (engine uses AGI + FEIE add-back).`,
+        `Post-IRA-2022 §80101 ZERO 400%-FPL cliff applies through TY2025; the 400% cliff REINSTATES TY2026 absent legislation — a repayment over 400% FPL is then uncapped.`,
+        `Coordinates with G1.42 SE Health Insurance — both reference the same premiums (Pub 974 circular calc when both apply).`,
+      ],
+    };
+  }
+
   const agi = computed.adjustedGrossIncome;
   if (agi < G1_30_AGI_MIN || agi > G1_30_AGI_MAX) return null;
   // Proxy for marketplace coverage: client has SE income (less likely
