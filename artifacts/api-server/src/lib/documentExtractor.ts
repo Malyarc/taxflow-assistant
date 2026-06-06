@@ -32,9 +32,46 @@ export interface BoundingBox {
 
 export type FieldBoxes = Partial<Record<keyof ExtractedW2Data, BoundingBox>>;
 
+/** P2-9 — per-field extraction confidence (0–1) returned by the vision model. */
+export type FieldConfidence = Partial<Record<string, number>>;
+
 export interface ExtractionResult {
   data: ExtractedW2Data;
   boxes: FieldBoxes;
+  /** P2-9 — per-field confidence (0–1). Absent when the model didn't return it. */
+  confidence: FieldConfidence;
+}
+
+/**
+ * P2-9 — fields whose confidence is at/below `threshold` (default 0.85), so the
+ * CPA reviews only the risky fields instead of re-reading every box. Only
+ * considers fields that actually have a value in `data`. Sorted least-confident
+ * first.
+ */
+export function lowConfidenceFields(
+  data: Record<string, unknown>,
+  confidence: FieldConfidence,
+  threshold = 0.85,
+): Array<{ field: string; confidence: number }> {
+  const out: Array<{ field: string; confidence: number }> = [];
+  for (const [field, c] of Object.entries(confidence)) {
+    if (typeof c !== "number" || !Number.isFinite(c)) continue;
+    const v = data[field];
+    const present = v != null && v !== "";
+    if (present && c <= threshold) out.push({ field, confidence: c });
+  }
+  return out.sort((a, b) => a.confidence - b.confidence);
+}
+
+function normalizeConfidence(parsed: unknown): FieldConfidence {
+  if (!parsed || typeof parsed !== "object") return {};
+  const out: FieldConfidence = {};
+  for (const [field, val] of Object.entries(parsed as Record<string, unknown>)) {
+    const n = typeof val === "number" ? val : Number(val);
+    // Clamp to [0,1]; accept 0–100 scale by dividing when > 1.
+    if (Number.isFinite(n)) out[field] = Math.max(0, Math.min(1, n > 1 ? n / 100 : n));
+  }
+  return out;
 }
 
 const W2_TEXT_PROMPT = `You are a tax document extraction specialist. Extract W-2 form data from the provided document text or image.
@@ -81,10 +118,20 @@ Return ONLY a valid JSON object with two top-level keys: "data" and "boxes".
 }
 Use 0 as the top-left of the image and 1000 as the bottom-right. Include "page" (1-indexed) when the document is multi-page. Only include boxes for fields you actually found a value for. If a field is null in "data", omit it from "boxes".
 
+"confidence" contains a number from 0.0 to 1.0 for each field you extracted a value for, reflecting how certain you are the value is correct (1.0 = the printed digits are unambiguous; lower for blurry, handwritten, or ambiguous values):
+{
+  "wagesBox1": 0.98,
+  "employeeSSN": 0.72,
+  ...
+}
+
+RECALL — extract EVERY box on the form that has a printed value; do not skip a box just because you are unsure (lower its confidence instead). DISAMBIGUATION HINT: Box 1 (wages, tips) and Box 3 (Social Security wages) are frequently DIFFERENT — Box 1 is reduced by pre-tax 401(k)/125-plan deferrals while Box 3 is not. Read each box's printed number independently; do NOT copy Box 1 into Box 3 (or vice-versa) when only one is legible.
+
 Final response format:
 {
   "data": { ... },
-  "boxes": { ... }
+  "boxes": { ... },
+  "confidence": { ... }
 }`;
 
 function extractJsonObject(text: string): unknown {
@@ -182,7 +229,7 @@ export async function extractW2DataFromFile(
   base64Content: string,
   mimeType: string,
 ): Promise<ExtractionResult> {
-  if (!aiEnabled) return { data: {}, boxes: {} };
+  if (!aiEnabled) return { data: {}, boxes: {}, confidence: {} };
 
   const response = await openai.chat.completions.create({
     model: aiModel,
@@ -214,10 +261,12 @@ export async function extractW2DataFromFile(
   // Tolerate two response shapes: {data,boxes} or just the flat data object
   const dataPart = parsed.data && typeof parsed.data === "object" ? parsed.data : parsed;
   const boxesPart = parsed.boxes && typeof parsed.boxes === "object" ? parsed.boxes : {};
+  const confidencePart = parsed.confidence && typeof parsed.confidence === "object" ? parsed.confidence : {};
 
   return {
     data: normalizeData(dataPart),
     boxes: normalizeBoxes(boxesPart),
+    confidence: normalizeConfidence(confidencePart),
   };
 }
 
@@ -270,6 +319,8 @@ export interface Extracted1099Data {
 export interface Extraction1099Result {
   data: Extracted1099Data;
   boxes: Record<string, BoundingBox>;
+  /** P2-9 — per-field confidence (0–1). */
+  confidence: FieldConfidence;
 }
 
 const FORM_1099_PROMPT = `You are a tax document extraction specialist. The image is a 1099 form. First, IDENTIFY which 1099 type it is from the form's header (1099-NEC, 1099-MISC, 1099-INT, 1099-DIV, 1099-B, 1099-R, 1099-G, or 1099-K). Then extract the relevant fields.
@@ -304,17 +355,22 @@ For multi-page PDFs (e.g. 1099-R can be multi-page), include "page" (1-indexed):
   ...
 }
 
+"confidence" contains a number from 0.0 to 1.0 for each field you extracted a value for (1.0 = the printed digits are unambiguous; lower for blurry/handwritten/ambiguous values).
+
+RECALL — extract EVERY box on the form that has a printed value; do not skip a box because you are unsure (lower its confidence instead).
+
 Final response format:
 {
   "data": { "formType": "...", ...fields },
-  "boxes": { ... }
+  "boxes": { ... },
+  "confidence": { ... }
 }`;
 
 export async function extract1099DataFromFile(
   base64Content: string,
   mimeType: string,
 ): Promise<Extraction1099Result> {
-  if (!aiEnabled) return { data: {}, boxes: {} };
+  if (!aiEnabled) return { data: {}, boxes: {}, confidence: {} };
 
   const response = await openai.chat.completions.create({
     model: aiModel,
@@ -344,10 +400,12 @@ export async function extract1099DataFromFile(
   const parsed = extractJsonObject(response.choices[0]?.message?.content ?? "{}") as Record<string, unknown>;
   const dataPart = parsed.data && typeof parsed.data === "object" ? parsed.data : parsed;
   const boxesPart = parsed.boxes && typeof parsed.boxes === "object" ? parsed.boxes : {};
+  const confidencePart = parsed.confidence && typeof parsed.confidence === "object" ? parsed.confidence : {};
 
   return {
     data: normalize1099Data(dataPart),
     boxes: normalizeBoxes(boxesPart),
+    confidence: normalizeConfidence(confidencePart),
   };
 }
 

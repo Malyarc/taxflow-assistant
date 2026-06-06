@@ -173,25 +173,32 @@ router.post("/clients/:clientId/documents", async (req, res): Promise<void> => {
         : await extractTextFromBase64(parsed.data.fileContent, parsed.data.fileName);
       let extractedData: Record<string, unknown> = {};
       let fieldBoxes: Record<string, unknown> = {};
+      let fieldConfidence: Record<string, unknown> = {};
 
       if (parsed.data.documentType === "w2") {
         if (isVisual) {
-          const { data, boxes } = await extractW2DataFromFile(parsed.data.fileContent, mimeType);
+          const { data, boxes, confidence } = await extractW2DataFromFile(parsed.data.fileContent, mimeType);
           extractedData = data as Record<string, unknown>;
           fieldBoxes = boxes as Record<string, unknown>;
+          fieldConfidence = confidence as Record<string, unknown>;
         } else {
           extractedData = (await extractW2DataFromText(extractedText)) as Record<string, unknown>;
         }
       } else if (parsed.data.documentType === "form_1099" && isVisual) {
-        const { data, boxes } = await extract1099DataFromFile(parsed.data.fileContent, mimeType);
+        const { data, boxes, confidence } = await extract1099DataFromFile(parsed.data.fileContent, mimeType);
         extractedData = data as Record<string, unknown>;
         fieldBoxes = boxes as Record<string, unknown>;
+        fieldConfidence = confidence as Record<string, unknown>;
       }
 
       const payload = {
         text: extractedText.slice(0, 2000),
         data: extractedData,
         boxes: fieldBoxes,
+        // P2-9 — per-field confidence (0–1) so the review UI can flag low-
+        // confidence fields ("review only the risky boxes"). Empty when the
+        // model didn't return confidence (e.g. text path or older responses).
+        confidence: fieldConfidence,
       };
 
       await db
