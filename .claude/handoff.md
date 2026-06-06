@@ -1,3 +1,47 @@
+# Handoff Note — 2026-06-06j (A+B+C batch: mid-quarter MACRS + CT NR sourcing + Schedule C asset live-app path — shipped + deployed)
+
+Did all three of the previously-deferred items. **4 commits on `main` (`1dcaeda`,
+`4e0bc01`, `b8c12a8`, `26099a5`), pushed, deployed to EC2 (migration 0009 applied,
+api-server rebuilt, pm2 restarted, frontend rsynced). No-API battery 72 suites /
+4,427 assertions green; C verified end-to-end in PROD.**
+
+- **(A) Full §168(d)(3) mid-quarter MACRS** (`1dcaeda`): replaced detection-only
+  with full computation. `computeMacrsSchedule` GENERATES the Pub 946 tables from
+  the IRS algorithm (200%/150% DB → SL switch, convention first-year fraction,
+  round-each-year-and-carry, 3-decimal for the 20-yr class). **Verified to reproduce
+  Pub 946 Table A-1 (half-year) EXACTLY for all 6 classes** (incl. the 7-yr
+  8.93/8.92/8.93 + the 3-decimal 20-yr) — so the mid-quarter output is trustworthy
+  without sourcing the (web-unreliable) published mid-quarter tables. The calculator
+  runs the 40% test PER placed-in-service year. +46 tests.
+- **(B) CT added to the NR tax-ratio method** (`4e0bc01`): NR_AS_IF_RESIDENT_STATES
+  = {CA, NY, CT}. CT verified against the CT-1040NR/PY DRS instructions (Line 8 tax
+  on full CT-AGI × Line 9 source ratio = method a, NOT the income-ratio method b).
+  Documented why VA + AL/HI/IL/MA/MS/WV (method b) and NJ/MN (unverified) are NOT
+  added. Hand-calc'd worked example ($5,950 × 0.75 = $4,462.50). +4 tests.
+- **(C) Schedule C asset live-app input path** (`b8c12a8` + test fix `26099a5`):
+  full new `schedule_c_assets` entity mirroring rental_properties — DB table
+  (migration 0009) + schema + pipeline load (by clientId, ALL years for multi-year
+  MACRS; engine skips future-placed) + CRUD routes + openapi/codegen + a compact
+  "Sched C Assets" tab in ClientDetail (list/add/edit/delete). **PROD-VERIFIED
+  end-to-end:** POST a $20k §179 asset on $100k SE → SE tax $14,129.55 → $11,303.64
+  (−$2,825.91) → delete → back to $14,129.55. The Schedule C asset calculator is now
+  reachable in the live app.
+
+## Honest notes
+- `scheduleCDepreciation` is a computed-only field (NOT a persisted column) — observe
+  the asset flow via the persisted `selfEmploymentTax`/`adjustedGrossIncome`.
+- The "Sched C Assets" UI tab is built + typechecks + Vite-builds + its CRUD endpoints
+  are prod-verified; the live BROWSER render of the tab was not separately screenshotted
+  (standard rentals-mirroring pattern; low risk).
+- Per the "don't invest in SPA forms" frame the UI tab is deliberately compact.
+
+## Verify
+typecheck (all projects) + typecheck:tests clean; 72 no-API suites / 4,427 assertions
+green; esbuild + Vite clean; deployed (migration 0009, api-server, frontend rsync) +
+prod-smoked (healthz, the C CRUD→SE-tax flow end-to-end).
+
+---
+
 # Handoff Note — 2026-06-06h (Schedule C asset-level depreciation calculator — shipped + deployed)
 
 Completed the last item of the 3-task batch (the one 2026-06-06g had deferred):
