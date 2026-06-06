@@ -1,3 +1,37 @@
+# Handoff Note — 2026-06-06c (§453 installment sale — H3 multi-year wiring — shipped + deployed)
+
+Completed the §1244/§453 pair (the 2026-06-06b §453 "deferred" note is now SUPERSEDED).
+**1 commit (`264e607`) on `main`, pushed, deployed to EC2 (api-server rebuilt, pm2
+restarted, frontend rsynced, prod-smoked, re-score 0-drift). No migration. Full no-API
+battery 66 suites / 4,160 assertions green (+16 net this increment).**
+
+- **New `long_term_capital_gain` adjustment** — a general "additional LTCG" lever injected
+  into Schedule D netting at the LTCG aggregation point (cross-nets STCG + $3k offset +
+  carryforward; flows to AGI + preferential rate + §1411 NIIT + §199A(e)(3) QBI cap).
+  openapi enum + codegen + ClientForm label. **No DB column** (adjustment types are
+  API-layer enums, never persisted as columns). CPA-enterable; also the lever the §453
+  what-if injects per year.
+- **G1.47 §453 — H3 multi-year wired** via `runDetectorMultiYear`: baseline recognizes the
+  full gain in year 0, scenario spreads gain/N over the 5-year horizon — SAME total gain,
+  so the delta is the honest bracket-smoothing benefit (the deferred gain IS taxed later;
+  this is why a single-year what-if was wrong). estSavings = engine multi-year total when
+  baselineInputs present, heuristic 5%-of-gain fallback otherwise. §453(i) recapture is a
+  documented year-0 CPA carve-out.
+- **The wiring EXPOSED the old flat-5% heuristic was wrong both ways** — it overstated ~$15k
+  on a $400k gain mostly already at 15% (planning-tests G1.47+1: engine $4,353 vs heuristic
+  $20k, hand-calc'd against the MFJ $583,750 LTCG breakpoint) and understated on a $600k
+  gain that fully crosses it (scenarios S5: $46,091). Both regression assertions updated to
+  the engine-verified values.
+- 14 new hand-calc'd tests (`tax-engine-section453-multiyear-tests.ts`): the LTCG lever flows
+  correctly (AGI/netting/preferential deltas + cross-nets a loss CF) and the detector's
+  multiYear.totalSavings is cross-checked against an INDEPENDENT runMultiYearTrajectory pair.
+
+**§1244/§453 PAIR COMPLETE.** Remaining engine-modelable heuristic: §163(d) investment-
+interest election (G1.93). Remaining credit mechanics (need calculate* first): §41 R&D
+(G1.36), §530 Coverdell (G1.59), §45S FMLA (G1.74), §51 WOTC (G1.75).
+
+---
+
 # Handoff Note — 2026-06-06b (P2-13/14/15 — planning CREDIT MECHANICS — shipped + deployed)
 
 Worked `docs/product-todo.md` P2 "Planning engine" — the credit/election mechanics
