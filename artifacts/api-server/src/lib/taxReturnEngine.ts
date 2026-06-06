@@ -3197,7 +3197,12 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // §41 — and carries forward the excess (§39). Reported aggregate.
   const wotcCredit = Math.max(0, sumByType("wotc_credit"));
   const fmlaCredit = Math.max(0, sumByType("fmla_credit"));
-  const otherGbcAvailable = wotcCredit + fmlaCredit;
+  // §39 prior-year §51/§45S general-business-credit carryforward (the §38-
+  // disallowed credit from a prior year — auto-seeded by the pipeline as
+  // `general_business_credit_carryforward`). Added to this year's §51/§45S
+  // credits before the §38(c) liability limit (mirrors the §41 rd carryforward).
+  const otherGbcCarryforwardIn = Math.max(0, sumByType("general_business_credit_carryforward"));
+  const otherGbcAvailable = wotcCredit + fmlaCredit + otherGbcCarryforwardIn;
   const otherGbcApplied = Math.min(
     otherGbcAvailable,
     availableForNonRefundable,

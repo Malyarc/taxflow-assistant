@@ -6,6 +6,14 @@
  * engine doesn't model). The engine applies them through the SAME §38(c) limit as
  * §41, against the REMAINING GBC room after §41, and carries the excess (§39).
  *
+ * W4-W6 (2026-06-06g) cover the §39 carryforward roll-forward parity with §41/
+ * §163(d): the §38-disallowed §51/§45S excess persists
+ * (tax_returns.other_general_business_credit_carryforward_remaining) and the
+ * pipeline re-seeds it as a `general_business_credit_carryforward` adjustment
+ * that the engine adds to next year's §51/§45S credits BEFORE the §38(c) limit.
+ * Tested at the engine level by feeding year-N's carryforward output as year-N+1's
+ * input (the persist→seed mirror is a 1-line mechanical copy of the §41 path).
+ *
  * Run: pnpm --filter @workspace/scripts exec tsx src/tax-engine-gbc-wotc-fmla-tests.ts
  */
 import { computeTaxReturnPure, type TaxReturnInputs, type AdjustmentFact } from "../../artifacts/api-server/src/lib/taxReturnEngine";
@@ -67,6 +75,59 @@ header("W3: §38 ordering — §41 first, then WOTC against the remainder");
   checkBool("W3 WOTC partially applied (> 0)", r.otherGeneralBusinessCreditApplied > 0, true);
   check("W3 conservation: applied + carryforward = $5,000",
     r.otherGeneralBusinessCreditApplied + r.otherGeneralBusinessCreditCarryforward, 5000, 1);
+}
+
+// ── W4: §39 carryforward-IN under the limit is applied like a current credit ──
+// A prior-year §38-disallowed §51/§45S credit, re-seeded as
+// `general_business_credit_carryforward`, is added to otherGbcAvailable before
+// the §38 limit. $4,000 < §38 limit → fully applied (cf. W1's $5,000).
+header("W4: §39 carryforward-in $4,000 applied (under §38 limit)");
+{
+  const noGbc = computeTaxReturnPure(mk([]));
+  const r = computeTaxReturnPure(mk([A("general_business_credit_carryforward", 4000)]));
+  check("W4 carryforward-in applied $4,000", r.otherGeneralBusinessCreditApplied, 4000);
+  check("W4 nothing re-carried", r.otherGeneralBusinessCreditCarryforward, 0);
+  check("W4 refund delta = $4,000", r.federalRefundOrOwed - noGbc.federalRefundOrOwed, 4000);
+}
+
+// ── W5: carryforward-in aggregates with current §51/§45S (under the limit) ──
+// $3,000 prior carryforward + $5,000 current WOTC = $8,000, all under the limit.
+header("W5: §39 carryforward $3,000 + current WOTC $5,000 = $8,000 applied");
+{
+  const r = computeTaxReturnPure(mk([
+    A("general_business_credit_carryforward", 3000),
+    A("wotc_credit", 5000),
+  ]));
+  check("W5 aggregate applied $8,000", r.otherGeneralBusinessCreditApplied, 8000);
+  check("W5 nothing re-carried", r.otherGeneralBusinessCreditCarryforward, 0);
+}
+
+// ── W6: full year-N → year-N+1 roll-forward with §39 re-carry ──
+// The §38(c) limit is shared by §41 and §51/§45S. Measure it via the §41 path
+// (a huge §41 credit is applied exactly up to the limit — independently hand-
+// calc'd in tax-engine-section41-rd-tests.ts).
+header("W6: year-N disallows excess → persists → year-N+1 applies the carryforward");
+{
+  const measuredLimit = computeTaxReturnPure(mk([
+    A("qualified_research_expenses", 500000),
+    A("qualified_research_expenses_prior_avg", 0),
+  ])).rdCreditApplied;
+  checkBool("W6 §38(c) limit measured > 0", measuredLimit > 0, true);
+
+  // Year N: WOTC = limit + $9,000 → applied = limit exactly, $9,000 disallowed →
+  // carried forward (§39). (No §41 this year, so §51/§45S get the full limit.)
+  const yearN = computeTaxReturnPure(mk([A("wotc_credit", measuredLimit + 9000)]));
+  check("W6 year-N applied = §38(c) limit", yearN.otherGeneralBusinessCreditApplied, measuredLimit);
+  check("W6 year-N carryforward = $9,000 (the §38-disallowed excess)", yearN.otherGeneralBusinessCreditCarryforward, 9000);
+
+  // Year N+1: the pipeline persists yearN's carryforward and re-seeds it as a
+  // `general_business_credit_carryforward` adjustment. Simulate that with NO new
+  // credit → the rolled-forward amount is applied (min of the amount and limit).
+  const rolled = yearN.otherGeneralBusinessCreditCarryforward;
+  const yearN1 = computeTaxReturnPure(mk([A("general_business_credit_carryforward", rolled)]));
+  check("W6 year-N+1 applies min(rolled, limit)", yearN1.otherGeneralBusinessCreditApplied, Math.min(rolled, measuredLimit));
+  check("W6 year-N+1 conservation (applied + re-carry = rolled)",
+    yearN1.otherGeneralBusinessCreditApplied + yearN1.otherGeneralBusinessCreditCarryforward, rolled);
 }
 
 // ── Summary ──

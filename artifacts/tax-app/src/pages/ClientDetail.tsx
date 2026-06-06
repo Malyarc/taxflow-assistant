@@ -2892,6 +2892,7 @@ function AdjustmentsTab({ clientId }: { clientId: number }) {
     qualified_research_expenses_prior_avg: "R&D — prior 3-yr avg QRE (ASC base; blank = startup 6%)",
     investment_interest_carryforward: "Investment Interest Carryforward (§163(d)(2), prior year)",
     rd_credit_carryforward: "R&D Credit Carryforward (§39, prior year)",
+    general_business_credit_carryforward: "General Business Credit Carryforward (§39 §51/§45S, prior year)",
     wotc_credit: "Work Opportunity Tax Credit (§51, Form 5884)",
     fmla_credit: "Paid Family & Medical Leave Credit (§45S, Form 8994)",
     scorp_reasonable_comp: "S-corp Reasonable Comp (RC Reports/BLS benchmark; G1.17)",

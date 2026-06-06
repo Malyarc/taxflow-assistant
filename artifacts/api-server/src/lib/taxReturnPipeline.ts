@@ -365,6 +365,19 @@ async function synthesizePriorYearCarryforwards(
     });
   }
 
+  // P2 — §39 §51 WOTC + §45S FMLA general-business-credit carryforward
+  // (1-back/20-forward). Auto-load the prior-year §38-disallowed credit; the
+  // engine adds it to this year's §51/§45S credits before the §38(c) limit
+  // (mirrors the §41 R&D carryforward above).
+  const otherGbcCarry = Number(priorReturn.otherGeneralBusinessCreditCarryforwardRemaining ?? 0);
+  if (otherGbcCarry > 0 && !hasManualOverride("general_business_credit_carryforward")) {
+    synthetic.push({
+      adjustmentType: "general_business_credit_carryforward",
+      amount: otherGbcCarry,
+      isApplied: true,
+    });
+  }
+
   return synthetic;
 }
 
@@ -471,6 +484,7 @@ export async function recalculateAndUpsertTaxReturn(
     adoptionCreditCarryforwardRemaining: String(result.adoptionCreditCarryforwardRemaining),
     investmentInterestCarryforwardRemaining: String(result.investmentInterestDisallowed),
     rdCreditCarryforwardRemaining: String(result.rdCreditCarryforwardRemaining),
+    otherGeneralBusinessCreditCarryforwardRemaining: String(result.otherGeneralBusinessCreditCarryforward),
     totalNonRefundableApplied: String(result.totalNonRefundableApplied),
     charitableCarryforwardCashRemaining: String(result.charitableCarryforwardCashRemaining),
     qsbsGrossGain: String(result.qsbsGrossGain),

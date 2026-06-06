@@ -82,6 +82,10 @@ export const taxReturnsTable = pgTable(
   /** P2 — §39 §41 R&D general-business-credit carried forward (§38-disallowed).
    *  Auto-loaded by the pipeline as a synthetic `rd_credit_carryforward`. */
   rdCreditCarryforwardRemaining: numeric("rd_credit_carryforward_remaining", { precision: 14, scale: 2 }),
+  /** P2 — §39 §51 WOTC + §45S FMLA general-business-credit carried forward
+   *  (§38-disallowed). Auto-loaded by the pipeline as a synthetic
+   *  `general_business_credit_carryforward` adjustment (mirrors the §41 R&D one). */
+  otherGeneralBusinessCreditCarryforwardRemaining: numeric("other_general_business_credit_carryforward_remaining", { precision: 14, scale: 2 }),
     /**
      * E2 — Form 8801 minimum-tax credit generated this year (IRC §53(b)).
      * Simplified model: equals `amtTax` (treats all AMT as deferral). CPA can

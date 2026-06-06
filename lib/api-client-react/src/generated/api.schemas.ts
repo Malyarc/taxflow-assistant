@@ -1266,6 +1266,7 @@ export const AdjustmentAdjustmentType = {
   fmla_credit: "fmla_credit",
   scorp_reasonable_comp: "scorp_reasonable_comp",
   schedule_c_depreciation: "schedule_c_depreciation",
+  general_business_credit_carryforward: "general_business_credit_carryforward",
 } as const;
 
 export interface Adjustment {
@@ -1404,6 +1405,7 @@ export const CreateAdjustmentBodyAdjustmentType = {
   fmla_credit: "fmla_credit",
   scorp_reasonable_comp: "scorp_reasonable_comp",
   schedule_c_depreciation: "schedule_c_depreciation",
+  general_business_credit_carryforward: "general_business_credit_carryforward",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -1538,6 +1540,7 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   fmla_credit: "fmla_credit",
   scorp_reasonable_comp: "scorp_reasonable_comp",
   schedule_c_depreciation: "schedule_c_depreciation",
+  general_business_credit_carryforward: "general_business_credit_carryforward",
 } as const;
 
 export interface UpdateAdjustmentBody {
