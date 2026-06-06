@@ -1954,8 +1954,9 @@ const G1_17_FICA_TOTAL = 0.153; // 6.2% SS + 1.45% Medicare, both sides
 function detectScorpReasonableComp(args: {
   client: ClientFacts;
   computed: ComputedTaxReturn;
+  adjustments: AdjustmentFact[];
 }): OpportunityHit | null {
-  const { client, computed } = args;
+  const { client, computed, adjustments } = args;
   void client; // unused — reserved for future spouse-attribution
   const k1Summary = computed.scheduleK1;
   if (!k1Summary) return null;
@@ -1974,8 +1975,17 @@ function detectScorpReasonableComp(args: {
   const sCorpIncome = k1Summary.totalActiveOrdinaryIncome ?? 0;
   if (sCorpIncome < G1_17_MIN_S_CORP_INCOME) return null;
 
-  const reasonableComp = sCorpIncome * G1_17_REASONABLE_COMP_PCT;
-  const distributions = sCorpIncome - reasonableComp;
+  // DATA-DRIVEN (PLAN): reasonable comp is a facts-and-circumstances figure (Rev.
+  // Rul. 74-44; the IRS weighs role, hours, comparable wages — what an RC Reports /
+  // BLS OES study produces). When the CPA supplies the benchmarked figure via the
+  // `scorp_reasonable_comp` adjustment, use it; otherwise fall back to the rough
+  // 40%-of-profit placeholder (NOT a substitute for a real comp study).
+  const cpaReasonableComp = sumAdjustment(adjustments, "scorp_reasonable_comp");
+  const reasonableCompIsBenchmarked = cpaReasonableComp > 0;
+  const reasonableComp = reasonableCompIsBenchmarked
+    ? Math.min(cpaReasonableComp, sCorpIncome) // comp can't exceed the available profit
+    : sCorpIncome * G1_17_REASONABLE_COMP_PCT;
+  const distributions = Math.max(0, sCorpIncome - reasonableComp);
   // PLAN-07: the FICA saved by taking distributions instead of wages is the
   // 12.4% SS portion ONLY on distributions up to the wage base REMAINING after
   // reasonable-comp wages already consume it, plus 2.9% Medicare (uncapped) on
@@ -2017,13 +2027,16 @@ function detectScorpReasonableComp(args: {
     inputs: {
       sCorpIncome: Math.round(sCorpIncome),
       reasonableComp: Math.round(reasonableComp),
+      reasonableCompIsBenchmarked: reasonableCompIsBenchmarked ? 1 : 0,
       distributions: Math.round(distributions),
       ssSavings: Math.round(ssSavings),
       medSavings: Math.round(medSavings),
       ficaRate: G1_17_FICA_TOTAL,
     },
     assumptions: [
-      `Default split assumption: 40% reasonable W-2 wages / 60% distributions. CPA refines based on RC Reports / BLS / industry.`,
+      reasonableCompIsBenchmarked
+        ? `Reasonable comp = the CPA-supplied benchmarked figure (${fmt(Math.round(reasonableComp))}, via scorp_reasonable_comp) — an RC Reports / BLS OES study result, not the rough default.`
+        : `Reasonable comp uses the rough 40%-of-profit PLACEHOLDER — supply the benchmarked figure via the scorp_reasonable_comp adjustment (RC Reports / BLS OES) for a defensible estimate.`,
       `SS portion (12.4%) applies only to distributions up to the ${fmt(ssWageBase)} TY${computed.taxYear} wage base REMAINING after reasonable comp; Medicare (2.9%) on all distributions. When comp >= the wage base, only Medicare is saved.`,
       `Rev. Rul. 74-44 + Mike v. Comm'r line of cases: distributions can be recharacterized as wages if comp is unreasonably low — leading IRS audit issue.`,
       `K-1 income assumed to be from S-corp (engine doesn't yet differentiate entity types in summary). CPA verifies on K-1 box 1 + Schedule K-1 line A.`,
@@ -5089,6 +5102,7 @@ function detectCoverdellEsa(args: {
       numAffectedAssumed: numAffected,
     },
     assumptions: [
+      `NO current-year 1040 tax effect — Coverdell contributions are NOT federally deductible and there is no credit; the entire value is TAX-FREE GROWTH (modeled here as a long-term PV). So §530 is correctly INFORMATIONAL — there is nothing for the engine to compute/verify (unlike §23/§41 which are real credits).`,
       `Contribution cap $2,000/yr PER BENEFICIARY — aggregate across all contributors.`,
       `Beneficiary must be under 18 (or special needs to age 21) when contributed. The eligible-children count includes otherDependents (to catch 17-yr-olds) — CPA excludes any 18-23 student dependents swept in, who can no longer receive new contributions.`,
       `AGI phase-out TY2024 (Rev. Proc. 2023-34 §3.20): $95k-$110k single / $190k-$220k MFJ.`,
@@ -8244,7 +8258,7 @@ export function evaluatePlanningOpportunities(args: PlanningInputs): Opportunity
   if (nua) hits.push(nua);
   const megaRoth = detectMegaBackdoorRoth({ computed, adjustments, assetBalances });
   if (megaRoth) hits.push(megaRoth);
-  const scorpComp = detectScorpReasonableComp({ client, computed });
+  const scorpComp = detectScorpReasonableComp({ client, computed, adjustments });
   if (scorpComp) hits.push(scorpComp);
   const reps = detectRepsElection({ client, computed });
   if (reps) hits.push(reps);

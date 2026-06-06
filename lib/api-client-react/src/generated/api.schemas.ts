@@ -1264,6 +1264,7 @@ export const AdjustmentAdjustmentType = {
   rd_credit_carryforward: "rd_credit_carryforward",
   wotc_credit: "wotc_credit",
   fmla_credit: "fmla_credit",
+  scorp_reasonable_comp: "scorp_reasonable_comp",
 } as const;
 
 export interface Adjustment {
@@ -1400,6 +1401,7 @@ export const CreateAdjustmentBodyAdjustmentType = {
   rd_credit_carryforward: "rd_credit_carryforward",
   wotc_credit: "wotc_credit",
   fmla_credit: "fmla_credit",
+  scorp_reasonable_comp: "scorp_reasonable_comp",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -1532,6 +1534,7 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   rd_credit_carryforward: "rd_credit_carryforward",
   wotc_credit: "wotc_credit",
   fmla_credit: "fmla_credit",
+  scorp_reasonable_comp: "scorp_reasonable_comp",
 } as const;
 
 export interface UpdateAdjustmentBody {

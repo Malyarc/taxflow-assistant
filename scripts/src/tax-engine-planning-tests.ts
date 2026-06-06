@@ -5147,6 +5147,29 @@ header("PLAN-07 G1.17 — S-corp reasonable comp: SS savings net of wage base");
   if (hit) check("PLAN-07", "estSavings = $7,395 (Medicare-only; comp ≥ wage base)", hit.estSavings, 7395, 1);
 }
 
+// PLAN-07b — CPA-supplied benchmarked reasonable comp overrides the 40% default.
+header("PLAN-07b G1.17 — benchmarked scorp_reasonable_comp used (not 40%)");
+{
+  // Same $425k S-corp K-1 but the CPA supplies a $200k RC-Reports comp (> the
+  // 40%=$170k default). Distributions $225k; comp ≥ wage base → Medicare-only:
+  // 2.9% × $225k = $6,525 (less than the $7,395 default — more is wages).
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
+    scheduleK1: [
+      { taxYear: 2024, entityName: "S-Corp Inc.", entityType: "s_corp", activityType: "active",
+        box1OrdinaryIncome: 425000 } as unknown as TaxReturnInputs["scheduleK1"][number],
+    ],
+    adjustments: [{ adjustmentType: "scorp_reasonable_comp", amount: 200000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number]],
+  });
+  const hit = findHit(hits, "G1.17");
+  checkTruthy("PLAN-07b", "G1.17 fires", hit != null, true);
+  if (hit) {
+    check("PLAN-07b", "reasonableComp = benchmarked $200k (not 40%=$170k)", Number(hit.inputs.reasonableComp), 200000);
+    check("PLAN-07b", "reasonableCompIsBenchmarked flag = 1", Number(hit.inputs.reasonableCompIsBenchmarked), 1);
+    check("PLAN-07b", "estSavings = $6,525 (Medicare 2.9% × $225k dist)", hit.estSavings, 6525, 1);
+  }
+}
+
 // ============================================================================
 // PLAN-08 — catalog validUntil expiry gate
 // ============================================================================

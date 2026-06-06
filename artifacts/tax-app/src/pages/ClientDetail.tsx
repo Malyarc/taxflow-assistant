@@ -2894,6 +2894,7 @@ function AdjustmentsTab({ clientId }: { clientId: number }) {
     rd_credit_carryforward: "R&D Credit Carryforward (§39, prior year)",
     wotc_credit: "Work Opportunity Tax Credit (§51, Form 5884)",
     fmla_credit: "Paid Family & Medical Leave Credit (§45S, Form 8994)",
+    scorp_reasonable_comp: "S-corp Reasonable Comp (RC Reports/BLS benchmark; G1.17)",
     // Phase 1.5
     educator_expenses: "Educator Expenses (K-12, $300/educator)",
     student_loan_interest: "Student Loan Interest (1098-E)",
