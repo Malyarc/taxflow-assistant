@@ -3501,11 +3501,13 @@ function detectSection1244(args: {
   client: ClientFacts;
   computed: ComputedTaxReturn;
   adjustments: AdjustmentFact[];
+  baselineInputs?: TaxReturnInputs;
 }): OpportunityHit | null {
-  const { client, computed, adjustments } = args;
+  const { client, computed, adjustments, baselineInputs } = args;
   if (computed.totalIncome < 100_000) return null;
-  const capLossCf = sumAdjustment(adjustments, "capital_loss_carryforward_short") +
-                    sumAdjustment(adjustments, "capital_loss_carryforward_long");
+  const cfShort = sumAdjustment(adjustments, "capital_loss_carryforward_short");
+  const cfLong = sumAdjustment(adjustments, "capital_loss_carryforward_long");
+  const capLossCf = cfShort + cfLong;
   if (capLossCf < G1_40_MIN_CAP_LOSS_CF) return null;
 
   const cap = client.filingStatus === "married_filing_jointly" ||
@@ -3516,6 +3518,32 @@ function detectSection1244(args: {
   const recharacterizable = Math.min(capLossCf, cap);
   const estSavings = Math.round(recharacterizable * G1_40_RATE_SPREAD);
   if (estSavings <= 0) return null;
+
+  // H2 (PLAN-Q2) — engine-verified CURRENT-YEAR delta of electing §1244 ordinary
+  // treatment vs leaving the loss as capital. The election removes the
+  // recharacterizable amount from the capital-loss carryforward (which would
+  // otherwise release only $3k/yr against ordinary income) and deducts it in
+  // full this year above the line (Form 4797 → Sch 1). The engine captures the
+  // exact bracket/NOL limits the 17% rate-spread heuristic can't. We take the
+  // recharacterized amount from short-term first (it would otherwise offset the
+  // least-preferential income). varyAmount=false — the amount is the statutory
+  // cap, not a free dial. NOTE: this is the CURRENT-YEAR benefit; the capital
+  // carryforward retains residual future value, so the LIFETIME advantage is the
+  // smaller rate-spread (heuristic estSavings) — both numbers travel on the hit.
+  const removeFromShort = Math.min(cfShort, recharacterizable);
+  const removeFromLong = recharacterizable - removeFromShort;
+  const whatIf = runDetectorWhatIf({
+    baselineInputs,
+    scenarioId: "G1.40-section-1244",
+    label: `§1244 ordinary loss $${recharacterizable.toLocaleString("en-US")}`,
+    mutations: [
+      { kind: "set_adjustment", adjustmentType: "capital_loss_carryforward_short", amount: cfShort - removeFromShort },
+      { kind: "set_adjustment", adjustmentType: "capital_loss_carryforward_long", amount: cfLong - removeFromLong },
+      { kind: "add_adjustment", adjustmentType: "deduction", amount: recharacterizable },
+    ],
+    semantics: "savings",
+    varyAmount: false,
+  });
 
   const strategy = strategyById("G1.40");
   const fmt = (n: number) =>
@@ -3547,13 +3575,14 @@ function detectSection1244(args: {
       rateSpread: G1_40_RATE_SPREAD,
     },
     assumptions: [
-      `HEURISTIC — engine cannot verify §1244 qualifying-stock status. CPA confirms all 5 requirements.`,
+      `Engine cannot verify §1244 qualifying-stock status — CPA confirms all 5 requirements; the engine VERIFIES the tax math once the loss is recharacterized.`,
+      `whatIf delta = the CURRENT-YEAR refund benefit of ordinary vs capital treatment (engine-computed, incl. real bracket/NOL limits). estSavings (rate-spread) is the conservative LIFETIME measure — the capital carryforward retains future value, so true lifetime gain sits between the two.`,
       `Annual ordinary-loss cap: $50,000 single/MFS/HoH/QSS; $100,000 MFJ. Excess flows to capital loss (Sch D).`,
       `Stock must be: (1) DOMESTIC C-CORP, (2) issued for money/property (not services), (3) ORIGINAL ISSUANCE to client, (4) corp raised ≤ $1M equity at issuance, (5) corp had > 50% gross receipts from active T/B in 5 yrs preceding loss.`,
-      `Rate spread heuristic 17% — approximate gap between ordinary marginal (24-37%) and LTCG (0-20%). Real spread varies.`,
       `Loss must be from sale, exchange, or worthlessness (Form 4797 Part I, NOT Sch D).`,
       `Strategy is REACTIVE — applies to loss already incurred. Forward planning: structure equity rounds to preserve §1244 eligibility (< $1M raised).`,
     ],
+    whatIf,
   };
 }
 
@@ -3716,6 +3745,7 @@ function detectInstallmentSale(args: {
       installmentYears: G1_47_DEFAULT_INSTALLMENT_YEARS,
       timingBenefitFactor: G1_47_TIMING_BENEFIT_FACTOR,
       annualGain,
+      currentMarginalRate: federalMarginalRate(computed),
     },
     assumptions: [
       `Heuristic timing-benefit 5% — conservative estimate. Actual savings depend on the bracket arbitrage achievable across the installment years (could be 2-15% of gain).`,
@@ -3724,7 +3754,7 @@ function detectInstallmentSale(args: {
       `Depreciation recapture (§1250) RECOGNIZED IN YEAR OF SALE — only excess flows through installment method.`,
       `Imputed interest (§483 / §1274) on long-term notes — interest portion separately ordinary.`,
       `Election to opt OUT exists — file by due date if all-cash recognition preferred (e.g., low-bracket year, buyer credit concern).`,
-      `H2 verification deferred — multi-year scenario, requires H3 wiring of installment-payment stream which the engine doesn't model.`,
+      `H2/H3 verification deferred (PLAN-Q2): the §453 benefit is multi-year bracket-smoothing — a single-year what-if would falsely book the full deferred-year tax as a saving (the gain IS taxed later). Honest wiring needs an installment-gain INPUT LEVER (recognize gain/N per year) driven through runDetectorMultiYear; the engine has no general capital-gain adjustment to inject the recognized gain yet. estSavings stays a conservative ${(G1_47_TIMING_BENEFIT_FACTOR * 100).toFixed(0)}%-of-gain ESTIMATE (not engine-verified); inputs.currentMarginalRate shows the engine's actual bracket context.`,
     ],
   };
 }
@@ -8112,7 +8142,7 @@ export function evaluatePlanningOpportunities(args: PlanningInputs): Opportunity
   if (rdCredit) hits.push(rdCredit);
   const energy25c = detectEnergyEfficientHome({ computed, adjustments, assetBalances, baselineInputs });
   if (energy25c) hits.push(energy25c);
-  const section1244 = detectSection1244({ client, computed, adjustments });
+  const section1244 = detectSection1244({ client, computed, adjustments, baselineInputs });
   if (section1244) hits.push(section1244);
   // Phase H — H1 catalog v1.7: G1.46 spousal IRA / G1.47 §453 installment /
   // G1.48 §83(b) / G1.49 family employment / G1.51 AOC vs LLC.
