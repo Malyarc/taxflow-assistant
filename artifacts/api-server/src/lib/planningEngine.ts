@@ -412,26 +412,110 @@ function detectSepIra(args: {
 // ── G1.2 — PTET (Pass-Through Entity Tax) election ────────────────────────
 
 /**
- * States that have enacted a Pass-Through Entity Tax regime that lets
- * S-corp / partnership owners bypass the federal $10k SALT cap. List per the
- * Phase G plan (AICPA tracker as of 2026-05). New states are added as they
- * enact PTET; date-version the catalog when the list changes.
+ * STATE_PTET_REGIMES — per-state Pass-Through Entity Tax (SALT-cap workaround)
+ * regime data, keyed by USPS state code (+ "DC"). Every U.S. jurisdiction is
+ * listed (hasPtet true or false) so the table is self-documenting: a maintainer
+ * sees each state's status at a glance and the yearly freshness review is a scan
+ * of one table.
+ *
+ *   hasPtet     — the state has enacted an ELECTIVE entity-level PTET that lets
+ *                 S-corp / partnership owners pay + deduct state income tax at
+ *                 the entity level, bypassing the federal $10k/$40k SALT cap
+ *                 (IRS Notice 2020-75; IRC §164(b)(6)+(7)).
+ *   topPtetRate — the entity-level PTET rate as a decimal. For GRADUATED regimes
+ *                 (NJ BAIT, NY, OR) this is the TOP marginal rate; the detector
+ *                 applies it to the owner's incremental pass-through income to
+ *                 estimate the PTET actually payable. 0 when hasPtet is false.
+ *   notes       — statutory / DOR basis, the applicable tax year for the rate,
+ *                 and any known rate trajectory.
+ *
+ * Source basis: AICPA "States' Elective Pass-Through Entity (PTE) Tax" tracker,
+ * cross-checked per state against the statute / DOR form instructions (see the
+ * per-state note) and the CrossLink / Smith & Howard / EisnerAmper 2024-25
+ * summaries. Where a state is ratcheting its rate, the rate is anchored to
+ * TY2024 (the dominant completed filing year for this app's data) and the TY2025
+ * value is captured in the note.
+ *
+ * ⚠ FRESHNESS — PTET regimes and rates change EVERY YEAR: states keep enacting
+ * PTETs, and the flat-tax states (AR, CO, GA, IA, IN, KY, MO, MS, NC, NE, UT, WV)
+ * are ratcheting their individual rates DOWN annually. Re-verify this table each
+ * filing season against the AICPA tracker + each state's DOR before relying on
+ * the dollar estimates. Table verified 2026-06.
  */
-const PTET_ELECTING_STATES: ReadonlySet<string> = new Set([
-  "AL", "AZ", "AR", "CA", "CO", "CT", "GA", "HI", "IL", "IN",
-  "IA", "KS", "KY", "LA", "MD", "MA", "MI", "MN", "MS", "MO",
-  "MT", "NE", "NJ", "NM", "NY", "NC", "OH", "OK", "OR", "RI",
-  "SC", "UT", "VA", "WV", "WI",
-]);
+export interface PtetRegime {
+  hasPtet: boolean;
+  topPtetRate: number;
+  notes: string;
+}
+
+export const STATE_PTET_REGIMES: Readonly<Record<string, PtetRegime>> = {
+  // ── States WITH an enacted elective PTET (36) ──────────────────────────────
+  AL: { hasPtet: true, topPtetRate: 0.05, notes: "5% flat (Act 2021-1, Alabama Electing PTE Tax Act; = top individual rate)." },
+  AZ: { hasPtet: true, topPtetRate: 0.025, notes: "2.5% flat TY2023+ (A.R.S. §43-1014 → §43-1011 flat individual rate; AZ Form 165 instr.; was 4.5% TY2022)." },
+  AR: { hasPtet: true, topPtetRate: 0.039, notes: "= AR top individual rate; 3.9% (eff. 1/1/2024 per the 2024 special session; was 4.4%)." },
+  CA: { hasPtet: true, topPtetRate: 0.093, notes: "9.3% FLAT (R&TC §19900 et seq.) — the specific PTE-elective rate, NOT the 13.3% top individual rate. Extended through 2030." },
+  CO: { hasPtet: true, topPtetRate: 0.044, notes: "= CO flat individual rate (SALT Parity Act, C.R.S. §39-22-340 et seq.); 4.40% TY2024 (4.25% TY2025)." },
+  CT: { hasPtet: true, topPtetRate: 0.0699, notes: "6.99% (Conn. Gen. Stat. §12-699; mandatory pre-2024, elective from TY2024)." },
+  GA: { hasPtet: true, topPtetRate: 0.0539, notes: "= GA flat individual rate (HB 149); 5.39% TY2024 (5.19% TY2025, declining toward 4.99%)." },
+  HI: { hasPtet: true, topPtetRate: 0.11, notes: "graduated to the 11% top individual rate (Act 50 (2023), TY2023+)." },
+  ID: { hasPtet: true, topPtetRate: 0.05695, notes: "= ID flat individual/corporate rate (Affected Business Entity tax); 5.695% TY2024 (was 5.8%)." },
+  IL: { hasPtet: true, topPtetRate: 0.0495, notes: "4.95% flat (35 ILCS 5/201(p); = individual rate). TY2021-2025." },
+  IN: { hasPtet: true, topPtetRate: 0.0305, notes: "= IN flat individual rate; 3.05% TY2024 (3.0% TY2025; →2.9% by 2027)." },
+  IA: { hasPtet: true, topPtetRate: 0.057, notes: "= IA top individual rate; 5.7% TY2024 (IA goes flat 3.8% TY2025)." },
+  KS: { hasPtet: true, topPtetRate: 0.057, notes: "5.7% (K.S.A. 79-32,287; = top individual rate)." },
+  KY: { hasPtet: true, topPtetRate: 0.04, notes: "= KY flat individual rate; 4.0% TY2024 (was 4.5% TY2023)." },
+  LA: { hasPtet: true, topPtetRate: 0.0425, notes: "= LA individual rate; graduated top 4.25% TY2024 (LA went flat 3% TY2025)." },
+  MD: { hasPtet: true, topPtetRate: 0.08, notes: "8% on resident individual members' shares (Md. Tax-Gen. §10-102.1; ≈ 5.75% state + county-equivalent); 8.25% corporate members." },
+  MA: { hasPtet: true, topPtetRate: 0.05, notes: "5% flat (Ch. 63D; = individual rate). The 4% millionaire surtax is NOT imposed at the entity level." },
+  MI: { hasPtet: true, topPtetRate: 0.0425, notes: "4.25% flat flow-through entity tax (MCL 206.813; = individual rate)." },
+  MN: { hasPtet: true, topPtetRate: 0.0985, notes: "= MN top individual rate 9.85% (Minn. Stat. §289A.08 subd. 7a)." },
+  MS: { hasPtet: true, topPtetRate: 0.047, notes: "= MS flat individual rate above the exemption; 4.7% TY2024 (4.4% TY2025; →4.0% by 2026)." },
+  MO: { hasPtet: true, topPtetRate: 0.048, notes: "= MO top individual rate; 4.8% TY2024 (4.7% TY2025)." },
+  MT: { hasPtet: true, topPtetRate: 0.059, notes: "= MT top individual rate (SB 554, TY2023+); 5.9% TY2024 (restructured from 6.75%)." },
+  NE: { hasPtet: true, topPtetRate: 0.0584, notes: "= NE top individual rate (LB 754); 5.84% TY2024 (5.20% TY2025; →3.99% by 2027)." },
+  NJ: { hasPtet: true, topPtetRate: 0.109, notes: "BAIT graduated 5.675%-10.9%; top 10.9% over $1M (N.J.S.A. 54A:12-1 et seq.)." },
+  NM: { hasPtet: true, topPtetRate: 0.059, notes: "= NM top individual rate 5.9% (N.M. Stat. §7-3A; PTE entity tax)." },
+  NY: { hasPtet: true, topPtetRate: 0.109, notes: "PTET graduated 6.85%-10.9%; top 10.9% (Tax Law Art. 24-A). NYC PTET (3.876%) is a separate add-on." },
+  NC: { hasPtet: true, topPtetRate: 0.045, notes: "= NC flat individual rate; 4.5% TY2024 (4.25% TY2025; 3.99% thereafter)." },
+  OH: { hasPtet: true, topPtetRate: 0.03, notes: "3% TY2023+ (R.C. §5747.38, Form IT 4738; = business-income tax rate; was 5% TY2022)." },
+  OK: { hasPtet: true, topPtetRate: 0.0475, notes: "= OK top individual rate for individual members 4.75% (68 O.S. §2355.1P-4); 4% corporate members." },
+  OR: { hasPtet: true, topPtetRate: 0.099, notes: "PTE-E graduated 9% (≤$250k) / 9.9% (>$250k); top 9.9% (ORS 314.778)." },
+  RI: { hasPtet: true, topPtetRate: 0.0599, notes: "5.99% flat (R.I. Gen. Laws §44-11-2.3; = top individual rate)." },
+  SC: { hasPtet: true, topPtetRate: 0.03, notes: "3% flat active-trade-or-business rate (S.C. Code §12-6-545 / §12-6-3910, I-335 election)." },
+  UT: { hasPtet: true, topPtetRate: 0.0455, notes: "= UT flat individual rate; 4.55% TY2024 (4.5% TY2025; was 4.65%)." },
+  VA: { hasPtet: true, topPtetRate: 0.0575, notes: "5.75% (Va. Code §58.1-390.3; = top individual rate). TY2021-2025." },
+  WV: { hasPtet: true, topPtetRate: 0.065, notes: "WV PTE tax (S.B. 151, TY2022+) at 6.5%; NOTE WV has cut its individual rates since (top ≈5.12% TY2024) — confirm the entity-year rate. Low-stakes (rarely strands SALT above the cap)." },
+  WI: { hasPtet: true, topPtetRate: 0.079, notes: "7.9% flat entity rate (Wis. Stat. §71.21(6) / §71.365(4m); = corporate rate, not the 7.65% top individual)." },
+
+  // ── Income-tax states WITHOUT a PTET (5 + DC) ──────────────────────────────
+  DE: { hasPtet: false, topPtetRate: 0, notes: "No PTET enacted (has an individual income tax but no SALT-cap workaround)." },
+  ME: { hasPtet: false, topPtetRate: 0, notes: "No PTET enacted as of TY2024." },
+  ND: { hasPtet: false, topPtetRate: 0, notes: "No PTET enacted (individual income tax, no workaround)." },
+  PA: { hasPtet: false, topPtetRate: 0, notes: "No PTET enacted — PA notably has not adopted a SALT-cap workaround." },
+  VT: { hasPtet: false, topPtetRate: 0, notes: "No PTET enacted as of TY2024." },
+  DC: { hasPtet: false, topPtetRate: 0, notes: "No §164 SALT-cap PTET (the District's unincorporated-business franchise tax is unrelated)." },
+
+  // ── No broad individual income tax → nothing to work around (9) ────────────
+  AK: { hasPtet: false, topPtetRate: 0, notes: "No broad individual income tax → no PTET." },
+  FL: { hasPtet: false, topPtetRate: 0, notes: "No individual income tax → no PTET." },
+  NV: { hasPtet: false, topPtetRate: 0, notes: "No individual income tax → no PTET." },
+  NH: { hasPtet: false, topPtetRate: 0, notes: "No tax on wage/business income (interest-&-dividends tax fully phased out by 2025) → no PTET." },
+  SD: { hasPtet: false, topPtetRate: 0, notes: "No individual income tax → no PTET." },
+  TN: { hasPtet: false, topPtetRate: 0, notes: "No individual income tax (Hall tax repealed 2021) → no PTET." },
+  TX: { hasPtet: false, topPtetRate: 0, notes: "No individual income tax → no PTET." },
+  WA: { hasPtet: false, topPtetRate: 0, notes: "No broad individual income tax (7% LTCG excise only) → no PTET." },
+  WY: { hasPtet: false, topPtetRate: 0, notes: "No individual income tax → no PTET." },
+};
 
 function detectPtetElection(args: {
   client: ClientFacts;
   computed: ComputedTaxReturn;
 }): OpportunityHit | null {
   const { client, computed } = args;
-  // Resident state must have a PTET regime.
+  // Resident state must have an enacted PTET regime with a positive rate.
   const state = (client.state ?? "").toUpperCase();
-  if (!PTET_ELECTING_STATES.has(state)) return null;
+  const regime = STATE_PTET_REGIMES[state];
+  if (!regime || !regime.hasPtet || regime.topPtetRate <= 0) return null;
 
   // Must be a K-1 client with active (i.e. non-passive) pass-through income.
   // Passive K-1 income doesn't benefit from PTET in the same way (the rule
@@ -456,15 +540,27 @@ function detectPtetElection(args: {
   const saltCap = getSaltCap(computed.taxYear, client.filingStatus, computed.adjustedGrossIncome);
   const { saltUncapped } = computed.scheduleA;
   if (saltUncapped <= saltCap) return null;
+  const strandedSalt = saltUncapped - saltCap;
 
+  // RATE-AWARE VALUATION (2026-06-06g): PTET can only move the state income tax
+  // ATTRIBUTABLE TO the pass-through income to the entity level. That tax ≈
+  // active K-1 income × the state's PTET rate (ptetPayable). The federal benefit
+  // is the LESSER of (the stranded SALT) and (the PTET actually payable),
+  // deducted at the owner's federal marginal rate. Bounding by ptetPayable fixes
+  // the prior all-stranded heuristic's overstatement for low-PTET-rate states:
+  // e.g. CA's flat 9.3% on $500k = $46.5k cannot recover $50k of stranded SALT —
+  // the $3.5k balance is property tax / non-PTE state tax PTET cannot reach.
+  const ptetPayable = activeK1 * regime.topPtetRate;
+  const recoverable = Math.min(strandedSalt, ptetPayable);
   const fedRate = federalMarginalRate(computed);
-  const recoverable = saltUncapped - saltCap;
   const estSavings = recoverable * fedRate;
   if (estSavings <= 0) return null;
 
   const strategy = strategyById("G1.2");
   const fmt = (n: number) =>
     n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  // Display rate as a trimmed percent (9.3, 10.9, 6.99, 5, 5.7).
+  const ratePct = (regime.topPtetRate * 100).toFixed(2).replace(/\.?0+$/, "");
   const vars = {
     estSavings: Math.round(estSavings),
     recoverableSalt: Math.round(recoverable),
@@ -478,26 +574,31 @@ function detectPtetElection(args: {
     cpaEffortHours: strategy.cpaEffortHours,
     recurring: strategy.recurring,
     rationale:
-      `Resident state ${state} has a PTET regime; SALT cap binds at ${fmt(saltCap)} but ` +
-      `${fmt(Math.round(saltUncapped))} of state + property tax was paid. Electing PTET would deduct ` +
-      `~${fmt(Math.round(recoverable))} at the entity level instead.`,
+      `Resident state ${state} has a PTET regime (top rate ${ratePct}%); the SALT cap binds at ` +
+      `${fmt(saltCap)} but ${fmt(Math.round(saltUncapped))} of state + property tax was paid, stranding ` +
+      `${fmt(Math.round(strandedSalt))}. Electing PTET deducts ~${fmt(Math.round(recoverable))} at the entity ` +
+      `level instead — the lesser of the stranded SALT and the ${ratePct}% PTET on ${fmt(Math.round(activeK1))} of active K-1 income.`,
     action: interpolate(strategy.action, vars),
     prerequisiteData: strategy.prerequisiteData,
     citation: `${strategy.ircSection}; ${strategy.irsPub}`,
     inputs: {
       state,
+      statePtetRate: regime.topPtetRate,
       activeK1Income: Math.round(activeK1),
       saltUncapped: Math.round(saltUncapped),
       saltCap,
+      strandedSalt: Math.round(strandedSalt),
+      ptetPayable: Math.round(ptetPayable),
       recoverableSalt: Math.round(recoverable),
       federalMarginalRate: fedRate,
     },
     assumptions: [
-      `Resident state ${state} has enacted a PTET regime (AICPA state tracker, as of Phase G).`,
-      `SALT cap for TY${computed.taxYear} = ${fmt(saltCap)} (IRC §164(b)(6)+(7)). OBBBA (P.L. 119-21 §70120) raised the cap to $40k ($20k MFS) for TY2025 [$40.4k TY2026, +1%/yr through 2029], phasing DOWN 30% of MAGI over $500k ($250k MFS) to a $10k floor, then reverting to $10k after 2029. TCJA $10k applies for TY2024 and earlier.`,
-      `Heuristic estSavings = (saltUncapped − SALT cap) × federal marginal rate (recoverable SALT deducted at the entity level instead). For a standard-deduction filer this is a CONSERVATIVE estimate — they currently get no federal benefit from any of their state tax, and PTET recovers the entity-level portion regardless of itemizing.`,
-      `Engine does NOT model the PTET election as a first-class adjustment type — H2 verification deferred (would require multi-mutation: remove personal SALT + add PTE-level deduction + PTE-state-tax credit). Tracked as H1 catalog work.`,
+      `Resident state ${state} has an enacted elective PTET regime; top entity rate ${ratePct}% (${regime.notes}).`,
+      `Federal benefit = min(stranded SALT ${fmt(Math.round(strandedSalt))}, active K-1 ${fmt(Math.round(activeK1))} × ${ratePct}% PTET = ${fmt(Math.round(ptetPayable))}) × federal marginal rate ${(fedRate * 100).toFixed(0)}%. Bounding by the PTET actually payable avoids overstating recovery when the stranded SALT is partly property tax / non-PTE state tax that PTET cannot move to the entity level.`,
+      `SALT cap for TY${computed.taxYear} = ${fmt(saltCap)} (IRC §164(b)(6)+(7)). OBBBA (P.L. 119-21 §70120) raised the cap to $40k ($20k MFS) for TY2025 [$40.4k TY2026, +1%/yr through 2029], phasing DOWN 30% of MAGI over $500k ($250k MFS) to a $10k floor, then reverting to $10k after 2029. TCJA $10k applies for TY2024 and earlier. For a standard-deduction filer this is still a conservative estimate — they get no federal benefit from any state tax today, and PTET recovers the entity-level portion regardless of itemizing.`,
       `Assumes active K-1 income (passive doesn't qualify the same way under most PTET regimes).`,
+      `⚠ PTET rates change yearly — re-verify ${state}'s rate against its DOR/statute each filing season (table verified 2026-06).`,
+      `Engine does NOT model the PTET election as a first-class adjustment type — H2 verification deferred (would require multi-mutation: remove personal SALT + add PTE-level deduction + PTE-state-tax credit). Tracked as H1 catalog work.`,
     ],
   };
 }

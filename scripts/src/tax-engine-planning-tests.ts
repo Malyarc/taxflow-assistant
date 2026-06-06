@@ -320,7 +320,9 @@ header("G1.2+1 — MFJ NY $300k K-1 + $35k SALT: PTET recovers $25k @ 24% = $6,0
   if (hit) {
     check("G1.2+1", "recoverableSalt = $25,000",
       Number(hit.inputs.recoverableSalt), 25000, 1,
-      "saltUncapped $35,000 − saltCap $10,000");
+      "min(stranded $25k, NY 10.9% × $300k = $32,700) = $25k — stranded binds");
+    check("G1.2+1", "ptetPayable = $32,700 ($300k × NY 10.9%)",
+      Number(hit.inputs.ptetPayable), 32700, 1);
     check("G1.2+1", "federal marginal = 0.24",
       Number(hit.inputs.federalMarginalRate), 0.24, 0.001,
       "MFJ 2024: $345k taxable is in 24% bracket ($201,050-$383,900)");
@@ -344,8 +346,12 @@ header("G1.2+1 — MFJ NY $300k K-1 + $35k SALT: PTET recovers $25k @ 24% = $6,0
 //   Post-QBI taxable = $460k − $92k = $368,000.
 //   MFJ 2024: 24% bracket $201,050-$383,900 → marginal 0.24 at $368k.
 //   (Pre-QBI it was 32% at $460k taxable. QBI pulls into 24% bracket.)
-//   recoverableSalt = $60k − $10k = $50k. estSavings = $50k × 0.24 = $12,000.
-header("G1.2+2 — MFJ CA $500k S-corp + $60k SALT: PTET recovers $50k @ 24% = $12,000 (post-QBI)");
+//   strandedSalt = $60k − $10k = $50,000.
+//   RATE-AWARE (2026-06-06g): CA PTET rate is a FLAT 9.3% (R&TC §19900) →
+//     ptetPayable = $500,000 × 0.093 = $46,500 < $50,000 stranded.
+//     recoverable = min($50,000, $46,500) = $46,500 (the $3.5k balance is
+//     property tax PTET can't reach). estSavings = $46,500 × 0.24 = $11,160.
+header("G1.2+2 — MFJ CA $500k S-corp + $60k SALT: PTET recovers $46.5k (9.3% binds) @ 24% = $11,160");
 {
   const hits = runPlanning({
     client: { filingStatus: "married_filing_jointly", state: "CA", taxYear: 2024 },
@@ -362,7 +368,11 @@ header("G1.2+2 — MFJ CA $500k S-corp + $60k SALT: PTET recovers $50k @ 24% = $
   const hit = findHit(hits, "G1.2");
   checkTruthy("G1.2+2", "PTET hit fires (CA)", hit != null, true);
   if (hit) {
-    check("G1.2+2", "estSavings = $12,000 (post-QBI)", hit.estSavings, 12000, 10);
+    check("G1.2+2", "estSavings = $11,160 (CA 9.3% PTET caps recovery)", hit.estSavings, 11160, 10);
+    check("G1.2+2", "ptetPayable = $46,500 ($500k × 9.3%)",
+      Number(hit.inputs.ptetPayable), 46500, 1);
+    check("G1.2+2", "recoverableSalt = $46,500 (min of $50k stranded, $46.5k PTET)",
+      Number(hit.inputs.recoverableSalt), 46500, 1);
     check("G1.2+2", "federal marginal = 0.24 (post-QBI)",
       Number(hit.inputs.federalMarginalRate), 0.24, 0.001);
   }
