@@ -1147,12 +1147,22 @@ export interface PartYearResidencyResult {
   currentStateTax: number;
 }
 
-// States whose NON-RESIDENT return uses the proportional ("as-if-resident ×
-// source-fraction") method — NY IT-203 (Line 45 income %) + CA 540NR Schedule CA.
-// Most states use this method; enabled for the two validated with worked examples
-// (NY/CA, the named targets). Other states fall back to direct brackets on the
-// source income (a conservative approximation, documented).
-const NR_AS_IF_RESIDENT_STATES = new Set<string>(["CA", "NY"]);
+// States whose NON-RESIDENT return uses the TAX-RATIO proportional method:
+//   NR tax = Tax(TOTAL income as-if-resident) × (state-source / total income).
+// Enabled ONLY for states verified to use THIS specific method against their NR
+// form (not the alternative INCOME-ratio method — prorate income, then tax — which
+// gives a different, lower result; mixing the two would mis-tax):
+//   - NY  — IT-203 (Line 45 income %; base tax on total × income %).        [worked example]
+//   - CA  — 540NR Schedule CA (CA tax = taxable income × effective rate =
+//           tax-on-all-income / all-income).                                [worked example]
+//   - CT  — CT-1040NR/PY (Line 8 tax on the FULL CT-AGI × Line 9 ratio =
+//           CT-source ÷ CT-AGI; portal.ct.gov DRS instructions).           [verified 2026-06-06j]
+// NOT added (different method or unverified): VA (Form 763 prorates net taxable
+// INCOME by the allocation %, then taxes — method b); AL/HI/IL/MA/MS/WV (prorate
+// deductions/exemptions by the source ratio — method b); NJ/MN/etc. (unverified —
+// confirm the exact line flow against the NR form before adding). Unlisted states
+// fall back to direct brackets on the source income (conservative; documented).
+const NR_AS_IF_RESIDENT_STATES = new Set<string>(["CA", "NY", "CT"]);
 
 export function calculateMultiStateTax(params: {
   residentState: string;

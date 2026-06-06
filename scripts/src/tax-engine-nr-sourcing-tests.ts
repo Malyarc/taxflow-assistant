@@ -1,8 +1,8 @@
 /**
  * PREP-B1 — per-line non-resident income sourcing (NY IT-203 / CA 540NR).
  *
- * Verifies the proportional ("as-if-resident × source-fraction") method for NY
- * and CA non-residents, the per-income-type NR source base (wages + NR business/
+ * Verifies the proportional ("as-if-resident × source-fraction") TAX-RATIO method
+ * for NY, CA, and CT (2026-06-06j) non-residents, the per-income-type NR source base (wages + NR business/
  * rental/real-property gains via perStateNonResidentOtherSourced), and the federal
  * sourcing exclusions: intangibles (interest/dividends — 4 U.S.C. §114(a)) and
  * retirement (pension/IRA/401(k)/SS — 4 U.S.C. §114(b)) are NEVER NR-source.
@@ -78,6 +78,35 @@ header("CA 540NR — TX resident, $100k CA + $50k TX wages");
   const ca = nyEntry(r, "CA");
   check("CA-as-resident($150k single) = $9,977.14", calculateStateTax(150000, "CA", "single", 2024), 9977.14, 0.5);
   check("CA NR tax = $6,651.43 (540NR ratio)", ca?.tax ?? -1, 6651.43, 0.5);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// CT-1040NR/PY worked example (CT DRS instructions: Line 8 = tax on the FULL
+// CT-AGI, Line 9 = CT-source ÷ CT-AGI ratio, CT tax = Line 8 × Line 9 — method a):
+// Single NY resident, $90,000 CT-source wages + $30,000 NY interest = $120,000.
+//   CT has NO standard deduction; the $15,000 single personal exemption is fully
+//   phased out above $45k → CT taxable = full $120,000. 2024 CT single brackets
+//   (post-2024 rate cut: 2% / 4.5% / 5.5% / 6%): 2%×10,000 + 4.5%×40,000 +
+//   5.5%×50,000 + 6%×20,000 = 200 + 1,800 + 2,750 + 1,200 = $5,950.
+//   CT ratio = 90,000/120,000 = 75% → CT NR tax = 5,950 × 0.75 = $4,462.50.
+// ════════════════════════════════════════════════════════════════════════════
+header("CT-1040NR/PY — NY resident, $90k CT wages + $30k NY interest");
+{
+  const r = calculateMultiStateTax({
+    residentState: "NY",
+    federalAgi: 120000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "CT", wages: 90000 }],
+  });
+  const ct = nyEntry(r, "CT");
+  check("CT-as-resident($120k single) = $5,950 (hand-calc, 2024 brackets)",
+    calculateStateTax(120000, "CT", "single", 2024), 5950, 0.5);
+  check("CT NR tax = $4,462.50 (CT-1040NR/PY ratio method)", ct?.tax ?? -1, 4462.5, 0.5);
+  check("CT NR tax == CT-as-resident × 0.75 (relational)",
+    ct?.tax ?? -1, calculateStateTax(120000, "CT", "single", 2024) * (90000 / 120000), 0.5);
+  checkTruthy("> the old direct-bracket-on-$90k fallback ($4,200)",
+    (ct?.tax ?? 0) > calculateStateTax(90000, "CT", "single", 2024));
 }
 
 // ════════════════════════════════════════════════════════════════════════════
