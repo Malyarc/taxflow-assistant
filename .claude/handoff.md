@@ -32,10 +32,16 @@ asset-load path is built). Full no-API battery 72 suites / 4,352 assertions gree
   ports to Haven 1:1, so Haven builds its own asset-entry UI/persistence. Until
   then the calculator is reachable only via direct `computeTaxReturnPure` calls;
   CPAs enter the computed figure via the live `schedule_c_depreciation` adjustment.
-- **§179 carryforward persist + auto-seed** — the §179(b)(3) income-limit
-  carryforward is COMPUTED + exposed (`section179Carryforward`); the calculator
-  accepts `section179CarryforwardIn`. Persisting + re-seeding it (the §41/§51 GBC
-  pattern from 2026-06-06g) is a clean follow-up.
+- **✅ §179 carryforward persist + auto-seed — DONE 2026-06-06i (commit `45268bf`,
+  migration 0008, deployed).** New nullable
+  `tax_returns.schedule_c_section179_carryforward_remaining` + `mapReturn` persist +
+  `buildSyntheticPriorYearAdjustments` re-seed as a new
+  `schedule_c_section179_carryforward` adjustment (openapi 3 enums + codegen +
+  ClientDetail label). The engine now also runs the asset calculator when ONLY a
+  carryforward is present (no new assets) so a carried §179 deducts in a later
+  year. +8 hand-calc'd tests (C1-C3: deduct-with-no-new-assets, re-limited re-carry,
+  full year-N→N+1 roll-forward). The Schedule C §179 carryforward is now at full
+  §41/§51 multi-year parity.
 - **Modeling bounds (documented in code):** half-year convention only (mid-quarter
   not modeled); an asset is either fully §179'd OR bonus+MACRS (not partial-§179 +
   bonus on the same asset); basis = cost.
