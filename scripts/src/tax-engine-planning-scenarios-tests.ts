@@ -334,11 +334,20 @@ section("SCENARIO 5 — Real Estate Investor, TX, MFJ age 55");
   checkSubset("S5", "fires G1.47 §453 installment (real_estate gain $600k > $250k)", ["G1.47"], ids(hits));
   checkSubset("S5", "fires G1.45 §121 home sale (embedded gain $400k > $100k)", ["G1.45"], ids(hits));
   checkSubset("S5", "fires G1.40 §1244 (cap loss CF $50k > $25k)", ["G1.40"], ids(hits));
-  // §453 estSavings = $600k × 0.05 = $30,000.
+  // §453 is now ENGINE-VERIFIED multi-year (PLAN-Q2): the $600k gain spread over
+  // 5 years vs lump-sum in year 0. Spreading keeps the gain mostly in the 15%
+  // LTCG bracket (MFJ 15%→20% breakpoint ~$583,750 taxable) vs 20%+NIIT on the
+  // lump → engine total ≈ $46k, between the 5%-heuristic floor ($30k) and the
+  // ((20%+3.8%)−15%)×$600k = $52.8k ceiling. estSavings now equals the engine
+  // multi-year total (not the heuristic); exact wiring is cross-checked against
+  // an independent trajectory in tax-engine-section453-multiyear-tests.ts.
   const installHit = findHit(hits, "G1.47");
   if (installHit) {
-    checkInRange("S5", "G1.47 estSavings ≈ $30k ($600k × 5%)",
-      installHit.estSavings, 29_000, 31_000);
+    const myTotal = Math.round(installHit.multiYear?.totalSavings ?? -1);
+    checkInRange("S5", "G1.47 estSavings == engine multi-year total (identity)",
+      installHit.estSavings, myTotal - 1, myTotal + 1);
+    checkInRange("S5", "G1.47 estSavings in sensible bracket-smoothing range ($30k–$60k)",
+      installHit.estSavings, 30_000, 60_000);
   }
   // §121 estSavings = min($400k, $500k MFJ cap) × 0.20 = $80,000 (plus NIIT
   // if AGI > $250k MFJ threshold; here AGI ~$350k so NIIT applies → 23.8%).

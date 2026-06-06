@@ -2885,6 +2885,7 @@ function AdjustmentsTab({ clientId }: { clientId: number }) {
     qualified_adoption_expenses: "Adoption Expenses (Form 8839 §23, per child)",
     adoption_special_needs: "Adoption — Special Needs (full credit, enter 1)",
     adoption_credit_carryforward: "Adoption Credit Carryforward (prior-year §23(c))",
+    long_term_capital_gain: "Long-Term Capital Gain (additional — not on 1099-B/Sch D)",
     // Phase 1.5
     educator_expenses: "Educator Expenses (K-12, $300/educator)",
     student_loan_interest: "Student Loan Interest (1098-E)",

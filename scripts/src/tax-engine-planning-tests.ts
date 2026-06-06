@@ -2710,7 +2710,18 @@ header("G1.46-2 — Single: suppressed (MFJ only)");
 //   embeddedGain = $400k. > $250k threshold ✓.
 //   AGI > $250k threshold ✓.
 //   estSavings = $400k × 0.05 = $20,000.
-header("H1v1.7 G1.47+1 — H5 real_estate $400k embedded gain: estSavings $20,000");
+// §453 is now ENGINE-VERIFIED multi-year (PLAN-Q2). MFJ $300k W-2 → ~$270,800
+// ordinary taxable (− $29,200 std). Lumping the $400k LTCG in year 0 pushes the
+// part above the MFJ 15%→20% LTCG breakpoint ($583,750) into 20%:
+//   $270,800 + $400,000 = $670,800 → $670,800 − $583,750 = $87,050 at 20%, rest 15%.
+//   Lump LTCG tax = $312,950×15% + $87,050×20% = $64,352.50.
+//   Spread $80k/yr (all under $583,750) = 5 × $80,000 × 15% = $60,000.
+//   Smoothing benefit ≈ $64,352.50 − $60,000 = $4,352.50 (engine $4,353; tiny
+//   3%-growth effect). The OLD flat-5% heuristic ($20,000) OVERSTATED by ~$15k —
+//   most of the $400k gain is already at 15% even when lumped. estSavings now
+//   equals the engine multi-year total. (Larger gains that fully cross the
+//   breakpoint, e.g. scenarios S5 $600k, save more — see scenarios suite.)
+header("H1v1.7 G1.47+1 — H5 real_estate $400k gain: engine multi-year ≈ $4,353 (heuristic $20k overstated)");
 {
   const hits = runPlanningH3({
     client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024, taxpayerAge: 50 } as unknown as TaxReturnInputs["client"],
@@ -2723,7 +2734,10 @@ header("H1v1.7 G1.47+1 — H5 real_estate $400k embedded gain: estSavings $20,00
   checkTruthy("G1.47+1", "fires for real_estate w/ gain > $250k", hit != null, true);
   if (hit) {
     check("G1.47+1", "embeddedGain = $400,000", Number(hit.inputs.embeddedGain), 400000);
-    check("G1.47+1", "estSavings = $20,000 ($400k × 5%)", hit.estSavings, 20000, 50);
+    check("G1.47+1", "estSavings == engine multi-year total (identity)",
+      hit.estSavings, Math.round(hit.multiYear?.totalSavings ?? -1), 1);
+    check("G1.47+1", "estSavings ≈ $4,353 (hand-calc 20%-vs-15% on the $87,050 over the breakpoint)",
+      hit.estSavings, 4353, 350);
   }
 }
 

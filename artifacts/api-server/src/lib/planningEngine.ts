@@ -3688,8 +3688,9 @@ function detectInstallmentSale(args: {
   computed: ComputedTaxReturn;
   adjustments: AdjustmentFact[];
   assetBalances?: AssetBalanceFact[];
+  baselineInputs?: TaxReturnInputs;
 }): OpportunityHit | null {
-  const { computed, adjustments, assetBalances } = args;
+  const { computed, adjustments, assetBalances, baselineInputs } = args;
   if (computed.adjustedGrossIncome < G1_47_MIN_AGI) return null;
   if (!assetBalances || assetBalances.length === 0) return null;
   // Look for real_estate or primary_residence with embedded gain > threshold.
@@ -3705,14 +3706,45 @@ function detectInstallmentSale(args: {
   const fmv = toNum(candidate.balance);
   const basis = toNum(candidate.costBasis);
   const embeddedGain = fmv - basis;
-  const estSavings = Math.round(embeddedGain * G1_47_TIMING_BENEFIT_FACTOR);
-  if (estSavings <= 0) return null;
-
-  const annualGain = Math.round(embeddedGain / G1_47_DEFAULT_INSTALLMENT_YEARS);
-
-  const strategy = strategyById("G1.47");
   const fmt = (n: number) =>
     n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+  const heuristicEstSavings = Math.round(embeddedGain * G1_47_TIMING_BENEFIT_FACTOR);
+  if (heuristicEstSavings <= 0) return null;
+
+  const years = G1_47_DEFAULT_INSTALLMENT_YEARS;
+  const annualGain = Math.round(embeddedGain / years);
+
+  // H3 (PLAN-Q2) — engine-verified MULTI-YEAR bracket-smoothing. BOTH trajectories
+  // recognize the SAME total gain; only the timing differs, so the delta is the
+  // honest installment benefit — NO overstatement: the deferred gain IS taxed in
+  // the later years (the reason a single-year what-if was wrong here). Baseline:
+  // full gain in year 0. Scenario: gain/N each year. Injected via the new
+  // `long_term_capital_gain` lever (flows through Schedule D netting → preferential
+  // rate + §1411 NIIT). §453(i) depreciation recapture is a year-0 item the CPA
+  // nets out of the embedded gain.
+  const gainMutation = (amount: number): WhatIfMutation[] => [
+    { kind: "add_adjustment", adjustmentType: "long_term_capital_gain", amount },
+  ];
+  const multiYear = runDetectorMultiYear({
+    baselineInputs,
+    horizonYears: years,
+    // Year 0 recognizes the full gain; years 1..N-1 = undefined (lump-sum baseline).
+    baselineMutationsByYear: [gainMutation(embeddedGain)],
+    scenarioMutationsByYear: Array.from({ length: years }, () => gainMutation(embeddedGain / years)),
+    multiYearAssumptions: [
+      `Installment sale spreads the ${fmt(embeddedGain)} gain evenly over ${years} years (${fmt(embeddedGain / years)}/yr) vs full recognition in year 0 — SAME total gain, different timing.`,
+      `Income scaled at 3%/year compound for projection years; the gain stacks on each year's other income (drives the LTCG-rate + NIIT-threshold smoothing).`,
+      `§453(i) depreciation recapture (§1245/§1250) is recognized in YEAR OF SALE regardless — net it out of the embedded gain before relying on this figure.`,
+      `Publicly traded securities + dealer dispositions do NOT qualify (§453(b)(2)); imputed interest (§483/§1274) is separately ordinary.`,
+    ],
+  });
+  // One-time strategy → use the TOTAL multi-year savings (not annualized) when the
+  // engine ran; else the conservative heuristic 5%-of-gain estimate.
+  const estSavings = multiYear && multiYear.totalSavings > 0
+    ? Math.round(multiYear.totalSavings)
+    : heuristicEstSavings;
+
+  const strategy = strategyById("G1.47");
   const vars: Record<string, number | string> = {
     plannedYears: G1_47_DEFAULT_INSTALLMENT_YEARS,
     annualGain,
@@ -3746,16 +3778,20 @@ function detectInstallmentSale(args: {
       timingBenefitFactor: G1_47_TIMING_BENEFIT_FACTOR,
       annualGain,
       currentMarginalRate: federalMarginalRate(computed),
+      heuristicEstSavings,
+      multiYearTotalSavings: multiYear ? Math.round(multiYear.totalSavings) : null,
     },
     assumptions: [
-      `Heuristic timing-benefit 5% — conservative estimate. Actual savings depend on the bracket arbitrage achievable across the installment years (could be 2-15% of gain).`,
-      `5-year planning horizon assumed. Real installment can be 2-30+ years per contract.`,
+      multiYear
+        ? `ENGINE-VERIFIED via the H3 multi-year primitive (PLAN-Q2): baseline recognizes the full ${fmt(embeddedGain)} gain in year 0; the scenario spreads ${fmt(embeddedGain / years)}/yr over ${years} years. SAME total gain — the delta is the genuine bracket-smoothing benefit (the deferred gain IS taxed in the later years, so this does NOT overstate). estSavings = the total multi-year savings. Heuristic was ${fmt(heuristicEstSavings)}.`
+        : `Heuristic timing-benefit ${(G1_47_TIMING_BENEFIT_FACTOR * 100).toFixed(0)}% (no baselineInputs for H3 verification) — conservative; actual bracket arbitrage across the installment years runs 2-15% of gain. inputs.currentMarginalRate shows the engine's bracket context.`,
+      `${years}-year planning horizon assumed. Real installment can be 2-30+ years per contract — longer terms smooth further.`,
       `Publicly traded securities + dealer dispositions do NOT qualify per §453(b)(2).`,
-      `Depreciation recapture (§1250) RECOGNIZED IN YEAR OF SALE — only excess flows through installment method.`,
+      `§453(i) depreciation recapture (§1245/§1250) RECOGNIZED IN YEAR OF SALE — net it out of the embedded gain; only the excess flows through the installment method.`,
       `Imputed interest (§483 / §1274) on long-term notes — interest portion separately ordinary.`,
       `Election to opt OUT exists — file by due date if all-cash recognition preferred (e.g., low-bracket year, buyer credit concern).`,
-      `H2/H3 verification deferred (PLAN-Q2): the §453 benefit is multi-year bracket-smoothing — a single-year what-if would falsely book the full deferred-year tax as a saving (the gain IS taxed later). Honest wiring needs an installment-gain INPUT LEVER (recognize gain/N per year) driven through runDetectorMultiYear; the engine has no general capital-gain adjustment to inject the recognized gain yet. estSavings stays a conservative ${(G1_47_TIMING_BENEFIT_FACTOR * 100).toFixed(0)}%-of-gain ESTIMATE (not engine-verified); inputs.currentMarginalRate shows the engine's actual bracket context.`,
     ],
+    multiYear,
   };
 }
 
@@ -8148,7 +8184,7 @@ export function evaluatePlanningOpportunities(args: PlanningInputs): Opportunity
   // G1.48 §83(b) / G1.49 family employment / G1.51 AOC vs LLC.
   const spousalIra = detectSpousalIra({ client, computed, adjustments, baselineInputs });
   if (spousalIra) hits.push(spousalIra);
-  const installmentSale = detectInstallmentSale({ computed, adjustments, assetBalances });
+  const installmentSale = detectInstallmentSale({ computed, adjustments, assetBalances, baselineInputs });
   if (installmentSale) hits.push(installmentSale);
   const section83b = detectSection83b({ computed, assetBalances });
   if (section83b) hits.push(section83b);

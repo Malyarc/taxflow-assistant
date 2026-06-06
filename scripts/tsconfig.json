@@ -89,6 +89,7 @@
     "src/tax-engine-p2-audit-tests.ts",
     "src/tax-engine-adoption-credit-tests.ts",
     "src/tax-engine-ptc-detector-tests.ts",
-    "src/tax-engine-section1244-whatif-tests.ts"
+    "src/tax-engine-section1244-whatif-tests.ts",
+    "src/tax-engine-section453-multiyear-tests.ts"
   ]
 }

@@ -1254,6 +1254,7 @@ export const AdjustmentAdjustmentType = {
   qualified_adoption_expenses: "qualified_adoption_expenses",
   adoption_special_needs: "adoption_special_needs",
   adoption_credit_carryforward: "adoption_credit_carryforward",
+  long_term_capital_gain: "long_term_capital_gain",
 } as const;
 
 export interface Adjustment {
@@ -1380,6 +1381,7 @@ export const CreateAdjustmentBodyAdjustmentType = {
   qualified_adoption_expenses: "qualified_adoption_expenses",
   adoption_special_needs: "adoption_special_needs",
   adoption_credit_carryforward: "adoption_credit_carryforward",
+  long_term_capital_gain: "long_term_capital_gain",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -1502,6 +1504,7 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   qualified_adoption_expenses: "qualified_adoption_expenses",
   adoption_special_needs: "adoption_special_needs",
   adoption_credit_carryforward: "adoption_credit_carryforward",
+  long_term_capital_gain: "long_term_capital_gain",
 } as const;
 
 export interface UpdateAdjustmentBody {

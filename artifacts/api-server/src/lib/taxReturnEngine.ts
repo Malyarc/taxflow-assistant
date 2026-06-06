@@ -1496,6 +1496,13 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // entered gain (multiply by 1.33 or 2.0 respectively). Tracked sub-gap.
   const qsbsGrossGainAdj = sumByType("qsbs_gross_gain");
   const qsbsAdjustedBasisAdj = sumByType("qsbs_adjusted_basis");
+  // P2-15b — general long-term capital gain not already captured by a 1099-B /
+  // Schedule D transaction or a more specific adjustment. Flows into the same
+  // Schedule D netting (cross-nets with STCG, the $3k offset + carryforward) and
+  // therefore into AGI, the preferential-rate calc, the §1411 NIIT base, and the
+  // §199A(e)(3) QBI cap. CPA-enterable (e.g. installment-sale recognized gain)
+  // and the lever the §453 installment-sale planning what-if injects per year.
+  const longTermCapitalGainAdj = sumByType("long_term_capital_gain");
   // C5 — §1031 like-kind exchange (post-TCJA: real property only).
   // CPA enters two adjustments per exchange (or aggregated across multiple
   // exchanges this year):
@@ -1971,7 +1978,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // Home-sale taxable remainder (K6) and QSBS taxable remainder (K7) are
   // long-term per §121 (2-of-5 ownership) and §1202 (5-year holding).
   let netSTCG = form1099Summary.shortTermCapitalGains + k1Stcg - stcgCarryforward;
-  let netLTCG = form1099Summary.longTermCapitalGains + k1Ltcg - ltcgCarryforward + homeSaleTaxableGain + qsbsTaxableGain + section1031RecognizedGain;
+  let netLTCG = form1099Summary.longTermCapitalGains + k1Ltcg - ltcgCarryforward + homeSaleTaxableGain + qsbsTaxableGain + section1031RecognizedGain + Math.max(0, longTermCapitalGainAdj);
 
   // Cross-netting per Schedule D Lines 7, 15, 16
   if (netSTCG > 0 && netLTCG < 0) {
