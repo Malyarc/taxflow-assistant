@@ -2890,6 +2890,8 @@ function AdjustmentsTab({ clientId }: { clientId: number }) {
     investment_interest_election_amount: "§163(d)(4)(B) Election — QDIV/LTCG as investment income",
     qualified_research_expenses: "R&D Qualified Research Expenses (§41, Form 6765)",
     qualified_research_expenses_prior_avg: "R&D — prior 3-yr avg QRE (ASC base; blank = startup 6%)",
+    investment_interest_carryforward: "Investment Interest Carryforward (§163(d)(2), prior year)",
+    rd_credit_carryforward: "R&D Credit Carryforward (§39, prior year)",
     // Phase 1.5
     educator_expenses: "Educator Expenses (K-12, $300/educator)",
     student_loan_interest: "Student Loan Interest (1098-E)",

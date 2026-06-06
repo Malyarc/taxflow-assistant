@@ -43,6 +43,13 @@
       "when": 1780723135759,
       "tag": "0005_normal_komodo",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1780732523734,
+      "tag": "0006_lyrical_virginia_dare",
+      "breakpoints": true
     }
   ]
 }

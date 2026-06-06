@@ -1,0 +1,2 @@
+ALTER TABLE "tax_returns" ADD COLUMN "investment_interest_carryforward_remaining" numeric(14, 2);--> statement-breakpoint
+ALTER TABLE "tax_returns" ADD COLUMN "rd_credit_carryforward_remaining" numeric(14, 2);

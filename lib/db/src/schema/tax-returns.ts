@@ -76,6 +76,12 @@ export const taxReturnsTable = pgTable(
    *  forward to next year (5-year life). Auto-loaded by the pipeline as a
    *  synthetic `adoption_credit_carryforward` adjustment. */
   adoptionCreditCarryforwardRemaining: numeric("adoption_credit_carryforward_remaining", { precision: 14, scale: 2 }),
+  /** P2 — §163(d)(2) disallowed investment interest carried forward indefinitely.
+   *  Auto-loaded by the pipeline as a synthetic `investment_interest_carryforward`. */
+  investmentInterestCarryforwardRemaining: numeric("investment_interest_carryforward_remaining", { precision: 14, scale: 2 }),
+  /** P2 — §39 §41 R&D general-business-credit carried forward (§38-disallowed).
+   *  Auto-loaded by the pipeline as a synthetic `rd_credit_carryforward`. */
+  rdCreditCarryforwardRemaining: numeric("rd_credit_carryforward_remaining", { precision: 14, scale: 2 }),
     /**
      * E2 — Form 8801 minimum-tax credit generated this year (IRC §53(b)).
      * Simplified model: equals `amtTax` (treats all AMT as deferral). CPA can

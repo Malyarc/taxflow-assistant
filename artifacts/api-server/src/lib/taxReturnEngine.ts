@@ -2065,7 +2065,14 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // §1411 NIIT base (the election is a §163(d) characterization, not a §1411 one),
   // so the NIIT base below keeps reading the pre-election `ltcgPreferential`.
   // Gated entirely on the adjustments — both 0 ⇒ no change to any existing return.
-  const investmentInterestExpenseAdj = Math.max(0, sumByType("investment_interest_expense"));
+  // §163(d)(2): prior-year disallowed investment interest carries forward
+  // INDEFINITELY and is added to the current year's investment interest expense.
+  // The pipeline auto-seeds it as `investment_interest_carryforward` from the
+  // prior return; a CPA can also enter it directly.
+  const investmentInterestExpenseAdj = Math.max(
+    0,
+    sumByType("investment_interest_expense") + sumByType("investment_interest_carryforward"),
+  );
   const nonQualifiedDividends = Math.max(
     0,
     (form1099Summary.ordinaryDividends + k1OrdinaryDividends) -
@@ -3155,13 +3162,18 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     qualifiedResearchExpenses: sumByType("qualified_research_expenses"),
     priorThreeYearAvgQre: sumByType("qualified_research_expenses_prior_avg"),
   });
+  // §39 prior-year general-business-credit carryforward (the §38-disallowed §41
+  // credit from a prior year — auto-seeded by the pipeline as `rd_credit_carryforward`).
+  // Added to this year's §41 credit before the §38(c) liability limit.
+  const rdCreditCarryforwardIn = Math.max(0, sumByType("rd_credit_carryforward"));
+  const rdCreditAvailable = rdCredit.credit + rdCreditCarryforwardIn;
   const section38Limit = Math.max(
     0,
     incomeTaxOnly - Math.max(amt.amtBeforeRegular, 0.25 * Math.max(0, incomeTaxOnly - 25_000)),
   );
-  const rdCreditApplied = Math.min(rdCredit.credit, availableForNonRefundable, section38Limit);
+  const rdCreditApplied = Math.min(rdCreditAvailable, availableForNonRefundable, section38Limit);
   availableForNonRefundable = Math.max(0, availableForNonRefundable - rdCreditApplied);
-  const rdCreditCarryforwardRemaining = Math.max(0, rdCredit.credit - rdCreditApplied);
+  const rdCreditCarryforwardRemaining = Math.max(0, rdCreditAvailable - rdCreditApplied);
 
   // ── Step 8: Refundable credits + PTC reconciliation ───
   // FED-06 — §32(i)(2) EITC disqualifying-investment-income cliff. Unlike the

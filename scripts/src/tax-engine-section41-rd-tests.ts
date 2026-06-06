@@ -149,6 +149,22 @@ header("RD-4: G1.36 engine-verified (QRE) + heuristic fallback");
   }
 }
 
+// ── RD-5 — §39 R&D credit carryforward (auto-seeded prior §38-disallowed) ──
+header("RD-5: §39 R&D credit carryforward applies against tax");
+{
+  const noRd = computeTaxReturnPure(mk([]));
+  // Prior-year §39 carryforward $5,000, no current QRE → applies (under the §38 limit).
+  const cf = computeTaxReturnPure(mk([A("rd_credit_carryforward", 5000)]));
+  check("RD-5 carryforward applied $5,000", cf.rdCreditApplied, 5000);
+  check("RD-5 refund delta = $5,000", cf.federalRefundOrOwed - noRd.federalRefundOrOwed, 5000);
+  // Current ASC $8,848 + $5,000 carryforward = $13,848 available; conservation holds
+  // (applied + carryforward-out = available) regardless of where the §38 limit lands.
+  const both = computeTaxReturnPure(mk([A("qualified_research_expenses", 100000), A("qualified_research_expenses_prior_avg", 40000), A("rd_credit_carryforward", 5000)]));
+  check("RD-5 current + CF conservation: applied + cf-out = $13,848",
+    both.rdCreditApplied + both.rdCreditCarryforwardRemaining, 13848, 1);
+  checkBool("RD-5 carryforward augments the current credit", both.rdCreditApplied > 8848, true);
+}
+
 // ── Summary ──
 console.log(`\n== §41 R&D credit ==  PASS: ${PASS.length}  FAIL: ${FAIL.length}`);
 if (FAIL.length > 0) {

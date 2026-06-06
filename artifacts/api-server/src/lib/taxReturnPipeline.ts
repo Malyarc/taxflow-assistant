@@ -341,6 +341,30 @@ async function synthesizePriorYearCarryforwards(
     });
   }
 
+  // P2 — §163(d)(2) investment-interest carryforward (indefinite). Auto-load the
+  // prior-year disallowed amount; the engine adds it to this year's investment
+  // interest expense before re-applying the net-investment-income cap.
+  const invIntCarry = Number(priorReturn.investmentInterestCarryforwardRemaining ?? 0);
+  if (invIntCarry > 0 && !hasManualOverride("investment_interest_carryforward")) {
+    synthetic.push({
+      adjustmentType: "investment_interest_carryforward",
+      amount: invIntCarry,
+      isApplied: true,
+    });
+  }
+
+  // P2 — §39 §41 R&D general-business-credit carryforward (1-back/20-forward).
+  // Auto-load the prior-year §38-disallowed credit; the engine adds it to this
+  // year's §41 credit before the §38(c) liability limit.
+  const rdCarry = Number(priorReturn.rdCreditCarryforwardRemaining ?? 0);
+  if (rdCarry > 0 && !hasManualOverride("rd_credit_carryforward")) {
+    synthetic.push({
+      adjustmentType: "rd_credit_carryforward",
+      amount: rdCarry,
+      isApplied: true,
+    });
+  }
+
   return synthetic;
 }
 
@@ -445,6 +469,8 @@ export async function recalculateAndUpsertTaxReturn(
     amtCreditCarryforwardRemaining: String(result.amtCreditCarryforwardRemaining),
     foreignTaxCreditCarryforwardRemaining: String(result.foreignTaxCreditCarryforwardRemaining),
     adoptionCreditCarryforwardRemaining: String(result.adoptionCreditCarryforwardRemaining),
+    investmentInterestCarryforwardRemaining: String(result.investmentInterestDisallowed),
+    rdCreditCarryforwardRemaining: String(result.rdCreditCarryforwardRemaining),
     totalNonRefundableApplied: String(result.totalNonRefundableApplied),
     charitableCarryforwardCashRemaining: String(result.charitableCarryforwardCashRemaining),
     qsbsGrossGain: String(result.qsbsGrossGain),

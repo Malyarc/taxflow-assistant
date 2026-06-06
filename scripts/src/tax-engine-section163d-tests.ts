@@ -149,6 +149,19 @@ header("IIE-5: G1.93 engine-verified what-if + independent cross-check");
   }
 }
 
+// ── IIE-6 — §163(d)(2) carryforward (auto-seeded prior disallowed) is additive ──
+// `investment_interest_carryforward` behaves exactly like current-year expense.
+header("IIE-6: §163(d)(2) carryforward additive to current expense");
+{
+  const viaCf = computeTaxReturnPure(mk([A("investment_interest_carryforward", 50000)]));
+  const viaExpense = computeTaxReturnPure(mk([A("investment_interest_expense", 50000)]));
+  check("IIE-6 carryforward → same deduction as current expense", viaCf.investmentInterestDeduction, viaExpense.investmentInterestDeduction);
+  check("IIE-6 carryforward deduction = $10k (NII cap)", viaCf.investmentInterestDeduction, 10000);
+  // $30k current + $20k carryforward = $50k total invInt → $40k disallowed (NII $10k).
+  const combined = computeTaxReturnPure(mk([A("investment_interest_expense", 30000), A("investment_interest_carryforward", 20000)]));
+  check("IIE-6 current + carryforward sum → disallowed $40k", combined.investmentInterestDisallowed, 40000);
+}
+
 // ── Summary ──
 console.log(`\n== §163(d) investment interest + election ==  PASS: ${PASS.length}  FAIL: ${FAIL.length}`);
 if (FAIL.length > 0) {
