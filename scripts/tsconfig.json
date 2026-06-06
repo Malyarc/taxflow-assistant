@@ -82,6 +82,7 @@
     "src/tax-engine-qbi-per-business-tests.ts",
     "src/tax-engine-ftc-carryforward-tests.ts",
     "src/tax-engine-fed-subgaps-tests.ts",
-    "src/tax-engine-form8582-tests.ts"
+    "src/tax-engine-form8582-tests.ts",
+    "src/tax-engine-state-amt-tests.ts"
   ]
 }

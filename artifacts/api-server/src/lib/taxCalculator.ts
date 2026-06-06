@@ -1451,6 +1451,37 @@ export function calculateMultiStateTax(params: {
     residentStateTax += caAmtDelta;
   }
 
+  // P2-2 — MN AMT (Schedule M1MT, Minn. Stat. §290.091). 6.75% flat on Minnesota
+  // alternative minimum taxable income after the exemption, as a delta over
+  // regular MN tax (max(0, tentative − regular)). Like CA, applied for MN
+  // RESIDENTS (M1MT; the statute confirms residents are subject — non-residents
+  // pro-rate via M1NR) with AMT preferences present. Exemptions are the
+  // §290.091 subd. 3 statutory amounts; the exemption phases out at 25¢/$ over
+  // the §55(d)(2) threshold (MN incorporates the federal phase-out by reference;
+  // 2024 §55(d)(3): $1,218,700 MFJ / $609,350 others).
+  // APPROXIMATIONS (documented, mirroring CA): (1) MN AMTI is approximated by
+  // federal AGI + the engine's AMT preferences — the exact M1MT base is federal
+  // Form 6251 AMTI with MN-specific add/subtractions; (2) the exemption uses the
+  // §290.091 statutory figures — the CPA should confirm any inflation indexing
+  // on the exact-year M1MT form. Year-indexed so future years can refine.
+  const mnAmtPrefs = params.options?.amtPreferences ?? 0;
+  if (resident === "MN" && mnAmtPrefs > 0 && !params.partYearResidency) {
+    const fs = params.filingStatus as StateFilingStatus;
+    const isJoint = fs === "married_filing_jointly" || fs === "qualifying_widow";
+    const isMfs = fs === "married_filing_separately";
+    // §290.091 subd. 3 statutory exemption by filing status.
+    const mnExemptionBase = isJoint ? 77_590 : isMfs ? 38_800 : 58_190; // single/HoH = unmarried
+    // §55(d)(2) phase-out start (2024 §55(d)(3) thresholds, incorporated by ref).
+    const mnPhaseStart = isJoint ? 1_218_700 : 609_350;
+    const mnAmti = Math.max(0, params.federalAgi) + Math.max(0, mnAmtPrefs);
+    // Exemption reduced 25¢ per $1 of AMTI over the phase-out start, floored at 0.
+    const mnExemption = Math.max(0, mnExemptionBase - 0.25 * Math.max(0, mnAmti - mnPhaseStart));
+    const mnAmtBase = Math.max(0, mnAmti - mnExemption);
+    const mnAmtTentative = 0.0675 * mnAmtBase;
+    const mnAmtDelta = Math.max(0, mnAmtTentative - residentStateTax);
+    residentStateTax += mnAmtDelta;
+  }
+
   // ── Local jurisdiction (NYC + E14 flat-rate localities) ─────────────────
   // NYC: computed when resident state is NY AND localityCode is "NYC". The
   // CPA's domicile + 183-day determination is captured upstream in
