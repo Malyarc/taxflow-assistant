@@ -4139,8 +4139,9 @@ const G1_30_HEURISTIC_BENEFIT = 1_000;
 function detectAcaPtc(args: {
   computed: ComputedTaxReturn;
   adjustments: AdjustmentFact[];
+  baselineInputs?: TaxReturnInputs;
 }): OpportunityHit | null {
-  const { computed, adjustments } = args;
+  const { computed, adjustments, baselineInputs } = args;
 
   // ENGINE-VERIFIED path (P2-14): the client has Marketplace coverage
   // (acaAnnualPremium/Slcsp populated from a 1095-A → calculatePremiumTaxCredit
@@ -4162,6 +4163,22 @@ function detectAcaPtc(args: {
         : isClawback
           ? ` At ${pct(ptc.fplFraction)} FPL (≥400%) the repayment is UNCAPPED — full ${fmt(verified)} is owed.`
           : ``;
+    // §36B-cliff OPTIMIZER (P2): near an FPL band edge / the 400% cliff the PTC is
+    // highly nonlinear, so a deductible contribution that lowers MAGI recovers far
+    // more than its face value. Engine-verified what-if at a $7,000 traditional-IRA
+    // contribution (the most universal lever — a SE client's SEP/HSA can go larger);
+    // combinedRefundDelta = the income-tax saving on the deduction PLUS the PTC swing.
+    // When present (baselineInputs supplied), this becomes the actionable headline
+    // (annotateVerifiedSavings reads it); otherwise the reconciliation |netPtc| stands.
+    const optimizerWhatIf = runDetectorWhatIf({
+      baselineInputs,
+      scenarioId: "G1.30-ptc-magi-optimizer",
+      label: "PTC: $7,000 deductible IRA lowers MAGI",
+      mutations: [{ kind: "add_adjustment", adjustmentType: "ira_contribution_traditional", amount: 7000 }],
+      semantics: "savings",
+      varyAmount: true,
+    });
+    const optimizerBeneficial = optimizerWhatIf != null && optimizerWhatIf.delta.combinedRefundDelta > 0;
     const vars: Record<string, number | string> = { estSavings: verified, taxYear: computed.taxYear };
     return {
       strategyId: strategy.id,
@@ -4196,16 +4213,24 @@ function detectAcaPtc(args: {
         advanceAptc: Math.round(ptc.advanceAptc),
         netPtc: Math.round(ptc.netPtc),
         repaymentCap: Number.isFinite(ptc.repaymentCap) ? Math.round(ptc.repaymentCap) : -1,
+        optimizerIraContribution: optimizerBeneficial ? 7000 : 0,
+        optimizerNetBenefit: optimizerBeneficial ? Math.round(Math.abs(optimizerWhatIf!.delta.combinedRefundDelta)) : 0,
       },
       assumptions: [
         `ENGINE-VERIFIED — value is the engine's computed Form 8962 net reconciliation (computed PTC − advance APTC), not a heuristic.`,
         isClawback
           ? `netPtc < 0 → excess advance APTC repayment. The ${fmt(verified)} is the exposure; how much is AVOIDABLE depends on the MAGI lever available before year-end (an IRA/HSA/SEP deduction that drops MAGI toward a lower applicable-figure band).`
           : `netPtc > 0 → additional refundable PTC the client is owed on Form 8962 Line 26.`,
+        optimizerBeneficial
+          ? `§36B OPTIMIZER (engine-verified): a $7,000 deductible traditional-IRA contribution lowers MAGI and is worth ${fmt(Math.round(Math.abs(optimizerWhatIf!.delta.combinedRefundDelta)))} combined (income-tax saving + PTC swing) — far more than $7,000 × marginal near a band edge. A SE client's SEP/HSA lever can go larger. Assumes earned income + §219(g) IRA eligibility.`
+          : `§36B optimizer what-if requires baselineInputs (per-client endpoint) — not run on the firm-wide path.`,
         `MAGI = AGI + tax-exempt interest + the §911/§931/§933 foreign exclusions per §36B(d)(2)(B) (engine uses AGI + FEIE add-back).`,
         `Post-IRA-2022 §80101 ZERO 400%-FPL cliff applies through TY2025; the 400% cliff REINSTATES TY2026 absent legislation — a repayment over 400% FPL is then uncapped.`,
         `Coordinates with G1.42 SE Health Insurance — both reference the same premiums (Pub 974 circular calc when both apply).`,
       ],
+      // When the optimizer ran (baselineInputs present + beneficial), the actionable
+      // mitigation becomes the engine-verified headline; otherwise |netPtc| stands.
+      whatIf: optimizerBeneficial ? optimizerWhatIf : undefined,
     };
   }
 
@@ -8281,7 +8306,7 @@ export function evaluatePlanningOpportunities(args: PlanningInputs): Opportunity
   if (aocVsLlc) hits.push(aocVsLlc);
   // Phase H — H1 catalog v1.8: G1.30 ACA PTC / G1.41 §1045 / G1.42 SEHI /
   // G1.43 wash sale proactive / G1.50 §72(t) SEPP.
-  const acaPtc = detectAcaPtc({ computed, adjustments });
+  const acaPtc = detectAcaPtc({ computed, adjustments, baselineInputs });
   if (acaPtc) hits.push(acaPtc);
   const section1045 = detectSection1045Rollover({ computed, adjustments });
   if (section1045) hits.push(section1045);

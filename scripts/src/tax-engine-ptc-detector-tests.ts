@@ -135,6 +135,39 @@ header("PTC-D: heuristic fallback preserved (SE income, no 1095-A)");
   }
 }
 
+// ── PTC-E — §36B optimizer: engine-verified IRA-contribution mitigation ──
+// The PTC-A clawback scenario + baselineInputs → the optimizer what-if runs. A
+// $7,000 deductible traditional IRA lowers MAGI (fplFraction 2.50 → ~2.02), raising
+// the PTC + giving an income-tax deduction. The what-if delta must match an
+// independent +$7k-IRA engine run, and (post-annotate) becomes the headline.
+header("PTC-E: §36B optimizer (IRA-contribution what-if, baselineInputs)");
+{
+  const inputs: TaxReturnInputs = {
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, acaAnnualPremium: 7000, acaAnnualSlcsp: 8000, acaAdvanceAptc: 9000, acaHouseholdSize: 1 },
+    w2s: [{ taxYear: 2024, wagesBox1: 36450, federalTaxWithheldBox2: 0, stateCode: "FL" }],
+    form1099s: [], adjustments: [], taxYear: 2024,
+  } as unknown as TaxReturnInputs;
+  const computed = computeTaxReturnPure(inputs);
+  const client = { filingStatus: "single" } as unknown as ClientFacts;
+  const hit = evaluatePlanningOpportunities({ client, computed, adjustments: [], baselineInputs: inputs }).find((h) => h.strategyId === "G1.30") ?? null;
+
+  // Independent: the same return + a $7,000 traditional IRA contribution.
+  const withIra = computeTaxReturnPure({ ...inputs, adjustments: [A("ira_contribution_traditional", 7000)] } as TaxReturnInputs);
+  const independentDelta = (withIra.federalRefundOrOwed + withIra.stateRefundOrOwed) - (computed.federalRefundOrOwed + computed.stateRefundOrOwed);
+
+  checkBool("PTC-E G1.30 fires", hit != null, true);
+  if (hit) {
+    checkBool("PTC-E optimizer what-if attached", hit.whatIf != null, true);
+    if (hit.whatIf) {
+      check("PTC-E what-if delta == independent +$7k-IRA run", hit.whatIf.delta.combinedRefundDelta, independentDelta, 1);
+      checkBool("PTC-E optimizer benefit > 0", hit.whatIf.delta.combinedRefundDelta > 0, true);
+    }
+    annotateVerifiedSavings([hit]);
+    checkEq("PTC-E savingsSource engine-verified", hit.savingsSource, "engine-verified");
+    check("PTC-E verifiedSavings = |optimizer delta|", hit.verifiedSavings ?? -1, Math.round(Math.abs(independentDelta)), 1);
+  }
+}
+
 // ── Summary ──
 console.log(`\n== ACA PTC G1.30 detector ==  PASS: ${PASS.length}  FAIL: ${FAIL.length}`);
 if (FAIL.length > 0) {
