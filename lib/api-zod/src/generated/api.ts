@@ -3621,6 +3621,131 @@ export const DeleteRentalPropertyParams = zod.object({
 });
 
 /**
+ * @summary List all Schedule C assets for a client
+ */
+export const ListScheduleCAssetsParams = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const ListScheduleCAssetsResponseItem = zod.object({
+  id: zod.number(),
+  clientId: zod.number(),
+  taxYear: zod.number(),
+  description: zod.string(),
+  cost: zod.number(),
+  recoveryYears: zod.union([
+    zod.literal(3),
+    zod.literal(5),
+    zod.literal(7),
+    zod.literal(10),
+    zod.literal(15),
+    zod.literal(20),
+  ]),
+  placedInServiceYear: zod.number(),
+  placedInServiceQuarter: zod.number().nullish(),
+  section179: zod.boolean(),
+  bonus: zod.boolean(),
+  bonusFullObbba: zod.boolean(),
+  notes: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+export const ListScheduleCAssetsResponse = zod.array(
+  ListScheduleCAssetsResponseItem,
+);
+
+/**
+ * @summary Create a Schedule C asset record
+ */
+export const CreateScheduleCAssetParams = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const CreateScheduleCAssetBody = zod.object({
+  taxYear: zod.number(),
+  description: zod.string().optional(),
+  cost: zod.number().optional(),
+  recoveryYears: zod
+    .union([
+      zod.literal(3),
+      zod.literal(5),
+      zod.literal(7),
+      zod.literal(10),
+      zod.literal(15),
+      zod.literal(20),
+    ])
+    .optional(),
+  placedInServiceYear: zod.number(),
+  placedInServiceQuarter: zod.number().nullish(),
+  section179: zod.boolean().optional(),
+  bonus: zod.boolean().optional(),
+  bonusFullObbba: zod.boolean().optional(),
+  notes: zod.string().nullish(),
+});
+
+/**
+ * @summary Update a Schedule C asset
+ */
+export const UpdateScheduleCAssetParams = zod.object({
+  clientId: zod.coerce.number(),
+  assetId: zod.coerce.number(),
+});
+
+export const UpdateScheduleCAssetBody = zod.object({
+  taxYear: zod.number().optional(),
+  description: zod.string().optional(),
+  cost: zod.number().optional(),
+  recoveryYears: zod
+    .union([
+      zod.literal(3),
+      zod.literal(5),
+      zod.literal(7),
+      zod.literal(10),
+      zod.literal(15),
+      zod.literal(20),
+    ])
+    .optional(),
+  placedInServiceYear: zod.number().optional(),
+  placedInServiceQuarter: zod.number().nullish(),
+  section179: zod.boolean().optional(),
+  bonus: zod.boolean().optional(),
+  bonusFullObbba: zod.boolean().optional(),
+  notes: zod.string().nullish(),
+});
+
+export const UpdateScheduleCAssetResponse = zod.object({
+  id: zod.number(),
+  clientId: zod.number(),
+  taxYear: zod.number(),
+  description: zod.string(),
+  cost: zod.number(),
+  recoveryYears: zod.union([
+    zod.literal(3),
+    zod.literal(5),
+    zod.literal(7),
+    zod.literal(10),
+    zod.literal(15),
+    zod.literal(20),
+  ]),
+  placedInServiceYear: zod.number(),
+  placedInServiceQuarter: zod.number().nullish(),
+  section179: zod.boolean(),
+  bonus: zod.boolean(),
+  bonusFullObbba: zod.boolean(),
+  notes: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Delete a Schedule C asset
+ */
+export const DeleteScheduleCAssetParams = zod.object({
+  clientId: zod.coerce.number(),
+  assetId: zod.coerce.number(),
+});
+
+/**
  * @summary List all capital transactions for a client
  */
 export const ListCapitalTransactionsParams = zod.object({

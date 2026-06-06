@@ -72,7 +72,7 @@ import { localityLabel } from "@/lib/localityLabels";
 import {
   FileText, FileSpreadsheet, Files, CandlestickChart, Building2, Network,
   Wallet, Calculator, GitCompareArrows, SlidersHorizontal, Target,
-  FileDown, Briefcase, Pencil, ArrowLeft,
+  FileDown, Briefcase, Pencil, ArrowLeft, Boxes,
   CheckCircle2, AlertTriangle, AlertCircle, Info,
 } from "lucide-react";
 
@@ -3126,6 +3126,7 @@ export default function ClientDetail() {
             <TabsTrigger value="form1099" className={TAB_TRIGGER_CLS}><Files className="h-4 w-4" />1099 Forms</TabsTrigger>
             <TabsTrigger value="schedD" className={TAB_TRIGGER_CLS}><CandlestickChart className="h-4 w-4" />Schedule D</TabsTrigger>
             <TabsTrigger value="rentals" className={TAB_TRIGGER_CLS}><Building2 className="h-4 w-4" />Rentals</TabsTrigger>
+            <TabsTrigger value="schedCAssets" className={TAB_TRIGGER_CLS}><Boxes className="h-4 w-4" />Sched C Assets</TabsTrigger>
             <TabsTrigger value="k1" className={TAB_TRIGGER_CLS}><Network className="h-4 w-4" />K-1s</TabsTrigger>
             <TabsTrigger value="assets" className={TAB_TRIGGER_CLS}><Wallet className="h-4 w-4" />Assets</TabsTrigger>
             <TabsTrigger value="calculator" className={TAB_TRIGGER_CLS}><Calculator className="h-4 w-4" />Tax Calculator</TabsTrigger>
@@ -3153,6 +3154,9 @@ export default function ClientDetail() {
         </TabsContent>
         <TabsContent value="rentals" className="mt-6">
           <RentalPropertiesTab clientId={clientId} taxYear={client.taxYear ?? 2024} />
+        </TabsContent>
+        <TabsContent value="schedCAssets" className="mt-6">
+          <ScheduleCAssetsTab clientId={clientId} taxYear={client.taxYear ?? 2024} />
         </TabsContent>
         <TabsContent value="k1" className="mt-6">
           <ScheduleK1Tab clientId={clientId} taxYear={client.taxYear ?? 2024} />
@@ -3711,6 +3715,254 @@ function RentalPropertyForm({
           <div className="flex justify-end gap-2 pt-2 border-t">
             <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>Cancel</Button>
             <Button type="submit" disabled={submitting}>{submitting ? "Saving…" : existing ? "Save changes" : "Add property"}</Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Schedule C Depreciable Assets Tab (Form 4562) ──────────────────────────
+
+interface ScheduleCAssetRow {
+  id: number;
+  clientId: number;
+  taxYear: number;
+  description: string;
+  cost: number;
+  recoveryYears: number;
+  placedInServiceYear: number;
+  placedInServiceQuarter: number | null;
+  section179: boolean;
+  bonus: boolean;
+  bonusFullObbba: boolean;
+  notes: string | null;
+}
+
+function ScheduleCAssetsTab({ clientId, taxYear }: { clientId: number; taxYear: number }) {
+  const qc = useQueryClient();
+  const { data: rows, isLoading } = useQuery<ScheduleCAssetRow[]>({
+    queryKey: ["schedule-c-assets", clientId],
+    queryFn: async () => {
+      const res = await fetch(`/api/clients/${clientId}/schedule-c-assets`);
+      return res.json();
+    },
+  });
+  // The full asset register (multi-year): every asset still depreciating
+  // contributes to this and future returns, so we show them all.
+  const assets = (rows ?? []).slice().sort((a, b) => b.placedInServiceYear - a.placedInServiceYear);
+  const [editing, setEditing] = useState<ScheduleCAssetRow | null>(null);
+  const [showForm, setShowForm] = useState(false);
+
+  function invalidate() {
+    qc.invalidateQueries({ queryKey: ["schedule-c-assets", clientId] });
+    qc.invalidateQueries({ queryKey: getGetTaxReturnQueryKey(clientId) });
+  }
+  async function handleDelete(id: number) {
+    if (!confirm("Delete this asset? The tax return will recalculate.")) return;
+    await fetch(`/api/clients/${clientId}/schedule-c-assets/${id}`, { method: "DELETE" });
+    invalidate();
+    toast({ title: "Asset deleted" });
+  }
+  const totalCost = assets.reduce((s, a) => s + Number(a.cost), 0);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-base font-semibold">Schedule C — Depreciable Assets (Form 4562)</h3>
+          <p className="text-xs text-muted-foreground">
+            The engine computes §179 (with the §179(b)(3) business-income limit) + §168(k) bonus + MACRS and folds the total into the Schedule C net profit / SE base. The register is multi-year — prior-year assets keep depreciating.
+          </p>
+        </div>
+        <Button onClick={() => { setEditing(null); setShowForm(true); }} size="sm">Add asset</Button>
+      </div>
+
+      {isLoading ? (
+        <Skeleton className="h-24 w-full" />
+      ) : assets.length === 0 ? (
+        <Card><CardContent className="py-8 text-center text-muted-foreground text-sm">No assets yet. Click "Add asset" to enter one — or supply the computed Form 4562 figure via the `schedule_c_depreciation` adjustment.</CardContent></Card>
+      ) : (
+        <div className="rounded-lg border overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/40 border-b">
+              <tr>
+                <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">Description</th>
+                <th className="text-right px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">Cost</th>
+                <th className="text-center px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">Class</th>
+                <th className="text-center px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">In service</th>
+                <th className="text-left px-3 py-2 text-xs font-semibold text-muted-foreground uppercase">Treatment</th>
+                <th className="px-3 py-2"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {assets.map((a) => (
+                <tr key={a.id} className="hover:bg-muted/20">
+                  <td className="px-3 py-2 font-medium">{a.description || "—"}</td>
+                  <td className="px-3 py-2 text-right font-mono">{fmt(a.cost)}</td>
+                  <td className="px-3 py-2 text-center text-muted-foreground">{a.recoveryYears}-yr</td>
+                  <td className="px-3 py-2 text-center text-muted-foreground">{a.placedInServiceYear}{a.placedInServiceQuarter ? ` Q${a.placedInServiceQuarter}` : ""}</td>
+                  <td className="px-3 py-2 text-muted-foreground">
+                    {a.section179 ? "§179" : a.bonus ? (a.bonusFullObbba ? "Bonus 100%" : "Bonus") : "MACRS"}
+                  </td>
+                  <td className="px-3 py-2 text-right space-x-1">
+                    <Button variant="ghost" size="sm" onClick={() => { setEditing(a); setShowForm(true); }}>Edit</Button>
+                    <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => handleDelete(a.id)}>Delete</Button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot className="bg-muted/20 border-t">
+              <tr>
+                <td className="px-3 py-2 text-right font-semibold">Total cost:</td>
+                <td className="px-3 py-2 text-right font-mono font-semibold">{fmt(totalCost)}</td>
+                <td colSpan={4}></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+
+      {showForm && (
+        <ScheduleCAssetForm
+          clientId={clientId}
+          taxYear={taxYear}
+          existing={editing}
+          onClose={() => { setShowForm(false); setEditing(null); }}
+          onSaved={() => { invalidate(); setShowForm(false); setEditing(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function ScheduleCAssetForm({
+  clientId, taxYear, existing, onClose, onSaved,
+}: {
+  clientId: number;
+  taxYear: number;
+  existing: ScheduleCAssetRow | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [description, setDescription] = useState(existing?.description ?? "");
+  const [cost, setCost] = useState(existing?.cost != null ? String(existing.cost) : "");
+  const [recoveryYears, setRecoveryYears] = useState(String(existing?.recoveryYears ?? 5));
+  const [placedYear, setPlacedYear] = useState(String(existing?.placedInServiceYear ?? taxYear));
+  const [quarter, setQuarter] = useState(existing?.placedInServiceQuarter != null ? String(existing.placedInServiceQuarter) : "");
+  const [section179, setSection179] = useState(existing?.section179 ?? false);
+  const [bonus, setBonus] = useState(existing?.bonus ?? false);
+  const [bonusFullObbba, setBonusFullObbba] = useState(existing?.bonusFullObbba ?? false);
+  const [notes, setNotes] = useState(existing?.notes ?? "");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (placedYear === "" || Number.isNaN(Number(placedYear))) {
+      toast({ title: "Placed-in-service year is required", variant: "destructive" });
+      return;
+    }
+    setSubmitting(true);
+    const body = {
+      taxYear,
+      description: description.trim(),
+      cost: cost === "" ? 0 : Number(cost),
+      recoveryYears: Number(recoveryYears),
+      placedInServiceYear: Number(placedYear),
+      placedInServiceQuarter: quarter === "" ? null : Number(quarter),
+      section179,
+      // §179 and bonus are mutually exclusive on one asset (engine: §179 → no bonus).
+      bonus: section179 ? false : bonus,
+      bonusFullObbba: section179 ? false : bonus && bonusFullObbba,
+      notes: notes.trim() === "" ? null : notes.trim(),
+    };
+    try {
+      const url = existing
+        ? `/api/clients/${clientId}/schedule-c-assets/${existing.id}`
+        : `/api/clients/${clientId}/schedule-c-assets`;
+      await fetch(url, {
+        method: existing ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      toast({ title: existing ? "Asset updated" : "Asset added" });
+      onSaved();
+    } catch (err) {
+      toast({ title: "Save failed", description: err instanceof Error ? err.message : "Unknown error", variant: "destructive" });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={true} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader><DialogTitle>{existing ? "Edit asset" : "Add Schedule C asset"}</DialogTitle></DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div className="space-y-1">
+            <Label>Description</Label>
+            <Input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="e.g. Delivery van, laptop, machinery" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label>Cost (depreciable basis)</Label>
+              <CurrencyInput value={cost} onChange={setCost} />
+            </div>
+            <div className="space-y-1">
+              <Label>GDS recovery class</Label>
+              <Select value={recoveryYears} onValueChange={setRecoveryYears}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="3">3-yr (tools, some software)</SelectItem>
+                  <SelectItem value="5">5-yr (computers, autos, equipment)</SelectItem>
+                  <SelectItem value="7">7-yr (furniture, fixtures)</SelectItem>
+                  <SelectItem value="10">10-yr</SelectItem>
+                  <SelectItem value="15">15-yr (land improvements)</SelectItem>
+                  <SelectItem value="20">20-yr</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label>Placed-in-service year</Label>
+              <Input type="number" value={placedYear} onChange={(e) => setPlacedYear(e.target.value)} placeholder="2024" />
+            </div>
+            <div className="space-y-1">
+              <Label>Quarter (for the §168(d)(3) mid-quarter test)</Label>
+              <Select value={quarter || "none"} onValueChange={(v) => setQuarter(v === "none" ? "" : v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Not specified (half-year)</SelectItem>
+                  <SelectItem value="1">Q1</SelectItem>
+                  <SelectItem value="2">Q2</SelectItem>
+                  <SelectItem value="3">Q3</SelectItem>
+                  <SelectItem value="4">Q4</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <div className="space-y-2 rounded-md border p-3">
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={section179} onChange={(e) => setSection179(e.target.checked)} />
+              Elect §179 full expensing (acquisition year; no MACRS on the §179'd basis)
+            </label>
+            <label className={`flex items-center gap-2 text-sm ${section179 ? "opacity-40" : ""}`}>
+              <input type="checkbox" checked={bonus} disabled={section179} onChange={(e) => setBonus(e.target.checked)} />
+              Apply §168(k) bonus depreciation
+            </label>
+            <label className={`flex items-center gap-2 text-sm ml-6 ${section179 || !bonus ? "opacity-40" : ""}`}>
+              <input type="checkbox" checked={bonusFullObbba} disabled={section179 || !bonus} onChange={(e) => setBonusFullObbba(e.target.checked)} />
+              OBBBA 100% (placed in service after 2025-01-19)
+            </label>
+          </div>
+          <div className="space-y-1">
+            <Label>Notes (optional)</Label>
+            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} />
+          </div>
+          <div className="flex justify-end gap-2 pt-2 border-t">
+            <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>Cancel</Button>
+            <Button type="submit" disabled={submitting}>{submitting ? "Saving…" : existing ? "Save changes" : "Add asset"}</Button>
           </div>
         </form>
       </DialogContent>

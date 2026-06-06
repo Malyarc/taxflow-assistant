@@ -12,3 +12,4 @@ export * from "./capital-transactions";
 export * from "./schedule-k1-data";
 export * from "./asset-balances";
 export * from "./disclosure-consents";
+export * from "./schedule-c-assets";

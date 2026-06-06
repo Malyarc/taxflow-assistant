@@ -1646,6 +1646,91 @@ export interface UpdateRentalPropertyBody {
   notes?: string | null;
 }
 
+export type ScheduleCAssetRecoveryYears =
+  (typeof ScheduleCAssetRecoveryYears)[keyof typeof ScheduleCAssetRecoveryYears];
+
+export const ScheduleCAssetRecoveryYears = {
+  NUMBER_3: 3,
+  NUMBER_5: 5,
+  NUMBER_7: 7,
+  NUMBER_10: 10,
+  NUMBER_15: 15,
+  NUMBER_20: 20,
+} as const;
+
+export interface ScheduleCAsset {
+  id: number;
+  clientId: number;
+  taxYear: number;
+  description: string;
+  cost: number;
+  recoveryYears: ScheduleCAssetRecoveryYears;
+  placedInServiceYear: number;
+  /** @nullable */
+  placedInServiceQuarter?: number | null;
+  section179: boolean;
+  bonus: boolean;
+  bonusFullObbba: boolean;
+  /** @nullable */
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CreateScheduleCAssetBodyRecoveryYears =
+  (typeof CreateScheduleCAssetBodyRecoveryYears)[keyof typeof CreateScheduleCAssetBodyRecoveryYears];
+
+export const CreateScheduleCAssetBodyRecoveryYears = {
+  NUMBER_3: 3,
+  NUMBER_5: 5,
+  NUMBER_7: 7,
+  NUMBER_10: 10,
+  NUMBER_15: 15,
+  NUMBER_20: 20,
+} as const;
+
+export interface CreateScheduleCAssetBody {
+  taxYear: number;
+  description?: string;
+  cost?: number;
+  recoveryYears?: CreateScheduleCAssetBodyRecoveryYears;
+  placedInServiceYear: number;
+  /** @nullable */
+  placedInServiceQuarter?: number | null;
+  section179?: boolean;
+  bonus?: boolean;
+  bonusFullObbba?: boolean;
+  /** @nullable */
+  notes?: string | null;
+}
+
+export type UpdateScheduleCAssetBodyRecoveryYears =
+  (typeof UpdateScheduleCAssetBodyRecoveryYears)[keyof typeof UpdateScheduleCAssetBodyRecoveryYears];
+
+export const UpdateScheduleCAssetBodyRecoveryYears = {
+  NUMBER_3: 3,
+  NUMBER_5: 5,
+  NUMBER_7: 7,
+  NUMBER_10: 10,
+  NUMBER_15: 15,
+  NUMBER_20: 20,
+} as const;
+
+export interface UpdateScheduleCAssetBody {
+  taxYear?: number;
+  description?: string;
+  cost?: number;
+  recoveryYears?: UpdateScheduleCAssetBodyRecoveryYears;
+  placedInServiceYear?: number;
+  /** @nullable */
+  placedInServiceQuarter?: number | null;
+  section179?: boolean;
+  bonus?: boolean;
+  bonusFullObbba?: boolean;
+  /** @nullable */
+  notes?: string | null;
+}
+
 export interface Form8606PartIIIResult {
   /** Over 59½ AND first-Roth 5+ years old → entire distribution tax-free, no penalty. */
   isQualifiedDistribution: boolean;

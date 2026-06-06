@@ -30,6 +30,7 @@ import type {
   CreateClientBody,
   CreateForm1099DataBody,
   CreateRentalPropertyBody,
+  CreateScheduleCAssetBody,
   CreateScheduleK1Body,
   CreateW2DataBody,
   DashboardSummary,
@@ -57,6 +58,7 @@ import type {
   RentalProperty,
   RothOptimizerBody,
   RothOptimizerResponse,
+  ScheduleCAsset,
   ScheduleK1,
   Settings,
   StateComparisonBody,
@@ -69,6 +71,7 @@ import type {
   UpdateClientBody,
   UpdateForm1099DataBody,
   UpdateRentalPropertyBody,
+  UpdateScheduleCAssetBody,
   UpdateScheduleK1Body,
   UpdateTaxReturnBody,
   UpdateW2DataBody,
@@ -4952,6 +4955,386 @@ export const useDeleteRentalProperty = <
   TContext
 > => {
   return useMutation(getDeleteRentalPropertyMutationOptions(options));
+};
+
+/**
+ * @summary List all Schedule C assets for a client
+ */
+export const getListScheduleCAssetsUrl = (clientId: number) => {
+  return `/api/clients/${clientId}/schedule-c-assets`;
+};
+
+export const listScheduleCAssets = async (
+  clientId: number,
+  options?: RequestInit,
+): Promise<ScheduleCAsset[]> => {
+  return customFetch<ScheduleCAsset[]>(getListScheduleCAssetsUrl(clientId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListScheduleCAssetsQueryKey = (clientId: number) => {
+  return [`/api/clients/${clientId}/schedule-c-assets`] as const;
+};
+
+export const getListScheduleCAssetsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listScheduleCAssets>>,
+  TError = ErrorType<unknown>,
+>(
+  clientId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listScheduleCAssets>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListScheduleCAssetsQueryKey(clientId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listScheduleCAssets>>
+  > = ({ signal }) =>
+    listScheduleCAssets(clientId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!clientId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof listScheduleCAssets>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListScheduleCAssetsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listScheduleCAssets>>
+>;
+export type ListScheduleCAssetsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List all Schedule C assets for a client
+ */
+
+export function useListScheduleCAssets<
+  TData = Awaited<ReturnType<typeof listScheduleCAssets>>,
+  TError = ErrorType<unknown>,
+>(
+  clientId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listScheduleCAssets>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListScheduleCAssetsQueryOptions(clientId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Create a Schedule C asset record
+ */
+export const getCreateScheduleCAssetUrl = (clientId: number) => {
+  return `/api/clients/${clientId}/schedule-c-assets`;
+};
+
+export const createScheduleCAsset = async (
+  clientId: number,
+  createScheduleCAssetBody: CreateScheduleCAssetBody,
+  options?: RequestInit,
+): Promise<ScheduleCAsset> => {
+  return customFetch<ScheduleCAsset>(getCreateScheduleCAssetUrl(clientId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createScheduleCAssetBody),
+  });
+};
+
+export const getCreateScheduleCAssetMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createScheduleCAsset>>,
+    TError,
+    { clientId: number; data: BodyType<CreateScheduleCAssetBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createScheduleCAsset>>,
+  TError,
+  { clientId: number; data: BodyType<CreateScheduleCAssetBody> },
+  TContext
+> => {
+  const mutationKey = ["createScheduleCAsset"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createScheduleCAsset>>,
+    { clientId: number; data: BodyType<CreateScheduleCAssetBody> }
+  > = (props) => {
+    const { clientId, data } = props ?? {};
+
+    return createScheduleCAsset(clientId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateScheduleCAssetMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createScheduleCAsset>>
+>;
+export type CreateScheduleCAssetMutationBody =
+  BodyType<CreateScheduleCAssetBody>;
+export type CreateScheduleCAssetMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Create a Schedule C asset record
+ */
+export const useCreateScheduleCAsset = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createScheduleCAsset>>,
+    TError,
+    { clientId: number; data: BodyType<CreateScheduleCAssetBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createScheduleCAsset>>,
+  TError,
+  { clientId: number; data: BodyType<CreateScheduleCAssetBody> },
+  TContext
+> => {
+  return useMutation(getCreateScheduleCAssetMutationOptions(options));
+};
+
+/**
+ * @summary Update a Schedule C asset
+ */
+export const getUpdateScheduleCAssetUrl = (
+  clientId: number,
+  assetId: number,
+) => {
+  return `/api/clients/${clientId}/schedule-c-assets/${assetId}`;
+};
+
+export const updateScheduleCAsset = async (
+  clientId: number,
+  assetId: number,
+  updateScheduleCAssetBody: UpdateScheduleCAssetBody,
+  options?: RequestInit,
+): Promise<ScheduleCAsset> => {
+  return customFetch<ScheduleCAsset>(
+    getUpdateScheduleCAssetUrl(clientId, assetId),
+    {
+      ...options,
+      method: "PATCH",
+      headers: { "Content-Type": "application/json", ...options?.headers },
+      body: JSON.stringify(updateScheduleCAssetBody),
+    },
+  );
+};
+
+export const getUpdateScheduleCAssetMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateScheduleCAsset>>,
+    TError,
+    {
+      clientId: number;
+      assetId: number;
+      data: BodyType<UpdateScheduleCAssetBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateScheduleCAsset>>,
+  TError,
+  {
+    clientId: number;
+    assetId: number;
+    data: BodyType<UpdateScheduleCAssetBody>;
+  },
+  TContext
+> => {
+  const mutationKey = ["updateScheduleCAsset"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateScheduleCAsset>>,
+    {
+      clientId: number;
+      assetId: number;
+      data: BodyType<UpdateScheduleCAssetBody>;
+    }
+  > = (props) => {
+    const { clientId, assetId, data } = props ?? {};
+
+    return updateScheduleCAsset(clientId, assetId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateScheduleCAssetMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateScheduleCAsset>>
+>;
+export type UpdateScheduleCAssetMutationBody =
+  BodyType<UpdateScheduleCAssetBody>;
+export type UpdateScheduleCAssetMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Update a Schedule C asset
+ */
+export const useUpdateScheduleCAsset = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateScheduleCAsset>>,
+    TError,
+    {
+      clientId: number;
+      assetId: number;
+      data: BodyType<UpdateScheduleCAssetBody>;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateScheduleCAsset>>,
+  TError,
+  {
+    clientId: number;
+    assetId: number;
+    data: BodyType<UpdateScheduleCAssetBody>;
+  },
+  TContext
+> => {
+  return useMutation(getUpdateScheduleCAssetMutationOptions(options));
+};
+
+/**
+ * @summary Delete a Schedule C asset
+ */
+export const getDeleteScheduleCAssetUrl = (
+  clientId: number,
+  assetId: number,
+) => {
+  return `/api/clients/${clientId}/schedule-c-assets/${assetId}`;
+};
+
+export const deleteScheduleCAsset = async (
+  clientId: number,
+  assetId: number,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteScheduleCAssetUrl(clientId, assetId), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteScheduleCAssetMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteScheduleCAsset>>,
+    TError,
+    { clientId: number; assetId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteScheduleCAsset>>,
+  TError,
+  { clientId: number; assetId: number },
+  TContext
+> => {
+  const mutationKey = ["deleteScheduleCAsset"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteScheduleCAsset>>,
+    { clientId: number; assetId: number }
+  > = (props) => {
+    const { clientId, assetId } = props ?? {};
+
+    return deleteScheduleCAsset(clientId, assetId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteScheduleCAssetMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteScheduleCAsset>>
+>;
+
+export type DeleteScheduleCAssetMutationError = ErrorType<unknown>;
+
+/**
+ * @summary Delete a Schedule C asset
+ */
+export const useDeleteScheduleCAsset = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteScheduleCAsset>>,
+    TError,
+    { clientId: number; assetId: number },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteScheduleCAsset>>,
+  TError,
+  { clientId: number; assetId: number },
+  TContext
+> => {
+  return useMutation(getDeleteScheduleCAssetMutationOptions(options));
 };
 
 /**

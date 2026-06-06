@@ -96,6 +96,7 @@
     "src/tax-engine-gbc-wotc-fmla-tests.ts",
     "src/tax-engine-schedule-c-depreciation-tests.ts",
     "src/tax-engine-ptet-regimes-tests.ts",
-    "src/tax-engine-schedule-c-asset-depreciation-tests.ts"
+    "src/tax-engine-schedule-c-asset-depreciation-tests.ts",
+    "src/tax-engine-schedule-c-assets-integration-tests.ts"
   ]
 }

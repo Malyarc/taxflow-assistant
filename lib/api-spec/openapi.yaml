@@ -1434,6 +1434,99 @@ paths:
         "204":
           description: Deleted
 
+  # ── Schedule C depreciable assets (Form 4562) ────────────────────────────
+  /clients/{clientId}/schedule-c-assets:
+    get:
+      operationId: listScheduleCAssets
+      tags: [scheduleCAssets]
+      summary: List all Schedule C assets for a client
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: List of Schedule C assets
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScheduleCAsset"
+    post:
+      operationId: createScheduleCAsset
+      tags: [scheduleCAssets]
+      summary: Create a Schedule C asset record
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateScheduleCAssetBody"
+      responses:
+        "201":
+          description: Created Schedule C asset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleCAsset"
+
+  /clients/{clientId}/schedule-c-assets/{assetId}:
+    patch:
+      operationId: updateScheduleCAsset
+      tags: [scheduleCAssets]
+      summary: Update a Schedule C asset
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateScheduleCAssetBody"
+      responses:
+        "200":
+          description: Updated Schedule C asset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScheduleCAsset"
+    delete:
+      operationId: deleteScheduleCAsset
+      tags: [scheduleCAssets]
+      summary: Delete a Schedule C asset
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
   # ── Capital transactions (Schedule D / Form 8949) ────────────────────────
   /clients/{clientId}/capital-transactions:
     get:
@@ -2871,6 +2964,94 @@ components:
           type: number
         totalExpenses:
           type: number
+        notes:
+          type: ["string", "null"]
+
+    # ── Schedule C depreciable assets (Form 4562) ─────────────────────────────
+    ScheduleCAsset:
+      type: object
+      required: [id, clientId, taxYear, description, cost, recoveryYears, placedInServiceYear, section179, bonus, bonusFullObbba, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+        clientId:
+          type: integer
+        taxYear:
+          type: integer
+        description:
+          type: string
+        cost:
+          type: number
+        recoveryYears:
+          type: integer
+          enum: [3, 5, 7, 10, 15, 20]
+        placedInServiceYear:
+          type: integer
+        placedInServiceQuarter:
+          type: ["integer", "null"]
+        section179:
+          type: boolean
+        bonus:
+          type: boolean
+        bonusFullObbba:
+          type: boolean
+        notes:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateScheduleCAssetBody:
+      type: object
+      required: [taxYear, placedInServiceYear]
+      properties:
+        taxYear:
+          type: integer
+        description:
+          type: string
+        cost:
+          type: number
+        recoveryYears:
+          type: integer
+          enum: [3, 5, 7, 10, 15, 20]
+        placedInServiceYear:
+          type: integer
+        placedInServiceQuarter:
+          type: ["integer", "null"]
+        section179:
+          type: boolean
+        bonus:
+          type: boolean
+        bonusFullObbba:
+          type: boolean
+        notes:
+          type: ["string", "null"]
+
+    UpdateScheduleCAssetBody:
+      type: object
+      properties:
+        taxYear:
+          type: integer
+        description:
+          type: string
+        cost:
+          type: number
+        recoveryYears:
+          type: integer
+          enum: [3, 5, 7, 10, 15, 20]
+        placedInServiceYear:
+          type: integer
+        placedInServiceQuarter:
+          type: ["integer", "null"]
+        section179:
+          type: boolean
+        bonus:
+          type: boolean
+        bonusFullObbba:
+          type: boolean
         notes:
           type: ["string", "null"]
 

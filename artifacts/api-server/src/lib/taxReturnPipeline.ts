@@ -24,6 +24,7 @@ import {
   capitalTransactionsTable,
   scheduleK1DataTable,
   assetBalancesTable,
+  scheduleCAssetsTable,
 } from "@workspace/db";
 import {
   computeTaxReturnPure,
@@ -102,6 +103,7 @@ export async function computeTaxReturn(
     capitalTransactions,
     scheduleK1,
     assetBalances,
+    scheduleCAssetRows,
   ] = await Promise.all([
     db.select().from(w2DataTable).where(
       and(eq(w2DataTable.clientId, clientId), eq(w2DataTable.taxYear, taxYear)),
@@ -138,6 +140,10 @@ export async function computeTaxReturn(
         eq(assetBalancesTable.taxYear, taxYear),
       ),
     ),
+    // Schedule C asset register — loaded for ALL years (NOT taxYear-filtered):
+    // multi-year MACRS needs prior-year assets, and the engine safely skips any
+    // placed in a FUTURE year (placedInServiceYear > taxYear).
+    db.select().from(scheduleCAssetsTable).where(eq(scheduleCAssetsTable.clientId, clientId)),
   ]);
 
   // Auto-load capital-loss + §469 PAL carryforwards from the prior tax year.
@@ -189,6 +195,18 @@ export async function computeTaxReturn(
     capitalTransactions: capitalTransactions as CapitalTransactionFact[],
     scheduleK1: scheduleK1 as ScheduleK1Fact[],
     assetBalances: assetBalances as AssetBalanceFact[],
+    // Map the asset-register rows → the engine's ScheduleCAsset shape (numeric
+    // coercion + recoveryYears/quarter union narrowing).
+    scheduleCAssets: scheduleCAssetRows.map((a) => ({
+      cost: Number(a.cost),
+      recoveryYears: Number(a.recoveryYears) as 3 | 5 | 7 | 10 | 15 | 20,
+      placedInServiceYear: a.placedInServiceYear,
+      placedInServiceQuarter:
+        a.placedInServiceQuarter != null ? (Number(a.placedInServiceQuarter) as 1 | 2 | 3 | 4) : undefined,
+      section179: a.section179,
+      bonus: a.bonus,
+      bonusFullObbba: a.bonusFullObbba,
+    })),
     taxYear,
     overrides,
     existingItemizedFallback: existing?.itemizedDeductions ?? undefined,

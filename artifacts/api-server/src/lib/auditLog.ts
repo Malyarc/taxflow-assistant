@@ -38,6 +38,8 @@ export type AuditEntityType =
   | "capital_transaction"
   | "rental_property"
   | "schedule_k1"
+  // P2 — Schedule C depreciable-asset register (Form 4562).
+  | "schedule_c_asset"
   // Phase H — H5 client asset balances.
   | "asset_balance"
   // P0-2 — §7216 disclosure consents.
