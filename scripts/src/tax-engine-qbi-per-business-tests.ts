@@ -163,6 +163,50 @@ header("Engine: SSTB business phased out + non-SSTB wage-limited (above band)");
   check("QBI deduction $40,000 (SSTB→$0, non-SSTB wage-OK)", r.qbiDeduction, 40000, 1);
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// §199A(c)(2) qualified-business-LOSS netting (deep-audit regression).
+// A negative-QBI business must reduce the positive businesses' QBI BEFORE the
+// wage limit (Form 8995-A Sched A) — else the per-business path over-states.
+// ════════════════════════════════════════════════════════════════════════════
+header("Loss-business netting (engine): $200k biz + −$50k loss → net $150k");
+{
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 300000, stateCode: "FL" }],
+    form1099s: [],
+    adjustments: [],
+    scheduleK1: [
+      { taxYear: 2024, entityType: "s_corp", activityType: "active", box1OrdinaryIncome: 200000, section199aQbi: 200000, section199aW2Wages: 100000 },
+      { taxYear: 2024, entityType: "partnership", activityType: "active", box1OrdinaryIncome: -50000, section199aQbi: -50000, basisAtYearStart: 100000 },
+    ],
+    taxYear: 2024,
+  });
+  // Net QBI = $150k; the $200k biz scaled by 150/200 = 0.75 → $150k → 20% = $30k
+  // (its $100k wages give a $50k limit that does NOT bind). Was $40k before the fix.
+  check("QBI = $30,000 (loss netted before wage limit)", r.qbiDeduction, 30000, 1);
+}
+
+header("Loss netting (unit): proportional allocation across wage-limited businesses");
+{
+  // A $200k/$100k wages, B $300k/$60k wages, plus a −$100k loss → net $400k.
+  // scale = 400/500 = 0.8. A: $160k→$32k (limit $50k, no bind). B: $240k→$48k,
+  // limit 50%×$60k=$30k binds → $30k. Sum = $62k (capped well below 20%×taxable).
+  const q = calculateQbi({
+    qbiIncome: 400000,
+    taxableIncomeBeforeQbi: 800000,
+    netCapitalGain: 0,
+    filingStatus: "single",
+    taxYear: 2024,
+    perBusiness: [
+      { qbiIncome: 200000, w2Wages: 100000, ubia: 0, label: "A" },
+      { qbiIncome: 300000, w2Wages: 60000, ubia: 0, label: "B" },
+    ],
+  });
+  check("final = $62,000 (proportional loss allocation + per-business limit)", q.finalDeduction, 62000, 1);
+  check("A deductible $32,000", q.perBusiness?.[0].deductibleAmount ?? -1, 32000, 1);
+  check("B deductible $30,000 (wage-limited)", q.perBusiness?.[1].deductibleAmount ?? -1, 30000, 1);
+}
+
 console.log(`\n${"=".repeat(50)}`);
 console.log(`RESULTS: ${PASS.length} passed, ${FAIL.length} failed`);
 if (FAIL.length) { for (const f of FAIL) console.log(f); process.exit(1); }

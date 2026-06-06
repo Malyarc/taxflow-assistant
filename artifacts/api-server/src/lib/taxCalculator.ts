@@ -5807,10 +5807,20 @@ export function calculateQbi(params: {
     // Each business's 20%-of-QBI is limited by ITS OWN max(50% wages, 25% wages
     // + 2.5% UBIA), phased over the band; businesses with no supplied wage data
     // stay unlimited (escape hatch). The limited deductions are then summed.
+    //
+    // §199A(c)(2) qualified-business-LOSS netting: a negative-QBI business
+    // reduces the positive businesses' QBI (Form 8995-A Sched A) BEFORE the wage
+    // limit. The caller passes `qbiIncome` already netted to qbiCombinedIncome,
+    // and `perBusiness` carries only the positive businesses; so we scale each
+    // positive business's QBI by (net qbiIncome / sum of positive QBI) — this
+    // allocates the loss proportionally. Without it, the wage limit would be
+    // applied to the un-netted positive QBI and OVER-state the deduction.
+    const sumPositiveQbi = params.perBusiness.reduce((s, b) => s + Math.max(0, b.qbiIncome), 0);
+    const lossScale = sumPositiveQbi > qbiIncome && sumPositiveQbi > 0 ? qbiIncome / sumPositiveQbi : 1;
     let sumDeduction = 0;
     let sumLimit = 0;
     perBusinessDetail = params.perBusiness.map((b) => {
-      const bQbi = Math.max(0, b.qbiIncome);
+      const bQbi = Math.max(0, b.qbiIncome) * lossScale;
       const bTentative = 0.20 * bQbi;
       const bW2 = Math.max(0, b.w2Wages);
       const bUbia = Math.max(0, b.ubia);
