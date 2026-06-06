@@ -61,6 +61,9 @@ import {
   computeForm8582Breakdown,
   type Form8582Breakdown,
   calculateMacrsDepreciation,
+  computeScheduleCAssetDepreciation,
+  type ScheduleCAsset,
+  type ScheduleCAssetDepreciationResult,
   getFederalStandardDeduction,
   getSaltCap,
   type TaxYear,
@@ -413,6 +416,13 @@ export interface TaxReturnInputs {
   scheduleK1?: ScheduleK1Fact[];
   /** Phase H — H5. Optional per-account asset balances. Used by H6 + H1 detectors. */
   assetBalances?: AssetBalanceFact[];
+  /**
+   * P2 — Optional Schedule C asset register (Form 4562). The engine computes
+   * §179 (with the §179(b)(3) business-income limit) + §168(k) bonus + MACRS and
+   * folds the total into the SE-base-reducing `schedule_c_depreciation` total.
+   * Inert when omitted/empty. (Migration-seam contract addition — keep PURE.)
+   */
+  scheduleCAssets?: ScheduleCAsset[];
   /** The resolved tax year. Engine does NOT re-resolve from client.taxYear. */
   taxYear: number;
   overrides?: RecalcOverrides;
@@ -755,8 +765,12 @@ export interface ComputedTaxReturn {
   // ── Phase 1 line items ─────────────────────────────────────────────────
   scheduleA: ScheduleACalculation;
   scheduleCExpenses: number;
-  /** P2 — Schedule C asset depreciation (Form 4562) reducing the SE base. */
+  /** P2 — Schedule C depreciation reducing the SE base = the manual
+   *  `schedule_c_depreciation` adjustment + the asset-register calculator total. */
   scheduleCDepreciation: number;
+  /** P2 — breakdown of the Schedule C asset-register depreciation (Form 4562:
+   *  §179 + bonus + MACRS), or null when no `scheduleCAssets` were supplied. */
+  scheduleCAssetDepreciation: ScheduleCAssetDepreciationResult | null;
   retirementDeductions: RetirementDeductionsCalculation;
   eitc: EitcCalculation;
   educationCredits: EducationCreditsCalculation;
@@ -1250,6 +1264,21 @@ const BONUS_DEPR_RATES: Record<TaxYear, number> = {
   2025: 0.40,
   2026: 1.00,
 };
+// §168(k) bonus rate by ACQUISITION (placed-in-service) calendar year — broader
+// than BONUS_DEPR_RATES (which is Record<TaxYear>, supported years only) because
+// the Schedule C asset calculator must reconstruct the bonus taken on PRIOR-year
+// assets to derive their remaining MACRS basis. TCJA phase-down: 50% (2015-2017,
+// PATH Act) → 100% (2018-2022) → 80% (2023) → 60% (2024) → 40% (2025 TCJA; OBBBA
+// restored 100% for post-1/19/2025 but the engine keeps the conservative 40%
+// default, matching BONUS_DEPR_RATES) → 100% (2026+, OBBBA §70301 permanent).
+// Years outside this range default to 0 in the calculator (a pre-2015 asset is
+// fully depreciated for the common 3/5/7-yr classes; enter remaining basis if not).
+const BONUS_RATE_BY_ACQUISITION_YEAR: Readonly<Record<number, number>> = {
+  2015: 0.5, 2016: 0.5, 2017: 0.5,
+  2018: 1.0, 2019: 1.0, 2020: 1.0, 2021: 1.0, 2022: 1.0,
+  2023: 0.8, 2024: 0.6, 2025: 0.4,
+  2026: 1.0, 2027: 1.0, 2028: 1.0, 2029: 1.0, 2030: 1.0,
+};
 // §461(l)(3)(B) excess-business-loss threshold, inflation-indexed: TY2024
 // $305k/$610k; TY2025 $313k/$626k (Rev. Proc. 2024-40). TY2026 not yet
 // published — held at TY2025.
@@ -1493,7 +1522,10 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // pass-through contexts), this reduces the Schedule C NET PROFIT → and therefore
   // the SE-tax base, §199A QBI, earned income, and local EIT (the CPA supplies the
   // computed Form 4562 figure). Floored at 0; can drive a Schedule C loss.
-  const scheduleCDepreciationAdj = Math.max(0, sumByType("schedule_c_depreciation"));
+  // The asset-register calculator's output (computeScheduleCAssetDepreciation,
+  // below — after grossSeIncome is known for the §179 income limit) is ADDED to
+  // this manual figure to form scheduleCDepreciationAdj.
+  const scheduleCDepreciationManual = Math.max(0, sumByType("schedule_c_depreciation"));
   // K5: Self-Employed Health Insurance premiums (Form 7206) — above-the-line.
   // Capped at (net SE earnings − half-SE) by the engine; the CPA-entered
   // adjustment represents gross premiums paid for the year.
@@ -1777,6 +1809,34 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // Schedule E Part II (k1ActiveOrdinary). Adding K-1 SE to netSeIncome
   // would double-count, so we keep a separate SE-tax base.
   const grossSeIncome = seIncomeFromAdj + form1099Summary.seIncome;
+  // P2 (2026-06-06h) — Schedule C asset-level depreciation (Form 4562 → Sch C
+  // line 13): §179 (with the §179(b)(3) business-income limit + carryforward) +
+  // §168(k) bonus + personal-property MACRS, computed from the per-asset register
+  // and folded into the SE-base-reducing schedule_c_depreciation total. Inert when
+  // no assets are supplied (totalDepreciation 0 → scheduleCDepreciationAdj ==
+  // the manual figure, unchanged). The §179 income-limit base is the active-T/B
+  // taxable income BEFORE asset depreciation: Schedule C net (gross − expenses −
+  // any manual depreciation) + W-2 wages (Reg §1.179-2(c)(6)(iv)).
+  const scheduleCAssetList = inputs.scheduleCAssets ?? [];
+  const scheduleCAssetDepreciation: ScheduleCAssetDepreciationResult | null =
+    scheduleCAssetList.length > 0
+      ? computeScheduleCAssetDepreciation({
+          assets: scheduleCAssetList,
+          taxYear: resolvedMapYear,
+          businessIncomeForSection179:
+            grossSeIncome - Math.max(0, scheduleCExpensesInput) - scheduleCDepreciationManual + totalWages,
+          section179Cap: SECTION_179_CAPS[resolvedMapYear].cap,
+          section179PhaseStart: SECTION_179_CAPS[resolvedMapYear].phaseStart,
+          bonusRateByYear: BONUS_RATE_BY_ACQUISITION_YEAR,
+          // The §179(b)(3)(B) income-limit carryforward is COMPUTED + exposed on
+          // the result (section179Carryforward). Auto-applying it next year is a
+          // documented follow-up — the calculator already accepts
+          // section179CarryforwardIn; the pipeline persist + re-seed (the §41/§51
+          // GBC pattern) would supply it. Not wired here → defaults to 0.
+        })
+      : null;
+  const scheduleCDepreciationAdj =
+    scheduleCDepreciationManual + (scheduleCAssetDepreciation?.totalDepreciation ?? 0);
   const scheduleCExpenses = Math.min(
     Math.max(0, scheduleCExpensesInput),
     Math.max(0, grossSeIncome),
@@ -3469,6 +3529,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     scheduleA,
     scheduleCExpenses,
     scheduleCDepreciation: scheduleCDepreciationAdj,
+    scheduleCAssetDepreciation,
     retirementDeductions: retirement,
     eitc,
     educationCredits,

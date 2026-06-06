@@ -5077,6 +5077,148 @@ export function calculateMacrsDepreciation(p: MacrsDepreciationParams): MacrsDep
   };
 }
 
+// ── Schedule C asset depreciation (Form 4562: §179 + §168(k) bonus + MACRS) ──
+// Personal-property GDS MACRS (Pub 946 Appendix A, Table A-1, HALF-YEAR
+// convention). Unlike calculateMacrsDepreciation above (real property only,
+// 27.5/39-yr SL, mid-month), this handles the 3/5/7/10/15/20-yr classes that
+// Schedule C BUSINESS assets use (200% declining balance for 3-10yr, 150% DB for
+// 15-20yr), plus §179 expensing — with the §179(b)(3) BUSINESS-INCOME limitation
+// and carryforward — and §168(k) bonus depreciation. The total reduces the
+// Schedule C net profit → the SE-tax base (it routes into the engine's
+// `schedule_c_depreciation` total), the correct treatment for a sole prop's own
+// business assets.
+//
+// Each class's Table A-1 percentages are verified against IRS Pub 946 and sum to
+// 100%. MODELING BOUNDS (documented sub-gaps; CPA overrides via the
+// schedule_c_depreciation adjustment when they apply):
+//   - HALF-YEAR convention only. Mid-quarter (>40% of basis placed in Q4) is NOT
+//     modeled (no per-asset quarter input).
+//   - An asset is EITHER fully §179-elected (no MACRS basis) OR depreciated via
+//     bonus+MACRS — not a partial §179 + bonus/MACRS on the SAME asset (split it
+//     into two asset rows if needed).
+//   - basis = cost (no trade-in basis / listed-property business-use %).
+
+/** Pub 946 Table A-1 — GDS, half-year convention. Index 0 = recovery year 1. */
+const MACRS_HALF_YEAR_TABLE: Readonly<Record<number, readonly number[]>> = {
+  3: [0.3333, 0.4445, 0.1481, 0.0741],
+  5: [0.2, 0.32, 0.192, 0.1152, 0.1152, 0.0576],
+  7: [0.1429, 0.2449, 0.1749, 0.1249, 0.0893, 0.0892, 0.0893, 0.0446],
+  10: [0.1, 0.18, 0.144, 0.1152, 0.0922, 0.0737, 0.0655, 0.0655, 0.0656, 0.0655, 0.0328],
+  15: [0.05, 0.095, 0.0855, 0.077, 0.0693, 0.0623, 0.059, 0.059, 0.0591, 0.059, 0.0591, 0.059, 0.0591, 0.059, 0.0591, 0.0295],
+  20: [0.0375, 0.07219, 0.06677, 0.06177, 0.05713, 0.05285, 0.04888, 0.04522, 0.04462, 0.04461, 0.04462, 0.04461, 0.04462, 0.04461, 0.04462, 0.04461, 0.04462, 0.04461, 0.04462, 0.04461, 0.02231],
+};
+
+export type MacrsRecoveryYears = 3 | 5 | 7 | 10 | 15 | 20;
+
+export interface ScheduleCAsset {
+  /** Acquisition cost = depreciable basis (assumes basis = cost; no trade-in / listed-property %-use limit). */
+  cost: number;
+  /** GDS recovery period in years (computers/autos 5, office furniture 7, land improvements 15, etc.). */
+  recoveryYears: MacrsRecoveryYears;
+  /** Calendar year placed in service. */
+  placedInServiceYear: number;
+  /** Elect §179 full expensing on this asset (acquisition year only; no MACRS on the §179'd basis). */
+  section179?: boolean;
+  /** Apply §168(k) bonus to the basis (acquisition year only). Ignored when section179 is set. */
+  bonus?: boolean;
+}
+
+export interface ScheduleCAssetDepreciationParams {
+  assets: readonly ScheduleCAsset[];
+  taxYear: number;
+  /**
+   * §179(b)(3) business-income limit base: active trade/business taxable income
+   * BEFORE asset depreciation (Schedule C net before asset dep + the taxpayer's
+   * W-2 wages, which count per Reg §1.179-2(c)(6)(iv)). The function subtracts the
+   * computed bonus + MACRS to derive the §179 ceiling.
+   */
+  businessIncomeForSection179: number;
+  /** §179 annual dollar cap for taxYear (reused from the engine's year map). */
+  section179Cap: number;
+  /** §179 investment phase-out threshold for taxYear. */
+  section179PhaseStart: number;
+  /** §168(k) bonus rate keyed by the asset's placed-in-service calendar year. */
+  bonusRateByYear: Readonly<Record<number, number>>;
+  /** Prior-year §179 disallowed by the income limit (§179(b)(3)(B) carryforward). */
+  section179CarryforwardIn?: number;
+}
+
+export interface ScheduleCAssetDepreciationResult {
+  /** §179 allowed + bonus + MACRS — the figure that reduces the Schedule C net profit / SE base. */
+  totalDepreciation: number;
+  section179Deduction: number;
+  bonusDeduction: number;
+  macrsDeduction: number;
+  /** §179 disallowed by the income limit (or dollar cap) → carries to next year (§179(b)(3)(B)). */
+  section179Carryforward: number;
+}
+
+export function computeScheduleCAssetDepreciation(
+  p: ScheduleCAssetDepreciationParams,
+): ScheduleCAssetDepreciationResult {
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const carryIn = Math.max(0, p.section179CarryforwardIn ?? 0);
+  let bonusTotal = 0;
+  let macrsTotal = 0;
+  let currentYearSection179Elected = 0;
+  let currentYearQualifiedPropertyCost = 0; // drives the §179 investment phase-out
+
+  for (const a of p.assets) {
+    const cost = Math.max(0, a.cost);
+    if (cost <= 0 || a.placedInServiceYear > p.taxYear) continue; // not in service
+    const isCurrentYear = a.placedInServiceYear === p.taxYear;
+
+    if (a.section179) {
+      // §179-elected: full cost expensed in the acquisition year (no MACRS basis).
+      // A PRIOR-year §179 asset is already fully expensed → contributes nothing now.
+      if (isCurrentYear) {
+        currentYearSection179Elected += cost;
+        currentYearQualifiedPropertyCost += cost;
+      }
+      continue;
+    }
+
+    // Bonus + MACRS asset (neither is income-limited). Bonus is taken only in the
+    // acquisition year at that year's §168(k) rate; MACRS runs on the post-bonus
+    // basis over the recovery period (half-year convention).
+    const bonusRate = a.bonus
+      ? Math.max(0, Math.min(1, p.bonusRateByYear[a.placedInServiceYear] ?? 0))
+      : 0;
+    const bonusBasis = bonusRate * cost;
+    const macrsBasis = cost - bonusBasis;
+    const table = MACRS_HALF_YEAR_TABLE[a.recoveryYears] ?? [];
+    const yearIndex = p.taxYear - a.placedInServiceYear; // 0 = recovery year 1
+    const macrsPct = yearIndex >= 0 && yearIndex < table.length ? table[yearIndex] : 0;
+    macrsTotal += macrsPct * macrsBasis;
+    if (isCurrentYear) {
+      bonusTotal += bonusBasis;
+      currentYearQualifiedPropertyCost += cost;
+    }
+  }
+
+  // §179 aggregate: dollar cap (with the investment phase-out) + the §179(b)(3)
+  // business-income limit. The carryforward-in is added AFTER the dollar cap (it
+  // was already capped in its origin year) but is subject to the income limit.
+  const phaseOut = Math.max(0, currentYearQualifiedPropertyCost - p.section179PhaseStart);
+  const dollarCap = Math.max(0, p.section179Cap - phaseOut);
+  const electedAfterDollarCap = Math.min(currentYearSection179Elected, dollarCap);
+  const available = electedAfterDollarCap + carryIn;
+  const incomeLimit = Math.max(0, p.businessIncomeForSection179 - bonusTotal - macrsTotal);
+  const section179Deduction = Math.min(available, incomeLimit);
+  // Carryforward = income-disallowed + the (rare) dollar-cap-disallowed excess.
+  const section179Carryforward =
+    Math.max(0, available - section179Deduction) +
+    Math.max(0, currentYearSection179Elected - electedAfterDollarCap);
+
+  return {
+    totalDepreciation: r2(section179Deduction + bonusTotal + macrsTotal),
+    section179Deduction: r2(section179Deduction),
+    bonusDeduction: r2(bonusTotal),
+    macrsDeduction: r2(macrsTotal),
+    section179Carryforward: r2(section179Carryforward),
+  };
+}
+
 // ── §469 Passive Activity Loss Limit (Form 8582) ───────────────────────────
 // Rental real estate is per se passive (§469(c)(2)) unless taxpayer materially
 // participates. Losses are limited under §469:
