@@ -1257,6 +1257,9 @@ export const AdjustmentAdjustmentType = {
   long_term_capital_gain: "long_term_capital_gain",
   investment_interest_expense: "investment_interest_expense",
   investment_interest_election_amount: "investment_interest_election_amount",
+  qualified_research_expenses: "qualified_research_expenses",
+  qualified_research_expenses_prior_avg:
+    "qualified_research_expenses_prior_avg",
 } as const;
 
 export interface Adjustment {
@@ -1386,6 +1389,9 @@ export const CreateAdjustmentBodyAdjustmentType = {
   long_term_capital_gain: "long_term_capital_gain",
   investment_interest_expense: "investment_interest_expense",
   investment_interest_election_amount: "investment_interest_election_amount",
+  qualified_research_expenses: "qualified_research_expenses",
+  qualified_research_expenses_prior_avg:
+    "qualified_research_expenses_prior_avg",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -1511,6 +1517,9 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   long_term_capital_gain: "long_term_capital_gain",
   investment_interest_expense: "investment_interest_expense",
   investment_interest_election_amount: "investment_interest_election_amount",
+  qualified_research_expenses: "qualified_research_expenses",
+  qualified_research_expenses_prior_avg:
+    "qualified_research_expenses_prior_avg",
 } as const;
 
 export interface UpdateAdjustmentBody {

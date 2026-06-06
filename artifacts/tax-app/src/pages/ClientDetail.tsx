@@ -2888,6 +2888,8 @@ function AdjustmentsTab({ clientId }: { clientId: number }) {
     long_term_capital_gain: "Long-Term Capital Gain (additional — not on 1099-B/Sch D)",
     investment_interest_expense: "Investment Interest Expense (§163(d), Form 4952)",
     investment_interest_election_amount: "§163(d)(4)(B) Election — QDIV/LTCG as investment income",
+    qualified_research_expenses: "R&D Qualified Research Expenses (§41, Form 6765)",
+    qualified_research_expenses_prior_avg: "R&D — prior 3-yr avg QRE (ASC base; blank = startup 6%)",
     // Phase 1.5
     educator_expenses: "Educator Expenses (K-12, $300/educator)",
     student_loan_interest: "Student Loan Interest (1098-E)",

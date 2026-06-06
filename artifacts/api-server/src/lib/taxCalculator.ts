@@ -4475,6 +4475,73 @@ export function calculateAdoptionCredit(params: {
   };
 }
 
+// ── R&D Credit (Form 6765, IRC §41) — Alternative Simplified Credit ──────────
+// The §41 research credit, computed via the Alternative Simplified Credit (ASC,
+// §41(c)(5)) — the practical method for the SE / small-business filers this engine
+// serves (the regular method needs 1984–88 base data). The CPA supplies the
+// current-year Qualified Research Expenses (QRE) — the §41(d) 4-part test is their
+// determination, like adoption status — and the average QRE of the 3 prior years:
+//   ASC (has a 3-yr base):  14% × max(0, currentQRE − 50% × prior-3-yr-avg-QRE)
+//   No base (startup):      6% × currentQRE
+// §280C(c)(3): the engine applies the REDUCED-credit election by default (gross ×
+// (1 − 21%)) — this avoids the QRE-deduction add-back the individual engine can't
+// cleanly make (QRE is embedded in net SE income). The §38 general-business-credit
+// liability limit + the §41(h) payroll-tax election are applied/handled by the
+// caller (the engine pipeline) and documented there.
+const RD_ASC_RATE = 0.14;
+const RD_STARTUP_RATE = 0.06;
+const RD_SECTION_280C_RATE = 0.21; // §280C(c)(3)(B) → max §11(b) corporate rate
+
+export interface RdCreditCalculation {
+  qualifiedResearchExpenses: number;
+  priorThreeYearAvgQre: number;
+  method: "asc" | "startup" | "none";
+  rate: number;
+  /** ASC base = 50% of the prior-3-year average QRE (0 for the startup rate). */
+  ascBase: number;
+  /** Credit before the §280C(c)(3) reduction. */
+  grossCredit: number;
+  /** Whether the §280C(c)(3) reduced-credit election was applied. */
+  reducedCreditElection: boolean;
+  /** Claimable credit after §280C (before the §38 liability limit, applied by the caller). */
+  credit: number;
+}
+
+export function calculateRdCredit(params: {
+  qualifiedResearchExpenses: number;
+  priorThreeYearAvgQre: number;
+  /** §280C(c)(3) reduced-credit election. Default true (clean — no deduction add-back). */
+  useReducedCredit?: boolean;
+}): RdCreditCalculation {
+  const qre = Math.max(0, params.qualifiedResearchExpenses);
+  const priorAvg = Math.max(0, params.priorThreeYearAvgQre);
+  const reducedCreditElection = params.useReducedCredit !== false;
+  const base = {
+    qualifiedResearchExpenses: qre,
+    priorThreeYearAvgQre: priorAvg,
+    reducedCreditElection,
+  };
+  if (qre <= 0) {
+    return { ...base, method: "none", rate: 0, ascBase: 0, grossCredit: 0, credit: 0 };
+  }
+  let method: "asc" | "startup";
+  let rate: number;
+  let ascBase = 0;
+  let grossCredit: number;
+  if (priorAvg > 0) {
+    method = "asc";
+    rate = RD_ASC_RATE;
+    ascBase = 0.5 * priorAvg;
+    grossCredit = RD_ASC_RATE * Math.max(0, qre - ascBase);
+  } else {
+    method = "startup";
+    rate = RD_STARTUP_RATE;
+    grossCredit = RD_STARTUP_RATE * qre;
+  }
+  const credit = reducedCreditElection ? grossCredit * (1 - RD_SECTION_280C_RATE) : grossCredit;
+  return { ...base, method, rate, ascBase, grossCredit, credit };
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // Phase 1.5 — Everyday-filer credits and deductions
 // ════════════════════════════════════════════════════════════════════════════

@@ -49,6 +49,7 @@ import {
   calculateResidentialEnergyCredits,
   calculatePremiumTaxCredit,
   calculateAdoptionCredit,
+  calculateRdCredit,
   calculateStateTax,
   calculateMultiStateTax,
   calculateStateEitc,
@@ -88,6 +89,7 @@ import {
   type ResidentialEnergyCreditsCalculation,
   type PremiumTaxCreditCalculation,
   type AdoptionCreditCalculation,
+  type RdCreditCalculation,
 } from "./taxCalculator";
 
 // ── Loose numeric coercion ──────────────────────────────────────────────────
@@ -769,6 +771,12 @@ export interface ComputedTaxReturn {
   adoptionCredit: AdoptionCreditCalculation;
   /** P2-13 — unused nonrefundable §23 adoption credit carried to next year. */
   adoptionCreditCarryforwardRemaining: number;
+  /** P2-15c — R&D Credit (Form 6765 / §41) ASC computation. */
+  rdCredit: RdCreditCalculation;
+  /** P2-15c — §41 credit applied this year (after the §38 GBC liability limit). */
+  rdCreditApplied: number;
+  /** P2-15c — §41 credit carried forward (§39) — disallowed by the §38 limit. */
+  rdCreditCarryforwardRemaining: number;
   /** K5 — Self-Employed Health Insurance deduction (Form 7206), above-the-line.
    *  Computed from `self_employed_health_insurance_premiums` adjustment, capped
    *  at (net SE earnings − half-SE). */
@@ -3134,6 +3142,27 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     amtCreditCarryforwardIn + amtCreditGenerated - amtCreditApplied,
   );
 
+  // P2-15c — R&D Credit (Form 6765 / §41), the general business credit. ASC
+  // method (14% over 50% of the prior-3-yr QRE avg; 6% startup) with the
+  // §280C(c)(3) reduced election applied by default. Subject to the §38(c)(1)
+  // general-business-credit liability limit: net income tax − max(TMT, 25% of
+  // net income tax over $25,000). The excess carries forward (§39, 1-back/
+  // 20-forward; not vintage-tracked, consistent with the other carryforwards).
+  // Applied last in the nonrefundable order (Form 3800). The §41(h) payroll-tax
+  // election (qualified small business → offsets the employer OASDI share, not
+  // income tax) is OUT of the individual income-tax engine's scope — documented.
+  const rdCredit = calculateRdCredit({
+    qualifiedResearchExpenses: sumByType("qualified_research_expenses"),
+    priorThreeYearAvgQre: sumByType("qualified_research_expenses_prior_avg"),
+  });
+  const section38Limit = Math.max(
+    0,
+    incomeTaxOnly - Math.max(amt.amtBeforeRegular, 0.25 * Math.max(0, incomeTaxOnly - 25_000)),
+  );
+  const rdCreditApplied = Math.min(rdCredit.credit, availableForNonRefundable, section38Limit);
+  availableForNonRefundable = Math.max(0, availableForNonRefundable - rdCreditApplied);
+  const rdCreditCarryforwardRemaining = Math.max(0, rdCredit.credit - rdCreditApplied);
+
   // ── Step 8: Refundable credits + PTC reconciliation ───
   // FED-06 — §32(i)(2) EITC disqualifying-investment-income cliff. Unlike the
   // §1411 NIIT base, §32(i)(2)(B) COUNTS tax-exempt interest, so add it back.
@@ -3210,6 +3239,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     saversApplied +
     residentialEnergyApplied +
     adoptionCredit.nonRefundableApplied +
+    rdCreditApplied +
     amtCreditApplied;
   const totalRefundableCreditsApplied =
     ctc.refundableActc +
@@ -3401,6 +3431,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     premiumTaxCredit,
     adoptionCredit,
     adoptionCreditCarryforwardRemaining: adoptionCredit.carryforwardToNext,
+    rdCredit,
+    rdCreditApplied,
+    rdCreditCarryforwardRemaining,
     sehi,
     socialSecurityBenefits: ssTaxability.ssBenefits,
     socialSecurityTaxable: taxableSocialSecurity,

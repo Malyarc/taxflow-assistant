@@ -3363,6 +3363,66 @@ function detectRdCredit(args: {
   adjustments: AdjustmentFact[];
 }): OpportunityHit | null {
   const { computed, adjustments } = args;
+
+  // P2-15c — ENGINE-VERIFIED path: the CPA entered qualified research expenses
+  // (a `qualified_research_expenses` marker) → the engine computed the real §41
+  // ASC credit (after §280C(c)(3) reduction + the §38 GBC liability limit). Report
+  // THAT instead of the netSe-proxy heuristic below.
+  const rd = computed.rdCredit;
+  if (rd && rd.qualifiedResearchExpenses > 0 && rd.credit > 0) {
+    const strategy = strategyById("G1.36");
+    const fmt = (n: number) =>
+      n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+    const applied = Math.round(computed.rdCreditApplied);
+    const carryforward = Math.round(computed.rdCreditCarryforwardRemaining);
+    const fullCredit = Math.round(rd.credit);
+    const cfNote =
+      carryforward > 0
+        ? ` ${fmt(applied)} is usable this year (the §38(c) limit caps the general business credit at regular tax over the tentative minimum tax); ${fmt(carryforward)} carries forward up to 20 years (§39).`
+        : ` Fully usable against this year's income tax.`;
+    const vars: Record<string, number | string> = { estSavings: fullCredit };
+    return {
+      strategyId: strategy.id,
+      name: strategy.name,
+      category: strategy.category,
+      // The full §280C-reduced credit is the value earned; the §38 limit only
+      // defers part of it (recoverable via the §39 carryforward).
+      estSavings: fullCredit,
+      verifiedSavings: fullCredit,
+      savingsSource: "engine-verified",
+      confidence: strategy.confidence,
+      cpaEffortHours: strategy.cpaEffortHours,
+      recurring: strategy.recurring,
+      rationale:
+        `Engine-verified §41 R&D credit of ${fmt(fullCredit)} on ${fmt(Math.round(rd.qualifiedResearchExpenses))} QREs ` +
+        `via the ${rd.method === "asc" ? "Alternative Simplified Credit (14% over 50% of the prior-3-yr QRE avg)" : "6% startup rate (no 3-yr base)"} ` +
+        `(${fmt(Math.round(rd.grossCredit))} gross × 0.79 §280C(c)(3) reduced election).${cfNote}`,
+      action: interpolate(strategy.action, vars),
+      prerequisiteData: strategy.prerequisiteData,
+      citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+      inputs: {
+        qualifiedResearchExpenses: Math.round(rd.qualifiedResearchExpenses),
+        priorThreeYearAvgQre: Math.round(rd.priorThreeYearAvgQre),
+        method: rd.method,
+        rate: rd.rate,
+        ascBase: Math.round(rd.ascBase),
+        grossCredit: Math.round(rd.grossCredit),
+        creditAfter280c: fullCredit,
+        appliedThisYear: applied,
+        carryforward,
+      },
+      assumptions: [
+        `ENGINE-VERIFIED — value is the engine's computed §41 ASC credit (after §280C(c)(3) + the §38(c) liability limit), not a heuristic. The §41(d) 4-part test is the CPA's determination.`,
+        `ASC = 14% × (current QRE − 50% × prior-3-yr-avg QRE); 6% × QRE when there's no 3-year base (startup).`,
+        `§280C(c)(3) reduced-credit election applied by default (gross × (1 − 21%)) — avoids the QRE-deduction add-back. The full credit + deduction add-back is an alternative (not modeled).`,
+        `§38(c)(1): the general business credit can't reduce regular tax below the tentative minimum tax; the excess carries forward (§39, 1-back/20-forward).`,
+        `§41(h): a qualified small business (gross receipts < $5M AND < 5 yrs) may instead offset the EMPLOYER payroll tax up to $500k — OUT of this individual income-tax engine's scope (CPA evaluates separately).`,
+        `§174 (post-TCJA) requires R&D costs to be CAPITALIZED + amortized (5 yr domestic / 15 yr foreign) — separate from the credit; the credit reduces capitalizable basis.`,
+        `Heavy documentation (time studies / 4-part-test narratives) — most claims use a specialist.`,
+      ],
+    };
+  }
+
   const netSe = computed.detail.se.netSeEarnings;
   if (netSe < G1_36_MIN_SE) return null;
   // Suppress if any prior R&D credit signal.

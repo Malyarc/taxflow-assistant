@@ -91,6 +91,7 @@
     "src/tax-engine-ptc-detector-tests.ts",
     "src/tax-engine-section1244-whatif-tests.ts",
     "src/tax-engine-section453-multiyear-tests.ts",
-    "src/tax-engine-section163d-tests.ts"
+    "src/tax-engine-section163d-tests.ts",
+    "src/tax-engine-section41-rd-tests.ts"
   ]
 }
