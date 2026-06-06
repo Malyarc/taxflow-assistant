@@ -39,9 +39,12 @@ asset-load path is built). Full no-API battery 72 suites / 4,352 assertions gree
 - **Modeling bounds (documented in code):** half-year convention only (mid-quarter
   not modeled); an asset is either fully §179'd OR bonus+MACRS (not partial-§179 +
   bonus on the same asset); basis = cost.
-- **Noticed (separate, NOT this task): SECTION_179_CAPS[2024] holds 2023's values**
-  ($1.16M/$2.89M; real 2024 = $1.22M/$3.05M per Rev. Proc. 2023-34). Above-the-line
-  §179 path; non-binding for Schedule C. Flagged for a separate fix.
+- **✅ FIXED 2026-06-06i (commit `4fca6aa`, deployed): SECTION_179_CAPS[2024]**
+  was holding 2023's values ($1.16M/$2.89M) → corrected to $1,220,000/$3,050,000
+  (Rev. Proc. 2023-34 §3.27); both inline comments fixed; map exported. +7 regression
+  assertions (all 3 years' cap+phaseStart pinned + a behavioral $1.3M-§179-on-$2M-SE
+  → caps at $1.22M). No existing suite shifted (none exercised the >$1.16M boundary).
+  Full battery 72 suites / 4,359 green.
 
 ---
 
