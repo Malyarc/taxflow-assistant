@@ -83,6 +83,7 @@
     "src/tax-engine-ftc-carryforward-tests.ts",
     "src/tax-engine-fed-subgaps-tests.ts",
     "src/tax-engine-form8582-tests.ts",
-    "src/tax-engine-state-amt-tests.ts"
+    "src/tax-engine-state-amt-tests.ts",
+    "src/tax-engine-1099-validation-tests.ts"
   ]
 }

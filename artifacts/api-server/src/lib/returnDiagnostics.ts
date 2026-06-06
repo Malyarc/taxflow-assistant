@@ -28,6 +28,7 @@ import type {
   ComputedTaxReturn,
 } from "./taxReturnEngine";
 import { validateW2, type W2DataLike, type ValidationContext, type W2FlagSeverity } from "@workspace/validation";
+import { validate1099, type Form1099DataLike } from "@workspace/validation";
 import { STATE_TAX_DATA } from "./stateTaxData";
 
 /** validateW2 uses "error"; the diagnostics panel uses "critical" for the same. */
@@ -251,6 +252,24 @@ export function computeReturnDiagnostics(args: {
         severity: mapW2Severity(f.severity),
         category: "Income documents",
         title: `${employer}: ${f.field ?? "record"} check`,
+        detail: f.message,
+        field: f.field,
+      });
+    }
+  });
+
+  // P2-12 — 1099 box-arithmetic checks (DIV qualified ≤ ordinary, R taxable ≤
+  // gross, B proceeds−basis ≈ gain/loss, withholding plausibility, etc.).
+  form1099s.forEach((rec, idx) => {
+    const flags = validate1099(rec as Form1099DataLike, { clientTaxYear: taxYear, clientState: stateCode || undefined });
+    const label = (rec.payerName ?? "").toString().trim() || `1099 #${idx + 1}`;
+    const ft = (rec.formType ?? "").toString().toUpperCase();
+    for (const f of flags) {
+      push({
+        id: `1099-${idx}-${f.field ?? "record"}-${f.severity}`,
+        severity: f.severity === "error" ? "critical" : f.severity,
+        category: "Income documents",
+        title: `${label}${ft ? ` (1099-${ft})` : ""}: ${f.field ?? "record"} check`,
         detail: f.message,
         field: f.field,
       });
