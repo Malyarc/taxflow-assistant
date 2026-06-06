@@ -1,3 +1,52 @@
+# Handoff Note — 2026-06-06f (REST OF P2 — 5 items shipped + deployed)
+
+Cleared the remaining P2 backlog: carryforward auto-seeds, §51/§45S WOTC, the §36B
+PTC optimizer, G1.17 data-driven comp + §530 clarification, and the Schedule C
+per-line depreciation core. **5 commits on `main`, pushed, deployed to EC2
+(migration 0006 applied, api-server rebuilt, pm2 restarted, frontend rsynced,
+prod-smoked, re-score 0-drift). Full no-API battery 70 suites / 4,254 assertions green.**
+
+- **Carryforward auto-seeds** (`2f82ebf`, migration 0006): §163(d)(2) disallowed
+  investment interest (new `investment_interest_carryforward`, summed into invInt) +
+  §39 §41 R&D GBC carryforward (new `rd_credit_carryforward`, added before the §38
+  limit). Persisted (2 new tax_returns columns) + auto-seeded from the prior return
+  (FTC/adoption pattern). Both new credits now at full multi-year parity.
+- **§51 WOTC + §45S FMLA** (`a325212`): CPA-supplied general business credits
+  (Form 5884 / 8994 — need employee data the engine can't compute) applied through
+  the SAME §38(c) limit as §41, against the REMAINING GBC room (§41 first), with §39
+  carryforward. `wotc_credit` / `fmla_credit` adjustments. G1.74/G1.75 stay
+  qualitative (no engine computation of the credit → no meaningful promotion).
+- **§36B PTC-cliff optimizer** (`79f6ca7`): G1.30 gains an engine-verified what-if at
+  a $7,000 deductible IRA — combinedRefundDelta = income-tax saving + the PTC swing
+  (the PTC is nonlinear near a band edge). Becomes the actionable headline on the
+  per-client path; the |netPtc| reconciliation stands on the firm-wide path (P2-14
+  preserved).
+- **G1.17 data-driven comp + §530** (`98473ef`): G1.17 S-corp reasonable comp now
+  uses a CPA-supplied benchmarked figure (`scorp_reasonable_comp`, an RC Reports/BLS
+  result) instead of the hardcoded 40% (kept as a documented placeholder). §530
+  Coverdell clarified — NO current-year 1040 effect (non-deductible, tax-free growth),
+  so it's correctly informational, not a missed engine credit.
+- **Schedule C depreciation** (`5ac953b`): new `schedule_c_depreciation` reduces the
+  Schedule C NET PROFIT → SE-tax base + §199A QBI + earned income + §461(l) (unlike
+  above-the-line §179/bonus). Closes the documented P2-5 SE-base gap. Per-line P&L is
+  now complete (receipts − expenses − depreciation = net SE). $30k dep reduces SE tax
+  by exactly $4,238.87; §179 reduces it by $0 (the gap, regression-locked).
+
+## NOT done / honest gaps
+- **G1.2 PTET per-state regime split** — needs the AICPA state-by-state PTET data
+  (which states, rates, caps, mechanics). Documented as a data task; NOT faked.
+- **Schedule C per-EXPENSE-category P&L + asset-level §179/bonus/MACRS calculator on
+  the SE side** — NOT modeled (the aggregate net is what's tax-relevant; the CPA
+  supplies the computed Form 4562 figure). The SE-base correctness core IS done.
+- §45S/§51 carryforward not persisted (surfaced only; the §163(d)/§41 ones are).
+
+## Verify
+typecheck (api-server + tax-app + db + libs + tests) clean; 70 no-API suites / 4,254
+assertions green; builds clean; deployed + prod-smoked (healthz, migration 0006 both
+columns present, re-score 0-drift across 10 returns, planning-opps HTTP 200).
+
+---
+
 # Handoff Note — 2026-06-06e (§41 R&D credit — engine model + G1.36 H2 — shipped + deployed)
 
 Continued the credit-mechanics theme (§23-adoption pattern). The engine had NO §41
