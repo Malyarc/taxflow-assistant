@@ -2892,6 +2892,8 @@ function AdjustmentsTab({ clientId }: { clientId: number }) {
     qualified_research_expenses_prior_avg: "R&D — prior 3-yr avg QRE (ASC base; blank = startup 6%)",
     investment_interest_carryforward: "Investment Interest Carryforward (§163(d)(2), prior year)",
     rd_credit_carryforward: "R&D Credit Carryforward (§39, prior year)",
+    wotc_credit: "Work Opportunity Tax Credit (§51, Form 5884)",
+    fmla_credit: "Paid Family & Medical Leave Credit (§45S, Form 8994)",
     // Phase 1.5
     educator_expenses: "Educator Expenses (K-12, $300/educator)",
     student_loan_interest: "Student Loan Interest (1098-E)",

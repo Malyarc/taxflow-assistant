@@ -777,6 +777,11 @@ export interface ComputedTaxReturn {
   rdCreditApplied: number;
   /** P2-15c — §41 credit carried forward (§39) — disallowed by the §38 limit. */
   rdCreditCarryforwardRemaining: number;
+  /** P2 — §51 WOTC + §45S FMLA general business credits applied (CPA-supplied,
+   *  under the §38 limit, after §41). */
+  otherGeneralBusinessCreditApplied: number;
+  /** P2 — §51/§45S GBC carried forward (§39) — disallowed by the §38 limit. */
+  otherGeneralBusinessCreditCarryforward: number;
   /** K5 — Self-Employed Health Insurance deduction (Form 7206), above-the-line.
    *  Computed from `self_employed_health_insurance_premiums` adjustment, capped
    *  at (net SE earnings − half-SE). */
@@ -3175,6 +3180,23 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   availableForNonRefundable = Math.max(0, availableForNonRefundable - rdCreditApplied);
   const rdCreditCarryforwardRemaining = Math.max(0, rdCreditAvailable - rdCreditApplied);
 
+  // P2 — Other CPA-supplied general business credits: §51 Work Opportunity Tax
+  // Credit + §45S Employer Paid Family & Medical Leave Credit. Both require
+  // employee/wage-level data the individual engine doesn't model, so the CPA
+  // supplies the computed credit (Form 5884 / Form 8994); the engine applies it
+  // through the SAME §38(c) limit as §41 — against the REMAINING GBC room after
+  // §41 — and carries forward the excess (§39). Reported aggregate.
+  const wotcCredit = Math.max(0, sumByType("wotc_credit"));
+  const fmlaCredit = Math.max(0, sumByType("fmla_credit"));
+  const otherGbcAvailable = wotcCredit + fmlaCredit;
+  const otherGbcApplied = Math.min(
+    otherGbcAvailable,
+    availableForNonRefundable,
+    Math.max(0, section38Limit - rdCreditApplied),
+  );
+  availableForNonRefundable = Math.max(0, availableForNonRefundable - otherGbcApplied);
+  const otherGbcCarryforwardRemaining = Math.max(0, otherGbcAvailable - otherGbcApplied);
+
   // ── Step 8: Refundable credits + PTC reconciliation ───
   // FED-06 — §32(i)(2) EITC disqualifying-investment-income cliff. Unlike the
   // §1411 NIIT base, §32(i)(2)(B) COUNTS tax-exempt interest, so add it back.
@@ -3252,6 +3274,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     residentialEnergyApplied +
     adoptionCredit.nonRefundableApplied +
     rdCreditApplied +
+    otherGbcApplied +
     amtCreditApplied;
   const totalRefundableCreditsApplied =
     ctc.refundableActc +
@@ -3446,6 +3469,8 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     rdCredit,
     rdCreditApplied,
     rdCreditCarryforwardRemaining,
+    otherGeneralBusinessCreditApplied: otherGbcApplied,
+    otherGeneralBusinessCreditCarryforward: otherGbcCarryforwardRemaining,
     sehi,
     socialSecurityBenefits: ssTaxability.ssBenefits,
     socialSecurityTaxable: taxableSocialSecurity,

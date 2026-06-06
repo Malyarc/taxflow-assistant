@@ -1262,6 +1262,8 @@ export const AdjustmentAdjustmentType = {
     "qualified_research_expenses_prior_avg",
   investment_interest_carryforward: "investment_interest_carryforward",
   rd_credit_carryforward: "rd_credit_carryforward",
+  wotc_credit: "wotc_credit",
+  fmla_credit: "fmla_credit",
 } as const;
 
 export interface Adjustment {
@@ -1396,6 +1398,8 @@ export const CreateAdjustmentBodyAdjustmentType = {
     "qualified_research_expenses_prior_avg",
   investment_interest_carryforward: "investment_interest_carryforward",
   rd_credit_carryforward: "rd_credit_carryforward",
+  wotc_credit: "wotc_credit",
+  fmla_credit: "fmla_credit",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -1526,6 +1530,8 @@ export const UpdateAdjustmentBodyAdjustmentType = {
     "qualified_research_expenses_prior_avg",
   investment_interest_carryforward: "investment_interest_carryforward",
   rd_credit_carryforward: "rd_credit_carryforward",
+  wotc_credit: "wotc_credit",
+  fmla_credit: "fmla_credit",
 } as const;
 
 export interface UpdateAdjustmentBody {
