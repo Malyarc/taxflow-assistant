@@ -1267,6 +1267,7 @@ export const AdjustmentAdjustmentType = {
   scorp_reasonable_comp: "scorp_reasonable_comp",
   schedule_c_depreciation: "schedule_c_depreciation",
   general_business_credit_carryforward: "general_business_credit_carryforward",
+  schedule_c_section179_carryforward: "schedule_c_section179_carryforward",
 } as const;
 
 export interface Adjustment {
@@ -1406,6 +1407,7 @@ export const CreateAdjustmentBodyAdjustmentType = {
   scorp_reasonable_comp: "scorp_reasonable_comp",
   schedule_c_depreciation: "schedule_c_depreciation",
   general_business_credit_carryforward: "general_business_credit_carryforward",
+  schedule_c_section179_carryforward: "schedule_c_section179_carryforward",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -1541,6 +1543,7 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   scorp_reasonable_comp: "scorp_reasonable_comp",
   schedule_c_depreciation: "schedule_c_depreciation",
   general_business_credit_carryforward: "general_business_credit_carryforward",
+  schedule_c_section179_carryforward: "schedule_c_section179_carryforward",
 } as const;
 
 export interface UpdateAdjustmentBody {

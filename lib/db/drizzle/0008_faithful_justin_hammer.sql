@@ -1,0 +1,1 @@
+ALTER TABLE "tax_returns" ADD COLUMN "schedule_c_section179_carryforward_remaining" numeric(14, 2);

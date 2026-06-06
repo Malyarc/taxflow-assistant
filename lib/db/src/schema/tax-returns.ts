@@ -86,6 +86,10 @@ export const taxReturnsTable = pgTable(
    *  (§38-disallowed). Auto-loaded by the pipeline as a synthetic
    *  `general_business_credit_carryforward` adjustment (mirrors the §41 R&D one). */
   otherGeneralBusinessCreditCarryforwardRemaining: numeric("other_general_business_credit_carryforward_remaining", { precision: 14, scale: 2 }),
+  /** P2 — §179(b)(3)(B) income-limit carryforward from the Schedule C asset-
+   *  register calculator. Auto-loaded by the pipeline as a synthetic
+   *  `schedule_c_section179_carryforward` adjustment (mirrors the §41/§51 ones). */
+  scheduleCSection179CarryforwardRemaining: numeric("schedule_c_section179_carryforward_remaining", { precision: 14, scale: 2 }),
     /**
      * E2 — Form 8801 minimum-tax credit generated this year (IRC §53(b)).
      * Simplified model: equals `amtTax` (treats all AMT as deferral). CPA can

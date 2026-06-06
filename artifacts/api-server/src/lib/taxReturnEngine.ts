@@ -1819,8 +1819,14 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // taxable income BEFORE asset depreciation: Schedule C net (gross − expenses −
   // any manual depreciation) + W-2 wages (Reg §1.179-2(c)(6)(iv)).
   const scheduleCAssetList = inputs.scheduleCAssets ?? [];
+  // §179(b)(3)(B) carryforward of a PRIOR year's income-disallowed §179 — auto-
+  // seeded by the pipeline as `schedule_c_section179_carryforward` from the prior
+  // return (the §41/§51 GBC pattern). Added to this year's §179 available before
+  // the income limit; deductible even with no new assets (so the calculator runs
+  // when assets OR a carryforward is present).
+  const scheduleCSection179CarryforwardIn = Math.max(0, sumByType("schedule_c_section179_carryforward"));
   const scheduleCAssetDepreciation: ScheduleCAssetDepreciationResult | null =
-    scheduleCAssetList.length > 0
+    scheduleCAssetList.length > 0 || scheduleCSection179CarryforwardIn > 0
       ? computeScheduleCAssetDepreciation({
           assets: scheduleCAssetList,
           taxYear: resolvedMapYear,
@@ -1829,11 +1835,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
           section179Cap: SECTION_179_CAPS[resolvedMapYear].cap,
           section179PhaseStart: SECTION_179_CAPS[resolvedMapYear].phaseStart,
           bonusRateByYear: BONUS_RATE_BY_ACQUISITION_YEAR,
-          // The §179(b)(3)(B) income-limit carryforward is COMPUTED + exposed on
-          // the result (section179Carryforward). Auto-applying it next year is a
-          // documented follow-up — the calculator already accepts
-          // section179CarryforwardIn; the pipeline persist + re-seed (the §41/§51
-          // GBC pattern) would supply it. Not wired here → defaults to 0.
+          section179CarryforwardIn: scheduleCSection179CarryforwardIn,
         })
       : null;
   const scheduleCDepreciationAdj =

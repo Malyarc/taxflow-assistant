@@ -378,6 +378,19 @@ async function synthesizePriorYearCarryforwards(
     });
   }
 
+  // P2 — §179(b)(3)(B) Schedule C asset §179 income-limit carryforward (indefinite).
+  // Auto-load the prior-year income-disallowed §179; the asset calculator adds it
+  // to this year's §179 available before the income limit (mirrors the §41/§51
+  // carryforwards above; deductible even with no new assets this year).
+  const schCS179Carry = Number(priorReturn.scheduleCSection179CarryforwardRemaining ?? 0);
+  if (schCS179Carry > 0 && !hasManualOverride("schedule_c_section179_carryforward")) {
+    synthetic.push({
+      adjustmentType: "schedule_c_section179_carryforward",
+      amount: schCS179Carry,
+      isApplied: true,
+    });
+  }
+
   return synthetic;
 }
 
@@ -485,6 +498,7 @@ export async function recalculateAndUpsertTaxReturn(
     investmentInterestCarryforwardRemaining: String(result.investmentInterestDisallowed),
     rdCreditCarryforwardRemaining: String(result.rdCreditCarryforwardRemaining),
     otherGeneralBusinessCreditCarryforwardRemaining: String(result.otherGeneralBusinessCreditCarryforward),
+    scheduleCSection179CarryforwardRemaining: String(result.scheduleCAssetDepreciation?.section179Carryforward ?? 0),
     totalNonRefundableApplied: String(result.totalNonRefundableApplied),
     charitableCarryforwardCashRemaining: String(result.charitableCarryforwardCashRemaining),
     qsbsGrossGain: String(result.qsbsGrossGain),

@@ -222,6 +222,59 @@ header("E4: W-2 $80k lifts §179 limit → full $50k §179, AGI = $50,000");
   check("E4 AGI = $50,000 (Sch C loss offsets wages)", r.adjustedGrossIncome, 50000, 1);
 }
 
+// ════════════════════════ §179 carryforward roll-forward ════════════════════════
+// The §179(b)(3)(B) income-limit carryforward persists
+// (tax_returns.schedule_c_section179_carryforward_remaining) and re-seeds as a
+// `schedule_c_section179_carryforward` adjustment that the engine adds to next
+// year's §179 available BEFORE the income limit (mirrors §41/§51). Tested at the
+// engine level by feeding year-N's carryforward as year-N+1's input.
+
+// ── C1: carried §179 deducts with NO new assets (engine runs on carryforward alone) ──
+// SE income $30k, prior §179 carryforward $10k, no assets. available = $10k;
+// income limit $30k → §179 = $10,000 fully deducted; nothing re-carries.
+header("C1: §179 carryforward $10k + no assets, SE $30k → $10,000 deducted");
+{
+  const r = computeTaxReturnPure(mkReturn([], [
+    A("self_employment_income", 30000),
+    A("schedule_c_section179_carryforward", 10000),
+  ]));
+  check("C1 §179 deduction = $10,000", r.scheduleCAssetDepreciation?.section179Deduction ?? -1, 10000);
+  check("C1 nothing re-carried", r.scheduleCAssetDepreciation?.section179Carryforward ?? -1, 0);
+  check("C1 scheduleCDepreciation = $10,000", r.scheduleCDepreciation, 10000);
+}
+
+// ── C2: carried §179 RE-LIMITED by a low-income year → re-carries ──
+// SE income $6k, prior §179 carryforward $10k. §179 = min(10,000, 6,000) = $6,000;
+// re-carry = $4,000.
+header("C2: §179 carryforward $10k, SE $6k → $6,000 deducted, $4,000 re-carry");
+{
+  const r = computeTaxReturnPure(mkReturn([], [
+    A("self_employment_income", 6000),
+    A("schedule_c_section179_carryforward", 10000),
+  ]));
+  check("C2 §179 deduction = $6,000 (income-limited again)", r.scheduleCAssetDepreciation?.section179Deduction ?? -1, 6000);
+  check("C2 §179 re-carry = $4,000", r.scheduleCAssetDepreciation?.section179Carryforward ?? -1, 4000);
+}
+
+// ── C3: full year-N → year-N+1 roll-forward ──
+// Year N: SE $30k + a $50k 7-yr §179 asset → §179 $30k allowed, $20k carryforward.
+// Year N+1: feed that $20k carryforward, SE $30k, no new assets → $20k deducted.
+header("C3: year-N disallows $20k → persists → year-N+1 deducts the carryforward");
+{
+  const yearN = computeTaxReturnPure(mkReturn(
+    [{ cost: 50000, recoveryYears: 7, placedInServiceYear: 2024, section179: true }],
+    [A("self_employment_income", 30000)]));
+  check("C3 year-N carryforward = $20,000", yearN.scheduleCAssetDepreciation?.section179Carryforward ?? -1, 20000);
+
+  const rolled = yearN.scheduleCAssetDepreciation?.section179Carryforward ?? 0;
+  const yearN1 = computeTaxReturnPure(mkReturn([], [
+    A("self_employment_income", 30000),
+    A("schedule_c_section179_carryforward", rolled),
+  ]));
+  check("C3 year-N+1 §179 deduction = $20,000 (rolled forward)", yearN1.scheduleCAssetDepreciation?.section179Deduction ?? -1, 20000);
+  check("C3 year-N+1 nothing left to carry", yearN1.scheduleCAssetDepreciation?.section179Carryforward ?? -1, 0);
+}
+
 // ════════════════════════ SECTION_179_CAPS regression ════════════════════════
 // 2026-06-06i — the TY2024 §179 cap/phase-out were stale (held the 2023 figures
 // $1,160,000 / $2,890,000). Correct TY2024 values: $1,220,000 cap / $3,050,000
