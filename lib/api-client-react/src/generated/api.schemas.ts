@@ -1251,6 +1251,9 @@ export const AdjustmentAdjustmentType = {
   qualified_tips: "qualified_tips",
   qualified_overtime: "qualified_overtime",
   qualified_car_loan_interest: "qualified_car_loan_interest",
+  qualified_adoption_expenses: "qualified_adoption_expenses",
+  adoption_special_needs: "adoption_special_needs",
+  adoption_credit_carryforward: "adoption_credit_carryforward",
 } as const;
 
 export interface Adjustment {
@@ -1374,6 +1377,9 @@ export const CreateAdjustmentBodyAdjustmentType = {
   qualified_tips: "qualified_tips",
   qualified_overtime: "qualified_overtime",
   qualified_car_loan_interest: "qualified_car_loan_interest",
+  qualified_adoption_expenses: "qualified_adoption_expenses",
+  adoption_special_needs: "adoption_special_needs",
+  adoption_credit_carryforward: "adoption_credit_carryforward",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -1493,6 +1499,9 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   qualified_tips: "qualified_tips",
   qualified_overtime: "qualified_overtime",
   qualified_car_loan_interest: "qualified_car_loan_interest",
+  qualified_adoption_expenses: "qualified_adoption_expenses",
+  adoption_special_needs: "adoption_special_needs",
+  adoption_credit_carryforward: "adoption_credit_carryforward",
 } as const;
 
 export interface UpdateAdjustmentBody {

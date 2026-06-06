@@ -72,6 +72,10 @@ export const taxReturnsTable = pgTable(
    *  forward to next year. Auto-loaded by the pipeline as a synthetic
    *  `foreign_tax_credit_carryforward` adjustment. */
   foreignTaxCreditCarryforwardRemaining: numeric("foreign_tax_credit_carryforward_remaining", { precision: 14, scale: 2 }),
+  /** P2-13 — Form 8839 / §23(c) unused nonrefundable adoption credit carried
+   *  forward to next year (5-year life). Auto-loaded by the pipeline as a
+   *  synthetic `adoption_credit_carryforward` adjustment. */
+  adoptionCreditCarryforwardRemaining: numeric("adoption_credit_carryforward_remaining", { precision: 14, scale: 2 }),
     /**
      * E2 — Form 8801 minimum-tax credit generated this year (IRC §53(b)).
      * Simplified model: equals `amtTax` (treats all AMT as deferral). CPA can

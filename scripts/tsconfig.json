@@ -86,6 +86,7 @@
     "src/tax-engine-state-amt-tests.ts",
     "src/tax-engine-1099-validation-tests.ts",
     "src/tax-engine-extraction-confidence-tests.ts",
-    "src/tax-engine-p2-audit-tests.ts"
+    "src/tax-engine-p2-audit-tests.ts",
+    "src/tax-engine-adoption-credit-tests.ts"
   ]
 }

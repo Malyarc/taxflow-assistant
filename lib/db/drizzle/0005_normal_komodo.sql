@@ -1,0 +1,1 @@
+ALTER TABLE "tax_returns" ADD COLUMN "adoption_credit_carryforward_remaining" numeric(14, 2);

@@ -4330,6 +4330,151 @@ export function calculateDependentCareCredit(params: {
   };
 }
 
+// ── Adoption Credit (Form 8839, IRC §23) ─────────────────────────────────────
+// Nonrefundable personal credit for qualified adoption expenses, up to a
+// per-child dollar limit, phased out ratably over a $40,000 MAGI band, with a
+// 5-year carryforward of the unused nonrefundable portion (§23(c)). OBBBA
+// (P.L. 119-21 §70402) made up to $5,000 (2025, indexed) of the credit
+// REFUNDABLE beginning in 2025 (was fully nonrefundable through 2024).
+//
+// Year-indexed values (Rev. Proc. 2023-34 / 2024-40 / 2025-32):
+//   Max credit/child : 2024 $16,810 / 2025 $17,280 / 2026 $17,670
+//   Phase-out start  : 2024 $252,150 / 2025 $259,190 / 2026 $265,080
+//   Phase-out band   : $40,000 (credit fully eliminated at start + $40,000)
+//   Refundable cap   : 2024 $0 / 2025 $5,000 / 2026 $5,120
+// These are the single source of truth for the §23 math; the G1.65 planning
+// detector reads the engine-computed result rather than re-deriving it.
+//
+// §23(a)(3): a finalized SPECIAL-NEEDS adoption is treated as having paid
+// qualified expenses equal to the full dollar limit regardless of the amount
+// actually spent → deemed eligible expenses = the per-child max.
+//
+// MAGI per §23(b)(2)(B) = AGI computed without the §911/§931/§933 foreign
+// exclusions (the caller adds FEIE back, mirroring the §36B PTC MAGI). The
+// phase-out is applied to the CURRENT-year credit only; a prior carryforward
+// keeps its already-determined dollar amount and is NOT re-phased.
+//
+// Single-adoption model: `qualifiedExpenses` is the amount claimable for the
+// year (the CPA nets prior-year claims for the same child) and is capped at one
+// child's dollar limit. Simultaneous multiple adoptions need per-child entry
+// (documented sub-gap). MFS is disqualified in v1 — the narrow §23 lived-apart
+// exception is not modeled; an MFS return rolls any prior carryforward forward
+// untouched (conservative — never overstates the refund).
+const ADOPTION_MAX_CREDIT: Record<TaxYear, number> = { 2024: 16_810, 2025: 17_280, 2026: 17_670 };
+const ADOPTION_PHASE_OUT_START: Record<TaxYear, number> = { 2024: 252_150, 2025: 259_190, 2026: 265_080 };
+const ADOPTION_PHASE_OUT_BAND = 40_000;
+const ADOPTION_REFUNDABLE_CAP: Record<TaxYear, number> = { 2024: 0, 2025: 5_000, 2026: 5_120 };
+
+export interface AdoptionCreditCalculation {
+  qualifiedExpenses: number;
+  specialNeeds: boolean;
+  maxCreditPerChild: number;
+  magi: number;
+  phaseOutStart: number;
+  phaseOutTop: number;
+  /** 0..1 — fraction of the current-year credit lost to the MAGI phase-out. */
+  phaseOutFraction: number;
+  /** Eligible expenses after special-needs deeming + per-child dollar cap. */
+  eligibleExpenses: number;
+  /** Current-year credit after the MAGI phase-out (pre-split). */
+  tentativeCredit: number;
+  refundableCap: number;
+  /** OBBBA refundable portion of the current-year credit (adds to the refund). */
+  refundablePortion: number;
+  priorCarryforward: number;
+  /** Current-year nonrefundable portion + prior carryforward. */
+  nonRefundableTentative: number;
+  /** Nonrefundable amount actually applied (capped at available income tax). */
+  nonRefundableApplied: number;
+  /** Unused nonrefundable amount carried to next year (§23(c), 5-year life). */
+  carryforwardToNext: number;
+  eligible: boolean;
+}
+
+export function calculateAdoptionCredit(params: {
+  qualifiedExpenses: number;
+  specialNeeds: boolean;
+  priorCarryforward: number;
+  magi: number;
+  filingStatus: string;
+  /** Remaining income tax (regular + AMT) after higher-priority nonrefundable
+   *  credits — the §26(a)/§23(b) liability limit for the nonrefundable portion. */
+  availableTax: number;
+  taxYear: number;
+}): AdoptionCreditCalculation {
+  const year = resolveTaxYear(params.taxYear);
+  const maxCreditPerChild = ADOPTION_MAX_CREDIT[year];
+  const phaseOutStart = ADOPTION_PHASE_OUT_START[year];
+  const phaseOutTop = phaseOutStart + ADOPTION_PHASE_OUT_BAND;
+  const refundableCap = ADOPTION_REFUNDABLE_CAP[year];
+  const priorCarryforward = Math.max(0, params.priorCarryforward);
+  const expenses = Math.max(0, params.qualifiedExpenses);
+
+  const base: AdoptionCreditCalculation = {
+    qualifiedExpenses: expenses,
+    specialNeeds: params.specialNeeds,
+    maxCreditPerChild,
+    magi: params.magi,
+    phaseOutStart,
+    phaseOutTop,
+    phaseOutFraction: 0,
+    eligibleExpenses: 0,
+    tentativeCredit: 0,
+    refundableCap,
+    refundablePortion: 0,
+    priorCarryforward,
+    nonRefundableTentative: priorCarryforward,
+    nonRefundableApplied: 0,
+    carryforwardToNext: priorCarryforward,
+    eligible: false,
+  };
+
+  // MFS disqualified (v1) → no current credit; prior carryforward rolls forward.
+  if (params.filingStatus === "married_filing_separately") return base;
+
+  // §23(a)(3): special-needs adoption is deemed to have full-limit expenses.
+  const eligibleExpenses = params.specialNeeds
+    ? maxCreditPerChild
+    : Math.min(expenses, maxCreditPerChild);
+
+  if (eligibleExpenses <= 0 && priorCarryforward <= 0) return base;
+
+  // §23(b)(2) MAGI phase-out, ratable over the $40k band.
+  const phaseOutFraction =
+    params.magi > phaseOutStart
+      ? Math.min(1, (params.magi - phaseOutStart) / ADOPTION_PHASE_OUT_BAND)
+      : 0;
+  const tentativeCredit = eligibleExpenses * (1 - phaseOutFraction);
+
+  // OBBBA refundability applies to the CURRENT-year credit only; a prior
+  // carryforward retains its nonrefundable character.
+  const refundablePortion = Math.min(tentativeCredit, refundableCap);
+  const currentNonRefundable = tentativeCredit - refundablePortion;
+
+  const nonRefundableTentative = currentNonRefundable + priorCarryforward;
+  const nonRefundableApplied = Math.min(nonRefundableTentative, Math.max(0, params.availableTax));
+  const carryforwardToNext = nonRefundableTentative - nonRefundableApplied;
+
+  return {
+    qualifiedExpenses: expenses,
+    specialNeeds: params.specialNeeds,
+    maxCreditPerChild,
+    magi: params.magi,
+    phaseOutStart,
+    phaseOutTop,
+    phaseOutFraction,
+    eligibleExpenses,
+    tentativeCredit,
+    refundableCap,
+    refundablePortion,
+    priorCarryforward,
+    nonRefundableTentative,
+    nonRefundableApplied,
+    carryforwardToNext,
+    eligible: true,
+  };
+}
+
 // ════════════════════════════════════════════════════════════════════════════
 // Phase 1.5 — Everyday-filer credits and deductions
 // ════════════════════════════════════════════════════════════════════════════

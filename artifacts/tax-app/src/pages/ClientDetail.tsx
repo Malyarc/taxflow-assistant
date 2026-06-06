@@ -2882,6 +2882,9 @@ function AdjustmentsTab({ clientId }: { clientId: number }) {
     qualified_education_expenses_aoc: "Education Expenses — AOC (per student)",
     qualified_education_expenses_llc: "Education Expenses — LLC",
     retirement_contributions_savers: "Retirement Contributions (Saver's Credit)",
+    qualified_adoption_expenses: "Adoption Expenses (Form 8839 §23, per child)",
+    adoption_special_needs: "Adoption — Special Needs (full credit, enter 1)",
+    adoption_credit_carryforward: "Adoption Credit Carryforward (prior-year §23(c))",
     // Phase 1.5
     educator_expenses: "Educator Expenses (K-12, $300/educator)",
     student_loan_interest: "Student Loan Interest (1098-E)",

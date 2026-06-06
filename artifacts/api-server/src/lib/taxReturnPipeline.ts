@@ -328,6 +328,19 @@ async function synthesizePriorYearCarryforwards(
     });
   }
 
+  // P2-13 — §23 adoption credit carryforward (5-year life, §23(c)). Auto-load
+  // the prior-year unused nonrefundable portion as the
+  // `adoption_credit_carryforward` adjustment so the engine applies it against
+  // this year's income tax before the §23 credit re-derives the carryforward.
+  const adoptionCarry = Number(priorReturn.adoptionCreditCarryforwardRemaining ?? 0);
+  if (adoptionCarry > 0 && !hasManualOverride("adoption_credit_carryforward")) {
+    synthetic.push({
+      adjustmentType: "adoption_credit_carryforward",
+      amount: adoptionCarry,
+      isApplied: true,
+    });
+  }
+
   return synthetic;
 }
 
@@ -431,6 +444,7 @@ export async function recalculateAndUpsertTaxReturn(
     amtCreditGenerated: String(result.amtCreditGenerated),
     amtCreditCarryforwardRemaining: String(result.amtCreditCarryforwardRemaining),
     foreignTaxCreditCarryforwardRemaining: String(result.foreignTaxCreditCarryforwardRemaining),
+    adoptionCreditCarryforwardRemaining: String(result.adoptionCreditCarryforwardRemaining),
     totalNonRefundableApplied: String(result.totalNonRefundableApplied),
     charitableCarryforwardCashRemaining: String(result.charitableCarryforwardCashRemaining),
     qsbsGrossGain: String(result.qsbsGrossGain),

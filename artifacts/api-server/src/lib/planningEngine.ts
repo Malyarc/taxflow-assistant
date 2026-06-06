@@ -5232,6 +5232,71 @@ function detectAdoptionCredit(args: {
 }): OpportunityHit | null {
   const { client, computed, adjustments } = args;
   if (client.filingStatus === "married_filing_separately") return null;
+
+  // P2-13 — ENGINE-VERIFIED path: if the CPA entered actual adoption expenses
+  // (a `qualified_adoption_expenses` / `adoption_special_needs` marker) or a
+  // prior-year carryforward, the engine computed the real §23 credit. Report
+  // THAT number (engine-verified, with the §23(c) carryforward) instead of the
+  // broad kids-under-17 heuristic below.
+  const ac = computed.adoptionCredit;
+  if (ac && ac.eligible && (ac.tentativeCredit > 0 || ac.priorCarryforward > 0)) {
+    const strategy = strategyById("G1.65");
+    const fmt = (n: number) =>
+      n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+    const verified = Math.round(ac.refundablePortion + ac.nonRefundableApplied);
+    const year = computed.taxYear;
+    const phasedNote =
+      ac.phaseOutFraction > 0
+        ? ` MAGI ${fmt(Math.round(ac.magi))} phases the credit out by ${(ac.phaseOutFraction * 100).toFixed(0)}% (band ${fmt(ac.phaseOutStart)}–${fmt(ac.phaseOutTop)}).`
+        : ``;
+    const cfNote =
+      ac.carryforwardToNext > 0
+        ? ` ${fmt(Math.round(ac.carryforwardToNext))} of nonrefundable credit exceeds this year's tax and carries forward 5 years (§23(c)).`
+        : ``;
+    const vars: Record<string, number | string> = { maxCredit: ac.maxCreditPerChild, estSavings: verified };
+    return {
+      strategyId: strategy.id,
+      name: strategy.name,
+      category: strategy.category,
+      estSavings: verified,
+      verifiedSavings: verified,
+      savingsSource: "engine-verified",
+      confidence: strategy.confidence,
+      cpaEffortHours: strategy.cpaEffortHours,
+      recurring: strategy.recurring,
+      rationale:
+        `Engine-verified §23 adoption credit of ${fmt(verified)} on Form 8839 for TY${year} ` +
+        `(${fmt(Math.round(ac.refundablePortion))} refundable + ${fmt(Math.round(ac.nonRefundableApplied))} ` +
+        `nonrefundable applied against income tax).${phasedNote}${cfNote}`,
+      action: interpolate(strategy.action, vars),
+      prerequisiteData: strategy.prerequisiteData,
+      citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+      inputs: {
+        qualifiedExpenses: Math.round(ac.qualifiedExpenses),
+        specialNeeds: ac.specialNeeds ? 1 : 0,
+        eligibleExpenses: Math.round(ac.eligibleExpenses),
+        maxCreditPerChild: ac.maxCreditPerChild,
+        magi: Math.round(ac.magi),
+        phaseOutFraction: Number(ac.phaseOutFraction.toFixed(4)),
+        tentativeCredit: Math.round(ac.tentativeCredit),
+        refundableCap: ac.refundableCap,
+        refundablePortion: Math.round(ac.refundablePortion),
+        nonRefundableApplied: Math.round(ac.nonRefundableApplied),
+        priorCarryforward: Math.round(ac.priorCarryforward),
+        carryforwardToNext: Math.round(ac.carryforwardToNext),
+      },
+      assumptions: [
+        `ENGINE-VERIFIED — value is the engine's computed §23 credit (refundable + nonrefundable applied), not a heuristic.`,
+        `Special-needs adoption (§23(a)(3)) deems full-limit expenses regardless of amount spent — flagged: ${ac.specialNeeds ? "YES" : "no"}.`,
+        ac.refundableCap > 0
+          ? `OBBBA (P.L. 119-21 §70402): up to ${fmt(ac.refundableCap)} of the TY${year} credit is REFUNDABLE; the rest is nonrefundable with a 5-yr §23(c) carryforward.`
+          : `TY${year} predates OBBBA refundability — the credit is fully nonrefundable (5-yr §23(c) carryforward).`,
+        `Single-adoption model: expenses capped at one child's ${fmt(ac.maxCreditPerChild)} limit. Simultaneous multiple adoptions need per-child entry (sub-gap).`,
+        `MAGI = AGI + FEIE add-back (§23(b)(2)(B)). Foreign adoption: credit allowed only in the year the adoption is FINALIZED (Reg §1.23-1).`,
+      ],
+    };
+  }
+
   const kidsUnder17 = client.dependentsUnder17 ?? 0;
   if (kidsUnder17 < 1) return null;
   const year = computed.taxYear;
@@ -7871,6 +7936,12 @@ export function annotateVerifiedSavings(hits: OpportunityHit[]): void {
     if (h.whatIf && h.whatIf.semantics === "savings") {
       h.verifiedSavings = Math.round(Math.abs(h.whatIf.delta.combinedRefundDelta));
       h.savingsSource = "engine-verified";
+    } else if (h.savingsSource === "engine-verified" && h.verifiedSavings != null) {
+      // A detector that reads a value the engine already computed in the
+      // baseline return (e.g. G1.65 §23 adoption credit, G1.30 §36B PTC
+      // reconciliation) is engine-verified WITHOUT a what-if mutation — the
+      // number is the engine's own output, not a heuristic. Keep its
+      // annotation rather than downgrading it to an estimate.
     } else {
       h.savingsSource = "estimate";
     }

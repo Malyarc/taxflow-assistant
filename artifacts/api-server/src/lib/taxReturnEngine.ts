@@ -48,6 +48,7 @@ import {
   calculateForeignTaxCredit,
   calculateResidentialEnergyCredits,
   calculatePremiumTaxCredit,
+  calculateAdoptionCredit,
   calculateStateTax,
   calculateMultiStateTax,
   calculateStateEitc,
@@ -86,6 +87,7 @@ import {
   type ForeignTaxCreditCalculation,
   type ResidentialEnergyCreditsCalculation,
   type PremiumTaxCreditCalculation,
+  type AdoptionCreditCalculation,
 } from "./taxCalculator";
 
 // ── Loose numeric coercion ──────────────────────────────────────────────────
@@ -754,6 +756,11 @@ export interface ComputedTaxReturn {
   foreignTaxCredit: ForeignTaxCreditCalculation;
   residentialEnergyCredits: ResidentialEnergyCreditsCalculation;
   premiumTaxCredit: PremiumTaxCreditCalculation;
+  /** P2-13 — Adoption Credit (Form 8839, IRC §23): nonrefundable + OBBBA
+   *  refundable split, MAGI phase-out, and the §23(c) 5-year carryforward. */
+  adoptionCredit: AdoptionCreditCalculation;
+  /** P2-13 — unused nonrefundable §23 adoption credit carried to next year. */
+  adoptionCreditCarryforwardRemaining: number;
   /** K5 — Self-Employed Health Insurance deduction (Form 7206), above-the-line.
    *  Computed from `self_employed_health_insurance_premiums` adjustment, capped
    *  at (net SE earnings − half-SE). */
@@ -3021,6 +3028,24 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const residentialEnergyApplied =
     cleanEnergyApplied + efficientHomeApplied + heatPumpApplied + evChargerApplied;
 
+  // P2-13 — Adoption Credit (Form 8839, IRC §23) — Sched 3 Line 6c. Applied
+  // after the other §25–§25D personal credits (which mostly don't carry
+  // forward) so they absorb tax first; the §23 credit takes the remaining room
+  // and carries any unused nonrefundable portion forward 5 years (§23(c)). The
+  // OBBBA refundable portion (TY2025+) is added to the refundable-credit total
+  // below. Placed before the §53 AMT credit so §53(c)'s own limit nets §23 out.
+  // MAGI = AGI + FEIE add-back per §23(b)(2)(B) (mirrors the §36B PTC MAGI).
+  const adoptionCredit = calculateAdoptionCredit({
+    qualifiedExpenses: sumByType("qualified_adoption_expenses"),
+    specialNeeds: sumByType("adoption_special_needs") > 0,
+    priorCarryforward: sumByType("adoption_credit_carryforward"),
+    magi: calc.adjustedGrossIncome + feieExclusion,
+    filingStatus: client.filingStatus,
+    availableTax: availableForNonRefundable,
+    taxYear,
+  });
+  availableForNonRefundable = Math.max(0, availableForNonRefundable - adoptionCredit.nonRefundableApplied);
+
   // E2 — Form 8801 Minimum-Tax Credit (IRC §53). Sched 3 Line 6b on TY2024.
   // Carryforward from prior years can offset regular tax DOWN TO the level
   // of tentative minimum tax (Form 6251 Line 8 = amt.amtBeforeRegular).
@@ -3122,12 +3147,14 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     llcApplied +
     saversApplied +
     residentialEnergyApplied +
+    adoptionCredit.nonRefundableApplied +
     amtCreditApplied;
   const totalRefundableCreditsApplied =
     ctc.refundableActc +
     educationCredits.aocRefundable +
     eitc.appliedCredit +
-    netPremiumTaxCreditRefundable;
+    netPremiumTaxCreditRefundable +
+    adoptionCredit.refundablePortion;
   const totalCreditsAppliedForRefund =
     totalNonRefundableApplied + totalRefundableCreditsApplied;
 
@@ -3307,6 +3334,8 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     foreignTaxCredit,
     residentialEnergyCredits: residentialEnergy,
     premiumTaxCredit,
+    adoptionCredit,
+    adoptionCreditCarryforwardRemaining: adoptionCredit.carryforwardToNext,
     sehi,
     socialSecurityBenefits: ssTaxability.ssBenefits,
     socialSecurityTaxable: taxableSocialSecurity,
