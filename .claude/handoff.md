@@ -1,3 +1,43 @@
+# Handoff Note — 2026-06-06d (§163(d) investment interest + election — engine model + G1.93 H2 — shipped + deployed)
+
+Completed the PLAN-Q2 engine-modelable trio (§1244 / §453 / §163(d)). The engine had
+NO §163(d) modeling; this adds the deduction + the election, then H2-wires G1.93.
+**1 commit (`10c24d6`) on `main`, pushed, deployed to EC2 (api-server rebuilt, pm2
+restarted, frontend rsynced, prod-smoked, re-score 0-drift). No migration. Full no-API
+battery 67 suites / 4,184 assertions green (+24 this increment).**
+
+- **ENGINE — §163(d) investment interest (Form 4952)** as a Schedule A itemized
+  deduction capped at net investment income (interest + non-qualified dividends + net
+  STCG + royalties); the excess is the §163(d)(2) indefinite carryforward
+  (`investmentInterestDisallowed`). The **§163(d)(4)(B) election**
+  (`investment_interest_election_amount`) treats QDIV/LTCG as ordinary investment
+  income — raises the NII cap (frees more deduction) AND re-buckets that amount from
+  the preferential to the ordinary rate (reduces BOTH the ordinary-portion split and
+  the amounts passed to calculateFederalTaxWithCapitalGains → no double-count). The
+  elected amount STAYS in the §1411 NIIT base (it's a §163(d), not §1411,
+  characterization). 2 new adjustments (openapi + codegen + ClientForm). **Fully gated
+  on the adjustments → zero change to any return without them** (verified: 214-test
+  core + Schedule A + preferential suites all green).
+- **G1.93 H2-wired**: reads the engine-computed disallowed interest, elects
+  min(preferential, disallowed) via an engine-verified what-if; SUPPRESSES when the
+  engine shows no benefit (e.g. too little OTHER itemized → the freed interest is
+  wasted against the std deduction — the exact error the flat 13.2% heuristic missed).
+  Heuristic preserved for the no-baselineInputs (precompute/hit-list) path.
+- `ComputedTaxReturn` gains investmentInterestDeduction / investmentInterestDisallowed
+  / investmentInterestElectionAmount.
+- 24 hand-calc'd tests (`tax-engine-section163d-tests.ts`): deduction cap, the election
+  ($6,000 = $40k × 15% preferential, freed-deduction offset), std-floor waste (no
+  benefit), election capped at preferential, NIIT-unchanged, and the detector's what-if
+  cross-checked vs an independent elect-vs-no-elect engine run.
+
+**PLAN-Q2 TRIO COMPLETE (§1244/§453/§163(d)).** Remaining credit mechanics (need
+calculate* support first, §23-adoption pattern): §41 R&D (G1.36), §530 Coverdell
+(G1.59), §45S FMLA (G1.74), §51 WOTC (G1.75). Documented follow-up: §163(d) disallowed-
+interest carryforward AUTO-SEED (a DB column + pipeline wire, like FTC/adoption); the
+§1411 NII investment-interest net-down (a pre-existing engine simplification).
+
+---
+
 # Handoff Note — 2026-06-06c (§453 installment sale — H3 multi-year wiring — shipped + deployed)
 
 Completed the §1244/§453 pair (the 2026-06-06b §453 "deferred" note is now SUPERSEDED).
