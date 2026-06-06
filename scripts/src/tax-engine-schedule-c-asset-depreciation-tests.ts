@@ -19,6 +19,7 @@ import {
 } from "../../artifacts/api-server/src/lib/taxCalculator";
 import {
   computeTaxReturnPure,
+  SECTION_179_CAPS,
   type TaxReturnInputs,
   type AdjustmentFact,
 } from "../../artifacts/api-server/src/lib/taxReturnEngine";
@@ -40,7 +41,8 @@ function header(t: string) { console.log(`\n-- ${t} --`); }
 const BONUS: Record<number, number> = {
   2018: 1.0, 2022: 1.0, 2023: 0.8, 2024: 0.6, 2025: 0.4, 2026: 1.0,
 };
-// §179 2024 caps (Rev. Proc.); non-binding for these small-asset cases.
+// §179 2024 caps (Rev. Proc. 2023-34: $1.22M cap / $3.05M phase-out); non-binding
+// for these small-asset cases.
 function calc(
   assets: ScheduleCAsset[],
   opts: Partial<ScheduleCAssetDepreciationParams> = {},
@@ -49,8 +51,8 @@ function calc(
     assets,
     taxYear: 2024,
     businessIncomeForSection179: 1_000_000, // plenty unless overridden
-    section179Cap: 1_160_000,
-    section179PhaseStart: 2_890_000,
+    section179Cap: 1_220_000,
+    section179PhaseStart: 3_050_000,
     bonusRateByYear: BONUS,
     ...opts,
   });
@@ -218,6 +220,32 @@ header("E4: W-2 $80k lifts §179 limit → full $50k §179, AGI = $50,000");
   check("E4 §179 deduction = $50,000 (wage-lifted)", r.scheduleCAssetDepreciation?.section179Deduction ?? -1, 50000);
   check("E4 §179 carryforward = 0", r.scheduleCAssetDepreciation?.section179Carryforward ?? -1, 0);
   check("E4 AGI = $50,000 (Sch C loss offsets wages)", r.adjustedGrossIncome, 50000, 1);
+}
+
+// ════════════════════════ SECTION_179_CAPS regression ════════════════════════
+// 2026-06-06i — the TY2024 §179 cap/phase-out were stale (held the 2023 figures
+// $1,160,000 / $2,890,000). Correct TY2024 values: $1,220,000 cap / $3,050,000
+// phase-out (Rev. Proc. 2023-34 §3.27). 2025/2026 = OBBBA $2.5M/$4.0M + indexed.
+header("CAP: SECTION_179_CAPS year values (TY2024 corrected to $1.22M / $3.05M)");
+{
+  check("CAP 2024 cap = $1,220,000 (not stale $1,160,000)", SECTION_179_CAPS[2024].cap, 1_220_000, 0);
+  check("CAP 2024 phase-out = $3,050,000 (not stale $2,890,000)", SECTION_179_CAPS[2024].phaseStart, 3_050_000, 0);
+  check("CAP 2025 cap = $2,500,000 (OBBBA)", SECTION_179_CAPS[2025].cap, 2_500_000, 0);
+  check("CAP 2025 phase-out = $4,000,000 (OBBBA)", SECTION_179_CAPS[2025].phaseStart, 4_000_000, 0);
+  check("CAP 2026 cap = $2,560,000 (OBBBA indexed)", SECTION_179_CAPS[2026].cap, 2_560_000, 0);
+  check("CAP 2026 phase-out = $4,090,000 (OBBBA indexed)", SECTION_179_CAPS[2026].phaseStart, 4_090_000, 0);
+}
+
+// Behavioral: the above-the-line §179 caps at $1,220,000 (the income limit doesn't
+// bind on $2M of SE income; the phase-out doesn't apply below $3.05M of property).
+// Under the old stale cap this would have been $1,160,000.
+header("CAP-e2e: §179 elected $1.3M on $2M SE → capped at $1,220,000");
+{
+  const r = computeTaxReturnPure(mkReturn([], [
+    A("self_employment_income", 2_000_000),
+    A("section_179_expense_election", 1_300_000),
+  ]));
+  check("CAP-e2e §179 applied = $1,220,000 (cap binds)", r.section179Applied, 1_220_000, 1);
 }
 
 // ── Summary ──

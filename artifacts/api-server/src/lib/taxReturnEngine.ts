@@ -1242,13 +1242,14 @@ export function detectWashSales(
 // via resolveTaxYear(taxYear) → a supported TaxYear, so every key is present.
 
 // §179 expensing cap + phase-out start.
-//   - §179 cap TY2024: $1,160,000 (Rev. Proc. 2023-34); phase-out $-for-$ above
-//     $2,890,000 of qualified property.
+//   - §179 cap TY2024: $1,220,000 (Rev. Proc. 2023-34 §3.27); phase-out $-for-$
+//     above $3,050,000 of qualified property. (Corrected 2026-06-06i — the prior
+//     $1,160,000 / $2,890,000 were the stale TY2023 figures.)
 //   - OBBBA (P.L. 119-21 §70306) raised §179 to $2.5M cap / $4M phase-out for
 //     property placed in service in TY beginning after 2024-12-31 (TY2025+),
 //     then inflation-indexed: TY2026 $2.56M / $4.09M (Rev. Proc. 2025-32).
-const SECTION_179_CAPS: Record<TaxYear, { cap: number; phaseStart: number }> = {
-  2024: { cap: 1160000, phaseStart: 2890000 },
+export const SECTION_179_CAPS: Record<TaxYear, { cap: number; phaseStart: number }> = {
+  2024: { cap: 1220000, phaseStart: 3050000 },
   2025: { cap: 2500000, phaseStart: 4000000 },
   2026: { cap: 2560000, phaseStart: 4090000 },
 };
@@ -1427,8 +1428,8 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
 
   // E7 — §179 expense election + §168(k) bonus depreciation. Both reduce
   // business income (effectively additional deductions). Apply caps + phase-out:
-  //   - §179 cap TY2024: $1,160,000 (Rev. Proc. 2023-34)
-  //   - §179 phase-out: dollar-for-dollar above $2,890,000 of qualified property
+  //   - §179 cap TY2024: $1,220,000 (Rev. Proc. 2023-34)
+  //   - §179 phase-out: dollar-for-dollar above $3,050,000 of qualified property
   //   - §179 income limit: can't exceed net business income (no NOL via §179)
   //   - Bonus depreciation: 60% × cost basis TY2024, 40% TY2025 (no income limit)
   // CPA enters the elected §179 amount and the cost basis of bonus-eligible
