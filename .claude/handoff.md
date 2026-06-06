@@ -1,3 +1,65 @@
+# Handoff Note — 2026-06-06 (P2 BATCH — 10 items shipped + deep audit + deployed)
+
+Worked `docs/product-todo.md` P2 (medium enhancements) + the requested deep audit.
+**13 commits fast-forwarded to `main`, pushed, deployed to EC2 (migrations 0003+0004
+applied, api-server rebuilt, pm2 restarted, frontend rsynced, prod-smoked, planning
+re-scored). Full no-API battery 62 suites / 4,025 assertions green.** Every tax value
+hand-calc'd against IRS/state primary sources before asserting.
+
+## What shipped (each its own commit; hand-calc'd tests)
+- **P2-16 — return-level diagnostics** (`lib/returnDiagnostics.ts`, PURE): critical/
+  warning/info pre-filing checklist (state code, kiddie-tax parent rate, ACA APTC w/o
+  SLCSP, non-resident wages, §6654 balance-due, W-2 + 1099 box arithmetic, ACA gaps).
+  GET `/clients/:id/tax-return/diagnostics`; `DiagnosticsCard` on the Tax Calc tab. 36 tests.
+- **P2-7 — 1040-X depth**: real Line 6→7→8 chain (tax → nonref credits → net), credit-
+  component breakdown, amended state-return lines. Additive FiledSnapshot (back-compat
+  bug caught by a legacy-snapshot test + fixed). PDF + card. 107 tests.
+- **P2-4 — Form 8995-A per-business §199A wage/UBIA limit**: per-business limit summed
+  (high-wage biz can't rescue low-wage). `ComputedTaxReturn.qbiPerBusiness`. 22 tests.
+  **Deep audit caught + fixed a real §199A loss-netting bug** in this (loss biz now nets
+  before the wage limit; was over-stating).
+- **P2-3 — FTC §904(c) carryover** (Form 1116 Sch B): combined current+carryover through
+  the §904 limit; excess re-carries. New column `foreign_tax_credit_carryforward_remaining`
+  (migration 0003). SEHI "carryforward" documented as a non-concept (no SEHI CF in law). 14 tests.
+- **P2-6 — federal sub-gaps**: §1202 acquisition-date exclusion % (50/75/100) + §57(a)(7)
+  AMT pref; K-1 basis reduced by distributions + sep-stated deductions (§1367 order,
+  migration 0004); §168(k) TY2025 bonus dual-rate (`bonus_depreciation_basis_obbba` @100%).
+  HIFO/specific-ID (planning, not prep) + partial-wash re-flow (already handled) documented. 21 tests.
+- **P2-1 — Form 8582 per-activity worksheet**: ratably allocates allowed/suspended loss
+  per property (Worksheet 5); `ComputedTaxReturn.form8582`. Tax result unchanged. 27 tests.
+- **P2-2 — Minnesota AMT** (Schedule M1MT, §290.091): 6.75% on MN AMTI after the statutory
+  exemption ($77,590 MFJ/$58,190 single/$38,800 MFS), §55(d) phase-out, resident delta —
+  mirrors the CA pattern. Caught that a web search had conflated the FEDERAL exemptions;
+  used the statute. NY (IT-220 narrow) + NJ (no AMT) documented. 9 tests.
+- **P2-12 — 1099 box-arithmetic validation** (`validate1099`): DIV qualified≤ordinary,
+  R taxable≤gross, B proceeds−basis≈gain, TIN/withholding plausibility; folded into
+  diagnostics. 19 tests.
+- **P2-9/P2-10 — extraction confidence + recall**: per-field confidence (0–1) on the
+  extractors + `lowConfidenceFields` filter + documents-route plumbing; W-2 Box1≠Box3
+  + "extract every box" recall hints. 10 deterministic tests (model-side needs a live key).
+- **Deep audit** — hand-verified 7 feature-INTERACTION scenarios + 5 edge cases
+  (`tax-engine-p2-audit-tests.ts`, 23 assertions); found+fixed the QBI loss-netting bug;
+  verified the planning engine fires sane engine-verified strategies.
+
+## NOT done / partial (honest)
+- **P2-5 Schedule C per-line** — NOT done. The engine takes net SE as one number;
+  §179/bonus are above-the-line (don't reduce the SE base — documented, not a bug).
+  Per-line P&L + asset depreciation reducing SE is the real enhancement (large input model).
+- **P2-8 100-doc benchmark** — BLOCKED on a PAID Gemini key. Harness READY
+  (`scripts/src/ai-benchmark/run.ts` — LIVE with a key, MOCK otherwise).
+- **P2-11 new doc-type extractors** (1098/1095-A/SSA-1099/W-2G) — NOT done (unverifiable
+  without the paid API; W-2/1099 now have confidence+recall).
+- **P2-13..15 planning credit mechanics** (§41/§45S/§51/§23/§530/§36B + heuristic→engine
+  promotion) — NOT done (XL; the cleanest next is §23 adoption + wiring the existing PTC).
+
+## Verify
+typecheck (api-server + tax-app + db + validation + tests) clean; 62 no-API suites /
+4,025 assertions green; api-server esbuild + frontend Vite build clean; deployed +
+prod-smoked (diagnostics endpoint live, new engine fields present, 10/10 prod returns
+recompute clean, planning re-scored 0-drift).
+
+---
+
 # Handoff Note — 2026-06-05h (STATE-MOD LAYER — per-line non-resident sourcing, NY IT-203 / CA 540NR — SHIPPED + deployed)
 
 Built P1 #2 — the #1 correctness gap. Research (worked examples) → implement →

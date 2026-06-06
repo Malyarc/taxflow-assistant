@@ -52,20 +52,20 @@ operator/legal work (P0) that's yours, not engineering.
 ## P2 — Medium enhancements (bounded; port to Haven)
 
 ### Tax calculator engine
-- [ ] `[ENH]` **Per-property Schedule E roll-up** — per-property MACRS/basis/suspended-PAL + Form 8582 per-activity (today aggregate-only; most CPA-visible federal gap).
-- [ ] `[ENH]` **State AMT for NY (IT-220) / NJ / MN** — extend the CA Schedule-P pattern (only CA modeled today).
-- [ ] `[ENH]` **FTC carryforward** (Form 1116 Schedule B, 10-yr) + SEHI carryforward.
-- [ ] `[ENH]` **Form 8995-A per-business wage/UBIA limit** (aggregate today — matters for multi-entity K-1 filers above the §199A threshold).
-- [ ] `[ENH]` **Schedule C per-line P&L + depreciation** (MACRS/§179/bonus on business assets; engine takes net SE as one number today) — PREP-B3 / Haven B#19.
-- [ ] `[ENH]` **Federal sub-gap batch** (PREP-B5): §1202 pre-2010-09-27 sub-multipliers (75%/50%); K-1 basis reduced by distributions + separately-stated deductions; **bonus-depreciation acquisition-date field** → correct TY2025 40%/100% dual-rate; Schedule D HIFO/specific-ID lot selection; partial-wash leftover-replacement re-flow.
-- [ ] `[ENH]` **1040-X amendment depth** (extend the C4 snapshot diff) — PREP-B6 / Haven B#18.
+- [x] `[ENH]` **Per-property Schedule E roll-up** — ✅ **DONE 2026-06-06.** Form 8582 per-activity worksheet (`computeForm8582Breakdown` → `ComputedTaxReturn.form8582`): ratably allocates allowed/suspended loss per property (Worksheet 5). Tax result unchanged (the $25k cap was always correct on aggregate). 27 tests. Remaining increment: per-property suspended-loss STORAGE for release-on-disposition.
+- [~] `[ENH]` **State AMT for NY (IT-220) / NJ / MN** — ✅ **MN DONE 2026-06-06** (Schedule M1MT §290.091: 6.75%, statutory exemptions, §55(d) phase-out, resident delta, mirrors CA). NY (IT-220 narrow preference tax) + NJ (no individual AMT) documented as intentionally-not-modeled. 9 tests.
+- [x] `[ENH]` **FTC carryforward** (Form 1116 Schedule B, §904(c)) — ✅ **DONE 2026-06-06.** Combined current+carryover through the §904 limit; excess re-carries (migration 0003). SEHI "carryforward" documented as a non-concept (no SEHI CF in law). 14 tests.
+- [x] `[ENH]` **Form 8995-A per-business wage/UBIA limit** — ✅ **DONE 2026-06-06.** Per-business limit summed; `qbiPerBusiness` output. Deep audit caught+fixed a §199A loss-netting bug. 22 tests.
+- [ ] `[ENH]` **Schedule C per-line P&L + depreciation** — NOT done (the engine takes net SE as one number; §179/bonus are above-the-line and don't reduce the SE base — documented). PREP-B3 / Haven B#19.
+- [x] `[ENH]` **Federal sub-gap batch** (PREP-B5) — ✅ **DONE 2026-06-06** (a/b/c): §1202 acquisition-date exclusion % (50/75/100) + §57(a)(7) AMT pref; K-1 basis reduced by distributions + sep-stated deductions (§1367 order, migration 0004); §168(k) TY2025 bonus dual-rate (`bonus_depreciation_basis_obbba`). (d) HIFO = a sale-time planning decision (detector G1.56), not a prep-engine gap; (e) partial-wash re-flow already handled via `remainingReplQty`. 21 tests.
+- [x] `[ENH]` **1040-X amendment depth** — ✅ **DONE 2026-06-06.** Real Line 6→7→8 chain + credit-component breakdown + amended state lines; additive snapshot. 107 tests.
 
 ### AI extraction (the real half of "autofill")
-- [ ] `[FIX]` **Run the full 100-doc benchmark on PAID Gemini quota** — current 97.5%P / 77.7%R is on **25 synthetic W-2s only**; the 100-doc/1099 headline numbers are a *mock simulator*. Harness is ready (~5 min on paid). Highest-leverage, lowest-cost truth check. (EXT)
-- [ ] `[ENH]` **Per-field confidence scores + "review only low-confidence fields" filter** — extractor returns `{data, boxes}` with **no confidence**; today the only signal is presence/absence. Turns "re-read every box" into "review the 3 risky fields."
-- [ ] `[ENH]` **Attack recall** — prompt the model to enumerate **every filled box** (not only confident ones) + add a Box 1 ≠ Box 3 disambiguation hint (the dominant false-positive class: pre-tax-deferral W-2s).
-- [ ] `[ENH]` **Expand doc-type coverage** to where CPA time goes: **consolidated/multi-page brokerage 1099** (most common real doc) → **K-1** (highest value) → **1098/1098-T/E**, **1095-A** (unlocks Form 8962), **SSA-1099**, **W-2G**. (each: new extractor + prompt + corpus entry, on the W-2 template)
-- [ ] `[ENH]` **1099 box-arithmetic validation** — extend the `validateW2` flag engine to 1099s (EXT-2).
+- [ ] `[FIX]` **Run the full 100-doc benchmark on PAID Gemini quota** — BLOCKED on a paid key. Harness READY (`scripts/src/ai-benchmark/run.ts` — LIVE with a key, MOCK otherwise). (EXT)
+- [x] `[ENH]` **Per-field confidence scores + "review only low-confidence fields" filter** — ✅ **DONE 2026-06-06.** Extractors return `confidence` (0–1); `lowConfidenceFields` filter; threaded through the documents route. (Model-side values need a live key to validate.)
+- [x] `[ENH]` **Attack recall** — ✅ **DONE 2026-06-06.** W-2 + 1099 vision prompts: "extract EVERY box (lower confidence, don't skip)" + W-2 Box 1 ≠ Box 3 disambiguation hint.
+- [ ] `[ENH]` **Expand doc-type coverage** (1098/1098-T/E, 1095-A, SSA-1099, W-2G) — NOT done (unverifiable without the paid API; W-2/1099 now carry confidence+recall).
+- [x] `[ENH]` **1099 box-arithmetic validation** — ✅ **DONE 2026-06-06.** `validate1099` (DIV qualified≤ordinary, R taxable≤gross, B reconciliation, TIN/withholding); folded into diagnostics. 19 tests.
 
 ### Planning engine
 - [ ] `[ENH]` **Model the credit/election mechanics that block what-if wiring** — add `calculate*` support for §41 R&D, §45S FMLA, §51 WOTC, §23 adoption, §530 Coverdell, §36B ACA PTC reconciliation; **then promote** the corresponding heuristic detectors (G1.30/36/59/60/65/74/75/80/81) from heuristic → engine-verified. (NOTE: don't force-wire via the generic `credit` adjustment — it's refundable, would overstate for low-tax filers.)
