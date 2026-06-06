@@ -5091,8 +5091,11 @@ export function calculateMacrsDepreciation(p: MacrsDepreciationParams): MacrsDep
 // Each class's Table A-1 percentages are verified against IRS Pub 946 and sum to
 // 100%. MODELING BOUNDS (documented sub-gaps; CPA overrides via the
 // schedule_c_depreciation adjustment when they apply):
-//   - HALF-YEAR convention only. Mid-quarter (>40% of basis placed in Q4) is NOT
-//     modeled (no per-asset quarter input).
+//   - HALF-YEAR MACRS computation only. The §168(d)(3) mid-quarter convention
+//     (>40% of non-§179 basis placed in Q4) is DETECTED — the result's
+//     `midQuarterApplies` flags when the CPA must recompute MACRS mid-quarter
+//     (Pub 946 Tables A-2..A-5) and override via `schedule_c_depreciation` — but
+//     the mid-quarter percentages themselves are not yet computed.
 //   - An asset is EITHER fully §179-elected (no MACRS basis) OR depreciated via
 //     bonus+MACRS — not a partial §179 + bonus/MACRS on the SAME asset (split it
 //     into two asset rows if needed).
@@ -5131,6 +5134,13 @@ export interface ScheduleCAsset {
    * (already 100%) and ignored unless `bonus` is set.
    */
   bonusFullObbba?: boolean;
+  /**
+   * Calendar quarter placed in service (1-4). Optional — used ONLY for the
+   * §168(d)(3) mid-quarter-convention 40% test (does the result need a mid-quarter
+   * override). The MACRS computation itself is always half-year (see the result's
+   * `midQuarterApplies`). Unspecified is treated as not-Q4 for the test.
+   */
+  placedInServiceQuarter?: 1 | 2 | 3 | 4;
 }
 
 export interface ScheduleCAssetDepreciationParams {
@@ -5161,6 +5171,15 @@ export interface ScheduleCAssetDepreciationResult {
   macrsDeduction: number;
   /** §179 disallowed by the income limit (or dollar cap) → carries to next year (§179(b)(3)(B)). */
   section179Carryforward: number;
+  /**
+   * §168(d)(3) mid-quarter convention TEST result: true when > 40% of this year's
+   * non-§179 depreciable basis was placed in service in Q4. The MACRS figures
+   * above are computed half-year regardless; when this is true the CPA must
+   * recompute MACRS under the mid-quarter convention (Pub 946 Tables A-2..A-5) and
+   * override via the `schedule_c_depreciation` adjustment. Requires per-asset
+   * `placedInServiceQuarter` to fire (defaults false without quarter data).
+   */
+  midQuarterApplies: boolean;
 }
 
 export function computeScheduleCAssetDepreciation(
@@ -5172,6 +5191,10 @@ export function computeScheduleCAssetDepreciation(
   let macrsTotal = 0;
   let currentYearSection179Elected = 0;
   let currentYearQualifiedPropertyCost = 0; // drives the §179 investment phase-out
+  // §168(d)(3) mid-quarter 40% test — basis of current-year NON-§179 depreciable
+  // property (§179-expensed property is excluded from the test), and the Q4 share.
+  let currentYearTestBasis = 0;
+  let currentYearQ4TestBasis = 0;
 
   for (const a of p.assets) {
     const cost = Math.max(0, a.cost);
@@ -5206,8 +5229,14 @@ export function computeScheduleCAssetDepreciation(
     if (isCurrentYear) {
       bonusTotal += bonusBasis;
       currentYearQualifiedPropertyCost += cost;
+      currentYearTestBasis += cost;
+      if (a.placedInServiceQuarter === 4) currentYearQ4TestBasis += cost;
     }
   }
+  // §168(d)(3): mid-quarter convention required when > 40% of the year's
+  // (non-§179) depreciable basis is placed in service in the last quarter.
+  const midQuarterApplies =
+    currentYearTestBasis > 0 && currentYearQ4TestBasis > 0.4 * currentYearTestBasis;
 
   // §179 aggregate: dollar cap (with the investment phase-out) + the §179(b)(3)
   // business-income limit. The carryforward-in is added AFTER the dollar cap (it
@@ -5229,6 +5258,7 @@ export function computeScheduleCAssetDepreciation(
     bonusDeduction: r2(bonusTotal),
     macrsDeduction: r2(macrsTotal),
     section179Carryforward: r2(section179Carryforward),
+    midQuarterApplies,
   };
 }
 

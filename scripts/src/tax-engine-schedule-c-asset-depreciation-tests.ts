@@ -182,6 +182,50 @@ header("A9b: 2025 $50k bonus, no OBBBA flag → 40% = $20k + $6k MACRS = $26,000
   check("A9b total = $26,000", r.totalDepreciation, 26000);
 }
 
+// ════════════════════════ §168(d)(3) mid-quarter detection ════════════════════════
+// MACRS is computed half-year regardless; `midQuarterApplies` flags when > 40% of
+// the year's NON-§179 depreciable basis is placed in Q4 (CPA must then override).
+
+// ── MQ1: 60% of basis in Q4 → mid-quarter applies ──
+// A $60k Q4 + B $40k Q1 (both MACRS). Q4 share 60/100 = 60% > 40% → TRUE.
+header("MQ1: $60k Q4 + $40k Q1 (60% in Q4) → midQuarterApplies = true");
+{
+  const r = calc([
+    { cost: 60000, recoveryYears: 5, placedInServiceYear: 2024, placedInServiceQuarter: 4 },
+    { cost: 40000, recoveryYears: 5, placedInServiceYear: 2024, placedInServiceQuarter: 1 },
+  ]);
+  checkBool("MQ1 midQuarterApplies = true", r.midQuarterApplies, true);
+}
+// ── MQ2: 30% of basis in Q4 → does NOT apply ──
+header("MQ2: $30k Q4 + $70k Q1 (30% in Q4) → midQuarterApplies = false");
+{
+  const r = calc([
+    { cost: 30000, recoveryYears: 5, placedInServiceYear: 2024, placedInServiceQuarter: 4 },
+    { cost: 70000, recoveryYears: 5, placedInServiceYear: 2024, placedInServiceQuarter: 1 },
+  ]);
+  checkBool("MQ2 midQuarterApplies = false (30% ≤ 40%)", r.midQuarterApplies, false);
+}
+// ── MQ3: §179 property is EXCLUDED from the 40% test (§168(d)(3)) ──
+// A $80k Q4 §179 (excluded) + B $50k Q1 MACRS. Test basis = B only = $50k; Q4 = $0
+// → false. (If §179 counted, 80/130 = 62% would wrongly trigger.)
+header("MQ3: $80k Q4 §179 excluded + $50k Q1 MACRS → false (§179 not in the test)");
+{
+  const r = calc([
+    { cost: 80000, recoveryYears: 5, placedInServiceYear: 2024, section179: true, placedInServiceQuarter: 4 },
+    { cost: 50000, recoveryYears: 5, placedInServiceYear: 2024, bonus: true, placedInServiceQuarter: 1 },
+  ], { businessIncomeForSection179: 200000 });
+  checkBool("MQ3 midQuarterApplies = false (§179 Q4 asset excluded)", r.midQuarterApplies, false);
+}
+// ── MQ4: no quarter data → false (default to half-year) ──
+header("MQ4: no placedInServiceQuarter → midQuarterApplies = false");
+{
+  const r = calc([
+    { cost: 60000, recoveryYears: 5, placedInServiceYear: 2024 },
+    { cost: 40000, recoveryYears: 5, placedInServiceYear: 2024 },
+  ]);
+  checkBool("MQ4 midQuarterApplies = false (no quarter data)", r.midQuarterApplies, false);
+}
+
 // ════════════════════════ End-to-end (SE base) ════════════════════════
 function mkReturn(scheduleCAssets: ScheduleCAsset[], adj: AdjustmentFact[], w2 = 0): TaxReturnInputs {
   return {
