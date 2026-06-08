@@ -1,3 +1,47 @@
+# Handoff Note — 2026-06-08 (Lane A: GA/NC/OH added to the NR tax-ratio method — shipped + deployed)
+
+Picked lane A from the 2026-06-06k handoff: batch more states into `NR_AS_IF_RESIDENT_STATES`,
+each only after verifying it uses the TAX-RATIO method (a) against its actual NR-form line
+flow. **1 commit on `main` (`2db174f`), pushed, deployed to EC2 (engine-only: pull → build →
+pm2 restart, healthz ok, migration no-op, re-score 0-drift across 10 returns). No-API battery
+72 suites / 4,453 assertions green (+14).**
+
+- **Added GA + NC + OH** → `NR_AS_IF_RESIDENT_STATES` is now {CA,NY,CT,NJ,MN,GA,NC,OH}.
+  Each web-verified against its official NR form (.gov instructions) for method (a) — NR tax
+  = tax(TOTAL income as-if-resident) × (state-source/total):
+  - **GA Form 500 Schedule 3** (IT-511): Line 9 ratio = GA-source/total; Line 13 prorates
+    deductions by it. GA is FLAT 5.39%, so `r·(source − D·ratio) = r·(total − D)·ratio` =
+    method a EXACTLY. Worked example $90k GA + $30k TX → $5,821.20 × 0.75 = **$4,365.90**.
+  - **NC D-400** (D-401): Line 14 = taxable income on TOTAL × Line 13 "taxable %" (Sched PN =
+    NC-source/total); flat 4.5%. Worked example $80k NC + $40k TX → $4,826.25 × ⅔ = **$3,217.50**.
+  - **OH IT NRC**: nonresident CREDIT = tax(OAGI) × (non-OH/OAGI) ⇒ OH tax borne = tax(total)
+    × (OH-source/OAGI) = method a; the graduated 0/2.75/3.5% schedule makes it materially >
+    the source-only fallback. Worked example $90k OH + $30k TX → $2,733.625 × 0.75 = **$2,050.22**.
+  - All three previously hit the conservative fallback (direct brackets on source income),
+    which hands the NR the FULL std ded (GA/NC) or the whole zero/low bracket (OH) against
+    source-only income — under-taxing. Method (a) correctly prorates. Verified the deltas:
+    GA +$161.70 = 5.39%×$12k×0.25; NC +$191.25 = 4.5%×$12,750×⅓; OH +$291.59 (bracket effect).
+- **MD deliberately EXCLUDED + test-guarded**: Form 505NR is method b (prorates deductions
+  by the income factor, applies the GRADUATED rate to MD-SOURCE income — lands in lower
+  brackets than method a) AND adds a 2.25% SPECIAL NONRESIDENT TAX in lieu of county tax
+  (Line 32b) the engine doesn't model. A set-addition would both mis-method AND silently
+  omit 2.25% of MD taxable income, so a MD NR stays on the conservative direct-bracket
+  fallback (locked by a test).
+- +14 hand-calc'd assertions in `tax-engine-nr-sourcing-tests.ts` (now 35 total).
+
+## Remaining P1 sub-items (unchanged from 2026-06-06k, minus GA/NC/OH)
+- **More NR states** — same per-form method-(a)-vs-(b) verification cycle. VA + AL/HI/IL/MA/
+  MS/WV are confirmed method (b) → do NOT add. Other states need the NR-form check before adding.
+- **CT pension/annuity + IRA exclusion** — ENGINE-LIMITED (needs a pension-vs-IRA split of the
+  single retirement bucket + the bracketed phase-out table).
+- **IN unemployment-comp deduction** — minor; needs the IN rule sourced.
+- **NR per-type source plumbing** — the engine fn (`perStateNonResidentOtherSourced`) is done +
+  tested; needs a CPA-input path to set it e2e.
+- **Part-year as-if-resident income-% method**; **`CapitalGainTransaction.propertyStateSitus`** —
+  bigger multi-step engine changes.
+
+---
+
 # Handoff Note — 2026-06-06k (Remaining-P1 sub-increments: WI all-statuses std-ded + NJ/MN NR sourcing — shipped + deployed)
 
 Worked the "remaining P1" partial items. **4 commits on `main` (`5817b07` WI,
