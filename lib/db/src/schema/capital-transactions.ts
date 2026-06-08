@@ -95,6 +95,16 @@ export const capitalTransactionsTable = pgTable("capital_transactions", {
   /** Form 8949 box: A/B/C (short-term) or D/E/F (long-term). */
   formBox: text("form_box").notNull().default("A"),
 
+  /**
+   * PREP-B1 — optional 2-letter state code for the SITUS of the underlying
+   * property (real estate / tangible property physically located in a state).
+   * When set AND the `nonresident_source_allocation` marker is on, the gain on
+   * this disposition is sourced to that state as non-resident income (real-
+   * property gains follow situs; intangible gains — stocks/bonds — follow the
+   * owner's domicile per 4 U.S.C. §114(a) and must NOT be given a situs).
+   */
+  propertyStateSitus: text("property_state_situs"),
+
   /** 1099-B Box 12: basis reported to IRS (covered security). */
   isCovered: boolean("is_covered").notNull().default(true),
   /** Did the taxpayer receive a 1099-B for this transaction? */

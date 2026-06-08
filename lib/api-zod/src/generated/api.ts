@@ -2772,6 +2772,7 @@ export const ListAdjustmentsResponseItem = zod.object({
     "schedule_c_section179_carryforward",
     "ct_ira_distribution",
     "nonresident_source_allocation",
+    "part_year_income_pct_method",
   ]),
   amount: zod.number(),
   description: zod.string(),
@@ -2905,6 +2906,7 @@ export const CreateAdjustmentBody = zod.object({
     "schedule_c_section179_carryforward",
     "ct_ira_distribution",
     "nonresident_source_allocation",
+    "part_year_income_pct_method",
   ]),
   amount: zod.number(),
   description: zod.string(),
@@ -3037,6 +3039,7 @@ export const UpdateAdjustmentBody = zod.object({
       "schedule_c_section179_carryforward",
       "ct_ira_distribution",
       "nonresident_source_allocation",
+      "part_year_income_pct_method",
     ])
     .optional(),
   amount: zod.number().optional(),
@@ -3163,6 +3166,7 @@ export const UpdateAdjustmentResponse = zod.object({
     "schedule_c_section179_carryforward",
     "ct_ira_distribution",
     "nonresident_source_allocation",
+    "part_year_income_pct_method",
   ]),
   amount: zod.number(),
   description: zod.string(),
@@ -3790,6 +3794,12 @@ export const ListCapitalTransactionsResponseItem = zod.object({
       'E13 — TRUE when the engine auto-detected this as a wash sale (vs. broker-reported via adjustmentCode \"W\"). Set on the disallowed-loss row.',
     ),
   formBox: zod.enum(["A", "B", "C", "D", "E", "F"]),
+  propertyStateSitus: zod
+    .string()
+    .nullish()
+    .describe(
+      "PREP-B1 — 2-letter state code for the situs of the underlying real\/tangible property. With the nonresident_source_allocation marker on, the gain is sourced to that state as non-resident income (real-property situs rule). Intangible gains (stocks\/bonds) carry no situs (4 U.S.C. §114(a)).",
+    ),
   isCovered: zod.boolean(),
   received1099B: zod.boolean(),
   notes: zod.string().nullish(),
@@ -3836,6 +3846,12 @@ export const CreateCapitalTransactionBody = zod.object({
       'E13 — TRUE when the engine auto-detected this as a wash sale (vs. broker-reported via adjustmentCode \"W\"). Set on the disallowed-loss row.',
     ),
   formBox: zod.enum(["A", "B", "C", "D", "E", "F"]),
+  propertyStateSitus: zod
+    .string()
+    .nullish()
+    .describe(
+      "PREP-B1 — 2-letter state code for the situs of the underlying real\/tangible property. With the nonresident_source_allocation marker on, the gain is sourced to that state as non-resident income (real-property situs rule). Intangible gains (stocks\/bonds) carry no situs (4 U.S.C. §114(a)).",
+    ),
   isCovered: zod.boolean().optional(),
   received1099B: zod.boolean().optional(),
   notes: zod.string().nullish(),
@@ -3878,6 +3894,12 @@ export const UpdateCapitalTransactionBody = zod.object({
       'E13 — TRUE when the engine auto-detected this as a wash sale (vs. broker-reported via adjustmentCode \"W\"). Set on the disallowed-loss row.',
     ),
   formBox: zod.enum(["A", "B", "C", "D", "E", "F"]).optional(),
+  propertyStateSitus: zod
+    .string()
+    .nullish()
+    .describe(
+      "PREP-B1 — 2-letter state code for the situs of the underlying real\/tangible property. With the nonresident_source_allocation marker on, the gain is sourced to that state as non-resident income (real-property situs rule). Intangible gains (stocks\/bonds) carry no situs (4 U.S.C. §114(a)).",
+    ),
   isCovered: zod.boolean().optional(),
   received1099B: zod.boolean().optional(),
   notes: zod.string().nullish(),
@@ -3913,6 +3935,12 @@ export const UpdateCapitalTransactionResponse = zod.object({
       'E13 — TRUE when the engine auto-detected this as a wash sale (vs. broker-reported via adjustmentCode \"W\"). Set on the disallowed-loss row.',
     ),
   formBox: zod.enum(["A", "B", "C", "D", "E", "F"]),
+  propertyStateSitus: zod
+    .string()
+    .nullish()
+    .describe(
+      "PREP-B1 — 2-letter state code for the situs of the underlying real\/tangible property. With the nonresident_source_allocation marker on, the gain is sourced to that state as non-resident income (real-property situs rule). Intangible gains (stocks\/bonds) carry no situs (4 U.S.C. §114(a)).",
+    ),
   isCovered: zod.boolean(),
   received1099B: zod.boolean(),
   notes: zod.string().nullish(),

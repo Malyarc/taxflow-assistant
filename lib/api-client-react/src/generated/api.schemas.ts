@@ -1270,6 +1270,7 @@ export const AdjustmentAdjustmentType = {
   schedule_c_section179_carryforward: "schedule_c_section179_carryforward",
   ct_ira_distribution: "ct_ira_distribution",
   nonresident_source_allocation: "nonresident_source_allocation",
+  part_year_income_pct_method: "part_year_income_pct_method",
 } as const;
 
 export interface Adjustment {
@@ -1412,6 +1413,7 @@ export const CreateAdjustmentBodyAdjustmentType = {
   schedule_c_section179_carryforward: "schedule_c_section179_carryforward",
   ct_ira_distribution: "ct_ira_distribution",
   nonresident_source_allocation: "nonresident_source_allocation",
+  part_year_income_pct_method: "part_year_income_pct_method",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -1550,6 +1552,7 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   schedule_c_section179_carryforward: "schedule_c_section179_carryforward",
   ct_ira_distribution: "ct_ira_distribution",
   nonresident_source_allocation: "nonresident_source_allocation",
+  part_year_income_pct_method: "part_year_income_pct_method",
 } as const;
 
 export interface UpdateAdjustmentBody {
@@ -1955,6 +1958,11 @@ export interface CapitalTransaction {
   /** E13 — TRUE when the engine auto-detected this as a wash sale (vs. broker-reported via adjustmentCode "W"). Set on the disallowed-loss row. */
   washSaleAutoDetected: boolean;
   formBox: CapitalTransactionFormBox;
+  /**
+   * PREP-B1 — 2-letter state code for the situs of the underlying real/tangible property. With the nonresident_source_allocation marker on, the gain is sourced to that state as non-resident income (real-property situs rule). Intangible gains (stocks/bonds) carry no situs (4 U.S.C. §114(a)).
+   * @nullable
+   */
+  propertyStateSitus?: string | null;
   isCovered: boolean;
   received1099B: boolean;
   /** @nullable */
@@ -2001,6 +2009,11 @@ export interface CreateCapitalTransactionBody {
   /** E13 — TRUE when the engine auto-detected this as a wash sale (vs. broker-reported via adjustmentCode "W"). Set on the disallowed-loss row. */
   washSaleAutoDetected?: boolean;
   formBox: CreateCapitalTransactionBodyFormBox;
+  /**
+   * PREP-B1 — 2-letter state code for the situs of the underlying real/tangible property. With the nonresident_source_allocation marker on, the gain is sourced to that state as non-resident income (real-property situs rule). Intangible gains (stocks/bonds) carry no situs (4 U.S.C. §114(a)).
+   * @nullable
+   */
+  propertyStateSitus?: string | null;
   isCovered?: boolean;
   received1099B?: boolean;
   /** @nullable */
@@ -2045,6 +2058,11 @@ export interface UpdateCapitalTransactionBody {
   /** E13 — TRUE when the engine auto-detected this as a wash sale (vs. broker-reported via adjustmentCode "W"). Set on the disallowed-loss row. */
   washSaleAutoDetected?: boolean;
   formBox?: UpdateCapitalTransactionBodyFormBox;
+  /**
+   * PREP-B1 — 2-letter state code for the situs of the underlying real/tangible property. With the nonresident_source_allocation marker on, the gain is sourced to that state as non-resident income (real-property situs rule). Intangible gains (stocks/bonds) carry no situs (4 U.S.C. §114(a)).
+   * @nullable
+   */
+  propertyStateSitus?: string | null;
   isCovered?: boolean;
   received1099B?: boolean;
   /** @nullable */

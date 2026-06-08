@@ -1,0 +1,1 @@
+ALTER TABLE "capital_transactions" ADD COLUMN "property_state_situs" text;

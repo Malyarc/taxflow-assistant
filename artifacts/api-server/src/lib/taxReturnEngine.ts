@@ -282,6 +282,15 @@ export interface CapitalTransactionFact {
   /** E13 — TRUE when engine identified the wash sale (vs broker-reported "W"). */
   washSaleAutoDetected?: boolean | null;
   formBox?: "A" | "B" | "C" | "D" | "E" | "F" | string | null;
+  /**
+   * PREP-B1 — 2-letter state code for the SITUS of the underlying real/tangible
+   * property. When set and the `nonresident_source_allocation` marker is on, the
+   * gain (max(0, proceeds − costBasis + adjustmentAmount)) is sourced to that
+   * state as non-resident income (real-property gains follow situs). Intangible
+   * gains (stocks/bonds) follow the owner's domicile (4 U.S.C. §114(a)) and must
+   * NOT be given a situs.
+   */
+  propertyStateSitus?: string | null;
 }
 
 /**
@@ -2920,6 +2929,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
         formerState: client.formerState,
         residencyChangeDate: client.residencyChangeDate,
         useW2SourceAllocation,
+        // PREP-B1 (lane C) — opt-in IT-203/540NR income-% method for the resident-
+        // period tax in method-(a) states.
+        incomePctMethod: sumByType("part_year_income_pct_method") > 0,
       }
     : undefined;
 
@@ -3032,6 +3044,19 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
         }).currentYearDepreciation;
       }
       addNr(p.sourceState, propIncome - propExpenses - propDepreciation);
+    }
+    // PREP-B1 (lane C) — real-property capital GAIN by situs. A disposition of
+    // real/tangible property physically located in a state is NR-sourced to that
+    // state (situs rule); the CPA tags it with `propertyStateSitus`. Intangible
+    // gains (stocks/bonds) carry no situs and are never sourced (§114(a)). The
+    // sourced amount is the positive per-transaction gain (proceeds − basis +
+    // adjustment); the gain is already in federal AGI via Schedule D.
+    for (const t of inputs.capitalTransactions ?? []) {
+      if (t.taxYear !== taxYear) continue;
+      const situs = (t.propertyStateSitus ?? "").toUpperCase();
+      if (!situs) continue;
+      const gain = toNum(t.proceeds) - toNum(t.costBasis) + toNum(t.adjustmentAmount);
+      addNr(situs, Math.max(0, gain));
     }
     if (Object.keys(perStateNonResidentOtherSourced).length === 0) {
       perStateNonResidentOtherSourced = undefined;

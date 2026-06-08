@@ -11,6 +11,11 @@
  * royalties/STCG/LTCG) and retirement are NEVER sourced. Resident-state source is
  * skipped (covered by the resident calc).
  *
+ * Also covers the lane-C additions: CapitalTransaction.propertyStateSitus (real-
+ * property capital gains routed to the situs state; intangible gains excluded), and
+ * the opt-in part_year_income_pct_method (IT-203/540NR income-% method for the
+ * resident-period tax in a method-(a) state).
+ *
  * Worked example anchor — NY-as-resident($100,000 single 2024): taxable 100,000 −
  * 8,000 std ded = 92,000; NY brackets 4%×8,500 + 4.5%×3,200 + 5.25%×2,200 +
  * 5.5%×66,750 + 6%×11,350 = 340 + 144 + 115.50 + 3,671.25 + 681 = $4,951.75.
@@ -115,6 +120,77 @@ header("5 — opt-in: sourceState without the marker changes nothing");
 {
   const k1 = [{ taxYear: 2024, box2RentalRealEstate: 40000, sourceState: "NY" }];
   check("no marker → NY NR tax $0 even though sourceState=NY is set", run(k1, [], []).stateTaxLiability, 0, 0.5);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 6 (lane C) — CapitalTransaction.propertyStateSitus routes a REAL-PROPERTY gain to
+// the situs state. TX resident, W-2 $60k + a long-term sale of NY real estate
+// (proceeds $250k − basis $150k = $100k LTCG, formBox F) tagged propertyStateSitus
+// "NY" → AGI $160,000 (AGI includes LTCG), NY-source $100k.
+//   NY-as-resident($160,000 single 2024): taxable 152,000 → 4%×8,500 + 4.5%×3,200 +
+//   5.25%×2,200 + 5.5%×66,750 + 6%×71,350 = 340+144+115.50+3,671.25+4,281 = $8,551.75.
+//   NR ratio 100,000/160,000 = 0.625 → NY NR tax = $5,344.84.
+// ════════════════════════════════════════════════════════════════════════════
+const runTx = (txns: unknown[], adjustments: unknown[]) =>
+  computeTaxReturnPure({
+    client: { filingStatus: "single", state: "TX", taxYear: 2024 } as TaxReturnInputs["client"],
+    w2s: [W2(60000, "TX")],
+    form1099s: [],
+    capitalTransactions: txns as TaxReturnInputs["capitalTransactions"],
+    adjustments: adjustments as TaxReturnInputs["adjustments"],
+    taxYear: 2024,
+  });
+header("6 — propertyStateSitus routes a real-property gain to the situs state");
+{
+  const reSale = [{ taxYear: 2024, description: "NY building", proceeds: 250000, costBasis: 150000, formBox: "F", propertyStateSitus: "NY" }];
+  const on = runTx(reSale, MARKER);
+  const off = runTx(reSale, []);
+  check("AGI = $160,000 (W-2 60k + $100k LTCG)", on.adjustedGrossIncome, 160000, 1);
+  check("marker ON → NY NR tax on the real-property gain = $5,344.84", on.stateTaxLiability, 5344.84, 1);
+  check("marker ON → matches NY-as-resident(AGI) × (100k/AGI)",
+    on.stateTaxLiability, calculateStateTax(on.adjustedGrossIncome, "NY", "single", 2024) * (100000 / on.adjustedGrossIncome), 1);
+  check("marker OFF → real-property gain NOT sourced → $0", off.stateTaxLiability, 0, 0.5);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 7 (lane C) — §114(a): an INTANGIBLE gain (stock, NO propertyStateSitus) is never
+// sourced, even with the marker on (intangible gains follow the owner's domicile).
+// ════════════════════════════════════════════════════════════════════════════
+header("7 — §114(a): an intangible (stock) gain with no situs is NOT sourced");
+{
+  const stockSale = [{ taxYear: 2024, description: "AAPL", proceeds: 250000, costBasis: 150000, formBox: "F" }];
+  check("marker ON, no situs → NY tax $0 (intangible gain follows domicile)", runTx(stockSale, MARKER).stateTaxLiability, 0, 0.5);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 8 (lane C) — part-year income-% method (IT-203/540NR) for the resident-period tax
+// in a method-(a) state, opt-in via `part_year_income_pct_method`. NY→FL mover
+// (residency change 2024-07-01: daysFormer 182 / 366 leap year), $120k W-2.
+//   Day-prorated former (NY) AGI = 120,000 × 182/366 = $59,672.13.
+//   DEFAULT (direct brackets, std ded prorated): NY taxable = 59,672.13 − 8,000×182/366
+//     = 55,693.99 → 4%×8,500 + 4.5%×3,200 + 5.25%×2,200 + 5.5%×41,793.99 = $2,898.17.
+//   INCOME-% (marker on): NY-as-resident($120k) $6,151.75 × (182/366) = $3,059.07
+//     (preserves the full-income marginal rate — the IT-203 result; higher = correct).
+// ════════════════════════════════════════════════════════════════════════════
+const runPy = (marker: boolean) =>
+  computeTaxReturnPure({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, residencyChangedInYear: true, formerState: "NY", residencyChangeDate: "2024-07-01" } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 120000, federalTaxWithheldBox2: 0, stateCode: "NY" } as unknown as TaxReturnInputs["w2s"][number]],
+    form1099s: [],
+    adjustments: (marker ? [{ adjustmentType: "part_year_income_pct_method", amount: 1, isApplied: true }] : []) as TaxReturnInputs["adjustments"],
+    taxYear: 2024,
+  });
+header("8 — part-year income-% method (IT-203) for the NY resident period");
+{
+  const off = runPy(false);
+  const on = runPy(true);
+  check("default (day-prorated direct brackets): NY former-period tax = $2,898.17", off.formerStateTax, 2898.17, 1);
+  check("income-% method ON: NY former-period tax = $3,059.07 (NY-as-resident × 182/366)", on.formerStateTax, 3059.07, 1);
+  check("income-% ON: relational == NY-as-resident($120k) × (182/366)",
+    on.formerStateTax, calculateStateTax(120000, "NY", "single", 2024) * (182 / 366), 1);
+  checkTruthy("income-% > day-prorated direct brackets (it preserves the full-income marginal rate)",
+    on.formerStateTax > off.formerStateTax + 1);
+  checkTruthy("FL (no income tax) period stays $0 either way", on.stateTaxLiability === on.formerStateTax);
 }
 
 console.log(`\n========================================`);

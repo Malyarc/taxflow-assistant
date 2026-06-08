@@ -1303,6 +1303,13 @@ export function calculateMultiStateTax(params: {
      * during the former-state residence period.
      */
     useW2SourceAllocation?: boolean;
+    /**
+     * PREP-B1 (lane C) — OPT-IN: for the resident-period tax in a method-(a) state,
+     * use the IT-203/540NR income-percentage method (tax-as-if-full-year-resident on
+     * total income × period income/total) instead of direct brackets on the period
+     * AGI. Default false (existing day-prorated direct-bracket behavior).
+     */
+    incomePctMethod?: boolean;
   };
   options?: {
     federalIncomeTaxPaid?: number;
@@ -1505,6 +1512,7 @@ export function calculateMultiStateTax(params: {
       params.options ?? {},
       perStateWageMap,
       perStateOtherSourcedMap,
+      params.partYearResidency.incomePctMethod ?? false,
     );
     partYearResidencyResult = py;
     residentTaxFull = py.currentStateTax; // for the return shape
@@ -1724,6 +1732,16 @@ function computePartYearAllocation(
    * double-counted. When undefined, all non-wage income still pro-rates.
    */
   perStateOtherSourced?: Readonly<Record<string, number>>,
+  /**
+   * PREP-B1 (lane C) — OPT-IN: for the resident-period tax in a method-(a) state
+   * (NR_AS_IF_RESIDENT_STATES), use the IT-203 / 540NR "income-percentage" method —
+   * tax-as-if-full-year-resident(TOTAL income) × (period income / total) — instead of
+   * applying the brackets directly to the smaller period AGI. This preserves the
+   * progressive marginal rate of the full income (the method these states' part-year
+   * forms actually use; direct brackets under-tax). Non-method-(a) states keep the
+   * direct-bracket path. Default false (existing behavior unchanged).
+   */
+  incomePctMethod = false,
 ): PartYearResidencyResult {
   // Total days in the tax year (leap year handling).
   const isLeap = ((taxYear % 4 === 0) && (taxYear % 100 !== 0)) || (taxYear % 400 === 0);
@@ -1804,12 +1822,27 @@ function computePartYearAllocation(
   // split across the two states (was previously full in BOTH → ~2× over-deduct).
   const formerProration = daysInYear > 0 ? daysFormer / daysInYear : 0;
   const currentProration = daysInYear > 0 ? daysCurrent / daysInYear : 1;
-  const formerStateTax = formerStateAgi > 0
-    ? calculateStateTax(formerStateAgi, formerStateUpper, filingStatus, taxYear, { ...options, fullYearFederalAgiForCliff: federalAgiSafe, partYearDeductionProration: formerProration })
-    : 0;
-  const currentStateTax = currentStateAgi > 0
-    ? calculateStateTax(currentStateAgi, currentStateUpper, filingStatus, taxYear, { ...options, fullYearFederalAgiForCliff: federalAgiSafe, partYearDeductionProration: currentProration })
-    : 0;
+  // PREP-B1 (lane C) — per-period state tax. With incomePctMethod ON and a method-(a)
+  // state, use IT-203/540NR: tax-as-if-full-year-resident(TOTAL income, FULL std ded)
+  // × (period income / total). Otherwise the direct-bracket-on-period-AGI path (std
+  // ded prorated by days). federalAgiSafe > 0 is guaranteed when periodAgi > 0.
+  const periodStateTax = (state: string, periodAgi: number, proration: number): number => {
+    if (incomePctMethod && NR_AS_IF_RESIDENT_STATES.has(state) && federalAgiSafe > 0) {
+      const asIfResident = calculateStateTax(federalAgiSafe, state, filingStatus, taxYear, {
+        ...options,
+        fullYearFederalAgiForCliff: federalAgiSafe,
+        partYearDeductionProration: 1,
+      });
+      return asIfResident * Math.min(1, Math.max(0, periodAgi / federalAgiSafe));
+    }
+    return calculateStateTax(periodAgi, state, filingStatus, taxYear, {
+      ...options,
+      fullYearFederalAgiForCliff: federalAgiSafe,
+      partYearDeductionProration: proration,
+    });
+  };
+  const formerStateTax = formerStateAgi > 0 ? periodStateTax(formerStateUpper, formerStateAgi, formerProration) : 0;
+  const currentStateTax = currentStateAgi > 0 ? periodStateTax(currentStateUpper, currentStateAgi, currentProration) : 0;
 
   return {
     formerState: formerStateUpper,
