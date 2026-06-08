@@ -2981,6 +2981,63 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     }
   }
 
+  // PREP-B1 — FULL-YEAR NON-RESIDENT per-type source allocation. When the CPA sets
+  // the `nonresident_source_allocation` marker on a FULL-YEAR resident (NOT part-year
+  // — the part-year path uses perStateOtherSourced above), aggregate the filer's
+  // out-of-state BUSINESS + REAL-PROPERTY income by sourceState. This populates the
+  // calculateMultiStateTax `perStateNonResidentOtherSourced` option, so a non-resident
+  // state with K-1 business / rental real-estate source (but no wages there) is taxed
+  // via the IT-203/540NR method-(a) states or the conservative direct-bracket fallback.
+  // Per 4 U.S.C. §114 ONLY business income (K-1 Box 1) + rental real estate (K-1 Box
+  // 2/3 + rentalProperties net) are NR-sourceable; the K-1's interest/dividends/
+  // royalties/STCG/LTCG are intangibles (§114(a)) and retirement is §114(b) — NEVER
+  // auto-sourced. Source states equal to the resident state are skipped (covered by
+  // the resident calc). The amount is the SOURCE attribution only; it does not change
+  // federal AGI (which already includes the income).
+  let perStateNonResidentOtherSourced: Record<string, number> | undefined;
+  if (sumByType("nonresident_source_allocation") > 0 && !partYearResidencyArg) {
+    perStateNonResidentOtherSourced = {};
+    const residentCode = (stateCode ?? "").toUpperCase();
+    const addNr = (src: string | null | undefined, amount: number): void => {
+      const c = (src ?? "").toUpperCase();
+      if (!c || c === residentCode || amount <= 0) return;
+      perStateNonResidentOtherSourced![c] = (perStateNonResidentOtherSourced![c] ?? 0) + amount;
+    };
+    for (const k of inputs.scheduleK1 ?? []) {
+      if (k.taxYear !== taxYear) continue;
+      // Business (Box 1) + rental real estate (Box 2/3) only — NOT the K-1's
+      // intangible interest/dividends/royalties/cap-gains (§114(a)).
+      addNr(
+        k.sourceState,
+        toNum(k.box1OrdinaryIncome) + toNum(k.box2RentalRealEstate) + toNum(k.box3OtherRentalIncome),
+      );
+    }
+    for (const p of inputs.rentalProperties ?? []) {
+      if (p.taxYear !== taxYear) continue;
+      const propIncome = toNum(p.rentalIncome);
+      const propExpenses = toNum(p.totalExpenses);
+      let propDepreciation = 0;
+      if (
+        toNum(p.basis) > 0 &&
+        (p.placedInServiceYear ?? 0) > 0 &&
+        (p.placedInServiceMonth ?? 0) >= 1 &&
+        (p.placedInServiceMonth ?? 0) <= 12
+      ) {
+        propDepreciation = calculateMacrsDepreciation({
+          basis: toNum(p.basis),
+          propertyType: p.propertyType === "commercial" ? "commercial" : "residential",
+          monthPlacedInService: p.placedInServiceMonth ?? 1,
+          yearPlacedInService: p.placedInServiceYear ?? taxYear,
+          taxYear,
+        }).currentYearDepreciation;
+      }
+      addNr(p.sourceState, propIncome - propExpenses - propDepreciation);
+    }
+    if (Object.keys(perStateNonResidentOtherSourced).length === 0) {
+      perStateNonResidentOtherSourced = undefined;
+    }
+  }
+
   const multiState = calculateMultiStateTax({
     residentState: stateCode ?? "CA",
     federalAgi: calc.adjustedGrossIncome,
@@ -3008,6 +3065,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
       // bucket is pension/annuity (100% base).
       ctIraDistribution: sumByType("ct_ira_distribution") > 0
         ? sumByType("ct_ira_distribution") : undefined,
+      // PREP-B1 — full-year non-resident per-type source (K-1 business + rental real
+      // estate by sourceState), opt-in via the nonresident_source_allocation marker.
+      perStateNonResidentOtherSourced,
       // NJ pension-exclusion phase-out tests against NJ gross income; for
       // K10 NJ explicitly excludes taxable SS from NJ gross. Use
       // (federal AGI − taxable SS) so NJ filers with retirement income +

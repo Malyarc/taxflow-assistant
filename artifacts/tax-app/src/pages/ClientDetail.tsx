@@ -2835,6 +2835,7 @@ function AdjustmentsTab({ clientId }: { clientId: number }) {
     hi_employer_funded_pension: "HI — Employer-funded pension (excludable portion; employee 401(k)/IRA stays taxable)",
     ny_government_pension: "NY — Government pension (NYS/local/federal/military; IT-201 Line 26, fully excluded)",
     ct_ira_distribution: "CT — Non-Roth IRA portion of retirement income (50/75/100% by year; rest treated as pension/annuity 100%)",
+    nonresident_source_allocation: "Multi-state — Source out-of-state K-1 business + rental real estate to its state for non-resident tax (flag; uses each K-1/rental sourceState)",
     oh_work_city_tax_paid: "OH — Municipal tax paid to WORK city (resident cross-city credit, ORC ch. 718)",
     nyc_ubt_business_income: "NYC — Unincorporated Business Tax: NYC-allocated net business income (4% UBT, Form NYC-202)",
     amt_preferences: "AMT Preferences (catch-all — line 2 misc)",
