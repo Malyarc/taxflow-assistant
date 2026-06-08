@@ -1,3 +1,42 @@
+# Handoff Note — 2026-06-06k (Remaining-P1 sub-increments: WI all-statuses std-ded + NJ/MN NR sourcing — shipped + deployed)
+
+Worked the "remaining P1" partial items. **4 commits on `main` (`5817b07` WI,
+`b457ce2` NJ, `72c0ce0` MN, `21a0b5b` docs), pushed, deployed to EC2 (engine-only:
+api-server rebuilt + pm2 restarted, healthz ok). No-API battery 72 suites / 4,439
+assertions green.**
+
+- **Diagnostics doc-drift fixed**: product-todo line 76 marked the diagnostics
+  engine unchecked though the MVP shipped 2026-06-06 (P2-16); corrected to [~] with
+  the MVP scope + the fuller-version remainder.
+- **WI MFJ/HoH/MFS sliding-scale std deduction** (`5817b07`): closed the documented
+  WI sub-gap (the 3 non-single statuses were stuck at max, over-deducting). Reverse-
+  derived the per-status (max, threshold, rate) from the 2024 WI Form 1 Standard
+  Deduction Table (PyMuPDF-extracted) and VERIFIED to reproduce the published table
+  to the dollar across all 276 income brackets. HoH is two-tier (max(single, 22.5%
+  line)). +5 hand-calc'd tests. (HoH/MFS still use single WI brackets — a separate
+  pre-existing bracket sub-gap.)
+- **NJ + MN added to NR_AS_IF_RESIDENT_STATES** (`b457ce2`, `72c0ce0`): now
+  {CA, NY, CT, NJ, MN}, each method-(a)-verified against its NR form (NJ-1040NR Line
+  40×41→42; MN M1NR Line 30×31→32). Hand-calc'd worked examples (NJ $4,910.03; MN
+  $6,052.27). +7 tests.
+
+## Remaining P1 sub-items (honest — research-careful / engine-limited / multi-step)
+- **More NR states (GA/MD/OH/NC)** — each needs a per-form method-(a)-vs-(b)
+  verification cycle (fetch the NR instructions → PyMuPDF-extract → confirm the
+  tax-ratio line flow → add + worked example). Proven fast pattern; a fresh session
+  can batch them. Do NOT add a state without confirming method (a) (over-tax risk).
+- **CT pension/annuity + IRA exclusion** — ENGINE-LIMITED: needs the bracketed
+  phase-out table + a pension-vs-IRA split the engine's single retirement bucket
+  can't make (a schema change to split retirement income by type).
+- **IN unemployment-comp deduction** — minor; needs the IN rule sourced.
+- **NR per-type source plumbing** — the engine fn (`perStateNonResidentOtherSourced`)
+  is done + tested; needs a CPA-input path (a new adjustment/input) to set it e2e.
+- **Part-year as-if-resident income-% method** (replace the day-proration);
+  **`CapitalGainTransaction.propertyStateSitus`** (auto-route real-estate gains) —
+  bigger multi-step engine changes.
+
+---
+
 # Handoff Note — 2026-06-06j (A+B+C batch: mid-quarter MACRS + CT NR sourcing + Schedule C asset live-app path — shipped + deployed)
 
 Did all three of the previously-deferred items. **4 commits on `main` (`1dcaeda`,
