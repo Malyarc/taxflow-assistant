@@ -1,5 +1,9 @@
 # Product TODO — prioritized (enhancements + fixes)
 
+> **⚠️ SUPERSEDED for forward planning by [`docs/MASTER-TODO.md`](./MASTER-TODO.md) (2026-06-08).**
+> The Master TODO is now THE source of truth for "what to build next." This file is retained
+> as the **historical completed-work log** (commit-level provenance of everything shipped).
+
 **As of 2026-06-05.** The single working to-do for TaxFlow Assistant, prioritizing
 **enhancements to the current app** and **fixes**. Consolidates the 2026-06-02
 product audit (`product-assessment-2026-06-02.md`), the Haven migration roadmap

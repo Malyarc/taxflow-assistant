@@ -398,7 +398,7 @@ Several Phase 2/3 limitations have been resolved (multi-state foundation, MACRS,
 ## Where to look first when picking up a session
 
 1. `.claude/handoff.md` — last session's state. May be stale; check `git log` to corroborate.
-2. **`docs/product-todo.md` — the prioritized working to-do (enhancements + fixes), consolidated 2026-06-05 from the audit + Haven roadmap + the engine/planning/extraction/UltraTax analyses.** Start here for "what should I build next."
+2. **`docs/MASTER-TODO.md` — THE source of truth for forward planning (2026-06-08).** Start here for "what should I build next": T0 gate (security + the large accuracy-audit campaign) → T1 engine perfection (incl. the known §1250/collectibles/§1231 correctness gaps + planning enhancements) → T2 forms/firm features → T3 Haven → T4 business. `docs/product-todo.md` is now the historical completed-work log.
 3. `git log --oneline -10` — recent commits.
 4. `git status` — uncommitted WIP.
 5. Run the standalone test suites to confirm baseline: `pnpm --filter @workspace/scripts exec tsx ./src/tax-engine-tests.ts` (also `-deep-tests` and `-phase1-unit-tests`).
