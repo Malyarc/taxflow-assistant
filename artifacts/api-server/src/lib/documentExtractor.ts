@@ -589,6 +589,83 @@ export function normalizeInfoReturnData(parsed: unknown): ExtractedInfoReturnDat
   return out;
 }
 
+/**
+ * Maps a reviewed information return to the engine inputs it should create on
+ * approve — adjustments (year-agnostic, isApplied=true) and/or client-field
+ * patches. PURE (no DB) so it's unit-testable; the approve handler applies the
+ * result transactionally. Each adjustment carries a descriptive label citing the
+ * source form + box. Only positive values are mapped (a 0/blank box is skipped, so
+ * an approve never overwrites an existing client field with 0).
+ *
+ *   1098    → mortgage_interest (Box 1) [+ state_property_tax (Box 10)]
+ *   1098-T  → qualified_education_expenses_aoc (Box 1 − Box 5 scholarships, floored)
+ *   1098-E  → student_loan_interest (Box 1; engine caps at $2,500)
+ *   1095-A  → client aca{AnnualPremium,AnnualSlcsp,AdvanceAptc} (Form 8962)
+ *   SSA-1099→ client socialSecurityBenefits (Box 5 net; Pub 915 taxability)
+ *   W-2G    → additional_income (Box 1 winnings) [+ withholding_adjustment (Box 4)]
+ */
+export interface InfoReturnMapping {
+  adjustments: Array<{ adjustmentType: string; amount: number; description: string }>;
+  clientPatch: Partial<{
+    socialSecurityBenefits: number;
+    acaAnnualPremium: number;
+    acaAnnualSlcsp: number;
+    acaAdvanceAptc: number;
+  }>;
+}
+
+export function mapInfoReturnToInputs(
+  data: ExtractedInfoReturnData,
+  fileName = "uploaded document",
+): InfoReturnMapping {
+  const adjustments: InfoReturnMapping["adjustments"] = [];
+  const clientPatch: InfoReturnMapping["clientPatch"] = {};
+  const pos = (v: number | undefined): number =>
+    typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0;
+  const src = `(from ${fileName})`;
+
+  switch (data.infoType) {
+    case "1098": {
+      const interest = pos(data.mortgageInterestReceived);
+      if (interest > 0) adjustments.push({ adjustmentType: "mortgage_interest", amount: interest, description: `Mortgage interest — Form 1098 Box 1 ${src}` });
+      const reTax = pos(data.realEstateTaxes);
+      if (reTax > 0) adjustments.push({ adjustmentType: "state_property_tax", amount: reTax, description: `Real-estate tax — Form 1098 Box 10 ${src}` });
+      break;
+    }
+    case "1098t": {
+      // Net qualified education expenses = Box 1 payments − Box 5 scholarships, floored.
+      const net = Math.max(0, pos(data.qualifiedTuition) - pos(data.scholarshipsGrants));
+      if (net > 0) adjustments.push({ adjustmentType: "qualified_education_expenses_aoc", amount: net, description: `Qualified tuition net of scholarships (Box 1 − Box 5) — Form 1098-T ${src}. CPA: switch to LLC if not AOC-eligible.` });
+      break;
+    }
+    case "1098e": {
+      const interest = pos(data.studentLoanInterest);
+      if (interest > 0) adjustments.push({ adjustmentType: "student_loan_interest", amount: interest, description: `Student loan interest — Form 1098-E Box 1 ${src} (engine caps at $2,500)` });
+      break;
+    }
+    case "1095a": {
+      if (pos(data.annualPremium) > 0) clientPatch.acaAnnualPremium = pos(data.annualPremium);
+      if (pos(data.annualSlcsp) > 0) clientPatch.acaAnnualSlcsp = pos(data.annualSlcsp);
+      if (pos(data.annualAdvancePtc) > 0) clientPatch.acaAdvanceAptc = pos(data.annualAdvancePtc);
+      break;
+    }
+    case "ssa1099": {
+      if (pos(data.netSocialSecurityBenefits) > 0) clientPatch.socialSecurityBenefits = pos(data.netSocialSecurityBenefits);
+      break;
+    }
+    case "w2g": {
+      const winnings = pos(data.gamblingWinnings);
+      if (winnings > 0) adjustments.push({ adjustmentType: "additional_income", amount: winnings, description: `Gambling winnings — Form W-2G Box 1 ${src}` });
+      const fedWh = pos(data.gamblingFederalWithheld);
+      if (fedWh > 0) adjustments.push({ adjustmentType: "withholding_adjustment", amount: fedWh, description: `Federal tax withheld — Form W-2G Box 4 ${src}` });
+      break;
+    }
+    default:
+      break;
+  }
+  return { adjustments, clientPatch };
+}
+
 export async function extractInfoReturnFromFile(
   base64Content: string,
   mimeType: string,

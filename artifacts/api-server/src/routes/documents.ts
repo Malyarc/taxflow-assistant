@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq, and } from "drizzle-orm";
-import { db, taxDocumentsTable, w2DataTable, form1099DataTable, clientsTable } from "@workspace/db";
+import { db, taxDocumentsTable, w2DataTable, form1099DataTable, clientsTable, adjustmentsTable } from "@workspace/db";
 import {
   ListDocumentsParams,
   UploadDocumentParams,
@@ -17,6 +17,8 @@ import {
   extractW2DataFromFile,
   extract1099DataFromFile,
   extractInfoReturnFromFile,
+  mapInfoReturnToInputs,
+  type InfoReturnType,
   detectMimeType,
   isVisualMimeType,
   validateAndResolveMimeType,
@@ -517,6 +519,85 @@ router.post("/clients/:clientId/documents/:documentId/approve", async (req, res)
     // Pin the recompute to the APPROVED record's tax year (not the client's
     // default year). Approving a prior-year W-2/1099 must refresh THAT year's
     // return row; passing the year also avoids recomputing an unrelated year.
+    await recalculateAfterMutation(params.data.clientId, parsed.data.taxYear);
+    res.json(updatedDoc);
+    return;
+  }
+
+  // info_return — 1098 / 1098-T / 1098-E / 1095-A / SSA-1099 / W-2G. The reviewed
+  // boxes map (server-side, authoritatively) to engine ADJUSTMENTS and/or CLIENT
+  // fields per infoType. Unlike w2/form1099 there is no single linked record table:
+  // a doc may create N adjustments and/or patch client columns (1095-A → 3 ACA
+  // fields, SSA-1099 → socialSecurityBenefits).
+  if (parsed.data.recordType === "info_return") {
+    const mapping = mapInfoReturnToInputs(
+      {
+        infoType: (parsed.data.infoType ?? undefined) as InfoReturnType | undefined,
+        mortgageInterestReceived: parsed.data.mortgageInterestReceived ?? undefined,
+        realEstateTaxes: parsed.data.realEstateTaxes ?? undefined,
+        qualifiedTuition: parsed.data.qualifiedTuition ?? undefined,
+        scholarshipsGrants: parsed.data.scholarshipsGrants ?? undefined,
+        studentLoanInterest: parsed.data.studentLoanInterest ?? undefined,
+        annualPremium: parsed.data.annualPremium ?? undefined,
+        annualSlcsp: parsed.data.annualSlcsp ?? undefined,
+        annualAdvancePtc: parsed.data.annualAdvancePtc ?? undefined,
+        netSocialSecurityBenefits: parsed.data.netSocialSecurityBenefits ?? undefined,
+        gamblingWinnings: parsed.data.gamblingWinnings ?? undefined,
+        gamblingFederalWithheld: parsed.data.gamblingFederalWithheld ?? undefined,
+      },
+      doc.fileName,
+    );
+    if (mapping.adjustments.length === 0 && Object.keys(mapping.clientPatch).length === 0) {
+      res.status(400).json({ error: `No applicable values to apply for infoType '${parsed.data.infoType ?? "?"}'. Confirm the form type and that at least one box has a value.` });
+      return;
+    }
+    const patch = mapping.clientPatch;
+    const hasPatch = Object.keys(patch).length > 0;
+    const { insertedAdjustments, firstId, updatedDoc } = await db.transaction(async (tx) => {
+      const inserted = mapping.adjustments.length > 0
+        ? await tx.insert(adjustmentsTable).values(
+            mapping.adjustments.map((a) => ({
+              clientId: params.data.clientId,
+              adjustmentType: a.adjustmentType,
+              amount: String(a.amount),
+              description: a.description,
+              category: "ai_extracted",
+              isApplied: true,
+            })),
+          ).returning()
+        : [];
+      if (hasPatch) {
+        await tx.update(clientsTable)
+          .set({
+            ...(patch.socialSecurityBenefits != null ? { socialSecurityBenefits: String(patch.socialSecurityBenefits) } : {}),
+            ...(patch.acaAnnualPremium != null ? { acaAnnualPremium: String(patch.acaAnnualPremium) } : {}),
+            ...(patch.acaAnnualSlcsp != null ? { acaAnnualSlcsp: String(patch.acaAnnualSlcsp) } : {}),
+            ...(patch.acaAdvanceAptc != null ? { acaAdvanceAptc: String(patch.acaAdvanceAptc) } : {}),
+          })
+          .where(eq(clientsTable.id, params.data.clientId));
+      }
+      const linkedId = inserted[0]?.id ?? null;
+      const [doc2] = await tx.update(taxDocumentsTable)
+        .set({ status: "approved", linkedRecordId: linkedId, linkedRecordType: "info_return" })
+        .where(eq(taxDocumentsTable.id, doc.id))
+        .returning();
+      return { insertedAdjustments: inserted, firstId: linkedId, updatedDoc: doc2 };
+    });
+    for (const a of insertedAdjustments) {
+      await writeAudit({ clientId: params.data.clientId, action: "create", entityType: "adjustment", entityId: a.id, after: a, source: auditSource });
+    }
+    if (hasPatch) {
+      await writeAudit({ clientId: params.data.clientId, action: "update", entityType: "client", entityId: params.data.clientId, after: patch, source: auditSource });
+    }
+    await writeAudit({
+      clientId: params.data.clientId,
+      action: "update",
+      entityType: "tax_document",
+      entityId: doc.id,
+      before: { status: doc.status, linkedRecordId: doc.linkedRecordId },
+      after: { status: updatedDoc.status, linkedRecordId: firstId, linkedRecordType: "info_return" },
+      source: auditSource,
+    });
     await recalculateAfterMutation(params.data.clientId, parsed.data.taxYear);
     res.json(updatedDoc);
     return;

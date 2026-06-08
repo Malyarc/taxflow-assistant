@@ -2191,7 +2191,7 @@ components:
       properties:
         recordType:
           type: string
-          enum: [w2, form1099]
+          enum: [w2, form1099, info_return]
         taxYear:
           type: integer
         # W-2 fields (relevant when recordType === "w2")
@@ -2289,6 +2289,33 @@ components:
           type: ["number", "null"]
         stateCode:
           type: ["string", "null"]
+        # Information-return fields (relevant when recordType === "info_return").
+        # On approve the server maps these to adjustments / client fields per infoType.
+        infoType:
+          type: ["string", "null"]
+          enum: ["1098", "1098t", "1098e", "1095a", "ssa1099", "w2g", null]
+        mortgageInterestReceived:
+          type: ["number", "null"]
+        realEstateTaxes:
+          type: ["number", "null"]
+        qualifiedTuition:
+          type: ["number", "null"]
+        scholarshipsGrants:
+          type: ["number", "null"]
+        studentLoanInterest:
+          type: ["number", "null"]
+        annualPremium:
+          type: ["number", "null"]
+        annualSlcsp:
+          type: ["number", "null"]
+        annualAdvancePtc:
+          type: ["number", "null"]
+        netSocialSecurityBenefits:
+          type: ["number", "null"]
+        gamblingWinnings:
+          type: ["number", "null"]
+        gamblingFederalWithheld:
+          type: ["number", "null"]
 
     RejectExtractionBody:
       type: object

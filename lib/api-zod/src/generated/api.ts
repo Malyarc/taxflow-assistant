@@ -737,7 +737,7 @@ export const ApproveExtractionParams = zod.object({
 
 export const ApproveExtractionBody = zod
   .object({
-    recordType: zod.enum(["w2", "form1099"]),
+    recordType: zod.enum(["w2", "form1099", "info_return"]),
     taxYear: zod.number(),
     employerName: zod.string().nullish(),
     employerEin: zod.string().nullish(),
@@ -794,6 +794,28 @@ export const ApproveExtractionBody = zod
     stateLocalRefund: zod.number().nullish(),
     grossPaymentAmount: zod.number().nullish(),
     stateCode: zod.string().nullish(),
+    infoType: zod
+      .union([
+        zod.literal("1098"),
+        zod.literal("1098t"),
+        zod.literal("1098e"),
+        zod.literal("1095a"),
+        zod.literal("ssa1099"),
+        zod.literal("w2g"),
+        zod.literal(null),
+      ])
+      .nullish(),
+    mortgageInterestReceived: zod.number().nullish(),
+    realEstateTaxes: zod.number().nullish(),
+    qualifiedTuition: zod.number().nullish(),
+    scholarshipsGrants: zod.number().nullish(),
+    studentLoanInterest: zod.number().nullish(),
+    annualPremium: zod.number().nullish(),
+    annualSlcsp: zod.number().nullish(),
+    annualAdvancePtc: zod.number().nullish(),
+    netSocialSecurityBenefits: zod.number().nullish(),
+    gamblingWinnings: zod.number().nullish(),
+    gamblingFederalWithheld: zod.number().nullish(),
   })
   .describe(
     "Body for POST \/clients\/:clientId\/documents\/:documentId\/approve. The CPA\nconfirms (and optionally edits) the extracted values; the server inserts\nthe corresponding w2_data or form_1099_data row with an audit-log entry.\n",

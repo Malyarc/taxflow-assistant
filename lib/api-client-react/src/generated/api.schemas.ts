@@ -489,6 +489,7 @@ export type ApproveExtractionBodyRecordType =
 export const ApproveExtractionBodyRecordType = {
   w2: "w2",
   form1099: "form1099",
+  info_return: "info_return",
 } as const;
 
 /**
@@ -507,6 +508,22 @@ export const ApproveExtractionBodyFormType = {
   R: "R",
   G: "G",
   K: "K",
+} as const;
+
+/**
+ * @nullable
+ */
+export type ApproveExtractionBodyInfoType =
+  | (typeof ApproveExtractionBodyInfoType)[keyof typeof ApproveExtractionBodyInfoType]
+  | null;
+
+export const ApproveExtractionBodyInfoType = {
+  NUMBER_1098: "1098",
+  "1098t": "1098t",
+  "1098e": "1098e",
+  "1095a": "1095a",
+  ssa1099: "ssa1099",
+  w2g: "w2g",
 } as const;
 
 /**
@@ -604,6 +621,30 @@ export interface ApproveExtractionBody {
   grossPaymentAmount?: number | null;
   /** @nullable */
   stateCode?: string | null;
+  /** @nullable */
+  infoType?: ApproveExtractionBodyInfoType;
+  /** @nullable */
+  mortgageInterestReceived?: number | null;
+  /** @nullable */
+  realEstateTaxes?: number | null;
+  /** @nullable */
+  qualifiedTuition?: number | null;
+  /** @nullable */
+  scholarshipsGrants?: number | null;
+  /** @nullable */
+  studentLoanInterest?: number | null;
+  /** @nullable */
+  annualPremium?: number | null;
+  /** @nullable */
+  annualSlcsp?: number | null;
+  /** @nullable */
+  annualAdvancePtc?: number | null;
+  /** @nullable */
+  netSocialSecurityBenefits?: number | null;
+  /** @nullable */
+  gamblingWinnings?: number | null;
+  /** @nullable */
+  gamblingFederalWithheld?: number | null;
 }
 
 export interface RejectExtractionBody {

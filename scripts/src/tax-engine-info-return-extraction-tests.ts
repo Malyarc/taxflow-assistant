@@ -8,8 +8,9 @@
  * Run: pnpm --filter @workspace/scripts exec tsx src/tax-engine-info-return-extraction-tests.ts
  */
 
-import { normalizeInfoReturnData } from "../../artifacts/api-server/src/lib/documentExtractor";
+import { normalizeInfoReturnData, mapInfoReturnToInputs } from "../../artifacts/api-server/src/lib/documentExtractor";
 import { validateInfoReturn, type InfoReturnDataLike } from "../../lib/validation/src/infoReturnValidation";
+import { computeTaxReturnPure, type TaxReturnInputs } from "../../artifacts/api-server/src/lib/taxReturnEngine";
 
 const PASS: string[] = [];
 const FAIL: string[] = [];
@@ -20,6 +21,10 @@ function checkEq<T>(label: string, actual: T, expected: T): void {
 function checkTruthy(label: string, cond: boolean): void {
   if (cond) PASS.push(`✓ ${label}`);
   else FAIL.push(`✗ ${label}`);
+}
+function check(label: string, actual: number, expected: number, tol = 0.5): void {
+  if (Math.abs(actual - expected) <= tol) PASS.push(`✓ ${label}`);
+  else FAIL.push(`✗ ${label}: expected ${expected.toFixed(2)}, got ${actual.toFixed(2)}`);
 }
 function header(t: string): void { console.log(`\n-- ${t} --`); }
 // Does the flag list contain a flag of `sev` on `field`?
@@ -146,8 +151,100 @@ header("validateInfoReturn — common (TIN length + year mismatch)");
   checkEq("a clean 1098 produces zero flags", clean.length, 0);
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// mapInfoReturnToInputs — the approve→engine-inputs mapping (adjustments + client
+// patches). PURE; the approve handler applies the result transactionally.
+// ════════════════════════════════════════════════════════════════════════════
+const adj = (m: ReturnType<typeof mapInfoReturnToInputs>, type: string) => m.adjustments.find((a) => a.adjustmentType === type);
+
+header("mapInfoReturnToInputs — 1098 / 1098-T / 1098-E adjustments");
+{
+  const m1098 = mapInfoReturnToInputs({ infoType: "1098", mortgageInterestReceived: 8200, realEstateTaxes: 5400 }, "1098.pdf");
+  checkEq("1098 → mortgage_interest amount", adj(m1098, "mortgage_interest")?.amount, 8200);
+  checkEq("1098 → state_property_tax amount (Box 10)", adj(m1098, "state_property_tax")?.amount, 5400);
+  checkTruthy("1098 mortgage_interest description cites the form", (adj(m1098, "mortgage_interest")?.description ?? "").includes("1098"));
+
+  // 1098-T: net = Box 1 − Box 5 (floored).
+  const mT = mapInfoReturnToInputs({ infoType: "1098t", qualifiedTuition: 9000, scholarshipsGrants: 3500 }, "1098t.pdf");
+  checkEq("1098-T → AOC = 9000 − 3500 = 5500", adj(mT, "qualified_education_expenses_aoc")?.amount, 5500);
+  const mTneg = mapInfoReturnToInputs({ infoType: "1098t", qualifiedTuition: 2000, scholarshipsGrants: 5000 }, "1098t.pdf");
+  checkEq("1098-T scholarships > tuition → no adjustment (floored at 0)", mTneg.adjustments.length, 0);
+
+  const mE = mapInfoReturnToInputs({ infoType: "1098e", studentLoanInterest: 1800 }, "1098e.pdf");
+  checkEq("1098-E → student_loan_interest amount", adj(mE, "student_loan_interest")?.amount, 1800);
+}
+
+header("mapInfoReturnToInputs — 1095-A / SSA-1099 client patches");
+{
+  const mA = mapInfoReturnToInputs({ infoType: "1095a", annualPremium: 14400, annualSlcsp: 13200, annualAdvancePtc: 9000 }, "1095a.pdf");
+  checkEq("1095-A → acaAnnualPremium", mA.clientPatch.acaAnnualPremium, 14400);
+  checkEq("1095-A → acaAnnualSlcsp", mA.clientPatch.acaAnnualSlcsp, 13200);
+  checkEq("1095-A → acaAdvanceAptc", mA.clientPatch.acaAdvanceAptc, 9000);
+  checkEq("1095-A creates NO adjustments (client fields only)", mA.adjustments.length, 0);
+
+  const mS = mapInfoReturnToInputs({ infoType: "ssa1099", netSocialSecurityBenefits: 24000 }, "ssa.pdf");
+  checkEq("SSA-1099 → socialSecurityBenefits (Box 5 net)", mS.clientPatch.socialSecurityBenefits, 24000);
+  checkEq("SSA-1099 creates NO adjustments", mS.adjustments.length, 0);
+}
+
+header("mapInfoReturnToInputs — W-2G + edge cases");
+{
+  const mG = mapInfoReturnToInputs({ infoType: "w2g", gamblingWinnings: 5000, gamblingFederalWithheld: 1200 }, "w2g.pdf");
+  checkEq("W-2G → additional_income (winnings)", adj(mG, "additional_income")?.amount, 5000);
+  checkEq("W-2G → withholding_adjustment (fed WH)", adj(mG, "withholding_adjustment")?.amount, 1200);
+  // No federal withholding → only the income adjustment.
+  const mGnoWh = mapInfoReturnToInputs({ infoType: "w2g", gamblingWinnings: 5000 }, "w2g.pdf");
+  checkEq("W-2G with no withholding → 1 adjustment", mGnoWh.adjustments.length, 1);
+  // 0/blank boxes are skipped (never overwrite a client field with 0).
+  const mZero = mapInfoReturnToInputs({ infoType: "ssa1099", netSocialSecurityBenefits: 0 }, "ssa.pdf");
+  checkTruthy("SSA-1099 net 0 → no client patch (skip zero)", mZero.clientPatch.socialSecurityBenefits === undefined);
+  // Unknown/garbage infoType → empty mapping.
+  const mNone = mapInfoReturnToInputs({ infoType: undefined }, "x.pdf");
+  checkTruthy("no infoType → empty mapping", mNone.adjustments.length === 0 && Object.keys(mNone.clientPatch).length === 0);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// E2E — the mapped adjustments/patches actually hit the RIGHT engine levers when
+// fed to computeTaxReturnPure (proves the chosen adjustmentType strings are valid +
+// directionally correct). Base: single, $80,000 W-2, TX (no state tax noise).
+// ════════════════════════════════════════════════════════════════════════════
+const baseRun = (adjustments: unknown[], clientExtra: Record<string, unknown> = {}) =>
+  computeTaxReturnPure({
+    client: { filingStatus: "single", state: "TX", taxYear: 2024, taxpayerAge: 67, ...clientExtra } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 80000, federalTaxWithheldBox2: 8000, stateCode: "TX" } as unknown as TaxReturnInputs["w2s"][number]],
+    form1099s: [],
+    adjustments: adjustments as TaxReturnInputs["adjustments"],
+    taxYear: 2024,
+  });
+const toAdj = (m: ReturnType<typeof mapInfoReturnToInputs>) =>
+  m.adjustments.map((a) => ({ adjustmentType: a.adjustmentType, amount: a.amount, isApplied: true }));
+
+header("E2E — mapped inputs move the engine in the right direction");
+{
+  const base = baseRun([]);
+  // 1098-E student loan interest → above-the-line → AGI drops by the interest.
+  const sl = baseRun(toAdj(mapInfoReturnToInputs({ infoType: "1098e", studentLoanInterest: 2000 }, "1098e.pdf")));
+  check("1098-E $2,000 → AGI drops $2,000 (above-the-line)", base.adjustedGrossIncome - sl.adjustedGrossIncome, 2000, 1);
+
+  // W-2G winnings → additional income → AGI rises; fed withholding → more payments.
+  const w2g = baseRun(toAdj(mapInfoReturnToInputs({ infoType: "w2g", gamblingWinnings: 5000, gamblingFederalWithheld: 1200 }, "w2g.pdf")));
+  check("W-2G $5,000 winnings → AGI rises $5,000", w2g.adjustedGrossIncome - base.adjustedGrossIncome, 5000, 1);
+  checkTruthy("W-2G $1,200 withholding → total federal tax payments rise", w2g.federalTaxWithheld > base.federalTaxWithheld);
+
+  // SSA-1099 → client.socialSecurityBenefits → Pub 915 brings part of it into income.
+  const ssaMap = mapInfoReturnToInputs({ infoType: "ssa1099", netSocialSecurityBenefits: 24000 }, "ssa.pdf");
+  const ssa = baseRun([], { socialSecurityBenefits: ssaMap.clientPatch.socialSecurityBenefits });
+  checkTruthy("SSA-1099 net benefits → taxable SS raises AGI (Pub 915)", ssa.adjustedGrossIncome > base.adjustedGrossIncome);
+  checkTruthy("SSA-1099 taxable SS is capped < 85% of benefits", ssa.adjustedGrossIncome - base.adjustedGrossIncome <= 24000 * 0.85 + 1);
+
+  // 1095-A → client ACA fields → PTC computes (premium > SLCSP-contribution → refundable PTC).
+  const acaMap = mapInfoReturnToInputs({ infoType: "1095a", annualPremium: 14400, annualSlcsp: 13200, annualAdvancePtc: 0 }, "1095a.pdf");
+  const aca = baseRun([], { acaAnnualPremium: acaMap.clientPatch.acaAnnualPremium, acaAnnualSlcsp: acaMap.clientPatch.acaAnnualSlcsp, acaAdvanceAptc: 0, acaHouseholdSize: 1 });
+  checkTruthy("1095-A (premium+SLCSP, $0 APTC) → a net PTC is computed (refund effect)", aca.federalRefundOrOwed !== base.federalRefundOrOwed);
+}
+
 console.log(`\n========================================`);
-console.log(`RESULTS: ${PASS.length} passed, ${FAIL.length} failed  (info-return extraction: normalizer + validation)`);
+console.log(`RESULTS: ${PASS.length} passed, ${FAIL.length} failed  (info-return extraction: normalizer + validation + mapping + e2e)`);
 if (FAIL.length) {
   console.log(`\nFAILURES:`);
   for (const f of FAIL) console.log(f);

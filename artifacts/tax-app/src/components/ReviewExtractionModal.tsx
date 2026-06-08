@@ -179,6 +179,45 @@ const US_STATES = [
 
 const FORM_1099_TYPES = ["NEC", "MISC", "INT", "DIV", "B", "R", "G", "K"];
 
+// ── Information returns (1098 / 1098-T / 1098-E / 1095-A / SSA-1099 / W-2G) ──
+const INFO_RETURN_COMMON: FieldDef[] = [
+  { key: "payerName", label: "Filer / payer name", type: "string" },
+  { key: "payerTin", label: "Filer TIN", type: "ein" },
+];
+const INFO_RETURN_BY_TYPE: Record<string, { label: string; fields: FieldDef[] }> = {
+  "1098": { label: "Form 1098 — Mortgage Interest", fields: [
+    { key: "mortgageInterestReceived", label: "Box 1 — Mortgage interest received", type: "money" },
+    { key: "realEstateTaxes", label: "Box 10 — Real estate taxes", type: "money" },
+  ] },
+  "1098t": { label: "Form 1098-T — Tuition", fields: [
+    { key: "qualifiedTuition", label: "Box 1 — Payments for qualified tuition", type: "money" },
+    { key: "scholarshipsGrants", label: "Box 5 — Scholarships or grants", type: "money" },
+  ] },
+  "1098e": { label: "Form 1098-E — Student Loan Interest", fields: [
+    { key: "studentLoanInterest", label: "Box 1 — Student loan interest received", type: "money" },
+  ] },
+  "1095a": { label: "Form 1095-A — Marketplace", fields: [
+    { key: "annualPremium", label: "Part III-A — Annual enrollment premium", type: "money" },
+    { key: "annualSlcsp", label: "Part III-B — Annual SLCSP premium", type: "money" },
+    { key: "annualAdvancePtc", label: "Part III-C — Annual advance PTC", type: "money" },
+  ] },
+  "ssa1099": { label: "SSA-1099 — Social Security", fields: [
+    { key: "netSocialSecurityBenefits", label: "Box 5 — Net benefits", type: "money" },
+  ] },
+  "w2g": { label: "W-2G — Gambling Winnings", fields: [
+    { key: "gamblingWinnings", label: "Box 1 — Reportable winnings", type: "money" },
+    { key: "gamblingFederalWithheld", label: "Box 4 — Federal income tax withheld", type: "money" },
+  ] },
+};
+const DOC_TYPE_TO_INFO: Record<string, string> = {
+  form_1098: "1098", form_1098t: "1098t", form_1098e: "1098e",
+  form_1095a: "1095a", form_ssa1099: "ssa1099", form_w2g: "w2g",
+};
+const INFO_RETURN_VALUE_KEYS = Array.from(
+  new Set(Object.values(INFO_RETURN_BY_TYPE).flatMap((g) => g.fields).map((f) => f.key)
+    .concat(INFO_RETURN_COMMON.map((f) => f.key))),
+);
+
 // ─── Modal component ─────────────────────────────────────────────────────────
 
 export function ReviewExtractionModal({ open, onClose, clientId, clientTaxYear, clientState, doc }: Props) {
@@ -191,8 +230,15 @@ export function ReviewExtractionModal({ open, onClose, clientId, clientTaxYear, 
   const boxes = payload.boxes ?? {};
   const isW2 = doc?.documentType === "w2";
   const isForm1099 = doc?.documentType === "form_1099";
+  const isInfoReturn = doc != null && doc.documentType in DOC_TYPE_TO_INFO;
+  // The infoType is the model's identification when present + valid, else the
+  // upload documentType the CPA selected (authoritative fallback).
+  const infoType: string =
+    (typeof extracted.infoType === "string" && INFO_RETURN_BY_TYPE[extracted.infoType] ? extracted.infoType : "") ||
+    (doc ? DOC_TYPE_TO_INFO[doc.documentType] ?? "" : "");
 
-  const recordType: "w2" | "form1099" | null = isW2 ? "w2" : isForm1099 ? "form1099" : null;
+  const recordType: "w2" | "form1099" | "info_return" | null =
+    isW2 ? "w2" : isForm1099 ? "form1099" : isInfoReturn ? "info_return" : null;
 
   // Form state — always strings (for currency editing); converted to numbers on submit.
   const [values, setValues] = React.useState<Record<string, string>>({});
@@ -255,6 +301,10 @@ export function ReviewExtractionModal({ open, onClose, clientId, clientTaxYear, 
   // ── Compute the visible field list based on recordType + showAll toggle ──
   function getVisibleFields(): FieldDef[] {
     if (recordType === "w2") return W2_FIELDS;
+    if (recordType === "info_return") {
+      const group = INFO_RETURN_BY_TYPE[infoType];
+      return group ? [...INFO_RETURN_COMMON, ...group.fields] : INFO_RETURN_COMMON;
+    }
     if (!formType) {
       // No formType yet — show only the common fields and the formType picker.
       return FORM_1099_COMMON;
@@ -291,15 +341,22 @@ export function ReviewExtractionModal({ open, onClose, clientId, clientTaxYear, 
       "qualifiedDividends","totalCapitalGainDistribution","nondividendDistributions",
       "proceeds","costBasis","shortTermGainLoss","longTermGainLoss","grossDistribution",
       "taxableAmount","unemploymentCompensation","stateLocalRefund","grossPaymentAmount",
+      // info-return numeric boxes
+      "mortgageInterestReceived","realEstateTaxes","qualifiedTuition","scholarshipsGrants",
+      "studentLoanInterest","annualPremium","annualSlcsp","annualAdvancePtc",
+      "netSocialSecurityBenefits","gamblingWinnings","gamblingFederalWithheld",
     ]);
     const body: Record<string, unknown> = {
       recordType,
       taxYear,
     };
-    // W-2 carries all W-2 keys; 1099 carries all 1099 keys (the unrelated ones are NULL on the server).
+    // W-2 carries all W-2 keys; 1099 carries all 1099 keys; info-return carries its
+    // value keys (the unrelated ones are NULL on the server).
     const allKeys = recordType === "w2"
       ? W2_FIELDS.map((f) => f.key)
-      : ALL_1099_VALUE_KEYS;
+      : recordType === "info_return"
+        ? INFO_RETURN_VALUE_KEYS
+        : ALL_1099_VALUE_KEYS;
     for (const key of allKeys) {
       const raw = values[key];
       if (raw == null || raw === "") {
@@ -319,6 +376,13 @@ export function ReviewExtractionModal({ open, onClose, clientId, clientTaxYear, 
         return;
       }
       body.formType = formType;
+    }
+    if (recordType === "info_return") {
+      if (!infoType) {
+        toast({ title: "Form type required", description: "Could not determine the information-return type.", variant: "destructive" });
+        return;
+      }
+      body.infoType = infoType;
     }
     approve.mutate(
       { clientId, documentId: doc.id, data: body as never },
@@ -415,7 +479,21 @@ export function ReviewExtractionModal({ open, onClose, clientId, clientTaxYear, 
                   </Select>
                 </div>
               )}
+              {recordType === "info_return" && (
+                <div className="space-y-1.5">
+                  <Label>Form</Label>
+                  <div className="flex h-9 items-center rounded-md border bg-muted/40 px-3 text-sm">
+                    {INFO_RETURN_BY_TYPE[infoType]?.label ?? "Information return"}
+                  </div>
+                </div>
+              )}
             </div>
+            {recordType === "info_return" && (
+              <p className="text-xs text-muted-foreground">
+                On approve, these values are applied to the return as adjustments / client fields
+                (e.g. 1098 → mortgage interest, SSA-1099 → Social Security benefits, 1095-A → Form 8962 inputs).
+              </p>
+            )}
 
             {/* Field list */}
             <div className="space-y-3">
