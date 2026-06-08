@@ -110,6 +110,36 @@ header("CT-1040NR/PY — NY resident, $90k CT wages + $30k NY interest");
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// NJ-1040NR worked example (NJ Div. of Taxation: Line 40 = tax on Line 39 taxable
+// income from Column A = income EVERYWHERE; Line 42 = Line 40 × Line 41 income % =
+// NJ-source ÷ everywhere — method a):
+// Single NY resident, $100,000 NJ-source wages + $50,000 NY interest = $150,000.
+//   NJ tax as-if resident on $150,000 (NJ has no std ded; a $1,000 personal
+//   exemption → taxable $149,000). NJ single brackets: 1.4%×20,000 + 1.75%×15,000
+//   + 3.5%×5,000 + 5.525%×35,000 + 6.37%×(149,000−75,000) = 280 + 262.50 + 175 +
+//   1,933.75 + 4,713.80 = $7,365.05.
+//   NJ income % = 100,000/150,000 = 66.667% → NJ NR tax = 7,365.05 × ⅔ = $4,910.03.
+// ════════════════════════════════════════════════════════════════════════════
+header("NJ-1040NR — NY resident, $100k NJ wages + $50k NY interest");
+{
+  const r = calculateMultiStateTax({
+    residentState: "NY",
+    federalAgi: 150000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "NJ", wages: 100000 }],
+  });
+  const nj = nyEntry(r, "NJ");
+  check("NJ-as-resident($150k single) = $7,365.05 (hand-calc, $1k exemption)",
+    calculateStateTax(150000, "NJ", "single", 2024), 7365.05, 0.5);
+  check("NJ NR tax = $4,910.03 (NJ-1040NR income % method)", nj?.tax ?? -1, 4910.03, 0.5);
+  check("NJ NR tax == NJ-as-resident × ⅔ (relational)",
+    nj?.tax ?? -1, calculateStateTax(150000, "NJ", "single", 2024) * (100000 / 150000), 0.5);
+  checkTruthy("> the old direct-bracket-on-$100k fallback",
+    (nj?.tax ?? 0) > calculateStateTax(100000, "NJ", "single", 2024));
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // Per-income-type NR source: a TX resident with NY REAL-PROPERTY RENTAL income
 // (situs-sourced to NY) but NO NY wages. Supplied via perStateNonResidentOther-
 // Sourced. NY taxes the rental via the IT-203 method even with zero NY wages.
