@@ -1,3 +1,40 @@
+# Handoff Note — 2026-06-08d (AI extraction: auto-apply info-returns on approve — shipped + deployed + prod-smoked)
+
+Closed the downstream gap from 2026-06-08c: approving an extracted information return now
+APPLIES it to the return instead of re-keying. **1 commit on `main` (`ef86a7a`), pushed,
+deployed (api-server + frontend rsync, healthz ok), PROD-SMOKED end-to-end. No-API battery
+75 suites / 4,593 green (+23). No migration.**
+
+- **`mapInfoReturnToInputs`** (documentExtractor.ts, PURE): reviewed boxes → engine
+  adjustments and/or client-field patches per infoType. 1098 → `mortgage_interest`
+  (+ `state_property_tax`); 1098-T → `qualified_education_expenses_aoc` (Box1−Box5 floored);
+  1098-E → `student_loan_interest`; 1095-A → client `aca{AnnualPremium,AnnualSlcsp,AdvanceAptc}`;
+  SSA-1099 → client `socialSecurityBenefits`; W-2G → `additional_income` (+ `withholding_adjustment`).
+  Only positive boxes map (never overwrites a client field with 0).
+- **Approve handler** — new `recordType: "info_return"` branch: inserts N adjustments
+  (category "ai_extracted", isApplied) + patches client columns + links the doc + audits +
+  recalcs, all transactional. openapi (recordType enum + info-return fields) + codegen.
+- **ReviewExtractionModal** renders the per-infoType boxes for review (infoType from the
+  model's ID, falling back to the upload documentType) + the form label + an applied-as note.
+- **+23 tests** (17 mapping + 6 end-to-end through computeTaxReturnPure proving each chosen
+  adjustmentType hits the right lever: 1098-E drops AGI exactly $2,000, W-2G adds income +
+  withholding, SSA-1099 → Pub 915 taxable SS, 1095-A → PTC).
+- **PROD smoke (throwaway client, cleaned up):** SSA-1099 approve → `social_security_benefits
+  = 24000`; 1098 approve → `mortgage_interest 8200` + `state_property_tax 5400` (applied);
+  both docs `approved`/`info_return`. The extract→review→approve→engine pipeline is now
+  CLOSED for all 6 forms.
+
+## Honest notes / remaining tails
+- Documented sub-gaps in `docs/doc-type-coverage.md`: 1098 points (Box 6, amortization
+  nuance — CPA adds manually); 1098-T AOC-vs-LLC (defaults AOC); 1095-A monthly (engine uses
+  annual totals); adjustments are year-agnostic (the adjustments table has no taxYear, same
+  as manual entry).
+- The new ReviewExtractionModal info-return path typechecks + Vite-builds + is deployed; the
+  live browser render of the review modal for a new form was not separately screenshotted
+  (the approve API path IS prod-verified end-to-end).
+
+---
+
 # Handoff Note — 2026-06-08c (AI extraction: doc-type coverage +6 forms + LIVE benchmark run — shipped + deployed)
 
 Did the two AI-extraction items from product-todo P2. **4 commits on `main` (`290c9ee`,
