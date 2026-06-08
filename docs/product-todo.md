@@ -85,6 +85,141 @@ operator/legal work (P0) that's yours, not engineering.
 
 ---
 
+## P4 — Engine perfection, form generation, app-security & firm features (NEW — founder-requested 2026-06-08)
+
+> Founder-level expansion across all angles (CTO + Principal Eng + CPA): (A) drive the
+> engine + planning brain to an asymptotic zero-bug rate via a LARGE multi-technique audit;
+> (B) turn the computed return into a generated workpaper/form packet; (C) the tax-domain
+> security the product owns regardless of Haven; (D) the features a CPA firm would pay for.
+> Each item is a multi-session workstream. NOTE (dev-Mac memory safety): run generative/
+> differential sweeps in CI, capped — no large agent fan-outs locally.
+
+### A. Large-scale accuracy audit campaign (engine + planning → asymptotic zero bugs)
+> "Zero bugs" is unprovable, but the bug-DISCOVERY rate can be driven to ~0 across
+> INDEPENDENT techniques — the standard for shipping safety-critical numerics. Today's
+> ~4,600 hand-picked assertions have a coverage ceiling (they test what the author thought
+> of); these techniques find what the author DIDN'T.
+- [ ] **Differential / oracle testing vs independent reference engines** — run identical
+  inputs through TaxFlow AND ≥2 independent oracles (OpenTaxSolver / `ustaxes` / `tenforty`,
+  + the IRS ATS published e-file test scenarios + Pub 17 / form-instruction worked examples).
+  Any divergence = a bug to root-cause. Highest-value technique — you stop being your own
+  oracle. (Ultimate oracle = UltraTax/Lacerte side-by-side on real returns; waits on the partner.)
+- [ ] **Property-based / generative testing** (fast-check) — millions of valid random returns
+  asserting INVARIANTS true for ANY return: AGI ≥ taxable ≥ 0; tax ≥ 0; effective rate ≤ top
+  marginal; refund = payments − liability; each credit ≤ its statutory cap; phase-outs
+  continuous (no unintended cliffs); no >100% marginal rate outside known cliffs; MFJ within
+  the marriage-penalty bound. Violation = bug.
+- [ ] **Automated boundary/threshold sweep** — extract EVERY numeric threshold (brackets,
+  phase-out start/end, caps, age gates, AGI cliffs) and auto-generate ±$1 + exact-boundary
+  tests. Catches the `<` vs `<=` / off-by-one class (the #1 tax-software bug).
+- [ ] **Metamorphic + differential-year testing** — income doubling/splitting relations; the
+  same scenario across 2024/25/26 (year-indexed values move correctly, no regression).
+- [ ] **Fuzzing** — random/malformed inputs → no crash/NaN/Infinity/negative-where-impossible;
+  the engine fails LOUD, never a silent garbage tax number.
+- [ ] **CPA scenario matrix (common + uncommon)** — filing status (5) × income archetype
+  (W-2, SE/Sch C, retiree SS+pension+RMD, investor, RE pro, multi-state, expat/FEIE,
+  business-owner K-1) × life event (marriage/divorce/death/new-child/disability/disaster) ×
+  credit-deduction combos × all 50 states+DC, hand-calc'd corners by a CPA. The explicit
+  "uncommon" list: kiddie-AMT, ISO-AMT, NIIT/IRMAA/§199A cliffs, QSBS 50/75/100% tiers,
+  cross-account partial wash sale, §1031 boot+NIIT, §453 multi-year, NOL 80% limit, excess-SS
+  (multi-employer), Roth+IRMAA 2-yr lookback, charitable 60/30/20 carryforward, disaster
+  casualty, HSA excess §4973, §72(t) SEPP, Saver's QSS boundary, EITC investment-income
+  disqualification, adoption special-needs refundable split, PTC clawback-cap vs additional,
+  SEHI/§162(l) interaction, QSS 2-yr window, Form 8332 split custody.
+- [ ] **Planning-engine audit (all 101 strategies)** — a fire/suppress confusion matrix
+  (fires-when-should + suppresses-when-shouldn't) + savings within tolerance vs an independent
+  calc + cross-strategy stacking + a false-positive sweep on a trivial W-2 return + every
+  heuristic detector bounded against a hand-calc + catalog freshness at every supported year.
+- [ ] **Infra:** documented methodology + scenario matrix + oracle set + results ledger + bug
+  taxonomy (off-by-one / stale-year-constant / missing-phase-out / ordering / rounding); every
+  bug → a regression test; green bar = "no divergences across N independent techniques";
+  CPA sign-off on the matrix + divergences.
+
+### B. Form / workpaper generator (the engine already computes ~30 forms)
+> The product ALREADY ships substitute PDFs for 1040, 1040-X, 2210, 4868, 8606, 8824, 8990
+> (+ the IRS-1040 PDF + CPA-review `.gen` + PDF/CSV/JSON). Since the engine computes line
+> values for far more, the high-value feature is a WORKPAPER / review-packet generator — NOT
+> filed forms (Option A: the CPA e-files in their own software; filed forms need Pub 1167
+> substitute approval + MeF e-file XML — parked).
+- [ ] **Workpaper-packet generator** — render the computed forms as labeled, readable PDFs so
+  the CPA cross-checks their prep software line-by-line and the client gets a clean packet.
+  Generable NOW (data already computed):
+  - 1040 schedules: Sch 1/2/3, Sch A, Sch B, Sch C, Sch D + Form 8949, Sch E, Sch SE.
+  - Credits: 8812 (CTC/ACTC), 8863 (education), 8880 (saver's), 2441 (dependent care), 8962
+    (PTC), 5695 (energy), 8839 (adoption), 1116 (FTC).
+  - Other taxes: 6251 (AMT), 8959 (Add'l Medicare), 8960 (NIIT), 8615 (kiddie), 5329 (§72(t)).
+  - Income/deduction detail: 8995/8995-A (QBI), 4562 (depreciation), 8582 (PAL), 4952
+    (investment interest), 2555 (FEIE), 7206 (SEHI), 8283 (noncash charitable).
+- [ ] **1040 reconciliation worksheet** — one artifact mapping every computed value → its
+  form + line (the `.gen`/CPA-review summary is the seed). The single best CPA cross-check.
+- [ ] **Top-5 state main forms** (CA 540, NY IT-201, …) — the engine computes 50-state tax;
+  render the resident-state form for the top states (per-state rendering; start small).
+- [ ] **(Parked) Filable official/substitute forms + MeF e-file XML** — only if Option B /
+  real filing resurfaces; multi-month + IRS approval.
+
+### C. App-owned security & compliance (what Haven WON'T provide)
+> Haven provides PLATFORM security (auth, RBAC primitives, TLS, infra, DB, sessions). These
+> are tax-DOMAIN + feature-coupled controls the product owns on either side of the migration.
+- [ ] **§7216 consent LIFECYCLE (full)** — beyond the built gate: verbatim instrument
+  (Rev. Proc. 2013-14), per-disclosure scoping (AI-extract vs third-party-share vs
+  cross-service-use = separate consents), versioning, 1-yr expiry, revocation, renewal, and a
+  hard "can't proceed without consent" UX gate.
+- [ ] **Disclosure/use audit LEDGER (immutable, hash-chained)** — §7216/§6713: every
+  disclosure/use of tax-return info (to the LLM, an export, an email, a share) logged
+  append-only + tamper-evident (what/to-whom/under-which-consent/by-whom). The firm's defense
+  in an IRS/state exam or malpractice claim.
+- [ ] **PII handling at the feature level** — masked-by-default rendering (SSN last-4; logged
+  reveal), field-encryption key ROTATION + KMS (fieldCrypto built), document-blob S3+SSE-KMS
+  (P0), tokenization.
+- [ ] **AI/LLM data governance** — no-training DPA enforcement, per-call TRI request/response
+  logging, prompt-injection defense (built), a firm-wide AI kill-switch.
+- [ ] **Data retention + secure deletion (crypto-shred)** — IRS 3-yr preparer retention +
+  state variants + client deletion rights; a retention-policy engine + verifiable purge
+  (delete the per-record key).
+- [ ] **Tax-workflow segregation of duties** — preparer/reviewer/signer roles + a two-person
+  "ready to file" dual-control gate + §6695 signature controls (Haven gives RBAC primitives;
+  the tax roles + dual control are feature-level).
+- [ ] **Output/export security** — expiring signed download links, "DRAFT — not for filing"
+  watermarking, no-cache (partial), every export → the disclosure ledger.
+- [ ] **Engine input hardening** — DoS caps on capitalTransactions/K-1 array sizes, ReDoS-safe
+  parsing, fail-loud on NaN/Infinity (never a silent garbage tax).
+- [ ] **WISP / FTC Safeguards operationalization** — documented program (built) + named
+  Qualified Individual + annual risk assessment + breach-response runbook + sub-processor mgmt.
+- [ ] **Secrets management** — rotate AI/DB creds (P0-1) + env-var secrets → a secrets manager
+  + short-lived scoped AI keys.
+
+### D. Features a CPA firm would pay for (leveraging the engine + planning brain)
+- **Recurring-revenue / planning:**
+  - [ ] **Tax projection + quarterly estimates** — project next year from current data + 1040-ES
+    vouchers + safe-harbor (2210 logic exists). Turns a 1-time return into a recurring relationship.
+  - [ ] **MFJ-vs-MFS optimizer** — compute both, recommend (engine can do both).
+  - [ ] **Entity-choice / S-corp reasonable-comp calculator** — "should this Sch C be an S-corp"
+    (G1.17 is the seed; make it a dedicated payroll-tax-vs-comp tool).
+  - [ ] **Year-over-year + OBBBA-impact analysis** — flag big swings; quantify the law-change
+    delta (engine is multi-year + OBBBA-aware).
+  - [ ] **Client-facing branded planning deliverable** — polish the planning memo into a firm
+    sales artifact.
+- **Prep-workflow efficiency:**
+  - [ ] **Personalized client organizer / document-request list** — derive from last year's
+    return (diagnostics + missing-data endpoints are the bones).
+  - [ ] **"Ready to file" gate** — expand diagnostics (dependent-TIN completeness, CTC/EITC
+    eligibility cross-checks, unbalanced-return checks — the P1-5 fuller version).
+  - [ ] **Prior-year roll-forward** — carry the client + auto-seed carryforwards (partly via
+    buildSyntheticPriorYearAdjustments).
+  - [ ] **Audit-risk / DIF-style flagging** — outsized Sch C loss, charitable-to-income ratio,
+    home office — defensive review.
+  - [ ] **Engagement status + extension/due-date tracking** (some may be Haven — confirm).
+- **AI differentiators (LLM never does math):**
+  - [ ] **NL Q&A grounded in the computed return** — "why did the refund drop $4k?" via RAG over
+    the engine output (not the LLM computing).
+  - [ ] **Proactive threshold alerts** — crossed NIIT/IRMAA/§199A-phase-in → notify the CPA.
+  - [ ] **Firm-wide planning campaign tool** — turn the hit-list into "these 12 clients should
+    convert before year-end" with one-click memos.
+- **Practice management (likely Haven — confirm before building):** e-signature (§7216 +
+  engagement letters) · per-return/per-plan billing · review-notes/collaboration · client portal.
+
+---
+
 ## Explicitly DON'T invest (Haven replaces it, or wait for demand)
 - ClientDetail.tsx refactor / login UI / JS code-splitting / dark-mode toggle — Haven's Next.js portals + Expo mobile replace the SPA.
 - Real UltraTax / SDE write-back ("autofill" as integration) — no tax tool imports a finished 1040 via file; SurePrep API (2–3 wks post-contract, pricing-blocked) / SDE reverse-eng (4–6 wks + per-release maintenance) / GruntWorx-style UI automation (6–10 wks + high maintenance) are all multi-month and **gated on a paying partner confirming it's their blocker**.
