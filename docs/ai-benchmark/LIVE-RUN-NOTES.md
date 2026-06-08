@@ -1,4 +1,16 @@
-# LIVE benchmark run — notes (2026-05-23)
+# LIVE benchmark run — notes
+
+## 2026-06-08 (second run) — W-2 cohort now 100%; full run still quota-blocked
+
+Re-ran LIVE after the P2-10 prompt changes (recall hint + Box-1≠Box-3 disambiguation,
+shipped 2026-06-06). The free-tier rate/daily quota again blocked a full 100-doc run, but
+**every W-2 the model processed scored 12/12 fields (100% precision AND per-field recall)**
+— up from 2026-05-23's 77.7% recall / 0.865 F1. Strong (small-n) signal that the P2-10
+recall fix closed the gap. Partial artifacts + analysis in
+[`live-partial-2026-06-08/`](./live-partial-2026-06-08/). Harness also now retries
+transient 5xx (a 503 burned a doc) and has `--limit` / `--per-kind` for fast samples.
+
+## 2026-05-23 (first run) — the recall gap that drove P2-10
 
 First real Gemini run on the C13 harness. Hit Gemini Flash's free-tier daily
 quota partway through, so the full 100-doc report is not yet shipped — but the

@@ -1,0 +1,37 @@
+doc_id,kind,field,truth,extracted,match
+w2-001,w2,employerName,"""Coastline Manufacturing Co""","""Coastline Manufacturing Co""",TP
+w2-001,w2,employerEin,"""83-5584855""","""83-5584855""",TP
+w2-001,w2,employeeSSN,"""XXX-XX-4127""","""XXX-XX-4127""",TP
+w2-001,w2,wagesBox1,216107.83,216107.83,TP
+w2-001,w2,federalTaxWithheldBox2,23204.74,23204.74,TP
+w2-001,w2,socialSecurityWagesBox3,168600,168600,TP
+w2-001,w2,socialSecurityTaxBox4,10453.2,10453.2,TP
+w2-001,w2,medicareWagesBox5,216107.83,216107.83,TP
+w2-001,w2,medicareTaxBox6,3133.56,3133.56,TP
+w2-001,w2,stateWagesBox16,216107.83,216107.83,TP
+w2-001,w2,stateTaxWithheldBox17,13108.21,13108.21,TP
+w2-001,w2,stateCode,"""OH""","""OH""",TP
+w2-002,w2,employerName,"""Coastline Manufacturing Co""",,FN
+w2-002,w2,employerEin,"""95-9015607""",,FN
+w2-002,w2,employeeSSN,"""XXX-XX-9724""",,FN
+w2-002,w2,wagesBox1,219390.68,,FN
+w2-002,w2,federalTaxWithheldBox2,35709.36,,FN
+w2-002,w2,socialSecurityWagesBox3,168600,,FN
+w2-002,w2,socialSecurityTaxBox4,10453.2,,FN
+w2-002,w2,medicareWagesBox5,219390.68,,FN
+w2-002,w2,medicareTaxBox6,3181.16,,FN
+w2-002,w2,stateWagesBox16,219390.68,,FN
+w2-002,w2,stateTaxWithheldBox17,8765.32,,FN
+w2-002,w2,stateCode,"""IN""",,FN
+w2-003,w2,employerName,"""Harbor Financial Services""","""Harbor Financial Services""",TP
+w2-003,w2,employerEin,"""87-6818217""","""87-6818217""",TP
+w2-003,w2,employeeSSN,"""XXX-XX-8021""","""XXX-XX-8021""",TP
+w2-003,w2,wagesBox1,118881.83,118881.83,TP
+w2-003,w2,federalTaxWithheldBox2,21247.99,21247.99,TP
+w2-003,w2,socialSecurityWagesBox3,118881.83,118881.83,TP
+w2-003,w2,socialSecurityTaxBox4,7370.67,7370.67,TP
+w2-003,w2,medicareWagesBox5,118881.83,118881.83,TP
+w2-003,w2,medicareTaxBox6,1723.79,1723.79,TP
+w2-003,w2,stateWagesBox16,118881.83,118881.83,TP
+w2-003,w2,stateTaxWithheldBox17,6671.25,6671.25,TP
+w2-003,w2,stateCode,"""OH""","""OH""",TP

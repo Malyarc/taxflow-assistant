@@ -43,16 +43,21 @@ interface Args {
    *  smoke test before committing to the full ~11-min free-tier run. The cap is
    *  applied AFTER generation, so the per-kind distribution front-loads W-2s. */
   limit: number;
+  /** Override EVERY per-kind count to N (0 = use DEFAULT_COUNTS). A balanced,
+   *  small sample across all 9 form types — `--per-kind=2` = 18 docs covering
+   *  every kind, which completes on the free tier without the long full run. */
+  perKind: number;
 }
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { seed: 12345, forceMock: false, out: DEFAULT_OUT, paceMs: 6500, limit: 0 };
+  const args: Args = { seed: 12345, forceMock: false, out: DEFAULT_OUT, paceMs: 6500, limit: 0, perKind: 0 };
   for (const a of argv) {
     if (a === "--mock") args.forceMock = true;
     else if (a.startsWith("--seed=")) args.seed = Number(a.slice("--seed=".length)) || args.seed;
     else if (a.startsWith("--out=")) args.out = resolve(a.slice("--out=".length));
     else if (a.startsWith("--pace-ms=")) args.paceMs = Math.max(0, Number(a.slice("--pace-ms=".length)) || 0);
     else if (a.startsWith("--limit=")) args.limit = Math.max(0, Number(a.slice("--limit=".length)) || 0);
+    else if (a.startsWith("--per-kind=")) args.perKind = Math.max(0, Number(a.slice("--per-kind=".length)) || 0);
   }
   return args;
 }
@@ -78,8 +83,11 @@ async function main(): Promise<void> {
   await mkdir(args.out, { recursive: true });
 
   // Step 1: generate corpus
-  console.log(`Generating corpus (${corpusTotal()} docs)…`);
-  let corpus = generateCorpus(args.seed, DEFAULT_COUNTS);
+  const counts = args.perKind > 0
+    ? (Object.fromEntries(Object.keys(DEFAULT_COUNTS).map((k) => [k, args.perKind])) as typeof DEFAULT_COUNTS)
+    : DEFAULT_COUNTS;
+  console.log(`Generating corpus (${corpusTotal(counts)} docs)…`);
+  let corpus = generateCorpus(args.seed, counts);
   if (args.limit > 0 && corpus.length > args.limit) {
     corpus = corpus.slice(0, args.limit);
     console.log(`  ${corpus.length} entries (capped by --limit=${args.limit}).`);
