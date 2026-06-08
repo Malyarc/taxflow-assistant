@@ -229,7 +229,12 @@ function DocumentsTab({ clientId, clientTaxYear, clientState }: { clientId: numb
                 <SelectContent>
                   <SelectItem value="w2">W-2</SelectItem>
                   <SelectItem value="form_1099">Form 1099</SelectItem>
-                  <SelectItem value="form_1098">Form 1098</SelectItem>
+                  <SelectItem value="form_1098">Form 1098 (Mortgage Interest)</SelectItem>
+                  <SelectItem value="form_1098t">Form 1098-T (Tuition)</SelectItem>
+                  <SelectItem value="form_1098e">Form 1098-E (Student Loan Interest)</SelectItem>
+                  <SelectItem value="form_1095a">Form 1095-A (Marketplace)</SelectItem>
+                  <SelectItem value="form_ssa1099">SSA-1099 (Social Security)</SelectItem>
+                  <SelectItem value="form_w2g">W-2G (Gambling Winnings)</SelectItem>
                   <SelectItem value="schedule_k1">Schedule K-1</SelectItem>
                   <SelectItem value="other">Other</SelectItem>
                 </SelectContent>
