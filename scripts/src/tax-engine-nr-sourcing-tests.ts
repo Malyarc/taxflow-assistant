@@ -3,11 +3,14 @@
  *
  * Verifies the proportional ("as-if-resident × source-fraction") TAX-RATIO method
  * for the method-(a)-verified states — NY, CA, CT (2026-06-06j), NJ + MN (2026-06-06k),
- * and GA + NC + OH (2026-06-08) — the per-income-type NR source base (wages + NR
- * business/rental/real-property gains via perStateNonResidentOtherSourced), and the
- * federal sourcing exclusions: intangibles (interest/dividends — 4 U.S.C. §114(a)) and
- * retirement (pension/IRA/401(k)/SS — 4 U.S.C. §114(b)) are NEVER NR-source. Also
- * guards that MD stays EXCLUDED (method b + a 2.25% special NR tax the engine can't model).
+ * GA + NC + OH (2026-06-08), and the 2026-06-08 batch of 17 more (graduated AR/DE/ME/MO/
+ * MT/NE/NM/OK/OR/RI/VT/WI + flat CO/IA/KS/LA/ND) — the per-income-type NR source base
+ * (wages + NR business/rental/real-property gains via perStateNonResidentOtherSourced),
+ * and the federal sourcing exclusions: intangibles (interest/dividends — 4 U.S.C.
+ * §114(a)) and retirement (pension/IRA/401(k)/SS — 4 U.S.C. §114(b)) are NEVER NR-source.
+ * Also guards the deliberate EXCLUSIONS stay on the direct-bracket fallback: MD (method b
+ * + a 2.25% special NR tax the engine can't model), SC (genuine method b), UT (method-a
+ * form but a no-op — engine std ded 0).
  *
  * Run: pnpm --filter @workspace/scripts exec tsx src/tax-engine-nr-sourcing-tests.ts
  */
@@ -281,6 +284,71 @@ header("MD excluded — non-resident uses the conservative fallback, NOT method 
     md?.tax ?? -1, calculateStateTax(80000, "MD", "single", 2024), 0.5);
   checkTruthy("MD NR tax < the method-a value (proving method a was NOT applied)",
     (md?.tax ?? Infinity) < calculateStateTax(120000, "MD", "single", 2024) * (80000 / 120000) - 0.5);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 2026-06-08 BATCH — 17 more method-(a) states, each verified against its NR form's
+// "multiply tax-on-all-income by the source percentage" line (see the comment block
+// in taxCalculator.ts NR_AS_IF_RESIDENT_STATES). The defining property of method (a)
+// is the EXACT identity  NR tax == calculateStateTax(total) × (source / total)  — we
+// assert that per state (it would FAIL under the pre-change direct-bracket fallback),
+// plus NR > fallback (the method actually changed, in the correct direction). The
+// absolute resident values calculateStateTax(120000, ·) are validated by the 50-state
+// suite; here a TX resident ($80k state-source + $40k TX = $120k, ratio ⅔) isolates
+// the NR computation.
+// ════════════════════════════════════════════════════════════════════════════
+header("2026-06-08 batch — 17 method-(a) states (relational + >fallback)");
+{
+  const GRADUATED = ["AR", "DE", "ME", "MO", "MT", "NE", "NM", "OK", "OR", "RI", "VT", "WI"];
+  const FLAT = ["CO", "IA", "KS", "LA", "ND"];
+  for (const s of [...GRADUATED, ...FLAT]) {
+    const r = calculateMultiStateTax({
+      residentState: "TX",
+      federalAgi: 120000,
+      filingStatus: "single",
+      taxYear: 2024,
+      perStateWages: [{ stateCode: s, wages: 80000 }, { stateCode: "TX", wages: 40000 }],
+    });
+    const e = nyEntry(r, s);
+    const asRes = calculateStateTax(120000, s, "single", 2024);
+    check(`${s} NR == as-resident($120k) × ⅔ (method-(a) identity)`, e?.tax ?? -1, asRes * (80000 / 120000), 0.5);
+    checkTruthy(`${s} NR > direct-bracket fallback on $80k (method changed correctly)`,
+      (e?.tax ?? 0) > calculateStateTax(80000, s, "single", 2024) + 0.01);
+  }
+  // CO absolute hand-calc anchor (flat 4.4%, conforms to federal taxable income →
+  // std ded = federal $14,600 single 2024): as-resident = (120,000 − 14,600) × 4.4%
+  // = $4,637.60; NR = × ⅔ = $3,091.73.
+  const co = nyEntry(
+    calculateMultiStateTax({
+      residentState: "TX", federalAgi: 120000, filingStatus: "single", taxYear: 2024,
+      perStateWages: [{ stateCode: "CO", wages: 80000 }, { stateCode: "TX", wages: 40000 }],
+    }), "CO");
+  check("CO NR absolute = $3,091.73 ((120k−14.6k std)×4.4%×⅔)", co?.tax ?? -1, 3091.73, 0.5);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Guards for the deliberate EXCLUSIONS (each must stay on the direct-bracket
+// fallback, NOT method a):
+//   - SC: genuine method b (Sch NR taxes SC-source income directly at graduated
+//     rates → lower than method a). Adding it would OVER-tax.
+//   - UT: method a in form, but the engine models UT std ded as 0 (its taxpayer
+//     credit replaces the std ded, not modeled) → method a == fallback (a NO-OP);
+//     left out to keep the set honest.
+// ════════════════════════════════════════════════════════════════════════════
+header("Guards — SC (method b) + UT (no-op) stay on the fallback");
+{
+  for (const s of ["SC", "UT"]) {
+    const r = calculateMultiStateTax({
+      residentState: "TX", federalAgi: 120000, filingStatus: "single", taxYear: 2024,
+      perStateWages: [{ stateCode: s, wages: 80000 }, { stateCode: "TX", wages: 40000 }],
+    });
+    const e = nyEntry(r, s);
+    check(`${s} NR == direct-bracket fallback on $80k (NOT method a)`,
+      e?.tax ?? -1, calculateStateTax(80000, s, "single", 2024), 0.5);
+  }
+  // SC: confirm method a would have been STRICTLY higher (proves the exclusion matters).
+  checkTruthy("SC fallback < the method-a value it would wrongly compute",
+    calculateStateTax(80000, "SC", "single", 2024) < calculateStateTax(120000, "SC", "single", 2024) * (80000 / 120000) - 0.5);
 }
 
 // ════════════════════════════════════════════════════════════════════════════

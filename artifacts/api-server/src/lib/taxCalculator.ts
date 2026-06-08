@@ -1225,6 +1225,21 @@ export interface PartYearResidencyResult {
 //           so OH tax borne = tax(total) × (OH-source ÷ OAGI) = method a. The
 //           graduated schedule makes this materially > the source-only fallback.
 //           (tax.ohio.gov IT NRC + Schedule of Credits).                      [verified 2026-06-08]
+//   - 2026-06-08 batch — each verified method (a) against its NR form's "multiply
+//     tax-on-all-income by the source percentage" line (form + line in parens):
+//       GRADUATED (the method materially changes the dollar result):
+//         AR (AR1000NR L38D "Multiply line 38 by line 38C"), DE (200-02 proration
+//         decimal), ME (Sch NR nonresident credit = tax × Maine ratio), MO (MO-NRI,
+//         tax × MO income %), MT (Form 2 Sch II, ordinary tax × MT-source ratio),
+//         NE (1040N Sch III L85 = tax × ratio), NM (PIT-B "multiply line 12 % by the
+//         tax on line 13"), OK (511-NR base tax × OK %), OR (OR-40-N, tax-on-all ×
+//         Oregon %), RI (RI-1040NR L11 = RI tax × allocation %), VT (IN-111 L16 =
+//         L14 tax × L15 adjustment %), WI (1NPR L39 "Prorated tax: Multiply line 38
+//         by line 32").
+//       FLAT (method a == b numerically, BUT adding still corrects the std-ded
+//         over-deduction the fallback causes — the deduction is prorated by the
+//         source ratio): CO (DR 0104PN), IA (IA 126), KS (K-40 L10), LA (IT-540B),
+//         ND (ND-1NR L23 "Multiply line 22 by ratio on line 20").
 // NOT added (different method, or method-a but engine-uncomputable):
 //   - MD — Form 505NR is method b (prorates deductions/exemptions by the income
 //     factor, then applies the GRADUATED rate to MD-SOURCE taxable income — lands in
@@ -1233,10 +1248,22 @@ export interface PartYearResidencyResult {
 //     set-addition: it would mis-method AND silently omit 2.25% of MD taxable income.
 //   - VA (Form 763 prorates net taxable INCOME by the allocation %, then taxes —
 //     method b); AL/HI/IL/MA/MS/WV (prorate deductions/exemptions by the source
-//     ratio, graduated rate on source income — method b).
+//     ratio, graduated rate on source income — method b). SC (Sch NR prorates income
+//     → taxes SC taxable income directly — method b, genuinely lower than method a).
+//   - KY/ID/AZ/MI/IN — FLAT method-b: numerically coincide with method a, so adding
+//     is pointless (and IN adds a county local tax the rate schedule wouldn't capture).
+//     UT — FLAT method-a but its std ded is 0 in the engine (taxpayer credit not
+//     modeled) so method a == the fallback (a NO-OP); not added. DC does not tax
+//     non-residents at all.
 // Other unlisted states fall back to direct brackets on the source income
 // (conservative — confirm the NR form's line flow is method a before adding).
-const NR_AS_IF_RESIDENT_STATES = new Set<string>(["CA", "NY", "CT", "NJ", "MN", "GA", "NC", "OH"]);
+const NR_AS_IF_RESIDENT_STATES = new Set<string>([
+  "CA", "NY", "CT", "NJ", "MN", "GA", "NC", "OH",
+  // 2026-06-08 graduated method-(a) batch:
+  "AR", "DE", "ME", "MO", "MT", "NE", "NM", "OK", "OR", "RI", "VT", "WI",
+  // 2026-06-08 flat method-(a) batch (corrects std-ded over-deduction):
+  "CO", "IA", "KS", "LA", "ND",
+]);
 
 export function calculateMultiStateTax(params: {
   residentState: string;
