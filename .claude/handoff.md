@@ -1,3 +1,43 @@
+# Handoff Note — 2026-06-08c (AI extraction: doc-type coverage +6 forms + LIVE benchmark run — shipped + deployed)
+
+Did the two AI-extraction items from product-todo P2. **4 commits on `main` (`290c9ee`,
+`78f5c4f`, `baeade8`, `375aa72`), pushed, deployed (api-server + frontend rsync, healthz
+ok). No-API battery 75 suites / 4,570 green (+39).**
+
+- **Doc-type coverage +6 forms** (`78f5c4f` + `baeade8`) — unified information-return
+  extractor `extractInfoReturnFromFile` for **1098 / 1098-T / 1098-E / 1095-A / SSA-1099
+  / W-2G**: one vision call identifies the form from its header (`infoType`) + extracts
+  the boxes (IRS 2024 layouts) with bounding boxes + confidence + the prompt-injection
+  field-whitelist defense. `validateInfoReturn` (@workspace/validation) does box
+  arithmetic (SSA-1099 Box5=Box3−Box4, W-2G withholding≤winnings, 1095-A APTC≤premium,
+  1098-T scholarships>tuition, 1098-E §221 cap, 1098 refund>interest, TIN/year). 6 new
+  `documentType` enum values route to it; upload dropdown updated. 39 deterministic tests
+  (normalizer + every validation rule — no API key needed). Downstream auto-create-on-
+  approve is the documented next increment (`docs/doc-type-coverage.md`); today they
+  extract + show for CPA review.
+- **AI benchmark — RAN IT LIVE** (`290c9ee` + `375aa72`) — against the prod Gemini key
+  (synthetic corpus, no PII). The free-tier rate/daily quota blocked a clean 100-doc run
+  (429s w/ multi-min backoffs — same wall as 2026-05-23), BUT **every W-2 the model
+  processed scored 12/12 fields (100% precision + per-field recall)** — incl. masked SSN
+  last-4, exact cents, and the $168,600 SS-wage-base cap (Box 1 ≠ Box 3 read correctly).
+  That's up from 2026-05-23's 77.7% recall / 0.865 F1 → **validates the P2-10 recall-hint
+  prompt fix closed the recall gap**. Partial + analysis in
+  `docs/ai-benchmark/live-partial-2026-06-08/`. Harness hardened: retries transient 5xx
+  (a 503 burned a doc) + new `--limit=N` / `--per-kind=N` flags.
+
+## Honest notes
+- **The full 100-doc LIVE benchmark is still not done** — blocked by the free-tier quota
+  (needs paid quota or a fresh free-tier window; ~11 min at the default 6.5s pace). The
+  W-2 cohort (small-n) is a strong real signal; the 1099 cohort wasn't reachable before
+  the quota wall (same as 2026-05-23).
+- **The 6 new doc types EXTRACT + show for review but don't auto-create downstream
+  records on approve** (the approve flow only makes w2/form1099 records). The field→engine
+  mapping is documented in `docs/doc-type-coverage.md` as the next increment.
+- New doc-type UI = 5 dropdown SelectItems (live-deployed); not separately browser-tested
+  (trivial additive change).
+
+---
+
 # Handoff Note — 2026-06-08b (All 4 remaining multi-state items — CT pension/IRA, NR per-type plumbing, +17 NR states, lane C — shipped + deployed)
 
 Cleared the entire remaining multi-state backlog in one session — the four items the
