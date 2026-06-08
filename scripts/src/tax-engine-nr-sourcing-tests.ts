@@ -2,10 +2,12 @@
  * PREP-B1 — per-line non-resident income sourcing (NY IT-203 / CA 540NR).
  *
  * Verifies the proportional ("as-if-resident × source-fraction") TAX-RATIO method
- * for NY, CA, and CT (2026-06-06j) non-residents, the per-income-type NR source base (wages + NR business/
- * rental/real-property gains via perStateNonResidentOtherSourced), and the federal
- * sourcing exclusions: intangibles (interest/dividends — 4 U.S.C. §114(a)) and
- * retirement (pension/IRA/401(k)/SS — 4 U.S.C. §114(b)) are NEVER NR-source.
+ * for the method-(a)-verified states — NY, CA, CT (2026-06-06j), NJ + MN (2026-06-06k),
+ * and GA + NC + OH (2026-06-08) — the per-income-type NR source base (wages + NR
+ * business/rental/real-property gains via perStateNonResidentOtherSourced), and the
+ * federal sourcing exclusions: intangibles (interest/dividends — 4 U.S.C. §114(a)) and
+ * retirement (pension/IRA/401(k)/SS — 4 U.S.C. §114(b)) are NEVER NR-source. Also
+ * guards that MD stays EXCLUDED (method b + a 2.25% special NR tax the engine can't model).
  *
  * Run: pnpm --filter @workspace/scripts exec tsx src/tax-engine-nr-sourcing-tests.ts
  */
@@ -164,6 +166,121 @@ header("MN M1NR — TX resident, $100k MN + $50k TX wages");
   check("MN NR tax = $6,052.27 (M1NR ratio method)", mn?.tax ?? -1, 6052.27, 0.5);
   check("MN NR tax == MN-as-resident × ⅔ (relational)",
     mn?.tax ?? -1, calculateStateTax(150000, "MN", "single", 2024) * (100000 / 150000), 0.5);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// GA Form 500 Schedule 3 worked example (GA DOR IT-511: Line 9 ratio = GA-source ÷
+// total; Line 13 prorates deductions/exemptions by that ratio → GA taxable =
+// source − ded×ratio. GA is FLAT 5.39%, so r·(source − D·ratio) = r·(total − D)·ratio
+// = method a EXACTLY):
+// Single TX resident, $90,000 GA-source wages + $30,000 TX wages = $120,000.
+//   GA tax as-if resident on $120,000: (120,000 − $12,000 std ded) × 5.39%
+//     = 108,000 × 0.0539 = $5,821.20.
+//   GA ratio = 90,000/120,000 = 75% → GA NR tax = 5,821.20 × 0.75 = $4,365.90.
+//   Cross-check via Schedule 3: 90,000 − 12,000×0.75 = 81,000; × 0.0539 = $4,365.90.
+// ════════════════════════════════════════════════════════════════════════════
+header("GA Form 500 Sch 3 — TX resident, $90k GA + $30k TX wages");
+{
+  const r = calculateMultiStateTax({
+    residentState: "TX",
+    federalAgi: 120000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "GA", wages: 90000 }, { stateCode: "TX", wages: 30000 }],
+  });
+  const ga = nyEntry(r, "GA");
+  check("GA-as-resident($120k single) = $5,821.20 (flat 5.39%, std ded $12k)",
+    calculateStateTax(120000, "GA", "single", 2024), 5821.2, 0.5);
+  check("GA NR tax = $4,365.90 (Sch 3 prorate-deductions = method a for flat tax)",
+    ga?.tax ?? -1, 4365.9, 0.5);
+  check("GA NR tax == GA-as-resident × 0.75 (relational)",
+    ga?.tax ?? -1, calculateStateTax(120000, "GA", "single", 2024) * 0.75, 0.5);
+  checkTruthy("> the old direct-bracket-on-$90k fallback (full std ded → under-tax)",
+    (ga?.tax ?? 0) > calculateStateTax(90000, "GA", "single", 2024));
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// NC D-400 worked example (NCDOR D-401: Line 14 = Line 12a taxable income on TOTAL
+// × Line 13 "taxable %" from Schedule PN = NC-source ÷ total; Line 15 = ×4.5% —
+// method a, flat tax):
+// Single TX resident, $80,000 NC-source wages + $40,000 TX wages = $120,000.
+//   NC tax as-if resident on $120,000: (120,000 − $12,750 std ded) × 4.5%
+//     = 107,250 × 0.045 = $4,826.25.
+//   NC taxable % = 80,000/120,000 = 66.667% → NC NR tax = 4,826.25 × ⅔ = $3,217.50.
+//   Cross-check: 107,250 × 0.66667 = 71,500; × 0.045 = $3,217.50.
+// ════════════════════════════════════════════════════════════════════════════
+header("NC D-400 Sch PN — TX resident, $80k NC + $40k TX wages");
+{
+  const r = calculateMultiStateTax({
+    residentState: "TX",
+    federalAgi: 120000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "NC", wages: 80000 }, { stateCode: "TX", wages: 40000 }],
+  });
+  const nc = nyEntry(r, "NC");
+  check("NC-as-resident($120k single) = $4,826.25 (flat 4.5%, std ded $12,750)",
+    calculateStateTax(120000, "NC", "single", 2024), 4826.25, 0.5);
+  check("NC NR tax = $3,217.50 (D-400 Line 14 taxable-% method a)",
+    nc?.tax ?? -1, 3217.5, 0.5);
+  check("NC NR tax == NC-as-resident × ⅔ (relational)",
+    nc?.tax ?? -1, calculateStateTax(120000, "NC", "single", 2024) * (80000 / 120000), 0.5);
+  checkTruthy("> the old direct-bracket-on-$80k fallback",
+    (nc?.tax ?? 0) > calculateStateTax(80000, "NC", "single", 2024));
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// OH IT NRC worked example (tax.ohio.gov: the nonresident CREDIT = tax(OAGI on ALL
+// income) × (non-OH ÷ OAGI), so OH tax borne = tax(total) × (OH-source ÷ OAGI) =
+// method a. OH's graduated 0%/2.75%/3.5% schedule makes this materially > the
+// source-only fallback — the fallback would shelter $90k in the lower brackets):
+// Single TX resident, $90,000 OH-source wages + $30,000 TX wages = $120,000.
+//   OH tax as-if resident on $120,000 (no std ded): 0%×26,050 + 2.75%×(100,000−26,050)
+//     + 3.5%×(120,000−100,000) = 0 + 2,033.625 + 700 = $2,733.625.
+//   OH ratio = 90,000/120,000 = 75% → OH NR tax = 2,733.625 × 0.75 = $2,050.22.
+// ════════════════════════════════════════════════════════════════════════════
+header("OH IT NRC — TX resident, $90k OH + $30k TX wages");
+{
+  const r = calculateMultiStateTax({
+    residentState: "TX",
+    federalAgi: 120000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "OH", wages: 90000 }, { stateCode: "TX", wages: 30000 }],
+  });
+  const oh = nyEntry(r, "OH");
+  check("OH-as-resident($120k single) = $2,733.625 (graduated 0/2.75/3.5%)",
+    calculateStateTax(120000, "OH", "single", 2024), 2733.625, 0.5);
+  check("OH NR tax = $2,050.22 (IT NRC nonresident-credit = method a)",
+    oh?.tax ?? -1, 2050.22, 0.5);
+  check("OH NR tax == OH-as-resident × 0.75 (relational)",
+    oh?.tax ?? -1, calculateStateTax(120000, "OH", "single", 2024) * 0.75, 0.5);
+  checkTruthy("> the old direct-bracket-on-$90k fallback (graduated-bracket effect)",
+    (oh?.tax ?? 0) > calculateStateTax(90000, "OH", "single", 2024));
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// MD is DELIBERATELY EXCLUDED (Form 505NR is method b — prorates deductions by the
+// income factor then applies the GRADUATED rate to MD-SOURCE income, landing in
+// lower brackets than method a — AND adds a 2.25% special nonresident tax the engine
+// can't model). A MD non-resident must therefore use the CONSERVATIVE FALLBACK
+// (direct brackets on the source income), NOT the as-if-resident method. This guards
+// against someone naively adding MD to NR_AS_IF_RESIDENT_STATES.
+// ════════════════════════════════════════════════════════════════════════════
+header("MD excluded — non-resident uses the conservative fallback, NOT method a");
+{
+  const r = calculateMultiStateTax({
+    residentState: "TX",
+    federalAgi: 120000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "MD", wages: 80000 }, { stateCode: "TX", wages: 40000 }],
+  });
+  const md = nyEntry(r, "MD");
+  check("MD NR tax == direct-bracket fallback on $80k source (NOT method a)",
+    md?.tax ?? -1, calculateStateTax(80000, "MD", "single", 2024), 0.5);
+  checkTruthy("MD NR tax < the method-a value (proving method a was NOT applied)",
+    (md?.tax ?? Infinity) < calculateStateTax(120000, "MD", "single", 2024) * (80000 / 120000) - 0.5);
 }
 
 // ════════════════════════════════════════════════════════════════════════════

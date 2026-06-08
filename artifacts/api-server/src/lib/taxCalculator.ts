@@ -1163,12 +1163,29 @@ export interface PartYearResidencyResult {
 //   - MN  — Schedule M1NR (Line 31 = Form M1 line 12 tax on TOTAL income; Line 30
 //           = MN-source ÷ total ratio; Line 32 = Line 30 × Line 31 → M1 line 13;
 //           revenue.state.mn.us M1NR instructions).                          [verified 2026-06-06k]
-// NOT added (different method or unverified): VA (Form 763 prorates net taxable
-// INCOME by the allocation %, then taxes — method b); AL/HI/IL/MA/MS/WV (prorate
-// deductions/exemptions by the source ratio — method b); GA/MD/OH/NC/etc.
-// (unverified — confirm the exact line flow against the NR form before adding).
-// Unlisted states fall back to direct brackets on the source income (conservative).
-const NR_AS_IF_RESIDENT_STATES = new Set<string>(["CA", "NY", "CT", "NJ", "MN"]);
+//   - GA  — Form 500 Schedule 3 (Line 9 ratio = GA-source ÷ total; Line 13 prorates
+//           deductions/exemptions by that ratio → GA taxable = source − ded×ratio).
+//           Flat 5.39% → r·(source − D·ratio) = r·(total − D)·ratio = method a EXACTLY.
+//           (dor.georgia.gov IT-511 instructions).                            [verified 2026-06-08]
+//   - NC  — D-400 (Line 14 = Line 12a taxable income on TOTAL × Line 13 "taxable %"
+//           from Schedule PN = NC-source ÷ total; Line 15 = ×4.5%). Flat → method a.
+//           (ncdor.gov D-401 instructions).                                   [verified 2026-06-08]
+//   - OH  — IT NRC nonresident CREDIT = tax(OAGI on ALL income) × (non-OH ÷ OAGI),
+//           so OH tax borne = tax(total) × (OH-source ÷ OAGI) = method a. The
+//           graduated schedule makes this materially > the source-only fallback.
+//           (tax.ohio.gov IT NRC + Schedule of Credits).                      [verified 2026-06-08]
+// NOT added (different method, or method-a but engine-uncomputable):
+//   - MD — Form 505NR is method b (prorates deductions/exemptions by the income
+//     factor, then applies the GRADUATED rate to MD-SOURCE taxable income — lands in
+//     lower brackets than method a) AND adds a 2.25% SPECIAL NONRESIDENT TAX in lieu
+//     of the county tax (Line 32b) that the engine doesn't model. Both bar a simple
+//     set-addition: it would mis-method AND silently omit 2.25% of MD taxable income.
+//   - VA (Form 763 prorates net taxable INCOME by the allocation %, then taxes —
+//     method b); AL/HI/IL/MA/MS/WV (prorate deductions/exemptions by the source
+//     ratio, graduated rate on source income — method b).
+// Other unlisted states fall back to direct brackets on the source income
+// (conservative — confirm the NR form's line flow is method a before adding).
+const NR_AS_IF_RESIDENT_STATES = new Set<string>(["CA", "NY", "CT", "NJ", "MN", "GA", "NC", "OH"]);
 
 export function calculateMultiStateTax(params: {
   residentState: string;
