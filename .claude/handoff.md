@@ -1,3 +1,57 @@
+# Handoff Note — 2026-06-08b (All 4 remaining multi-state items — CT pension/IRA, NR per-type plumbing, +17 NR states, lane C — shipped + deployed)
+
+Cleared the entire remaining multi-state backlog in one session — the four items the
+2026-06-08 handoff listed as "what's left." **4 commits on `main` (`d263e95`, `f65d41b`,
+`0697e78`, `22c0422`), pushed, deployed to EC2 (migration 0010 applied, api-server +
+frontend rsynced, healthz ok, re-score 0-drift across 10 returns; endpoints 200).
+No-API battery 74 suites / 4,531 assertions green (+92).** Every state value hand-calc'd
+against the primary source (DOR form/worksheet) before asserting.
+
+## What shipped (each its own commit + hand-calc'd tests)
+- **CT pension/annuity + IRA exclusion** (`d263e95`, lane B) — Conn. Gen. Stat.
+  §12-701(a)(20)(B); CT-1040 Pension & Annuity Worksheet (PyMuPDF-extracted from the
+  CT-1040NR/PY 2024 instructions, Page 28). The engine taxed 100% of CT pension/IRA
+  before (over-taxing every CT retiree). Now: `(100% pension/annuity + IRA% × non-Roth
+  IRA) × phase-out decimal`. IRA% year-indexed (50/75/100% for 2024/25/26, new
+  `CT_IRA_EXCLUSION_PCT: Record<TaxYear>`); phase-out from the statutory table
+  (single/MFS/HoH $75k→$100k, MFJ/QSS $100k→$150k — HoH is single-like here, DIFFERS
+  from CT SS). IRA portion via a new `ct_ira_distribution` adjustment marker (no DB
+  change; mirrors NY/HI carve-out). 20 tests (`tax-engine-ct-retirement-tests.ts`).
+- **NR per-type-source plumbing** (`f65d41b`) — wired the existing-but-unreachable
+  `perStateNonResidentOtherSourced` engine option to a CPA path. New opt-in
+  `nonresident_source_allocation` marker: on a FULL-YEAR resident, sources out-of-state
+  K-1 business (Box 1) + rental real estate (Box 2/3 + rentalProperties net) by each
+  fact's `sourceState`. §114 by construction (intangibles/retirement never sourced).
+  10 e2e tests (`tax-engine-nr-source-plumbing-tests.ts`).
+- **+17 method-(a) NR states** (`0697e78`) — `NR_AS_IF_RESIDENT_STATES` now 25 states.
+  A background agent classified all remaining states vs their NR forms; I re-verified
+  (probed every engine value, confirmed method-a > fallback, form-line cites inline).
+  Added graduated AR/DE/ME/MO/MT/NE/NM/OK/OR/RI/VT/WI + flat CO/IA/KS/LA/ND. Guarded
+  exclusions: SC (genuine method b), UT (no-op — engine std ded 0), KY/ID/AZ/MI/IN
+  (flat method b), DC (no NR tax). +38 assertions.
+- **Lane C** (`22c0422`) — (a) `CapitalTransaction.propertyStateSitus` (new column,
+  migration 0010 additive) routes a real-property capital GAIN to its situs state (with
+  the marker); intangible gains excluded (§114(a)). (b) Opt-in `part_year_income_pct_method`
+  marker → the part-year RESIDENT-period tax in a method-(a) state uses IT-203/540NR
+  `tax-as-if-full-year-resident(total) × (period/total)` instead of day-prorated direct
+  brackets (which under-tax). Both default-off → zero change to existing returns. +10 tests.
+
+## Honest notes / remaining tails
+- The 4 new markers + propertyStateSitus column are API-settable + engine-wired +
+  prod-verified via the re-score (full pipeline ran clean on 10 real returns), but a
+  dedicated capital-transaction UI field for propertyStateSitus was NOT added (per the
+  "don't invest in SPA forms" frame — Haven builds its own; the field is in the API/
+  Create/Update bodies). The 4 adjustment markers DO appear in the ClientDetail dropdown.
+- CT military/RR-Tier/CT-teacher retirement carve-outs (separate CT lines) are a
+  documented sub-gap — the CPA nets them out of the retirement bucket.
+- Part-year income-% is OPT-IN (not default) because the part-year path has other
+  documented simplifications; forcing it would shift existing hand-calc'd part-year tests.
+- NR source for non-K1/non-rental items (e.g. 1099-NEC services in another state) still
+  needs the per-state amount entered via a K-1/rental/propertyStateSitus fact; an
+  arbitrary per-state input would need an AdjustmentFact schema extension (no state field today).
+
+---
+
 # Handoff Note — 2026-06-08 (Lane A: GA/NC/OH added to the NR tax-ratio method — shipped + deployed)
 
 Picked lane A from the 2026-06-06k handoff: batch more states into `NR_AS_IF_RESIDENT_STATES`,
