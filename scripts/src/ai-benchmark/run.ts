@@ -39,15 +39,20 @@ interface Args {
   /** Min ms between LIVE requests. 0 = no pacing. Default 6500 (~9 RPM,
    *  safely under Gemini Flash's free-tier 10 RPM limit). */
   paceMs: number;
+  /** Cap the corpus to the first N docs (0 = no cap). Useful for a quick LIVE
+   *  smoke test before committing to the full ~11-min free-tier run. The cap is
+   *  applied AFTER generation, so the per-kind distribution front-loads W-2s. */
+  limit: number;
 }
 
 function parseArgs(argv: string[]): Args {
-  const args: Args = { seed: 12345, forceMock: false, out: DEFAULT_OUT, paceMs: 6500 };
+  const args: Args = { seed: 12345, forceMock: false, out: DEFAULT_OUT, paceMs: 6500, limit: 0 };
   for (const a of argv) {
     if (a === "--mock") args.forceMock = true;
     else if (a.startsWith("--seed=")) args.seed = Number(a.slice("--seed=".length)) || args.seed;
     else if (a.startsWith("--out=")) args.out = resolve(a.slice("--out=".length));
     else if (a.startsWith("--pace-ms=")) args.paceMs = Math.max(0, Number(a.slice("--pace-ms=".length)) || 0);
+    else if (a.startsWith("--limit=")) args.limit = Math.max(0, Number(a.slice("--limit=".length)) || 0);
   }
   return args;
 }
@@ -74,8 +79,13 @@ async function main(): Promise<void> {
 
   // Step 1: generate corpus
   console.log(`Generating corpus (${corpusTotal()} docs)…`);
-  const corpus = generateCorpus(args.seed, DEFAULT_COUNTS);
-  console.log(`  ${corpus.length} entries.`);
+  let corpus = generateCorpus(args.seed, DEFAULT_COUNTS);
+  if (args.limit > 0 && corpus.length > args.limit) {
+    corpus = corpus.slice(0, args.limit);
+    console.log(`  ${corpus.length} entries (capped by --limit=${args.limit}).`);
+  } else {
+    console.log(`  ${corpus.length} entries.`);
+  }
 
   // Step 2: render + extract each doc
   const allResults: FieldResult[] = [];

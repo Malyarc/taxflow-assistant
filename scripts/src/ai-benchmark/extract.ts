@@ -126,13 +126,21 @@ function normalizeData(parsed: Record<string, unknown>): Record<string, unknown>
 
 // ── Live extraction ─────────────────────────────────────────────────────────
 
-function isRateLimitError(err: unknown): boolean {
+function isRetryableError(err: unknown): boolean {
   if (!err) return false;
   const e = err as { status?: number; code?: string | number; message?: string };
-  if (e.status === 429) return true;
-  if (e.code === 429 || e.code === "429") return true;
+  // 429 (rate limit) + transient 5xx (500/502/503/504 — Gemini Flash returns
+  // these under load) are all worth retrying. A 503 burned a doc in an early
+  // benchmark run; retrying it makes a 100-doc free-tier run reliable.
+  if (typeof e.status === "number" && (e.status === 429 || (e.status >= 500 && e.status < 600))) return true;
+  const codeNum = typeof e.code === "string" ? Number(e.code) : e.code;
+  if (codeNum === 429 || (typeof codeNum === "number" && codeNum >= 500 && codeNum < 600)) return true;
   const msg = (e.message ?? String(err)).toLowerCase();
-  return msg.includes("429") || msg.includes("rate limit") || msg.includes("quota") || msg.includes("resource_exhausted");
+  return (
+    msg.includes("429") || msg.includes("rate limit") || msg.includes("quota") || msg.includes("resource_exhausted") ||
+    msg.includes("503") || msg.includes("502") || msg.includes("500") || msg.includes("overloaded") ||
+    msg.includes("unavailable") || msg.includes("internal error")
+  );
 }
 
 async function sleep(ms: number): Promise<void> {
@@ -148,9 +156,10 @@ async function liveExtract(
     ? "Extract W-2 data from this image."
     : "Identify the 1099 type and extract relevant fields.";
 
-  // Retry on 429 with exponential backoff. Gemini free tier is 10 RPM, so
-  // even with the runner's pacing we will occasionally bump the limit; this
-  // ensures the run completes rather than logging 80% errors.
+  // Retry on 429 (rate limit) + transient 5xx with exponential backoff. Gemini
+  // free tier is 10 RPM and Flash intermittently 503s under load, so even with
+  // the runner's pacing we bump these; retrying ensures the run completes rather
+  // than logging spurious errors.
   const maxRetries = 6;
   let attempt = 0;
   // eslint-disable-next-line no-constant-condition
@@ -173,7 +182,7 @@ async function liveExtract(
       return normalizeData(extractJsonObject(response.choices[0]?.message?.content ?? "{}"));
     } catch (err) {
       attempt++;
-      if (!isRateLimitError(err) || attempt > maxRetries) throw err;
+      if (!isRetryableError(err) || attempt > maxRetries) throw err;
       // Backoff schedule: 8s, 16s, 32s, 60s, 60s, 60s (caps so a single doc
       // doesn't stall the run > ~4min)
       const backoffMs = Math.min(60_000, 4_000 * Math.pow(2, attempt));
