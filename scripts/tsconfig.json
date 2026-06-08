@@ -80,6 +80,7 @@
     "src/tax-engine-nr-sourcing-tests.ts",
     "src/tax-engine-ct-retirement-tests.ts",
     "src/tax-engine-nr-source-plumbing-tests.ts",
+    "src/tax-engine-info-return-extraction-tests.ts",
     "src/tax-engine-diagnostics-tests.ts",
     "src/tax-engine-qbi-per-business-tests.ts",
     "src/tax-engine-ftc-carryforward-tests.ts",

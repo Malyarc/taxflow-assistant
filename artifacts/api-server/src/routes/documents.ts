@@ -16,10 +16,17 @@ import {
   extractW2DataFromText,
   extractW2DataFromFile,
   extract1099DataFromFile,
+  extractInfoReturnFromFile,
   detectMimeType,
   isVisualMimeType,
   validateAndResolveMimeType,
 } from "../lib/documentExtractor";
+
+/** Document types routed to the unified information-return extractor (1098 /
+ *  1098-T / 1098-E / 1095-A / SSA-1099 / W-2G). */
+const INFO_RETURN_DOC_TYPES = new Set<string>([
+  "form_1098", "form_1098t", "form_1098e", "form_1095a", "form_ssa1099", "form_w2g",
+]);
 import { encryptField } from "../lib/fieldCrypto";
 import { consentRequired, hasValidConsent, AI_EXTRACTION_SCOPE } from "../lib/consentGate";
 import { logger } from "../lib/logger";
@@ -186,6 +193,17 @@ router.post("/clients/:clientId/documents", async (req, res): Promise<void> => {
         }
       } else if (parsed.data.documentType === "form_1099" && isVisual) {
         const { data, boxes, confidence } = await extract1099DataFromFile(parsed.data.fileContent, mimeType);
+        extractedData = data as Record<string, unknown>;
+        fieldBoxes = boxes as Record<string, unknown>;
+        fieldConfidence = confidence as Record<string, unknown>;
+      } else if (INFO_RETURN_DOC_TYPES.has(parsed.data.documentType) && isVisual) {
+        // 1098 / 1098-T / 1098-E / 1095-A / SSA-1099 / W-2G — one extractor
+        // identifies the specific form from its header and extracts the boxes.
+        // The extracted data flows to the same pending_review payload; the CPA
+        // reviews + (today) re-keys it into the right adjustment/field. Auto-
+        // creating downstream records (recordType for these) is a documented
+        // follow-up — see docs/doc-type-coverage.md.
+        const { data, boxes, confidence } = await extractInfoReturnFromFile(parsed.data.fileContent, mimeType);
         extractedData = data as Record<string, unknown>;
         fieldBoxes = boxes as Record<string, unknown>;
         fieldConfidence = confidence as Record<string, unknown>;

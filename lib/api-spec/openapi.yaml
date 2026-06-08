@@ -2142,7 +2142,7 @@ components:
           type: integer
         documentType:
           type: string
-          enum: [w2, form_1099, form_1098, schedule_k1, other]
+          enum: [w2, form_1099, form_1098, form_1098t, form_1098e, form_1095a, form_ssa1099, form_w2g, schedule_k1, other]
         fileName:
           type: string
         fileContent:
@@ -2174,7 +2174,7 @@ components:
       properties:
         documentType:
           type: string
-          enum: [w2, form_1099, form_1098, schedule_k1, other]
+          enum: [w2, form_1099, form_1098, form_1098t, form_1098e, form_1095a, form_ssa1099, form_w2g, schedule_k1, other]
         fileName:
           type: string
         fileContent:

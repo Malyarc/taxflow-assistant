@@ -394,6 +394,11 @@ export const TaxDocumentDocumentType = {
   w2: "w2",
   form_1099: "form_1099",
   form_1098: "form_1098",
+  form_1098t: "form_1098t",
+  form_1098e: "form_1098e",
+  form_1095a: "form_1095a",
+  form_ssa1099: "form_ssa1099",
+  form_w2g: "form_w2g",
   schedule_k1: "schedule_k1",
   other: "other",
 } as const;
@@ -462,6 +467,11 @@ export const UploadDocumentBodyDocumentType = {
   w2: "w2",
   form_1099: "form_1099",
   form_1098: "form_1098",
+  form_1098t: "form_1098t",
+  form_1098e: "form_1098e",
+  form_1095a: "form_1095a",
+  form_ssa1099: "form_ssa1099",
+  form_w2g: "form_w2g",
   schedule_k1: "schedule_k1",
   other: "other",
 } as const;
