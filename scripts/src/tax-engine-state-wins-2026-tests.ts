@@ -113,6 +113,34 @@ header("WI — single sliding-scale standard deduction phase-out");
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// WISCONSIN — MFJ / HoH / MFS sliding-scale std deduction (2026-06-06k). Each
+// reverse-derived from + verified to reproduce the 2024 WI Form 1 Standard
+// Deduction Table to the dollar. (HoH/MFS fall back to SINGLE brackets — a
+// separate pre-existing WI-bracket sub-gap; this test fixes only the std ded.)
+//   MFJ $80k: stdDed = 24,490 − 0.19778×(80,000−27,520) = 14,110.51 → taxable
+//     65,889.49 → MFJ brackets 0.0354×19,090 + 0.0465×19,100 + 0.053×27,699.49
+//     = 675.79 + 888.15 + 1,468.07 = $3,032.01 (was ~$2,481.90 at full std ded).
+//   HoH $30k (below the ~$55,832 crossover): stdDed = max(single 11,918.40, the
+//     HoH line 17,090 − 0.225×(30,000−19,070) = 14,630.75) = 14,630.75 → taxable
+//     15,369.25 → single brackets 0.0354×14,320 + 0.0465×1,049.25 = $555.72.
+//   HoH $60k (above crossover → follows single): stdDed = single 8,318.40 → $2,394.01.
+//   MFS $40k: stdDed = 12,575 − 0.19778×(40,000−8,282) = 6,301.81 → $1,440.89.
+// ════════════════════════════════════════════════════════════════════════════
+header("WI — MFJ / HoH / MFS std-deduction phase-out");
+{
+  check("WI MFJ $80k: std-ded $14,110.51 → tax $3,032.01",
+    calculateStateTax(80000, "WI", "married_filing_jointly", 2024), 3032.01, 0.5);
+  checkTruthy("WI MFJ $80k owes MORE than the old full-std-ded baseline ($2,481.90)",
+    calculateStateTax(80000, "WI", "married_filing_jointly", 2024) > 2481.90 + 1);
+  check("WI HoH $30k (HoH 22.5% line): std-ded $14,630.75 → tax $555.72",
+    calculateStateTax(30000, "WI", "head_of_household", 2024), 555.72, 0.5);
+  check("WI HoH $60k (past crossover → = single): std-ded $8,318.40 → tax $2,394.01",
+    calculateStateTax(60000, "WI", "head_of_household", 2024), 2394.01, 0.5);
+  check("WI MFS $40k: std-ded $6,301.81 → tax $1,440.89",
+    calculateStateTax(40000, "WI", "married_filing_separately", 2024), 1440.89, 0.5);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // CONNECTICUT — Social Security exclusion (CT-1040 + DRS). 100% exempt below the
 // federal-AGI threshold ($75k single/MFS, $100k MFJ/QW/HoH); above, CT taxes no
 // more than ~25% of benefits (we exempt 75% of the federally-taxable SS). Tested

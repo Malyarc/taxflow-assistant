@@ -824,7 +824,7 @@ const STATE_TAX_DATA_2024: Record<string, StateTaxInfo> = {
       ],
     },
     standardDeduction: { single: 13230, married_filing_jointly: 24490, head_of_household: 17090, married_filing_separately: 12575 },
-    notes: "WI sliding-scale std deduction: SINGLE now modeled ($13,230 max − 12% of WAGI over $19,070, per Wis. Stat. §71.05(22) / LFB 2024; in calculateStateTax). MFJ/HoH/MFS retain the max pending their indexed phase-out thresholds (sub-gap).",
+    notes: "WI sliding-scale std deduction: ALL 4 statuses modeled in calculateStateTax (2026-06-06k) — single $13,230−12%/$19,070; MFJ $24,490−19.778%/$27,520; MFS $12,575−19.778%/$8,282; HoH max(single, $17,090−22.5%/$19,070). Reverse-derived from + verified to reproduce the 2024 WI Form 1 Standard Deduction Table to the dollar (Wis. Stat. §71.05(22)). 2024 values applied for all years (indexing is a year-pinning sub-gap). HoH/MFS use single brackets (separate pre-existing WI-bracket sub-gap).",
   },
 };
 

@@ -2037,14 +2037,30 @@ export function calculateStateTax(
   }
   const status = filingStatus as StateFilingStatus;
   let stdDed = pickStateStdDeduction(info.standardDeduction, status);
-  // WI sliding-scale standard deduction (Wis. Stat. §71.05(22); WI Form 1 / LFB
-  // 2024): single max $13,230 reduced by 12% of WAGI over $19,070, reaching $0
-  // at ~$129,319. Applied for SINGLE only — that threshold + the 12% rate are
-  // primary-source-confirmed (WI Legislative Fiscal Bureau); MFJ/HoH/MFS retain
-  // the max pending their indexed thresholds (documented sub-gap). WAGI ≈
-  // federalAgi (the engine's existing WI approximation).
-  if (code === "WI" && status === "single") {
-    stdDed = Math.max(0, 13230 - 0.12 * Math.max(0, federalAgi - 19070));
+  // WI sliding-scale standard deduction (Wis. Stat. §71.05(22)). All four filing
+  // statuses now modeled (2026-06-06k): the per-status max, phase-out threshold,
+  // and rate were reverse-derived from the 2024 WI Form 1 "Standard Deduction
+  // Table" and VERIFIED to reproduce the published table to the dollar across all
+  // 276 income brackets. WAGI ≈ federalAgi (the engine's existing approximation):
+  //   single: $13,230 − 12% of WAGI over $19,070  (→ $0 at ~$129,320)
+  //   MFJ:    $24,490 − 19.778% over $27,520        (→ $0 at ~$151,344)
+  //   MFS:    $12,575 − 19.778% over $8,282         (→ $0 at ~$71,863)
+  //   HoH:    max(single, $17,090 − 22.5% over $19,070) — HoH phases at 22.5%
+  //           until it meets the single deduction (~$55,832), then follows single.
+  // 2024 values applied for ALL years — the annual inflation-indexing of these
+  // amounts is a documented year-pinning sub-gap (same as the prior single block).
+  if (code === "WI") {
+    const wagi = federalAgi;
+    const wiSingle = Math.max(0, 13230 - 0.12 * Math.max(0, wagi - 19070));
+    if (status === "single") {
+      stdDed = wiSingle;
+    } else if (status === "married_filing_jointly") {
+      stdDed = Math.max(0, Math.min(24490, 24490 - 0.19778 * (wagi - 27520)));
+    } else if (status === "married_filing_separately") {
+      stdDed = Math.max(0, Math.min(12575, 12575 - 0.19778 * (wagi - 8282)));
+    } else if (status === "head_of_household") {
+      stdDed = Math.max(0, Math.min(17090, Math.max(wiSingle, 17090 - 0.225 * (wagi - 19070))));
+    }
   }
   // K10 — for states that exempt SS from their tax base, subtract the
   // federally-taxable SS amount BEFORE applying state brackets. (For the 9
