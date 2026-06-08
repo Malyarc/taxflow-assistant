@@ -3003,6 +3003,11 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
         ? sumByType("hi_employer_funded_pension") : undefined,
       nyGovernmentPension: sumByType("ny_government_pension") > 0
         ? sumByType("ny_government_pension") : undefined,
+      // CT — non-Roth IRA portion of the retirement bucket (Pension & Annuity
+      // Worksheet Line 4b → phased-in 50/75/100% IRA rate). Absent → the whole
+      // bucket is pension/annuity (100% base).
+      ctIraDistribution: sumByType("ct_ira_distribution") > 0
+        ? sumByType("ct_ira_distribution") : undefined,
       // NJ pension-exclusion phase-out tests against NJ gross income; for
       // K10 NJ explicitly excludes taxable SS from NJ gross. Use
       // (federal AGI − taxable SS) so NJ filers with retirement income +

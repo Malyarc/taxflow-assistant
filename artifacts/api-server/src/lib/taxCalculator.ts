@@ -530,6 +530,57 @@ function njPhaseOutMultiplier(njGrossIncome: number, filingStatus: string): numb
   return isMfj ? 0.25 : isMfs ? 0.125 : 0.1875;
 }
 
+/**
+ * CT non-Roth IRA distribution exclusion percentage, by tax year (Conn. Gen. Stat.
+ * §12-701(a)(20)(B)(xxi); CT-1040 / CT-1040NR/PY "Pension and Annuity Worksheet",
+ * Line 2). PA 23-204 phases the IRA exclusion in: 50% (2024) → 75% (2025) → 100%
+ * (2026+). The PENSION/ANNUITY base is a flat 100% for every supported year (its
+ * 2019-2025 phase-in had already reached 100% by TY2024 — the worksheet enters
+ * "100% of the amount of pensions and annuities" on Line 2 for all these years).
+ */
+const CT_IRA_EXCLUSION_PCT: Record<TaxYear, number> = {
+  2024: 0.5,
+  2025: 0.75,
+  2026: 1.0,
+};
+
+/**
+ * CT Pension and Annuity Phase-Out Table (CT-1040 instructions, Page 28) — the
+ * decimal multiplier on the retirement subtraction. Full (1.0) below the
+ * threshold; tiered down to 0 at the cap. Single/MFS/HoH use the $75k→$100k band;
+ * MFJ/QSS use the $100k→$150k band. (These thresholds DIFFER from the CT Social
+ * Security exclusion, where HoH groups with MFJ — here HoH is single-like. QSS is
+ * grouped with MFJ per CT's general QSS=MFJ treatment; the worksheet's table names
+ * only "Married Filing Jointly".) Boundaries are whole dollars, matching the table
+ * (e.g. single $75,000-$77,499 → .85, $77,500-$79,999 → .70).
+ */
+function ctPensionIraPhaseOutDecimal(federalAgi: number, filingStatus: string): number {
+  const isJoint =
+    filingStatus === "married_filing_jointly" || filingStatus === "qualifying_widow";
+  if (isJoint) {
+    if (federalAgi < 100000) return 1;
+    if (federalAgi <= 104999) return 0.85;
+    if (federalAgi <= 109999) return 0.7;
+    if (federalAgi <= 114999) return 0.55;
+    if (federalAgi <= 119999) return 0.4;
+    if (federalAgi <= 124999) return 0.25;
+    if (federalAgi <= 129999) return 0.1;
+    if (federalAgi <= 139999) return 0.05;
+    if (federalAgi <= 149999) return 0.025;
+    return 0;
+  }
+  if (federalAgi < 75000) return 1;
+  if (federalAgi <= 77499) return 0.85;
+  if (federalAgi <= 79999) return 0.7;
+  if (federalAgi <= 82499) return 0.55;
+  if (federalAgi <= 84999) return 0.4;
+  if (federalAgi <= 87499) return 0.25;
+  if (federalAgi <= 89999) return 0.1;
+  if (federalAgi <= 94999) return 0.05;
+  if (federalAgi <= 99999) return 0.025;
+  return 0;
+}
+
 export function getStateRetirementExemption(params: {
   stateCode: string;
   retirementIncome: number;
@@ -1291,6 +1342,9 @@ export function calculateMultiStateTax(params: {
      * §114) are NEVER non-resident source, so the CPA never places them here.
      */
     perStateNonResidentOtherSourced?: Readonly<Record<string, number>>;
+    /** CT only — non-Roth IRA portion of the retirement bucket (Pension &
+     *  Annuity Worksheet Line 4b); threaded to the resident calculateStateTax. */
+    ctIraDistribution?: number;
   };
 }): MultiStateTaxResult {
   const resident = params.residentState.toUpperCase();
@@ -2049,6 +2103,11 @@ export function calculateStateTax(
      *  (federally taxable but state-EXEMPT by federal preemption) SUBTRACTED. */
     muniBondAddBack?: number;
     usTreasurySubtraction?: number;
+    /** CT only — the non-Roth IRA portion of `retirementIncomeForExemption`
+     *  (CT-1040 Pension & Annuity Worksheet Line 4b). The remainder of the
+     *  retirement bucket is treated as pension/annuity (100% base). Absent →
+     *  the whole bucket is pension/annuity. See CT_IRA_EXCLUSION_PCT. */
+    ctIraDistribution?: number;
   },
 ): number {
   const year = resolveTaxYear(taxYear);
@@ -2110,6 +2169,27 @@ export function calculateStateTax(
     const ctThreshold = isJointish ? 100000 : 75000;
     ssExclusion = federalAgi < ctThreshold ? taxableSS : taxableSS * 0.75;
   }
+  // CT — pension/annuity + IRA income exclusion (Conn. Gen. Stat. §12-701(a)(20)(B);
+  // CT-1040 / CT-1040NR/PY "Pension and Annuity Worksheet", Page 28):
+  //   subtraction = (100% × pension/annuity + IRA% × non-Roth IRA) × phase-out decimal
+  // The IRA portion is CPA-supplied via options.ctIraDistribution (Worksheet Line 4b);
+  // absent it, the entire retirement bucket is treated as pension/annuity (100% base
+  // — the common case: 401(k)/403(b)/457(b)/defined-benefit all qualify as "pension
+  // and annuity" per the worksheet; only traditional-IRA distributions get the
+  // phased-in 50/75/100% IRA rate). Roth IRA, military retirement, RR Tier 1/2, and
+  // CT-teacher pay are SEPARATE CT lines (46/47) and are a documented sub-gap — the
+  // CPA nets them out of the retirement bucket. Phase-out thresholds DIFFER from the
+  // CT SS exclusion above (HoH is single-like here). This is additive to ssExclusion
+  // (SS is a distinct line) and to the getStateRetirementExemption path (which
+  // returns 0 for CT).
+  let ctRetirementExclusion = 0;
+  if (code === "CT") {
+    const retire = Math.max(0, options?.retirementIncomeForExemption ?? 0);
+    const ira = Math.min(retire, Math.max(0, options?.ctIraDistribution ?? 0));
+    const pensionAnnuity = Math.max(0, retire - ira);
+    const base = pensionAnnuity + ira * CT_IRA_EXCLUSION_PCT[year];
+    ctRetirementExclusion = base * ctPensionIraPhaseOutDecimal(federalAgi, filingStatus);
+  }
   // VT (and any future state) — per-filer personal exemption deducted from taxable.
   // IL-1040 Line 10b cliff: when federalAgi exceeds the personalExemptionAgiCliff
   // threshold (single/HoH/MFS/QSS $250k, MFJ $500k for IL TY2024), the exemption
@@ -2168,7 +2248,7 @@ export function calculateStateTax(
   // federal preemption but present in federal AGI).
   const stateBaseModifications =
     Math.max(0, options?.muniBondAddBack ?? 0) - Math.max(0, options?.usTreasurySubtraction ?? 0);
-  const stateTaxable = Math.max(0, federalAgi + stateBaseModifications - proratedStdDed - proratedPersonalExemption - oregonSubtraction - retirementExemption - ssExclusion);
+  const stateTaxable = Math.max(0, federalAgi + stateBaseModifications - proratedStdDed - proratedPersonalExemption - oregonSubtraction - retirementExemption - ssExclusion - ctRetirementExclusion);
   const brackets = pickStateBrackets(info.brackets, status);
   let tax = applyBrackets(stateTaxable, brackets);
 

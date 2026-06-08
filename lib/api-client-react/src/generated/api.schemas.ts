@@ -1268,6 +1268,7 @@ export const AdjustmentAdjustmentType = {
   schedule_c_depreciation: "schedule_c_depreciation",
   general_business_credit_carryforward: "general_business_credit_carryforward",
   schedule_c_section179_carryforward: "schedule_c_section179_carryforward",
+  ct_ira_distribution: "ct_ira_distribution",
 } as const;
 
 export interface Adjustment {
@@ -1408,6 +1409,7 @@ export const CreateAdjustmentBodyAdjustmentType = {
   schedule_c_depreciation: "schedule_c_depreciation",
   general_business_credit_carryforward: "general_business_credit_carryforward",
   schedule_c_section179_carryforward: "schedule_c_section179_carryforward",
+  ct_ira_distribution: "ct_ira_distribution",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -1544,6 +1546,7 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   schedule_c_depreciation: "schedule_c_depreciation",
   general_business_credit_carryforward: "general_business_credit_carryforward",
   schedule_c_section179_carryforward: "schedule_c_section179_carryforward",
+  ct_ira_distribution: "ct_ira_distribution",
 } as const;
 
 export interface UpdateAdjustmentBody {
