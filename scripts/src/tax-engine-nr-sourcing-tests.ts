@@ -140,6 +140,33 @@ header("NJ-1040NR — NY resident, $100k NJ wages + $50k NY interest");
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// MN Schedule M1NR worked example (MN DOR: Line 31 = Form M1 line 12 = tax on
+// TOTAL income; Line 30 = MN-source ÷ total ratio; Line 32 = Line 30 × Line 31 —
+// method a):
+// Single TX resident, $100,000 MN-source wages + $50,000 TX wages = $150,000.
+//   MN tax as-if resident on $150,000 (MN single std ded $14,575 → taxable
+//   $135,425). MN single brackets: 5.35%×31,690 + 6.80%×72,400 + 7.85%×31,335 =
+//   1,695.42 + 4,923.20 + 2,459.80 = $9,078.41.
+//   MN ratio = 100,000/150,000 = 66.667% → MN NR tax = 9,078.41 × ⅔ = $6,052.27.
+// ════════════════════════════════════════════════════════════════════════════
+header("MN M1NR — TX resident, $100k MN + $50k TX wages");
+{
+  const r = calculateMultiStateTax({
+    residentState: "TX",
+    federalAgi: 150000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "MN", wages: 100000 }, { stateCode: "TX", wages: 50000 }],
+  });
+  const mn = nyEntry(r, "MN");
+  check("MN-as-resident($150k single) = $9,078.41 (hand-calc, std ded $14,575)",
+    calculateStateTax(150000, "MN", "single", 2024), 9078.41, 0.5);
+  check("MN NR tax = $6,052.27 (M1NR ratio method)", mn?.tax ?? -1, 6052.27, 0.5);
+  check("MN NR tax == MN-as-resident × ⅔ (relational)",
+    mn?.tax ?? -1, calculateStateTax(150000, "MN", "single", 2024) * (100000 / 150000), 0.5);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // Per-income-type NR source: a TX resident with NY REAL-PROPERTY RENTAL income
 // (situs-sourced to NY) but NO NY wages. Supplied via perStateNonResidentOther-
 // Sourced. NY taxes the rental via the IT-203 method even with zero NY wages.

@@ -1160,12 +1160,15 @@ export interface PartYearResidencyResult {
 //   - NJ  — NJ-1040NR (Line 40 = tax on Line 39 taxable income from Column A =
 //           income from EVERYWHERE; Line 42 = Line 40 × the Line 41 income % =
 //           NJ-source ÷ everywhere; nj.gov NJ-1040NR instructions).          [verified 2026-06-06k]
+//   - MN  — Schedule M1NR (Line 31 = Form M1 line 12 tax on TOTAL income; Line 30
+//           = MN-source ÷ total ratio; Line 32 = Line 30 × Line 31 → M1 line 13;
+//           revenue.state.mn.us M1NR instructions).                          [verified 2026-06-06k]
 // NOT added (different method or unverified): VA (Form 763 prorates net taxable
 // INCOME by the allocation %, then taxes — method b); AL/HI/IL/MA/MS/WV (prorate
-// deductions/exemptions by the source ratio — method b); MN/GA/MD/OH/NC/etc.
+// deductions/exemptions by the source ratio — method b); GA/MD/OH/NC/etc.
 // (unverified — confirm the exact line flow against the NR form before adding).
 // Unlisted states fall back to direct brackets on the source income (conservative).
-const NR_AS_IF_RESIDENT_STATES = new Set<string>(["CA", "NY", "CT", "NJ"]);
+const NR_AS_IF_RESIDENT_STATES = new Set<string>(["CA", "NY", "CT", "NJ", "MN"]);
 
 export function calculateMultiStateTax(params: {
   residentState: string;
