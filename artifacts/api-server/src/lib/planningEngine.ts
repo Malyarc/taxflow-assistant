@@ -2913,16 +2913,14 @@ function detectEvCredit(args: {
 
   const estSavings = G1_33_NEW_EV_MAX_CREDIT;
 
-  const whatIf = runDetectorWhatIf({
-    baselineInputs,
-    scenarioId: "G1.33-ev-credit",
-    label: `EV credit $${G1_33_NEW_EV_MAX_CREDIT.toLocaleString("en-US")}`,
-    mutations: [
-      { kind: "add_adjustment", adjustmentType: "credit", amount: G1_33_NEW_EV_MAX_CREDIT },
-    ],
-    semantics: "savings",
-    varyAmount: false,
-  });
+  // Q2 (audit 2026-06-08) — this is a CONDITIONAL estimate ("IF the client buys a
+  // qualifying EV"), NOT an engine-verified saving. The prior code attached a
+  // what-if that injected an ASSUMED $7,500 credit and the engine dutifully
+  // "confirmed" the arithmetic → the hit was mislabeled "engine-verified $7,500"
+  // and ranked #1 ahead of applicable strategies, for ANY filer under the MAGI
+  // cap with no EV signal at all. Drop the what-if so it stays a clearly-flagged
+  // estimate (gate on a real EV-purchase marker when the data model gains one).
+  const whatIf = undefined;
 
   const strategy = strategyById("G1.33");
   const fmt = (n: number) =>
@@ -3304,22 +3302,20 @@ function detectSaversCredit(args: {
   const estSavings = Math.round(qualifyingContrib * rate);
   if (estSavings <= 0) return null;
 
-  // Cap by federal tax liability (non-refundable).
-  const cappedSavings = Math.min(estSavings, Math.round(computed.federalTaxLiability));
+  // Q1 (audit 2026-06-08) — the SAVINGS IS the Saver's credit the client already
+  // earns on the existing contribution, which the engine computes directly
+  // (`saversCredit.appliedCredit`). The prior code attached a what-if that ADDED
+  // ANOTHER $2,000 contribution — but §25B caps qualifying contributions at
+  // $2,000, so for an already-contributing client the credit didn't change →
+  // verifiedSavings collapsed to $0 and BURIED a valid high-confidence credit in
+  // the hit-list ranking. Use the engine's actual credit (cap-fallback to the
+  // heuristic) and DON'T attach the misleading add-more what-if.
+  const engineSaversCredit = Math.round(computed.saversCredit?.appliedCredit ?? 0);
+  const cappedSavings = engineSaversCredit > 0
+    ? engineSaversCredit
+    : Math.min(estSavings, Math.round(computed.federalTaxLiability));
   if (cappedSavings <= 0) return null;
-
-  // H2 mutation: add retirement_contributions_savers = cap. Engine
-  // computes the credit via the credit-ordering pipeline.
-  const whatIf = runDetectorWhatIf({
-    baselineInputs,
-    scenarioId: "G1.31-savers-credit",
-    label: `Saver's Credit cap $${cap.toLocaleString("en-US")}`,
-    mutations: [
-      { kind: "add_adjustment", adjustmentType: "retirement_contributions_savers", amount: cap },
-    ],
-    semantics: "savings",
-    varyAmount: false,
-  });
+  const whatIf = undefined;
 
   const strategy = strategyById("G1.31");
   const fmt = (n: number) =>
@@ -7498,17 +7494,21 @@ function detectDisasterRelief(args: {
   if (computed.adjustedGrossIncome < G1_91_MIN_AGI) return null;
   const state = (client.state ?? "").toUpperCase();
   if (!G1_91_DISASTER_STATES.has(state)) return null;
-  const hasDisaster = adjustments.some(
-    (a) =>
+  // Q4 (audit 2026-06-08) — fire only when the client ACTUALLY has a recorded
+  // disaster payment to potentially exclude under §139 (an actionable signal),
+  // NOT for every >$100k filer who merely lives in a disaster-prone state with
+  // NO marker (the prior inverted gate, which fired on a huge fraction of the
+  // FL/TX/CA book and ranked by a phantom $20k×rate). Valued at the real marker.
+  const disasterPaymentAmount = adjustments
+    .filter((a) =>
       (a.adjustmentType === "section_139_payment" ||
         a.adjustmentType === "qualified_disaster_payment") &&
-      a.isApplied !== false &&
-      toNum(a.amount) > 0,
-  );
-  if (hasDisaster) return null;
+      a.isApplied !== false)
+    .reduce((s, a) => s + Math.max(0, toNum(a.amount)), 0);
+  if (disasterPaymentAmount <= 0) return null;
 
   const fedRate = federalMarginalRate(computed);
-  const estSavings = Math.round(G1_91_TYPICAL_RECEIVED * fedRate);
+  const estSavings = Math.round(disasterPaymentAmount * fedRate);
 
   const strategy = strategyById("G1.91");
   const fmt = (n: number) =>

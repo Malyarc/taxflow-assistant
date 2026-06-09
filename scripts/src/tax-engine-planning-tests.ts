@@ -4855,20 +4855,27 @@ header("G1.90-1 — Age 40: suppressed");
 //   AGI $150k ≥ $100k ✓. State FL in disaster set ✓.
 //   Taxable = $150k - $14,600 = $135,400. Single 24% bracket. Marginal = 0.24.
 //   estSavings = $20k × 0.24 = $4,800.
-header("H1v1.16 G1.91+1 — Single FL disaster state W-2 $150k: estSavings $4,800");
+// Q4 (audit 2026-06-08): G1.91 now fires ONLY on a real §139 disaster-payment
+// marker (actionable — exclude it from income), NOT speculatively for every
+// >$100k filer in a disaster-prone state.
+header("H1v1.16 G1.91+1 — FL + $5,000 §139 payment → fires, valued at marker × marginal");
 {
   const hits = runPlanning({
     client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
     w2s: [{ taxYear: 2024, wagesBox1: 150000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
+    adjustments: [
+      { adjustmentType: "section_139_payment", amount: 5000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
+    ],
   });
   const hit = findHit(hits, "G1.91");
-  checkTruthy("G1.91+1", "fires (disaster state + AGI > $100k)", hit != null, true);
+  checkTruthy("G1.91+1", "fires with a real §139 payment marker", hit != null, true);
   if (hit) {
-    check("G1.91+1", "estSavings = $4,800", hit.estSavings, 4800, 5);
+    // FL single $150k → 24% marginal; $5,000 × 0.24 = $1,200.
+    check("G1.91+1", "estSavings = $5,000 × 24% marginal = $1,200", hit.estSavings, 1200, 5);
   }
 }
 
-// Negative: non-disaster state
+// Negative: non-disaster state (even with a marker, the state gate suppresses).
 header("G1.91-1 — Non-disaster state (NY): suppressed");
 {
   const hits = runPlanning({
@@ -4878,17 +4885,14 @@ header("G1.91-1 — Non-disaster state (NY): suppressed");
   checkTruthy("G1.91-1", "no fire non-disaster state", findHit(hits, "G1.91") == null, true);
 }
 
-// Negative: existing disaster adj
-header("G1.91-2 — Existing §139 payment: suppressed");
+// Negative: disaster state but NO §139 marker → no speculative fire (the Q4 fix).
+header("G1.91-2 — Disaster state, no §139 marker: NO speculative fire");
 {
   const hits = runPlanning({
     client: { filingStatus: "single", state: "FL", taxYear: 2024 } as TaxReturnInputs["client"],
     w2s: [{ taxYear: 2024, wagesBox1: 150000, stateCode: "FL" } as unknown as TaxReturnInputs["w2s"][number]],
-    adjustments: [
-      { adjustmentType: "section_139_payment", amount: 5000, isApplied: true } as unknown as TaxReturnInputs["adjustments"][number],
-    ],
   });
-  checkTruthy("G1.91-2", "no fire existing §139", findHit(hits, "G1.91") == null, true);
+  checkTruthy("G1.91-2", "no fire without a §139 marker", findHit(hits, "G1.91") == null, true);
 }
 
 // ============================================================================
