@@ -11,6 +11,8 @@ export type {
   WhatIfSensitivity,
   OpportunityWhatIf,
   OpportunityMultiYear,
+  DeadlineType,
+  StrategyDeadline,
 } from "./types";
 export { validateCatalog } from "./validateCatalog";
 

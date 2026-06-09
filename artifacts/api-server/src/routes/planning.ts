@@ -35,6 +35,7 @@ import {
 } from "../lib/planningMemo";
 import { consentRequired, hasValidConsent, AI_EXTRACTION_SCOPE } from "../lib/consentGate";
 import { computeTaxReturn, loadTaxReturnInputs } from "../lib/taxReturnPipeline";
+import { buildPlanningCalendar } from "../lib/planningCalendar";
 import { optimizeRothConversionLadder } from "../lib/rothOptimizer";
 import {
   runWhatIfScenario,
@@ -148,6 +149,43 @@ router.get("/clients/:clientId/planning-opportunities", async (req, res): Promis
   } catch (err) {
     logger.error({ err, clientId: params.data.clientId }, "Planning evaluation failed");
     res.status(500).json({ error: "Planning evaluation failed" });
+  }
+});
+
+// T1.3 — Deadline-aware planning calendar: the client's detected opportunities
+// grouped by their action deadline (year-end → quarterly → filing → extended →
+// ongoing), soonest-first, with per-group savings totals.
+router.get("/clients/:clientId/planning-calendar", async (req, res): Promise<void> => {
+  const params = GetPlanningOpportunitiesParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  try {
+    const computed = await computeTaxReturn(params.data.clientId);
+    if (!computed) {
+      res.status(404).json({ error: "Client not found" });
+      return;
+    }
+    const adjustments = await db
+      .select()
+      .from(adjustmentsTable)
+      .where(eq(adjustmentsTable.clientId, params.data.clientId));
+    const hits = evaluatePlanningOpportunities({
+      client: computed.client,
+      computed: computed.result,
+      adjustments: adjustments as AdjustmentFact[],
+      baselineInputs: computed.inputs,
+    });
+    const calendar = buildPlanningCalendar(hits, computed.result.taxYear);
+    res.json({
+      clientId: params.data.clientId,
+      catalogVersion: CATALOG_V1.version,
+      ...calendar,
+    });
+  } catch (err) {
+    logger.error({ err, clientId: params.data.clientId }, "Planning calendar failed");
+    res.status(500).json({ error: "Planning calendar failed" });
   }
 });
 

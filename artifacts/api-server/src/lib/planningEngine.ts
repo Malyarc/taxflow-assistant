@@ -34,6 +34,7 @@ import type {
   AssetBalanceFact,
   TaxReturnInputs,
 } from "./taxReturnEngine";
+import { annotateDeadlines } from "./planningCalendar";
 import {
   calculateFederalTaxWithBreakdown,
   calculateStateTaxWithBreakdown,
@@ -8562,6 +8563,8 @@ export function evaluatePlanningOpportunities(args: PlanningInputs): Opportunity
   });
   // PLAN-Q1 — rank on the engine-verified delta where present, not the heuristic.
   annotateVerifiedSavings(liveHits);
+  // T1.3 — attach a deadline-aware action date to each hit.
+  annotateDeadlines(liveHits, computed.taxYear);
   liveHits.sort((a, b) => headlineSavings(b) - headlineSavings(a));
   return liveHits;
 }

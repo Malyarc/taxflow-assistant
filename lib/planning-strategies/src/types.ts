@@ -279,4 +279,44 @@ export interface OpportunityHit {
    * `estSavings` is left intact so both numbers + the source travel on the hit.
    */
   verifiedSavings?: number;
+  /**
+   * T1.3 — Deadline-aware planning calendar. The actionable deadline for this
+   * strategy given the return's tax year (when the action must be COMPLETED to
+   * affect this year's tax). Attached by the planning engine post-detection.
+   */
+  deadline?: StrategyDeadline;
+}
+
+/**
+ * T1.3 — When a planning action must be completed to affect a given tax year.
+ *   - "year_end"          — must act by Dec 31 of the tax year (Roth conversion,
+ *                           tax-loss harvesting, QCD, DAF, gifting, RMD, 401(k)
+ *                           employee deferral).
+ *   - "filing_deadline"   — by the unextended return due date, ~Apr 15 of the
+ *                           NEXT year (IRA/HSA contributions, backdoor Roth).
+ *   - "extended_due_date" — by the extended due date, ~Oct 15 of the next year
+ *                           (SEP-IRA, Solo-401(k) employer contribution, DB plan).
+ *   - "quarterly"         — recurring estimated-tax dates (safe-harbor planning).
+ *   - "ongoing"           — structural, no single hard deadline (entity choice,
+ *                           state-residency, multi-year structural moves).
+ */
+export type DeadlineType =
+  | "year_end"
+  | "filing_deadline"
+  | "extended_due_date"
+  | "quarterly"
+  | "ongoing";
+
+export interface StrategyDeadline {
+  type: DeadlineType;
+  /** ISO date (YYYY-MM-DD) the action is due, or null for "ongoing". */
+  isoDate: string | null;
+  /** Human-readable label, e.g. "December 31, 2024". */
+  label: string;
+  /**
+   * Deterministic ordering key — days from Dec 31 of the tax year to the
+   * deadline (year_end = 0; filing ≈ 105; extended ≈ 288). Sorts the calendar
+   * soonest-first without reading the wall clock (keeps the engine pure).
+   */
+  daysFromYearEnd: number;
 }
