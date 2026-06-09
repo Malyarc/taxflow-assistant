@@ -1365,6 +1365,11 @@ export interface Adjustment {
   description: string;
   /** @nullable */
   category?: string | null;
+  /**
+   * E2 — optional MFJ spouse attribution ("taxpayer" | "spouse") for a self_employment_income adjustment's Sch SE Line-9 SS-wage-base credit.
+   * @nullable
+   */
+  spouse?: string | null;
   isApplied?: boolean;
   createdAt: string;
   updatedAt: string;
@@ -1513,6 +1518,11 @@ export interface CreateAdjustmentBody {
   description: string;
   /** @nullable */
   category?: string | null;
+  /**
+   * E2 — optional MFJ spouse attribution ("taxpayer" | "spouse") for a self_employment_income adjustment's Sch SE Line-9 SS-wage-base credit.
+   * @nullable
+   */
+  spouse?: string | null;
   isApplied?: boolean;
 }
 
@@ -1659,6 +1669,11 @@ export interface UpdateAdjustmentBody {
   description?: string;
   /** @nullable */
   category?: string | null;
+  /**
+   * E2 — optional MFJ spouse attribution ("taxpayer" | "spouse") for a self_employment_income adjustment's Sch SE Line-9 SS-wage-base credit.
+   * @nullable
+   */
+  spouse?: string | null;
   isApplied?: boolean;
 }
 

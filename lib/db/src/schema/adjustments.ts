@@ -11,6 +11,9 @@ export const adjustmentsTable = pgTable("adjustments", {
   amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
   description: text("description").notNull(),
   category: text("category"),
+  /** E2 — optional spouse attribution ("taxpayer" | "spouse"), used for MFJ
+   *  per-spouse Sch SE Line-9 attribution of a self_employment_income adjustment. */
+  spouse: text("spouse"),
   isApplied: boolean("is_applied").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),

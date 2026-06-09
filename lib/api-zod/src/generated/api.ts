@@ -2885,6 +2885,12 @@ export const ListAdjustmentsResponseItem = zod.object({
   amount: zod.number(),
   description: zod.string(),
   category: zod.string().nullish(),
+  spouse: zod
+    .string()
+    .nullish()
+    .describe(
+      'E2 — optional MFJ spouse attribution (\"taxpayer\" | \"spouse\") for a self_employment_income adjustment\'s Sch SE Line-9 SS-wage-base credit.',
+    ),
   isApplied: zod.boolean().optional(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -3026,6 +3032,12 @@ export const CreateAdjustmentBody = zod.object({
   amount: zod.number(),
   description: zod.string(),
   category: zod.string().nullish(),
+  spouse: zod
+    .string()
+    .nullish()
+    .describe(
+      'E2 — optional MFJ spouse attribution (\"taxpayer\" | \"spouse\") for a self_employment_income adjustment\'s Sch SE Line-9 SS-wage-base credit.',
+    ),
   isApplied: zod.boolean().optional(),
 });
 
@@ -3167,6 +3179,12 @@ export const UpdateAdjustmentBody = zod.object({
   amount: zod.number().optional(),
   description: zod.string().optional(),
   category: zod.string().nullish(),
+  spouse: zod
+    .string()
+    .nullish()
+    .describe(
+      'E2 — optional MFJ spouse attribution (\"taxpayer\" | \"spouse\") for a self_employment_income adjustment\'s Sch SE Line-9 SS-wage-base credit.',
+    ),
   isApplied: zod.boolean().optional(),
 });
 
@@ -3300,6 +3318,12 @@ export const UpdateAdjustmentResponse = zod.object({
   amount: zod.number(),
   description: zod.string(),
   category: zod.string().nullish(),
+  spouse: zod
+    .string()
+    .nullish()
+    .describe(
+      'E2 — optional MFJ spouse attribution (\"taxpayer\" | \"spouse\") for a self_employment_income adjustment\'s Sch SE Line-9 SS-wage-base credit.',
+    ),
   isApplied: zod.boolean().optional(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),

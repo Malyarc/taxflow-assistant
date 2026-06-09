@@ -1,0 +1,1 @@
+ALTER TABLE "adjustments" ADD COLUMN "spouse" text;

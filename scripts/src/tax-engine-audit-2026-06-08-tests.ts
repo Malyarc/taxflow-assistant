@@ -443,6 +443,54 @@ header("L1 — NYC EIC rate table (plateaus + interpolation, 10% floor)");
   check("$6,250 transition → 27.5%", nycEitcRateForAgi(6250), 0.275, 0.0001);
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// F3 — §1250/28% loss-absorption: a net STCL + LT carryover offsets the 28%
+// bucket FIRST, then spills onto §1250, INDEPENDENT of any plain 0/15/20 gain
+// (the prior bound let a plain gain "shield" the special buckets → over-charge).
+// W-2 $700k; LT §1250 $30k; LT collectible $20k; plain LT $50k; ST loss $40k:
+// loss $40k → 28% $20k→$0 (absorbs $20k); spill $20k → §1250 $30k→$10k. Plain $50k.
+// ════════════════════════════════════════════════════════════════════════════
+header("F3 — §1250/28% loss absorption (no plain-gain shielding)");
+{
+  const mk = (stLoss: number): TaxReturnInputs => ({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ wagesBox1: 700000, federalTaxWithheldBox2: 0, stateCode: "FL" }],
+    form1099s: [{ formType: "b", longTermGainLoss: 50000, shortTermGainLoss: stLoss } as never],
+    adjustments: [
+      { adjustmentType: "unrecaptured_section_1250_gain", amount: 30000, isApplied: true },
+      { adjustmentType: "collectibles_28_rate_gain", amount: 20000, isApplied: true },
+      { adjustmentType: "long_term_capital_gain", amount: 50000, isApplied: true },
+    ], taxYear: 2024,
+  });
+  const withLoss = computeTaxReturnPure(mk(-40000));
+  check("§1250 = $10,000 (loss spilled onto it)", withLoss.unrecapturedSection1250Gain, 10000, 1);
+  check("collectibles 28% = $0 (loss absorbed first)", withLoss.collectibles28RateGain, 0, 1);
+  // No loss → full buckets (no regression).
+  const noLoss = computeTaxReturnPure(mk(0));
+  check("no loss → §1250 = $30,000 (full)", noLoss.unrecapturedSection1250Gain, 30000, 1);
+  check("no loss → collectibles 28% = $20,000 (full)", noLoss.collectibles28RateGain, 20000, 1);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// E2 — MFJ per-spouse Sch SE: a spouse-tagged self_employment_income adjustment
+// credits the right spouse's W-2 SS wages against the SE SS base. MFJ, taxpayer
+// W-2 Box 3 $180k (> the $168,600 SS base) + taxpayer Sch C $50k: tagged
+// "taxpayer" → SE owes only 2.9% Medicare = $50k×0.9235×0.029 = $1,339.08 (vs
+// the conservative untagged default $7,064.77). Default stays conservative.
+// ════════════════════════════════════════════════════════════════════════════
+header("E2 — MFJ per-spouse SE attribution (spouse-tagged adjustment)");
+{
+  const mk = (spouse?: string): TaxReturnInputs => ({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024 },
+    w2s: [{ wagesBox1: 180000, socialSecurityWagesBox3: 180000, federalTaxWithheldBox2: 0, stateCode: "FL", spouse: "taxpayer" } as never],
+    form1099s: [],
+    adjustments: [{ adjustmentType: "self_employment_income", amount: 50000, isApplied: true, spouse } as never],
+    taxYear: 2024,
+  });
+  check("untagged → conservative default (over-tax preserved)", computeTaxReturnPure(mk(undefined)).selfEmploymentTax, 7064.77, 1);
+  check("tagged taxpayer → SE on Medicare only = $1,339.08", computeTaxReturnPure(mk("taxpayer")).selfEmploymentTax, 1339.08, 1);
+}
+
 // ── summary ──────────────────────────────────────────────────────────────────
 console.log(`\n${"═".repeat(70)}`);
 for (const f of FAIL) console.log(f);

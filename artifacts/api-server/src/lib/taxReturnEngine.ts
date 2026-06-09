@@ -273,6 +273,11 @@ export interface AdjustmentFact {
   adjustmentType: string;
   amount: Numish;
   isApplied?: boolean | null;
+  /** E2 — which spouse this adjustment belongs to ("taxpayer" | "spouse").
+   *  Used (today) for MFJ per-spouse Sch SE Line-9 attribution of a
+   *  `self_employment_income` adjustment so the right spouse's W-2 SS wages
+   *  credit against the SE SS base. Absent → the conservative default. */
+  spouse?: string | null;
 }
 
 export interface RecalcOverrides {
@@ -1586,6 +1591,14 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
 
   // Income / SE / investment / QBI / AMT
   const seIncomeFromAdj = sumByType("self_employment_income");
+  // E2 — split the SE-income adjustment by the optional `spouse` tag so MFJ
+  // per-spouse Sch SE can credit the right spouse's W-2 SS wages. Untagged →
+  // taxpayer (the spouse-tagged subset is carved out).
+  const seIncomeFromAdjSpouse = applied
+    .filter((a) => a.adjustmentType === "self_employment_income" && a.spouse === "spouse")
+    .reduce((s, a) => s + toNum(a.amount), 0);
+  const seAdjHasSpouseTag = applied.some(
+    (a) => a.adjustmentType === "self_employment_income" && (a.spouse === "spouse" || a.spouse === "taxpayer"));
   const investmentIncomeFromAdj = sumByType("investment_income");
   const qbiIncome = sumByType("qbi_income");
   // BP3 — AMT preference detail. The legacy `amt_preferences` catch-all
@@ -2005,7 +2018,11 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // implicit-default "all-taxpayer" attribution.
   const hasExplicitSpouseAttribution =
     w2Records.some((r) => r.spouse === "spouse") ||
-    form1099Records.some((r) => r.spouse === "spouse");
+    form1099Records.some((r) => r.spouse === "spouse") ||
+    // E2 — a spouse-tagged SE-income adjustment opts the return into per-spouse
+    // Sch SE (so a same-spouse high-W-2 + Sch C no longer over-taxes the SE SS
+    // base, and a spouse-attributed Sch C is taxed on its own base).
+    seAdjHasSpouseTag;
   if (isMfjForSe && hasExplicitSpouseAttribution) {
     // K1 MFJ sub-gap closure (2026-05-26).
     const necRecordsForYear = form1099Records.filter((r) =>
@@ -2019,8 +2036,10 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     // self_employment_income adjustments + K-1 partnership Box 14A default to
     // taxpayer attribution. Schedule C expenses split is the same — apportion
     // to taxpayer's gross.
-    const grossSeTaxpayer = seIncomeFromAdj + necSeIncomeTaxpayer;
-    const grossSeSpouse = necSeIncomeSpouse;
+    // E2 — the SE-income adjustment is attributed by its spouse tag (untagged →
+    // taxpayer). seIncomeFromAdjSpouse is the spouse-tagged subset.
+    const grossSeTaxpayer = (seIncomeFromAdj - seIncomeFromAdjSpouse) + necSeIncomeTaxpayer;
+    const grossSeSpouse = necSeIncomeSpouse + seIncomeFromAdjSpouse;
     const taxpayerScheduleCExpenses = Math.min(
       Math.max(0, scheduleCExpensesInput),
       Math.max(0, grossSeTaxpayer),
@@ -2965,10 +2984,29 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const rawCollectibles28 =
     capTxnCollectibles28 + Math.max(0, sumByType("collectibles_28_rate_gain"));
   const ltAvailableForSpecial = Math.max(0, ltcgPreferentialAfterElection);
-  const unrecaptured1250Bounded = Math.min(rawUnrecaptured1250, ltAvailableForSpecial);
+  // F3 (audit 2026-06-08) — apply the worksheet's LOSS ABSORPTION explicitly, not
+  // just a min(raw, netLTCG) bound. A net STCL + LT loss carryover offsets the
+  // 28% bucket FIRST, then spills onto §1250 (28%-Rate-Gain + Unrecaptured-§1250
+  // worksheets). The prior bound let a plain 0/15/20 gain "shield" the special
+  // buckets from the loss (over-charging — e.g. §1250 $30k + collectible $20k +
+  // plain $50k − $40k loss gave §1250 $30k/28% $20k instead of the correct
+  // §1250 $10k/28% $0). totalLtLossAbsorbed = the loss the LT pool absorbed,
+  // computed as the gross POSITIVE LT gain minus the surviving net LTCG. Using
+  // max(0,·) on each component UNDER-counts the gross when a component is itself
+  // net (so it can only UNDER-state the loss → over-charge, the safe direction).
+  const grossPositiveLt =
+    Math.max(0, form1099Summary.longTermCapitalGains) + Math.max(0, k1Ltcg) +
+    homeSaleTaxableGain + qsbsTaxableGain + section1031RecognizedGain +
+    Math.max(0, longTermCapitalGainAdj) + Math.max(0, form4797.netSection1231LtcgGain);
+  const totalLtLossAbsorbed = Math.max(0, grossPositiveLt - ltAvailableForSpecial);
+  const loss28 = Math.min(totalLtLossAbsorbed, rawCollectibles28);
+  const collectibles28AfterLoss = rawCollectibles28 - loss28;
+  const unrecaptured1250AfterLoss = Math.max(0, rawUnrecaptured1250 - (totalLtLossAbsorbed - loss28));
+  // Then cap at the available net LTCG (§1250 takes first claim; QDIV stays 0/15/20).
+  const unrecaptured1250Bounded = Math.min(unrecaptured1250AfterLoss, ltAvailableForSpecial);
   const collectibles28Bounded = Math.min(
-    rawCollectibles28,
-    ltAvailableForSpecial - unrecaptured1250Bounded,
+    collectibles28AfterLoss,
+    Math.max(0, ltAvailableForSpecial - unrecaptured1250Bounded),
   );
   const capGains = calculateFederalTaxWithCapitalGains({
     ordinaryTaxableIncome: ordinaryPortionOfTaxable,

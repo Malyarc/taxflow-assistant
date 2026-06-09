@@ -2875,6 +2875,9 @@ components:
           type: string
         category:
           type: ["string", "null"]
+        spouse:
+          type: ["string", "null"]
+          description: E2 — optional MFJ spouse attribution ("taxpayer" | "spouse") for a self_employment_income adjustment's Sch SE Line-9 SS-wage-base credit.
         isApplied:
           type: boolean
         createdAt:
@@ -2897,6 +2900,9 @@ components:
           type: string
         category:
           type: ["string", "null"]
+        spouse:
+          type: ["string", "null"]
+          description: E2 — optional MFJ spouse attribution ("taxpayer" | "spouse") for a self_employment_income adjustment's Sch SE Line-9 SS-wage-base credit.
         isApplied:
           type: boolean
 
@@ -2912,6 +2918,9 @@ components:
           type: string
         category:
           type: ["string", "null"]
+        spouse:
+          type: ["string", "null"]
+          description: E2 — optional MFJ spouse attribution ("taxpayer" | "spouse") for a self_employment_income adjustment's Sch SE Line-9 SS-wage-base credit.
         isApplied:
           type: boolean
 
