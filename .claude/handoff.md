@@ -1,3 +1,48 @@
+# Handoff Note — 2026-06-08g (FIX-ALL pass on the full-app-audit findings — 10 more commits shipped + deployed + prod-verified)
+
+Worked every remaining deferred finding from the 2026-06-08f audit (ledger:
+`docs/accuracy-audit/full-app-audit-2026-06-08.md`). **10 commits on `main`
+(`335bde7`..`50d0083`, all pushed + deployed: api-server rebuilt, migrations 0012+0013
+applied, frontend rsynced, re-scored, healthz ok). 80 no-API suites / 4,769 + the property
+harness (5,636 runs) + all 12 integration suites green; prod-smoked.** Every value hand-calc'd
+vs the IRS/state primary source; each fix has a regression in `tax-engine-audit-2026-06-08-tests.ts`
+(now 64 assertions).
+
+**Shipped (the under-tax / wrong-number bugs):**
+- **E3b** dependent/kiddie §63(c)(5) limited std deduction — was a full-std-ded under-tax of children
+  with unearned income, LOCKED BY a wrong-expectation test (deep-audit K8a-d + cpa-S7 reworked). New
+  `claimedAsDependent` client field (migration 0012). Prod-smoked: kiddie $10k interest → $2,498.
+- **C1** credit ordering — CTC now applied AFTER the Schedule-3 personal credits per the Sch 8812
+  Credit Limit Worksheet (dep-care/education no longer wasted; CLAUDE.md invariant #2 corrected).
+- **C3** AMT MFS §55(d)(3) phantom add-back. **C4** IRA-deduction MAGI adds back SLI+FEIE (Pub 590-A).
+  **CF2** auto-load NOL/§163(j) carryforwards. **E1** EITC qualifying-children (new field, migration 0013).
+- **A1** 1098 Box 4 nets the mortgage-interest deduction; **A2** 1099-INT Box 2 above-the-line deduction.
+- **State:** KY 2025 = 4.0% (was wrongly 3.5% — that's the 2026 rate; HB1) + KY 2026; MN removed from
+  the federal-conforming set (own std ded $14,950); AZ added (ties to federal); MA surtax 2025
+  $1,083,150; MD/IN county rates; DC/CA individual-mandate year-indexing (DC was wrongly frozen $695).
+- **L1** NYC EIC rebuilt to the IT-215 staircase + interpolation + 10% floor; **L1b** — fixing L1
+  exposed a worse bug: the NYC EIC was being subtracted from EVERY locality's tax (MD/PA/OH) → now
+  gated to NYC only (fixed cpa-S17 MD-Montgomery $627.78 → the correct $1,105.60).
+- **Planning** Q1 (Saver's $0-collapse), Q2 (EV false "engine-verified"), Q4 (§139 false-positive).
+- **Forms/UI:** PDF1 (1040 substitute Lines 20-24/33), PDF3 (Form 2210 adoption), FE2 (36 missing
+  TYPE_LABELS), FE4 (fmt NaN guard).
+
+**Deliberately DEFERRED (documented, all CONSERVATIVE/over-tax OR needing a new structural path —
+NOT silently dropped):** F3 §1250 loss-shielding (conservative over-charge; exact fix risks under-tax),
+E2 MFJ-SE attribution (conservative; 1099-NEC-spouse-tag workaround), WV SS phase-out 2024/25 (narrow
+under-tax; needs a year+floor+% handler), MD Anne Arundel/Frederick graduated brackets, MA mandate
+>300% FPL schedule (provisional), PDF2/SCH1/FE1/FE3 (SPA cosmetic — Haven replaces the SPA).
+
+**Lesson reconfirmed:** the /code-review on the FIRST audit ship caught a real incomplete fix (2 more
+case-sensitive `formType` sites my solo pass missed). Run /code-review on engine changes before done.
+
+**Recommended next:** the deferred items are all conservative or structural — none is a fresh under-tax
+except WV SS (narrow). The highest-leverage next move is the T0.3 differential-oracle layer (A2/A3 —
+OpenTaxSolver/ustaxes/tenforty + the IRS ATS scenarios) to promote the property harness to a full
+oracle-backed CI suite.
+
+---
+
 # Handoff Note — 2026-06-08f (FULL-APP MAXIMUM AUDIT — T0.3 — 14-agent fleet + machine harness; 3 commits shipped + deployed + prod-verified)
 
 Ran the full-app maximum audit: a **14-agent fresh-fleet fan-out** (one per subsystem, each

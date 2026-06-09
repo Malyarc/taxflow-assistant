@@ -1,6 +1,42 @@
 # Full-App Maximum Audit — 2026-06-08 (T0.3)
 
-## FINAL OUTCOME (3 commits shipped + prod-verified: 5fdb104 / f2cb6b7 / d0914fe)
+## FINAL OUTCOME — FIX-ALL PASS (14 commits, all shipped + deployed + prod-verified)
+After the initial 4-commit audit ship (below), a full "fix every remaining finding" pass landed 10
+more commits (`335bde7` C1 · `cf90947` C3 · `d08481b` C4+CF2 · `ce3a943` E1 · `<E3b>` · `43042cd` AI
+A1/A2 · `fa3f113` state · `67c563d` NYC-EIC+L1b · `bc7df0d` planning Q1/Q2/Q4 · `50d0083` forms+frontend).
+**80 no-API suites / 4,769 + the property harness (5,636 runs) + all 12 integration suites green; prod
+smoke-verified (E3b kiddie $2,498, KY-2025 $3,069.20, F2 AMT, WI rate).**
+
+**SHIPPED in the fix-all pass (every value hand-calc'd vs the primary source):**
+- **E3b** dependent/kiddie §63(c)(5) limited std deduction (was a full-std-ded under-tax LOCKED BY a
+  wrong-expectation test — K8a-d + S7 reworked). New `claimedAsDependent` field (migration 0012).
+- **C1** credit ordering — CTC now applied AFTER the Schedule-3 credits (Sch 8812 worksheet) so
+  dep-care/education aren't wasted (HoH $30k+1 child+$3k dep-care: refund +$510).
+- **C3** AMT MFS §55(d)(3) phantom add-back. **C4** IRA MAGI adds back SLI+FEIE (Pub 590-A). **CF2**
+  auto-load NOL/§163(j) carryforwards. **E1** EITC qualifying-children count (new field, migration 0013).
+- **A1** 1098 Box 4 nets mortgage interest; **A2** 1099-INT Box 2 above-the-line deduction (was dropped).
+- **State:** KY 2025 = 4.0% (BUG — code had 3.5%; that's 2026) + KY 2026; MN removed from conforming
+  (own std ded $14,950); AZ added to conforming; MA surtax 2025 $1,083,150; MD/IN county rates
+  (Cecil/StMarys/Allen/Vanderburgh); DC/CA mandate year-indexing.
+- **L1** NYC EIC IT-215 staircase + interpolation + 10% floor; **L1b** (a worse bug L1 exposed) — the
+  NYC EIC was wrongly reducing EVERY locality's tax (MD/PA/OH) → now gated to NYC only.
+- **Planning Q1** (Saver's $0-collapse → use the engine's actual credit), **Q2** (EV false
+  "engine-verified" → conditional estimate), **Q4** (§139 disaster → fire only on a real marker).
+- **PDF1** Form 1040 substitute Lines 20-24/33; **PDF3** Form 2210 adoption refundable; **FE2** 36
+  missing TYPE_LABELS; **FE4** fmt NaN guard.
+
+**STILL DEFERRED (documented — conservative/over-tax direction OR needs a new structural path):**
+F3 §1250/28% loss-absorption shielding (conservative over-charge; the exact fix needs lot-level loss
+tracking the aggregate engine lacks — under-tax risk). E2 MFJ-SE attribution (conservative; clean
+1099-NEC-spouse-tag workaround exists). WV SS phase-out 2024/25 (under-taxes the narrow high-income-WV-
+retiree-with-SS case; needs a year+income-floor+% handler). MD Anne Arundel/Frederick graduated
+brackets (needs a graduated-locality path). MA mandate >300% FPL schedule (provisional, flagged in code).
+PDF2 (pdfExport mandate/Sch-H disclosure rows), SCH1 (surface T1.1 outputs in the openapi TaxReturn
+schema + UI), FE1/FE3 (SPA cosmetic — Haven replaces the SPA).
+
+---
+
+## FINAL OUTCOME (initial 4-commit audit ship: 5fdb104 / f2cb6b7 / d0914fe / adc5d56)
 **SHIPPED (hand-calc-tested + 80 no-API suites/4,769 + fast-check harness 5,636 runs +
 12 integration suites + prod smoke):** F1 (CRITICAL AI-1099 formType drop, +2 sibling sites a
 /code-review caught), F2 (CRITICAL AMT std-ded addback, state-AMT isolated), C2 (NIIT §1231 cap),
