@@ -981,6 +981,38 @@ function fmtAmendCol(n: number): string {
   return n < 0 ? `(${abs})` : abs;
 }
 
+// FE3 — Form 1040-X delta coloring. For most lines a HIGHER value is worse for
+// the taxpayer (more income/tax/amount-owed → red on an increase). But on
+// "money-back" lines — deductions, credits, withholding, payments, refundable
+// credits, and the refund line — a HIGHER value is BETTER, so a positive
+// netChange there is favorable (green), not red. Keyed by the stable Form 1040-X
+// line refs built in form1040x.ts. Credit-detail refs 7a–7f are credits (better);
+// 6a is the cap-gains tax component (worse).
+const AMEND_BETTER_WHEN_HIGHER = new Set([
+  "2", "4b", "7", "7a", "7b", "7c", "7d", "7e", "7f",
+  "11", "13", "14", "16", "20", "S2", "S3",
+]);
+function amendDeltaClass(lineRef: string, netChange: number): string {
+  if (!Number.isFinite(netChange) || netChange === 0) return "";
+  const higherIsBetter = AMEND_BETTER_WHEN_HIGHER.has(lineRef);
+  const favorable = higherIsBetter ? netChange > 0 : netChange < 0;
+  return favorable ? "text-success" : "text-destructive";
+}
+
+// FE3 — Year-over-year delta coloring (keyed by metric label). Income/tax lines
+// are "higher is worse" (an increase is unfavorable → red); deductions, credits,
+// and refunds are "higher is better" (an increase is favorable → green). The old
+// code colored EVERY positive delta green, which mis-signaled rising tax/income.
+const YOY_HIGHER_IS_WORSE = new Set([
+  "Total Income", "AGI", "Taxable Income", "Federal Tax", "State Tax",
+  "AMT", "SE Tax", "NIIT", "Net Capital Gain/Loss (Sch D)", "Rental Net (Sch E)",
+]);
+function yoyDeltaClass(label: string, delta: number): string {
+  if (!Number.isFinite(delta) || delta === 0) return "";
+  const favorable = YOY_HIGHER_IS_WORSE.has(label) ? delta < 0 : delta > 0;
+  return favorable ? "text-success" : "text-destructive";
+}
+
 function Form1040xCard({ clientId, taxYear }: { clientId: number; taxYear: number }) {
   const qc = useQueryClient();
   // Pull the raw tax-return row to check amendment fields. We use a
@@ -1153,7 +1185,7 @@ function Form1040xCard({ clientId, taxYear }: { clientId: number; taxYear: numbe
                         <td className="py-1.5 pr-2 text-muted-foreground">{l.lineRef}</td>
                         <td className="py-1.5 pr-2">{l.label}</td>
                         <td className="py-1.5 pr-2 font-mono text-right">{fmtAmendCol(l.original)}</td>
-                        <td className={`py-1.5 pr-2 font-mono text-right ${l.netChange > 0 ? "text-destructive" : l.netChange < 0 ? "text-success" : ""}`}>
+                        <td className={`py-1.5 pr-2 font-mono text-right ${amendDeltaClass(l.lineRef, l.netChange)}`}>
                           {fmtAmendCol(l.netChange)}
                         </td>
                         <td className="py-1.5 pr-2 font-mono text-right">{fmtAmendCol(l.amended)}</td>
@@ -1175,7 +1207,7 @@ function Form1040xCard({ clientId, taxYear }: { clientId: number; taxYear: numbe
                           <td className="py-1 pr-2 text-muted-foreground w-10">{l.lineRef}</td>
                           <td className="py-1 pr-2">{l.label.trim()}</td>
                           <td className="py-1 pr-2 font-mono text-right">{fmtAmendCol(l.original)}</td>
-                          <td className={`py-1 pr-2 font-mono text-right ${l.netChange > 0 ? "text-destructive" : l.netChange < 0 ? "text-success" : ""}`}>{fmtAmendCol(l.netChange)}</td>
+                          <td className={`py-1 pr-2 font-mono text-right ${amendDeltaClass(l.lineRef, l.netChange)}`}>{fmtAmendCol(l.netChange)}</td>
                           <td className="py-1 pr-2 font-mono text-right">{fmtAmendCol(l.amended)}</td>
                         </tr>
                       ))}
@@ -1196,7 +1228,7 @@ function Form1040xCard({ clientId, taxYear }: { clientId: number; taxYear: numbe
                           <td className="py-1 pr-2 text-muted-foreground w-10">{l.lineRef}</td>
                           <td className="py-1 pr-2">{l.label}</td>
                           <td className="py-1 pr-2 font-mono text-right">{fmtAmendCol(l.original)}</td>
-                          <td className={`py-1 pr-2 font-mono text-right ${l.netChange > 0 ? "text-destructive" : l.netChange < 0 ? "text-success" : ""}`}>{fmtAmendCol(l.netChange)}</td>
+                          <td className={`py-1 pr-2 font-mono text-right ${amendDeltaClass(l.lineRef, l.netChange)}`}>{fmtAmendCol(l.netChange)}</td>
                           <td className="py-1 pr-2 font-mono text-right">{fmtAmendCol(l.amended)}</td>
                         </tr>
                       ))}
@@ -2251,7 +2283,7 @@ function DiffCard({ a, b }: { a: PreviewResponse; b: PreviewResponse }) {
                   <td className="py-1.5 font-sans">{row.label}</td>
                   <td className="py-1.5 text-right">{fmt(row.aVal)}</td>
                   <td className="py-1.5 text-right">{fmt(row.bVal)}</td>
-                  <td className={`py-1.5 text-right font-semibold ${delta > 0 ? "text-success" : delta < 0 ? "text-amber-700" : ""}`}>
+                  <td className={`py-1.5 text-right font-semibold ${yoyDeltaClass(row.label, delta)}`}>
                     {delta === 0 ? "—" : `${delta > 0 ? "+" : "−"}${fmt(Math.abs(delta))}`}
                   </td>
                 </tr>
@@ -4291,31 +4323,28 @@ function AssetBalancesTab({ clientId, taxYear }: { clientId: number; taxYear: nu
             </div>
             <div className="space-y-1">
               <Label htmlFor="balance">Balance (FMV at year-end)</Label>
-              <Input
+              <CurrencyInput
                 id="balance"
-                type="number"
-                value={Number(draft.balance ?? 0)}
-                onChange={(e) => setDraft((d) => ({ ...d, balance: Number(e.target.value) || 0 }))}
+                value={draft.balance ?? 0}
+                onChange={(raw) => setDraft((d) => ({ ...d, balance: Number(raw) || 0 }))}
               />
             </div>
             <div className="space-y-1">
               <Label htmlFor="cost-basis">Cost basis (optional)</Label>
-              <Input
+              <CurrencyInput
                 id="cost-basis"
-                type="number"
                 placeholder="Brokerage / employer stock / real estate"
                 value={draft.costBasis ?? ""}
-                onChange={(e) => setDraft((d) => ({ ...d, costBasis: e.target.value === "" ? null : Number(e.target.value) }))}
+                onChange={(raw) => setDraft((d) => ({ ...d, costBasis: raw === "" ? null : Number(raw) }))}
               />
             </div>
             <div className="space-y-1">
               <Label htmlFor="after-tax-basis">After-tax basis (IRA / 401(k) only)</Label>
-              <Input
+              <CurrencyInput
                 id="after-tax-basis"
-                type="number"
                 placeholder="Form 8606 pro-rata input"
                 value={draft.afterTaxBasis ?? ""}
-                onChange={(e) => setDraft((d) => ({ ...d, afterTaxBasis: e.target.value === "" ? null : Number(e.target.value) }))}
+                onChange={(raw) => setDraft((d) => ({ ...d, afterTaxBasis: raw === "" ? null : Number(raw) }))}
               />
             </div>
             <div className="space-y-1 flex items-end gap-2">
