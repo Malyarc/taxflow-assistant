@@ -1,3 +1,53 @@
+# Handoff Note — 2026-06-08f (FULL-APP MAXIMUM AUDIT — T0.3 — 14-agent fleet + machine harness; 3 commits shipped + deployed + prod-verified)
+
+Ran the full-app maximum audit: a **14-agent fresh-fleet fan-out** (one per subsystem, each
+verifying every numeric rule vs the IRS/state PRIMARY SOURCE) + a new **machine-driven fast-check
+harness** (property/fuzz/boundary/metamorphic) + the **integration suites** + an in-session
+**/code-review max**. **3 commits on `main` (`5fdb104` Set A, `f2cb6b7` Set B, `d0914fe` Set C),
+pushed, deployed (api-server + frontend rsync, healthz ok, re-score 0-drift), PROD-SMOKED.
+80 no-API suites / 4,769 green + harness 5,636 runs + 12 integration suites green.** Full findings
+ledger (severity/file:line/repro/fix for ALL findings, shipped + deferred): **`docs/accuracy-audit/full-app-audit-2026-06-08.md`**.
+
+**SHIPPED (every value hand-calc'd vs primary source):**
+- **F1 (CRITICAL)** — AI-extracted-then-approved 1099s were stored UPPERCASE (`ApproveExtractionBody`
+  enum) while the engine filtered lowercase → **every AI-approved 1099's income silently dropped.**
+  Fixed all 3 `formType` read-sites case-insensitive + lowercase at the write seam. (The /code-review
+  caught 2 sibling sites my first fix missed — `:1985` MFJ-SE $7,064 + `:1460` DIV cap-gain $10k.)
+- **F2 (CRITICAL)** — AMT omitted the Form 6251 line-2a **standard-deduction addback** (§56(b)(1)(E));
+  a std-ded filer who hit AMT had AMTI understated by the full std ded. Federal-only (state CA/MN AMT
+  kept on the shared prefs — they add back their own std ded). 22 AMT test expectations re-hand-calc'd.
+- **C2** NIIT §1231 non-passive exclusion capped at the surviving disposition gain (was wiping
+  unrelated NII). **F4** MFS LTCG breakpoint $291,850. **F5** W-2 val TY2026 SS base $184,500.
+- **SEC1/2/3 (DoS/totality)** — `toNum` clamps ±1e13 (engine can't emit NaN/Infinity even on garbage —
+  Haven seam); `horizonYears` bounded (openapi max 75 + rothOptimizer clamp — was an unauthenticated
+  ~200M-engine-run hang); effRate sub-dollar guard; dropped console.warn from the pure seam.
+- **6 state rates, each DOR/statute-verified** — WI 2024 3.54%/4.65%→3.50%/4.40% (every WI filer);
+  ID 5.8%→5.695%(2024)/5.3%(2025); CO 4.4%→4.25%(2024 TABOR); SC 6.4%→6.2%(2024)/6.0%(2025);
+  OH top 3.5%→3.125%(2025)/flat 2.75%(2026); NE top 5.84%→5.20%(2025). 11 state-test expectations re-calc'd.
+- **Q3** Saver's Credit (G1.31) now reads the engine's year-indexed `SAVERS_CREDIT_TIERS` via the new
+  `saversCreditRateFor()` (was a stale TY2024-only band map → mis-rated TY2025+).
+- **New tests:** `tax-engine-audit-2026-06-08-tests.ts` (31) + `tax-engine-property-harness.ts`
+  (fast-check; a T0.3 Phase-A1 deliverable). The harness independently surfaced SEC1 (the -1e308
+  overflow) + the effRate denormal + the PTC repaymentCap=Infinity sentinel.
+
+**Prod smoke proved live:** F2 amtTax $72,337.50 (pre-fix $68,249.50); WI $50k stateTax $1,758.88
+(pre-fix $1,800.41).
+
+**DEFERRED — prioritized (top of the ledger; each has a repro + fix):** (1) **E3b dependent/kiddie
+std deduction** §63(c)(5) — HIGH under-tax + LOCKED BY A WRONG-EXPECTATION TEST (deep-audit K8a-d);
+(2) **C1 credit ordering** (CTC before Sch-3 credits wastes dependent-care/education); (3) **C4 IRA-MAGI
+SLI/FEIE add-back**; (4) E1 EITC child count; (5) A1/A2 AI 1098-Box4 + 1099-INT-Box2; (6) PDF1 Form-1040
+substitute lines; (7) surface T1.1 outputs in openapi+UI; (8) planning Q1/Q2/Q4; (9) CF2 NOL/§163(j)
+auto-load, C3 AMT-MFS, E2 MFJ-SE; (10) F3 §1250-loss-shielding (conservative), more states (MN/MA/AZ/WV/KY),
+NYC-EITC, MD/IN county, DC/CA mandate. **Security:** the API-security fan-out agent did the comprehensive
+pass (no CRITICAL/HIGH; all gates verified; unbounded-input finding shipped as SEC1/2/3).
+
+**Recommended next:** **E3b** (the dependent-std-ded under-tax that's locked by a wrong test — exactly
+the "tests passing on wrong expectations" class John hates), then **C1 credit ordering**. Both are real
+filed-number bugs; both need careful test rework (do them with /code-review before calling done).
+
+---
+
 # Handoff Note — 2026-06-08e (MASTER-TODO **T1** engine-perfection session — T1.1 fully closed + high-value T1.2/T1.3 slices; shipped + pushed)
 
 Worked the MASTER-TODO **T1 — PERFECT THE ENGINES** tier. **3 commits on `main`

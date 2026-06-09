@@ -1,5 +1,32 @@
 # Full-App Maximum Audit — 2026-06-08 (T0.3)
 
+## FINAL OUTCOME (3 commits shipped + prod-verified: 5fdb104 / f2cb6b7 / d0914fe)
+**SHIPPED (hand-calc-tested + 80 no-API suites/4,769 + fast-check harness 5,636 runs +
+12 integration suites + prod smoke):** F1 (CRITICAL AI-1099 formType drop, +2 sibling sites a
+/code-review caught), F2 (CRITICAL AMT std-ded addback, state-AMT isolated), C2 (NIIT §1231 cap),
+F4 (MFS LTCG breakpoint), F5 (W-2 2026 SS base), SEC1/2/3 (engine totality + horizonYears +
+arrays — DoS), effRate guard, Q3 (Saver's year-index), 6 state rates (WI/ID/CO/SC/OH/NE, each
+DOR-verified). New machine harness `tax-engine-property-harness.ts` (property/fuzz/boundary/
+metamorphic — a T0.3-A1 deliverable) + `tax-engine-audit-2026-06-08-tests.ts` (31).
+
+**DEFERRED — prioritized follow-up (each has a repro + fix direction below):**
+1. **E3b dependent/kiddie std deduction** (§63(c)(5)) — HIGH under-tax; LOCKED BY A WRONG-EXPECTATION
+   TEST (deep-audit K8a-d). Needs a `claimedAsDependent`/`isKiddieTaxFiler` std-ded clamp + K8 rework.
+2. **C1 credit ordering** — HIGH; CTC applied before the Sch-3 credits (reverses Sch 8812 limit wksht
+   → wastes non-carryforward dependent-care/education credits). Reshuffles many tests — do carefully.
+3. **C4 IRA-deduction MAGI** must add back SLI + FEIE (Pub 590-A Wksht 1-1) — over-allows IRA in the
+   phase-out band. Delicate (the MAGI bootstrap invariant).
+4. **E1 EITC qualifying-children** count reuses dependentsUnder17 (drops a tier for 17-23) — needs a field.
+5. **A1/A2 AI** 1098 Box 4 net + 1099-INT Box 2 early-withdrawal deduction (extracted, never consumed).
+6. **PDF1** Form 1040 substitute: Line 24 pre-credit, Line 33 missing refundables, Lines 20-22 blank.
+7. **SCH1/FE2** surface T1.1 outputs (mandate/SchH/4797/§1250-28) in openapi+UI; TYPE_LABELS missing 36.
+8. **Planning Q1 (Saver's $0-verify collapse), Q2 (EV provenance), Q4 (§139 false-positive).**
+9. **CF2** NOL/§163(j) carryforward auto-load; **C3** AMT MFS §55(d)(3); **E2** MFJ-SE attribution.
+10. **F3** §1250/28% loss-absorption shielding (conservative); **M1/M2** DC/CA mandate year-index;
+    state **MN-conforming / MA-surtax-COLA / AZ-std-ded / WV-SS / KY-2026**; **L1** NYC-EITC; **L2/L3** MD/IN county.
+
+---
+
 Findings ledger from the 14-agent fleet + machine-driven harness + integration run.
 Baseline: HEAD `66bcbcc`, 4,769 no-API assertions green. Each finding adjudicated by
 the lead against the primary source before fix. Status: OPEN / CONFIRMED / FIXED / REFUTED / DEFERRED.
