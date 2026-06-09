@@ -55,3 +55,4 @@ Thumbs.db
 
 # Claude harness runtime lock (never commit)
 .claude/scheduled_tasks.lock
+.claude/worktrees/
