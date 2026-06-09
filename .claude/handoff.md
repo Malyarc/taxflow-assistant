@@ -46,6 +46,24 @@ works today) — a bespoke Form 4797 entry UI was intentionally NOT built (Haven
 the SPA). **Recommended next:** the T0.3 large accuracy-audit campaign (it will exercise these
 new rate buckets hard), or §280F as a focused follow-on.
 
+**POST-SHIP INDEPENDENT REVIEW (same session, commit `f863b9c`, redeployed + prod-verified
+HEAD f863b9c).** Ran a memory-safe multi-agent review (3 fresh reviewer agents + in-session
+/code-review + /security-review + /verify) over the T1 diff. It found **2 real HIGH
+capital-gains bugs my solo tests missed** — both fixed with hand-calc'd regressions:
+(1) §1250/28% were taxed via a per-layer min(rate, marginal-ordinary) that UNDER-taxed a
+special layer pushed into a sub-25/28% bracket while the global floor was slack (ord $20k +
+reg-LTCG $20k + §1250 $40k: $10,253 vs correct $12,168). IRC §1(h)(1)(E)/(F) + the Schedule D
+Tax Worksheet use FLAT 25%/28% with the cap enforced only by the global final-min — fixed to
+flat. **NOTE: test W6 had asserted the WRONG per-layer value (4,685) — corrected to 6,000.**
+(2) Loss-absorption ordering was reversed (preserved 28%, clipped §1250 → OVER-taxed); the
+28%-Rate-Gain worksheet offsets losses against the 28% gain first — fixed (§1250 first claim).
+Plus 2 LOW fixes (clergy→Sch-C-QBI ½-SE over-reduction; mandate `method`="bronze_cap") and 2
+documented conservative §1231 sub-gaps (loss not in §461(l) auto-agg; gain unconditionally in
+NIIT). Battery 4,754 → **4,761** green. **Lesson: this is the author's-blindness gap — solo
+hand-calc'd tests passed on a wrong expected value; independent review caught it. For the next
+big engine change, run /code-review + a few fresh review agents (or /code-review ultra) BEFORE
+calling it done.**
+
 ---
 
 # Handoff Note — 2026-06-08d (AI extraction: auto-apply info-returns on approve — shipped + deployed + prod-smoked)
