@@ -837,13 +837,27 @@ export interface LocalityInfo {
    * base (e.g. 0.025 = 2.5% of income). The credit cannot exceed this.
    */
   creditLimitRate?: number;
+  /**
+   * L2 — GRADUATED local brackets (e.g. MD Anne Arundel / Frederick CY2024+),
+   * applied to the `base` instead of the flat `rate`. Single column also covers
+   * MFS/dependent; joint column covers MFJ/HoH/QSS. When present, `rate` is the
+   * top marginal rate (kept for the informational `flatRate` field only).
+   */
+  localBrackets?: { single: StateBracket[]; joint: StateBracket[] };
 }
 
 export const LOCAL_TAX_DATA: Record<string, LocalityInfo> = {
   // ── Maryland counties — Comptroller of Maryland 2024 rates ───────────────
   // Source: Maryland Tax Tables for County Income Tax (Comptroller 2024).
   "MD-ALLEGANY":      { jurisdictionLabel: "Allegany County, MD",       state: "MD", rate: 0.0303, base: "state_taxable" },
-  "MD-ANNE_ARUNDEL":  { jurisdictionLabel: "Anne Arundel County, MD",   state: "MD", rate: 0.0281, base: "state_taxable" },
+  // MD-08 — Anne Arundel CY2024 GRADUATED local income tax (Bill 47-24; MD
+  // Comptroller 2024 local-rate table). Single/MFS/dependent vs joint/HoH/QSS
+  // thresholds differ. `rate` retained as the informational middle-band rate.
+  "MD-ANNE_ARUNDEL":  { jurisdictionLabel: "Anne Arundel County, MD",   state: "MD", rate: 0.0281, base: "state_taxable",
+    localBrackets: {
+      single: [{ upTo: 50000, rate: 0.0270 }, { upTo: 400000, rate: 0.0281 }, { upTo: Infinity, rate: 0.0320 }],
+      joint:  [{ upTo: 75000, rate: 0.0270 }, { upTo: 480000, rate: 0.0281 }, { upTo: Infinity, rate: 0.0320 }],
+    } },
   "MD-BALTIMORE_CITY":{ jurisdictionLabel: "Baltimore City, MD",        state: "MD", rate: 0.0320, base: "state_taxable" },
   "MD-BALTIMORE_CO":  { jurisdictionLabel: "Baltimore County, MD",      state: "MD", rate: 0.0320, base: "state_taxable" },
   "MD-CALVERT":       { jurisdictionLabel: "Calvert County, MD",        state: "MD", rate: 0.0300, base: "state_taxable" },
@@ -852,7 +866,13 @@ export const LOCAL_TAX_DATA: Record<string, LocalityInfo> = {
   "MD-CECIL":         { jurisdictionLabel: "Cecil County, MD",          state: "MD", rate: 0.0275, base: "state_taxable" },
   "MD-CHARLES":       { jurisdictionLabel: "Charles County, MD",        state: "MD", rate: 0.0303, base: "state_taxable" },
   "MD-DORCHESTER":    { jurisdictionLabel: "Dorchester County, MD",     state: "MD", rate: 0.0320, base: "state_taxable" },
-  "MD-FREDERICK":     { jurisdictionLabel: "Frederick County, MD",      state: "MD", rate: 0.0275, base: "state_taxable" },
+  // MD-08 — Frederick CY2024 GRADUATED local income tax (MD Comptroller 2024
+  // local-rate table). 4 bands; single vs joint thresholds differ above $25k.
+  "MD-FREDERICK":     { jurisdictionLabel: "Frederick County, MD",      state: "MD", rate: 0.0296, base: "state_taxable",
+    localBrackets: {
+      single: [{ upTo: 25000, rate: 0.0225 }, { upTo: 50000, rate: 0.0275 }, { upTo: 150000, rate: 0.0296 }, { upTo: Infinity, rate: 0.0320 }],
+      joint:  [{ upTo: 25000, rate: 0.0225 }, { upTo: 100000, rate: 0.0275 }, { upTo: 250000, rate: 0.0296 }, { upTo: Infinity, rate: 0.0320 }],
+    } },
   "MD-GARRETT":       { jurisdictionLabel: "Garrett County, MD",        state: "MD", rate: 0.0265, base: "state_taxable" },
   "MD-HARFORD":       { jurisdictionLabel: "Harford County, MD",        state: "MD", rate: 0.0306, base: "state_taxable" },
   "MD-HOWARD":        { jurisdictionLabel: "Howard County, MD",         state: "MD", rate: 0.0320, base: "state_taxable" },
@@ -1042,6 +1062,7 @@ export function calculateFlatRateLocalTax(params: {
         creditRate: info.creditRate,
         creditLimitRate: info.creditLimitRate,
         workCityTaxPaid: params.ohWorkCityTaxPaid,
+        localBrackets: info.localBrackets,
       },
     );
   }
@@ -1112,6 +1133,8 @@ function computeFlatRateLocalTaxFromInfo(
     creditLimitRate?: number;
     /** CPA-supplied municipal tax paid to the WORK city (for the resident credit). */
     workCityTaxPaid?: number;
+    /** L2 — graduated local brackets (MD Anne Arundel / Frederick). */
+    localBrackets?: { single: StateBracket[]; joint: StateBracket[] };
   },
 ): NycLocalTaxCalculation {
   let base = 0;
@@ -1156,7 +1179,21 @@ function computeFlatRateLocalTaxFromInfo(
       : 0;
     base = Math.max(0, federalAgi - stdDed);
   }
-  const tax = base * rate;
+  // L2 — graduated local brackets (MD Anne Arundel / Frederick CY2024+): when
+  // the locality supplies a bracket schedule, the tax is progressive on `base`
+  // (MD taxable income), not a single flat rate. Joint column also covers
+  // HoH/QSS; single column covers MFS/dependent (per the MD county ordinances).
+  let tax: number;
+  if (extra?.localBrackets) {
+    const isJointCol =
+      filingStatus === "married_filing_jointly" ||
+      filingStatus === "qualifying_widow" ||
+      filingStatus === "head_of_household";
+    const schedule = isJointCol ? extra.localBrackets.joint : extra.localBrackets.single;
+    tax = applyBrackets(base, schedule);
+  } else {
+    tax = base * rate;
+  }
   // OH cross-city resident credit (ORC ch. 718): a RESIDENT city credits tax
   // paid to the WORK city, = min(creditRate × work-city tax, creditLimitRate ×
   // base), capped so net resident tax ≥ 0. Only applied when the locality has
@@ -2269,6 +2306,22 @@ export function calculateStateTax(
       status === "head_of_household";
     const ctThreshold = isJointish ? 100000 : 75000;
     ssExclusion = federalAgi < ctThreshold ? taxableSS : taxableSS * 0.75;
+  }
+  // WV — Social Security is 100% exempt BELOW the income floor ($50k single /
+  // $100k MFJ federal AGI) in ALL years (the 2019-law subtraction). ABOVE the
+  // floor, HB 4880 (2024) phases out the tax with a DECREASING modification: WV
+  // subtracts 35% (2024) / 65% (2025) / 100% (2026) of the federally-taxable SS,
+  // so it taxes 65% / 35% / 0% of it. (Audit S10 — the engine exempted 100% in
+  // all years, under-taxing high-income WV retirees in 2024/2025.)
+  if (code === "WV") {
+    const taxableSS = Math.max(0, options?.taxableSocialSecurity ?? 0);
+    const isJoint = status === "married_filing_jointly" || status === "qualifying_widow";
+    const wvFloor = isJoint ? 100000 : 50000;
+    const wvSubtractionByYear: Record<number, number> = { 2024: 0.35, 2025: 0.65, 2026: 1 };
+    // Statute: the decreasing modification applies to AGI "more than $50,000"
+    // ($100k joint), so AGI exactly AT the floor stays 100% exempt (≤, not <).
+    const subtractionPct = federalAgi <= wvFloor ? 1 : (wvSubtractionByYear[year] ?? 1);
+    ssExclusion = taxableSS * subtractionPct;
   }
   // CT — pension/annuity + IRA income exclusion (Conn. Gen. Stat. §12-701(a)(20)(B);
   // CT-1040 / CT-1040NR/PY "Pension and Annuity Worksheet", Page 28):

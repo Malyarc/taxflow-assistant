@@ -93,14 +93,33 @@ const MA_TIERS_2023: ReadonlyArray<{ maxFplPct: number; monthly: number }> = [
   { maxFplPct: 300, monthly: 68 },
   { maxFplPct: Infinity, monthly: 183 },
 ];
-// 2024/2025 are PROVISIONAL — they REUSE the confirmed 2023 schedule as a single
-// shared array (so an editor can't update one year and miss the others). REPLACE
-// with the published MA DOR TIR 24-1/25-1 amounts (give each its own array) once
-// verified. Tests assert only the confirmed 2023 schedule.
+// VERIFIED 2026-06-09 against MA DOR TIR 24-1 + TIR 25-1 (audit M3). The 2024/2025
+// schedule EXPANDED to 6 income tiers up to 500% FPL (the FY2024 budget extended
+// ConnectorCare to 500% FPL) plus a >500% Bronze-priced top tier. Per-ADULT
+// monthly; a married couple = sum of each spouse's tier amount.
+const MA_TIERS_2024: ReadonlyArray<{ maxFplPct: number; monthly: number }> = [
+  { maxFplPct: 150, monthly: 0 },
+  { maxFplPct: 200, monthly: 24 },
+  { maxFplPct: 250, monthly: 48 },
+  { maxFplPct: 300, monthly: 71 },
+  { maxFplPct: 400, monthly: 109 },
+  { maxFplPct: 500, monthly: 127 },
+  { maxFplPct: Infinity, monthly: 175 },
+];
+const MA_TIERS_2025: ReadonlyArray<{ maxFplPct: number; monthly: number }> = [
+  { maxFplPct: 150, monthly: 0 },
+  { maxFplPct: 200, monthly: 25 },
+  { maxFplPct: 250, monthly: 49 },
+  { maxFplPct: 300, monthly: 73 },
+  { maxFplPct: 400, monthly: 113 },
+  { maxFplPct: 500, monthly: 132 },
+  { maxFplPct: Infinity, monthly: 187 },
+];
 const MA_PENALTY_TIERS_BY_YEAR: Record<number, ReadonlyArray<{ maxFplPct: number; monthly: number }>> = {
   2023: MA_TIERS_2023,
-  2024: MA_TIERS_2023,
-  2025: MA_TIERS_2023,
+  2024: MA_TIERS_2024,
+  2025: MA_TIERS_2025,
+  2026: MA_TIERS_2025, // 2026 amounts not yet published — hold 2025 (documented).
 };
 
 export interface StateMandateParams {

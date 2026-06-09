@@ -10,7 +10,7 @@ import {
   summarize1099s,
   type TaxReturnInputs,
 } from "../../artifacts/api-server/src/lib/taxReturnEngine";
-import { calculateStateTax, saversCreditRateFor, getDependentStandardDeductionBase, calculateAmt, nycEitcRateForAgi } from "../../artifacts/api-server/src/lib/taxCalculator";
+import { calculateStateTax, saversCreditRateFor, getDependentStandardDeductionBase, calculateAmt, nycEitcRateForAgi, calculateMultiStateTax } from "../../artifacts/api-server/src/lib/taxCalculator";
 import { validateW2 } from "@workspace/validation";
 import { mapInfoReturnToInputs } from "../../artifacts/api-server/src/lib/documentExtractor";
 import { calculateStateIndividualMandatePenalty } from "../../artifacts/api-server/src/lib/stateMandate";
@@ -489,6 +489,94 @@ header("E2 — MFJ per-spouse SE attribution (spouse-tagged adjustment)");
   });
   check("untagged → conservative default (over-tax preserved)", computeTaxReturnPure(mk(undefined)).selfEmploymentTax, 7064.77, 1);
   check("tagged taxpayer → SE on Medicare only = $1,339.08", computeTaxReturnPure(mk("taxpayer")).selfEmploymentTax, 1339.08, 1);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// M3 — MA individual-mandate penalty schedule for TY2024/2025 (was a stale
+// REUSE of the 2023 array). VERIFIED against MA DOR TIR 24-1 ($24/$48/$71/$109/
+// $127/$175) + TIR 25-1 ($25/$49/$73/$113/$132/$187), per-ADULT monthly × months.
+// FPL 2024 base $15,060 (size 1) / $20,440 (size 2); 2025 base $15,650.
+// ════════════════════════════════════════════════════════════════════════════
+header("M3 — MA mandate FPL-tier penalty TY2024/2025 (TIR 24-1 / 25-1)");
+{
+  // single, size 1, income $40k → FPL 40000/15060 = 265.6% → 250.1-300% tier.
+  const ma24 = calculateStateIndividualMandatePenalty({
+    state: "MA", filingStatus: "single", uninsuredAdults: 1, uninsuredChildren: 0,
+    householdIncome: 40000, filingThreshold: 0, monthsUninsured: 12, taxYear: 2024, householdSize: 1,
+  });
+  check("MA TY2024 single $40k 12mo → $71×12 = $852", ma24.penalty, 852.0, 0.01);
+  // 2025 same profile: FPL 40000/15650 = 255.6% → 250.1-300% → $73/mo.
+  const ma25 = calculateStateIndividualMandatePenalty({
+    state: "MA", filingStatus: "single", uninsuredAdults: 1, uninsuredChildren: 0,
+    householdIncome: 40000, filingThreshold: 0, monthsUninsured: 12, taxYear: 2025, householdSize: 1,
+  });
+  check("MA TY2025 single $40k 12mo → $73×12 = $876", ma25.penalty, 876.0, 0.01);
+  // MFJ, size 2, both uninsured, income $80k → FPL 80000/20440 = 391.4% → 300.1-400% → $109/adult.
+  const maMfj = calculateStateIndividualMandatePenalty({
+    state: "MA", filingStatus: "married_filing_jointly", uninsuredAdults: 2, uninsuredChildren: 0,
+    householdIncome: 80000, filingThreshold: 0, monthsUninsured: 12, taxYear: 2024, householdSize: 2,
+  });
+  check("MA TY2024 MFJ $80k 2 adults 12mo → $109×2×12 = $2,616", maMfj.penalty, 2616.0, 0.01);
+  // >500% FPL single (income $100k, size 1) → top Bronze tier $175 (2024) × 6 mo.
+  const maTop = calculateStateIndividualMandatePenalty({
+    state: "MA", filingStatus: "single", uninsuredAdults: 1, uninsuredChildren: 0,
+    householdIncome: 100000, filingThreshold: 0, monthsUninsured: 6, taxYear: 2024, householdSize: 1,
+  });
+  check("MA TY2024 >500% FPL single 6mo → $175×6 = $1,050", maTop.penalty, 1050.0, 0.01);
+  ok("MA 2025 > 2024 at same tier (premium growth)", ma25.penalty > ma24.penalty);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// S10 — WV Social Security phase-out (HB 4880, 2024). 100% exempt ≤$50k single /
+// ≤$100k joint federal AGI (all years). ABOVE the floor, WV subtracts 35% (2024)
+// / 65% (2025) / 100% (2026) of the federally-taxable SS. The engine exempted
+// 100% in every year (under-taxing high-income WV retirees). WV std ded $0;
+// single brackets 2.22/2.96/3.33/4.44/4.82% (identical across 2024-2026).
+// ════════════════════════════════════════════════════════════════════════════
+header("S10 — WV SS phase-out (HB 4880: 35/65/100% above the floor)");
+{
+  // Above floor (AGI $80k), SS $20k. 2024: exclude 35% = $7,000 → base $73,000.
+  //   222 + 444 + 499.50 + 888 + 13,000×4.82%(626.60) = $2,680.10
+  check("WV 2024 single $80k AGI, $20k SS (35% excl) → $2,680.10",
+    calculateStateTax(80000, "WV", "single", 2024, { taxableSocialSecurity: 20000 }), 2680.10, 0.05);
+  // 2025: exclude 65% = $13,000 → base $67,000. + 7,000×4.82%(337.40) = $2,390.90
+  check("WV 2025 single $80k AGI, $20k SS (65% excl) → $2,390.90",
+    calculateStateTax(80000, "WV", "single", 2025, { taxableSocialSecurity: 20000 }), 2390.90, 0.05);
+  // 2026: exclude 100% = $20,000 → base $60,000 → $2,053.50.
+  check("WV 2026 single $80k AGI, $20k SS (100% excl) → $2,053.50",
+    calculateStateTax(80000, "WV", "single", 2026, { taxableSocialSecurity: 20000 }), 2053.50, 0.05);
+  // Below floor (AGI $40k ≤ $50k), SS $15k → 100% exempt every year → base $25,000.
+  //   222 + 444 = $666.00
+  check("WV 2024 single $40k AGI (≤floor), $15k SS (100% excl) → $666.00",
+    calculateStateTax(40000, "WV", "single", 2024, { taxableSocialSecurity: 15000 }), 666.0, 0.05);
+  ok("WV above-floor 2024 tax > 2026 tax (less SS excluded earlier)",
+    calculateStateTax(80000, "WV", "single", 2024, { taxableSocialSecurity: 20000 }) >
+    calculateStateTax(80000, "WV", "single", 2026, { taxableSocialSecurity: 20000 }));
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// MD-08 — MD Anne Arundel + Frederick GRADUATED local income tax (CY2024+; MD
+// Comptroller local-rate table). Was a single flat rate. Local base = federal
+// AGI − MD std ded ($2,700 single / $5,450 MFJ). Brackets on MD taxable income;
+// single column also covers MFS/dependent, joint column covers MFJ/HoH/QSS.
+// ════════════════════════════════════════════════════════════════════════════
+header("MD-08 — Anne Arundel + Frederick graduated local income tax");
+{
+  const md = (locality: string, agi: number, status: string) =>
+    calculateMultiStateTax({
+      residentState: "MD", federalAgi: agi, filingStatus: status, taxYear: 2024,
+      perStateWages: [{ stateCode: "MD", wages: agi }], localityCode: locality, totalWages: agi,
+    }).localTax?.netLocalTax ?? 0;
+  // Anne Arundel single, AGI $102,700 → base $100,000: 2.70%×50k + 2.81%×50k.
+  check("AnneArundel single base $100k → 1,350 + 1,405 = $2,755", md("MD-ANNE_ARUNDEL", 102700, "single"), 2755.0, 0.05);
+  // Anne Arundel MFJ, AGI $105,450 → base $100,000: 2.70%×75k + 2.81%×25k.
+  check("AnneArundel MFJ base $100k → 2,025 + 702.50 = $2,727.50", md("MD-ANNE_ARUNDEL", 105450, "married_filing_jointly"), 2727.50, 0.05);
+  // Frederick single, AGI $202,700 → base $200,000: 2.25/2.75/2.96/3.20%.
+  check("Frederick single base $200k → 562.50+687.50+2,960+1,600 = $5,810", md("MD-FREDERICK", 202700, "single"), 5810.0, 0.05);
+  // Frederick MFJ, AGI $305,450 → base $300,000: 2.25/2.75/2.96/3.20% (joint widths).
+  check("Frederick MFJ base $300k → 562.50+2,062.50+4,440+1,600 = $8,665", md("MD-FREDERICK", 305450, "married_filing_jointly"), 8665.0, 0.05);
+  // Low-income Frederick single (base $20k, all in 2.25% band) → graduated < old flat 2.75%.
+  ok("Frederick low-income uses 2.25% band (< old 2.75% flat)", md("MD-FREDERICK", 22700, "single") < 20000 * 0.0275);
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────
