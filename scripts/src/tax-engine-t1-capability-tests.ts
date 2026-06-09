@@ -7,6 +7,7 @@
  *   pnpm --filter @workspace/scripts exec tsx src/tax-engine-t1-capability-tests.ts
  */
 import { computeTaxReturnPure, type TaxReturnInputs } from "../../artifacts/api-server/src/lib/taxReturnEngine";
+import { computeForm2210Annualized } from "../../artifacts/api-server/src/lib/form2210";
 
 const PASS: string[] = [];
 const FAIL: string[] = [];
@@ -120,6 +121,61 @@ header("SE edges — non-farm optional method (Sch SE Part II election)");
   // the extra ½-SE deduction ($941.97−$423.89)/2 = $259.04.
   check("AGI delta = the ½-SE deduction delta ($259.04)",
     computeTaxReturnPure(mk(false)).adjustedGrossIncome - computeTaxReturnPure(mk(true)).adjustedGrossIncome, 259.04, 1);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Digital assets — staking (ordinary, not SE; Rev. Rul. 2023-14) vs mining as a
+// trade/business (ordinary + SE tax; Notice 2014-21).
+// ════════════════════════════════════════════════════════════════════════════
+header("Digital assets — staking (ordinary) vs mining (SE)");
+{
+  const staking: TaxReturnInputs = {
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [], form1099s: [],
+    adjustments: [{ adjustmentType: "crypto_staking_income", amount: 10000, isApplied: true } as never],
+    taxYear: 2024,
+  };
+  const s = computeTaxReturnPure(staking);
+  check("staking $10k → AGI includes $10k", s.adjustedGrossIncome, 10000, 1);
+  check("staking → $0 SE tax (not a trade/business)", s.selfEmploymentTax, 0, 0.5);
+  // Mining as a business: $30k → SE tax 15.3% × (30,000 × 0.9235) = $4,238.87.
+  const mining: TaxReturnInputs = {
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [], form1099s: [],
+    adjustments: [{ adjustmentType: "crypto_mining_income", amount: 30000, isApplied: true } as never],
+    taxYear: 2024,
+  };
+  check("mining $30k → SE tax $4,238.87", computeTaxReturnPure(mining).selfEmploymentTax, 4238.87, 1);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Form 2210 Schedule AI — annualized-income installment method. tax($100k single
+// 2024) = $17,053. RAP = $10,000 → flat 25% = $2,500/quarter.
+// ════════════════════════════════════════════════════════════════════════════
+header("Form 2210 Schedule AI — annualized installment method");
+{
+  // Back-loaded: all $100k taxable earned in Q4. The annualized method lets the
+  // taxpayer owe $0 in Q1-Q3 and $10,000 (the full RAP) in Q4.
+  const back = computeForm2210Annualized({
+    cumulativeTaxableIncome: [0, 0, 0, 100000],
+    cumulativeTaxPaid: [0, 0, 0, 0],
+    filingStatus: "single", taxYear: 2024, requiredAnnualPayment: 10000,
+  });
+  check("back-loaded Q1 installment = $0", back.requiredInstallment[0], 0, 0.5);
+  check("back-loaded Q3 installment = $0", back.requiredInstallment[2], 0, 0.5);
+  check("back-loaded Q4 installment = $10,000 (full RAP)", back.requiredInstallment[3], 10000, 1);
+  ok("annualized method reduces the early installments", back.reducesEarlyInstallments === true);
+  check("back-loaded total required = $10,000", back.totalAnnualizedRequired, 10000, 1);
+  // Even income: each period annualizes to ~$100k → flat 25% = $2,500/quarter
+  // (the method gives the same as the regular method; it never raises it).
+  const even = computeForm2210Annualized({
+    cumulativeTaxableIncome: [25000, 41666.67, 66666.67, 100000],
+    cumulativeTaxPaid: [2500, 5000, 7500, 10000],
+    filingStatus: "single", taxYear: 2024, requiredAnnualPayment: 10000,
+  });
+  check("even-income Q1 installment = $2,500 (25%)", even.requiredInstallment[0], 2500, 1);
+  check("even-income Q4 installment = $2,500 (25%)", even.requiredInstallment[3], 2500, 1);
+  ok("even income: annualized does NOT reduce installments", even.reducesEarlyInstallments === false);
 }
 
 // ── summary ──

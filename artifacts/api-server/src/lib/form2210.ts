@@ -34,6 +34,7 @@ import PDFDocument from "pdfkit";
 import type { ComputedTaxReturn } from "./taxReturnEngine";
 import type { clientsTable } from "@workspace/db";
 import { SUPPORTED_TAX_YEARS, type TaxYear } from "./taxYears";
+import { calculateFederalTax } from "./taxCalculator";
 
 type Client = typeof clientsTable.$inferSelect;
 
@@ -237,6 +238,84 @@ function fmtCurrency(n: number | null): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+}
+
+// ── Form 2210 Schedule AI — Annualized Income Installment Method (§6654(d)(2)) ─
+// For taxpayers whose income was UNEVEN across the year (e.g. a year-end capital
+// gain or bonus), this method computes a SMALLER required installment for the
+// early periods by annualizing the income actually earned through each period.
+// It can only LOWER (or equal) the flat 25%-per-quarter required installment,
+// never raise it — so it's purely a penalty-reducer for back-loaded income.
+
+export interface Form2210AnnualizedInput {
+  /** Cumulative TAXABLE income earned through the end of each period (the four
+   *  Form 2210 periods cover 3, 5, 8, and 12 months). */
+  cumulativeTaxableIncome: [number, number, number, number];
+  /** Cumulative tax paid (withholding + estimates) by each period's due date. */
+  cumulativeTaxPaid: [number, number, number, number];
+  filingStatus: string;
+  taxYear: number;
+  /** The regular-method required annual payment (Form 2210 Part I line 9). */
+  requiredAnnualPayment: number;
+}
+
+export interface Form2210AnnualizedResult {
+  /** Annualization factors (4, 2.4, 1.5, 1). */
+  factors: [number, number, number, number];
+  /** Annualized taxable income per period (cumulative income × factor). */
+  annualizedTaxableIncome: number[];
+  /** Annualized total tax per period (full-year tax on the annualized income). */
+  annualizedTax: number[];
+  /** Required installment per period under Schedule AI. */
+  requiredInstallment: number[];
+  /** Underpayment per period = max(0, cumulative required − cumulative paid). */
+  periodUnderpayment: number[];
+  /** Total required under the annualized method (≤ the regular RAP). */
+  totalAnnualizedRequired: number;
+  /** TRUE when ≥1 early-period installment is lower than the flat 25% (i.e. the
+   *  method helps a back-loaded-income taxpayer). */
+  reducesEarlyInstallments: boolean;
+}
+
+export function computeForm2210Annualized(input: Form2210AnnualizedInput): Form2210AnnualizedResult {
+  const factors: [number, number, number, number] = [4, 2.4, 1.5, 1];
+  const applicablePct = [0.225, 0.45, 0.675, 0.9]; // 22.5/45/67.5/90%
+  const rap = Math.max(0, input.requiredAnnualPayment);
+  const regularPerPeriod = 0.25 * rap;
+  const annualizedTaxableIncome: number[] = [];
+  const annualizedTax: number[] = [];
+  const requiredInstallment: number[] = [];
+  const periodUnderpayment: number[] = [];
+  let cumRequired = 0;
+  let cumRegular = 0;
+  let reducesEarly = false;
+  for (let i = 0; i < 4; i++) {
+    const ti = Math.max(0, input.cumulativeTaxableIncome[i]) * factors[i];
+    const tax = calculateFederalTax(ti, input.filingStatus, input.taxYear);
+    annualizedTaxableIncome.push(ti);
+    annualizedTax.push(tax);
+    const annualizedCumRequired = applicablePct[i] * tax;
+    const annualizedInstallment = Math.max(0, annualizedCumRequired - cumRequired);
+    cumRegular += regularPerPeriod;
+    // Schedule AI: the required installment is the SMALLER of the annualized
+    // installment or the "applicable amount" = 25% of RAP, recapturing any prior
+    // period's shortfall (cumRegular − cumRequired).
+    const applicableAmount = Math.max(0, cumRegular - cumRequired);
+    const inst = Math.min(annualizedInstallment, applicableAmount);
+    if (inst < regularPerPeriod - 0.005) reducesEarly = true;
+    requiredInstallment.push(inst);
+    cumRequired += inst;
+    periodUnderpayment.push(Math.max(0, cumRequired - Math.max(0, input.cumulativeTaxPaid[i])));
+  }
+  return {
+    factors,
+    annualizedTaxableIncome,
+    annualizedTax,
+    requiredInstallment,
+    periodUnderpayment,
+    totalAnnualizedRequired: cumRequired,
+    reducesEarlyInstallments: reducesEarly,
+  };
 }
 
 const WAIVED_REASON_LABELS: Record<NonNullable<Form2210WaivedReason>, string> = {

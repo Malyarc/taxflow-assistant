@@ -1381,6 +1381,8 @@ export const AdjustmentAdjustmentType = {
   statutory_employee_income: "statutory_employee_income",
   church_employee_income: "church_employee_income",
   se_optional_method_nonfarm: "se_optional_method_nonfarm",
+  crypto_staking_income: "crypto_staking_income",
+  crypto_mining_income: "crypto_mining_income",
 } as const;
 
 export interface Adjustment {
@@ -1539,6 +1541,8 @@ export const CreateAdjustmentBodyAdjustmentType = {
   statutory_employee_income: "statutory_employee_income",
   church_employee_income: "church_employee_income",
   se_optional_method_nonfarm: "se_optional_method_nonfarm",
+  crypto_staking_income: "crypto_staking_income",
+  crypto_mining_income: "crypto_mining_income",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -1693,6 +1697,8 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   statutory_employee_income: "statutory_employee_income",
   church_employee_income: "church_employee_income",
   se_optional_method_nonfarm: "se_optional_method_nonfarm",
+  crypto_staking_income: "crypto_staking_income",
+  crypto_mining_income: "crypto_mining_income",
 } as const;
 
 export interface UpdateAdjustmentBody {

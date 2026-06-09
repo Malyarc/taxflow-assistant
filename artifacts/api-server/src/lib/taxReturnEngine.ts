@@ -1990,7 +1990,15 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // SE: the underlying income is already in AGI via K-1 Box 1 →
   // Schedule E Part II (k1ActiveOrdinary). Adding K-1 SE to netSeIncome
   // would double-count, so we keep a separate SE-tax base.
-  const grossSeIncome = seIncomeFromAdj + form1099Summary.seIncome;
+  // T1.2 — digital-asset ordinary income (IRS Notice 2014-21 + Rev. Rul. 2023-14):
+  //  • Staking rewards → ordinary income at FMV when dominion & control is gained
+  //    (NOT self-employment — passive staking is not a trade/business).
+  //  • Mining rewards as a trade/business → ordinary income SUBJECT to SE tax
+  //    (hobby mining: the CPA uses additional_income instead). Both establish basis
+  //    = the FMV included. Their later disposition rides the capital-transaction path.
+  const cryptoStakingIncome = Math.max(0, sumByType("crypto_staking_income"));
+  const cryptoMiningIncome = Math.max(0, sumByType("crypto_mining_income"));
+  const grossSeIncome = seIncomeFromAdj + form1099Summary.seIncome + cryptoMiningIncome;
   // P2 (2026-06-06h) — Schedule C asset-level depreciation (Form 4562 → Sch C
   // line 13): §179 (with the §179(b)(3) business-income limit + carryforward) +
   // §168(k) bonus + personal-property MACRS, computed from the per-asset register
@@ -2587,6 +2595,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     scheduleCNetSigned +   // §461(l) fix: signed Sch C net (loss flows to AGI; §461(l) addback below caps it)
     statutoryEmployeeIncome +  // T1.2 — statutory-employee Sch C net (ordinary income, no SE tax)
     churchEmployeeIncome +     // T1.2 — church-employee wages (ordinary income + SE tax via seTaxBase)
+    cryptoStakingIncome +      // T1.2 — crypto staking rewards (ordinary, not SE; Rev. Rul. 2023-14)
     form1099Summary.interestIncome +
     form1099Summary.ordinaryDividends +
     form1099Summary.retirementIncome +
