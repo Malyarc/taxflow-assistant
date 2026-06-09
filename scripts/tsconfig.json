@@ -108,6 +108,7 @@
     "src/tax-engine-audit-2026-06-08-tests.ts",
     "src/tax-engine-sch1-surface-integration-tests.ts",
     "src/tax-engine-section280f-tests.ts",
+    "src/tax-engine-t1-capability-tests.ts",
     "src/tax-engine-property-harness.ts"
   ]
 }

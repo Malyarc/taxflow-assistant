@@ -380,6 +380,20 @@ export interface RentalPropertyFact {
    * estate sourcing rules require this (situs-of-property rule).
    */
   sourceState?: string | null;
+  /**
+   * T1.2 §469(g) — the property was FULLY DISPOSED in a taxable transaction to an
+   * unrelated party this year. Its current-year net AND its accumulated suspended
+   * passive losses (`suspendedLossCarryforward`) are then RELEASED — freely
+   * deductible against ordinary income, NOT subject to the $25k §469(i) cap.
+   */
+  fullyDisposedThisYear?: boolean | null;
+  /**
+   * T1.2 — this property's accumulated suspended passive loss carried in from
+   * prior years (a positive number). Released in full when fullyDisposedThisYear;
+   * otherwise informational (the active-property path uses the aggregate
+   * `schedule_e_passive_loss_carryforward` adjustment).
+   */
+  suspendedLossCarryforward?: Numish;
 }
 
 /**
@@ -1061,6 +1075,9 @@ export interface ComputedTaxReturn {
   form8582: Form8582Breakdown | null;
   /** Schedule E passive loss suspended to next year */
   scheduleEPassiveLossSuspended: number;
+  /** T1.2 §469(g) — suspended passive loss RELEASED this year by a fully-taxable
+   *  disposition of a rental property (freely deductible, no $25k cap). 0 when none. */
+  section469gReleasedLoss: number;
   /** Schedule K-1 (partnership + S-corp) aggregate summary */
   scheduleK1: ScheduleK1Summary;
   /** Local-jurisdiction income tax (NYC PIT + flat localities + NYC UBT). Zero when none. */
@@ -1810,16 +1827,18 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // P2-1 — per-property net (income − expenses − MACRS) for the Form 8582
   // per-activity worksheet. Empty when no per-property rows (legacy aggregate).
   const perPropertyNets: Array<{ address: string; netIncome: number }> = [];
+  // T1.2 §469(g) — a fully-disposed property's current-year net + its accumulated
+  // suspended passive loss are RELEASED (freely deductible, no $25k cap) and held
+  // OUT of the active-property §469 path.
+  let disposedRentalNet = 0;         // disposed properties' current-year net (±)
+  let disposedSuspendedReleased = 0; // their accumulated suspended carryforward (≥0)
   if (propertiesForYear.length > 0) {
-    scheduleERentalIncomeAdj = propertiesForYear.reduce((s, p) => s + toNum(p.rentalIncome), 0);
-    scheduleERentalExpensesAdj = propertiesForYear.reduce((s, p) => s + toNum(p.totalExpenses), 0);
-    scheduleEMacrsDepreciationAdj = propertiesForYear.reduce((s, p, idx) => {
+    const propMacrs = (p: RentalPropertyFact): number => {
       const basis = toNum(p.basis);
       const placedYear = p.placedInServiceYear ?? 0;
       const placedMonth = p.placedInServiceMonth ?? 0;
-      let dep = 0;
       if (basis > 0 && placedYear > 0 && placedMonth >= 1 && placedMonth <= 12) {
-        dep = calculateMacrsDepreciation({
+        return calculateMacrsDepreciation({
           basis,
           propertyType: p.propertyType === "commercial" ? "commercial" : "residential",
           monthPlacedInService: placedMonth,
@@ -1827,17 +1846,41 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
           taxYear,
         }).currentYearDepreciation;
       }
-      perPropertyNets.push({
-        address: p.address?.trim() || `Property ${idx + 1}`,
-        netIncome: toNum(p.rentalIncome) - toNum(p.totalExpenses) - dep,
-      });
-      return s + dep;
-    }, 0);
+      return 0;
+    };
+    let inc = 0;
+    let exp = 0;
+    let depTotal = 0;
+    propertiesForYear.forEach((p, idx) => {
+      const pDep = propMacrs(p);
+      const pNet = toNum(p.rentalIncome) - toNum(p.totalExpenses) - pDep;
+      if (p.fullyDisposedThisYear) {
+        disposedRentalNet += pNet;
+        disposedSuspendedReleased += Math.max(0, toNum(p.suspendedLossCarryforward));
+      } else {
+        inc += toNum(p.rentalIncome);
+        exp += toNum(p.totalExpenses);
+        depTotal += pDep;
+        perPropertyNets.push({
+          address: p.address?.trim() || `Property ${idx + 1}`,
+          netIncome: pNet,
+        });
+      }
+    });
+    scheduleERentalIncomeAdj = inc;
+    scheduleERentalExpensesAdj = exp;
+    scheduleEMacrsDepreciationAdj = depTotal;
   } else {
     scheduleERentalIncomeAdj = sumByType("schedule_e_rental_income");
     scheduleERentalExpensesAdj = sumByType("schedule_e_rental_expenses");
     scheduleEMacrsDepreciationAdj = sumByType("schedule_e_macrs_depreciation");
   }
+  // §469(g) net effect on AGI = disposed current-year net (±) − released suspended
+  // loss (≥0). Both flow fully to ordinary income with NO §469 limitation. (Minor
+  // documented sub-gap: this release is added AFTER the active-property §469 MAGI,
+  // so it doesn't lower that phase-out base.)
+  const section469gReleasedLoss = disposedSuspendedReleased;
+  const section469gAgiEffect = disposedRentalNet - disposedSuspendedReleased;
   const scheduleEPassiveLossCarryforwardAdj = sumByType("schedule_e_passive_loss_carryforward");
 
   // ── Phase B+: Schedule K-1 (partnership 1065 + S-corp 1120-S) ──
@@ -1998,9 +2041,41 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // & SE-taxable separately; this adjustment carries only the income-tax-exempt
   // housing piece (the common gap where it otherwise escapes SE tax entirely).
   const clergyHousingAllowance = Math.max(0, sumByType("clergy_housing_allowance"));
-  // SE-tax base = Schedule C net + K-1 partnership Box 14A SE earnings + clergy
-  // housing allowance (K-1 SE loss nets against positive amounts; floor at 0).
-  const seTaxBase = Math.max(0, netSeIncome + k1SelfEmploymentEarnings + clergyHousingAllowance);
+  // T1.2 SE edges:
+  //  • Statutory employee (W-2 Box 13): income + expenses go on Schedule C, but
+  //    the net is NOT in the SE base (FICA was already withheld on the W-2). It
+  //    IS ordinary income (AGI), QBI-eligible, and earned income.
+  //  • Church employee income (Sch SE Line 5a): wages of a church/§3121(w)-electing
+  //    org that opted OUT of employer FICA → the employee owes SE tax on it. It is
+  //    ordinary income (AGI) + earned income, NOT QBI. ($108.28-to-$400 special
+  //    floor is a documented sub-gap — the engine uses the $400 Sch SE floor.)
+  const statutoryEmployeeIncome = Math.max(0, sumByType("statutory_employee_income"));
+  const churchEmployeeIncome = Math.max(0, sumByType("church_employee_income"));
+  // T1.2 — SE NON-FARM OPTIONAL METHOD (Sch SE Part II). A taxpayer with low/
+  // negative actual net SE may ELECT to report ⅔ of gross nonfarm SE income (up
+  // to the year cap) as net SE earnings, to earn SS credits / qualify for EITC/
+  // ACTC. Election adjustment `se_optional_method_nonfarm` carries the GROSS
+  // nonfarm SE income. Eligible only if actual net SE < the year threshold AND
+  // < 72.189% of gross. Raises the SE base + earned income (NOT AGI — the actual
+  // Sch C net still flows to AGI). 2024/2025 figures per Sch SE instructions.
+  const seOptionalNonfarmGross = Math.max(0, sumByType("se_optional_method_nonfarm"));
+  const SE_OPTIONAL_METHOD: Record<number, { netThreshold: number; maxReport: number }> = {
+    2024: { netThreshold: 7493, maxReport: 6920 },
+    2025: { netThreshold: 7840, maxReport: 7240 },
+    2026: { netThreshold: 7840, maxReport: 7240 }, // 2026 not yet published — hold 2025.
+  };
+  let seOptionalReported = 0;
+  if (seOptionalNonfarmGross > 0) {
+    const cfg = SE_OPTIONAL_METHOD[taxYear] ?? SE_OPTIONAL_METHOD[2024];
+    if (netSeIncome < cfg.netThreshold && netSeIncome < 0.72189 * seOptionalNonfarmGross) {
+      seOptionalReported = Math.min((2 / 3) * seOptionalNonfarmGross, cfg.maxReport);
+    }
+  }
+  // The optional method REPLACES actual net SE in the SE base + earned income.
+  const seBaseScheduleC = seOptionalReported > 0 ? seOptionalReported : netSeIncome;
+  // SE-tax base = Schedule C net (or optional-method reported) + K-1 partnership
+  // Box 14A SE earnings + clergy housing allowance + church-employee income.
+  const seTaxBase = Math.max(0, seBaseScheduleC + k1SelfEmploymentEarnings + clergyHousingAllowance + churchEmployeeIncome);
 
   // Sch SE Part I Line 9: each spouse files their own Sch SE; each subtracts
   // only their own W-2 SS wages from the SS wage base. For single/HoH/MFS/QSS
@@ -2050,7 +2125,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     );
     const taxpayerNetSe = Math.max(0, grossSeTaxpayer - taxpayerScheduleCExpenses);
     const spouseNetSe = Math.max(0, grossSeSpouse);
-    const seTaxBaseTaxpayer = Math.max(0, taxpayerNetSe + k1SelfEmploymentEarnings + clergyHousingAllowance);
+    const seTaxBaseTaxpayer = Math.max(0, taxpayerNetSe + k1SelfEmploymentEarnings + clergyHousingAllowance + churchEmployeeIncome);
     const seTaxBaseSpouse = Math.max(0, spouseNetSe);
 
     const seTaxpayer = calculateSelfEmploymentTax(seTaxBaseTaxpayer, taxYear, w2SsByTaxpayer);
@@ -2510,6 +2585,8 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     additionalIncomeAdjustments +
     investmentIncomeFromAdj +
     scheduleCNetSigned +   // §461(l) fix: signed Sch C net (loss flows to AGI; §461(l) addback below caps it)
+    statutoryEmployeeIncome +  // T1.2 — statutory-employee Sch C net (ordinary income, no SE tax)
+    churchEmployeeIncome +     // T1.2 — church-employee wages (ordinary income + SE tax via seTaxBase)
     form1099Summary.interestIncome +
     form1099Summary.ordinaryDividends +
     form1099Summary.retirementIncome +
@@ -2564,7 +2641,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
       ? computeForm8582Breakdown({ properties: perPropertyNets, palResult: passiveLossAllowance })
       : null;
 
-  const ordinaryAdditionalIncome = ordinaryAdditionalIncomeBeforeRental + rentalNetAppliedToAgi;
+  const ordinaryAdditionalIncome = ordinaryAdditionalIncomeBeforeRental + rentalNetAppliedToAgi + section469gAgiEffect;
 
   const totalIncomeProvisional = totalWages + ordinaryAdditionalIncome;
 
@@ -2696,7 +2773,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // deduction. earnedIncome = wages + net SE profit. Used for BOTH the
   // itemize-vs-standard decision here AND runTaxCalculation below (same value).
   const claimedAsDependent = Boolean(client.claimedAsDependent || client.isKiddieTaxFiler);
-  const earnedIncomeForStdDed = totalWages + netSeIncome;
+  const earnedIncomeForStdDed = totalWages + seBaseScheduleC + statutoryEmployeeIncome + churchEmployeeIncome;
   const stdDed = claimedAsDependent
     ? getDependentStandardDeductionBase(client.filingStatus, taxYear, earnedIncomeForStdDed)
     : getFederalStandardDeduction(client.filingStatus, taxYear);
@@ -2760,7 +2837,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     // ½-SE must NOT reduce Sch-C QBI. Exclude it (no-op when there's no clergy
     // allowance — clergyHousingAllowance/seTaxBase = 0 → identical to before).
     const clergyShareOfSe = Math.min(1, seTaxBase > 0 ? clergyHousingAllowance / seTaxBase : 0);
-    const schCQbi = Math.max(0, netSeIncome - se.deductibleHalf * (1 - clergyShareOfSe));
+    // T1.2 — statutory-employee Sch C net is QBI-eligible (full amount; it has
+    // no ½-SE deduction to subtract). Church-employee wages are NOT QBI.
+    const schCQbi = Math.max(0, netSeIncome - se.deductibleHalf * (1 - clergyShareOfSe)) + statutoryEmployeeIncome;
     qbiIncomeEffective = schCQbi;
     // Sub-gap (independent review 2026-06-08): when K-1 partnership SE earnings
     // (k1SelfEmploymentEarnings) coexist, the FULL ½-SE still over-reduces Sch-C
@@ -4059,6 +4138,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     passiveActivityLoss: passiveLossAllowance,
     form8582,
     scheduleEPassiveLossSuspended: passiveLossAllowance?.suspendedToNextYear ?? 0,
+    section469gReleasedLoss,
     localTaxLiability: localTaxLiabilityWithUbt,
     localTaxJurisdiction: multiState.localTax ? multiState.localTax.jurisdiction : (nycUbt > 0 ? "NYC-UBT" : null),
     nycUbt,

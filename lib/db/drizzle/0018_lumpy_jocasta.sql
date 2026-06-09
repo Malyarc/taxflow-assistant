@@ -1,0 +1,2 @@
+ALTER TABLE "rental_properties" ADD COLUMN "fully_disposed_this_year" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "rental_properties" ADD COLUMN "suspended_loss_carryforward" numeric(14, 2);

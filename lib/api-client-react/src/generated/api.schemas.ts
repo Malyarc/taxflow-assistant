@@ -1378,6 +1378,9 @@ export const AdjustmentAdjustmentType = {
   household_employee_cash_wages: "household_employee_cash_wages",
   household_employee_futa_wages: "household_employee_futa_wages",
   clergy_housing_allowance: "clergy_housing_allowance",
+  statutory_employee_income: "statutory_employee_income",
+  church_employee_income: "church_employee_income",
+  se_optional_method_nonfarm: "se_optional_method_nonfarm",
 } as const;
 
 export interface Adjustment {
@@ -1533,6 +1536,9 @@ export const CreateAdjustmentBodyAdjustmentType = {
   household_employee_cash_wages: "household_employee_cash_wages",
   household_employee_futa_wages: "household_employee_futa_wages",
   clergy_housing_allowance: "clergy_housing_allowance",
+  statutory_employee_income: "statutory_employee_income",
+  church_employee_income: "church_employee_income",
+  se_optional_method_nonfarm: "se_optional_method_nonfarm",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -1684,6 +1690,9 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   household_employee_cash_wages: "household_employee_cash_wages",
   household_employee_futa_wages: "household_employee_futa_wages",
   clergy_housing_allowance: "clergy_housing_allowance",
+  statutory_employee_income: "statutory_employee_income",
+  church_employee_income: "church_employee_income",
+  se_optional_method_nonfarm: "se_optional_method_nonfarm",
 } as const;
 
 export interface UpdateAdjustmentBody {
@@ -1727,6 +1736,9 @@ export interface RentalProperty {
   isActiveParticipant: boolean;
   rentalIncome: number;
   totalExpenses: number;
+  fullyDisposedThisYear?: boolean;
+  /** @nullable */
+  suspendedLossCarryforward?: number | null;
   /** @nullable */
   notes?: string | null;
   createdAt: string;
@@ -1758,6 +1770,9 @@ export interface CreateRentalPropertyBody {
   isActiveParticipant?: boolean;
   rentalIncome?: number;
   totalExpenses?: number;
+  fullyDisposedThisYear?: boolean;
+  /** @nullable */
+  suspendedLossCarryforward?: number | null;
   /** @nullable */
   notes?: string | null;
 }
@@ -1787,6 +1802,9 @@ export interface UpdateRentalPropertyBody {
   isActiveParticipant?: boolean;
   rentalIncome?: number;
   totalExpenses?: number;
+  fullyDisposedThisYear?: boolean;
+  /** @nullable */
+  suspendedLossCarryforward?: number | null;
   /** @nullable */
   notes?: string | null;
 }

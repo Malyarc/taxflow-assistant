@@ -56,6 +56,12 @@ export const rentalPropertiesTable = pgTable("rental_properties", {
   rentalIncome: numeric("rental_income", { precision: 14, scale: 2 }).notNull().default("0"),
   /** Total expenses excluding depreciation (engine computes depreciation). */
   totalExpenses: numeric("total_expenses", { precision: 14, scale: 2 }).notNull().default("0"),
+  /** T1.2 §469(g) — property fully disposed (taxable sale to an unrelated party)
+   *  this year → its current-year net + suspendedLossCarryforward are RELEASED. */
+  fullyDisposedThisYear: boolean("fully_disposed_this_year").notNull().default(false),
+  /** T1.2 — accumulated suspended passive loss from prior years (released on full
+   *  disposition). Positive number. */
+  suspendedLossCarryforward: numeric("suspended_loss_carryforward", { precision: 14, scale: 2 }),
   /** Optional CPA notes. */
   notes: text("notes"),
 
