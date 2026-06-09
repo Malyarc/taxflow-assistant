@@ -3653,7 +3653,10 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   let nycEitcRate = 0;
   let nycEitcRefundableExcess = 0;
   let localTaxLiabilityAfterNycEitc = localTaxLiability;
-  if (multiState.localTax && eitc.appliedCredit > 0) {
+  // L1b (audit 2026-06-08) — the NYC EIC reduces NYC local tax ONLY. Gate on the
+  // NYC locality; without this the credit was wrongly subtracted from EVERY
+  // locality's tax (MD counties, PA EIT, OH SDIT, …) for any EITC claimant.
+  if (multiState.localTax && eitc.appliedCredit > 0 && (client.localityCode ?? "").toUpperCase() === "NYC") {
     nycEitcRate = nycEitcRateForAgi(calc.adjustedGrossIncome);
     nycEitcCredit = eitc.appliedCredit * nycEitcRate;
     if (nycEitcCredit > localTaxLiability) {

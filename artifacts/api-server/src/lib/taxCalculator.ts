@@ -1990,13 +1990,24 @@ export interface NycLocalTaxCalculation {
  *  Engine approximation of NY DTF's published bands. NYAGI ≈ federal AGI
  *  (NY-specific subtractions not modeled, sub-gap documented). Bands
  *  calibrated to the accuracy-audit reference case: $20k single → 20%. */
-export function nycEitcRateForAgi(federalAgi: number): number {
-  if (federalAgi <= 10000) return 0.30;
-  if (federalAgi <= 15000) return 0.25;
-  if (federalAgi <= 25000) return 0.20;
-  if (federalAgi <= 35000) return 0.15;
-  if (federalAgi <= 50000) return 0.10;
-  return 0.05;
+export function nycEitcRateForAgi(nyagi: number): number {
+  // NY IT-215 (2024) NYC EIC rate table (Worksheet C): flat plateaus separated
+  // by LINEAR phase-down transition bands. In a transition band the rate =
+  // plateau − (NYAGI − band_floor) × 0.00002, rounded to 4 decimals. Max 30%,
+  // floor 10% — the old 5% floor was REPEALED effective TY2022. (Audit L1 — the
+  // prior bands 10k/15k/25k/35k/50k + a 5% floor were wrong.) NOTE: ideally keyed
+  // to NYAGI; the caller passes federal AGI (a documented sub-gap — NYAGI ≈ FAGI
+  // for most NYC EIC claimants).
+  const round4 = (x: number) => Math.round(x * 10000) / 10000;
+  if (nyagi < 5000) return 0.30;
+  if (nyagi < 7500) return round4(0.30 - (nyagi - 4999) * 0.00002);
+  if (nyagi < 15000) return 0.25;
+  if (nyagi < 17500) return round4(0.25 - (nyagi - 14999) * 0.00002);
+  if (nyagi < 20000) return 0.20;
+  if (nyagi < 22500) return round4(0.20 - (nyagi - 19999) * 0.00002);
+  if (nyagi < 40000) return 0.15;
+  if (nyagi < 42500) return round4(0.15 - (nyagi - 39999) * 0.00002);
+  return 0.10;
 }
 
 export function calculateNycLocalTax(params: {

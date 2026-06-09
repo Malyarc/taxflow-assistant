@@ -10,7 +10,7 @@ import {
   summarize1099s,
   type TaxReturnInputs,
 } from "../../artifacts/api-server/src/lib/taxReturnEngine";
-import { calculateStateTax, saversCreditRateFor, getDependentStandardDeductionBase, calculateAmt } from "../../artifacts/api-server/src/lib/taxCalculator";
+import { calculateStateTax, saversCreditRateFor, getDependentStandardDeductionBase, calculateAmt, nycEitcRateForAgi } from "../../artifacts/api-server/src/lib/taxCalculator";
 import { validateW2 } from "@workspace/validation";
 import { mapInfoReturnToInputs } from "../../artifacts/api-server/src/lib/documentExtractor";
 import { calculateStateIndividualMandatePenalty } from "../../artifacts/api-server/src/lib/stateMandate";
@@ -425,6 +425,22 @@ header("State batch 2 — KY/MN/MA/AZ + DC/CA mandate year-indexing");
   check("M1 DC 2025 single flat $795", calculateStateIndividualMandatePenalty({ state: "DC", filingStatus: "single", uninsuredAdults: 1, uninsuredChildren: 0, householdIncome: 25000, filingThreshold: 14600, monthsUninsured: 12, taxYear: 2025 }).penalty, 795, 0.01);
   // M2 — CA mandate 2025 $950/adult (was $900 in 2024).
   check("M2 CA 2025 single flat $950 (low income)", calculateStateIndividualMandatePenalty({ state: "CA", filingStatus: "single", uninsuredAdults: 1, uninsuredChildren: 0, householdIncome: 20000, filingThreshold: 21561, monthsUninsured: 12, taxYear: 2025 }).penalty, 950, 0.01);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// L1 — NYC EIC rate table (IT-215 Worksheet C): flat plateaus + linear transition
+// bands, max 30%, floor 10% (the old 5% floor was repealed TY2022). The prior
+// engine bands (10k/15k/25k/35k/50k + 5% floor) were wrong.
+// ════════════════════════════════════════════════════════════════════════════
+header("L1 — NYC EIC rate table (plateaus + interpolation, 10% floor)");
+{
+  check("$4,000 → 30%", nycEitcRateForAgi(4000), 0.30, 0.0001);
+  check("$10,000 → 25%", nycEitcRateForAgi(10000), 0.25, 0.0001);
+  check("$18,000 → 20%", nycEitcRateForAgi(18000), 0.20, 0.0001);
+  check("$30,000 → 15%", nycEitcRateForAgi(30000), 0.15, 0.0001);
+  check("$55,000 → 10% (was wrongly 5%)", nycEitcRateForAgi(55000), 0.10, 0.0001);
+  // Transition band $5,000-$7,500: 0.30 − (6250−4999)×0.00002 = 0.275.
+  check("$6,250 transition → 27.5%", nycEitcRateForAgi(6250), 0.275, 0.0001);
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────

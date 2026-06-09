@@ -665,12 +665,10 @@ section("Scenario 17 — MFJ MD-Montgomery, $40k AGI, 2 kids, EITC + ACTC + MD p
   approx("S17", "Federal liability (pre-credit) ≈ $1,080", r.federalTaxLiability, 1080, 50);
   approx("S17", "MD state tax ≈ $1,589", r.stateTaxLiability, 1589, 100);
   approx("S17", "MD state EITC piggyback ≈ $2,150 (45%)", r.stateEitc.credit, 2150, 200);
-  // ENGINE NOTE: MD-Montgomery local tax base computation uses MD-taxable
-  // (state-bracket base) AFTER some path-specific deductions; engine returns
-  // $627.78 for this filer. The previous hand-calc of $1,106 (3.20% × $34,550)
-  // assumed federalAgi − mdStdDed only — engine applies further state-base
-  // adjustments. Accept engine value as authoritative.
-  approx("S17", "MD-Montgomery local tax ≈ $628 (engine state-base path)", r.localTaxLiability, 628, 50);
+  // MD-Montgomery local tax = 3.20% × MD-taxable ≈ $1,106. (Audit L1b: the prior
+  // $627.78 was WRONG — the NYC EIC was being subtracted from EVERY locality's
+  // tax, including MD; that reduction is now correctly gated to NYC only.)
+  approx("S17", "MD-Montgomery local tax ≈ $1,106 (3.20% × MD-taxable; no NYC EIC)", r.localTaxLiability, 1106, 5);
   exact("S17", "Locality = MD-MONTGOMERY", r.localTaxJurisdiction, "MD-MONTGOMERY");
 }
 
