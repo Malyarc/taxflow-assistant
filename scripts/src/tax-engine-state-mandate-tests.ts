@@ -65,6 +65,7 @@ function checkStr(label: string, actual: string, expected: string): void {
 {
   const r = calculateStateIndividualMandatePenalty({ state: "CA", filingStatus: "single", uninsuredAdults: 1, uninsuredChildren: 0, householdIncome: 1000000, filingThreshold: 14600, monthsUninsured: 12, taxYear: 2024 });
   check("M5 CA bronze cap binds", r.penalty, 4176);
+  checkStr("M5 method reports bronze_cap (not the unbinding percentage)", r.method, "bronze_cap");
 }
 
 // M6 — NJ single, low income → flat $695. pct=(30,000−10,000)·2.5%=$500 < $695.

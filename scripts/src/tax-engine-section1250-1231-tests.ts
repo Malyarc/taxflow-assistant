@@ -102,15 +102,31 @@ function wsTax(p: {
   check("W5 three-bucket preferential piece", r.preferentialRateTax, 49000);
 }
 
-// W6 — 0%-bracket PRESERVATION: §1250 must NOT steal the 0% bracket from the
-//   regular gain. ordinary $10k + regular LTCG $30k + §1250 $20k.
-//   regular 30k stacks 10k→40k entirely under the 0% breakpoint (47,025) → $0.
-//   §1250 stacks 40k→60k at ordinary: ordTax(60k)−ordTax(40k)=8,253−4,568=3,685.
-//   min(0.25·20k=5,000, 3,685)=3,685. total=1,000(ord 10k)+0+3,685=4,685.
+// W6 — 0%-bracket PRESERVATION + FLAT 25% on §1250. ordinary $10k + regular
+//   LTCG $30k + §1250 $20k. The regular 30k stacks 10k→40k entirely under the
+//   0% breakpoint (47,025) → $0 (the §1250 does NOT steal the regular gain's
+//   0% bracket). The §1250 is taxed at a FLAT 25% (NOT the 12/22% bracket it
+//   physically occupies): 0.25·20k = 5,000. The global floor ord(60k)−ord(10k)
+//   = 8,253−1,000 = 7,253 is SLACK, so it does not reduce the flat result.
+//   total = 1,000(ord 10k) + 0 + 5,000 = 6,000.
 {
   const r = wsTax({ ord: 10000, lt: 50000, u1250: 20000 });
-  check("W6 0%-bracket preserved for regular gain; §1250 at ordinary", r.totalFederalTax, 4685);
-  check("W6 preferential piece = §1250 only", r.preferentialRateTax, 3685);
+  check("W6 0%-bracket preserved; §1250 at FLAT 25% (not its 12/22% bracket)", r.totalFederalTax, 6000);
+  check("W6 preferential piece = flat 25% §1250", r.preferentialRateTax, 5000);
+}
+
+// W8 — REGRESSION (independent review 2026-06-08): the per-layer-min bug. A
+//   regular gain pushes the §1250 layer into a sub-25% ordinary bracket while
+//   the global floor is SLACK. ordinary $20k + regular LTCG $20k + §1250 $40k.
+//   The OLD per-layer min wrongly taxed §1250 at its 12/22% blend ($8,085 →
+//   total $10,253); the IRS worksheet (IRC §1(h)(1)(E)) taxes it FLAT 25%.
+//   ord(20k)=2,168. tax015: reg 20k stacks 20k→40k @0% = 0. §1250 flat = 0.25·40k
+//   = 10,000. global floor ord(80k)−ord(20k)=12,653−2,168=10,485 (slack).
+//   total = 2,168 + 10,000 = 12,168.
+{
+  const r = wsTax({ ord: 20000, lt: 60000, u1250: 40000 });
+  check("W8 flat 25% (not per-layer marginal) on mid-income §1250", r.totalFederalTax, 12168);
+  check("W8 §1250 flat 25% piece", r.preferentialRateTax, 10000);
 }
 
 // W7 — Backward-compat: no special buckets → plain QDCGT worksheet.
@@ -391,6 +407,26 @@ function adj(type: string, amount: number): TaxReturnInputs["adjustments"][numbe
   check("E8 no §1250 bucket", r.unrecapturedSection1250Gain, 0);
   check("E8 no 28% bucket", r.collectibles28RateGain, 0);
   check("E8 form4797 null when absent", r.form4797 === null ? 0 : 1, 0);
+}
+
+// E9 — REGRESSION (independent review 2026-06-08): loss-absorption ordering. A
+//   capital loss erodes net LTCG below §1250+28%; the loss must clip the 28%
+//   bucket FIRST (preserve §1250) per the IRS 28%-Rate-Gain + Unrecaptured-§1250
+//   worksheets (Sched D lines 18/19) — taxpayer-favorable since 28% > 25%.
+//   W-2 $700k + LT collectible $50k + LT §1250 $50k + ST loss $30k → net LTCG
+//   $70k. §1250 preserved $50k; 28% clipped to the $20k remainder.
+//   capGainsTax = 25%·50k + 28%·20k = 12,500 + 5,600 = 18,100. (The pre-fix
+//   engine preserved 28% / clipped §1250 → 14,000+5,000 = 19,000, a $900 OVER-charge.)
+{
+  const stLoss = { taxYear: 2024, description: "st loss", formBox: "A", proceeds: "0", costBasis: "30000", gainClass: null, unrecaptured1250Amount: null } as unknown as CapTxn;
+  const r = computeTaxReturnPure(baseInputs({ capitalTransactions: [
+    ltTxn({ proceeds: 50000, basis: 0, gainClass: "collectible" }),
+    ltTxn({ proceeds: 50000, basis: 0, gainClass: "section1250", u1250: 50000 }),
+    stLoss,
+  ] }));
+  check("E9 §1250 preserved (loss clips 28% first)", r.unrecapturedSection1250Gain, 50000);
+  check("E9 28% bucket clipped to remainder", r.collectibles28RateGain, 20000);
+  check("E9 capGainsTax = 25%·50k + 28%·20k", r.capitalGainsTax, 18100);
 }
 
 console.log(`\nT1.1 §1250 (25%) / Collectibles (28%) / §1231 Form 4797 tests:`);

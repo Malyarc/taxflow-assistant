@@ -129,6 +129,19 @@ function adj(type: string, amount: number): TaxReturnInputs["adjustments"][numbe
   check("E2 base (no clergy) has no SE tax", base.selfEmploymentTax, 0);
 }
 
+// E3 — clergy housing must NOT over-reduce Schedule-C QBI (independent review
+//   2026-06-08; §1.199A-3(b)(1)(vi)). W-2 $100k + Sch C $50k + clergy $20k.
+//   SE on $70k base = 70,000·0.9235·0.153 = $9,890.69; ½-SE = $4,945.34.
+//   Only the Sch-C share of ½-SE reduces QBI: clergy share = 20k/70k = 0.2857,
+//   so schC QBI = 50,000 − 4,945.34·(1−0.2857) = $46,467.61. Taxable income
+//   $130,454.66 (< the $191,950 §199A threshold → no wage limit). QBI deduction
+//   = 20%·46,467.61 = $9,293.52. (Pre-fix subtracted the FULL ½-SE → $9,010.93,
+//   a $282.59 understatement.)
+{
+  const r = computeTaxReturnPure(baseInputs({ adjustments: [adj("self_employment_income", 50000), adj("clergy_housing_allowance", 20000)] }, 100000));
+  check("E3 clergy does not over-reduce Sch-C QBI", r.qbiDeduction, 9293.52, 1);
+}
+
 console.log(`\nT1.2 — Schedule H + clergy housing tests:`);
 console.log(`  ✓ Passed: ${PASS.length}`);
 console.log(`  ✗ Failed: ${FAIL.length}`);

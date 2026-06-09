@@ -133,7 +133,7 @@ function householdFplPercent(income: number, householdSize: number, taxYear: num
 export interface StateMandateResult {
   penalty: number;
   state: string;
-  method: "flat" | "percentage" | "fpl_tier" | "none";
+  method: "flat" | "percentage" | "bronze_cap" | "fpl_tier" | "none";
   flatAmount: number;
   percentageAmount: number;
   bronzeCapAmount: number;
@@ -190,7 +190,9 @@ export function calculateStateIndividualMandatePenalty(p: StateMandateParams): S
   return {
     penalty,
     state,
-    method: pctAnnual > flatAnnual ? "percentage" : "flat",
+    // Report what actually DROVE the number: the bronze cap when it binds,
+    // else the greater of the flat / percentage method.
+    method: cappedAnnual < greaterOf ? "bronze_cap" : pctAnnual > flatAnnual ? "percentage" : "flat",
     flatAmount: round2(flatAnnual * (months / 12)),
     percentageAmount: round2(pctAnnual * (months / 12)),
     bronzeCapAmount: round2(bronzeAnnual * (months / 12)),

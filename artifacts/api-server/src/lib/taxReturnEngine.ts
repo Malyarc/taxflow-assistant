@@ -2143,6 +2143,12 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     const rentalNetPrePal = aggregateRentalIncome - aggregateRentalExpenses;
     const rentalLossPrePal = Math.max(0, -rentalNetPrePal);
     const k1ActiveLoss = Math.max(0, -k1ActiveOrdinary);
+    // Sub-gap (independent review 2026-06-08): a net §1231 loss from Form 4797
+    // (`form4797.ordinaryComponent` < 0) is also an excess-business-loss
+    // component under §461(l)(3)(B), but form4797 is computed below (line ~2170)
+    // so it is NOT in this auto-aggregation. Direction is conservative (under-
+    // addback → never over-taxes). A CPA supplies the figure via the explicit
+    // `section_461l_excess_loss_addback` override (which always wins above).
     const aggregateBizLoss = schCLoss + rentalLossPrePal + k1ActiveLoss;
     const threshold =
       section461lThreshold[client.filingStatus] ?? section461lThreshold.single;
@@ -2159,6 +2165,12 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // Schedule D netting as LTCG (carrying any unrecaptured §1250 25% character);
   // depreciation recapture + a net §1231 loss + the §1231(c) 5-year lookback
   // recharacterization flow to ordinary income below. Inert when no rows.
+  // Sub-gap (independent review 2026-06-08): the net §1231 gain flows into the
+  // §1411 NIIT base unconditionally (via netLTCG → ltcgPreferential). A §1231
+  // gain on property used in a NON-passive trade/business is excluded from NII
+  // (§1411(c)(1)); the engine has no active/passive flag on a 4797 disposition,
+  // so it over-includes (conservative — over-states NIIT, never under-taxes),
+  // consistent with the engine's existing NIIT posture (§1031/§121/QSBS gains).
   const form4797 = computeForm4797(
     (inputs.form4797 ?? []).filter((s) => s.taxYear === taxYear),
     Math.max(0, sumByType("section_1231_lookback_loss")),
@@ -2657,7 +2669,13 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     // Default Sch C contribution: net SE (incl. K-1 partnership 14A passes
     // through separately via k1SelfEmploymentEarnings — that piece is
     // NOT QBI-eligible at the Sch C level; it's QBI via the K-1 row).
-    const schCQbi = Math.max(0, netSeIncome - se.deductibleHalf);
+    // §1.199A-3(b)(1)(vi): only the ½-SE deduction ATTRIBUTABLE to the qualified
+    // trade/business reduces its QBI. A clergy housing allowance is in the SE
+    // base but is NOT Sch-C QBI income, so the clergy-attributable share of
+    // ½-SE must NOT reduce Sch-C QBI. Exclude it (no-op when there's no clergy
+    // allowance — clergyHousingAllowance/seTaxBase = 0 → identical to before).
+    const clergyShareOfSe = seTaxBase > 0 ? clergyHousingAllowance / seTaxBase : 0;
+    const schCQbi = Math.max(0, netSeIncome - se.deductibleHalf * (1 - clergyShareOfSe));
     qbiIncomeEffective = schCQbi;
   }
   // K-1 default: when section199aQbi unset for active K-1, use Box 1.
@@ -2869,9 +2887,11 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // the Form 4797 output (T1.1b — `form4797.unrecaptured1250Gain`). Each is a
   // SUBSET of the net long-term gain, so bound the total to the post-election
   // net LTCG (never letting §1250/28% consume the QDIV portion, which is always
-  // 0/15/20). 28% takes priority over 25% within the available LTCG (matches the
-  // worksheet's stacking, and is the taxpayer-correct ordering — the engine then
-  // re-bounds by `prefTaxable` if a deduction eroded the preferential base).
+  // 0/15/20). When a capital loss / §163(d)(4)(B) election erodes net LTCG below
+  // the sum of the two buckets, the loss offsets the 28% gain FIRST and only the
+  // excess reduces the §1250 pool (IRS 28%-Rate-Gain + Unrecaptured-§1250
+  // worksheets, Sched D lines 18/19 — taxpayer-favorable since 28% > 25%). So
+  // §1250 takes first claim on the available LTCG; collectibles get the remainder.
   const rawUnrecaptured1250 =
     capTxnUnrecaptured1250 +
     Math.max(0, sumByType("unrecaptured_section_1250_gain")) +
@@ -2879,10 +2899,10 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const rawCollectibles28 =
     capTxnCollectibles28 + Math.max(0, sumByType("collectibles_28_rate_gain"));
   const ltAvailableForSpecial = Math.max(0, ltcgPreferentialAfterElection);
-  const collectibles28Bounded = Math.min(rawCollectibles28, ltAvailableForSpecial);
-  const unrecaptured1250Bounded = Math.min(
-    rawUnrecaptured1250,
-    ltAvailableForSpecial - collectibles28Bounded,
+  const unrecaptured1250Bounded = Math.min(rawUnrecaptured1250, ltAvailableForSpecial);
+  const collectibles28Bounded = Math.min(
+    rawCollectibles28,
+    ltAvailableForSpecial - unrecaptured1250Bounded,
   );
   const capGains = calculateFederalTaxWithCapitalGains({
     ordinaryTaxableIncome: ordinaryPortionOfTaxable,

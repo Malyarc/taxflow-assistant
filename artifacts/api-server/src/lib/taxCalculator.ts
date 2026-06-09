@@ -5955,8 +5955,13 @@ export function calculateFederalTaxWithCapitalGains(params: {
   // deduction-driven reduction (when prefTaxable < total LTCG+QDIV). When both
   // special buckets are 0 this collapses to exactly the prior single-bucket
   // (Qualified Dividends & Cap Gain Tax Worksheet) path — zero regression.
-  const g28 = Math.max(0, Math.min(params.collectibles28Gain ?? 0, prefTaxable));
-  const g25 = Math.max(0, Math.min(params.unrecaptured1250Gain ?? 0, prefTaxable - g28));
+  // §1250 (25%) gets first claim on the preferential amount; collectibles (28%)
+  // get the remainder — so any deduction-driven erosion of the preferential base
+  // clips the 28% bucket before the §1250 bucket (matches the IRS 28%-Rate-Gain
+  // worksheet, which offsets reductions against the 28% gain first; taxpayer-
+  // favorable since 28% > 25%). The 0/15/20 residual still absorbs erosion first.
+  const g25 = Math.max(0, Math.min(params.unrecaptured1250Gain ?? 0, prefTaxable));
+  const g28 = Math.max(0, Math.min(params.collectibles28Gain ?? 0, prefTaxable - g25));
   const gNormal = Math.max(0, prefTaxable - g25 - g28);
 
   // Ordinary tax on an arbitrary stacking height (FEIE-aware): `base` is stacked
@@ -5967,18 +5972,16 @@ export function calculateFederalTaxWithCapitalGains(params: {
       : calculateFederalTax(Math.max(0, base), status, year);
 
   const tax015 = calculateLtcgQdivStackedTax(ltcgStackBase, gNormal, status, year);
-  let tax25 = 0;
-  let tax28 = 0;
-  if (g25 > 0) {
-    const below = ordinaryWithStcg + gNormal; // ordinary + 0/15/20 gain below the §1250 layer
-    const incrementalOrdinary = ordTaxAtHeight(below + g25) - ordTaxAtHeight(below);
-    tax25 = Math.min(0.25 * g25, Math.max(0, incrementalOrdinary));
-  }
-  if (g28 > 0) {
-    const below = ordinaryWithStcg + gNormal + g25; // ordinary + 0/15/20 + §1250 below the 28% layer
-    const incrementalOrdinary = ordTaxAtHeight(below + g28) - ordTaxAtHeight(below);
-    tax28 = Math.min(0.28 * g28, Math.max(0, incrementalOrdinary));
-  }
+  // The IRS Schedule D Tax Worksheet taxes these two layers at a FLAT 25% / 28%
+  // (the worksheet's "multiply by 0.25 / 0.28" lines; IRC §1(h)(1)(E)/(F) read
+  // "25 percent of …" / "28 percent of …"). The statutory "maximum rate" is NOT
+  // a per-bracket cap — it is enforced SOLELY by the final-line global floor
+  // below (total preferential tax ≤ ordinary tax on all taxable income). An
+  // earlier per-layer min(rate, marginal-ordinary) under-taxed a §1250/28% layer
+  // that a 0/15/20% gain pushed into a sub-25%/28% ordinary bracket while the
+  // global floor was slack — caught in independent review 2026-06-08.
+  const tax25 = 0.25 * g25;
+  const tax28 = 0.28 * g28;
   const hasSpecialBuckets = g25 > 0 || g28 > 0;
   // Final safety floor (Schedule D Tax Worksheet last line): the preferential
   // computation may never exceed ordinary-rate tax on the full taxable income.
