@@ -81,6 +81,14 @@ async function run() {
     check("Unrecaptured §1250 gain persisted = $40,000", Number(r.unrecapturedSection1250Gain), 40000, 0.5);
     check("28%-rate collectibles gain persisted = $10,000", Number(r.collectibles28RateGain), 10000, 0.5);
     check("CA individual-mandate penalty persisted (FTB threshold) = $4,054.55", Number(r.stateIndividualMandatePenalty), 4054.55, 0.5);
+
+    // PDF2 — the summary PDF must render (no crash) with the new disclosure rows
+    // (Schedule H / §1250 / 28% / mandate). Asserts a valid, non-trivial PDF.
+    const pdfRes = await fetch(`${BASE}/clients/${cid}/tax-return/pdf?taxYear=2024`);
+    const buf = Buffer.from(await pdfRes.arrayBuffer());
+    check("PDF endpoint returns 200", pdfRes.status, 200, 0);
+    check("PDF is a valid non-trivial document (> 2KB)", buf.length > 2048 ? 1 : 0, 1, 0);
+    check("PDF starts with the %PDF- magic header", buf.subarray(0, 5).toString() === "%PDF-" ? 1 : 0, 1, 0);
   });
 
   // Negative control: a plain single FL W-2-only return → all four are 0 (no

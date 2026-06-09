@@ -138,6 +138,12 @@ export function buildTaxReturnPdf(client: Client, ret: ComputedTaxReturn): Promi
       if (ret.capitalLossDeducted > 0) sdRows.push(["Capital loss deducted (Sched D L21)", `(${fmt(ret.capitalLossDeducted)})`]);
       if (ret.capitalLossCarryforwardShort > 0) sdRows.push(["Short-term carryforward to next year", fmt(ret.capitalLossCarryforwardShort)]);
       if (ret.capitalLossCarryforwardLong > 0) sdRows.push(["Long-term carryforward to next year", fmt(ret.capitalLossCarryforwardLong)]);
+      // PDF2 — §1(h) special-rate gain disclosures (subsets of the net LTCG, NOT
+      // additional amounts): unrecaptured §1250 (25% max) + 28% collectibles/§1202.
+      const unrecap1250 = (ret as { unrecapturedSection1250Gain?: number }).unrecapturedSection1250Gain ?? 0;
+      const gain28 = (ret as { collectibles28RateGain?: number }).collectibles28RateGain ?? 0;
+      if (unrecap1250 > 0) sdRows.push(["  └─ Unrecaptured §1250 gain @ 25% max (Sched D L19)", fmt(unrecap1250)]);
+      if (gain28 > 0) sdRows.push(["  └─ 28%-rate gain: collectibles/§1202 (Sched D L18)", fmt(gain28)]);
       section("Schedule D (Capital Gains/Losses)", sdRows);
     }
 
@@ -151,13 +157,23 @@ export function buildTaxReturnPdf(client: Client, ret: ComputedTaxReturn): Promi
       section("Schedule E (Rental Real Estate)", seRows);
     }
 
+    // PDF2 — the "other taxes" bundled into federalTaxLiability (Sched 2):
+    // §72(t) early-withdrawal additional tax, §4973 HSA excise, and Schedule H
+    // household-employment tax. Net them OUT of the displayed regular-tax line
+    // (they were silently inflating it) and disclose each as its own row below.
+    const earlyWithdrawalPenalty = (ret as { earlyWithdrawalPenalty?: number }).earlyWithdrawalPenalty ?? 0;
+    const hsaExcessExcise = (ret as { hsaExcessExcise?: number }).hsaExcessExcise ?? 0;
+    const scheduleHTax = (ret as { scheduleH?: { total?: number } }).scheduleH?.total ?? 0;
     const fedRows: Array<[string, string]> = [
-      ["Federal income tax (regular, 1040 L16)", fmt(ret.federalTaxLiability - (ret.amtTax ?? 0) - (ret.niitTax ?? 0) - (ret.selfEmploymentTax ?? 0) - (ret.additionalMedicareTax ?? 0))],
+      ["Federal income tax (regular, 1040 L16)", fmt(ret.federalTaxLiability - (ret.amtTax ?? 0) - (ret.niitTax ?? 0) - (ret.selfEmploymentTax ?? 0) - (ret.additionalMedicareTax ?? 0) - earlyWithdrawalPenalty - hsaExcessExcise - scheduleHTax)],
     ];
     if (ret.selfEmploymentTax > 0) fedRows.push(["Self-employment tax (Sched SE)", fmt(ret.selfEmploymentTax)]);
     if (ret.niitTax > 0) fedRows.push(["Net investment income tax (Form 8960)", fmt(ret.niitTax)]);
     if (ret.additionalMedicareTax > 0) fedRows.push(["Additional Medicare tax (Form 8959)", fmt(ret.additionalMedicareTax)]);
     if (ret.amtTax > 0) fedRows.push(["Alternative minimum tax (Form 6251)", fmt(ret.amtTax)]);
+    if (scheduleHTax > 0) fedRows.push(["Schedule H household employment tax (Sched 2 L9)", fmt(scheduleHTax)]);
+    if (earlyWithdrawalPenalty > 0) fedRows.push(["Early-withdrawal additional tax §72(t) (Sched 2 L8)", fmt(earlyWithdrawalPenalty)]);
+    if (hsaExcessExcise > 0) fedRows.push(["HSA excess-contribution excise §4973 (Form 5329)", fmt(hsaExcessExcise)]);
     fedRows.push(["Total federal tax liability (1040 L24)", fmt(ret.federalTaxLiability)]);
     // Credits
     if (ret.childTaxCredit.appliedCredit > 0) {
@@ -198,6 +214,11 @@ export function buildTaxReturnPdf(client: Client, ret: ComputedTaxReturn): Promi
       }
     }
     stateRows.push(["Total state tax", fmt(ret.stateTaxLiability)]);
+    // PDF2 — state individual-mandate (shared-responsibility) penalty (CA/NJ/RI/
+    // DC/MA). Not part of stateTaxLiability; it adds to the balance due (reduces
+    // the refund), so disclose it so the refund line reconciles.
+    const mandatePenalty = (ret as { stateIndividualMandatePenalty?: number }).stateIndividualMandatePenalty ?? 0;
+    if (mandatePenalty > 0) stateRows.push(["Individual mandate penalty (CA/NJ/RI/DC/MA)", fmt(mandatePenalty)]);
     stateRows.push(["State tax withheld", fmt(ret.stateTaxWithheld)]);
     stateRows.push([ret.stateRefundOrOwed >= 0 ? "State refund" : "State balance due", fmt(Math.abs(ret.stateRefundOrOwed))]);
     section("State", stateRows);
