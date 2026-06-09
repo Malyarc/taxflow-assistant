@@ -14,12 +14,10 @@ Project-level notes for Claude sessions. Things that change every sprint live in
 
 **The live box is a synthetic-data demo:** keep `API_AUTH_TOKEN` / `PII_ENCRYPTION_KEY` UNSET and the §7216 consent gate OFF there (set `REQUIRE_7216_CONSENT=false` if `NODE_ENV=production`) so the open demo flow stays working — those P0 controls activate only on a real-PII deployment.
 
-## Machine & memory safety (shared 24 GB Mac)
+## Machine notes (24 GB Mac)
 
-This dev machine is a 24 GB Mac that idles near its RAM ceiling. On 2026-06-05 a leaky Claude Code CLI + a Next/Turbopack dev server (in the Haven repo) + large multi-agent runs stacked to ~140 GB "application memory" and force-shut-down the machine. Full rules live in `~/.claude/CLAUDE.md`; what bites here:
-- **Restart Claude sessions every ~30–60 min.** The Claude Code CLI has an upstream, unfixed memory leak (regression since v2.1.4; anthropics/claude-code #17563, #56693) that grows over a session — only a restart clears it. `~/.zshenv` caps node heap at 8 GB so a runaway self-crashes instead of taking the Mac down.
-- **No large multi-agent / Workflow fan-outs on this machine.** A 47-agent run in this repo on 2026-06-05 was a top contributor to the overheat. Solo, or small targeted Agent delegation only.
-- **One dev server at a time.** This app's Vite dev server is light, but don't stack it on Haven's 4-app stack + the iOS Simulator.
+**Ultracode and large multi-agent / parallel-session runs are fully supported — use them whenever asked.** The 2026-06-05 force-shutdown was a transient, understood event (a leak regression in one specific Claude Code version, since changed, stacked with a Turbopack dev server's unbounded dev memory), NOT a limit of this machine or of multi-agent work — Ultracode ran fine across simultaneous sessions the day before. Full notes in `~/.claude/CLAUDE.md`.
+- For Next.js dev servers use `next dev --webpack` (not `--turbopack`). This app's own Vite dev server is light.
 
 ## What this is
 
