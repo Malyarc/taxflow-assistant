@@ -1326,6 +1326,9 @@ export const AdjustmentAdjustmentType = {
   collectibles_28_rate_gain: "collectibles_28_rate_gain",
   section_1231_lookback_loss: "section_1231_lookback_loss",
   months_without_minimum_coverage: "months_without_minimum_coverage",
+  household_employee_cash_wages: "household_employee_cash_wages",
+  household_employee_futa_wages: "household_employee_futa_wages",
+  clergy_housing_allowance: "clergy_housing_allowance",
 } as const;
 
 export interface Adjustment {
@@ -1473,6 +1476,9 @@ export const CreateAdjustmentBodyAdjustmentType = {
   collectibles_28_rate_gain: "collectibles_28_rate_gain",
   section_1231_lookback_loss: "section_1231_lookback_loss",
   months_without_minimum_coverage: "months_without_minimum_coverage",
+  household_employee_cash_wages: "household_employee_cash_wages",
+  household_employee_futa_wages: "household_employee_futa_wages",
+  clergy_housing_allowance: "clergy_housing_allowance",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -1616,6 +1622,9 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   collectibles_28_rate_gain: "collectibles_28_rate_gain",
   section_1231_lookback_loss: "section_1231_lookback_loss",
   months_without_minimum_coverage: "months_without_minimum_coverage",
+  household_employee_cash_wages: "household_employee_cash_wages",
+  household_employee_futa_wages: "household_employee_futa_wages",
+  clergy_housing_allowance: "clergy_housing_allowance",
 } as const;
 
 export interface UpdateAdjustmentBody {

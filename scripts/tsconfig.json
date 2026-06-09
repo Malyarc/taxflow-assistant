@@ -102,6 +102,7 @@
     "src/tax-engine-schedule-c-asset-depreciation-tests.ts",
     "src/tax-engine-schedule-c-assets-integration-tests.ts",
     "src/tax-engine-section1250-1231-tests.ts",
-    "src/tax-engine-state-mandate-tests.ts"
+    "src/tax-engine-state-mandate-tests.ts",
+    "src/tax-engine-scheduleh-clergy-tests.ts"
   ]
 }

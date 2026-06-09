@@ -104,6 +104,7 @@ import {
   STATES_WITH_INDIVIDUAL_MANDATE,
   type StateMandateResult,
 } from "./stateMandate";
+import { calculateScheduleH, type ScheduleHResult } from "./scheduleH";
 
 // ── Loose numeric coercion ──────────────────────────────────────────────────
 // Drizzle numeric() columns are strings; Haven might pass plain numbers.
@@ -796,6 +797,9 @@ export interface ComputedTaxReturn {
   /** Additional Medicare Tax (0.9% Form 8959, IRC §3101(b)(2)/§1401(b)(2))
    *  on Medicare wages + SE net above filing-status threshold */
   additionalMedicareTax: number;
+  /** T1.2 — Schedule H household employment tax (FICA + FUTA on a nanny /
+   *  household employee's cash wages). Schedule 2 line 9. 0 when none. */
+  scheduleH: ScheduleHResult;
   /** AMT delta — additional tax beyond regular tax. Often $0. */
   amtTax: number;
   /** Refundable portion of CTC (Additional Child Tax Credit) */
@@ -1933,9 +1937,15 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // arithmetically identical to the prior `grossSeIncome - scheduleCExpenses`.
   const scheduleCNetSigned = grossSeIncome - Math.max(0, scheduleCExpensesInput) - scheduleCDepreciationAdj;
   const netSeIncome = Math.max(0, scheduleCNetSigned);
-  // SE-tax base = Schedule C net + K-1 partnership Box 14A SE earnings
-  // (K-1 SE loss nets against positive amounts; floor at 0).
-  const seTaxBase = Math.max(0, netSeIncome + k1SelfEmploymentEarnings);
+  // T1.2 — Clergy housing/parsonage allowance (IRC §107 + §1402(a)(8)). EXCLUDED
+  // from income tax (never enters AGI) but INCLUDED in the SE-tax base — a minister
+  // is self-employed for SE-tax purposes. The minister's W-2 box-1 wages are taxed
+  // & SE-taxable separately; this adjustment carries only the income-tax-exempt
+  // housing piece (the common gap where it otherwise escapes SE tax entirely).
+  const clergyHousingAllowance = Math.max(0, sumByType("clergy_housing_allowance"));
+  // SE-tax base = Schedule C net + K-1 partnership Box 14A SE earnings + clergy
+  // housing allowance (K-1 SE loss nets against positive amounts; floor at 0).
+  const seTaxBase = Math.max(0, netSeIncome + k1SelfEmploymentEarnings + clergyHousingAllowance);
 
   // Sch SE Part I Line 9: each spouse files their own Sch SE; each subtracts
   // only their own W-2 SS wages from the SS wage base. For single/HoH/MFS/QSS
@@ -1979,7 +1989,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     );
     const taxpayerNetSe = Math.max(0, grossSeTaxpayer - taxpayerScheduleCExpenses);
     const spouseNetSe = Math.max(0, grossSeSpouse);
-    const seTaxBaseTaxpayer = Math.max(0, taxpayerNetSe + k1SelfEmploymentEarnings);
+    const seTaxBaseTaxpayer = Math.max(0, taxpayerNetSe + k1SelfEmploymentEarnings + clergyHousingAllowance);
     const seTaxBaseSpouse = Math.max(0, spouseNetSe);
 
     const seTaxpayer = calculateSelfEmploymentTax(seTaxBaseTaxpayer, taxYear, w2SsByTaxpayer);
@@ -3257,6 +3267,16 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     filingStatus: client.filingStatus,
   });
 
+  // T1.2 — Schedule H household employment tax (FICA + FUTA on nanny/household
+  // employee cash wages). Driven by the `household_employee_cash_wages`
+  // adjustment (+ optional `household_employee_futa_wages` override). Schedule 2
+  // line 9 — an employment tax, NOT offset by non-refundable income-tax credits.
+  const scheduleH: ScheduleHResult = calculateScheduleH({
+    cashWages: sumByType("household_employee_cash_wages"),
+    taxYear,
+    futaWagesOverride: sumByType("household_employee_futa_wages") || undefined,
+  });
+
   const totalFederalLiability =
     regularFederalTax + amt.amtTax + niit.niitTax + se.seTaxTotal + additionalMedicare.additionalMedicareTax +
     // E5 — IRC §72(t) early-withdrawal additional tax (Sched 2 Line 8).
@@ -3264,7 +3284,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     form1099Summary.earlyWithdrawalPenalty +
     // E4 — IRC §4973(g) 6% excise on HSA contributions over the annual cap.
     // Reported on Form 5329 Part VII. Not offset by non-refundable credits.
-    retirement.hsaExcessExcise;
+    retirement.hsaExcessExcise +
+    // T1.2 — Schedule H household employment tax (Sched 2 line 9).
+    scheduleH.total;
 
   // ── Step 7: Non-refundable credits in IRS Sched 3 order ──
   const incomeTaxOnly = regularFederalTax + amt.amtTax;
@@ -3745,6 +3767,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     manualCreditsApplied: creditAdjustments,
     childTaxCredit: ctc,
     selfEmploymentTax: se.seTaxTotal,
+    scheduleH,
     niitTax: niit.niitTax,
     additionalMedicareTax: additionalMedicare.additionalMedicareTax,
     amtTax: amt.amtTax,
