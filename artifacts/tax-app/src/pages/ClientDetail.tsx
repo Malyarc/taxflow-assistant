@@ -85,7 +85,9 @@ const FILING_STATUS_LABELS: Record<string, string> = {
 };
 
 function fmt(n: number | null | undefined) {
-  if (n == null) return "—";
+  // FE4 (audit 2026-06-08) — guard against NaN/Infinity (e.g. a caller passing
+  // Number(undefined) on a partially-computed return) rendering as "$NaN".
+  if (n == null || !Number.isFinite(n)) return "—";
   return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 }
 
@@ -2829,6 +2831,45 @@ function AdjustmentsTab({ clientId }: { clientId: number }) {
   }
 
   const TYPE_LABELS: Record<string, string> = {
+    // FE2 (audit 2026-06-08) — the 36 adjustment types previously missing a
+    // label (incl. all the T1.1 types) showed the raw enum key in the dropdown +
+    // badges. Added below.
+    unrecaptured_section_1250_gain: "Unrecaptured §1250 gain (25% rate)",
+    collectibles_28_rate_gain: "Collectibles / §1202 gain (28% rate)",
+    section_1231_lookback_loss: "§1231(c) 5-year lookback loss",
+    months_without_minimum_coverage: "Months without minimum health coverage",
+    household_employee_cash_wages: "Household employee cash wages (Schedule H)",
+    household_employee_futa_wages: "Household employee FUTA wages (Schedule H)",
+    clergy_housing_allowance: "Clergy housing allowance (SE-taxed, income-tax-exempt)",
+    amt_credit_carryforward: "AMT credit carryforward (Form 8801)",
+    charitable_carryforward_cash: "Charitable cash carryforward (prior year)",
+    bonus_depreciation_basis: "Bonus depreciation basis (§168(k))",
+    section_179_expense_election: "§179 expense election",
+    hsa_employer_contribution: "HSA employer contribution",
+    nondeductible_ira_contribution: "Nondeductible IRA contribution (Form 8606 basis)",
+    roth_conversion_amount: "Roth conversion amount",
+    roth_conversion_basis: "Roth conversion basis",
+    roth_conversion_basis_within_5yr: "Roth conversion basis (within 5-year window)",
+    roth_ira_distribution: "Roth IRA distribution",
+    traditional_ira_distribution: "Traditional IRA distribution",
+    mega_backdoor_roth_after_tax_contribution: "Mega-backdoor Roth after-tax contribution",
+    nua_lump_sum_employer_stock: "NUA — lump-sum employer stock",
+    augusta_rule_rent: "Augusta Rule rent (§280A(g))",
+    foreign_source_taxable_income: "Foreign-source taxable income (Form 1116)",
+    college_tuition_qualified: "Qualified college tuition (NY credit)",
+    k12_education_expenses: "K-12 education expenses (IL credit)",
+    annual_rent_paid: "Annual rent paid (renter's credit)",
+    ca_renter_months: "CA renter — months rented",
+    ga_disabled_home_purchase_cost: "GA disabled-access home purchase cost",
+    ma_assessed_home_value: "MA assessed home value (circuit breaker)",
+    ma_lead_paint_removal_cost: "MA lead-paint removal cost",
+    ma_water_sewer_half: "MA water/sewer charges (½)",
+    mi_home_heating_cost: "MI home-heating cost",
+    mi_household_resources: "MI household resources",
+    pa_eligibility_income: "PA eligibility income (Schedule SP)",
+    oh_sdit_traditional_base: "OH SDIT — traditional base",
+    part_year_use_w2_source: "Part-year: allocate W-2 by source state",
+    part_year_use_full_source_allocation: "Part-year: full per-source allocation",
     deduction: "Deduction (above-the-line)",
     credit: "Credit (non-refundable)",
     additional_income: "Additional Income",

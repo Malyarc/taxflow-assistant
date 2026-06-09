@@ -253,18 +253,39 @@ export async function buildIrsForm1040Pdf(options: BuildIrsForm1040Options): Pro
   // `nonRefundablePortion`; refundable ACTC lands separately on Line 28.
   safeSet(form, F1040_2024_FIELDS.line19, fmt(ret.childTaxCredit?.nonRefundablePortion ?? 0));
 
+  // Audit 2026-06-08 PDF1 — Lines 20/21/22 were never written, and Line 24 used
+  // the PRE-nonrefundable-credit federalTaxLiability (overstating it by the
+  // credits). Line 20 = Schedule 3 non-refundable credits (everything EXCEPT the
+  // CTC, which is Line 19); Line 21 = 19+20; Line 22 = 18−21.
+  const line18Val = Math.max(0, regularFederalTax + (ret.amtTax ?? 0));
+  const ctcNonRef = ret.childTaxCredit?.nonRefundablePortion ?? 0;
+  const sch3NonRef = Math.max(0, (ret.totalNonRefundableApplied ?? 0) - ctcNonRef);
+  safeSet(form, F1040_2024_FIELDS.line20, fmt(sch3NonRef));
+  safeSet(form, F1040_2024_FIELDS.line21, fmt(ctcNonRef + sch3NonRef));
+  safeSet(form, F1040_2024_FIELDS.line22, fmt(Math.max(0, line18Val - (ctcNonRef + sch3NonRef))));
+
   // Line 23: other taxes (SE + NIIT + Add'l Medicare) — Schedule 2 line 21.
   // Add'l Medicare flows from Form 8959 Line 18 → Sch 2 Line 11 → Line 21.
   safeSet(form, F1040_2024_FIELDS.line23, fmt(
     (ret.selfEmploymentTax ?? 0) + (ret.niitTax ?? 0) + (ret.additionalMedicareTax ?? 0)));
-  safeSet(form, F1040_2024_FIELDS.line24, fmt(ret.federalTaxLiability ?? 0));
+  // Line 24 (total tax) = Line 22 (income tax AFTER non-refundable credits) +
+  // Line 23 (other taxes). federalTaxLiability bundles the other taxes and is
+  // PRE-credit, so total tax = federalTaxLiability − totalNonRefundableApplied.
+  safeSet(form, F1040_2024_FIELDS.line24, fmt(Math.max(0, (ret.federalTaxLiability ?? 0) - (ret.totalNonRefundableApplied ?? 0))));
 
   // Payments
   safeSet(form, F1040_2024_FIELDS.line25a, fmt(ret.federalTaxWithheld ?? 0));
   safeSet(form, F1040_2024_FIELDS.line25d, fmt(ret.federalTaxWithheld ?? 0));
   safeSet(form, F1040_2024_FIELDS.line27, fmt(ret.eitc?.appliedCredit ?? 0));
   safeSet(form, F1040_2024_FIELDS.line28, fmt(ret.additionalChildTaxCredit ?? 0));
-  safeSet(form, F1040_2024_FIELDS.line33, fmt(ret.federalTaxWithheld ?? 0));
+  // Line 33 (total payments) = withholding + the refundable credits (EITC, ACTC,
+  // AOC refundable 40%, net PTC) — was withholding ONLY, so the PDF didn't foot.
+  const refundableCredits =
+    (ret.eitc?.appliedCredit ?? 0) +
+    (ret.additionalChildTaxCredit ?? 0) +
+    (ret.educationCredits?.aocRefundable ?? 0) +
+    Math.max(0, ret.premiumTaxCredit?.netPtc ?? 0);
+  safeSet(form, F1040_2024_FIELDS.line33, fmt((ret.federalTaxWithheld ?? 0) + refundableCredits));
 
   // Refund vs. owed
   const refundOrOwed = ret.federalRefundOrOwed ?? 0;

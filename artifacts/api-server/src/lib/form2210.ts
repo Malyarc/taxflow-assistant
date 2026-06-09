@@ -147,7 +147,11 @@ export function computeForm2210(args: { ret: ComputedTaxReturn; input?: Form2210
     ret.additionalChildTaxCredit +
     ret.educationCredits.aocRefundable +
     ret.eitc.appliedCredit +
-    Math.max(0, ret.premiumTaxCredit.netPtc);
+    Math.max(0, ret.premiumTaxCredit.netPtc) +
+    // PDF3 (audit 2026-06-08) — the OBBBA refundable portion of the §23 adoption
+    // credit (TY2025+) is a payment-like credit and reduces the Line-4 required-
+    // annual-payment base; was omitted, overstating the §6654 penalty target.
+    Math.max(0, ret.adoptionCredit?.refundablePortion ?? 0);
   const currentYearTax = Math.max(
     0,
     round(ret.federalTaxLiability - ret.totalNonRefundableApplied - refundableCredits),
