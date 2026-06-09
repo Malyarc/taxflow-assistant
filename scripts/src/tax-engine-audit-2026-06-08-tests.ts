@@ -289,6 +289,30 @@ header("E3b — dependent §63(c)(5) limited standard deduction");
   ok("non-dependent same income → taxable 0 (full std ded)", nonDep.taxableIncome === 0);
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// C1 — credit ordering: the CTC is applied AFTER the Schedule-3 personal credits
+// (FTC/dep-care/education/Saver's/energy/adoption) per the Schedule 8812 Credit
+// Limit Worksheet, so the non-carryforward credits aren't wasted and the maximum
+// CTC spills to the refundable ACTC. HoH $30k + 1 child + $3k dependent care:
+// dep-care $810 zeroes the $810 tax → CTC nonref $0 → ACTC = min($2,000,$1,700)
+// = $1,700 (vs $1,190 without dep care). Net refund +$510.
+// ════════════════════════════════════════════════════════════════════════════
+header("C1 — CTC applied after Sch-3 credits (dep care no longer wasted)");
+{
+  const mk = (dep: boolean): TaxReturnInputs => ({
+    client: { filingStatus: "head_of_household", state: "FL", taxYear: 2024, dependentsUnder17: 1, dependentsForCareCredit: 1 } as never,
+    w2s: [{ wagesBox1: 30000, federalTaxWithheldBox2: 0, stateCode: "FL" }],
+    form1099s: [],
+    adjustments: dep ? [{ adjustmentType: "dependent_care_expenses", amount: 3000, isApplied: true }] : [],
+    taxYear: 2024,
+  });
+  const no = computeTaxReturnPure(mk(false));
+  const yes = computeTaxReturnPure(mk(true));
+  check("dependent care credit is APPLIED (not wasted)", yes.dependentCareCredit.appliedCredit, 810, 0.5);
+  check("ACTC maximized to $1,700 when dep care zeroes the tax", yes.additionalChildTaxCredit, 1700, 1);
+  check("adding $3k dep care raises the refund by $510", yes.federalRefundOrOwed - no.federalRefundOrOwed, 510, 1);
+}
+
 // ── summary ──────────────────────────────────────────────────────────────────
 console.log(`\n${"═".repeat(70)}`);
 for (const f of FAIL) console.log(f);

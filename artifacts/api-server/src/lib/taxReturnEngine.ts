@@ -1384,8 +1384,10 @@ const SECTION_448C_THRESHOLD: Record<TaxYear, number> = {
  *
  * IMPORTANT: Critical invariants preserved here (see CLAUDE.md):
  *   1. AGI = Form 1040 Line 9 (includes LTCG + QDIV + STCG)
- *   2. Credits apply in IRS Schedule 3 order (CTC → Foreign tax → Dep care →
- *      Education → Saver's → Energy)
+ *   2. Credits apply in IRS Schedule-8812-worksheet order: the Schedule-3
+ *      personal credits FIRST (Foreign tax → Dep care → Education → Saver's →
+ *      Energy → Adoption), THEN the CTC (its limit = tax after those; unused
+ *      nonrefundable portion spills to the refundable ACTC), then §53 / §38. (C1)
  *   3. IRA / SLI MAGI bootstrap (per Pub 590-A / Pub 970)
  *   4. State tax computed before Oregon fed-tax subtraction (recomputed for OR)
  *   5. Dep care MFJ taxpayer earned income = household − spouseEarnedIncome
@@ -3382,16 +3384,14 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   let availableForNonRefundable = incomeTaxOnly;
 
   const earnedIncomeHousehold = totalWages + Math.max(0, netSeIncome - se.deductibleHalf);
-  const ctc = calculateChildTaxCredit({
-    qualifyingChildren: client.dependentsUnder17 ?? 0,
-    otherDependents: client.otherDependents ?? 0,
-    agi: calc.adjustedGrossIncome,
-    filingStatus: client.filingStatus,
-    taxYear,
-    taxBeforeCredit: availableForNonRefundable,
-    earnedIncome: earnedIncomeHousehold,
-  });
-  availableForNonRefundable = Math.max(0, availableForNonRefundable - ctc.nonRefundablePortion);
+  // C1 (audit 2026-06-08): the CTC is computed/applied AFTER the Schedule-3
+  // personal credits (FTC, dependent care, education, Saver's, energy, adoption)
+  // — see below. Per the Schedule 8812 Credit Limit Worksheet, the CTC's
+  // nonrefundable limit = tax AFTER those credits, so they get first claim on
+  // the tax; the CTC fills the residual and its UNUSED nonrefundable portion
+  // spills to the refundable ACTC. Applying the CTC first (the prior behavior)
+  // let it absorb all the tax and WASTE the non-carryforward dependent-care /
+  // education credits.
 
   // P2-3 — combine current-year foreign tax with the prior-year §904(c)
   // carryover before applying the Form 1116 limit. The §904 limit is computed
@@ -3503,6 +3503,24 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     taxYear,
   });
   availableForNonRefundable = Math.max(0, availableForNonRefundable - adoptionCredit.nonRefundableApplied);
+
+  // C1 — Child Tax Credit (Schedule 8812), applied here AFTER the Schedule-3
+  // personal credits (FTC/dep-care/education/Saver's/energy/adoption) per the
+  // Credit Limit Worksheet: `taxBeforeCredit` is the tax remaining after those,
+  // so the CTC fills only the residual and the maximum amount spills to the
+  // refundable ACTC. (The §53 AMT credit + §38 GBC below are NOT subtracted in
+  // the CTC limit worksheet, so the CTC takes priority over them — they apply
+  // against what's left after the CTC.)
+  const ctc = calculateChildTaxCredit({
+    qualifyingChildren: client.dependentsUnder17 ?? 0,
+    otherDependents: client.otherDependents ?? 0,
+    agi: calc.adjustedGrossIncome,
+    filingStatus: client.filingStatus,
+    taxYear,
+    taxBeforeCredit: availableForNonRefundable,
+    earnedIncome: earnedIncomeHousehold,
+  });
+  availableForNonRefundable = Math.max(0, availableForNonRefundable - ctc.nonRefundablePortion);
 
   // E2 — Form 8801 Minimum-Tax Credit (IRC §53). Sched 3 Line 6b on TY2024.
   // Carryforward from prior years can offset regular tax DOWN TO the level
