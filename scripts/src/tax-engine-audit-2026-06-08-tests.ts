@@ -10,7 +10,7 @@ import {
   summarize1099s,
   type TaxReturnInputs,
 } from "../../artifacts/api-server/src/lib/taxReturnEngine";
-import { calculateStateTax, saversCreditRateFor, getDependentStandardDeductionBase } from "../../artifacts/api-server/src/lib/taxCalculator";
+import { calculateStateTax, saversCreditRateFor, getDependentStandardDeductionBase, calculateAmt } from "../../artifacts/api-server/src/lib/taxCalculator";
 import { validateW2 } from "@workspace/validation";
 
 const PASS: string[] = [];
@@ -311,6 +311,29 @@ header("C1 — CTC applied after Sch-3 credits (dep care no longer wasted)");
   check("dependent care credit is APPLIED (not wasted)", yes.dependentCareCredit.appliedCredit, 810, 0.5);
   check("ACTC maximized to $1,700 when dep care zeroes the tax", yes.additionalChildTaxCredit, 1700, 1);
   check("adding $3k dep care raises the refund by $510", yes.federalRefundOrOwed - no.federalRefundOrOwed, 510, 1);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// C3 — IRC §55(d)(3) MFS "phantom" AMTI add-back. Once the MFS exemption fully
+// phases out (AMTI > $875,950 in 2024), AMTI += min(rate×(AMTI−zeroAt), exemption).
+// MFS taxable $1,000,000, no prefs, 2024: zeroAt = 609,350 + 66,650/0.25 = 875,950;
+// add-back = min(0.25×(1,000,000−875,950), 66,650) = min(31,012.50, 66,650) = 31,012.50.
+// amtBase = 1,031,012.50; TMT (MFS breakpoint $116,300) = 116,300×.26 +
+// (1,031,012.50−116,300)×.28 = 30,238 + 256,119.50 = $286,357.50.
+// ════════════════════════════════════════════════════════════════════════════
+header("C3 — AMT MFS §55(d)(3) phantom add-back");
+{
+  const mfs = calculateAmt({ taxableIncome: 1_000_000, amtPreferences: 0, filingStatus: "married_filing_separately", regularTax: 333062.75, taxYear: 2024 });
+  check("MFS $1M TMT includes the §55(d)(3) add-back = $286,357.50", mfs.amtBeforeRegular, 286357.50, 1);
+  // Below the full-phase-out point → NO add-back (MFS $800k, exemption not yet 0).
+  const mfsLow = calculateAmt({ taxableIncome: 800_000, amtPreferences: 0, filingStatus: "married_filing_separately", regularTax: 0, taxYear: 2024 });
+  // amti 800k; exemption = max(0, 66,650 − 0.25×(800,000−609,350)) = max(0, 66,650−47,662.50) = 18,987.50;
+  // amtBase = 800,000 − 18,987.50 = 781,012.50; below zeroAt $875,950 → no add-back.
+  check("MFS $800k (exemption not fully phased) → no add-back", mfsLow.amtBeforeRegular,
+    116300 * 0.26 + (781012.50 - 116300) * 0.28, 1);
+  // Single control at the same AMTI is unaffected by the MFS rule.
+  const single = calculateAmt({ taxableIncome: 1_000_000, amtPreferences: 0, filingStatus: "single", regularTax: 0, taxYear: 2024 });
+  check("single $1M unaffected (TMT $275,348)", single.amtBeforeRegular, 232600 * 0.26 + (1_000_000 - 232600) * 0.28, 1);
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────

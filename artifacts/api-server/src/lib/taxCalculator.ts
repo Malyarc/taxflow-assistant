@@ -6836,7 +6836,20 @@ export function calculateAmt(params: {
   // Phase out: 25¢ per $1 over threshold (50¢ for TY2026+ per OBBBA §70107).
   const phaseOut = amti > phaseStart ? (amti - phaseStart) * data.exemptionPhaseOutRate : 0;
   const exemption = Math.max(0, baseExemption - phaseOut);
-  const amtBase = Math.max(0, amti - exemption);
+  // IRC §55(d)(3) flush language — the MFS "phantom" add-back. Once an MFS
+  // filer's exemption has fully phased out, AMTI is INCREASED by the lesser of
+  // (a) the phase-out rate × (AMTI − the full-phase-out point) or (b) the base
+  // exemption — clawing back the benefit of the lower MFS exemption/bracket at
+  // very high AMTI (Form 6251 MFS special rule). Uses the year's phase-out rate
+  // (25% TY2024-25, 50% TY2026 per OBBBA). (Audit 2026-06-08 C3.)
+  let amtiForBase = amti;
+  if (fs === "married_filing_separately") {
+    const zeroAt = phaseStart + baseExemption / data.exemptionPhaseOutRate;
+    if (amti > zeroAt) {
+      amtiForBase = amti + Math.min(data.exemptionPhaseOutRate * (amti - zeroAt), baseExemption);
+    }
+  }
+  const amtBase = Math.max(0, amtiForBase - exemption);
 
   // FED-01: the 26%/28% breakpoint is halved for MFS (Form 6251: "$232,600 —
   // or $116,300 if married filing separately"; 2025: $239,100 / $119,550).
