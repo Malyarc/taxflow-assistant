@@ -151,6 +151,12 @@ export const CreateClientBody = zod.object({
     .describe(
       "K8 — true when return is for a child subject to kiddie tax (Form 8615; unearned income > $2,600 taxed at parent rate).",
     ),
+  claimedAsDependent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "E3b — true when this taxpayer can be claimed as a dependent on another return → IRC §63(c)(5) limited standard deduction. isKiddieTaxFiler also implies this.",
+    ),
   parentsTopMarginalRate: zod
     .number()
     .nullish()
@@ -299,6 +305,12 @@ export const GetClientResponse = zod.object({
     .describe(
       "K8 — true when this return is for a child whose unearned income > $2,600 is taxed at the parent's marginal rate (Form 8615).",
     ),
+  claimedAsDependent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "E3b — true when this taxpayer can be claimed as a dependent on another return → IRC §63(c)(5) limited standard deduction. isKiddieTaxFiler also implies this.",
+    ),
   parentsTopMarginalRate: zod
     .number()
     .nullish()
@@ -430,6 +442,12 @@ export const UpdateClientBody = zod.object({
     .optional()
     .describe(
       "K8 — true when return is for a child subject to kiddie tax (Form 8615; unearned income > $2,600 taxed at parent rate).",
+    ),
+  claimedAsDependent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "E3b — true when this taxpayer can be claimed as a dependent on another return → IRC §63(c)(5) limited standard deduction. isKiddieTaxFiler also implies this.",
     ),
   parentsTopMarginalRate: zod
     .number()
@@ -571,6 +589,12 @@ export const UpdateClientResponse = zod.object({
     .optional()
     .describe(
       "K8 — true when this return is for a child whose unearned income > $2,600 is taxed at the parent's marginal rate (Form 8615).",
+    ),
+  claimedAsDependent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "E3b — true when this taxpayer can be claimed as a dependent on another return → IRC §63(c)(5) limited standard deduction. isKiddieTaxFiler also implies this.",
     ),
   parentsTopMarginalRate: zod
     .number()
@@ -4405,6 +4429,12 @@ export const GetRecentClientsResponseItem = zod.object({
     .optional()
     .describe(
       "K8 — true when this return is for a child whose unearned income > $2,600 is taxed at the parent's marginal rate (Form 8615).",
+    ),
+  claimedAsDependent: zod
+    .boolean()
+    .optional()
+    .describe(
+      "E3b — true when this taxpayer can be claimed as a dependent on another return → IRC §63(c)(5) limited standard deduction. isKiddieTaxFiler also implies this.",
     ),
   parentsTopMarginalRate: zod
     .number()

@@ -65,6 +65,7 @@ import {
   type ScheduleCAsset,
   type ScheduleCAssetDepreciationResult,
   getFederalStandardDeduction,
+  getDependentStandardDeductionBase,
   getSaltCap,
   type TaxYear,
   type MultiStateTaxResult,
@@ -169,6 +170,11 @@ export interface ClientFacts {
   /** K8 — Form 8615 kiddie-tax filer flag. When true and unearned income
    *  > $2,600, the excess is taxed at parent's marginal rate. */
   isKiddieTaxFiler?: boolean | null;
+  /** E3b — can be claimed as a dependent on another return → IRC §63(c)(5)
+   *  limited standard deduction (greater of the floor or earned income + $450,
+   *  capped at the regular amount). A kiddie-tax filer IS a dependent by
+   *  definition, so isKiddieTaxFiler also triggers the limit. */
+  claimedAsDependent?: boolean | null;
   /** K8 — Parent's top marginal rate (decimal: 0.10/0.12/0.22/0.24/0.32/0.35/0.37). */
   parentsTopMarginalRate?: Numish;
   /**
@@ -2628,7 +2634,14 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // into the itemized total (it only benefits the client if they itemize).
   const scheduleAItemizedWithInvInt = scheduleA.totalItemized + allowedInvestmentInterest;
   const itemizedTotal = Math.max(scheduleAItemizedWithInvInt, additionalDeductions);
-  const stdDed = getFederalStandardDeduction(client.filingStatus, taxYear);
+  // E3b — a dependent / kiddie-tax filer gets the IRC §63(c)(5) limited std
+  // deduction. earnedIncome = wages + net SE profit. Used for BOTH the
+  // itemize-vs-standard decision here AND runTaxCalculation below (same value).
+  const claimedAsDependent = Boolean(client.claimedAsDependent || client.isKiddieTaxFiler);
+  const earnedIncomeForStdDed = totalWages + netSeIncome;
+  const stdDed = claimedAsDependent
+    ? getDependentStandardDeductionBase(client.filingStatus, taxYear, earnedIncomeForStdDed)
+    : getFederalStandardDeduction(client.filingStatus, taxYear);
   const useItemizedDeductions =
     useItemizedDeductionsOverride === true
       ? true
@@ -2653,6 +2666,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     spouseAge: client.spouseAge,
     taxpayerBlind: client.taxpayerBlind,
     spouseBlind: client.spouseBlind,
+    // E3b — §63(c)(5) dependent std-deduction limit.
+    claimedAsDependent,
+    earnedIncome: earnedIncomeForStdDed,
   });
 
   // K-1 §199A QBI (Box 20 Z on 1065 / Box 17 V on 1120-S) joins the QBI base.

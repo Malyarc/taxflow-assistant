@@ -1,0 +1,1 @@
+ALTER TABLE "clients" ADD COLUMN "claimed_as_dependent" boolean DEFAULT false NOT NULL;

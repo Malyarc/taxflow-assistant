@@ -1289,56 +1289,48 @@ header("K7. §1202 QSBS — CLOSED");
 // K8. Kiddie tax (Form 8615).  CLOSED 2026-05-26.
 header("K8. Kiddie tax (Form 8615) — CLOSED");
 {
-  // K8a — Child with $10k interest income (treated as ordinary). Parent's rate 32%.
-  //   Unearned = $10,000. Net unearned = $10,000 - $2,600 = $7,400 (taxed at parent rate).
-  //   amount_at_parent_rate = $7,400.
-  //   Total taxable = $10,000 (no std ded for child kiddie context if treated as adult-like)
-  //   Actually engine: $10k income - $14.6k std ded = $0 taxable (below std ded).
-  //   Hmm, but kiddie filers have limited std deduction: max($1,300, earned + $450), cap at filing std.
-  //   Engine simplification: full std ded applies, and kiddie tax adds on top.
-  //   With taxable = max(0, 10000 - 14600) = $0, kiddie path: amount_at_parent_rate = min(7400, 0) = 0.
-  //   So kiddie tax = $0 (low-income child still pays $0).
+  // E3b (audit 2026-06-08): a kiddie-tax filer IS a dependent → IRC §63(c)(5)
+  // LIMITED std deduction = greater of $1,300 (2024) or (earned income + $450),
+  // capped at the regular std ded. (Prior tests asserted the buggy full-$14,600
+  // behavior — that under-taxed every child with unearned income.)
+  // K8a — Child with $10k interest (all unearned), no earned income. Parent 32%.
+  //   Dep std ded = max($1,300, 0+$450) = $1,300. Taxable = 10,000 − 1,300 = $8,700.
+  //   Net unearned over $2,600 = $7,400 @ parent 32% = $2,368; remaining
+  //   $8,700 − $7,400 = $1,300 @ child 10% = $130. Kiddie = $2,498.
   const a = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024,
     isKiddieTaxFiler: true as any, parentsTopMarginalRate: 0.32 as any } as any,
     form1099s: [{ taxYear: 2024, formType: "int", payerName: "Bank", interestIncome: 10000 }] });
-  check("K8a", "Child $10k interest, below std ded → kiddie tax $0",
-    a.federalTaxLiability, 0, 0.01, "Form 8615 — kiddie method capped by taxable income");
+  check("K8a", "Child $10k interest, dep std ded $1,300 → kiddie tax $2,498",
+    a.federalTaxLiability, 2498, 1, "§63(c)(5) limited std ded + Form 8615 parent rate");
 
-  // K8b — Child with $30k interest income. Parent's rate 32%.
-  //   Engine: $30k - $14.6k std = $15,400 taxable (treated as ordinary).
-  //   Regular child tax on $15,400 single 2024: 1160 + (15400-11600)*.12 = 1160 + 456 = $1,616.
-  //   Net unearned = $30,000 - $2,600 = $27,400.
-  //   amount_at_parent_rate = min($27,400, $15,400) = $15,400.
-  //   Child remaining base = $15,400 - $15,400 = $0. tax on $0 = $0.
-  //   Parent addition = $15,400 × 0.32 = $4,928.
-  //   Kiddie method = $0 + $4,928 = $4,928.
-  //   Regular method = $1,616.
-  //   max(regular, kiddie) = $4,928. ← actual federal tax.
+  // K8b — Child with $30k interest. Parent 32%.
+  //   Dep std ded $1,300. Taxable = 30,000 − 1,300 = $28,700.
+  //   Net unearned over $2,600 = $27,400 @ 32% = $8,768; remaining $1,300 @ 10% = $130.
+  //   Kiddie = $8,898. Regular on $28,700 = 1160 + (28,700−11,600)×.12 = $3,212.
+  //   max(regular $3,212, kiddie $8,898) = $8,898.
   const b = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024,
     isKiddieTaxFiler: true as any, parentsTopMarginalRate: 0.32 as any } as any,
     form1099s: [{ taxYear: 2024, formType: "int", payerName: "Bank", interestIncome: 30000 }] });
-  check("K8b", "Child $30k interest, parent rate 32% → federal tax $4,928",
-    b.federalTaxLiability, 4928, 5, "Form 8615 kiddie method: $15,400 × 0.32 = $4,928");
+  check("K8b", "Child $30k interest, parent 32% → federal tax $8,898",
+    b.federalTaxLiability, 8898, 5, "Form 8615: $27,400×.32 + $1,300×.10 = $8,898");
 
-  // K8c — Same case BUT parent's rate is lower than child's effective rate.
-  //   $30k interest, parent rate 0.10 (low).
-  //   Regular child tax = $1,616.
-  //   Kiddie method = $0 + $15,400 × 0.10 = $1,540.
-  //   max($1,616, $1,540) = $1,616 (regular method wins).
+  // K8c — Same $30k BUT parent rate 0.10 (low) → regular method wins.
+  //   Regular on $28,700 = $3,212. Kiddie = $27,400×.10 + $1,300×.10 = $2,740 + $130 = $2,870.
+  //   max($3,212, $2,870) = $3,212 (regular method wins).
   const c = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024,
     isKiddieTaxFiler: true as any, parentsTopMarginalRate: 0.10 as any } as any,
     form1099s: [{ taxYear: 2024, formType: "int", payerName: "Bank", interestIncome: 30000 }] });
-  check("K8c", "Parent rate 10% lower than child effective → regular method wins ($1,616)",
-    c.federalTaxLiability, 1616, 5, "Form 8615 Line 18: child's tax = MAX(regular, kiddie)");
+  check("K8c", "Parent rate 10% → regular method wins ($3,212)",
+    c.federalTaxLiability, 3212, 5, "Form 8615 Line 18: child's tax = MAX(regular, kiddie)");
 
-  // K8d — Below $2,600 threshold: no kiddie tax applied.
-  //   Child $2,000 interest. Unearned $2,000 < $2,600 → no kiddie tax.
-  //   $2,000 - $14,600 std = $0 taxable. Federal tax = $0.
+  // K8d — Below $2,600 threshold: no kiddie tax, but the §63(c)(5) limited std
+  //   ded still applies → the child owes regular tax on the small base.
+  //   Child $2,000 interest. Dep std ded $1,300 → taxable $700 → 10% = $70.
   const d = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024,
     isKiddieTaxFiler: true as any, parentsTopMarginalRate: 0.32 as any } as any,
     form1099s: [{ taxYear: 2024, formType: "int", payerName: "Bank", interestIncome: 2000 }] });
-  check("K8d", "Child $2,000 interest (< $2,600 threshold) → kiddie tax NOT applied",
-    d.federalTaxLiability, 0, 0.01, "Form 8615 threshold");
+  check("K8d", "Child $2,000 interest (< $2,600 threshold) → regular tax $70 on $700",
+    d.federalTaxLiability, 70, 0.5, "no kiddie tax, but §63(c)(5) limited std ded applies");
 
   // K8e — Kiddie flag off: same income, regular tax only.
   const e = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },

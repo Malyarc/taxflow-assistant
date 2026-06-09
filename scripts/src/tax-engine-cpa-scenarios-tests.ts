@@ -322,11 +322,13 @@ section("Scenario 6 — Single NY → CO on Jul 1, $120k W-2");
 // ─────────────────────────────────────────────────────────────────────────────
 section("Scenario 7 — Kiddie tax, 17yo dep, $5k earned + $8k unearned, parent 32%");
 {
-  // To approximate the IRS dependent std-ded rule (min(std ded, earned + $450)
-  // = $5,450), use the useItemizedDeductions override path with the legacy
-  // additionalDeductions slot. Engine takes max(itemized, override) and the
-  // engine's std-ded path won't be applied when override forces itemized.
-  // The hand-calc treats taxable = AGI 13,000 − 5,450 = 7,550.
+  // E3b (audit 2026-06-08): the engine now models the IRC §63(c)(5) dependent
+  // std-ded limit natively (a kiddie filer IS a dependent). earned $5,000 →
+  // dep std ded = min($14,600, max($1,300, 5,000+450)) = $5,450.
+  // Taxable = AGI 13,000 − 5,450 = $7,550. Unearned = 1,000 + 3,000 + 4,000 = 8,000.
+  // Kiddie: (8,000 − 2,600) = 5,400 @ parent 32% = 1,728; remaining
+  //   (7,550 − 5,400) = 2,150 @ child 10% = 215 → kiddie $1,943.
+  // Regular on $7,550 = 10% = $755. max(755, 1,943) = $1,943.
   const r = computeTaxReturnPure({
     client: {
       filingStatus: "single",
@@ -343,19 +345,10 @@ section("Scenario 7 — Kiddie tax, 17yo dep, $5k earned + $8k unearned, parent 
     ],
     adjustments: [],
     taxYear: 2024,
-    overrides: {
-      useItemizedDeductions: true,
-      additionalDeductions: 5450,
-    },
   });
   exact("S7", "AGI = $13,000", r.adjustedGrossIncome, 13000);
-  // ENGINE SUB-GAP: dependent's std-ded reduction (min(std, earned+450)) NOT
-  // applied. The useItemizedDeductions override is preferred only when the
-  // override > std ded — $5,450 < $14,600 so std ded wins. Engine returns
-  // taxable = $0 → no kiddie tax binds mechanically. CPA must enter the
-  // dep std ded as an explicit itemized total to trigger the rule.
-  exact("S7", "Taxable income = 0 (engine sub-gap: dep std ded not modeled)", r.taxableIncome, 0);
-  exact("S7", "Federal liability = 0 (no tax base after std ded)", r.federalTaxLiability, 0);
+  exact("S7", "Taxable income = $7,550 (§63(c)(5) dep std ded $5,450)", r.taxableIncome, 7550);
+  approx("S7", "Federal liability = $1,943 (kiddie method)", r.federalTaxLiability, 1943, 1);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -396,6 +396,36 @@ export function getFederalStandardDeduction(filingStatus: string, taxYear: numbe
   return yearDeductions[filingStatus] ?? yearDeductions.single;
 }
 
+// IRC §63(c)(5) — minimum-base amount for a taxpayer who can be claimed as a
+// dependent on another return: the std ded = greater of this floor or
+// (earned income + $450), capped at the regular std ded. Inflation-indexed.
+const DEPENDENT_STD_DED_FLOOR: Record<TaxYear, number> = {
+  2024: 1300,
+  2025: 1350,
+  2026: 1350,
+};
+const DEPENDENT_STD_DED_EARNED_BUMP = 450; // §63(c)(5)(B) "$250" indexed (2024-2026)
+
+/**
+ * IRC §63(c)(5) — the standard deduction for an individual who can be claimed as
+ * a DEPENDENT on another taxpayer's return: the GREATER of the year's floor
+ * ($1,300 2024 / $1,350 2025-2026) or (earned income + $450), but never more than
+ * the regular standard deduction for the filing status. (Audit 2026-06-08 E3b —
+ * a dependent / kiddie-tax filer previously got the full std ded, sheltering
+ * unearned income that should be taxable.)
+ */
+export function getDependentStandardDeductionBase(
+  filingStatus: string,
+  taxYear: number,
+  earnedIncome: number,
+): number {
+  const year = resolveTaxYear(taxYear);
+  const regular = getFederalStandardDeduction(filingStatus, year);
+  const floor = DEPENDENT_STD_DED_FLOOR[year];
+  const limited = Math.max(floor, Math.max(0, earnedIncome) + DEPENDENT_STD_DED_EARNED_BUMP);
+  return Math.min(regular, limited);
+}
+
 /**
  * Federal ordinary-rate bracket breakpoints — the taxable-income thresholds
  * where the marginal rate steps up — for a filing status + year. Excludes the
@@ -2405,6 +2435,10 @@ export function runTaxCalculation(params: {
   spouseAge?: number | null;
   taxpayerBlind?: boolean | null;
   spouseBlind?: boolean | null;
+  /** §63(c)(5) — can be claimed as a dependent → limited std deduction. */
+  claimedAsDependent?: boolean | null;
+  /** Earned income (wages + net SE earnings) — drives the §63(c)(5) limit. */
+  earnedIncome?: number | null;
 }): TaxCalculationResult {
   const {
     totalWages,
@@ -2420,7 +2454,12 @@ export function runTaxCalculation(params: {
   const year = resolveTaxYear(taxYear);
   const totalIncome = totalWages + additionalIncome;
   const adjustedGrossIncome = Math.max(0, totalIncome - adjustments);
-  const baseFedStdDeduction = getFederalStandardDeduction(filingStatus, year);
+  // §63(c)(5): a taxpayer who can be claimed as a dependent gets a std deduction
+  // limited to greater of the floor or (earned income + $450), capped at the
+  // regular amount. (Audit E3b.) Otherwise the full regular std ded.
+  const baseFedStdDeduction = params.claimedAsDependent
+    ? getDependentStandardDeductionBase(filingStatus, year, params.earnedIncome ?? 0)
+    : getFederalStandardDeduction(filingStatus, year);
   // Age-65 / blind add-on per IRS Form 1040 Standard Deduction Chart.
   const stdDedAddOn = getFederalStdDedAgeBlindAddOn({
     taxpayerAge: params.taxpayerAge,

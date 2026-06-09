@@ -10,7 +10,7 @@ import {
   summarize1099s,
   type TaxReturnInputs,
 } from "../../artifacts/api-server/src/lib/taxReturnEngine";
-import { calculateStateTax, saversCreditRateFor } from "../../artifacts/api-server/src/lib/taxCalculator";
+import { calculateStateTax, saversCreditRateFor, getDependentStandardDeductionBase } from "../../artifacts/api-server/src/lib/taxCalculator";
 import { validateW2 } from "@workspace/validation";
 
 const PASS: string[] = [];
@@ -247,6 +247,46 @@ header("Q3 — Saver's Credit rate is year-indexed (single source)");
   ok("2025 single $23,500 → 50% (2025 band $23,750; was wrongly 20%)", saversCreditRateFor(2025, "single", 23500) === 0.50);
   ok("2026 single $24,000 → 50% (2026 band $24,250)", saversCreditRateFor(2026, "single", 24000) === 0.50);
   ok("2025 MFJ $47,000 → 50% (2025 band $47,500)", saversCreditRateFor(2025, "married_filing_jointly", 47000) === 0.50);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// E3b — IRC §63(c)(5) dependent standard deduction (greater of the year floor or
+// earned income + $450, capped at the regular std ded). isKiddieTaxFiler OR the
+// new claimedAsDependent flag triggers it.
+// ════════════════════════════════════════════════════════════════════════════
+header("E3b — dependent §63(c)(5) limited standard deduction");
+{
+  // The helper directly.
+  check("2024 dep, $0 earned → floor $1,300", getDependentStandardDeductionBase("single", 2024, 0), 1300, 0.01);
+  check("2024 dep, $5,000 earned → $5,450", getDependentStandardDeductionBase("single", 2024, 5000), 5450, 0.01);
+  check("2024 dep, $20,000 earned → capped at regular $14,600", getDependentStandardDeductionBase("single", 2024, 20000), 14600, 0.01);
+  check("2025 dep, $0 earned → floor $1,350", getDependentStandardDeductionBase("single", 2025, 0), 1350, 0.01);
+  check("2026 dep, $0 earned → floor $1,350", getDependentStandardDeductionBase("single", 2026, 0), 1350, 0.01);
+  // e2e via the NEW claimedAsDependent flag (non-kiddie dependent — e.g. a
+  // student with a summer job + $0 investment income): $8,000 wages, std ded
+  // limited to 8,000+450 = $8,450 → taxable $0 (8,000 < 8,450) but only because
+  // earned≈std; use $12,000 wages → std ded $12,450 → taxable $0 still. Use
+  // $20,000 wages → std ded capped $14,600 → taxable $5,400 (vs full would be same).
+  // Cleaner: $6,000 wages → dep std ded $6,450 → taxable $0; a NON-dependent
+  // $6,000 earner also has taxable $0 (under $14,600) — so test the binding case:
+  // dependent with $4,000 wages + $5,000 interest.
+  const dep = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, claimedAsDependent: true } as never,
+    w2s: [{ wagesBox1: 4000, federalTaxWithheldBox2: 0, stateCode: "FL" }],
+    form1099s: [{ formType: "int", interestIncome: 5000 } as never],
+    adjustments: [], taxYear: 2024,
+  });
+  // earned $4,000 → dep std ded = max($1,300, 4,000+450)=$4,450. AGI $9,000.
+  // Taxable = 9,000 − 4,450 = $4,550.
+  check("e2e claimedAsDependent: taxable = $4,550 (dep std ded $4,450)", dep.taxableIncome, 4550, 1);
+  const nonDep = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ wagesBox1: 4000, federalTaxWithheldBox2: 0, stateCode: "FL" }],
+    form1099s: [{ formType: "int", interestIncome: 5000 } as never],
+    adjustments: [], taxYear: 2024,
+  });
+  // Same income, NOT a dependent → full $14,600 std ded → taxable $0.
+  ok("non-dependent same income → taxable 0 (full std ded)", nonDep.taxableIncome === 0);
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────

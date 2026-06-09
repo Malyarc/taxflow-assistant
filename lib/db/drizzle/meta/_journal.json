@@ -85,6 +85,13 @@
       "when": 1780962324152,
       "tag": "0011_soft_thaddeus_ross",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1781022220896,
+      "tag": "0012_illegal_scrambler",
+      "breakpoints": true
     }
   ]
 }

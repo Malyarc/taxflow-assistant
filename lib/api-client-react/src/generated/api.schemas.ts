@@ -128,6 +128,8 @@ match the locality's parent state.
   mfsLivedApartAllYear?: boolean;
   /** K8 — true when this return is for a child whose unearned income > $2,600 is taxed at the parent's marginal rate (Form 8615). */
   isKiddieTaxFiler?: boolean;
+  /** E3b — true when this taxpayer can be claimed as a dependent on another return → IRC §63(c)(5) limited standard deduction. isKiddieTaxFiler also implies this. */
+  claimedAsDependent?: boolean;
   /**
    * K8 — parent's top marginal rate (decimal, e.g. 0.32) used in Form 8615 for the kiddie tax computation.
    * @nullable
@@ -259,6 +261,8 @@ export interface CreateClientBody {
   mfsLivedApartAllYear?: boolean;
   /** K8 — true when return is for a child subject to kiddie tax (Form 8615; unearned income > $2,600 taxed at parent rate). */
   isKiddieTaxFiler?: boolean;
+  /** E3b — true when this taxpayer can be claimed as a dependent on another return → IRC §63(c)(5) limited standard deduction. isKiddieTaxFiler also implies this. */
+  claimedAsDependent?: boolean;
   /**
    * Parent's top marginal rate (0.10–0.37) for Form 8615 computation when isKiddieTaxFiler = true.
    * @nullable
@@ -353,6 +357,8 @@ export interface UpdateClientBody {
   mfsLivedApartAllYear?: boolean;
   /** K8 — true when return is for a child subject to kiddie tax (Form 8615; unearned income > $2,600 taxed at parent rate). */
   isKiddieTaxFiler?: boolean;
+  /** E3b — true when this taxpayer can be claimed as a dependent on another return → IRC §63(c)(5) limited standard deduction. isKiddieTaxFiler also implies this. */
+  claimedAsDependent?: boolean;
   /**
    * Parent's top marginal rate (0.10–0.37) for Form 8615 computation when isKiddieTaxFiler = true.
    * @nullable

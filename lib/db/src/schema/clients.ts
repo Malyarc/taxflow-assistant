@@ -61,6 +61,10 @@ export const clientsTable = pgTable("clients", {
    *  rate. CPA confirms eligibility (child < age 18, or 18-23 if full-time
    *  student dependent on parents). */
   isKiddieTaxFiler: boolean("is_kiddie_tax_filer").notNull().default(false),
+  /** E3b — IRC §63(c)(5): this taxpayer can be claimed as a dependent on another
+   *  return → limited standard deduction (greater of the floor or earned income
+   *  + $450, capped at the regular amount). isKiddieTaxFiler also implies this. */
+  claimedAsDependent: boolean("claimed_as_dependent").notNull().default(false),
   /** K8 — Parent's top marginal rate for the Form 8615 computation
    *  (0.10 / 0.12 / 0.22 / 0.24 / 0.32 / 0.35 / 0.37). Required when
    *  isKiddieTaxFiler = TRUE. */
