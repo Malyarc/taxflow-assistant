@@ -102,6 +102,7 @@ import {
 } from "./form4797";
 import {
   calculateStateIndividualMandatePenalty,
+  caFilingThreshold,
   STATES_WITH_INDIVIDUAL_MANDATE,
   type StateMandateResult,
 } from "./stateMandate";
@@ -3892,10 +3893,18 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   if (monthsWithoutCoverage > 0 && STATES_WITH_INDIVIDUAL_MANDATE.has(stateUpperForMandate)) {
     const mandateIsJoint =
       client.filingStatus === "married_filing_jointly" || client.filingStatus === "qualifying_widow";
+    const mandateDependents = toNum(client.dependentsUnder17) + toNum(client.otherDependents);
+    // Percentage-method filing threshold (audit M4): NJ uses its own gross-income
+    // threshold; CA uses the household-size-dependent FTB 3853 threshold; RI/DC
+    // froze the 2018 FEDERAL methodology, whose filing threshold = the federal
+    // standard deduction (post-TCJA exemption = $0), so the std-ded value is the
+    // correct federal filing threshold for those two.
     const mandateFilingThreshold =
       stateUpperForMandate === "NJ"
         ? (client.filingStatus === "single" || client.filingStatus === "married_filing_separately" ? 10000 : 20000)
-        : getFederalStandardDeduction(client.filingStatus, taxYear);
+        : stateUpperForMandate === "CA"
+          ? caFilingThreshold(client.filingStatus, mandateDependents, taxYear)
+          : getFederalStandardDeduction(client.filingStatus, taxYear);
     stateMandate = calculateStateIndividualMandatePenalty({
       state: stateCode,
       filingStatus: client.filingStatus,

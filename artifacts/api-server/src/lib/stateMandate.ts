@@ -122,6 +122,33 @@ const MA_PENALTY_TIERS_BY_YEAR: Record<number, ReadonlyArray<{ maxFplPct: number
   2026: MA_TIERS_2025, // 2026 amounts not yet published — hold 2025 (documented).
 };
 
+// CA Shared Responsibility Penalty filing threshold (FTB 3853 Worksheet, Step 4
+// "Percentage Income Amount" = 2.5% × (CA AGI − filing threshold)). The threshold
+// is the CA gross-income FILING requirement, which is HOUSEHOLD-SIZE-dependent and
+// materially HIGHER than the federal standard deduction the engine used as a proxy
+// (audit M4). Under-65 amounts; index [0,1,2+] dependents. Verified vs the 2024 +
+// 2025 FTB 3853 instructions. 2026 holds 2025 pending the FTB table (documented).
+const CA_FILING_THRESHOLD_BY_YEAR: Record<number, { singleHoh: readonly number[]; mfj: readonly number[] }> = {
+  2024: { singleHoh: [17818, 33185, 44710], mfj: [35642, 51009, 62534] },
+  2025: { singleHoh: [18353, 34186, 46061], mfj: [36711, 52544, 64419] },
+  2026: { singleHoh: [18353, 34186, 46061], mfj: [36711, 52544, 64419] },
+};
+
+/**
+ * CA FTB 3853 percentage-method filing threshold for the household (audit M4).
+ * `dependents` = total claimed dependents. QSS uses the single column shifted by
+ * +1 dependent (which reproduces the published QSS 0/1-dependent amounts exactly);
+ * MFS uses the single column. Capped at the published 2+-dependent value.
+ */
+export function caFilingThreshold(filingStatus: string, dependents: number, taxYear: number): number {
+  const t = CA_FILING_THRESHOLD_BY_YEAR[taxYear] ?? CA_FILING_THRESHOLD_BY_YEAR[2024];
+  const deps = Math.max(0, Math.round(num(dependents)));
+  const idx = Math.min(deps, 2);
+  if (filingStatus === "married_filing_jointly") return t.mfj[idx];
+  if (filingStatus === "qualifying_widow") return t.singleHoh[Math.min(deps + 1, 2)];
+  return t.singleHoh[idx]; // single / head_of_household / married_filing_separately
+}
+
 export interface StateMandateParams {
   /** 2-letter resident state code. */
   state: string;
@@ -206,10 +233,14 @@ export function calculateStateIndividualMandatePenalty(p: StateMandateParams): S
   const flatAnnual = Math.min(cfg.flatMax, adults * cfg.adultFlat + children * cfg.childFlat);
   const pctAnnual = Math.max(0, num(p.householdIncome) - num(p.filingThreshold)) * cfg.pct;
   const people = adults + children;
+  // Audit M4 — the §5000A bronze-premium cap counts at most 5 individuals
+  // (Treas. Reg. §1.5000A-4(c) / Rev. Proc. table; a household of 6+ uses the
+  // 5-person average bronze premium). CA/NJ/RI/DC all inherited this federal cap.
+  const bronzeHeadcount = Math.min(people, 5);
   const bronzeAnnual =
     p.bronzeAnnualCapOverride != null && p.bronzeAnnualCapOverride > 0
       ? p.bronzeAnnualCapOverride
-      : cfg.bronzeMonthlyPerPerson * 12 * people;
+      : cfg.bronzeMonthlyPerPerson * 12 * bronzeHeadcount;
 
   const greaterOf = Math.max(flatAnnual, pctAnnual);
   const cappedAnnual = Math.min(greaterOf, bronzeAnnual);

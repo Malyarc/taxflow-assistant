@@ -13,7 +13,7 @@ import {
 import { calculateStateTax, saversCreditRateFor, getDependentStandardDeductionBase, calculateAmt, nycEitcRateForAgi, calculateMultiStateTax } from "../../artifacts/api-server/src/lib/taxCalculator";
 import { validateW2 } from "@workspace/validation";
 import { mapInfoReturnToInputs } from "../../artifacts/api-server/src/lib/documentExtractor";
-import { calculateStateIndividualMandatePenalty } from "../../artifacts/api-server/src/lib/stateMandate";
+import { calculateStateIndividualMandatePenalty, caFilingThreshold } from "../../artifacts/api-server/src/lib/stateMandate";
 
 const PASS: string[] = [];
 const FAIL: string[] = [];
@@ -577,6 +577,41 @@ header("MD-08 — Anne Arundel + Frederick graduated local income tax");
   check("Frederick MFJ base $300k → 562.50+2,062.50+4,440+1,600 = $8,665", md("MD-FREDERICK", 305450, "married_filing_jointly"), 8665.0, 0.05);
   // Low-income Frederick single (base $20k, all in 2.25% band) → graduated < old flat 2.75%.
   ok("Frederick low-income uses 2.25% band (< old 2.75% flat)", md("MD-FREDERICK", 22700, "single") < 20000 * 0.0275);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// M4 — CA mandate percentage-method filing threshold (FTB 3853) + the §5000A
+// bronze-premium cap counting at most 5 individuals. The engine used the federal
+// std ded as the CA threshold (too low → over-penalty) and an UNCAPPED headcount
+// for the bronze cap. Thresholds verified vs the 2024/2025 FTB 3853 instructions.
+// ════════════════════════════════════════════════════════════════════════════
+header("M4 — CA FTB 3853 filing threshold + bronze cap headcount ≤ 5");
+{
+  // Filing-threshold table (under-65), verified vs FTB 3853.
+  check("CA 2024 single 0 dep → $17,818", caFilingThreshold("single", 0, 2024), 17818, 0.01);
+  check("CA 2024 single 1 dep → $33,185", caFilingThreshold("single", 1, 2024), 33185, 0.01);
+  check("CA 2024 single 2+ dep → $44,710", caFilingThreshold("single", 5, 2024), 44710, 0.01);
+  check("CA 2024 MFJ 0 dep → $35,642", caFilingThreshold("married_filing_jointly", 0, 2024), 35642, 0.01);
+  check("CA 2024 QSS 0 dep → $33,185 (single+1)", caFilingThreshold("qualifying_widow", 0, 2024), 33185, 0.01);
+  check("CA 2024 QSS 1 dep → $44,710 (single+1)", caFilingThreshold("qualifying_widow", 1, 2024), 44710, 0.01);
+  check("CA 2025 single 0 dep → $18,353", caFilingThreshold("single", 0, 2025), 18353, 0.01);
+  // Percentage method binds: single $80k, 0 deps, 12 mo. 2.5%×(80,000−17,818)=$1,554.55.
+  const pctCase = calculateStateIndividualMandatePenalty({
+    state: "CA", filingStatus: "single", uninsuredAdults: 1, uninsuredChildren: 0,
+    householdIncome: 80000, filingThreshold: caFilingThreshold("single", 0, 2024),
+    monthsUninsured: 12, taxYear: 2024, householdSize: 1,
+  });
+  check("CA % method single $80k → 2.5%×62,182 = $1,554.55", pctCase.penalty, 1554.55, 0.02);
+  ok("CA % method drives it (> flat $900, < bronze)", pctCase.method === "percentage");
+  // Bronze cap counts ≤5: MFJ 2 adults + 6 kids (8 people), income $1M, 12 mo.
+  //   pct 2.5%×(1,000,000−62,534)=$23,436.65; bronze $348×12×min(8,5)=5=$20,880 → BINDS.
+  const bronzeCase = calculateStateIndividualMandatePenalty({
+    state: "CA", filingStatus: "married_filing_jointly", uninsuredAdults: 2, uninsuredChildren: 6,
+    householdIncome: 1000000, filingThreshold: caFilingThreshold("married_filing_jointly", 6, 2024),
+    monthsUninsured: 12, taxYear: 2024, householdSize: 8,
+  });
+  check("CA bronze cap counts 5 not 8 → $348×12×5 = $20,880", bronzeCase.penalty, 20880.0, 0.02);
+  ok("CA bronze cap is what binds (not uncapped 8-person)", bronzeCase.method === "bronze_cap");
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────
