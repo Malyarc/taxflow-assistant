@@ -64,6 +64,22 @@ hand-calc'd tests passed on a wrong expected value; independent review caught it
 big engine change, run /code-review + a few fresh review agents (or /code-review ultra) BEFORE
 calling it done.**
 
+**FULL 9-ANGLE /code-review max (same session, commit `2f584a7`, redeployed HEAD 2f584a7).** Ran
+the code-review skill AS DESIGNED — 9 finder-angle agents (A-E correctness + reuse/simplification/
+efficiency/altitude) in parallel. Found **2 more correctness items** my round-1 (4-agent) pass
+missed, both fixed + hand-calc-tested: (1) **AMT asymmetry** — the regular-tax §1250→25%/
+collectibles→28% fix left Form 6251 Part III taxing the same gains at 0/15/20%, under-stating TMT;
+threaded the buckets into calculateAmt (AMT1/AMT2 tests). (2) **§1231 gain unconditionally in NIIT**
+— added an opt-in `nonPassive` flag (§1411(c)(1) active-business exclusion; N1 test). Battery
+4,754 → **4,769**. Two fresh agents AGAIN split on flat-vs-per-layer §1250 (the seductive "25% is a
+per-bracket cap" fallacy) — re-adjudicated via IRC §1(h)(1)(E) "25 percent of" → flat is correct,
+my fix stands. REFUTED: §1202 (engine's qsbsTaxableGain = over-§1202-cap regular LTCG, not the
+28%-rate remainder), FUTA falsy-zero. **Documented/deferred sub-gaps:** clergy/K-1 QBI ½-SE
+attribution, exports missing Schedule-H/mandate/4797 line items, 1040-X other-taxes bucket for
+Schedule H, top-level finite-guard for absurd inputs (T0.2). **Meta-lesson reinforced: even after a
+4-agent review, the FULL 9-angle fan-out found 2 more real bugs — the cross-cutting AMT one needed
+the cross-file angle specifically.**
+
 ---
 
 # Handoff Note — 2026-06-08d (AI extraction: auto-apply info-returns on approve — shipped + deployed + prod-smoked)
