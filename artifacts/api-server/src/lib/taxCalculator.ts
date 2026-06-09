@@ -1399,9 +1399,11 @@ export function calculateMultiStateTax(params: {
      *  Only applied when resident state is WA. */
     longTermCapitalGains?: number;
     /** G5 — federal AMT preferences total (ISO bargain + SALT addback +
-     *  legacy catch-all) for CA AMT (Schedule P 540). Only applied when
-     *  resident state is CA. */
+     *  legacy catch-all) for CA / MN / CO / CT state AMT. */
     amtPreferences?: number;
+    /** T1.2 — federal tentative minimum tax (Form 6251 line 7, before subtracting
+     *  regular tax). Used by the CT AMT lesser-of(19%×TMT, 5.5%×AMTI) test. */
+    federalTentativeMinimumTax?: number;
     /** PREP-B1 — state-base modifications, passed through to the resident
      *  calculateStateTax. muniBondAddBack: out-of-state muni interest (state-
      *  taxable); usTreasurySubtraction: US-Treasury interest (state-exempt). */
@@ -1614,9 +1616,12 @@ export function calculateMultiStateTax(params: {
   // LTCG to residence period; not modeled).
   if (resident === "WA" && !params.partYearResidency) {
     const ltcg = Math.max(0, params.options?.longTermCapitalGains ?? 0);
-    const waLtcgThreshold = 262000; // TY2024 indexed; TY2025 ≈ $270k (not yet
-    // confirmed; engine treats both years the same as TY2024).
-    const waLtcgExcise = Math.max(0, ltcg - waLtcgThreshold) * 0.07;
+    // RCW 82.87.060 standard deduction (indexed): $270,000 (2024) / $278,000 (2025).
+    const waThreshold = params.taxYear >= 2025 ? 278000 : 270000;
+    let waLtcgExcise = Math.max(0, ltcg - waThreshold) * 0.07;
+    // T1.2 — 2025+ surcharge: an ADDITIONAL 2.9% on WA gains over $1,000,000
+    // (RCW 82.87.040, added 2025; the $1M threshold is NOT indexed).
+    if (params.taxYear >= 2025) waLtcgExcise += Math.max(0, ltcg - 1000000) * 0.029;
     residentStateTax += waLtcgExcise;
   }
 
@@ -1669,6 +1674,41 @@ export function calculateMultiStateTax(params: {
     const mnAmtTentative = 0.0675 * mnAmtBase;
     const mnAmtDelta = Math.max(0, mnAmtTentative - residentStateTax);
     residentStateTax += mnAmtDelta;
+  }
+
+  // T1.2 — CO AMT (Form DR 0104AMT, C.R.S. §39-22-105): 3.47% of Colorado AMTI
+  // (≈ the federal AMTI proxy; CO has NO separate exemption — it piggybacks the
+  // federal exemption baked into federal AMTI), as a delta over regular CO tax.
+  // Rarely binds (regular CO rate 4.25-4.40% > 3.47%) unless large preferences
+  // inflate AMTI. (IA + WI repealed their individual AMTs — not modeled.)
+  const coAmtPrefs = params.options?.amtPreferences ?? 0;
+  if (resident === "CO" && coAmtPrefs > 0 && !params.partYearResidency) {
+    const coAmti = Math.max(0, params.federalAgi) + Math.max(0, coAmtPrefs);
+    const coAmtTentative = 0.0347 * coAmti;
+    residentStateTax += Math.max(0, coAmtTentative - residentStateTax);
+  }
+
+  // T1.2 — CT AMT (Form CT-6251, Conn. Gen. Stat. §12-700a): the LESSER of
+  // (19% × adjusted federal TMT) or (5.5% × adjusted federal AMTI after the CT
+  // exemption), as a delta over regular CT tax. CT exemption (2024) $137,000
+  // MFJ/QSS / $88,100 single/HoH / $68,500 MFS, phased out 25¢/$ over the federal
+  // §55(d)(2) start ($1,252,700 MFJ / $626,350 others). AMTI ≈ federalAgi + prefs.
+  const ctAmtPrefs = params.options?.amtPreferences ?? 0;
+  if (resident === "CT" && ctAmtPrefs > 0 && !params.partYearResidency) {
+    const fs = params.filingStatus as StateFilingStatus;
+    const isJoint = fs === "married_filing_jointly" || fs === "qualifying_widow";
+    const isMfs = fs === "married_filing_separately";
+    const ctExemptionBase = isJoint ? 137000 : isMfs ? 68500 : 88100;
+    const ctPhaseStart = isJoint ? 1252700 : 626350;
+    const ctAmti = Math.max(0, params.federalAgi) + Math.max(0, ctAmtPrefs);
+    const ctExemption = Math.max(0, ctExemptionBase - 0.25 * Math.max(0, ctAmti - ctPhaseStart));
+    const ctAmtiAfterExemption = Math.max(0, ctAmti - ctExemption);
+    const fedTmt = Math.max(0, params.options?.federalTentativeMinimumTax ?? 0);
+    const ctByAmti = 0.055 * ctAmtiAfterExemption;
+    // The 19%×TMT path usually binds the lesser-of for high AMTI; fall back to the
+    // 5.5%×AMTI path when the federal TMT wasn't supplied (documented sub-gap).
+    const ctTentative = fedTmt > 0 ? Math.min(0.19 * fedTmt, ctByAmti) : ctByAmti;
+    residentStateTax += Math.max(0, ctTentative - residentStateTax);
   }
 
   // ── Local jurisdiction (NYC + E14 flat-rate localities) ─────────────────

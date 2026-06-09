@@ -1374,13 +1374,15 @@ header("G3. MA millionaire surtax (VERIFIED modeled — pass-through)");
 // Engine applies only for WA residents; stateTaxLiability reflects the excise.
 header("G4. WA 7% LTCG excise above $262k — CLOSED");
 {
-  // G4a — single WA $1M LTCG → (1M - 262k) × 7% = $51,660.
+  // G4a — single WA $1M LTCG → (1M − 270k 2024-indexed threshold) × 7% = $51,100.
+  // (T1.2 corrected the 2024 standard deduction to the verified $270,000 — the
+  // prior $262,000 was a stale estimate; RCW 82.87.060 indexed.)
   const r = run({
     client: { filingStatus: "single", state: "WA", taxYear: 2024 },
     form1099s: [{ taxYear: 2024, formType: "b", payerName: "X", longTermGainLoss: 1000000 }],
   });
-  check("G4a", "Single WA $1M LTCG → state tax $51,660 (7% × $738k)",
-    r.stateTaxLiability, 51660, 1, "WA RCW 82.87");
+  check("G4a", "Single WA $1M LTCG → state tax $51,100 (7% × $730k)",
+    r.stateTaxLiability, 51100, 1, "WA RCW 82.87");
 
   // G4b — under threshold. Single WA $200k LTCG → no excise.
   const r2 = run({

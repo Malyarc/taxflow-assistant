@@ -3468,6 +3468,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
       // Only applied when resident state is CA. SALT addback + ISO bargain
       // + legacy catch-all.
       amtPreferences: totalAmtPreferences,
+      // T1.2 — federal tentative minimum tax (Form 6251 line 7) for the CT AMT
+      // lesser-of(19%×TMT, 5.5%×AMTI) test.
+      federalTentativeMinimumTax: amt.amtBeforeRegular,
       // PREP-B1 — state-base modifications: out-of-state muni interest is
       // state-taxable (added); US-Treasury interest is state-exempt (subtracted).
       // CPA-supplied via adjustments; 0 → undefined → no-op.
