@@ -366,6 +366,24 @@ header("C4 — IRA MAGI adds back SLI + FEIE");
   check("IRA deductible = $7,000 (MAGI $60k below the band)", (full as never as { retirementDeductions: { iraDeductible: number } }).retirementDeductions.iraDeductible, 7000, 1);
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// E1 — EITC qualifying-children count (§32(c)(3): <19 / <24 student) is a wider
+// set than the CTC's <17. New `eitcQualifyingChildren` field; null → defaults to
+// dependentsUnder17 (backward compatible). HoH, $20k earned, 2024 (plateau).
+// ════════════════════════════════════════════════════════════════════════════
+header("E1 — EITC qualifying-children count (separate from CTC <17)");
+{
+  const mk = (eitc?: number): TaxReturnInputs => ({
+    client: { filingStatus: "head_of_household", state: "FL", taxYear: 2024, dependentsUnder17: 1, eitcQualifyingChildren: eitc } as never,
+    w2s: [{ wagesBox1: 20000, federalTaxWithheldBox2: 0, stateCode: "FL" }],
+    form1099s: [], adjustments: [], taxYear: 2024,
+  });
+  // Default (null) → dependentsUnder17 = 1 → 1-child EITC max $4,213 (2024).
+  check("default → dependentsUnder17 (1 child EITC $4,213)", computeTaxReturnPure(mk(undefined)).eitc.appliedCredit, 4213, 1);
+  // Explicit 2 (e.g. a 17/18-yo qualifying child not in the CTC <17 count) → $6,960.
+  check("explicit 2 EITC children → 2-child EITC $6,960", computeTaxReturnPure(mk(2)).eitc.appliedCredit, 6960, 1);
+}
+
 // ── summary ──────────────────────────────────────────────────────────────────
 console.log(`\n${"═".repeat(70)}`);
 for (const f of FAIL) console.log(f);

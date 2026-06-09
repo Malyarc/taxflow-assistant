@@ -13,6 +13,9 @@ export const clientsTable = pgTable("clients", {
   taxYear: integer("tax_year").notNull(),
   /** Number of qualifying children under 17 with SSN (drives Child Tax Credit). */
   dependentsUnder17: integer("dependents_under_17").notNull().default(0),
+  /** E1 — count of EITC qualifying children (§32(c)(3): <19, or <24 student —
+   *  wider than the CTC's <17). NULL → engine defaults to dependentsUnder17. */
+  eitcQualifyingChildren: integer("eitc_qualifying_children"),
   /** Other qualifying dependents (drives the $500 Credit for Other Dependents). */
   otherDependents: integer("other_dependents").notNull().default(0),
   /** Children eligible for dependent care credit (age 12 and under at year end) */

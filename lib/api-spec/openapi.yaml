@@ -1803,6 +1803,9 @@ components:
         dependentsUnder17:
           type: integer
           description: Number of qualifying children under 17 with SSN (drives Child Tax Credit).
+        eitcQualifyingChildren:
+          type: ["integer", "null"]
+          description: E1 — count of EITC qualifying children (§32(c)(3) <19 / <24 student — wider than CTC <17). When null, defaults to dependentsUnder17.
         otherDependents:
           type: integer
           description: Other qualifying dependents (drives the $500 Credit for Other Dependents).
@@ -1970,6 +1973,9 @@ components:
           type: integer
         dependentsUnder17:
           type: integer
+        eitcQualifyingChildren:
+          type: ["integer", "null"]
+          description: E1 — count of EITC qualifying children (§32(c)(3); null → dependentsUnder17).
         otherDependents:
           type: integer
         dependentsForCareCredit:
@@ -2065,6 +2071,9 @@ components:
           type: integer
         dependentsUnder17:
           type: integer
+        eitcQualifyingChildren:
+          type: ["integer", "null"]
+          description: E1 — count of EITC qualifying children (§32(c)(3); null → dependentsUnder17).
         otherDependents:
           type: integer
         dependentsForCareCredit:

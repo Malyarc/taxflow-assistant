@@ -101,6 +101,12 @@ export const CreateClientBody = zod.object({
   state: zod.string(),
   taxYear: zod.number(),
   dependentsUnder17: zod.number().optional(),
+  eitcQualifyingChildren: zod
+    .number()
+    .nullish()
+    .describe(
+      "E1 — count of EITC qualifying children (§32(c)(3); null → dependentsUnder17).",
+    ),
   otherDependents: zod.number().optional(),
   dependentsForCareCredit: zod.number().optional(),
   taxpayerAge: zod.number().nullish(),
@@ -216,6 +222,12 @@ export const GetClientResponse = zod.object({
     .number()
     .describe(
       "Number of qualifying children under 17 with SSN (drives Child Tax Credit).",
+    ),
+  eitcQualifyingChildren: zod
+    .number()
+    .nullish()
+    .describe(
+      "E1 — count of EITC qualifying children (§32(c)(3) <19 \/ <24 student — wider than CTC <17). When null, defaults to dependentsUnder17.",
     ),
   otherDependents: zod
     .number()
@@ -393,6 +405,12 @@ export const UpdateClientBody = zod.object({
   state: zod.string().optional(),
   taxYear: zod.number().optional(),
   dependentsUnder17: zod.number().optional(),
+  eitcQualifyingChildren: zod
+    .number()
+    .nullish()
+    .describe(
+      "E1 — count of EITC qualifying children (§32(c)(3); null → dependentsUnder17).",
+    ),
   otherDependents: zod.number().optional(),
   dependentsForCareCredit: zod.number().optional(),
   taxpayerAge: zod.number().nullish(),
@@ -501,6 +519,12 @@ export const UpdateClientResponse = zod.object({
     .number()
     .describe(
       "Number of qualifying children under 17 with SSN (drives Child Tax Credit).",
+    ),
+  eitcQualifyingChildren: zod
+    .number()
+    .nullish()
+    .describe(
+      "E1 — count of EITC qualifying children (§32(c)(3) <19 \/ <24 student — wider than CTC <17). When null, defaults to dependentsUnder17.",
     ),
   otherDependents: zod
     .number()
@@ -4341,6 +4365,12 @@ export const GetRecentClientsResponseItem = zod.object({
     .number()
     .describe(
       "Number of qualifying children under 17 with SSN (drives Child Tax Credit).",
+    ),
+  eitcQualifyingChildren: zod
+    .number()
+    .nullish()
+    .describe(
+      "E1 — count of EITC qualifying children (§32(c)(3) <19 \/ <24 student — wider than CTC <17). When null, defaults to dependentsUnder17.",
     ),
   otherDependents: zod
     .number()

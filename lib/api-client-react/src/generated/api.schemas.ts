@@ -55,6 +55,11 @@ export interface Client {
   taxYear: number;
   /** Number of qualifying children under 17 with SSN (drives Child Tax Credit). */
   dependentsUnder17: number;
+  /**
+   * E1 — count of EITC qualifying children (§32(c)(3) <19 / <24 student — wider than CTC <17). When null, defaults to dependentsUnder17.
+   * @nullable
+   */
+  eitcQualifyingChildren?: number | null;
   /** Other qualifying dependents (drives the $500 Credit for Other Dependents). */
   otherDependents: number;
   /** Children age 12 and under (drives Dependent Care Credit eligibility). */
@@ -222,6 +227,11 @@ export interface CreateClientBody {
   state: string;
   taxYear: number;
   dependentsUnder17?: number;
+  /**
+   * E1 — count of EITC qualifying children (§32(c)(3); null → dependentsUnder17).
+   * @nullable
+   */
+  eitcQualifyingChildren?: number | null;
   otherDependents?: number;
   dependentsForCareCredit?: number;
   /** @nullable */
@@ -318,6 +328,11 @@ export interface UpdateClientBody {
   state?: string;
   taxYear?: number;
   dependentsUnder17?: number;
+  /**
+   * E1 — count of EITC qualifying children (§32(c)(3); null → dependentsUnder17).
+   * @nullable
+   */
+  eitcQualifyingChildren?: number | null;
   otherDependents?: number;
   dependentsForCareCredit?: number;
   /** @nullable */

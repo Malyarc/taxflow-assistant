@@ -1,0 +1,1 @@
+ALTER TABLE "clients" ADD COLUMN "eitc_qualifying_children" integer;

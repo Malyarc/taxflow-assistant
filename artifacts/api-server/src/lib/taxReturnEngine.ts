@@ -145,6 +145,11 @@ export interface ClientFacts {
   dependentsUnder17?: number | null;
   otherDependents?: number | null;
   dependentsForCareCredit?: number | null;
+  /** E1 — count of EITC qualifying children (§32(c)(3): under 19, or under 24 if
+   *  a full-time student, or any age if permanently disabled — a WIDER set than
+   *  the CTC's under-17). When null, defaults to dependentsUnder17 (backward
+   *  compatible); the CPA sets it when there are qualifying children aged 17-23. */
+  eitcQualifyingChildren?: number | null;
   taxpayerAge?: number | null;
   spouseAge?: number | null;
   /** FED-05 — legally blind at year end → extra std-ded box per IRC §63(f)(2). */
@@ -3616,7 +3621,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     totalInvestmentIncomeForNiit + form1099Summary.taxExemptInterest;
   const eitc = calculateEitc({
     filingStatus: client.filingStatus,
-    qualifyingChildren: client.dependentsUnder17 ?? 0,
+    // E1 — EITC qualifying children (§32(c)(3): <19, or <24 student) is a WIDER
+    // set than the CTC's <17. Default to dependentsUnder17 when not specified.
+    qualifyingChildren: client.eitcQualifyingChildren ?? client.dependentsUnder17 ?? 0,
     earnedIncome: earnedIncomeHousehold,
     agi: calc.adjustedGrossIncome,
     investmentIncome: eitcDisqualifyingIncome,
@@ -3717,7 +3724,8 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     agi: calc.adjustedGrossIncome,
     earnedIncome: earnedIncomeHousehold,
     investmentIncome: investmentIncomeForStateEitc,
-    qualifyingChildren: client.dependentsUnder17 ?? 0,
+    // E1 — state EITC piggybacks the federal qualifying-children count.
+    qualifyingChildren: client.eitcQualifyingChildren ?? client.dependentsUnder17 ?? 0,
     taxYear: calc.taxYear,
     filingStatus: client.filingStatus,
     stateTaxLiability, // STL-05 — MD's 50% nonrefundable cap is limited to MD tax
