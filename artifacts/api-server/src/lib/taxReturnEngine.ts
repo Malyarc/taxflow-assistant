@@ -2674,9 +2674,16 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     // base but is NOT Sch-C QBI income, so the clergy-attributable share of
     // ½-SE must NOT reduce Sch-C QBI. Exclude it (no-op when there's no clergy
     // allowance — clergyHousingAllowance/seTaxBase = 0 → identical to before).
-    const clergyShareOfSe = seTaxBase > 0 ? clergyHousingAllowance / seTaxBase : 0;
+    const clergyShareOfSe = Math.min(1, seTaxBase > 0 ? clergyHousingAllowance / seTaxBase : 0);
     const schCQbi = Math.max(0, netSeIncome - se.deductibleHalf * (1 - clergyShareOfSe));
     qbiIncomeEffective = schCQbi;
+    // Sub-gap (independent review 2026-06-08): when K-1 partnership SE earnings
+    // (k1SelfEmploymentEarnings) coexist, the FULL ½-SE still over-reduces Sch-C
+    // QBI by the K-1's share. The general fix (subtract only the Sch-C share,
+    // netSeIncome/seTaxBase) is deferred because the K-1's own ½-SE is not yet
+    // netted into its QBI — a half-done generalization would UNDER-reduce total
+    // QBI (under-taxation). Current state is conservative (over-reduces). Only
+    // the clergy share is carved out here (the new, common, zero-K-1 path).
   }
   // K-1 default: when section199aQbi unset for active K-1, use Box 1.
   // Per-business SSTB (§199A(d)(2)): track the SSTB portion of K-1 QBI
@@ -2959,6 +2966,11 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     // Closed 2026-05-24; previously the engine over-charged AMT on
     // high-LTCG + AMT-binding filers by taxing LTCG at 26/28%.
     ltcgPlusQdiv: preferentialIncome,
+    // T1.1a — Form 6251 Part III also taxes unrecaptured §1250 at 25% and the
+    // 28%-rate gain at 28% (not 0/15/20%). Pass the same bounded buckets the
+    // regular-tax Schedule D worksheet used, so AMT doesn't under-state TMT.
+    unrecaptured1250Gain: unrecaptured1250Bounded,
+    collectibles28Gain: collectibles28Bounded,
     // ATNOLD (§56(d)) — AMT-basis NOL carryforward, capped at 90% of AMTI.
     amtNolCarryforward,
     filingStatus: client.filingStatus,
@@ -3002,7 +3014,12 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
       // Net gain on disposition: post-netting positive LTCG + STCG (already
       // folds in 1099-B, K-1 Box 8/9a, §121 remainder, §1031 recognized, QSBS):
       ltcgPreferential +
-      stcgInOrdinary,
+      stcgInOrdinary -
+      // §1411(c)(1): a §1231 gain from a NON-passive (materially-participated)
+      // trade/business is NOT net investment income. Excluded when the CPA flags
+      // the Form 4797 disposition `nonPassive` (default off → conservatively
+      // included, matching the ordinary-landlord rental treatment above).
+      form4797.nonPassiveSection1231Gain,
   );
   const niit = calculateNiit({
     investmentIncome: totalInvestmentIncomeForNiit,
@@ -3719,27 +3736,34 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // threshold uses each state's published value (NJ gross-income threshold;
   // federal standard deduction proxy for CA/RI/DC — a CPA can refine via their
   // form software since this is an Option-A overlay).
+  // Compute the penalty inputs (filing threshold, household) ONLY when a mandate
+  // actually applies — the overwhelming-majority path (covered / non-mandate
+  // state) skips the getFederalStandardDeduction call entirely.
   const monthsWithoutCoverage = sumByType("months_without_minimum_coverage");
-  const mandateIsJoint =
-    client.filingStatus === "married_filing_jointly" || client.filingStatus === "qualifying_widow";
-  const mandateFilingThreshold =
-    stateCode.toUpperCase() === "NJ"
-      ? (client.filingStatus === "single" || client.filingStatus === "married_filing_separately" ? 10000 : 20000)
-      : getFederalStandardDeduction(client.filingStatus, taxYear);
-  const stateMandate: StateMandateResult =
-    monthsWithoutCoverage > 0 && STATES_WITH_INDIVIDUAL_MANDATE.has(stateCode.toUpperCase())
-      ? calculateStateIndividualMandatePenalty({
-          state: stateCode,
-          filingStatus: client.filingStatus,
-          uninsuredAdults: 1 + (mandateIsJoint ? 1 : 0),
-          uninsuredChildren: toNum(client.dependentsUnder17),
-          householdIncome: calc.adjustedGrossIncome,
-          filingThreshold: mandateFilingThreshold,
-          monthsUninsured: monthsWithoutCoverage,
-          householdSize: (mandateIsJoint ? 2 : 1) + toNum(client.dependentsUnder17) + toNum(client.otherDependents),
-          taxYear,
-        })
-      : { penalty: 0, state: stateCode, method: "none", flatAmount: 0, percentageAmount: 0, bronzeCapAmount: 0, monthsUninsured: 0 };
+  const stateUpperForMandate = stateCode.toUpperCase();
+  let stateMandate: StateMandateResult = {
+    penalty: 0, state: stateCode, method: "none", flatAmount: 0,
+    percentageAmount: 0, bronzeCapAmount: 0, monthsUninsured: 0,
+  };
+  if (monthsWithoutCoverage > 0 && STATES_WITH_INDIVIDUAL_MANDATE.has(stateUpperForMandate)) {
+    const mandateIsJoint =
+      client.filingStatus === "married_filing_jointly" || client.filingStatus === "qualifying_widow";
+    const mandateFilingThreshold =
+      stateUpperForMandate === "NJ"
+        ? (client.filingStatus === "single" || client.filingStatus === "married_filing_separately" ? 10000 : 20000)
+        : getFederalStandardDeduction(client.filingStatus, taxYear);
+    stateMandate = calculateStateIndividualMandatePenalty({
+      state: stateCode,
+      filingStatus: client.filingStatus,
+      uninsuredAdults: 1 + (mandateIsJoint ? 1 : 0),
+      uninsuredChildren: toNum(client.dependentsUnder17),
+      householdIncome: calc.adjustedGrossIncome,
+      filingThreshold: mandateFilingThreshold,
+      monthsUninsured: monthsWithoutCoverage,
+      householdSize: (mandateIsJoint ? 2 : 1) + toNum(client.dependentsUnder17) + toNum(client.otherDependents),
+      taxYear,
+    });
+  }
   const stateIndividualMandatePenalty = stateMandate.penalty;
 
   const stateRefundOrOwed = totalStateWithheld - stateTaxLiabilityAfterAdditional + stateEitc.credit + mnCtcRefundable + nycEitcRefundableExcess + stateCtcRefundable + nycSchoolTaxCreditRefundable + stateAdditionalRefundable - stateIndividualMandatePenalty;
@@ -3799,7 +3823,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     investmentInterestElectionAmount,
     unrecapturedSection1250Gain: unrecaptured1250Bounded,
     collectibles28RateGain: collectibles28Bounded,
-    form4797: (inputs.form4797 ?? []).some((s) => s.taxYear === taxYear) ? form4797 : null,
+    form4797: form4797.assetCount > 0 ? form4797 : null,
     form1099Summary,
     scheduleA,
     scheduleCExpenses,

@@ -5947,10 +5947,11 @@ export function calculateFederalTaxWithCapitalGains(params: {
   // ordinary income:
   //   1. 0/15/20% "adjusted net capital gain" (gNormal) — stacked first,
   //      directly above ordinary income (gets the favorable lower brackets).
-  //   2. Unrecaptured §1250 gain (g25) — stacked above gNormal, taxed at the
-  //      LESSER of 25% or the ordinary rate at that stack position (25% is a CAP).
+  //   2. Unrecaptured §1250 gain (g25) — stacked above gNormal, taxed at a FLAT
+  //      25% (IRC §1(h)(1)(E) "25 percent of …"). NOT a per-layer marginal cap —
+  //      the "maximum rate" is enforced ONLY by the global final-min below.
   //   3. 28%-rate gain (g28: collectibles + §1202) — stacked at the top, taxed
-  //      at the LESSER of 28% or the ordinary rate there (28% is a CAP).
+  //      at a FLAT 28% (§1(h)(1)(F)), capped only by the same global final-min.
   // The buckets are SUBSETS of `prefTaxable`; the 0/15/20 residual absorbs any
   // deduction-driven reduction (when prefTaxable < total LTCG+QDIV). When both
   // special buckets are 0 this collapses to exactly the prior single-bucket
@@ -6747,6 +6748,13 @@ export function calculateAmt(params: {
   /** K3 — LTCG + QDIV portion of taxable income (Form 6251 Part III).
    *  When > 0, AMT is computed both ways and the lower is used. */
   ltcgPlusQdiv?: number;
+  /** T1.1a — unrecaptured §1250 gain within ltcgPlusQdiv (Form 6251 Part III
+   *  lines 36-39: taxed at a flat 25%, same as the Schedule D Tax Worksheet).
+   *  A subset of ltcgPlusQdiv. */
+  unrecaptured1250Gain?: number;
+  /** T1.1a — 28%-rate gain (collectibles + §1202) within ltcgPlusQdiv (Form 6251
+   *  Part III line 40: flat 28%). A subset of ltcgPlusQdiv. */
+  collectibles28Gain?: number;
   /** AMT NOL carryforward (ATNOLD, §56(d)) — the AMT-basis NOL the CPA carries
    *  in. Applied against AMTI, limited to 90% of AMTI before the ATNOLD. */
   amtNolCarryforward?: number;
@@ -6798,7 +6806,17 @@ export function calculateAmt(params: {
       ordinaryPortion <= rateBreakpoint
         ? ordinaryPortion * 0.26
         : rateBreakpoint * 0.26 + (ordinaryPortion - rateBreakpoint) * 0.28;
-    const ltcgTax = calculateLtcgQdivStackedTax(ordinaryPortion, ltcgQdivInAmtBase, fs, year);
+    // Form 6251 Part III mirrors the Schedule D Tax Worksheet: the §1250 (25%)
+    // and 28%-rate buckets within the AMT base are taxed at their flat special
+    // rates; the rest of the preferential income gets 0/15/20%. (§1250 first
+    // claim / 28% the remainder, matching the regular-tax loss-absorption order.)
+    const g25amt = Math.max(0, Math.min(params.unrecaptured1250Gain ?? 0, ltcgQdivInAmtBase));
+    const g28amt = Math.max(0, Math.min(params.collectibles28Gain ?? 0, ltcgQdivInAmtBase - g25amt));
+    const gNormalAmt = Math.max(0, ltcgQdivInAmtBase - g25amt - g28amt);
+    const ltcgTax =
+      calculateLtcgQdivStackedTax(ordinaryPortion, gNormalAmt, fs, year) +
+      0.25 * g25amt +
+      0.28 * g28amt;
     amtWithPreferentialRates = amtOnOrdinary + ltcgTax;
   }
 

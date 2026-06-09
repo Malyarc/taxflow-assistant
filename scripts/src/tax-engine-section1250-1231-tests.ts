@@ -20,7 +20,7 @@ import {
   computeTaxReturnPure,
   type TaxReturnInputs,
 } from "../../artifacts/api-server/src/lib/taxReturnEngine";
-import { calculateFederalTaxWithCapitalGains } from "../../artifacts/api-server/src/lib/taxCalculator";
+import { calculateFederalTaxWithCapitalGains, calculateAmt } from "../../artifacts/api-server/src/lib/taxCalculator";
 import {
   computeForm4797,
   type BusinessPropertySaleFact,
@@ -54,11 +54,11 @@ function wsTax(p: {
   });
 }
 
-// W1 — Low-income §1250: 25% is a CAP, so the gain is taxed at the ORDINARY rate
-// (22% top) since that is below 25%. ordinary $40k + §1250 $60k.
+// W1 — Low-income §1250: the FLAT 25% (0.25·60k=15,000) is capped by the GLOBAL
+// final-min (preferential tax ≤ ordinary tax on all income). ordinary $40k + §1250 $60k.
 //   ordinaryTax(40k)=1,160+0.12·28,400=4,568.
-//   §1250 stacks 40k→100k at ordinary: ordTax(100k)−ordTax(40k)=17,053−4,568=12,485.
-//   min(0.25·60k=15,000, 12,485)=12,485. total=4,568+12,485=17,053 (= all-ordinary).
+//   flat §1250 = 0.25·60k = 15,000; global floor = ordTax(100k)−ordTax(40k)=12,485 BINDS.
+//   prefTax=min(15,000, 12,485)=12,485. total=4,568+12,485=17,053 (= all-ordinary).
 {
   const r = wsTax({ ord: 40000, lt: 60000, u1250: 60000 });
   check("W1 §1250 low-income total = ordinary rate", r.totalFederalTax, 17053);
@@ -427,6 +427,52 @@ function adj(type: string, amount: number): TaxReturnInputs["adjustments"][numbe
   check("E9 §1250 preserved (loss clips 28% first)", r.unrecapturedSection1250Gain, 50000);
   check("E9 28% bucket clipped to remainder", r.collectibles28RateGain, 20000);
   check("E9 capGainsTax = 25%·50k + 28%·20k", r.capitalGainsTax, 18100);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// PART 4 — AMT Form 6251 Part III: §1250 at 25% / collectibles at 28%
+//   (independent-review fix 2026-06-08: AMT was taxing them at 0/15/20%, under-
+//   stating TMT — an asymmetry vs the sharpened regular-tax side.)
+// ════════════════════════════════════════════════════════════════════════════
+
+// AMT1 — single, taxableIncome $300k (incl. $100k §1250 LTCG), AMT prefs $100k.
+//   amti=400k; exemption $85,700; amtBase=314,300. Path 2 ordinary 214,300 @26%
+//   = 55,718; §1250 FLAT 25% × 100k = 25,000 → amtWithPreferential = 80,718.
+//   Without the bucket the §1250 would get 15% (518,900 LTCG band) = 15,000 →
+//   70,718. The bucket correctly adds (25−15)%·100k = $10,000 to the AMT.
+{
+  const base = { taxableIncome: 300000, amtPreferences: 100000, filingStatus: "single", regularTax: 0, taxYear: 2024, ltcgPlusQdiv: 100000 };
+  const withBucket = calculateAmt({ ...base, unrecaptured1250Gain: 100000 });
+  const without = calculateAmt({ ...base, unrecaptured1250Gain: 0 });
+  check("AMT1 §1250 at FLAT 25% in Form 6251 Part III", withBucket.amtWithPreferentialRates, 80718);
+  check("AMT1 without bucket → 0/15/20%", without.amtWithPreferentialRates, 70718);
+  check("AMT1 §1250 bucket adds (25-15)%·100k", withBucket.amtWithPreferentialRates - without.amtWithPreferentialRates, 10000);
+}
+// AMT2 — same but $100k collectibles (28%): ltcgTax = 0.28·100k = 28,000 →
+//   amtWithPreferential = 55,718 + 28,000 = 83,718 (adds (28-15)%·100k = 13,000).
+{
+  const withBucket = calculateAmt({ taxableIncome: 300000, amtPreferences: 100000, filingStatus: "single", regularTax: 0, taxYear: 2024, ltcgPlusQdiv: 100000, collectibles28Gain: 100000 });
+  check("AMT2 collectibles at FLAT 28% in AMT", withBucket.amtWithPreferentialRates, 83718);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// PART 5 — §1231 gain NIIT exclusion for non-passive (materially-participated)
+//   business dispositions (§1411(c)(1); independent-review fix 2026-06-08).
+// ════════════════════════════════════════════════════════════════════════════
+
+// N1 — W-2 $700k + a §1231 land gain $200k. NIIT (3.8%) on the gain unless the
+//   disposition is flagged nonPassive (active trade/business → excluded from NII).
+{
+  const passive = computeTaxReturnPure(baseInputs({
+    form4797: [sale({ grossSalePrice: 250000, costOrBasis: 50000, depreciationAllowed: 0, assetClass: "land" })],
+  }));
+  const active = computeTaxReturnPure(baseInputs({
+    form4797: [sale({ grossSalePrice: 250000, costOrBasis: 50000, depreciationAllowed: 0, assetClass: "land", nonPassive: true })],
+  }));
+  check("N1 non-passive §1231 gain reported", active.form4797!.nonPassiveSection1231Gain, 200000);
+  check("N1 passive §1231 gain stays in NIIT (not excluded)", passive.form4797!.nonPassiveSection1231Gain, 0);
+  check("N1 non-passive exclusion drops NIIT by 3.8%·200k", passive.niitTax - active.niitTax, 7600);
+  check("N1 §1231 gain still in AGI either way (only NIIT differs)", active.adjustedGrossIncome, passive.adjustedGrossIncome);
 }
 
 console.log(`\nT1.1 §1250 (25%) / Collectibles (28%) / §1231 Form 4797 tests:`);

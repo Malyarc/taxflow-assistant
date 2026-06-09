@@ -59,6 +59,11 @@ export interface BusinessPropertySaleFact {
    *  is straight-line, so this is 0 and the whole depreciation portion becomes
    *  unrecaptured §1250 gain (25%). Defaults to 0. */
   additionalDepreciation?: number | null;
+  /** When TRUE, this disposition is from a NON-passive trade or business in which
+   *  the taxpayer materially participates — its §1231 gain is EXCLUDED from the
+   *  §1411 NIIT base (§1411(c)(1); not "net investment income"). Default
+   *  false/undefined → included in NII (conservative — over-includes). */
+  nonPassive?: boolean | null;
 }
 
 export interface Form4797Result {
@@ -70,6 +75,10 @@ export interface Form4797Result {
   netSection1231LtcgGain: number;
   /** Unrecaptured §1250 gain (25% bucket) — a SUBSET of netSection1231LtcgGain. */
   unrecaptured1250Gain: number;
+  /** Portion of netSection1231LtcgGain from NON-passive (materially-participated)
+   *  trade/business dispositions — EXCLUDED from the §1411 NIIT base. A SUBSET of
+   *  netSection1231LtcgGain. */
+  nonPassiveSection1231Gain: number;
   // ── transparency / Form 4797 reconciliation ──
   section1245OrdinaryRecapture: number;
   section1250OrdinaryRecapture: number;
@@ -85,6 +94,7 @@ const EMPTY_RESULT: Form4797Result = {
   ordinaryComponent: 0,
   netSection1231LtcgGain: 0,
   unrecaptured1250Gain: 0,
+  nonPassiveSection1231Gain: 0,
   section1245OrdinaryRecapture: 0,
   section1250OrdinaryRecapture: 0,
   section1231GainGross: 0,
@@ -114,6 +124,7 @@ export function computeForm4797(
   let section1231GainGross = 0;
   let section1231LossGross = 0;
   let unrecaptured1250Pool = 0;
+  let nonPassive1231GainGross = 0; // §1231 gain from non-passive (materially-participated) sales
   let partIIOrdinary = 0; // Part II: ordinary gains/losses (short-term business property)
 
   for (const sale of sales) {
@@ -136,6 +147,7 @@ export function computeForm4797(
       continue;
     }
 
+    let assetSection1231Gain = 0;
     switch (sale.assetClass) {
       case "section1245": {
         // §1245: ordinary recapture = gain up to ALL depreciation taken.
@@ -143,7 +155,7 @@ export function computeForm4797(
         section1245OrdinaryRecapture += recapture;
         // True appreciation above original cost (only when proceeds > cost) is
         // §1231 gain.
-        section1231GainGross += realizedGain - recapture;
+        assetSection1231Gain = realizedGain - recapture;
         break;
       }
       case "section1250": {
@@ -160,15 +172,17 @@ export function computeForm4797(
         unrecaptured1250Pool += Math.min(remaining, straightLineDepr);
         // All of the remaining gain is §1231 gain (the unrecaptured portion is a
         // character SUBSET of it).
-        section1231GainGross += remaining;
+        assetSection1231Gain = remaining;
         break;
       }
       default: {
         // land / other §1231 property — entire gain is §1231 gain.
-        section1231GainGross += realizedGain;
+        assetSection1231Gain = realizedGain;
         break;
       }
     }
+    section1231GainGross += assetSection1231Gain;
+    if (sale.nonPassive === true) nonPassive1231GainGross += assetSection1231Gain;
   }
 
   const netSection1231 = section1231GainGross - section1231LossGross;
@@ -196,10 +210,16 @@ export function computeForm4797(
     ordinaryComponent += netSection1231; // netSection1231 ≤ 0 here
   }
 
+  // Non-passive §1231 gain that survives as LTCG → excluded from the §1411 NIIT
+  // base by the engine (bounded by the surviving net §1231 LTCG).
+  const nonPassiveSection1231Gain =
+    netSection1231 > 0 ? Math.min(netSection1231LtcgGain, nonPassive1231GainGross) : 0;
+
   return {
     ordinaryComponent,
     netSection1231LtcgGain,
     unrecaptured1250Gain,
+    nonPassiveSection1231Gain,
     section1245OrdinaryRecapture,
     section1250OrdinaryRecapture,
     section1231GainGross,

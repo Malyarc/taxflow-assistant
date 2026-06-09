@@ -171,9 +171,13 @@ export function buildPlanningCalendar(hits: OpportunityHit[], taxYear: number): 
     });
     g.totalSavings += Math.max(0, headline);
   }
-  const groups = [...byType.values()].sort(
-    (a, b) => DEADLINE_ORDER.indexOf(a.deadlineType) - DEADLINE_ORDER.indexOf(b.deadlineType),
-  );
+  // Sort soonest-first. An unknown deadline type (caller-supplied / future enum
+  // value) sorts LAST, not first (indexOf -1 would otherwise jump it to the top).
+  const orderOf = (t: DeadlineType): number => {
+    const i = DEADLINE_ORDER.indexOf(t);
+    return i < 0 ? DEADLINE_ORDER.length : i;
+  };
+  const groups = [...byType.values()].sort((a, b) => orderOf(a.deadlineType) - orderOf(b.deadlineType));
   for (const g of groups) {
     g.strategies.sort((a, b) => (b.verifiedSavings ?? b.estSavings) - (a.verifiedSavings ?? a.estSavings));
   }

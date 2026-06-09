@@ -68,30 +68,21 @@ const GREATER_OF_PARAMS: Record<string, GreaterOfParams> = {
 // FY2024 budget expanded ConnectorCare to 500% FPL; confirm the dollar amounts
 // against the annual MA DOR TIR 24-1/25-1 before relying on them. Tests assert
 // only the confirmed 2023 schedule.
-const MA_PENALTY_TIERS_BY_YEAR: Record<number, Array<{ maxFplPct: number; monthly: number }>> = {
-  2023: [
-    { maxFplPct: 150, monthly: 0 },
-    { maxFplPct: 200, monthly: 24 },
-    { maxFplPct: 250, monthly: 46 },
-    { maxFplPct: 300, monthly: 68 },
-    { maxFplPct: Infinity, monthly: 183 },
-  ],
-  // PROVISIONAL placeholders (= last confirmed 2023 schedule). REPLACE with the
-  // published TIR 24-1 amounts once verified.
-  2024: [
-    { maxFplPct: 150, monthly: 0 },
-    { maxFplPct: 200, monthly: 24 },
-    { maxFplPct: 250, monthly: 46 },
-    { maxFplPct: 300, monthly: 68 },
-    { maxFplPct: Infinity, monthly: 183 },
-  ],
-  2025: [
-    { maxFplPct: 150, monthly: 0 },
-    { maxFplPct: 200, monthly: 24 },
-    { maxFplPct: 250, monthly: 46 },
-    { maxFplPct: 300, monthly: 68 },
-    { maxFplPct: Infinity, monthly: 183 },
-  ],
+const MA_TIERS_2023: ReadonlyArray<{ maxFplPct: number; monthly: number }> = [
+  { maxFplPct: 150, monthly: 0 },
+  { maxFplPct: 200, monthly: 24 },
+  { maxFplPct: 250, monthly: 46 },
+  { maxFplPct: 300, monthly: 68 },
+  { maxFplPct: Infinity, monthly: 183 },
+];
+// 2024/2025 are PROVISIONAL — they REUSE the confirmed 2023 schedule as a single
+// shared array (so an editor can't update one year and miss the others). REPLACE
+// with the published MA DOR TIR 24-1/25-1 amounts (give each its own array) once
+// verified. Tests assert only the confirmed 2023 schedule.
+const MA_PENALTY_TIERS_BY_YEAR: Record<number, ReadonlyArray<{ maxFplPct: number; monthly: number }>> = {
+  2023: MA_TIERS_2023,
+  2024: MA_TIERS_2023,
+  2025: MA_TIERS_2023,
 };
 
 export interface StateMandateParams {
@@ -190,9 +181,9 @@ export function calculateStateIndividualMandatePenalty(p: StateMandateParams): S
   return {
     penalty,
     state,
-    // Report what actually DROVE the number: the bronze cap when it binds,
-    // else the greater of the flat / percentage method.
-    method: cappedAnnual < greaterOf ? "bronze_cap" : pctAnnual > flatAnnual ? "percentage" : "flat",
+    // Report what actually DROVE the number: the bronze cap when it binds (or
+    // ties the greater-of), else the greater of the flat / percentage method.
+    method: bronzeAnnual <= greaterOf ? "bronze_cap" : pctAnnual > flatAnnual ? "percentage" : "flat",
     flatAmount: round2(flatAnnual * (months / 12)),
     percentageAmount: round2(pctAnnual * (months / 12)),
     bronzeCapAmount: round2(bronzeAnnual * (months / 12)),
