@@ -338,6 +338,23 @@ function applyBracketsWithBreakdown(
   return out;
 }
 
+/**
+ * T1.3 — the taxable-income CEILING of the ordinary bracket at `targetRate` (the
+ * top of the last bracket whose marginal rate is ≤ targetRate). Used by the
+ * multi-year bracket-filling optimizer to size income realizations / Roth
+ * conversions up to the top of a target bracket. Returns Infinity for the top rate.
+ */
+export function federalBracketCeiling(targetRate: number, filingStatus: string, taxYear: number): number {
+  const year = resolveTaxYear(taxYear);
+  const brackets = FEDERAL_BRACKETS[year][filingStatus] ?? FEDERAL_BRACKETS[year].single;
+  let ceiling = 0;
+  for (const b of brackets) {
+    if (b.rate <= targetRate + 1e-9) ceiling = b.upTo;
+    else break;
+  }
+  return ceiling;
+}
+
 export function calculateFederalTax(
   taxableIncome: number,
   filingStatus: string,

@@ -37,6 +37,8 @@ import { consentRequired, hasValidConsent, AI_EXTRACTION_SCOPE } from "../lib/co
 import { computeTaxReturn, loadTaxReturnInputs } from "../lib/taxReturnPipeline";
 import { buildPlanningCalendar } from "../lib/planningCalendar";
 import { optimizeRothConversionLadder } from "../lib/rothOptimizer";
+import { runMonteCarlo } from "../lib/monteCarloEngine";
+import { optimizeBracketFilling } from "../lib/multiYearOptimizer";
 import {
   runWhatIfScenario,
   runWhatIfScenarios,
@@ -755,6 +757,67 @@ router.post("/clients/:clientId/roth-optimizer", async (req, res): Promise<void>
   } catch (err) {
     logger.error({ err, clientId: params.data.clientId }, "Roth optimizer failed");
     res.status(500).json({ error: "Roth optimizer failed" });
+  }
+});
+
+// ── T1.3 — Monte Carlo multi-year projection (confidence bands) ────────────
+router.post("/clients/:clientId/monte-carlo", async (req, res): Promise<void> => {
+  const params = RunRothOptimizerParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  // Lightweight inline body parse with clamped defaults (the engine also clamps).
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const num = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d);
+  try {
+    const loaded = await loadTaxReturnInputs(params.data.clientId);
+    if (!loaded) {
+      res.status(404).json({ error: "Client not found" });
+      return;
+    }
+    const result = runMonteCarlo(loaded.inputs, {
+      trials: num(b.trials, 1000),
+      horizonYears: num(b.horizonYears, 10),
+      seed: num(b.seed, 20260609),
+      meanReturn: num(b.meanReturn, 0.06),
+      stdevReturn: num(b.stdevReturn, 0.12),
+      incomeGrowth: typeof b.incomeGrowth === "number" ? b.incomeGrowth : undefined,
+      startingPortfolio: typeof b.startingPortfolio === "number" ? b.startingPortfolio : undefined,
+    });
+    res.json({ clientId: params.data.clientId, taxYear: loaded.inputs.taxYear, result });
+  } catch (err) {
+    logger.error({ err, clientId: params.data.clientId }, "Monte Carlo failed");
+    res.status(500).json({ error: "Monte Carlo projection failed" });
+  }
+});
+
+// ── T1.3 — multi-year bracket-fill optimizer ───────────────────────────────
+router.post("/clients/:clientId/bracket-fill", async (req, res): Promise<void> => {
+  const params = RunRothOptimizerParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const num = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d);
+  try {
+    const loaded = await loadTaxReturnInputs(params.data.clientId);
+    if (!loaded) {
+      res.status(404).json({ error: "Client not found" });
+      return;
+    }
+    const result = optimizeBracketFilling(loaded.inputs, {
+      horizonYears: num(b.horizonYears, 10),
+      targetMarginalRate: num(b.targetMarginalRate, 0.22),
+      traditionalIraBalance: num(b.traditionalIraBalance, 0),
+      incomeGrowth: typeof b.incomeGrowth === "number" ? b.incomeGrowth : undefined,
+      iraGrowth: typeof b.iraGrowth === "number" ? b.iraGrowth : undefined,
+    });
+    res.json({ clientId: params.data.clientId, taxYear: loaded.inputs.taxYear, result });
+  } catch (err) {
+    logger.error({ err, clientId: params.data.clientId }, "Bracket-fill optimizer failed");
+    res.status(500).json({ error: "Bracket-fill optimizer failed" });
   }
 });
 

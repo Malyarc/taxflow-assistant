@@ -111,6 +111,8 @@
     "src/tax-engine-t1-capability-tests.ts",
     "src/tax-engine-t1-state-depth-tests.ts",
     "src/tax-engine-carryforward-audit-tests.ts",
+    "src/tax-engine-montecarlo-tests.ts",
+    "src/tax-engine-optimizer-tests.ts",
     "src/tax-engine-property-harness.ts"
   ]
 }
