@@ -336,6 +336,36 @@ header("C3 — AMT MFS §55(d)(3) phantom add-back");
   check("single $1M unaffected (TMT $275,348)", single.amtBeforeRegular, 232600 * 0.26 + (1_000_000 - 232600) * 0.28, 1);
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// C4 — IRA-deduction MAGI adds back the SLI deduction + FEIE (Pub 590-A Wksht 1-1).
+// Single, covered by a workplace plan, $86k W-2, $2,500 SLI, $7k trad IRA, 2024.
+// SLI deductible (80-95k phase-out @ MAGI 86k = 0.60) = $1,500. IRA MAGI must add
+// that back → $86,000 (not $84,500), so the IRA phase-out (77-87k) fraction is
+// (87,000−86,000)/10,000 = 0.10 → IRA deductible $7,000×0.10 = $700 (was $1,750).
+// ════════════════════════════════════════════════════════════════════════════
+header("C4 — IRA MAGI adds back SLI + FEIE");
+{
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, iraCoveredByWorkplacePlan: true } as never,
+    w2s: [{ wagesBox1: 86000, federalTaxWithheldBox2: 0, stateCode: "FL" }],
+    form1099s: [],
+    adjustments: [
+      { adjustmentType: "student_loan_interest", amount: 2500, isApplied: true },
+      { adjustmentType: "ira_contribution_traditional", amount: 7000, isApplied: true },
+    ], taxYear: 2024,
+  } as never);
+  check("IRA deductible = $700 (SLI added back to MAGI)", (r as never as { retirementDeductions: { iraDeductible: number } }).retirementDeductions.iraDeductible, 700, 1);
+  // Without SLI, the IRA MAGI is $86,000 too (no SLI to add back) — same $700.
+  // Control: lower the wage so MAGI is well below the band → full $7,000.
+  const full = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, iraCoveredByWorkplacePlan: true } as never,
+    w2s: [{ wagesBox1: 60000, federalTaxWithheldBox2: 0, stateCode: "FL" }],
+    form1099s: [],
+    adjustments: [{ adjustmentType: "ira_contribution_traditional", amount: 7000, isApplied: true }], taxYear: 2024,
+  } as never);
+  check("IRA deductible = $7,000 (MAGI $60k below the band)", (full as never as { retirementDeductions: { iraDeductible: number } }).retirementDeductions.iraDeductible, 7000, 1);
+}
+
 // ── summary ──────────────────────────────────────────────────────────────────
 console.log(`\n${"═".repeat(70)}`);
 for (const f of FAIL) console.log(f);

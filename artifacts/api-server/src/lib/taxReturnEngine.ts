@@ -2569,6 +2569,15 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const aboveTheLineExcludingIra = aboveTheLineDeterministic + sliDeduction;
   const agiBeforeIra = Math.max(0, totalIncomeProvisional - aboveTheLineExcludingIra);
 
+  // C4 (audit 2026-06-08) — MAGI for the traditional-IRA-deduction phase-out
+  // (Pub 590-A Worksheet 1-1) = AGI (without the IRA deduction) PLUS the
+  // student-loan-interest deduction and the §911 FEIE/foreign-housing exclusion,
+  // both ADDED BACK. `agiBeforeIra` already subtracted SLI, so add it back here;
+  // and add the FEIE that was netted out of total income. (Was passing
+  // agiBeforeIra directly → SLI/FEIE understated MAGI → over-allowed the IRA
+  // deduction in the phase-out band.)
+  const magiForIra = agiBeforeIra + sliDeduction + feieExclusion;
+
   const retirement = calculateRetirementDeductions({
     hsaContribution: hsaContributionAdj,
     hsaEmployerContribution: hsaEmployerContributionAdj,
@@ -2576,7 +2585,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     iraContribution: iraTraditionalAdj,
     iraCoveredByWorkplacePlan: client.iraCoveredByWorkplacePlan ?? false,
     age: ageTaxpayer,
-    agi: agiBeforeIra,
+    agi: magiForIra,
     filingStatus: client.filingStatus,
     taxYear,
   });

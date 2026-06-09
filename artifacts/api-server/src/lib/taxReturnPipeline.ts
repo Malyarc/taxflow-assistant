@@ -409,6 +409,32 @@ async function synthesizePriorYearCarryforwards(
     });
   }
 
+  // CF2 (audit 2026-06-08) — NOL carryforward (§172, indefinite, 80%-of-taxable
+  // limited). The engine WRITES nolCarryforwardRemaining each year but it was the
+  // only indefinite carryforward NOT auto-loaded (every sibling above is) — a
+  // silent multi-year loss + a trap for the multi-year planning projections.
+  const nolCarry = Number(priorReturn.nolCarryforwardRemaining ?? 0);
+  if (nolCarry > 0 && !hasManualOverride("nol_carryforward")) {
+    synthetic.push({
+      adjustmentType: "nol_carryforward",
+      amount: nolCarry,
+      isApplied: true,
+    });
+  }
+
+  // CF2 — §163(j)(2) disallowed business-interest carryforward (indefinite).
+  // Same gap: the engine writes section163jDisallowedCarryforward but didn't
+  // auto-load it; the engine adds it to this year's business interest before
+  // re-applying the ATI-30% cap.
+  const s163jCarry = Number(priorReturn.section163jDisallowedCarryforward ?? 0);
+  if (s163jCarry > 0 && !hasManualOverride("section_163j_carryforward_from_prior")) {
+    synthetic.push({
+      adjustmentType: "section_163j_carryforward_from_prior",
+      amount: s163jCarry,
+      isApplied: true,
+    });
+  }
+
   return synthetic;
 }
 
