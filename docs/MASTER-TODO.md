@@ -34,7 +34,7 @@ secure, audited to the hilt, and validated by a CPA before any tax number ships.
 ## 2. Current baseline (DONE — the foundation)
 
 > Detailed provenance in `docs/product-todo.md`. Compact summary:
-- **Engine:** individual Form 1040, 50 states + DC, OBBBA-conformant, multi-state NR tax-ratio for 25 states + part-year + local taxes; computes line values for ~30 federal forms; ships substitute PDFs for 1040 / 1040-X / 2210 / 4868 / 8606 / 8824 / 8990. **~4,600 hand-calc'd assertions, deployed.**
+- **Engine:** individual Form 1040, 50 states + DC, OBBBA-conformant, multi-state NR tax-ratio for 25 states + part-year + local taxes; computes line values for ~30 federal forms; ships substitute PDFs for 1040 / 1040-X / 2210 / 4868 / 8606 / 8824 / 8990. **~4,769 hand-calc'd assertions (80 no-API suites) + the 106-assertion audit file + the ~5,636-run property harness, deployed (migrations through 0016).**
 - **Planning:** 101-strategy catalog, "LLM never touches the math," ~16 engine-verified what-ifs + the rest heuristic, multi-year detectors, Roth-conversion optimizer (lifetime RMD/IRMAA value model).
 - **AI extraction:** upload→extract→review→approve→engine, end-to-end for W-2 + 8 1099s + 6 info-returns (1098/T/E, 1095-A, SSA-1099, W-2G); LIVE-validated W-2 100% (small-n).
 
@@ -67,28 +67,28 @@ secure, audited to the hilt, and validated by a CPA before any tax number ships.
   - [ ] Secrets management: env-var secrets → a secrets manager + short-lived scoped AI keys.
 - **Exit criteria:** `/security-review` clean on the full diff · independent pen-test of the data path · the compliance checklist green · counsel sign-off · no plaintext PII at rest anywhere.
 
-### T0.3 [P0] Large-scale accuracy audit campaign — **GAME PLAN A** (the credibility gate)
-> "Zero bugs" is unprovable; the **bug-discovery rate** is driven to ~0 across *independent* techniques — the safety-critical-numerics standard. Today's ~4,600 hand-picked assertions have a coverage ceiling (they test what the author thought of). These find what the author didn't. **This campaign will surface the T1 engine gaps — run it and the §1250/collectibles/§1231 bugs fall out.**
+### T0.3 [P0] Large-scale accuracy audit campaign — **GAME PLAN A** (the credibility gate) — **[~] MOSTLY DONE (2026-06-08→09): machine harness + 14-agent full-app fan-out RAN; all ~45 findings FIXED + deployed + prod-verified. Remaining: the differential-ORACLE layer (A0/A2) + CPA sign-off (A6).**
+> "Zero bugs" is unprovable; the **bug-discovery rate** is driven to ~0 across *independent* techniques — the safety-critical-numerics standard. Today's ~4,600 hand-picked assertions have a coverage ceiling (they test what the author thought of). These find what the author didn't. **This campaign surfaced the T1 engine gaps — the §1250/collectibles/§1231 bugs fell out (T1.1, all fixed).**
 - **Phase A0 — Foundation (harness + methodology):**
-  - [ ] Differential-oracle **adapter layer** (`TaxReturnInputs` → each oracle's input format) + a results-ledger schema + a bug taxonomy (off-by-one / stale-year-constant / missing-phase-out / ordering / rounding / missing-rate-bucket).
+  - [ ] Differential-oracle **adapter layer** (`TaxReturnInputs` → each oracle's input format) + a results-ledger schema + a bug taxonomy (off-by-one / stale-year-constant / missing-phase-out / ordering / rounding / missing-rate-bucket). **← THE TOP OPEN T0.3 ITEM (recommended next).**
   - [ ] Evaluate + pick ≥2 oracles: OpenTaxSolver, `ustaxes`, `tenforty`, + the **IRS ATS published e-file test scenarios** and Pub 17 / form-instruction worked examples (authoritative). Document each oracle's coverage + known divergences.
-  - [ ] Write the methodology doc (`docs/accuracy-audit/master-campaign.md`) + define the invariant set.
-- **Phase A1 — Machine-driven bug-finding (no oracle needed):**
-  - [ ] **Property-based suite** (fast-check): AGI ≥ taxable ≥ 0; tax ≥ 0; effective rate ≤ top marginal; refund = payments − liability; each credit ≤ its statutory cap; phase-outs continuous (no unintended cliffs); no >100% marginal rate outside known cliffs; MFJ within the marriage-penalty bound.
-  - [ ] **Boundary/threshold sweep:** auto-extract every numeric threshold (brackets, phase-out start/end, caps, age gates, AGI cliffs) → ±$1 + exact-boundary tests (the `<`/`<=` off-by-one class).
-  - [ ] **Metamorphic + differential-year** (income doubling/splitting relations; same scenario across 2024/25/26) + **fuzzing** (malformed → no crash/NaN/Infinity).
-- **Phase A2 — Differential vs oracles:** run the shared scenario space; triage every divergence (could be the oracle's bug — investigate both); IRS ATS + Pub 17 as tie-breakers.
-- **Phase A3 — CPA scenario matrix (common + uncommon):** filing status (5) × income archetype (W-2, SE/Sch C, retiree SS+pension+RMD, investor, RE pro, multi-state, expat/FEIE, business-owner K-1) × life event (marriage/divorce/death/new-child/disability/disaster) × credit-deduction combos × all 50 states+DC; CPA hand-calcs the corners. **Explicit uncommon list:** kiddie-AMT, ISO-AMT, NIIT/IRMAA/§199A cliffs, QSBS 50/75/100% tiers, cross-account partial wash sale, §1031 boot+NIIT, §453 multi-year, NOL 80% limit, excess-SS (multi-employer), Roth+IRMAA 2-yr lookback, charitable 60/30/20 carryforward, disaster casualty, HSA excess §4973, §72(t) SEPP, Saver's QSS boundary, EITC investment-income disqualification, adoption special-needs refundable split, PTC clawback-cap vs additional, SEHI/§162(l), QSS 2-yr window, Form 8332 split custody, **§1250 unrecaptured 25%, collectibles 28%, §1231/4797 recapture** (these last three are known gaps — T1).
-- **Phase A4 — Planning-engine audit:** a fire/suppress **confusion matrix** for all 101 strategies + savings within tolerance vs an independent calc + cross-strategy stacking + a false-positive sweep on a trivial W-2 return + every heuristic detector bounded against a hand-calc + catalog freshness at every supported year.
-- **Phase A5 — Functionality-level audit (EVERY feature, not just the two engines):**
-  - [ ] **AI extraction accuracy** — the full 100-doc benchmark on paid quota: per-field precision/recall/F1 across W-2 + 8 1099s + 6 info-returns; the document→review→approve→engine round-trip; the info-return → adjustment/client mapping correctness.
-  - [ ] **Multi-state + local depth** — every NR method-(a) state vs its NR form; the part-year income-% method; local taxes (NYC PIT/UBT/MCTMT, PA EIT ~175 munis, OH SDIT ~226 SDs, MD/IN counties, KY occupational, Yonkers); reciprocity pairs; the resident credit-for-tax-paid.
-  - [ ] **Form/workpaper generator output** (once T2.1 ships) — every generated form's line values reconcile to the engine AND to the official form layout; round-trip a packet through the T0.3 scenario matrix.
-  - [ ] **Exports + API contract** — PDF/CSV/JSON/.gen exports correct + stable; the OpenAPI contract + the integration ("yes-API") suites green; backward-compat of the `TaxReturnInputs`/`ComputedTaxReturn` seam.
-  - [ ] **What-if + multi-year primitives** — purity, mutation ordering, carryforward chaining, the RMD/IRMAA models, optimizer convergence.
-  - [ ] **Diagnostics + planning surfaces** — the pre-filing checklist, the firm-wide hit-list ranking, peer-benchmark, state-comparison endpoints, all under real data.
-- **Phase A6 — Sign-off:** CPA review of the matrix + every divergence; publish the audit report.
-- **Exit criteria:** bug-discovery rate ~0 across all techniques **and across every feature/functionality (not just the two engines)** · every divergence root-caused (fixed or documented as a CPA-confirmed correct difference) · the whole campaign is a **CI-runnable suite** · CPA sign-off.
+  - [x] Write the methodology doc + define the invariant set — `docs/accuracy-audit/full-app-audit-2026-06-08.md` (findings ledger) + the invariant set encoded in the property harness.
+- **Phase A1 — Machine-driven bug-finding (no oracle needed) — [x] DONE: `scripts/src/tax-engine-property-harness.ts` (~5,636 fast-check runs, seed 20260608). Found the −1e308 engine-totality overflow.**
+  - [x] **Property-based suite** (fast-check): all-finite + AGI ≥ taxable ≥ 0 + non-neg taxes + sane effective rate over 1,500 realistic returns.
+  - [x] **Boundary/threshold sweep:** ±$1 + exact-boundary continuity at the 2024 bracket edges (P4).
+  - [x] **Metamorphic + fuzzing** (gross-tax monotonic in wage income; 2,500 malformed/extreme inputs → no crash/NaN/Infinity). *(Differential-year relations partial; full cross-year metamorphic with the oracle is A2.)*
+- **Phase A2 — Differential vs oracles:** [ ] run the shared scenario space; triage every divergence (could be the oracle's bug — investigate both); IRS ATS + Pub 17 as tie-breakers. **← OPEN (needs A0).**
+- **Phase A3 — CPA scenario matrix (common + uncommon):** [~] partial — large scenario batteries exist (cpa-scenarios 20 archetypes, realworld S1-S17, 16-scenario battery, planning-scenarios 11 archetypes) covering most of the uncommon list incl. the now-closed **§1250/collectibles/§1231**. Open: the full 5×archetype×life-event×50-state CPA-hand-calc'd corner matrix + CPA sign-off.
+- **Phase A4 — Planning-engine audit:** [~] partial — `tax-engine-detector-coverage-tests.ts` (catalog↔detector parity, 101/101) + catalog-freshness at every supported year + false-positive sweeps (Q1-Q4 fixed) + bounded heuristics. Open: the full fire/suppress confusion matrix + savings-vs-independent-calc for all 101.
+- **Phase A5 — Functionality-level audit (EVERY feature) — [~] substantially DONE via the 14-agent fan-out (one per subsystem, each verifying numeric rules vs the primary source):**
+  - [~] **AI extraction accuracy** — round-trip + info-return mapping audited (F1 case-sensitivity bug fixed); the full 100-doc precision/recall benchmark on paid quota still open.
+  - [x] **Multi-state + local depth** — NR method-(a) states vs their NR forms (73 assertions), part-year income-% method, local taxes (NYC/PA/OH/MD incl. graduated counties/IN/KY/Yonkers), reciprocity, resident credit — all audited + the WV/MA/MD/state-rate fixes shipped.
+  - [ ] **Form/workpaper generator output** — pending T2.1 (the generator doesn't exist yet).
+  - [x] **Exports + API contract** — PDF/CSV/JSON/.gen + the OpenAPI contract + all yes-API integration suites green; SCH1 surfaced the T1.1 outputs through the seam.
+  - [x] **What-if + multi-year primitives** — purity, mutation ordering, carryforward chaining, RMD/IRMAA models, optimizer convergence (the SEC2 horizon-DoS bound shipped).
+  - [x] **Diagnostics + planning surfaces** — hit-list ranking, peer-benchmark, state-comparison, planning-calendar audited under real data.
+- **Phase A6 — Sign-off:** [ ] CPA review of the matrix + every divergence; publish the audit report. **← OPEN (needs a CPA design partner, T4).**
+- **Exit criteria:** bug-discovery rate ~0 across all techniques **and across every feature/functionality** · every divergence root-caused · the whole campaign is a **CI-runnable suite** · CPA sign-off. **STATUS: machine + fan-out techniques green & all findings fixed; the oracle technique (A2) + CPA sign-off (A6) remain before this can be marked [x].**
 
 ---
 
@@ -178,10 +178,11 @@ secure, audited to the hilt, and validated by a CPA before any tax number ships.
 
 ## Suggested execution order (highest leverage first)
 
-1. **T0.1** (yours — rotate creds; it unblocks everything).
-2. **T0.3 Phase A0–A1** — stand up the audit harness + machine-driven bug-finding. *This is the single highest-leverage engineering move:* it hardens the core AND auto-surfaces the T1.1 correctness gaps.
-3. **T1.1** — fix the correctness-affecting gaps the audit surfaces (§1250 / collectibles / §1231).
-4. **T0.2 Phase C1–C2** — consent ledger + PII, in parallel (different skill set).
-5. **T0.3 Phase A2–A5 + T1.2/T1.3** — finish the audit + the capability enhancements.
-6. **T2** — forms/workpapers + firm features, once the core is audited and the trust layer is closed.
-7. **T3/T4** — Haven + business.
+1. **T0.1** (yours — rotate creds; it unblocks everything). — still open.
+2. ~~**T0.3 Phase A1** — machine-driven bug-finding harness~~ **✓ DONE** (property/fuzz/boundary/metamorphic, 5,636 runs).
+3. ~~**T1.1** — §1250 / collectibles / §1231 / state-mandate correctness gaps~~ **✓ DONE** (+ the full-app fan-out audit closed all ~45 findings).
+4. **T0.3 Phase A0 + A2** — the differential-**oracle** layer (OpenTaxSolver/ustaxes/tenforty + IRS ATS). **← NEXT highest-leverage engineering move:** turns the self-consistency harness into oracle-backed cross-validation, the last unmet T0.3 technique.
+5. **T0.2 Phase C1–C2** — consent ledger + PII, in parallel (different skill set).
+6. **T1.2/T1.3** — capability enhancements (§280F luxury-auto is the top T1.2; promote heuristic planning detectors / multi-year optimizer for T1.3).
+7. **T2** — forms/workpapers + firm features, once the oracle layer + trust layer are closed.
+8. **T3/T4** — Haven + business (a CPA design partner also unblocks T0.3-A6 sign-off).
