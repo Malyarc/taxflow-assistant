@@ -1,3 +1,53 @@
+# Handoff Note — 2026-06-08e (MASTER-TODO **T1** engine-perfection session — T1.1 fully closed + high-value T1.2/T1.3 slices; shipped + pushed)
+
+Worked the MASTER-TODO **T1 — PERFECT THE ENGINES** tier. **3 commits on `main`
+(`2cb182d` T1.1, `94f70a4` T1.2, `8c529b1` T1.3), pushed. No-API battery 79 suites /
+4,754 green (+161). Typecheck + CI test-typecheck clean. DB migration 0011 (additive,
+2 nullable cols) pending the prod deploy's `drizzle-kit migrate` step.**
+
+**What landed (all hand-calc'd against IRS/state primary sources; zero regression — the
+special-rate path is gated so the prior 4,593 assertions are byte-for-byte unchanged):**
+- **T1.1 — ALL FOUR latent correctness bugs fixed** (a client got a wrong number today):
+  - §1(h) **Schedule D Tax Worksheet** — unrecaptured **§1250 (25% cap)** + **collectibles
+    (28% cap)** buckets in `calculateFederalTaxWithCapitalGains` (rates are CAPS, not floors;
+    stack above the 0/15/20 gain). Inputs: per-lot `capitalTransactions.gainClass` /
+    `unrecaptured1250Amount` (new DB cols) + the `unrecaptured_section_1250_gain` /
+    `collectibles_28_rate_gain` adjustments + Form 4797.
+  - New `form4797.ts` — **§1231/§1245/§1250 + Form 4797**: §1245 full recapture + §1250
+    excess recapture → ordinary; unrecaptured §1250 → 25% bucket; net §1231 gain→LTCG /
+    loss→ordinary (full, no $3k cap); §1231(c) 5-yr lookback. `TaxReturnInputs.form4797` +
+    `section_1231_lookback_loss` adjustment.
+  - New `stateMandate.ts` — **CA/NJ/RI/DC/MA individual-mandate penalty** via
+    `months_without_minimum_coverage`; folds into stateRefundOrOwed + effective rate.
+- **T1.2 (partial)**: new `scheduleH.ts` **household-employment (nanny) tax** (FICA + FUTA +
+  0.9%) via `household_employee_cash_wages`; **clergy housing allowance** (`clergy_housing_allowance`
+  → SE base only, income-tax-exempt per §107/§1402(a)(8)).
+- **T1.3 (partial)**: new `planningCalendar.ts` **deadline-aware planning calendar**
+  (`strategyDeadline` classifier + `buildPlanningCalendar`); `OpportunityHit.deadline`
+  attached by the engine; new `GET /api/clients/:id/planning-calendar`.
+
+**New tests (4 files, +161):** `tax-engine-section1250-1231-tests.ts` (79),
+`tax-engine-state-mandate-tests.ts` (31), `tax-engine-scheduleh-clergy-tests.ts` (19),
+`tax-engine-planning-calendar-tests.ts` (32). All registered in `scripts/tsconfig.json` +
+auto-run by `run-no-api.ts`.
+
+**Deferred + documented in `docs/MASTER-TODO.md`** (NOT silently dropped): **§280F** luxury-auto
+caps (deep change to the 108-test `computeScheduleCAssetDepreciation` — give it its own pass),
+Form 2210 annualized method, digital-assets/1099-DA, per-property suspended-loss storage,
+statutory-employee Sch C routing, broader state AMT/sourcing depth, carryforward audit;
+T1.3 detector-promotions + multi-year/strategy-combo/Monte-Carlo optimizers + what-if UI +
+estate/gift touchpoints; **business returns (1065/1120/1041) remain a founder scope decision.**
+
+**Watch-outs:** **MA mandate 2024+ monthly amounts are PROVISIONAL** (seeded with the confirmed
+2023 schedule; tests assert TY2023 only) — confirm against the annual MA DOR TIR before relying
+on a MA 2024/2025 mandate number. The per-lot §1250/collectibles + Form-4797 inputs are
+engine/Haven-ready; the live Option-A overlay path is the **adjustment** channel (zero-schema,
+works today) — a bespoke Form 4797 entry UI was intentionally NOT built (Haven's portals replace
+the SPA). **Recommended next:** the T0.3 large accuracy-audit campaign (it will exercise these
+new rate buckets hard), or §280F as a focused follow-on.
+
+---
+
 # Handoff Note — 2026-06-08d (AI extraction: auto-apply info-returns on approve — shipped + deployed + prod-smoked)
 
 Closed the downstream gap from 2026-06-08c: approving an extracted information return now
