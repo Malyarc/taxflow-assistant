@@ -45,6 +45,7 @@ import {
   resolveTaxYear,
   SS_WAGE_BASE,
   calculateStudentLoanInterest,
+  saversCreditRateFor,
   type TaxYear,
 } from "./taxCalculator";
 import { runWhatIfScenarios } from "./whatIfEngine";
@@ -3256,37 +3257,9 @@ function detect529ToRoth(args: {
 }
 
 // ── G1.31 — Saver's Credit §25B ──────────────────────────────────────────
+// The AGI→rate bands are the engine's year-indexed SAVERS_CREDIT_TIERS, read via
+// saversCreditRateFor() (single source of truth; QSS→single column per PLAN-01).
 
-const G1_31_AGI_BANDS: Record<string, Array<{ rate: number; maxAgi: number }>> = {
-  single: [
-    { rate: 0.50, maxAgi: 23_000 },
-    { rate: 0.20, maxAgi: 25_000 },
-    { rate: 0.10, maxAgi: 38_250 },
-  ],
-  married_filing_separately: [
-    { rate: 0.50, maxAgi: 23_000 },
-    { rate: 0.20, maxAgi: 25_000 },
-    { rate: 0.10, maxAgi: 38_250 },
-  ],
-  head_of_household: [
-    { rate: 0.50, maxAgi: 34_500 },
-    { rate: 0.20, maxAgi: 37_500 },
-    { rate: 0.10, maxAgi: 57_375 },
-  ],
-  married_filing_jointly: [
-    { rate: 0.50, maxAgi: 46_000 },
-    { rate: 0.20, maxAgi: 50_000 },
-    { rate: 0.10, maxAgi: 76_500 },
-  ],
-  // PLAN-01: Form 8880 places Qualifying Surviving Spouse in the SINGLE/MFS
-  // column, NOT MFJ — §25B grants the doubled thresholds to joint returns +
-  // HoH (75%) only; QSS falls in the residual single column.
-  qualifying_widow: [
-    { rate: 0.50, maxAgi: 23_000 },
-    { rate: 0.20, maxAgi: 25_000 },
-    { rate: 0.10, maxAgi: 38_250 },
-  ],
-};
 const G1_31_CONTRIB_CAP_SINGLE = 2_000;
 const G1_31_CONTRIB_CAP_MFJ = 4_000;
 const G1_31_MIN_AGE = 18;
@@ -3316,18 +3289,19 @@ function detectSaversCredit(args: {
     sumAdjustment(adjustments, "ira_contribution_roth");
   if (anyRetirement <= 0) return null;
 
-  // Determine applicable rate from AGI bracket.
-  const bands = G1_31_AGI_BANDS[client.filingStatus] ?? G1_31_AGI_BANDS.single;
+  // Determine the applicable §25B rate from the YEAR-INDEXED engine tiers
+  // (single source of truth — the prior hardcoded TY2024-only bands mis-rated
+  // TY2025+; audit Q3).
   const agi = computed.adjustedGrossIncome;
-  const matchedBand = bands.find((b) => agi <= b.maxAgi);
-  if (!matchedBand) return null;
+  const rate = saversCreditRateFor(computed.taxYear, client.filingStatus, agi);
+  if (rate <= 0) return null;
 
   // PLAN-01: QSS uses the single $2,000 cap (Form 8880), not the MFJ $4,000.
   const cap = client.filingStatus === "married_filing_jointly"
     ? G1_31_CONTRIB_CAP_MFJ
     : G1_31_CONTRIB_CAP_SINGLE;
   const qualifyingContrib = Math.min(anyRetirement, cap);
-  const estSavings = Math.round(qualifyingContrib * matchedBand.rate);
+  const estSavings = Math.round(qualifyingContrib * rate);
   if (estSavings <= 0) return null;
 
   // Cap by federal tax liability (non-refundable).
@@ -3361,7 +3335,7 @@ function detectSaversCredit(args: {
     recurring: strategy.recurring,
     rationale:
       `AGI ${fmt(Math.round(agi))} (${client.filingStatus}) is within the Saver's Credit ` +
-      `${(matchedBand.rate * 100).toFixed(0)}% band. Existing retirement contributions ` +
+      `${(rate * 100).toFixed(0)}% band. Existing retirement contributions ` +
       `${fmt(Math.round(anyRetirement))} qualify (cap ${fmt(cap)}). Credit ~${fmt(cappedSavings)} ` +
       `via Form 8880 — many CPAs miss this for low/mid-income clients with retirement savings.`,
     action: interpolate(strategy.action, vars),
@@ -3370,7 +3344,7 @@ function detectSaversCredit(args: {
     inputs: {
       agi: Math.round(agi),
       filingStatus: client.filingStatus,
-      bandRate: matchedBand.rate,
+      bandRate: rate,
       qualifyingContribution: Math.round(qualifyingContrib),
       contributionCap: cap,
       computedCredit: estSavings,

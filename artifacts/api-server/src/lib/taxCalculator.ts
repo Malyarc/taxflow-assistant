@@ -4405,6 +4405,21 @@ export interface SaversCreditCalculation {
   appliedCredit: number;
 }
 
+/**
+ * The §25B Saver's Credit RATE (0.50 / 0.20 / 0.10 / 0) for a given year, filing
+ * status, and AGI — the year-indexed source of truth. Exposed so the planning
+ * detector (G1.31) doesn't keep its own (stale) copy of the AGI bands.
+ * (Audit 2026-06-08 Q3 — the detector's hardcoded TY2024 bands mis-rated TY2025+.)
+ */
+export function saversCreditRateFor(taxYear: number, filingStatus: string, agi: number): number {
+  const year = resolveTaxYear(taxYear);
+  const tiers = SAVERS_CREDIT_TIERS[year][filingStatus] ?? SAVERS_CREDIT_TIERS[year].single;
+  for (const tier of tiers) {
+    if (agi <= tier.agiMax) return tier.rate;
+  }
+  return 0;
+}
+
 export function calculateSaversCredit(params: {
   filingStatus: string;
   agi: number;

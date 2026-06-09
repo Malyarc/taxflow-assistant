@@ -10,7 +10,7 @@ import {
   summarize1099s,
   type TaxReturnInputs,
 } from "../../artifacts/api-server/src/lib/taxReturnEngine";
-import { calculateStateTax } from "../../artifacts/api-server/src/lib/taxCalculator";
+import { calculateStateTax, saversCreditRateFor } from "../../artifacts/api-server/src/lib/taxCalculator";
 import { validateW2 } from "@workspace/validation";
 
 const PASS: string[] = [];
@@ -231,6 +231,22 @@ header("State rate corrections — 2024 base + 2025/2026 overrides");
   // = 91.02 + 648.30 + 679.36 + 1,870.44 = $3,289.11. The corrected 5.20% top rate
   // is what's verified (was 5.84%); the std ded is unchanged by this fix.
   check("S7 NE 2025 $80k top 5.20%", calculateStateTax(80000, "NE", "single", 2025), 3289.11, 1.0);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Q3 — Saver's Credit (G1.31) detector now reads the YEAR-INDEXED engine tiers
+// (was a hardcoded TY2024-only band map → mis-rated TY2025+). saversCreditRateFor
+// is the shared source of truth the detector uses.
+// ════════════════════════════════════════════════════════════════════════════
+header("Q3 — Saver's Credit rate is year-indexed (single source)");
+{
+  ok("2024 single $23,000 → 50%", saversCreditRateFor(2024, "single", 23000) === 0.50);
+  ok("2024 single $23,500 → 20% (above the 2024 $23,000 band)", saversCreditRateFor(2024, "single", 23500) === 0.20);
+  // The fix: a TY2025 single at $23,500 is in the 50% band ($23,750) — the old
+  // hardcoded TY2024 bands wrongly rated it 20%.
+  ok("2025 single $23,500 → 50% (2025 band $23,750; was wrongly 20%)", saversCreditRateFor(2025, "single", 23500) === 0.50);
+  ok("2026 single $24,000 → 50% (2026 band $24,250)", saversCreditRateFor(2026, "single", 24000) === 0.50);
+  ok("2025 MFJ $47,000 → 50% (2025 band $47,500)", saversCreditRateFor(2025, "married_filing_jointly", 47000) === 0.50);
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────
