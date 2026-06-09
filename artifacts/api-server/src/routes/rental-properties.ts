@@ -56,9 +56,9 @@ router.post("/clients/:clientId/rental-properties", async (req, res): Promise<vo
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  // Numeric DB columns are stored as strings.
+  // Numeric DB columns are stored as strings (incl. the T1.2 §469(g) carryforward).
   const insertData: Record<string, unknown> = { ...parsed.data, clientId: params.data.clientId };
-  for (const f of ["basis", "rentalIncome", "totalExpenses"]) {
+  for (const f of ["basis", "rentalIncome", "totalExpenses", "suspendedLossCarryforward"]) {
     if (insertData[f] != null) insertData[f] = String(insertData[f]);
   }
   const [record] = await db
@@ -89,7 +89,7 @@ router.patch("/clients/:clientId/rental-properties/:propertyId", async (req, res
     return;
   }
   const updateData: Record<string, unknown> = { ...parsed.data, updatedAt: new Date() };
-  for (const f of ["basis", "rentalIncome", "totalExpenses"]) {
+  for (const f of ["basis", "rentalIncome", "totalExpenses", "suspendedLossCarryforward"]) {
     if (updateData[f] != null) updateData[f] = String(updateData[f]);
   }
   const [before] = await db

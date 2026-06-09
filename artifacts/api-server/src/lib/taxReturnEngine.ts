@@ -2081,6 +2081,11 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   }
   // The optional method REPLACES actual net SE in the SE base + earned income.
   const seBaseScheduleC = seOptionalReported > 0 ? seOptionalReported : netSeIncome;
+  // T1.2 (church $108.28 floor, independent review 2026-06-09) — church-employee
+  // income (Sch SE Line 5a) is SE-taxed from $108.28 income / $100 net earnings,
+  // NOT the regular $400 floor. Lower the floor on the church-bearing SE base so a
+  // standalone church wage below $433 is no longer wrongly exempt.
+  const churchSeFloor = churchEmployeeIncome >= 108.28 ? 100 : 400;
   // SE-tax base = Schedule C net (or optional-method reported) + K-1 partnership
   // Box 14A SE earnings + clergy housing allowance + church-employee income.
   const seTaxBase = Math.max(0, seBaseScheduleC + k1SelfEmploymentEarnings + clergyHousingAllowance + churchEmployeeIncome);
@@ -2125,7 +2130,11 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     // to taxpayer's gross.
     // E2 — the SE-income adjustment is attributed by its spouse tag (untagged →
     // taxpayer). seIncomeFromAdjSpouse is the spouse-tagged subset.
-    const grossSeTaxpayer = (seIncomeFromAdj - seIncomeFromAdjSpouse) + necSeIncomeTaxpayer;
+    // T1.2 (HIGH-2, independent review 2026-06-09) — crypto-mining income (a
+    // trade/business, SE-taxable) defaults to the taxpayer like seIncomeFromAdj;
+    // it was in the single-filer grossSeIncome but was being dropped from the
+    // MFJ per-spouse SE base → mining escaped SE tax on MFJ returns.
+    const grossSeTaxpayer = (seIncomeFromAdj - seIncomeFromAdjSpouse) + necSeIncomeTaxpayer + cryptoMiningIncome;
     const grossSeSpouse = necSeIncomeSpouse + seIncomeFromAdjSpouse;
     const taxpayerScheduleCExpenses = Math.min(
       Math.max(0, scheduleCExpensesInput),
@@ -2133,10 +2142,15 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     );
     const taxpayerNetSe = Math.max(0, grossSeTaxpayer - taxpayerScheduleCExpenses);
     const spouseNetSe = Math.max(0, grossSeSpouse);
-    const seTaxBaseTaxpayer = Math.max(0, taxpayerNetSe + k1SelfEmploymentEarnings + clergyHousingAllowance + churchEmployeeIncome);
+    // T1.2 (HIGH-3, independent review 2026-06-09) — apply the SE non-farm optional
+    // method (Sch SE Part II) to the taxpayer's base on MFJ too (the election
+    // defaults to the taxpayer); the per-spouse branch was using the actual net,
+    // silently dropping the election (which exists to buy SS credits / EITC).
+    const taxpayerSeBaseSchedC = seOptionalReported > 0 ? seOptionalReported : taxpayerNetSe;
+    const seTaxBaseTaxpayer = Math.max(0, taxpayerSeBaseSchedC + k1SelfEmploymentEarnings + clergyHousingAllowance + churchEmployeeIncome);
     const seTaxBaseSpouse = Math.max(0, spouseNetSe);
 
-    const seTaxpayer = calculateSelfEmploymentTax(seTaxBaseTaxpayer, taxYear, w2SsByTaxpayer);
+    const seTaxpayer = calculateSelfEmploymentTax(seTaxBaseTaxpayer, taxYear, w2SsByTaxpayer, churchSeFloor);
     const seSpouse = calculateSelfEmploymentTax(seTaxBaseSpouse, taxYear, w2SsBySpouse);
     // Combine the two Sch SE results into a single SeTaxCalculation.
     se = {
@@ -2153,10 +2167,10 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     // pass 0 to calculateSelfEmploymentTax (no Line 9 applied). The CPA
     // can opt in to per-spouse Sch SE by tagging at least one W-2 or
     // 1099-NEC with spouse="spouse".
-    se = calculateSelfEmploymentTax(seTaxBase, taxYear, 0);
+    se = calculateSelfEmploymentTax(seTaxBase, taxYear, 0, churchSeFloor);
   } else {
     // Single, HoH, MFS, QSS — single filer; original Sch SE Line 9 path.
-    se = calculateSelfEmploymentTax(seTaxBase, taxYear, w2SocialSecurityWages);
+    se = calculateSelfEmploymentTax(seTaxBase, taxYear, w2SocialSecurityWages, churchSeFloor);
   }
 
   // K5 — SEHI deduction (Form 7206). Cap = net SE − half-SE. Adjustment is
@@ -2846,9 +2860,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     // ½-SE must NOT reduce Sch-C QBI. Exclude it (no-op when there's no clergy
     // allowance — clergyHousingAllowance/seTaxBase = 0 → identical to before).
     const clergyShareOfSe = Math.min(1, seTaxBase > 0 ? clergyHousingAllowance / seTaxBase : 0);
-    // T1.2 — statutory-employee Sch C net is QBI-eligible (full amount; it has
-    // no ½-SE deduction to subtract). Church-employee wages are NOT QBI.
-    const schCQbi = Math.max(0, netSeIncome - se.deductibleHalf * (1 - clergyShareOfSe)) + statutoryEmployeeIncome;
+    const schCQbi = Math.max(0, netSeIncome - se.deductibleHalf * (1 - clergyShareOfSe));
     qbiIncomeEffective = schCQbi;
     // Sub-gap (independent review 2026-06-08): when K-1 partnership SE earnings
     // (k1SelfEmploymentEarnings) coexist, the FULL ½-SE still over-reduces Sch-C
@@ -2858,6 +2870,12 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     // QBI (under-taxation). Current state is conservative (over-reduces). Only
     // the clergy share is carved out here (the new, common, zero-K-1 path).
   }
+  // T1.2 (HIGH-1, independent review 2026-06-09) — statutory-employee Sch C net is
+  // §199A-eligible (§1.199A-3; no ½-SE to subtract) and is a SEPARATE income stream
+  // from the Sch C / explicit qbi_income, so it is ALWAYS added on top — not gated
+  // behind the qbi_income<=0 auto-default (which a CPA-supplied qbi_income would
+  // otherwise skip, silently dropping the statutory QBI).
+  qbiIncomeEffective += statutoryEmployeeIncome;
   // K-1 default: when section199aQbi unset for active K-1, use Box 1.
   // Per-business SSTB (§199A(d)(2)): track the SSTB portion of K-1 QBI
   // (k1QbiSstbPortion) so the §199A(d)(3) phase-out below applies ONLY to
@@ -3215,8 +3233,13 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
       k1OrdinaryDividends +
       form1099Summary.royalties +
       k1Royalties +
-      // Rents — passive for the ordinary landlord; excluded for RE professionals:
-      (niitRentalIsNonPassive ? 0 : form1099Summary.rents + Math.max(0, rentalNetAppliedToAgi)) +
+      // Rents — passive for the ordinary landlord; excluded for RE professionals.
+      // T1.2 (MEDIUM-1, independent review 2026-06-09) — a FULLY-DISPOSED passive
+      // rental's positive current-year operating net flows to AGI via
+      // section469gAgiEffect (not rentalNetAppliedToAgi), so it must be added to
+      // the §1411 NII base too (it's net investment income up to disposition).
+      // Only the positive net is NII; a §469(g)-released loss stays out (floored).
+      (niitRentalIsNonPassive ? 0 : form1099Summary.rents + Math.max(0, rentalNetAppliedToAgi) + Math.max(0, disposedRentalNet)) +
       // Passive pass-through income (engine already segregates active vs passive):
       Math.max(0, k1PassiveAppliedToAgi) +
       // Net gain on disposition: post-netting positive LTCG + STCG (already
@@ -3480,6 +3503,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
       // T1.2 — federal tentative minimum tax (Form 6251 line 7) for the CT AMT
       // lesser-of(19%×TMT, 5.5%×AMTI) test.
       federalTentativeMinimumTax: amt.amtBeforeRegular,
+      // T1.2 — federal AMT base (Form 6251 line 6 = AMTI − exemption) for the CO
+      // AMT (§39-22-105(2)) + CT's 5.5% prong (year/status-accurate, not an AGI proxy).
+      federalAmtBase: Math.max(0, amt.amti - amt.exemption),
       // PREP-B1 — state-base modifications: out-of-state muni interest is
       // state-taxable (added); US-Treasury interest is state-exempt (subtracted).
       // CPA-supplied via adjustments; 0 → undefined → no-op.

@@ -1421,6 +1421,11 @@ export function calculateMultiStateTax(params: {
     /** T1.2 — federal tentative minimum tax (Form 6251 line 7, before subtracting
      *  regular tax). Used by the CT AMT lesser-of(19%×TMT, 5.5%×AMTI) test. */
     federalTentativeMinimumTax?: number;
+    /** T1.2 — federal AMT BASE = Form 6251 line 6 (AMTI − the federal AMT exemption,
+     *  phase-out-adjusted). The correct base for CO AMT (§39-22-105(2): federal AMTI
+     *  − federal exemption) and CT AMT's 5.5% prong (CT exemption tracks federal).
+     *  Year/status-accurate (the engine computes it), unlike a federalAgi proxy. */
+    federalAmtBase?: number;
     /** PREP-B1 — state-base modifications, passed through to the resident
      *  calculateStateTax. muniBondAddBack: out-of-state muni interest (state-
      *  taxable); usTreasurySubtraction: US-Treasury interest (state-exempt). */
@@ -1635,10 +1640,16 @@ export function calculateMultiStateTax(params: {
     const ltcg = Math.max(0, params.options?.longTermCapitalGains ?? 0);
     // RCW 82.87.060 standard deduction (indexed): $270,000 (2024) / $278,000 (2025).
     const waThreshold = params.taxYear >= 2025 ? 278000 : 270000;
-    let waLtcgExcise = Math.max(0, ltcg - waThreshold) * 0.07;
-    // T1.2 — 2025+ surcharge: an ADDITIONAL 2.9% on WA gains over $1,000,000
-    // (RCW 82.87.040, added 2025; the $1M threshold is NOT indexed).
-    if (params.taxYear >= 2025) waLtcgExcise += Math.max(0, ltcg - 1000000) * 0.029;
+    // "Washington capital gains" (RCW 82.87.020(13)) is NET of the standard
+    // deduction; both the 7% tier and the surcharge are measured on that taxable
+    // amount (WA DOR: "first $1M in TAXABLE WA gains at 7%; over $1M at 9.9%").
+    const waTaxableGain = Math.max(0, ltcg - waThreshold);
+    let waLtcgExcise = waTaxableGain * 0.07;
+    // State-audit fix (2026-06-09): the 2025+ 2.9% surcharge (RCW 82.87.040) applies
+    // to TAXABLE WA gains over $1,000,000 — i.e. (ltcg − threshold) − $1M, NOT gross
+    // ltcg − $1M (which over-stated it by 2.9% × the standard deduction). The $1M
+    // threshold is NOT indexed.
+    if (params.taxYear >= 2025) waLtcgExcise += Math.max(0, waTaxableGain - 1000000) * 0.029;
     residentStateTax += waLtcgExcise;
   }
 
@@ -1693,35 +1704,28 @@ export function calculateMultiStateTax(params: {
     residentStateTax += mnAmtDelta;
   }
 
-  // T1.2 — CO AMT (Form DR 0104AMT, C.R.S. §39-22-105): 3.47% of Colorado AMTI
-  // (≈ the federal AMTI proxy; CO has NO separate exemption — it piggybacks the
-  // federal exemption baked into federal AMTI), as a delta over regular CO tax.
+  // T1.2 — CO AMT (Form DR 0104AMT, C.R.S. §39-22-105(2)): 3.47% of Colorado AMTI,
+  // which the statute defines as FEDERAL AMTI MINUS the federal AMT exemption — i.e.
+  // the engine's federal AMT base (Form 6251 line 6). A delta over regular CO tax.
   // Rarely binds (regular CO rate 4.25-4.40% > 3.47%) unless large preferences
   // inflate AMTI. (IA + WI repealed their individual AMTs — not modeled.)
   const coAmtPrefs = params.options?.amtPreferences ?? 0;
+  const federalAmtBaseForState = Math.max(0, params.options?.federalAmtBase ?? 0);
   if (resident === "CO" && coAmtPrefs > 0 && !params.partYearResidency) {
-    const coAmti = Math.max(0, params.federalAgi) + Math.max(0, coAmtPrefs);
-    const coAmtTentative = 0.0347 * coAmti;
+    const coAmtTentative = 0.0347 * federalAmtBaseForState;
     residentStateTax += Math.max(0, coAmtTentative - residentStateTax);
   }
 
   // T1.2 — CT AMT (Form CT-6251, Conn. Gen. Stat. §12-700a): the LESSER of
-  // (19% × adjusted federal TMT) or (5.5% × adjusted federal AMTI after the CT
-  // exemption), as a delta over regular CT tax. CT exemption (2024) $137,000
-  // MFJ/QSS / $88,100 single/HoH / $68,500 MFS, phased out 25¢/$ over the federal
-  // §55(d)(2) start ($1,252,700 MFJ / $626,350 others). AMTI ≈ federalAgi + prefs.
+  // (19% × adjusted federal TMT) or (5.5% × adjusted federal AMTI), as a delta over
+  // regular CT tax. CT recomputes its exemption "under federal AMT rules" — so the
+  // 5.5% prong's base = federal AMTI − the federal exemption = the engine's federal
+  // AMT base (Form 6251 line 6), which is year/status-accurate (no hardcoded,
+  // stale CT exemption table; the prior literals were the 2025 federal values).
   const ctAmtPrefs = params.options?.amtPreferences ?? 0;
   if (resident === "CT" && ctAmtPrefs > 0 && !params.partYearResidency) {
-    const fs = params.filingStatus as StateFilingStatus;
-    const isJoint = fs === "married_filing_jointly" || fs === "qualifying_widow";
-    const isMfs = fs === "married_filing_separately";
-    const ctExemptionBase = isJoint ? 137000 : isMfs ? 68500 : 88100;
-    const ctPhaseStart = isJoint ? 1252700 : 626350;
-    const ctAmti = Math.max(0, params.federalAgi) + Math.max(0, ctAmtPrefs);
-    const ctExemption = Math.max(0, ctExemptionBase - 0.25 * Math.max(0, ctAmti - ctPhaseStart));
-    const ctAmtiAfterExemption = Math.max(0, ctAmti - ctExemption);
     const fedTmt = Math.max(0, params.options?.federalTentativeMinimumTax ?? 0);
-    const ctByAmti = 0.055 * ctAmtiAfterExemption;
+    const ctByAmti = 0.055 * federalAmtBaseForState;
     // The 19%×TMT path usually binds the lesser-of for high AMTI; fall back to the
     // 5.5%×AMTI path when the federal TMT wasn't supplied (documented sub-gap).
     const ctTentative = fedTmt > 0 ? Math.min(0.19 * fedTmt, ctByAmti) : ctByAmti;
@@ -5820,20 +5824,30 @@ export function computeScheduleCAssetDepreciation(
     if (a.gvwrOver6000) {
       const bu = Math.max(0, Math.min(1, a.businessUsePct ?? 1));
       const businessBasis = cost * bu;
-      const suvCap = SECTION_179_SUV_CAP[p.taxYear] ?? SECTION_179_SUV_CAP[2026];
-      const year1S179 = a.section179 ? Math.min(suvCap, businessBasis) : 0;
+      // §280F-audit fix (2026-06-09): the §179(b)(5) SUV cap is fixed to the
+      // vehicle's PLACED-IN-SERVICE vintage (was keyed to the current tax year,
+      // which drifted a prior-year SUV's MACRS basis → permanent under-depreciation).
+      const suvCap = SECTION_179_SUV_CAP[a.placedInServiceYear] ?? SECTION_179_SUV_CAP[2026];
+      // §280F(b)(1): a heavy SUV is still LISTED property — ≤50% qualified business
+      // use forces ADS straight-line with NO §179 and NO bonus (GVWR > 6,000 escapes
+      // only the luxury DOLLAR caps, not the predominant-use rules).
+      const predominant = bu > 0.5;
+      const year1S179 = predominant && a.section179 ? Math.min(suvCap, businessBasis) : 0;
       if (isCurrentYear && year1S179 > 0) {
         currentYearSection179Elected += year1S179;
         currentYearQualifiedPropertyCost += businessBasis;
       }
       const remBasis = Math.max(0, businessBasis - year1S179);
-      const suvBonusRate = !a.bonus ? 0 : a.bonusFullObbba ? 1.0 : Math.max(0, Math.min(1, p.bonusRateByYear[a.placedInServiceYear] ?? 0));
+      const suvBonusRate = !predominant || !a.bonus ? 0 : a.bonusFullObbba ? 1.0 : Math.max(0, Math.min(1, p.bonusRateByYear[a.placedInServiceYear] ?? 0));
       const suvBonusBasis = suvBonusRate * remBasis;
       const suvMacrsBasis = remBasis - suvBonusBasis;
       const sq = a.placedInServiceQuarter;
-      const suvSchedule = midQuarterYears.has(a.placedInServiceYear) && sq != null
-        ? midQuarterSchedule(a.recoveryYears, sq)
-        : MACRS_HALF_YEAR_TABLE[a.recoveryYears] ?? [];
+      // Vehicles are statutory 5-year property (force 5, ignore a.recoveryYears).
+      const suvSchedule = !predominant
+        ? ADS_5YR_SL_HALF_YEAR
+        : midQuarterYears.has(a.placedInServiceYear) && sq != null
+          ? midQuarterSchedule(5, sq)
+          : MACRS_HALF_YEAR_TABLE[5] ?? [];
       const syi = p.taxYear - a.placedInServiceYear;
       const suvMacrsPct = syi >= 0 && syi < suvSchedule.length ? suvSchedule[syi] : 0;
       macrsTotal += suvMacrsPct * suvMacrsBasis;
@@ -6454,6 +6468,11 @@ export function calculateSelfEmploymentTax(
   seIncome: number,
   taxYear: number,
   w2SocialSecurityWages = 0,
+  /** T1.2 — the net-SE-earnings floor below which no SE tax is owed. Default $400
+   *  (Sch SE Line 4c). Pass $100 when CHURCH-EMPLOYEE income ≥ $108.28 is present —
+   *  church income (Sch SE Line 5a) has a $108.28 income / $100 net-earnings trigger,
+   *  NOT the $400 floor, so it is SE-taxed even when the combined net is below $400. */
+  netEarningsFloor = 400,
 ): SeTaxCalculation {
   const year = resolveTaxYear(taxYear);
   const ssBase = SS_WAGE_BASE[year];
@@ -6467,7 +6486,8 @@ export function calculateSelfEmploymentTax(
   // IRS Schedule SE Part I Line 4c: if net SE earnings < $400, no SE tax is owed.
   // (See "Note: If line 4c is less than $400 ... you don't owe self-employment tax.")
   // This is a true cliff — at $399.99 you owe nothing, at $400.00 the full 15.3% kicks in.
-  if (netSeEarnings < 400) {
+  // (The floor is lowered to $100 when church-employee income ≥ $108.28 is present.)
+  if (netSeEarnings < netEarningsFloor) {
     return { seIncomeReported: seIncome, netSeEarnings, socialSecurityPortion: 0, medicarePortion: 0, seTaxTotal: 0, deductibleHalf: 0, ssBaseAvailableForSe };
   }
   // Sch SE Part I Line 10: SS portion = smaller of (net SE earnings, available SS base) × 12.4%.

@@ -178,6 +178,88 @@ header("Form 2210 Schedule AI — annualized installment method");
   ok("even income: annualized does NOT reduce installments", even.reducesEarlyInstallments === false);
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// INDEPENDENT-REVIEW REGRESSIONS (2026-06-09) — bugs the multi-agent audit found.
+// ════════════════════════════════════════════════════════════════════════════
+header("HIGH-1 — statutory-employee QBI survives an explicit qbi_income");
+{
+  // statutory $50k + an explicit qbi_income $1k. The statutory Sch C net is
+  // §199A-eligible and must NOT be dropped: QBI ded = min(20%×$51k, 20%×taxable
+  // $35,400) = $7,080 (was $200 — only the explicit qbi_income — before the fix).
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [], form1099s: [],
+    adjustments: [
+      { adjustmentType: "statutory_employee_income", amount: 50000, isApplied: true } as never,
+      { adjustmentType: "qbi_income", amount: 1000, isApplied: true } as never,
+    ],
+    taxYear: 2024,
+  });
+  check("statutory QBI not dropped by explicit qbi_income → $7,080", r.qbiDeduction, 7080, 1);
+}
+
+header("HIGH-2 — crypto-mining is SE-taxed on the MFJ per-spouse path");
+{
+  // MFJ: taxpayer crypto-mining $30k + a spouse-tagged 1099-NEC $5k (triggers
+  // per-spouse Sch SE). SE = mining 15.3%×($30k×0.9235)=$4,238.87 + spouse
+  // 15.3%×($5k×0.9235)=$706.48 = $4,945.35 (was $706.48 — mining escaped).
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024 },
+    w2s: [],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "X", nonemployeeCompensation: 5000, spouse: "spouse" } as never],
+    adjustments: [{ adjustmentType: "crypto_mining_income", amount: 30000, isApplied: true } as never],
+    taxYear: 2024,
+  });
+  check("MFJ crypto-mining SE tax = $4,945.35", r.selfEmploymentTax, 4945.35, 1);
+}
+
+header("HIGH-3 — SE optional method honored on the MFJ per-spouse path");
+{
+  // MFJ: taxpayer gross $10k − $7k exp (net $3k) + optional election, spouse NEC $1
+  // (triggers per-spouse). SE on the elected ⅔×$10k=$6,666.67 → $941.97 (was
+  // $423.89 on the actual $3k — the election was silently dropped).
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024 },
+    w2s: [],
+    form1099s: [{ taxYear: 2024, formType: "nec", payerName: "Y", nonemployeeCompensation: 1, spouse: "spouse" } as never],
+    adjustments: [
+      { adjustmentType: "self_employment_income", amount: 10000, isApplied: true } as never,
+      { adjustmentType: "schedule_c_expenses", amount: 7000, isApplied: true } as never,
+      { adjustmentType: "se_optional_method_nonfarm", amount: 10000, isApplied: true } as never,
+    ],
+    taxYear: 2024,
+  });
+  check("MFJ optional-method SE tax = $941.97", r.selfEmploymentTax, 941.97, 1.5);
+}
+
+header("MEDIUM-1 — disposed rental's positive net is in the NIIT base");
+{
+  // Single, $250k wages (NIIT binds) + a fully-disposed rental with +$50k operating
+  // net. AGI $300k; NII includes the $50k → NIIT 3.8%×$50k = $1,900 (was $0).
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ wagesBox1: 250000, federalTaxWithheldBox2: 0, stateCode: "FL" }] as never,
+    form1099s: [],
+    adjustments: [],
+    rentalProperties: [{ taxYear: 2024, rentalIncome: 60000, totalExpenses: 10000, basis: 0, isActiveParticipant: true, fullyDisposedThisYear: true }] as never,
+    taxYear: 2024,
+  });
+  check("disposed rental +$50k net → NIIT $1,900", r.niitTax, 1900, 1);
+}
+
+header("church $108.28 floor — standalone church wage below $400 is SE-taxed");
+{
+  // $300 church-employee income only → net $277.05 ≥ $100 → SE 15.3%×$277.05 =
+  // $42.39 (was $0 under the wrongly-applied $400 floor).
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [], form1099s: [],
+    adjustments: [{ adjustmentType: "church_employee_income", amount: 300, isApplied: true } as never],
+    taxYear: 2024,
+  });
+  check("church $300 → SE tax $42.39 (below $400 floor)", r.selfEmploymentTax, 42.39, 0.5);
+}
+
 // ── summary ──
 console.log(`\n${"═".repeat(60)}`);
 for (const f of FAIL) console.log(f);

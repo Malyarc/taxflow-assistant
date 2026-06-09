@@ -53,6 +53,7 @@ router.post("/clients/:clientId/schedule-c-assets", async (req, res): Promise<vo
   }
   const insertData: Record<string, unknown> = { ...parsed.data, clientId: params.data.clientId };
   if (insertData.cost != null) insertData.cost = String(insertData.cost); // numeric stored as string
+  if (insertData.businessUsePct != null) insertData.businessUsePct = String(insertData.businessUsePct); // T1.2 §280F numeric
   const [record] = await db
     .insert(scheduleCAssetsTable)
     .values(insertData as typeof scheduleCAssetsTable.$inferInsert)
@@ -82,6 +83,7 @@ router.patch("/clients/:clientId/schedule-c-assets/:assetId", async (req, res): 
   }
   const updateData: Record<string, unknown> = { ...parsed.data, updatedAt: new Date() };
   if (updateData.cost != null) updateData.cost = String(updateData.cost);
+  if (updateData.businessUsePct != null) updateData.businessUsePct = String(updateData.businessUsePct); // T1.2 §280F numeric
   const [before] = await db
     .select()
     .from(scheduleCAssetsTable)

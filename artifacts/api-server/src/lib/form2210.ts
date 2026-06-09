@@ -290,7 +290,10 @@ export function computeForm2210Annualized(input: Form2210AnnualizedInput): Form2
   let cumRegular = 0;
   let reducesEarly = false;
   for (let i = 0; i < 4; i++) {
-    const ti = Math.max(0, input.cumulativeTaxableIncome[i]) * factors[i];
+    // Finite guard (independent review 2026-06-09): a NaN/Infinity cumulative
+    // income input must not propagate through every output field.
+    const ci = input.cumulativeTaxableIncome[i];
+    const ti = Math.max(0, Number.isFinite(ci) ? ci : 0) * factors[i];
     const tax = calculateFederalTax(ti, input.filingStatus, input.taxYear);
     annualizedTaxableIncome.push(ti);
     annualizedTax.push(tax);

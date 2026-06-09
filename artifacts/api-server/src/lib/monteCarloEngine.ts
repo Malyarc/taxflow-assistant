@@ -105,6 +105,14 @@ function finiteOr(v: unknown, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/** Deterministic thousands-separator (independent review 2026-06-09): avoid
+ *  `toLocaleString` in the result, whose grouping depends on the JS engine's ICU
+ *  data — the determinism contract deep-equals the whole result incl. assumptions. */
+function fmtThousands(n: number): string {
+  const s = String(Math.round(n));
+  return s.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
 // ── Seeded PRNG (mulberry32) + Box–Muller normal ────────────────────────────
 // mulberry32 — a small, well-distributed 32-bit PRNG. Deterministic given the
 // seed; no global state, no Math.random. Each instance carries its own state so
@@ -280,7 +288,12 @@ export function runMonteCarlo(
   // A negative or non-finite stdev is meaningless; clamp at 0 (no volatility).
   const stdevReturn = Math.max(0, finiteOr(options.stdevReturn, 0));
   const incomeGrowth = finiteOr(options.incomeGrowth, DEFAULT_INCOME_GROWTH);
-  const startingPortfolio = Math.max(0, finiteOr(options.startingPortfolio, DEFAULT_STARTING_PORTFOLIO));
+  // Totality fix (independent review 2026-06-09): clamp the starting portfolio to a
+  // sane upper bound so growth compounding + the trial-mean reduction can never
+  // overflow to Infinity (mirrors the engine's ±1e13 money clamp). Without this an
+  // extreme startingPortfolio (e.g. 1e308) overflowed endingPortfolioValue.mean.
+  const MAX_PORTFOLIO = 1e13;
+  const startingPortfolio = Math.min(MAX_PORTFOLIO, Math.max(0, finiteOr(options.startingPortfolio, DEFAULT_STARTING_PORTFOLIO)));
 
   const cfg = { horizonYears, incomeGrowth, startingPortfolio };
 
@@ -326,7 +339,7 @@ export function runMonteCarlo(
     assumptions: [
       `${trials} independent paths over a ${horizonYears}-year horizon (both clamped: trials∈[${MIN_TRIALS},${MAX_TRIALS}], horizon∈[${MIN_HORIZON},${MAX_HORIZON}]).`,
       `Each year's investment return ~ Normal(mean=${(meanReturn * 100).toFixed(2)}%, stdev=${(stdevReturn * 100).toFixed(2)}%), drawn from a seeded mulberry32 PRNG (seed=${seed}) via a Box–Muller normal transform. Results are fully deterministic for this (baseline, seed).`,
-      `Starting investable portfolio = $${Math.round(startingPortfolio).toLocaleString("en-US")}. Underlying W-2/1099 income is projected forward at ${((incomeGrowth - 1) * 100).toFixed(1)}%/yr (reuses the multi-year engine; future brackets are held at the latest published year — the DELTA across paths is what's meaningful).`,
+      `Starting investable portfolio = $${fmtThousands(startingPortfolio)}. Underlying W-2/1099 income is projected forward at ${((incomeGrowth - 1) * 100).toFixed(1)}%/yr (reuses the multi-year engine; future brackets are held at the latest published year — the DELTA across paths is what's meaningful).`,
       `Income model: each year's POSITIVE portfolio growth is realized as taxable ordinary income (additional_income) and computed through the full engine; a down year realizes nothing and embeds the loss in the portfolio. This is a deliberately CONSERVATIVE fully-realize-gains model (no deferral, no preferential LTCG bucketing of the realized amount, no withdrawals) — actual tax will usually be lower.`,
       `cumulativeTaxBurden = Σ (federalTaxLiability + stateTaxLiability) over the horizon, per path; bands are the p10/p25/p50/p75/p90 + mean across paths (linear-interpolated percentiles).`,
       `With stdevReturn = 0 every path is identical, so all bands equal the mean and equal a single deterministic multi-year trajectory of the same scenario (the hand-checkable anchor).`,

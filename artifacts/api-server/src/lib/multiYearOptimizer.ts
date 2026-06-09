@@ -83,8 +83,13 @@ export function optimizeBracketFilling(baseline: TaxReturnInputs, opts: BracketF
       iraRemaining: round2(iraRemaining),
       incrementalTax: round2(incrementalTax),
     });
-    baselineTaxable *= incomeGrowth;
-    iraRemaining *= iraGrowth;
+    // Grow the baseline + deferred balance into the NEXT year only — not after the
+    // final year (the prior code grew once more, reporting a phantom extra year of
+    // growth in iraRemainingAtHorizon that disagreed with perYear[last].iraRemaining).
+    if (i < horizon - 1) {
+      baselineTaxable *= incomeGrowth;
+      iraRemaining *= iraGrowth;
+    }
   }
 
   return {

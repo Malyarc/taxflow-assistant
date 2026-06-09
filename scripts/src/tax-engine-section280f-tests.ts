@@ -103,6 +103,31 @@ header("§280F — non-auto asset unaffected (regression)");
   check("non-auto Y1 = $6,800", r.totalDepreciation, 6800, 0.5);
 }
 
+// ── Case 8 (independent review): SUV §179 cap is vintage-fixed; full-life = basis ──
+// $90k SUV, §179 + 60% bonus, placed 2024. Y1 §179 $30,500 + bonus $35,700 +
+// MACRS 20%×$23,800. Y2 (2025) must use the 2024 vintage cap ($30,500), so the
+// MACRS basis stays $23,800 → Y2 = 32%×$23,800 = $7,616 (was drifting to the 2025
+// $31,300 cap → permanent under-depreciation). Full life must sum to $90,000.
+header("§280F SUV — §179 cap vintage-fixed + full-life recovery");
+{
+  const suv = (ty: number) => run([{ cost: 90000, recoveryYears: 5, placedInServiceYear: 2024, section179: true, bonus: true, isPassengerAuto: true, gvwrOver6000: true }], ty, 500000);
+  check("SUV Y2 (2025) MACRS = $7,616 (2024 vintage cap)", suv(2025).totalDepreciation, 7616, 0.5);
+  let total = 0;
+  for (let ty = 2024; ty <= 2032; ty++) total += suv(ty).totalDepreciation;
+  check("SUV Σ life depreciation = full $90,000 basis", total, 90000, 1);
+}
+
+// ── Case 9 (independent review): heavy SUV ≤50% business use → ADS, no §179/bonus ──
+// $90k SUV, 40% business, §179+bonus flags, 2024. Listed property: ≤50% use forces
+// ADS straight-line, disallows §179 + bonus (§280F(b)(1)). businessBasis $36,000;
+// ADS Y1 = 10% × $36,000 = $3,600.
+header("§280F(b)(1) — heavy SUV ≤50% use → ADS SL, no §179/bonus");
+{
+  const r = run([{ cost: 90000, recoveryYears: 5, placedInServiceYear: 2024, section179: true, bonus: true, isPassengerAuto: true, gvwrOver6000: true, businessUsePct: 0.4 }], 2024, 500000);
+  check("SUV 40% use → $3,600 (ADS, no §179/bonus)", r.totalDepreciation, 3600, 0.5);
+  ok("SUV ≤50% takes no §179", r.section179Deduction === 0);
+}
+
 // ── summary ──
 console.log(`\n${"═".repeat(60)}`);
 for (const f of FAIL) console.log(f);
