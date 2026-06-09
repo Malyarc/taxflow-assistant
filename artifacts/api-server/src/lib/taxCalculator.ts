@@ -5445,6 +5445,94 @@ const MACRS_HALF_YEAR_TABLE: Readonly<Record<number, readonly number[]>> = {
   20: [0.0375, 0.07219, 0.06677, 0.06177, 0.05713, 0.05285, 0.04888, 0.04522, 0.04462, 0.04461, 0.04462, 0.04461, 0.04462, 0.04461, 0.04462, 0.04461, 0.04462, 0.04461, 0.04462, 0.04461, 0.02231],
 };
 
+// T1.2 §280F — luxury passenger-automobile annual depreciation caps: the MAX
+// §179+bonus+MACRS deduction per year-of-life (before business-use proration),
+// fixed to the vehicle's placed-in-service vintage for its whole life. Verified
+// vs Rev. Proc. 2024-13 / 2025-16 / 2026-15. The "with bonus" Y1 cap = the
+// no-bonus Y1 cap + the flat $8,000 §168(k)(2)(F) add-on (not inflation-indexed).
+const SECTION_280F_AUTO_CAPS: Readonly<Record<number, { y1NoBonus: number; y1Bonus: number; y2: number; y3: number; y4plus: number }>> = {
+  2024: { y1NoBonus: 12400, y1Bonus: 20400, y2: 19800, y3: 11900, y4plus: 7160 },
+  2025: { y1NoBonus: 12200, y1Bonus: 20200, y2: 19600, y3: 11800, y4plus: 7060 },
+  2026: { y1NoBonus: 12300, y1Bonus: 20300, y2: 19800, y3: 11900, y4plus: 7160 },
+};
+// §179(b)(5) "heavy SUV" cap (GVWR 6,001-14,000 lb): the max §179 on such a
+// vehicle; the remaining basis takes bonus + MACRS with NO §280F luxury cap.
+const SECTION_179_SUV_CAP: Readonly<Record<number, number>> = { 2024: 30500, 2025: 31300, 2026: 32000 };
+// ADS 5-year straight-line, half-year convention (≤50% qualified business use).
+const ADS_5YR_SL_HALF_YEAR: readonly number[] = [0.1, 0.2, 0.2, 0.2, 0.2, 0.1];
+
+function section280FAutoCaps(taxYear: number) {
+  return SECTION_280F_AUTO_CAPS[taxYear] ?? SECTION_280F_AUTO_CAPS[2026];
+}
+
+/**
+ * T1.2 §280F — one passenger auto's CURRENT-year depreciation (bonus + MACRS),
+ * already §280F(a)-capped and business-use-prorated. §179 is not used for a
+ * §280F auto (the cap binds far below it). ≤50% qualified business use → ADS
+ * straight-line, no bonus (§280F(b)(1)). Recovery period forced to 5 years.
+ * The post-recovery-period cap "overhang" IS modeled: when earlier years' caps
+ * leave undepreciated basis, depreciation continues past year 6 at the Y4+ cap
+ * until basis is exhausted (this is why luxury autos depreciate over 10+ years).
+ * The function replays years 1..lifeYear (cheap) to honor the cumulative-basis
+ * limit. Sub-gap (documented): §280F(b)(2) recapture on a later drop ≤50% use
+ * is not modeled (needs prior-year actual-vs-ADS history the engine doesn't store).
+ */
+function auto280FYearDeduction(
+  a: ScheduleCAsset,
+  taxYear: number,
+  bonusRateByYear: Readonly<Record<number, number>>,
+): { bonus: number; macrs: number; capBound: boolean } {
+  const cost = Math.max(0, a.cost);
+  const bu = Math.max(0, Math.min(1, a.businessUsePct ?? 1));
+  const businessBasis = cost * bu;
+  const lifeYear = taxYear - a.placedInServiceYear + 1; // 1-indexed year of life
+  if (businessBasis <= 0 || lifeYear < 1) return { bonus: 0, macrs: 0, capBound: false };
+  // §280F caps are FIXED to the vehicle's placed-in-service vintage for its whole
+  // life (Y2/Y3/Y4+ are NOT re-indexed to later-year Rev. Procs).
+  const caps = section280FAutoCaps(a.placedInServiceYear);
+  const predominant = bu > 0.5;
+  // >50% use → 5-yr 200%DB MACRS (half-year) + Y1 §168(k) bonus. ≤50% → ADS SL, no bonus.
+  const bonusRate = predominant && a.bonus
+    ? (a.bonusFullObbba ? 1.0 : Math.max(0, Math.min(1, bonusRateByYear[a.placedInServiceYear] ?? 0)))
+    : 0;
+  const year1Bonus = bonusRate * businessBasis;
+  const schedule = predominant ? (MACRS_HALF_YEAR_TABLE[5] ?? []) : ADS_5YR_SL_HALF_YEAR;
+  const scheduleBasis = businessBasis - year1Bonus; // ADS year1Bonus=0 → full basis
+  const capFor = (k: number) =>
+    (k === 1 ? (bonusRate > 0 ? caps.y1Bonus : caps.y1NoBonus)
+      : k === 2 ? caps.y2
+      : k === 3 ? caps.y3
+      : caps.y4plus) * bu;
+  const uncappedFor = (k: number, remaining: number) => {
+    const sched = k - 1 < schedule.length ? schedule[k - 1] * scheduleBasis : 0;
+    const bonus = k === 1 ? year1Bonus : 0;
+    // After the MACRS/ADS schedule ends, the §280F overhang lets the remaining
+    // basis continue (limited by the Y4+ cap below).
+    return k - 1 >= schedule.length ? remaining : bonus + sched;
+  };
+
+  // Replay years 1..lifeYear, honoring the cumulative-basis limit + per-year cap.
+  let cumulative = 0;
+  let result = { bonus: 0, macrs: 0, capBound: false };
+  for (let k = 1; k <= lifeYear; k++) {
+    const remaining = Math.max(0, businessBasis - cumulative);
+    if (remaining <= 0) break; // fully depreciated; later years are $0
+    const unc = uncappedFor(k, remaining);
+    const cap = capFor(k);
+    const allowed = Math.min(unc, cap, remaining);
+    if (k === lifeYear) {
+      const bonusPortion = k === 1 ? Math.min(year1Bonus, allowed) : 0;
+      result = {
+        bonus: bonusPortion,
+        macrs: Math.max(0, allowed - bonusPortion),
+        capBound: unc > cap + 1e-6,
+      };
+    }
+    cumulative += allowed;
+  }
+  return result;
+}
+
 /** §168 declining-balance factor by recovery period (200% for 3-10yr, 150% for 15/20yr). */
 function macrsDbFactor(recoveryYears: number): number {
   return recoveryYears >= 15 ? 1.5 : 2.0;
@@ -5548,6 +5636,29 @@ export interface ScheduleCAsset {
    * `midQuarterApplies`). Unspecified is treated as not-Q4 for the test.
    */
   placedInServiceQuarter?: 1 | 2 | 3 | 4;
+  /**
+   * T1.2 §280F — this asset is a "passenger automobile" (listed property, GVWR
+   * ≤ 6,000 lb). Its annual depreciation (§179 + bonus + MACRS combined) is
+   * capped at the year-of-life §280F(a) luxury-auto dollar limit × business-use %.
+   * Routed through a dedicated capped path (NOT the general §179 pool). Recovery
+   * period is forced to 5 years regardless of `recoveryYears`.
+   */
+  isPassengerAuto?: boolean;
+  /**
+   * T1.2 §280F — qualified-business-use percentage (0-1; default 1.0). Applies to
+   * BOTH the depreciable basis and the §280F cap. When ≤ 0.50 for a passenger
+   * auto, §179 + bonus are disallowed and depreciation is straight-line ADS
+   * (5-year), per §280F(b)(1).
+   */
+  businessUsePct?: number;
+  /**
+   * T1.2 §280F(d)(5) — the vehicle is rated OVER 6,000 lb GVWR (heavy SUV/truck),
+   * so it ESCAPES the §280F luxury caps. Instead its §179 is limited to the
+   * §179(b)(5) "heavy SUV" cap; the remaining basis takes bonus + MACRS uncapped.
+   * (Set together with isPassengerAuto to mark it a vehicle; the GVWR flag then
+   * overrides the §280F cap with the SUV §179 cap.)
+   */
+  gvwrOver6000?: boolean;
 }
 
 export interface ScheduleCAssetDepreciationParams {
@@ -5587,6 +5698,9 @@ export interface ScheduleCAssetDepreciationResult {
    * quarter for an exact figure). Informational flag for CPA review.
    */
   midQuarterApplies: boolean;
+  /** T1.2 §280F — true when a passenger auto's luxury-cap bound (deduction was
+   *  limited below the otherwise-computed depreciation). Informational. */
+  section280FCapApplied: boolean;
 }
 
 export function computeScheduleCAssetDepreciation(
@@ -5603,7 +5717,9 @@ export function computeScheduleCAssetDepreciation(
   const byYear = new Map<number, { total: number; q4: number }>();
   for (const a of p.assets) {
     const cost = Math.max(0, a.cost);
-    if (cost <= 0 || a.section179 || a.placedInServiceYear > p.taxYear) continue;
+    // §280F passenger autos use the dedicated capped half-year path (excluded
+    // from the mid-quarter test); heavy SUVs stay in the normal MACRS test.
+    if (cost <= 0 || a.section179 || a.placedInServiceYear > p.taxYear || (a.isPassengerAuto && !a.gvwrOver6000)) continue;
     const acc = byYear.get(a.placedInServiceYear) ?? { total: 0, q4: 0 };
     acc.total += cost;
     if (a.placedInServiceQuarter === 4) acc.q4 += cost;
@@ -5622,10 +5738,51 @@ export function computeScheduleCAssetDepreciation(
   let macrsTotal = 0;
   let currentYearSection179Elected = 0;
   let currentYearQualifiedPropertyCost = 0; // drives the §179 investment phase-out
+  let section280FCapApplied = false;
   for (const a of p.assets) {
     const cost = Math.max(0, a.cost);
     if (cost <= 0 || a.placedInServiceYear > p.taxYear) continue; // not in service
     const isCurrentYear = a.placedInServiceYear === p.taxYear;
+
+    // T1.2 §280F passenger automobile (GVWR ≤ 6,000): dedicated capped path. The
+    // luxury cap binds far below the §179 limit, so autos are kept OUT of the
+    // §179 pool — their capped bonus+MACRS flows straight to the totals.
+    if (a.isPassengerAuto && !a.gvwrOver6000) {
+      const v = auto280FYearDeduction(a, p.taxYear, p.bonusRateByYear);
+      bonusTotal += v.bonus;
+      macrsTotal += v.macrs;
+      if (v.capBound) section280FCapApplied = true;
+      if (isCurrentYear) currentYearQualifiedPropertyCost += cost * Math.max(0, Math.min(1, a.businessUsePct ?? 1));
+      continue;
+    }
+
+    // T1.2 §280F(d)(5) heavy SUV (GVWR > 6,000): escapes the luxury caps, but
+    // §179 is limited to the §179(b)(5) SUV cap; the remaining basis (and any
+    // prior-year MACRS basis) is net of that capped §179. The §179 still competes
+    // in the global §179 dollar/income pool below.
+    if (a.gvwrOver6000) {
+      const bu = Math.max(0, Math.min(1, a.businessUsePct ?? 1));
+      const businessBasis = cost * bu;
+      const suvCap = SECTION_179_SUV_CAP[p.taxYear] ?? SECTION_179_SUV_CAP[2026];
+      const year1S179 = a.section179 ? Math.min(suvCap, businessBasis) : 0;
+      if (isCurrentYear && year1S179 > 0) {
+        currentYearSection179Elected += year1S179;
+        currentYearQualifiedPropertyCost += businessBasis;
+      }
+      const remBasis = Math.max(0, businessBasis - year1S179);
+      const suvBonusRate = !a.bonus ? 0 : a.bonusFullObbba ? 1.0 : Math.max(0, Math.min(1, p.bonusRateByYear[a.placedInServiceYear] ?? 0));
+      const suvBonusBasis = suvBonusRate * remBasis;
+      const suvMacrsBasis = remBasis - suvBonusBasis;
+      const sq = a.placedInServiceQuarter;
+      const suvSchedule = midQuarterYears.has(a.placedInServiceYear) && sq != null
+        ? midQuarterSchedule(a.recoveryYears, sq)
+        : MACRS_HALF_YEAR_TABLE[a.recoveryYears] ?? [];
+      const syi = p.taxYear - a.placedInServiceYear;
+      const suvMacrsPct = syi >= 0 && syi < suvSchedule.length ? suvSchedule[syi] : 0;
+      macrsTotal += suvMacrsPct * suvMacrsBasis;
+      if (isCurrentYear) bonusTotal += suvBonusBasis;
+      continue;
+    }
 
     if (a.section179) {
       // §179-elected: full cost expensed in the acquisition year (no MACRS basis).
@@ -5687,6 +5844,7 @@ export function computeScheduleCAssetDepreciation(
     macrsDeduction: r2(macrsTotal),
     section179Carryforward: r2(section179Carryforward),
     midQuarterApplies,
+    section280FCapApplied,
   };
 }
 

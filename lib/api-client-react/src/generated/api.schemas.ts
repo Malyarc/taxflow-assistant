@@ -1816,6 +1816,10 @@ export interface ScheduleCAsset {
   section179: boolean;
   bonus: boolean;
   bonusFullObbba: boolean;
+  isPassengerAuto?: boolean;
+  /** @nullable */
+  businessUsePct?: number | null;
+  gvwrOver6000?: boolean;
   /** @nullable */
   notes?: string | null;
   createdAt: string;
@@ -1845,6 +1849,10 @@ export interface CreateScheduleCAssetBody {
   section179?: boolean;
   bonus?: boolean;
   bonusFullObbba?: boolean;
+  isPassengerAuto?: boolean;
+  /** @nullable */
+  businessUsePct?: number | null;
+  gvwrOver6000?: boolean;
   /** @nullable */
   notes?: string | null;
 }
@@ -1872,6 +1880,10 @@ export interface UpdateScheduleCAssetBody {
   section179?: boolean;
   bonus?: boolean;
   bonusFullObbba?: boolean;
+  isPassengerAuto?: boolean;
+  /** @nullable */
+  businessUsePct?: number | null;
+  gvwrOver6000?: boolean;
   /** @nullable */
   notes?: string | null;
 }

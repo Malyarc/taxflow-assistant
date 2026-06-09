@@ -36,6 +36,14 @@ export const scheduleCAssetsTable = pgTable("schedule_c_assets", {
   bonus: boolean("bonus").notNull().default(false),
   /** OBBBA post-1/19/2025 property → 100% bonus (else the conservative year default). */
   bonusFullObbba: boolean("bonus_full_obbba").notNull().default(false),
+  /** T1.2 §280F — this asset is a passenger automobile (GVWR ≤ 6,000): its annual
+   *  §179+bonus+MACRS is capped at the luxury-auto dollar limit × business-use %. */
+  isPassengerAuto: boolean("is_passenger_auto").notNull().default(false),
+  /** T1.2 §280F — qualified-business-use % (0-1; default 1). ≤0.50 → ADS SL, no bonus. */
+  businessUsePct: numeric("business_use_pct", { precision: 5, scale: 4 }),
+  /** T1.2 §280F(d)(5) — GVWR > 6,000 lb heavy SUV: escapes the luxury caps; §179
+   *  limited to the §179(b)(5) SUV cap. Set with isPassengerAuto to mark a vehicle. */
+  gvwrOver6000: boolean("gvwr_over_6000").notNull().default(false),
   /** Optional CPA notes. */
   notes: text("notes"),
 

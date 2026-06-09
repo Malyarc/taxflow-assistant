@@ -3071,6 +3071,12 @@ components:
           type: boolean
         bonusFullObbba:
           type: boolean
+        isPassengerAuto:
+          type: boolean
+        businessUsePct:
+          type: ["number", "null"]
+        gvwrOver6000:
+          type: boolean
         notes:
           type: ["string", "null"]
         createdAt:
@@ -3103,6 +3109,12 @@ components:
           type: boolean
         bonusFullObbba:
           type: boolean
+        isPassengerAuto:
+          type: boolean
+        businessUsePct:
+          type: ["number", "null"]
+        gvwrOver6000:
+          type: boolean
         notes:
           type: ["string", "null"]
 
@@ -3127,6 +3139,12 @@ components:
         bonus:
           type: boolean
         bonusFullObbba:
+          type: boolean
+        isPassengerAuto:
+          type: boolean
+        businessUsePct:
+          type: ["number", "null"]
+        gvwrOver6000:
           type: boolean
         notes:
           type: ["string", "null"]

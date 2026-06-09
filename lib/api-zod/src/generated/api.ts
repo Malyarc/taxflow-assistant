@@ -3887,6 +3887,9 @@ export const ListScheduleCAssetsResponseItem = zod.object({
   section179: zod.boolean(),
   bonus: zod.boolean(),
   bonusFullObbba: zod.boolean(),
+  isPassengerAuto: zod.boolean().optional(),
+  businessUsePct: zod.number().nullish(),
+  gvwrOver6000: zod.boolean().optional(),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -3921,6 +3924,9 @@ export const CreateScheduleCAssetBody = zod.object({
   section179: zod.boolean().optional(),
   bonus: zod.boolean().optional(),
   bonusFullObbba: zod.boolean().optional(),
+  isPassengerAuto: zod.boolean().optional(),
+  businessUsePct: zod.number().nullish(),
+  gvwrOver6000: zod.boolean().optional(),
   notes: zod.string().nullish(),
 });
 
@@ -3951,6 +3957,9 @@ export const UpdateScheduleCAssetBody = zod.object({
   section179: zod.boolean().optional(),
   bonus: zod.boolean().optional(),
   bonusFullObbba: zod.boolean().optional(),
+  isPassengerAuto: zod.boolean().optional(),
+  businessUsePct: zod.number().nullish(),
+  gvwrOver6000: zod.boolean().optional(),
   notes: zod.string().nullish(),
 });
 
@@ -3973,6 +3982,9 @@ export const UpdateScheduleCAssetResponse = zod.object({
   section179: zod.boolean(),
   bonus: zod.boolean(),
   bonusFullObbba: zod.boolean(),
+  isPassengerAuto: zod.boolean().optional(),
+  businessUsePct: zod.number().nullish(),
+  gvwrOver6000: zod.boolean().optional(),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
