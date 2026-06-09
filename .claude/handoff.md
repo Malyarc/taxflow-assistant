@@ -1,3 +1,42 @@
+# Handoff Note — 2026-06-09b (T1 — PERFECT THE ENGINES: all of T1.2 + T1.3 core shipped + deployed + prod-verified)
+
+Worked MASTER-TODO **T1** (perfect the tax + planning engines). **All 7 T1.2
+items + the T1.3 optimizer core are DONE**, hand-calc-tested, deployed (migrations
+0017+0018 applied to prod), and prod-smoked. 9 commits this run
+(`590b451`..`cb8e134`); ~115 new hand-calc'd assertions across 6 new suites; full
+green bar 86 no-API suites / 4,809 assertions + property harness (5,636) + 4
+typechecks; prod endpoints (monte-carlo, bracket-fill, tax-return) all 200.
+
+**T1.2 (ALL DONE):**
+- **§280F** luxury-auto depreciation caps + listed-property ≤50%-use ADS + heavy-SUV
+  §179(b)(5) cap (dedicated capped path; vintage-fixed caps + post-yr-6 overhang
+  via replay). New asset fields (migration 0017). Caps Rev. Proc. 2024-13/25-16/26-15.
+- **§469(g)** per-property suspended-loss release on full disposition (migration 0018).
+- **SE edges**: statutory employee (Sch C, no SE tax), church employee ($108.28),
+  non-farm optional method. **Digital assets**: crypto staking (ordinary) + mining (SE).
+- **State depth**: CO + CT individual AMT (CT plumbs the federal TMT for its
+  lesser-of test); WA cap-gains threshold corrected $270k/$278k + 2025 2.9%
+  surcharge over $1M. **Form 2210 Schedule AI** annualized method.
+- **Carryforward audit**: 10 round-trip assertions, zero gaps.
+
+**T1.3 (CORE DONE):** `monteCarloEngine.ts` (seeded MC confidence bands; built by a
+worktree agent, reviewed + integrated), `multiYearOptimizer.ts` (bracket-fill),
+`strategyComboOptimizer.ts` (greedy best-subset + interaction erosion). Endpoints:
+POST /clients/:id/monte-carlo + /bracket-fill.
+
+**T1.3 STILL OPEN (the remaining polish):** (1) promote the ~44 qualitative
+heuristic detectors to engine-verified what-ifs; (2) estate/gift touchpoints
+(catalog+detector — research is in hand: annual excl $18k/$19k, BEA $15M-permanent,
+step-up §1014); (3) the interactive what-if scenario-builder UI (frontend over the
+existing what-if engine + endpoints). Each needs careful catalog/coverage or
+frontend work; the high-value differentiated T1.3 core (optimizers + MC) is done.
+
+**Recommended next:** the interactive what-if UI (the engine + endpoints already
+exist — it's the highest-visibility remaining piece for a CPA demo), then the
+estate touchpoints, then the heuristic-detector promotion batch.
+
+---
+
 # Handoff Note — 2026-06-09 (AUDIT CLOSE-OUT — ZERO DEFERRALS; +8 commits shipped + deployed + prod-verified)
 
 Finished EVERY remaining deferred finding from the full-app audit (ledger:

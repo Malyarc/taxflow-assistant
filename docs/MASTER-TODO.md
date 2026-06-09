@@ -102,26 +102,26 @@ secure, audited to the hilt, and validated by a CPA before any tax number ships.
 - [x] **§1231 netting + Form 4797 + depreciation recapture (§1245/§1250)** — DONE. New pure `form4797.ts` (`computeForm4797`): §1245 full-recapture + §1250 excess-recapture → ordinary, unrecaptured §1250 → 25% bucket, net §1231 gain→LTCG / loss→ordinary (no $3k cap), §1231(c) 5-year lookback. New `TaxReturnInputs.form4797` + `section_1231_lookback_loss` adjustment.
 - [x] **State individual-mandate penalty** (CA, MA, NJ, RI, DC) — DONE. New pure `stateMandate.ts`: CA/NJ/RI/DC greater-of(flat, 2.5%) capped at bronze; MA FPL-tier monthly. `months_without_minimum_coverage` adjustment; folds into stateRefundOrOwed. 31 hand-calc'd tests. (MA 2024+ monthly amounts are PROVISIONAL — confirm vs the annual TIR.)
 
-### T1.2 Tax calculator — capability enhancements (in-scope individual 1040) — **PARTIAL (Schedule H + clergy DONE 2026-06-08, commit 94f70a4)**
-- [ ] **§280F luxury-auto depreciation caps** + listed-property rules (extends the Sch C asset calculator). DEFERRED — deep change to the 108-test `computeScheduleCAssetDepreciation`; needs per-asset cap visibility + its own test suite. Top remaining T1.2 item.
-- [x] **Schedule H** — household employment (nanny) tax. DONE. New pure `scheduleH.ts`: FICA (≥ threshold) + FUTA + addl-Medicare; `household_employee_cash_wages` (+`_futa_wages`) adjustment → Sched 2 line 9. 19 hand-calc'd tests.
-- [ ] **Form 2210 annualized-income method** (uneven income; the engine has only the short/safe-harbor method). DEFERRED — needs per-period income inputs the engine doesn't carry.
-- [ ] **Digital assets / 1099-DA** — basis tracking + staking/mining ordinary income + the 2025 1099-DA doc-type extractor (today crypto rides the generic capital-transaction path).
-- [ ] **Per-property suspended-loss STORAGE + release-on-disposition** (the 8582 worksheet allocates; storage/release is the remaining gap).
-- [~] **SE-tax edges** — **clergy housing allowance DONE** (`clergy_housing_allowance` adjustment → SE base only, income-tax-exempt per §107/§1402(a)(8)). Remaining: statutory employee Sch C routing, optional method, church-employee income.
-- [ ] **State depth** — state AMT beyond CA/MN; state-specific credits beyond the top-10; part-year per-income-item sourcing precision (NY IT-203 / CA 540NR Sched CA line-by-line); NYC EITC sliding scale; WA LTCG-excise edge.
-- [ ] **Carryforward completeness audit** — confirm every carryforward (NOL, cap-loss, charitable, §163(j), PAL, AMT credit, FTC) persists + interacts correctly across years (overlaps T0.3-A4).
-- [ ] **(Scope decision — flag to founder, not assumed) Business returns** (1065/1120-S/1120/1041). Currently out of scope (Option A); a major scope-expansion if the firm needs entity returns.
+### T1.2 Tax calculator — capability enhancements (in-scope individual 1040) — **DONE 2026-06-09 (all items shipped + deployed; migrations 0017+0018)**
+- [x] **§280F luxury-auto depreciation caps** + listed-property — DONE. Dedicated capped path in `computeScheduleCAssetDepreciation` (caps Rev. Proc. 2024-13/2025-16/2026-15, vintage-fixed, the post-year-6 "overhang" modeled via replay); ≤50%-use ADS SL; heavy-SUV §179(b)(5) cap. New asset fields isPassengerAuto/businessUsePct/gvwrOver6000 (migration 0017). 17 tests.
+- [x] **Schedule H** — household employment (nanny) tax. DONE (commit 94f70a4).
+- [x] **Form 2210 annualized-income method** (Schedule AI) — DONE. `computeForm2210Annualized`: annualizes per-period income (factors 4/2.4/1.5/1, applicable % 22.5/45/67.5/90), returns the per-period required installment (capped at 25% RAP + recapture). Only lowers early installments for back-loaded income.
+- [x] **Digital assets / 1099-DA** — DONE (engine income). `crypto_staking_income` (ordinary, not SE; Rev. Rul. 2023-14) + `crypto_mining_income` (SE business income). The 1099-DA extractor + per-wallet basis-tracking transition remain AI-layer follow-ups.
+- [x] **Per-property suspended-loss STORAGE + §469(g) release** — DONE. RentalPropertyFact.fullyDisposedThisYear + suspendedLossCarryforward (migration 0018); on full taxable disposition the property's current-year net + suspended PAL release freely (no $25k cap). New output section469gReleasedLoss.
+- [x] **SE-tax edges** — DONE. Clergy (prior) + statutory employee (Sch C, not in SE base), church-employee income ($108.28 SE trigger), SE non-farm optional method (Sch SE Part II election).
+- [x] **State depth** — DONE (AMT + WA). CO AMT (3.47%) + CT AMT (lesser-of 19%×TMT or 5.5%×AMTI; federal TMT plumbed); WA capital-gains threshold corrected to $270k/$278k + the 2025+ 2.9% surcharge over $1M. (Additional state-specific credits beyond the existing 31 remain an incremental enhancement.)
+- [x] **Carryforward completeness audit** — DONE. `tax-engine-carryforward-audit-tests.ts` (10) verifies all 8 carryforwards (NOL/cap-loss ST+LT/charitable/§163(j)/AMT-credit/AMT-NOL/PAL) capture + apply round-trip correctly. Zero gaps found.
+- [ ] **(Scope decision — flag to founder, not assumed) Business returns** (1065/1120-S/1120/1041). Out of scope (Option A).
 
-### T1.3 Tax planning engine — capability enhancements — **PARTIAL (deadline calendar DONE 2026-06-08, commit 8c529b1)**
-- [ ] **Promote the ~44 heuristic detectors to engine-verified** what-ifs (model each mechanic, like the §1244/§453/§163(d)/§41/§23 work) — the largest accuracy lift for planning *dollars*. Triage: modelable now vs needs-new-engine-support vs genuinely-qualitative. DEFERRED — ~2-4 hrs each; large.
-- [ ] **Multi-year global optimizer** (beyond detection): optimal capital-gains harvesting across years, the Roth-conversion amount that minimizes *lifetime* tax (extend the optimizer), bracket-filling, RMD/SS-timing optimization — a constrained-optimization solver over the multi-year engine.
-- [ ] **Strategy-combination global optimization** — find the best *combination* of strategies (not pairwise stacking), with the interaction-erosion modeled. Differentiated + hard.
-- [ ] **Monte Carlo** on the multi-year trajectory (market-return uncertainty; the Roth optimizer assumes fixed growth) → confidence bands on lifetime value.
-- [x] **Deadline-aware planning calendar** — DONE. New pure `planningCalendar.ts` (`strategyDeadline` classifier → year_end/quarterly/filing/extended/ongoing + ISO dates; `buildPlanningCalendar` groups hits soonest-first). `OpportunityHit.deadline` attached by the engine; new `GET /api/clients/:id/planning-calendar`. 32 tests.
-- [ ] **Interactive what-if scenario builder** (CPA composes arbitrary engine mutations; the what-if engine exists, needs a UI) + sensitivity/assumptions surfaced on *every* strategy (extend `whatIfSensitivity`).
-- [ ] **New + state-specific strategies** as law evolves (catalog is "closed" at 101 but tax law isn't); a few state-specific planning moves beyond PTET.
-- [ ] **Estate/gift planning touchpoints** (qualitative flags — SLAT, annual-exclusion gifting, step-up — without computing 706/709).
+### T1.3 Tax planning engine — capability enhancements — **CORE DONE 2026-06-09 (optimizers + Monte Carlo shipped + deployed); estate/detector-promotion/what-if-UI remain**
+- [ ] **Promote the ~44 heuristic detectors to engine-verified** what-ifs — STILL OPEN (the strategy-combo optimizer now stacks the already-engine-verified ones optimally; promoting the remaining qualitative heuristics is ~2-4 hrs each).
+- [x] **Multi-year global optimizer** — DONE. `multiYearOptimizer.ts` (`optimizeBracketFilling`): sizes the per-year income realization / Roth conversion to fill to a target bracket top, with per-year incremental tax + blended rate. New `federalBracketCeiling` helper. POST /clients/:id/bracket-fill. 6 hand-calc'd tests.
+- [x] **Strategy-combination global optimization** — DONE. `strategyComboOptimizer.ts` (`optimizeStrategyCombination`): greedy forward selection over the real engine to find the best SUBSET, modeling interaction erosion (combined vs Σ individual). 6 tests.
+- [x] **Monte Carlo** on the multi-year trajectory — DONE. `monteCarloEngine.ts` (`runMonteCarlo`): N seeded stochastic trajectories → p10/p25/p50/p75/p90 bands on cumulative tax + ending portfolio. POST /clients/:id/monte-carlo. 40 tests (determinism + convergence anchor). (Built by a worktree agent, reviewed for purity + integrated.)
+- [x] **Deadline-aware planning calendar** — DONE (commit 8c529b1).
+- [ ] **Interactive what-if scenario builder** (frontend UI over the existing what-if engine) — STILL OPEN (the engine + endpoints exist; a dedicated UI card remains).
+- [ ] **New + state-specific strategies** as law evolves — STILL OPEN.
+- [ ] **Estate/gift planning touchpoints** (qualitative flags — SLAT, annual-exclusion gifting, step-up) — STILL OPEN (catalog + detector + coverage wiring; research is in hand — annual excl $18k/$19k/$19k, BEA $13.61M/$13.99M/$15M-permanent, step-up §1014).
 
 ---
 
