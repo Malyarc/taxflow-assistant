@@ -1457,7 +1457,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   let form1099Summary: Form1099Summary;
   if (capTxnsForYear.length > 0) {
     const cgDistributions = form1099Records
-      .filter((r) => r.formType === "div")
+      .filter((r) => (r.formType ?? "").toLowerCase() === "div")
       .reduce((s, r) => s + toNum(r.totalCapitalGainDistribution), 0);
     const txnGainLoss = (t: CapitalTransactionFact) =>
       toNum(t.proceeds) - toNum(t.costBasis) + toNum(t.adjustmentAmount);
@@ -1982,7 +1982,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   if (isMfjForSe && hasExplicitSpouseAttribution) {
     // K1 MFJ sub-gap closure (2026-05-26).
     const necRecordsForYear = form1099Records.filter((r) =>
-      r.formType === "nec" && (r.taxYear ?? taxYear) === taxYear);
+      (r.formType ?? "").toLowerCase() === "nec" && (r.taxYear ?? taxYear) === taxYear);
     const necSeIncomeTaxpayer = necRecordsForYear
       .filter((r) => (r.spouse ?? "taxpayer") === "taxpayer")
       .reduce((s, r) => s + toNum(r.nonemployeeCompensation), 0);

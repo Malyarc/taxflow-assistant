@@ -315,15 +315,15 @@ header("2026-06-08 batch — 17 method-(a) states (relational + >fallback)");
     checkTruthy(`${s} NR > direct-bracket fallback on $80k (method changed correctly)`,
       (e?.tax ?? 0) > calculateStateTax(80000, s, "single", 2024) + 0.01);
   }
-  // CO absolute hand-calc anchor (flat 4.4%, conforms to federal taxable income →
-  // std ded = federal $14,600 single 2024): as-resident = (120,000 − 14,600) × 4.4%
-  // = $4,637.60; NR = × ⅔ = $3,091.73.
+  // CO absolute hand-calc anchor (flat 4.25% 2024 temp TABOR reduction (audit S4),
+  // conforms to federal taxable income → std ded = federal $14,600 single 2024):
+  // as-resident = (120,000 − 14,600) × 4.25% = $4,479.50; NR = × ⅔ = $2,986.33.
   const co = nyEntry(
     calculateMultiStateTax({
       residentState: "TX", federalAgi: 120000, filingStatus: "single", taxYear: 2024,
       perStateWages: [{ stateCode: "CO", wages: 80000 }, { stateCode: "TX", wages: 40000 }],
     }), "CO");
-  check("CO NR absolute = $3,091.73 ((120k−14.6k std)×4.4%×⅔)", co?.tax ?? -1, 3091.73, 0.5);
+  check("CO NR absolute = $2,986.33 ((120k−14.6k std)×4.25%×⅔)", co?.tax ?? -1, 2986.33, 0.5);
 }
 
 // ════════════════════════════════════════════════════════════════════════════

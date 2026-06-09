@@ -155,9 +155,9 @@ header("D. State tax: flat-rate states 2024");
 const FLAT_STATES_2024: Array<[string, number, number]> = [
   // [state, rate, std deduction (single)]
   ["AZ", 0.025, 14600],
-  ["CO", 0.044, 14600],
+  ["CO", 0.0425, 14600], // 2024 temporary TABOR-surplus reduction (audit S4)
   ["GA", 0.0539, 12000],
-  ["ID", 0.058, 14600],
+  ["ID", 0.05695, 14600], // 2024 = 5.695% (H.521); was 5.8% (audit S3)
   ["IL", 0.0495, 2775], // IL personal exemption $2,775/filer (2024) — modeled as deduction
   ["IN", 0.0305, 1000], // IN $1,000 personal exemption (single, 0 deps) modeled as deduction (#7)
   ["KY", 0.04, 3160],

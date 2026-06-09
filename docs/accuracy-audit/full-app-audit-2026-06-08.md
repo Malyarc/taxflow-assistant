@@ -32,6 +32,24 @@ under-tax bug); documented sub-gap. **repaymentCap=Infinity** = intentional §36
 | F4 | LOW | Cap gains | taxCalculator.ts:5738 LTCG_BRACKETS[2024].MFS `upTo:291875` | Rev.Proc.2023-34 + Sch D wksht = $291,850. ≤$25 band. | **FIXED** |
 | F5 | MEDIUM | AI extract / val | lib/validation/src/w2Validation.ts:48 `SS_WAGE_BASE_BY_YEAR` missing 2026 | TY2026 W-2 Box-3 cap check silently skipped. | **FIXED** |
 
+## SHIP STATUS — commit 2 (F1b /code-review catch + Ship Set B state rates)
+**/code-review max on commit 1 caught a REAL incomplete-fix (author-blindness):** F1 healed
+`summarize1099s` but TWO sibling consumers still matched `formType` case-sensitively —
+taxReturnEngine.ts:1985 (MFJ per-spouse SE split → a legacy uppercase "NEC" dropped → **$7,064
+SE-tax understatement**) + :1460 (DIV cap-gain distributions when capital txns present → **$10k
+LTCG dropped**). Both UNDER-tax (unsafe direction). **FIXED** all formType reads to
+`(r.formType ?? "").toLowerCase()`; added F1b regression (uppercase ≡ lowercase on both paths).
+Everything else in commit 1 verified CLEAN by both reviewers (F2 state-AMT isolation, C2 cap,
+toNum clamp, effRate guard, MFS breakpoint).
+**Ship Set B — state rates, each verified vs the state DOR/statute (WebSearch):** S1 WI 2024
+3.54%/4.65%→3.50%/4.40% (§71.06); S3 ID 5.8%→5.695%(2024)/5.3%(2025, HB40); S4 CO 4.4%→4.25%
+(2024 TABOR temp; 4.40% base restored 2025); S5 SC 6.4%→6.2%(2024)/6.0%(2025); S6 OH top
+3.5%→3.125%(2025)/flat 2.75%(2026, HB96); S7 NE top 5.84%→5.20%(2025, LB754). +S-rate regression
+block (8 assertions). 11 existing state-test expectations re-hand-calc'd for the corrected rates.
+**Still DEFERRED to a follow-up (documented):** S2 MN-conforming, S8 MA-surtax-COLA, S9 AZ-std-ded,
+S10 WV-SS, S11 KY-2026, L1 NYC-EITC, L2/L3 MD/IN county, M1/M2 DC/CA mandate — each needs its own
+DOR verification + override; lower population than S1/S3-S7.
+
 ## TIER 2 — VERIFY vs primary source, then fix (state/local constants)
 
 | ID | Sev | Area | Claim | Status |

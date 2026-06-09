@@ -2290,9 +2290,10 @@ header("E12+5 — pro-rated std ded: CO half-year, hand-calc $1,878.80");
   check("E12+5", "daysFormer = 183", r.partYearResidency?.daysFormer ?? 0, 183, 0);
   check("E12+5", "daysCurrent = 183", r.partYearResidency?.daysCurrent ?? 0, 183, 0);
   check("E12+5", "formerAgi (CO) = $50,000", r.partYearResidency?.formerStateAgi ?? 0, 50000, 0.5);
-  check("E12+5", "formerStateTax (CO) = $1,878.80 (std ded pro-rated to $7,300)",
-    r.partYearResidency?.formerStateTax ?? 0, 1878.80, 0.5);
-  check("E12+5", "totalStateTax = $1,878.80 (TX = 0)", r.totalStateTax, 1878.80, 0.5);
+  // CO 2024 = 4.25% (temporary TABOR reduction, audit S4): (50,000−7,300)×0.0425 = $1,814.75.
+  check("E12+5", "formerStateTax (CO) = $1,814.75 (std ded pro-rated to $7,300)",
+    r.partYearResidency?.formerStateTax ?? 0, 1814.75, 0.5);
+  check("E12+5", "totalStateTax = $1,814.75 (TX = 0)", r.totalStateTax, 1814.75, 0.5);
 }
 
 // --- E12 boundary: change date Jan 1 → 0 days former → all current ---

@@ -189,7 +189,10 @@ const STATE_TAX_DATA_2024: Record<string, StateTaxInfo> = {
   },
   CO: {
     name: "Colorado", hasIncomeTax: true,
-    brackets: { single: flat(0.044), married_filing_jointly: flat(0.044) },
+    // TY2024 = 4.25% (temporary TABOR-surplus reduction, SB24-228; CO DR 0104
+    // 2024 booklet). The 4.40% statutory base is restored for 2025 in
+    // build2025Data (the temp reduction is TABOR-surplus-conditional each year).
+    brackets: { single: flat(0.0425), married_filing_jointly: flat(0.0425) },
     standardDeduction: { single: FED_STD_DEDUCTION_2024.single, married_filing_jointly: FED_STD_DEDUCTION_2024.married_filing_jointly, head_of_household: FED_STD_DEDUCTION_2024.head_of_household, married_filing_separately: FED_STD_DEDUCTION_2024.married_filing_separately, qualifying_widow: FED_STD_DEDUCTION_2024.qualifying_widow },
     notes: "CO uses federal taxable income as the starting point.",
   },
@@ -201,7 +204,9 @@ const STATE_TAX_DATA_2024: Record<string, StateTaxInfo> = {
   },
   ID: {
     name: "Idaho", hasIncomeTax: true,
-    brackets: { single: flat(0.058), married_filing_jointly: flat(0.058) },
+    // TY2024 = 5.695% flat (H.521, retroactive to 1/1/2024). TY2025 → 5.3% (HB40),
+    // applied in build2025Data. Idaho State Tax Commission rate schedule.
+    brackets: { single: flat(0.05695), married_filing_jointly: flat(0.05695) },
     standardDeduction: { single: FED_STD_DEDUCTION_2024.single, married_filing_jointly: FED_STD_DEDUCTION_2024.married_filing_jointly, head_of_household: FED_STD_DEDUCTION_2024.head_of_household, married_filing_separately: FED_STD_DEDUCTION_2024.married_filing_separately, qualifying_widow: FED_STD_DEDUCTION_2024.qualifying_widow },
   },
   IL: {
@@ -747,9 +752,11 @@ const STATE_TAX_DATA_2024: Record<string, StateTaxInfo> = {
   },
   SC: {
     name: "South Carolina", hasIncomeTax: true,
+    // TY2024 top rate = 6.2% (SC DOR SC1040TT). TY2025 → 6.0% (effective 7/1/2025),
+    // applied in build2025Data. Brackets (0% ≤$3,460, 3% ≤$17,330) inflation-indexed.
     brackets: {
-      single: [{ upTo: 3460, rate: 0 }, { upTo: 17330, rate: 0.03 }, { upTo: Infinity, rate: 0.064 }],
-      married_filing_jointly: [{ upTo: 3460, rate: 0 }, { upTo: 17330, rate: 0.03 }, { upTo: Infinity, rate: 0.064 }],
+      single: [{ upTo: 3460, rate: 0 }, { upTo: 17330, rate: 0.03 }, { upTo: Infinity, rate: 0.062 }],
+      married_filing_jointly: [{ upTo: 3460, rate: 0 }, { upTo: 17330, rate: 0.03 }, { upTo: Infinity, rate: 0.062 }],
     },
     standardDeduction: { single: 14600, married_filing_jointly: 29200, head_of_household: 21900, married_filing_separately: 14600 },
     notes: "SC top rate dropped to 6.4% for 2024; mirrors federal std deduction.",
@@ -811,14 +818,14 @@ const STATE_TAX_DATA_2024: Record<string, StateTaxInfo> = {
     name: "Wisconsin", hasIncomeTax: true,
     brackets: {
       single: [
-        { upTo: 14320, rate: 0.0354 },
-        { upTo: 28640, rate: 0.0465 },
+        { upTo: 14320, rate: 0.035 },
+        { upTo: 28640, rate: 0.044 },
         { upTo: 315310, rate: 0.053 },
         { upTo: Infinity, rate: 0.0765 },
       ],
       married_filing_jointly: [
-        { upTo: 19090, rate: 0.0354 },
-        { upTo: 38190, rate: 0.0465 },
+        { upTo: 19090, rate: 0.035 },
+        { upTo: 38190, rate: 0.044 },
         { upTo: 420420, rate: 0.053 },
         { upTo: Infinity, rate: 0.0765 },
       ],
@@ -886,6 +893,48 @@ function build2025Data(): Record<string, StateTaxInfo> {
     ...data.GA,
     brackets: { single: flat(0.0519), married_filing_jointly: flat(0.0519) },
   };
+  // Idaho reduced flat rate to 5.3% for 2025 (HB40, retroactive to 1/1/2025)
+  data.ID = {
+    ...data.ID,
+    brackets: { single: flat(0.053), married_filing_jointly: flat(0.053) },
+  };
+  // Colorado: restore the 4.40% statutory base for 2025. The 2024 4.25% was a
+  // TABOR-surplus temporary reduction; the 2025+ reduction is surplus-conditional
+  // each year, so default to the base (over-estimates slightly if a surplus hits).
+  data.CO = {
+    ...data.CO,
+    brackets: { single: flat(0.044), married_filing_jointly: flat(0.044) },
+  };
+  // South Carolina reduced the top rate to 6.0% effective 7/1/2025 (SC DOR).
+  data.SC = {
+    ...data.SC,
+    brackets: {
+      single: [{ upTo: 3460, rate: 0 }, { upTo: 17330, rate: 0.03 }, { upTo: Infinity, rate: 0.06 }],
+      married_filing_jointly: [{ upTo: 3460, rate: 0 }, { upTo: 17330, rate: 0.03 }, { upTo: Infinity, rate: 0.06 }],
+    },
+  };
+  // Nebraska reduced the top rate to 5.20% for 2025 (LB754; lower rates unchanged).
+  data.NE = {
+    ...data.NE,
+    brackets: {
+      single: [
+        { upTo: 3700, rate: 0.0246 }, { upTo: 22170, rate: 0.0351 },
+        { upTo: 35730, rate: 0.0501 }, { upTo: Infinity, rate: 0.052 },
+      ],
+      married_filing_jointly: [
+        { upTo: 7390, rate: 0.0246 }, { upTo: 44360, rate: 0.0351 },
+        { upTo: 71460, rate: 0.0501 }, { upTo: Infinity, rate: 0.052 },
+      ],
+    },
+  };
+  // Ohio reduced the top rate to 3.125% for 2025 (HB96, retroactive to 1/1/2025).
+  data.OH = {
+    ...data.OH,
+    brackets: {
+      single: [{ upTo: 26050, rate: 0 }, { upTo: 100000, rate: 0.0275 }, { upTo: Infinity, rate: 0.03125 }],
+      married_filing_jointly: [{ upTo: 26050, rate: 0 }, { upTo: 100000, rate: 0.0275 }, { upTo: Infinity, rate: 0.03125 }],
+    },
+  };
   // California TY2025 brackets (inflation-adjusted ~3%)
   data.CA = {
     ...data.CA,
@@ -934,6 +983,14 @@ function build2026Data(): Record<string, StateTaxInfo> {
     }
     data[code] = next;
   }
+  // Ohio moves to a single flat 2.75% (over $26,050) for 2026 (HB96).
+  data.OH = {
+    ...data.OH,
+    brackets: {
+      single: [{ upTo: 26050, rate: 0 }, { upTo: Infinity, rate: 0.0275 }],
+      married_filing_jointly: [{ upTo: 26050, rate: 0 }, { upTo: Infinity, rate: 0.0275 }],
+    },
+  };
   return data;
 }
 

@@ -92,19 +92,20 @@ header("Yonkers — 16.75% surcharge on NY State tax");
 // ════════════════════════════════════════════════════════════════════════════
 // WISCONSIN — sliding-scale standard deduction, SINGLE (Wis. Stat. §71.05(22)).
 // 2024 single: max $13,230, reduced 12% of WAGI over $19,070, → $0 at ~$129,319.
-// WI single brackets: 3.54% to $14,320 / 4.65% to $28,640 / 5.30% to $315,310.
+// WI single brackets (Wis. Stat. §71.06): 3.50% to $14,320 / 4.40% to $28,640 /
+//   5.30% to $315,310 (the 3.54%/4.65% prior code values were stale — audit S1).
 //   AGI $50,000: stdDed = 13,230 − 0.12×(50,000−19,070) = 13,230 − 3,711.60 = 9,518.40
-//                taxable = 40,481.60 → 0.0354×14,320 + 0.0465×14,320 + 0.0530×11,841.60
-//                        = 506.93 + 665.88 + 627.60 = $1,800.41
-//   AGI $19,070 (threshold): full $13,230 → taxable 5,840 → 0.0354×5,840 = $206.74
+//                taxable = 40,481.60 → 0.035×14,320 + 0.044×14,320 + 0.0530×11,841.60
+//                        = 501.20 + 630.08 + 627.60 = $1,758.88
+//   AGI $19,070 (threshold): full $13,230 → taxable 5,840 → 0.035×5,840 = $204.40
 //   AGI $10,000 (below): full std ded > income → $0
 // ════════════════════════════════════════════════════════════════════════════
 header("WI — single sliding-scale standard deduction phase-out");
 {
-  check("WI single $50k: std-ded phased to $9,518.40 → tax $1,800.41",
-    calculateStateTax(50000, "WI", "single", 2024), 1800.41, 0.5);
-  check("WI single at $19,070 threshold: full $13,230 std ded → tax $206.74",
-    calculateStateTax(19070, "WI", "single", 2024), 206.74, 0.5);
+  check("WI single $50k: std-ded phased to $9,518.40 → tax $1,758.88",
+    calculateStateTax(50000, "WI", "single", 2024), 1758.88, 0.5);
+  check("WI single at $19,070 threshold: full $13,230 std ded → tax $204.40",
+    calculateStateTax(19070, "WI", "single", 2024), 204.40, 0.5);
   checkTruthy("WI single $10k (below threshold): $0 tax (full std ded > income)",
     calculateStateTax(10000, "WI", "single", 2024) === 0);
   // Phase-out makes high-AGI single owe MORE than the full-std-ded baseline.
@@ -117,27 +118,28 @@ header("WI — single sliding-scale standard deduction phase-out");
 // reverse-derived from + verified to reproduce the 2024 WI Form 1 Standard
 // Deduction Table to the dollar. (HoH/MFS fall back to SINGLE brackets — a
 // separate pre-existing WI-bracket sub-gap; this test fixes only the std ded.)
+//   (WI rates 3.5%/4.4% — audit S1.)
 //   MFJ $80k: stdDed = 24,490 − 0.19778×(80,000−27,520) = 14,110.51 → taxable
-//     65,889.49 → MFJ brackets 0.0354×19,090 + 0.0465×19,100 + 0.053×27,699.49
-//     = 675.79 + 888.15 + 1,468.07 = $3,032.01 (was ~$2,481.90 at full std ded).
+//     65,889.49 → MFJ brackets 0.035×19,090 + 0.044×19,100 + 0.053×27,699.49
+//     = 668.15 + 840.40 + 1,468.07 = $2,976.62 (was ~$2,481.90 at full std ded).
 //   HoH $30k (below the ~$55,832 crossover): stdDed = max(single 11,918.40, the
 //     HoH line 17,090 − 0.225×(30,000−19,070) = 14,630.75) = 14,630.75 → taxable
-//     15,369.25 → single brackets 0.0354×14,320 + 0.0465×1,049.25 = $555.72.
-//   HoH $60k (above crossover → follows single): stdDed = single 8,318.40 → $2,394.01.
-//   MFS $40k: stdDed = 12,575 − 0.19778×(40,000−8,282) = 6,301.81 → $1,440.89.
+//     15,369.25 → single brackets 0.035×14,320 + 0.044×1,049.25 = $547.37.
+//   HoH $60k (above crossover → follows single): stdDed = single 8,318.40 → $2,352.48.
+//   MFS $40k: stdDed = 12,575 − 0.19778×(40,000−8,282) = 6,301.81 → $1,399.36.
 // ════════════════════════════════════════════════════════════════════════════
 header("WI — MFJ / HoH / MFS std-deduction phase-out");
 {
-  check("WI MFJ $80k: std-ded $14,110.51 → tax $3,032.01",
-    calculateStateTax(80000, "WI", "married_filing_jointly", 2024), 3032.01, 0.5);
+  check("WI MFJ $80k: std-ded $14,110.51 → tax $2,976.62",
+    calculateStateTax(80000, "WI", "married_filing_jointly", 2024), 2976.62, 0.5);
   checkTruthy("WI MFJ $80k owes MORE than the old full-std-ded baseline ($2,481.90)",
     calculateStateTax(80000, "WI", "married_filing_jointly", 2024) > 2481.90 + 1);
-  check("WI HoH $30k (HoH 22.5% line): std-ded $14,630.75 → tax $555.72",
-    calculateStateTax(30000, "WI", "head_of_household", 2024), 555.72, 0.5);
-  check("WI HoH $60k (past crossover → = single): std-ded $8,318.40 → tax $2,394.01",
-    calculateStateTax(60000, "WI", "head_of_household", 2024), 2394.01, 0.5);
-  check("WI MFS $40k: std-ded $6,301.81 → tax $1,440.89",
-    calculateStateTax(40000, "WI", "married_filing_separately", 2024), 1440.89, 0.5);
+  check("WI HoH $30k (HoH 22.5% line): std-ded $14,630.75 → tax $547.37",
+    calculateStateTax(30000, "WI", "head_of_household", 2024), 547.37, 0.5);
+  check("WI HoH $60k (past crossover → = single): std-ded $8,318.40 → tax $2,352.48",
+    calculateStateTax(60000, "WI", "head_of_household", 2024), 2352.48, 0.5);
+  check("WI MFS $40k: std-ded $6,301.81 → tax $1,399.36",
+    calculateStateTax(40000, "WI", "married_filing_separately", 2024), 1399.36, 0.5);
 }
 
 // ════════════════════════════════════════════════════════════════════════════

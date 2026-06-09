@@ -10,6 +10,7 @@ import {
   summarize1099s,
   type TaxReturnInputs,
 } from "../../artifacts/api-server/src/lib/taxReturnEngine";
+import { calculateStateTax } from "../../artifacts/api-server/src/lib/taxCalculator";
 import { validateW2 } from "@workspace/validation";
 
 const PASS: string[] = [];
@@ -45,6 +46,31 @@ header("F1 — 1099 formType is case-insensitive (no silent income drop)");
     adjustments: [], taxYear: 2024,
   });
   check("e2e: AGI = 40000 wages + 5000 INT interest", r.adjustedGrossIncome, 45000, 1);
+
+  // F1b — case-insensitivity must hold at ALL formType read sites, not just
+  // summarize1099s (code-review 2026-06-08 caught two missed sibling consumers:
+  // the MFJ per-spouse SE split + the DIV cap-gain-distribution branch). Assert
+  // uppercase ≡ lowercase produce identical returns on both paths.
+  const mkMfjNec = (ft: string): TaxReturnInputs => ({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024 },
+    w2s: [{ wagesBox1: 200000, socialSecurityWagesBox3: 180000, federalTaxWithheldBox2: 0, stateCode: "FL", spouse: "taxpayer" } as never],
+    form1099s: [{ formType: ft, nonemployeeCompensation: 50000, spouse: "spouse" } as never],
+    adjustments: [], taxYear: 2024,
+  });
+  check("F1b MFJ uppercase NEC → spouse SE tax (not dropped)",
+    computeTaxReturnPure(mkMfjNec("NEC")).selfEmploymentTax,
+    computeTaxReturnPure(mkMfjNec("nec")).selfEmploymentTax, 0.01);
+  ok("F1b MFJ NEC SE tax > 0 (uppercase counted)", computeTaxReturnPure(mkMfjNec("NEC")).selfEmploymentTax > 1000);
+  const mkDiv = (ft: string): TaxReturnInputs => ({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ wagesBox1: 80000, federalTaxWithheldBox2: 0, stateCode: "FL" }],
+    form1099s: [{ formType: ft, totalCapitalGainDistribution: 10000 } as never],
+    capitalTransactions: [{ description: "X", proceeds: 13000, costBasis: 10000, longTerm: true } as never],
+    adjustments: [], taxYear: 2024,
+  });
+  check("F1b uppercase DIV cap-gain distribution counted with capital txns present",
+    computeTaxReturnPure(mkDiv("DIV")).netCapitalGainLoss,
+    computeTaxReturnPure(mkDiv("div")).netCapitalGainLoss, 0.01);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -170,6 +196,41 @@ header("SEC — sub-dollar income → effectiveTaxRate 0 (not exploded)");
     form1099s: [], adjustments: [], taxYear: 2024,
   });
   ok("effectiveTaxRate is finite + sane", Number.isFinite(r.effectiveTaxRate) && Math.abs(r.effectiveTaxRate) <= 2);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// STATE RATE CORRECTIONS (S1/S3/S4/S5/S6/S7) — verified vs each state DOR.
+// $80k single, std ded = federal $14,600 (2024) / $15,750 (2025) for the
+// conforming states (CO/ID/SC). Tax = (80,000 − stdDed) × rate.
+// ════════════════════════════════════════════════════════════════════════════
+header("State rate corrections — 2024 base + 2025/2026 overrides");
+{
+  // S1 — Wisconsin 2024 bottom brackets 3.50%/4.40% (Wis. Stat. §71.06).
+  // $25k single: stdDed phases to 13,230 − 0.12×(25,000−19,070)=12,518.40;
+  // taxable 12,481.60 → all in bracket 1 @ 3.5% = $436.86.
+  check("S1 WI 2024 single $25k bottom rate 3.5%", calculateStateTax(25000, "WI", "single", 2024), 436.86, 0.5);
+  // S3 — Idaho 5.695% (2024) → 5.3% (2025). std ded conforms.
+  check("S3 ID 2024 $80k = (80k−14.6k)×5.695%", calculateStateTax(80000, "ID", "single", 2024), (80000 - 14600) * 0.05695, 0.5);
+  check("S3 ID 2025 $80k = (80k−15.75k)×5.3%", calculateStateTax(80000, "ID", "single", 2025), (80000 - 15750) * 0.053, 0.5);
+  // S4 — Colorado 4.25% (2024 temp) → 4.40% base (2025).
+  check("S4 CO 2024 $80k = (80k−14.6k)×4.25%", calculateStateTax(80000, "CO", "single", 2024), (80000 - 14600) * 0.0425, 0.5);
+  check("S4 CO 2025 $80k = (80k−15.75k)×4.40%", calculateStateTax(80000, "CO", "single", 2025), (80000 - 15750) * 0.044, 0.5);
+  // S5 — South Carolina top 6.2% (2024) → 6.0% (2025). Brackets 0/3/top.
+  // $80k 2024: 0×3,460 + 3%×(17,330−3,460) + 6.2%×(80,000−15,750−17,330) ... uses conforming std ded.
+  // Verify the TOP marginal: tax(80k 2025) < tax(80k 2024) by the rate cut on the top slice.
+  ok("S5 SC 2025 top rate (6.0%) < 2024 (6.2%) at $80k",
+    calculateStateTax(80000, "SC", "single", 2025) < calculateStateTax(80000, "SC", "single", 2024));
+  // S6 — Ohio 2025 top 3.125%, 2026 flat 2.75%. $150k single (above $100k).
+  // 2025: 0×26,050 + 2.75%×(100,000−26,050) + 3.125%×(150,000−100,000) = 2,033.625 + 1,562.50 = $3,596.13.
+  check("S6 OH 2025 $150k top 3.125%", calculateStateTax(150000, "OH", "single", 2025), 3596.13, 0.5);
+  // 2026 flat 2.75% over $26,050: 2.75%×(150,000−26,050) = $3,408.625.
+  check("S6 OH 2026 $150k flat 2.75%", calculateStateTax(150000, "OH", "single", 2026), 3408.63, 0.5);
+  // S7 — Nebraska 2025 top 5.20% (LB754; lower 2.46/3.51/5.01% unchanged).
+  // $80k single; NE std ded ~$8,300 (pre-existing) → taxable ≈ 71,700:
+  // 2.46%×3,700 + 3.51%×(22,170−3,700) + 5.01%×(35,730−22,170) + 5.2%×(71,700−35,730)
+  // = 91.02 + 648.30 + 679.36 + 1,870.44 = $3,289.11. The corrected 5.20% top rate
+  // is what's verified (was 5.84%); the std ded is unchanged by this fix.
+  check("S7 NE 2025 $80k top 5.20%", calculateStateTax(80000, "NE", "single", 2025), 3289.11, 1.0);
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────
