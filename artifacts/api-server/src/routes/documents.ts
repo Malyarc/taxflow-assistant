@@ -537,6 +537,7 @@ router.post("/clients/:clientId/documents/:documentId/approve", async (req, res)
       {
         infoType: (parsed.data.infoType ?? undefined) as InfoReturnType | undefined,
         mortgageInterestReceived: parsed.data.mortgageInterestReceived ?? undefined,
+        refundOfOverpaidInterest: parsed.data.refundOfOverpaidInterest ?? undefined,
         realEstateTaxes: parsed.data.realEstateTaxes ?? undefined,
         qualifiedTuition: parsed.data.qualifiedTuition ?? undefined,
         scholarshipsGrants: parsed.data.scholarshipsGrants ?? undefined,

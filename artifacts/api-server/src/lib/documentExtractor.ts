@@ -626,8 +626,10 @@ export function mapInfoReturnToInputs(
 
   switch (data.infoType) {
     case "1098": {
-      const interest = pos(data.mortgageInterestReceived);
-      if (interest > 0) adjustments.push({ adjustmentType: "mortgage_interest", amount: interest, description: `Mortgage interest — Form 1098 Box 1 ${src}` });
+      // A2/A1 — Box 1 mortgage interest, REDUCED by Box 4 (refund of overpaid
+      // interest from a prior year), per Pub 936 / the Form 1098 instructions.
+      const interest = Math.max(0, pos(data.mortgageInterestReceived) - pos(data.refundOfOverpaidInterest));
+      if (interest > 0) adjustments.push({ adjustmentType: "mortgage_interest", amount: interest, description: `Mortgage interest — Form 1098 Box 1${pos(data.refundOfOverpaidInterest) > 0 ? " net of Box 4 refund" : ""} ${src}` });
       const reTax = pos(data.realEstateTaxes);
       if (reTax > 0) adjustments.push({ adjustmentType: "state_property_tax", amount: reTax, description: `Real-estate tax — Form 1098 Box 10 ${src}` });
       break;

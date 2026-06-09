@@ -2314,6 +2314,9 @@ components:
           enum: ["1098", "1098t", "1098e", "1095a", "ssa1099", "w2g", null]
         mortgageInterestReceived:
           type: ["number", "null"]
+        refundOfOverpaidInterest:
+          type: ["number", "null"]
+          description: A1 — Form 1098 Box 4. Reduces the deductible mortgage interest (Box 1 − Box 4).
         realEstateTaxes:
           type: ["number", "null"]
         qualifiedTuition:

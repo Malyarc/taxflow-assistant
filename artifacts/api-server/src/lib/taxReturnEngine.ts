@@ -243,6 +243,10 @@ export interface Form1099Fact {
   nonemployeeCompensation?: Numish;
   interestIncome?: Numish;
   taxExemptInterest?: Numish;
+  /** A2 — 1099-INT Box 2: penalty on early withdrawal of savings (a forfeited-
+   *  interest penalty on breaking a CD early). An ABOVE-THE-LINE deduction
+   *  (Schedule 1 line 18, §62(a)(9)) — distinct from the 1099-R §72(t) penalty. */
+  earlyWithdrawalPenalty?: Numish;
   ordinaryDividends?: Numish;
   qualifiedDividends?: Numish;
   totalCapitalGainDistribution?: Numish;
@@ -526,6 +530,10 @@ export interface Form1099Summary {
   retirementIncome: number;
   /** E5 — IRC §72(t) early-withdrawal penalty (10% on code "1", 25% on code "S"). Added to total federal liability on Sched 2 Line 8. */
   earlyWithdrawalPenalty: number;
+  /** A2 — 1099-INT Box 2 penalty on early withdrawal of SAVINGS (forfeited CD
+   *  interest). An ABOVE-THE-LINE DEDUCTION (Schedule 1 line 18, §62(a)(9)) —
+   *  the OPPOSITE of the §72(t) penalty above. Reduces AGI. */
+  interestEarlyWithdrawalPenalty: number;
   /** Unemployment + state refund (1099-G) */
   unemploymentIncome: number;
   /** E6 — 1099-G Box 1 only (unemployment comp). IRC §85 fully federal-taxable. */
@@ -579,6 +587,11 @@ export function summarize1099s(records: Form1099Fact[]): Form1099Summary {
     (s, r) => s + Math.max(0, toNum(r.interestIncome) - toNum(r.taxExemptInterest)),
     0,
   );
+  // A2 — 1099-INT Box 2 early-withdrawal-of-savings penalty → above-the-line
+  // deduction (§62(a)(9)). Only on 1099-INT (the 1099-R field carries the
+  // separate §72(t) additional tax).
+  const interestEarlyWithdrawalPenalty = intRecords.reduce(
+    (s, r) => s + Math.max(0, toNum(r.earlyWithdrawalPenalty)), 0);
   // Tax-exempt interest (1099-INT Box 8) — excluded from AGI but informs the
   // Pub 915 SS taxability provisional-income calculation (K10).
   const taxExemptInterest = intRecords.reduce(
@@ -729,6 +742,7 @@ export function summarize1099s(records: Form1099Fact[]): Form1099Summary {
     shortTermCapitalGains,
     retirementIncome,
     earlyWithdrawalPenalty,
+    interestEarlyWithdrawalPenalty,
     unemploymentIncome,
     unemploymentCompensationOnly,
     stateLocalRefundOnly,
@@ -2560,7 +2574,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const aboveTheLineDeterministic =
     deductionAdjustments + otherDeductions + se.deductibleHalf + hsaDeduction + educatorDeduction + sehi.deduction +
     // E7 — §179 + bonus depreciation. Both reduce taxable income.
-    section179Applied + bonusDepreciationApplied;
+    section179Applied + bonusDepreciationApplied +
+    // A2 — 1099-INT Box 2 early-withdrawal-of-savings penalty (§62(a)(9)).
+    form1099Summary.interestEarlyWithdrawalPenalty;
 
   const magiForSli = Math.max(0, totalIncomeProvisional - aboveTheLineDeterministic);
   const studentLoanInterest = calculateStudentLoanInterest({

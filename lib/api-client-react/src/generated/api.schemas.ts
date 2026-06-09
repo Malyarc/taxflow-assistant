@@ -646,6 +646,11 @@ export interface ApproveExtractionBody {
   infoType?: ApproveExtractionBodyInfoType;
   /** @nullable */
   mortgageInterestReceived?: number | null;
+  /**
+   * A1 — Form 1098 Box 4. Reduces the deductible mortgage interest (Box 1 − Box 4).
+   * @nullable
+   */
+  refundOfOverpaidInterest?: number | null;
   /** @nullable */
   realEstateTaxes?: number | null;
   /** @nullable */

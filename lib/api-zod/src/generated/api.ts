@@ -854,6 +854,12 @@ export const ApproveExtractionBody = zod
       ])
       .nullish(),
     mortgageInterestReceived: zod.number().nullish(),
+    refundOfOverpaidInterest: zod
+      .number()
+      .nullish()
+      .describe(
+        "A1 — Form 1098 Box 4. Reduces the deductible mortgage interest (Box 1 − Box 4).",
+      ),
     realEstateTaxes: zod.number().nullish(),
     qualifiedTuition: zod.number().nullish(),
     scholarshipsGrants: zod.number().nullish(),

@@ -12,6 +12,7 @@ import {
 } from "../../artifacts/api-server/src/lib/taxReturnEngine";
 import { calculateStateTax, saversCreditRateFor, getDependentStandardDeductionBase, calculateAmt } from "../../artifacts/api-server/src/lib/taxCalculator";
 import { validateW2 } from "@workspace/validation";
+import { mapInfoReturnToInputs } from "../../artifacts/api-server/src/lib/documentExtractor";
 
 const PASS: string[] = [];
 const FAIL: string[] = [];
@@ -382,6 +383,25 @@ header("E1 — EITC qualifying-children count (separate from CTC <17)");
   check("default → dependentsUnder17 (1 child EITC $4,213)", computeTaxReturnPure(mk(undefined)).eitc.appliedCredit, 4213, 1);
   // Explicit 2 (e.g. a 17/18-yo qualifying child not in the CTC <17 count) → $6,960.
   check("explicit 2 EITC children → 2-child EITC $6,960", computeTaxReturnPure(mk(2)).eitc.appliedCredit, 6960, 1);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// A1 — 1098 Box 4 (refund of overpaid interest) reduces the deductible mortgage
+// interest (Box 1 − Box 4), per Pub 936. A2 — 1099-INT Box 2 early-withdrawal
+// penalty is an above-the-line deduction (§62(a)(9)), reducing AGI.
+// ════════════════════════════════════════════════════════════════════════════
+header("A1/A2 — 1098 Box 4 netting + 1099-INT Box 2 deduction");
+{
+  const m = mapInfoReturnToInputs({ infoType: "1098", mortgageInterestReceived: 12000, refundOfOverpaidInterest: 500 } as never, "test.pdf");
+  const mi = m.adjustments.find((a) => a.adjustmentType === "mortgage_interest");
+  check("A1 mortgage interest = Box1 − Box4 = $11,500", mi?.amount ?? -1, 11500, 0.01);
+  // No Box 4 → full Box 1.
+  const m2 = mapInfoReturnToInputs({ infoType: "1098", mortgageInterestReceived: 12000 } as never, "test.pdf");
+  check("A1 no Box 4 → full $12,000", m2.adjustments.find((a) => a.adjustmentType === "mortgage_interest")?.amount ?? -1, 12000, 0.01);
+  // A2 — 1099-INT $2,000 early-withdrawal penalty reduces AGI by $2,000.
+  const noP = computeTaxReturnPure({ client: { filingStatus: "single", state: "FL", taxYear: 2024 }, w2s: [{ wagesBox1: 50000, federalTaxWithheldBox2: 0, stateCode: "FL" }], form1099s: [{ formType: "int", interestIncome: 3000 } as never], adjustments: [], taxYear: 2024 });
+  const withP = computeTaxReturnPure({ client: { filingStatus: "single", state: "FL", taxYear: 2024 }, w2s: [{ wagesBox1: 50000, federalTaxWithheldBox2: 0, stateCode: "FL" }], form1099s: [{ formType: "int", interestIncome: 3000, earlyWithdrawalPenalty: 2000 } as never], adjustments: [], taxYear: 2024 });
+  check("A2 1099-INT $2k early-withdrawal penalty → AGI −$2,000", noP.adjustedGrossIncome - withP.adjustedGrossIncome, 2000, 1);
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────
