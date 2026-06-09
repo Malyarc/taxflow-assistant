@@ -1,3 +1,42 @@
+# Handoff Note — 2026-06-09c (T1 A+ HARDENING — independent multi-agent + /code-review + /security-review; 12 bugs found + fixed + deployed)
+
+After the T1 ship, ran the review pass the first T1 pass skipped: `/code-review`
+(9 finder angles + verify) + `/security-review` + a fresh **9-agent opus
+adversarial audit** (4 area-audits + 4 method-angle finders + 1 security), each
+re-deriving every value vs the IRS/state primary source. It found **12 real
+correctness bugs** — several in MFJ paths + cross-cutting flows the single-filer
+unit tests missed, and several where the TEST EXPECTATION itself encoded the bug
+(the failure mode John warns about). All fixed + regression-tested + deployed +
+prod-verified (commit `5028ac0`); **/security-review found ZERO vulnerabilities**.
+
+**Bugs fixed (all hand-calc-regressed):**
+- HIGH-1 statutory-employee QBI dropped when an explicit qbi_income coexisted.
+- HIGH-2 crypto-mining escaped SE tax on the MFJ per-spouse path (~$4,239/return;
+  prod-verified now $4,238.87).
+- HIGH-3 SE non-farm optional method ignored on the MFJ per-spouse path.
+- MEDIUM-1 a disposed passive rental's positive net was missing from the NIIT base.
+- §280F-HIGH heavy-SUV §179 cap keyed off the current year not the vehicle vintage
+  → permanent under-depreciation; §280F-MED SUV ≤50%-use missing the ADS switch.
+- WA-HIGH surcharge measured on gross not TAXABLE gain over $1M (test re-derived
+  $100,040 → $91,978); CO-HIGH AMTI omitted the federal exemption; CT-MED exemption
+  hardcoded 2025 values mislabeled 2024 — all now use the engine's federal AMT base.
+- church $108.28 SE floor; Monte Carlo startingPortfolio Infinity-overflow + the
+  iraRemainingAtHorizon phantom growth + a toLocaleString determinism risk; the
+  two route handlers' numeric-column stringify gaps.
+- Form 2210 Schedule AI: the agent's "front-loaded under-statement" was on an
+  IMPOSSIBLE input (RAP can't exceed 90%×current tax); the math is correct for
+  valid inputs (verified, not changed) — only a NaN guard added.
+
+**LESSON (recorded to memory): always run /code-review + /security-review + an
+independent multi-agent audit before calling engine work done — green-bar-only is
+not enough.** The single-filer tests were green while 4 HIGH MFJ/cross-cutting
+bugs shipped.
+
++19 regressions (t1-capability 29, §280F 21, state-depth 10). Green bar: 86 no-API
+suites / 4,809 + property harness (5,636) + 4 typechecks; Monte Carlo 1e308→finite.
+
+---
+
 # Handoff Note — 2026-06-09b (T1 — PERFECT THE ENGINES: all of T1.2 + T1.3 core shipped + deployed + prod-verified)
 
 Worked MASTER-TODO **T1** (perfect the tax + planning engines). **All 7 T1.2
