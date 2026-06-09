@@ -5735,7 +5735,9 @@ const LTCG_BRACKETS: Record<TaxYear, Record<string, Array<{ upTo: number; rate: 
     ],
     married_filing_separately: [
       { upTo: 47025, rate: 0 },
-      { upTo: 291875, rate: 0.15 },
+      // Rev. Proc. 2023-34 §3.03 publishes the 2024 MFS max-15% amount as
+      // $291,850 (IRS-rounded; NOT exactly half of the $583,750 MFJ figure).
+      { upTo: 291850, rate: 0.15 },
       { upTo: Infinity, rate: 0.20 },
     ],
     head_of_household: [

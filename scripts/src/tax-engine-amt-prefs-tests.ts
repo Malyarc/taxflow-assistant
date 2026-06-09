@@ -90,7 +90,10 @@ header("Test B — SALT addback OFF when taking standard deduction");
     taxYear: 2024,
   });
   check("Used standard deduction (itemizedDeductions null)", r.itemizedDeductions ?? -1, -1, 0.01);
-  check("AMTI = $35,400 (taxable, no SALT addback)", r.detail.amt.amti, 35400, 1);
+  // AMTI = taxable $35,400 + std-ded addback $14,600 (Form 6251 line 2a /
+  // §56(b)(1)(E), audit F2) = $50,000 (= gross income; std ded not allowed for
+  // AMT). SALT addback stays $0 for a std-deduction filer (the point of Test B).
+  check("AMTI = $50,000 (taxable + std-ded addback; no SALT addback)", r.detail.amt.amti, 50000, 1);
   check("AMT tax = $0 (well below exemption)", r.amtTax ?? 0, 0, 1);
 }
 
@@ -121,11 +124,11 @@ header("Test C — SALT addback override replaces auto-derived value");
 // Per spec: 1,000 sh @ $10 strike, FMV $40 → $30,000 bargain element.
 // Single, $80k W-2, std ded, $30k ISO bargain (held past year-end).
 // Taxable = 80,000 − 14,600 = 65,400.
-// AMTI = 65,400 + 30,000 = 95,400.
-// Exemption $85,700. AMTI − exemption = 9,700.
-// AMT pre-regular = 26% × 9,700 = 2,522.
+// AMTI = 65,400 + 30,000 ISO + 14,600 std-ded addback (§56(b)(1)(E), F2) = 110,000.
+// Exemption $85,700. AMTI − exemption = 24,300.
+// AMT pre-regular = 26% × 24,300 = 6,318.
 // Regular tax = 1,160 + 4,266 + (65,400-47,150)×22% = 9,441.
-// AMT = max(0, 2,522 − 9,441) = 0 (regular tax dominates).
+// AMT = max(0, 6,318 − 9,441) = 0 (regular tax dominates).
 // Verify AMTI increased correctly.
 // ════════════════════════════════════════════════════════════════════════════
 header("Test D — ISO bargain element (1000 sh @ $10 strike, FMV $40 → $30k)");
@@ -139,7 +142,7 @@ header("Test D — ISO bargain element (1000 sh @ $10 strike, FMV $40 → $30k)"
     ],
     taxYear: 2024,
   });
-  check("AMTI = $95,400 (taxable + $30k ISO bargain)", r.detail.amt.amti, 95400, 1);
+  check("AMTI = $110,000 (taxable + $30k ISO + $14.6k std-ded addback)", r.detail.amt.amti, 110000, 1);
   check("AMT tax = $0 (regular tax dominates)", r.amtTax ?? 0, 0, 1);
 }
 
@@ -149,10 +152,10 @@ header("Test D — ISO bargain element (1000 sh @ $10 strike, FMV $40 → $30k)"
 // Taxable = 50,000 − 14,600 = 35,400.
 // Regular tax = 1,160 + 4,266 + (35,400-11,600 over 12% bracket)
 //   Actually: 1,160 + 12% × (35,400 − 11,600) = 1,160 + 12% × 23,800 = 1,160 + 2,856 = 4,016.
-// AMTI = 35,400 + 150,000 = 185,400.
-// Exemption $85,700. AMTI − exemption = 99,700.
-// AMT pre-regular = 26% × 99,700 = 25,922.
-// AMT vs regular = max(0, 25,922 − 4,016) = 21,906.
+// AMTI = 35,400 + 150,000 ISO + 14,600 std-ded addback (§56(b)(1)(E), F2) = 200,000.
+// Exemption $85,700. AMTI − exemption = 114,300.
+// AMT pre-regular = 26% × 114,300 = 29,718.
+// AMT vs regular = max(0, 29,718 − 4,016) = 25,702.
 // ════════════════════════════════════════════════════════════════════════════
 header("Test E — Large ISO bargain makes AMT bind");
 {
@@ -166,8 +169,8 @@ header("Test E — Large ISO bargain makes AMT bind");
     taxYear: 2024,
   });
   check("Regular taxable = $35,400", r.taxableIncome, 35400, 1);
-  check("AMTI = $185,400", r.detail.amt.amti, 185400, 1);
-  check("AMT tax = $21,906", r.amtTax ?? 0, 21906, 1);
+  check("AMTI = $200,000 (incl. std-ded addback)", r.detail.amt.amti, 200000, 1);
+  check("AMT tax = $25,702", r.amtTax ?? 0, 25702, 1);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -283,10 +286,10 @@ console.log("\n─────────────────────�
 // ════════════════════════════════════════════════════════════════════════════
 header("Test L2i-A — positive line 2i depreciation creates AMT");
 {
-  // +$200,000 line 2i: AMTI = 485,400 ; base = 399,700 ;
-  //   tentative = 26%×232,600 + 28%×(399,700−232,600=167,100)
-  //             = 60,476 + 46,788 = 107,264
-  //   AMT = 107,264 − 70,264.75 = 36,999.25
+  // +$200,000 line 2i + $14,600 std-ded addback (F2): AMTI = 500,000 ; base = 414,300 ;
+  //   tentative = 26%×232,600 + 28%×(414,300−232,600=181,700)
+  //             = 60,476 + 50,876 = 111,352
+  //   AMT = 111,352 − 70,264.75 = 41,087.25
   const r = computeTaxReturnPure({
     client: { filingStatus: "single", state: "FL", taxYear: 2024 },
     w2s: [{ taxYear: 2024, wagesBox1: 300000, federalTaxWithheldBox2: 0, stateCode: "FL" }],
@@ -294,16 +297,16 @@ header("Test L2i-A — positive line 2i depreciation creates AMT");
     adjustments: [{ adjustmentType: "amt_depreciation_adjustment", amount: 200000, isApplied: true }],
     taxYear: 2024,
   });
-  check("AMTI = $485,400 (taxable + line 2i $200k)", r.detail.amt.amti, 485400, 1);
-  check("AMT tax = $36,999.25", r.amtTax ?? 0, 36999.25, 1);
+  check("AMTI = $500,000 (taxable + line 2i $200k + std-ded addback)", r.detail.amt.amti, 500000, 1);
+  check("AMT tax = $41,087.25", r.amtTax ?? 0, 41087.25, 1);
 }
 
 header("Test L2i-B — negative line 2i (reversal year) reduces AMTI");
 {
   // ISO bargain $200k creates AMT; line 2i −$50k reversal nets prefs to $150k.
-  //   AMTI = 285,400 + 150,000 = 435,400 ; base = 349,700 ;
-  //   tentative = 60,476 + 28%×(349,700−232,600=117,100=32,788) = 93,264
-  //   AMT = 93,264 − 70,264.75 = 22,999.25 (vs $36,999.25 ISO-only — the
+  //   AMTI = 285,400 + 150,000 + 14,600 std-ded addback (F2) = 450,000 ; base = 364,300 ;
+  //   tentative = 60,476 + 28%×(364,300−232,600=131,700=36,876) = 97,352
+  //   AMT = 97,352 − 70,264.75 = 27,087.25 (vs $41,087.25 ISO-only — the
   //   −$50k reversal cut AMT by 28%×50,000 = $14,000).
   const r = computeTaxReturnPure({
     client: { filingStatus: "single", state: "FL", taxYear: 2024 },
@@ -315,8 +318,8 @@ header("Test L2i-B — negative line 2i (reversal year) reduces AMTI");
     ],
     taxYear: 2024,
   });
-  check("AMTI = $435,400 (taxable + $200k ISO − $50k line 2i)", r.detail.amt.amti, 435400, 1);
-  check("AMT tax = $22,999.25 (reversal reduced AMT)", r.amtTax ?? 0, 22999.25, 1);
+  check("AMTI = $450,000 (taxable + $200k ISO − $50k line 2i + std-ded addback)", r.detail.amt.amti, 450000, 1);
+  check("AMT tax = $27,087.25 (reversal reduced AMT)", r.amtTax ?? 0, 27087.25, 1);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -324,11 +327,12 @@ header("Test L2i-B — negative line 2i (reversal year) reduces AMTI");
 // ════════════════════════════════════════════════════════════════════════════
 header("Test ATNOLD-A — AMT NOL reduces AMTI (engine wiring)");
 {
-  // Base = L2i-A (AMTI before ATNOLD = 485,400). amt_nol_carryforward $100k.
-  //   90% × 485,400 = 436,860 ≥ 100,000 → full $100k applied, remaining $0.
-  //   AMTI = 385,400 ; base = 299,700 ;
-  //   tentative = 60,476 + 28%×(299,700−232,600=67,100=18,788) = 79,264
-  //   AMT = 79,264 − 70,264.75 = 8,999.25 (down from $36,999.25; 28%×100k = $28k).
+  // Base = L2i-A (AMTI before ATNOLD = 500,000 incl. std-ded addback, F2).
+  //   amt_nol_carryforward $100k. 90% × 500,000 = 450,000 ≥ 100,000 → full $100k
+  //   applied, remaining $0.
+  //   AMTI = 400,000 ; base = 314,300 ;
+  //   tentative = 60,476 + 28%×(314,300−232,600=81,700=22,876) = 83,352
+  //   AMT = 83,352 − 70,264.75 = 13,087.25 (down from $41,087.25; 28%×100k = $28k).
   const r = computeTaxReturnPure({
     client: { filingStatus: "single", state: "FL", taxYear: 2024 },
     w2s: [{ taxYear: 2024, wagesBox1: 300000, federalTaxWithheldBox2: 0, stateCode: "FL" }],
@@ -341,8 +345,8 @@ header("Test ATNOLD-A — AMT NOL reduces AMTI (engine wiring)");
   });
   check("ATNOLD applied = $100,000", r.amtNolDeduction ?? 0, 100000, 1);
   check("ATNOLD carryforward remaining = $0", r.amtNolCarryforwardRemaining ?? 0, 0, 1);
-  check("AMTI = $385,400 (after ATNOLD)", r.detail.amt.amti, 385400, 1);
-  check("AMT tax = $8,999.25", r.amtTax ?? 0, 8999.25, 1);
+  check("AMTI = $400,000 (after ATNOLD, incl. std-ded addback)", r.detail.amt.amti, 400000, 1);
+  check("AMT tax = $13,087.25", r.amtTax ?? 0, 13087.25, 1);
 }
 
 header("Test ATNOLD-unit — 90%-of-AMTI cap binds; excess carries forward");

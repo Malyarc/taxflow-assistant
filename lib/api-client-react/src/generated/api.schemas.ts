@@ -2718,8 +2718,9 @@ export interface StateComparisonResponse {
 
 export interface RothOptimizerBody {
   /**
-   * Number of years to ladder conversions over (>= 1).
+   * Number of years to ladder conversions over (1-75; a human planning horizon).
    * @minimum 1
+   * @maximum 75
    */
   horizonYears: number;
   /**

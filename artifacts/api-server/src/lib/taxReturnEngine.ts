@@ -111,16 +111,21 @@ import { calculateScheduleH, type ScheduleHResult } from "./scheduleH";
 // Both work. Non-finite results are logged to surface silent-zero bugs
 // (e.g. an AI extraction stored `"$1,200.00"` instead of `1200.00`).
 type Numish = string | number | null | undefined;
+// No real individual-return dollar figure approaches this; it is far above the
+// DB numeric(12,2) column ceiling yet far below the point where summing/scaling
+// a handful of them overflows a float64 to ±Infinity. Clamping here keeps
+// `computeTaxReturnPure` TOTAL (it can never emit NaN/Infinity) even if called
+// directly with garbage — the Haven-portable backstop. The API layer rejects
+// out-of-range inputs with a clean 400 (openapi min/max); this is belt-and-
+// suspenders so the pure seam degrades safely instead of producing Infinity.
+// (Audit 2026-06-08 SEC1 — fuzzing found two -1e308 wages summing to -Infinity.)
+const MAX_MONEY = 1e13;
 function toNum(val: Numish): number {
   if (val == null) return 0;
   const n = Number(val);
-  if (!Number.isFinite(n)) {
-    // Surface this — silent-zero in money math is the worst class of
-    // bug we have. Engine still returns 0 to avoid breaking the pipeline.
-    // eslint-disable-next-line no-console
-    console.warn(`toNum: non-finite value coerced to 0`, { value: String(val).slice(0, 64) });
-    return 0;
-  }
+  if (!Number.isFinite(n)) return 0; // NaN/Infinity garbage → 0
+  if (n > MAX_MONEY) return MAX_MONEY;
+  if (n < -MAX_MONEY) return -MAX_MONEY;
   return n;
 }
 
@@ -541,14 +546,20 @@ export interface Form1099Summary {
 }
 
 export function summarize1099s(records: Form1099Fact[]): Form1099Summary {
-  const necRecords = records.filter((r) => r.formType === "nec");
-  const miscRecords = records.filter((r) => r.formType === "misc");
-  const intRecords = records.filter((r) => r.formType === "int");
-  const divRecords = records.filter((r) => r.formType === "div");
-  const bRecords = records.filter((r) => r.formType === "b");
-  const rRecords = records.filter((r) => r.formType === "r");
-  const gRecords = records.filter((r) => r.formType === "g");
-  const kRecords = records.filter((r) => r.formType === "k");
+  // Match the form code case-INSENSITIVELY. The manual-create path stores
+  // lowercase ("int"), but the AI document-approve path's ApproveExtractionBody
+  // enum is UPPERCASE ("INT"); a strict `=== "int"` silently dropped every
+  // AI-approved 1099 (all its income vanished from the return). Normalizing on
+  // read fixes any already-stored uppercase rows too. (Audit 2026-06-08 F1.)
+  const ft = (r: Form1099Fact) => (r.formType ?? "").toLowerCase();
+  const necRecords = records.filter((r) => ft(r) === "nec");
+  const miscRecords = records.filter((r) => ft(r) === "misc");
+  const intRecords = records.filter((r) => ft(r) === "int");
+  const divRecords = records.filter((r) => ft(r) === "div");
+  const bRecords = records.filter((r) => ft(r) === "b");
+  const rRecords = records.filter((r) => ft(r) === "r");
+  const gRecords = records.filter((r) => ft(r) === "g");
+  const kRecords = records.filter((r) => ft(r) === "k");
 
   const seIncome = necRecords.reduce((s, r) => s + toNum(r.nonemployeeCompensation), 0);
 
@@ -2955,13 +2966,29 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // Total Form 6251 AMTI adjustment = legacy catch-all + ISO bargain + SALT
   // addback (line 2g) + MACRS-vs-ADS depreciation (line 2i, ±) − taxable state
   // refund (line 2e) + §57(a)(7) 7%-of-excluded §1202 QSBS preference (50%/75%).
+  // NOTE: this shared total feeds BOTH the federal AMT and the CA/MN state-AMT
+  // approximation (Schedule P 540 etc.), so it deliberately EXCLUDES the
+  // federal standard-deduction addback (which is federal-specific — the states
+  // add back their OWN std deduction). The std-ded addback is folded in only
+  // for the federal `calculateAmt` call below.
   const totalAmtPreferences =
     amtPreferencesLegacy + amtIsoBargainElement + saltAddbackForAmt +
     amtDepreciationAdjustment - taxableStateRefund + qsbs1202AmtPreference;
+  // Form 6251 line 2a — the standard deduction is NOT allowed for AMT
+  // (IRC §56(b)(1)(E)): a non-itemizer adds it back to reach AMTI. (Line 2a is
+  // EITHER the std deduction (non-itemizers) OR the SALT addback (itemizers,
+  // line 2g) — mutually exclusive, which is why this is gated on
+  // !useItemizedDeductions and saltAddbackForAmt is already 0 for them.)
+  // Uses calc.standardDeduction so the §63(f) age-65/blind add-ons are included.
+  // FEDERAL-ONLY (not shared with the state-AMT base). (Audit 2026-06-08 F2 —
+  // std-deduction filers who hit AMT had federal AMTI understated by the full
+  // standard deduction.)
+  const stdDeductionAddbackForAmt = useItemizedDeductions ? 0 : calc.standardDeduction;
+  const federalAmtPreferences = totalAmtPreferences + stdDeductionAddbackForAmt;
 
   const amt = calculateAmt({
     taxableIncome: taxableAfterObbba,
-    amtPreferences: totalAmtPreferences,
+    amtPreferences: federalAmtPreferences,
     // K3 — Form 6251 Part III: preserve LTCG/QDIV preferential rates inside AMT.
     // Closed 2026-05-24; previously the engine over-charged AMT on
     // high-LTCG + AMT-binding filers by taxing LTCG at 26/28%.
@@ -3019,7 +3046,16 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
       // trade/business is NOT net investment income. Excluded when the CPA flags
       // the Form 4797 disposition `nonPassive` (default off → conservatively
       // included, matching the ordinary-landlord rental treatment above).
-      form4797.nonPassiveSection1231Gain,
+      // Audit 2026-06-08 C2: cap the exclusion at the net disposition gain
+      // actually in the NII base. Without the cap, a separate capital loss that
+      // eroded post-netting LTCG below the gross §1231 figure let the GROSS
+      // subtraction drive the base negative and (after the max(0,…) floor) wipe
+      // out unrelated NII (interest/dividends) → under-stated NIIT. The §1231
+      // gain can never have contributed more than the surviving net disposition
+      // gain. (Residual sub-gap: when OTHER long-term gain also survives, the
+      // exact §1231-vs-other loss split isn't tracked — this cap over-includes,
+      // the safe NIIT direction.)
+      Math.min(form4797.nonPassiveSection1231Gain, Math.max(0, ltcgPreferential + stcgInOrdinary)),
   );
   const niit = calculateNiit({
     investmentIncome: totalInvestmentIncomeForNiit,
@@ -3769,7 +3805,10 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const stateRefundOrOwed = totalStateWithheld - stateTaxLiabilityAfterAdditional + stateEitc.credit + mnCtcRefundable + nycEitcRefundableExcess + stateCtcRefundable + nycSchoolTaxCreditRefundable + stateAdditionalRefundable - stateIndividualMandatePenalty;
 
   const totalTaxBurden = totalFederalLiabilityWithRepayment + stateTaxLiabilityAfterAdditional - stateEitc.credit - stateCtcRefundable - nycSchoolTaxCreditRefundable - stateAdditionalRefundable + stateIndividualMandatePenalty;
-  const effectiveRate = calc.totalIncome > 0 ? totalTaxBurden / calc.totalIncome : 0;
+  // Guard against a sub-dollar denominator (e.g. a fuzz/degenerate $0.0000…1
+  // income) blowing the ratio up to an absurd magnitude. No meaningful
+  // effective rate exists below $1 of income. (Audit 2026-06-08 P1.)
+  const effectiveRate = calc.totalIncome >= 1 ? totalTaxBurden / calc.totalIncome : 0;
 
   // ── Compute state retirement exemption (for transparency in result) ──
   // Pass filing status + NJ-gross approximation so NJ/NY rules apply correctly.

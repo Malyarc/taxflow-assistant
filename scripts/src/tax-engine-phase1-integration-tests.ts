@@ -236,9 +236,11 @@ async function testScheduleC() {
     }
   }
 
-  // 2b. Expenses cap at gross income (no NOL in Phase 1)
-  // 1099-NEC $20k gross, $30k expenses → net = max(0, $20k - $30k) = $0. SE tax = $0.
-  console.log("── 2b. Expenses cap at gross (no NOL) ──");
+  // 2b. Schedule C loss: SE tax floored at $0, but the SIGNED loss flows to AGI.
+  // 1099-NEC $20k gross, $30k expenses → net SE = max(0, 20k−30k) = $0 (SE tax $0,
+  // expense display capped at $20k gross). The §461(l) Sch-C-loss flow (shipped
+  // 2026-06-01) flows the signed −$10k to total income (a deductible business loss).
+  console.log("── 2b. Schedule C loss: SE floored, signed loss flows to total income ──");
   {
     const cid = await makeClient({ firstName: "OverExp", state: "FL" });
     try {
@@ -247,8 +249,8 @@ async function testScheduleC() {
       await settle();
       const r = await getReturn(cid);
       check("Sched C capped at gross $20k", Number(r.scheduleCExpenses), 20000, 1);
-      check("SE tax = $0 (net SE = $0)", Number(r.selfEmploymentTax), 0, 0.01);
-      check("Total income = $0", Number(r.totalIncome), 0, 1);
+      check("SE tax = $0 (net SE floored at $0)", Number(r.selfEmploymentTax), 0, 0.01);
+      check("Total income = -$10k (signed Sch C loss flows to AGI; §461(l))", Number(r.totalIncome), -10000, 1);
     } finally {
       await delClient(cid);
     }

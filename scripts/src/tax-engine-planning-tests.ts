@@ -1066,15 +1066,16 @@ section("G1.5 AMT timing — ISO bargain element");
 // Hand-calc:
 //   Regular tax single 2024 on $235,400 taxable ($250k − $14,600 std):
 //     $1,160 + $4,266 + $11,742.50 + $21,942 + $13,904 = $53,014.50.
-//   AMTI = taxable $235,400 + ISO bargain $100,000 = $335,400.
+//   AMTI = taxable $235,400 + ISO bargain $100,000 + $14,600 std-ded addback
+//     (Form 6251 line 2a / §56(b)(1)(E), audit F2) = $350,000.
 //   Single AMT exemption $85,700 (no phaseout below $609,350).
-//   AMT base = $335,400 − $85,700 = $249,700.
+//   AMT base = $350,000 − $85,700 = $264,300.
 //   Tentative AMT @ 26/28% (breakpoint $232,600):
-//     $232,600 × 0.26 + ($249,700 − $232,600) × 0.28
-//     = $60,476 + $4,788 = $65,264.
-//   amtTax = max(0, $65,264 − $53,014.50) = ~$12,250.
-//   estSavings = $12,250 (entire AMT deferrable / avoidable).
-header("G1.5+1 — Single $250k W-2 + $100k ISO bargain: AMT ~$12,250");
+//     $232,600 × 0.26 + ($264,300 − $232,600) × 0.28
+//     = $60,476 + $8,876 = $69,352.
+//   amtTax = max(0, $69,352 − $53,014.50) = ~$16,338.
+//   estSavings = $16,338 (entire AMT deferrable / avoidable).
+header("G1.5+1 — Single $250k W-2 + $100k ISO bargain: AMT ~$16,338");
 {
   const hits = runPlanning({
     client: { filingStatus: "single", state: "FL", taxYear: 2024 },
@@ -1086,9 +1087,9 @@ header("G1.5+1 — Single $250k W-2 + $100k ISO bargain: AMT ~$12,250");
   const hit = findHit(hits, "G1.5");
   checkTruthy("G1.5+1", "AMT-ISO hit fires", hit != null, true);
   if (hit) {
-    check("G1.5+1", "estSavings ≈ $12,250 (Form 6251 tentative − regular)",
-      hit.estSavings, 12250, 10,
-      "Form 6251: 26/28% on $249,700 AMT base − regular tax $53,014");
+    check("G1.5+1", "estSavings ≈ $16,338 (Form 6251 tentative − regular)",
+      hit.estSavings, 16338, 10,
+      "Form 6251: 26/28% on $264,300 AMT base − regular tax $53,014");
     check("G1.5+1", "isoBargainElement = $100,000",
       Number(hit.inputs.isoBargainElement), 100000, 1);
   }
@@ -1101,14 +1102,14 @@ header("G1.5+1 — Single $250k W-2 + $100k ISO bargain: AMT ~$12,250");
 //     Wait: MFJ brackets 2024: 24% to $383,900. $370,800 < $383,900 → in 24%.
 //     $2,320 + $8,532 + $23,485 + ($370,800 − $201,050) × 0.24
 //     = $2,320 + $8,532 + $23,485 + $40,740 = $75,077.
-//   AMTI = $370,800 + $200,000 = $570,800.
+//   AMTI = $370,800 + $200,000 + $29,200 std-ded addback (F2) = $600,000.
 //   MFJ AMT exemption $133,300 (no phaseout below $1,218,700).
-//   AMT base = $570,800 − $133,300 = $437,500.
+//   AMT base = $600,000 − $133,300 = $466,700.
 //   Tentative @ 26/28% (breakpoint $232,600):
-//     $232,600 × 0.26 + ($437,500 − $232,600) × 0.28
-//     = $60,476 + $57,372 = $117,848.
-//   amtTax = max(0, $117,848 − $75,077) = $42,771.
-header("G1.5+2 — MFJ $400k W-2 + $200k ISO bargain: AMT ~$42,771");
+//     $232,600 × 0.26 + ($466,700 − $232,600) × 0.28
+//     = $60,476 + $65,548 = $126,024.
+//   amtTax = max(0, $126,024 − $75,077) = $50,947.
+header("G1.5+2 — MFJ $400k W-2 + $200k ISO bargain: AMT ~$50,947");
 {
   const hits = runPlanning({
     client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024 },
@@ -1120,7 +1121,7 @@ header("G1.5+2 — MFJ $400k W-2 + $200k ISO bargain: AMT ~$42,771");
   const hit = findHit(hits, "G1.5");
   checkTruthy("G1.5+2", "AMT-ISO hit fires (MFJ)", hit != null, true);
   if (hit) {
-    check("G1.5+2", "estSavings ≈ $42,771", hit.estSavings, 42771, 10);
+    check("G1.5+2", "estSavings ≈ $50,947", hit.estSavings, 50947, 10);
   }
 }
 
@@ -1130,11 +1131,11 @@ header("G1.5+2 — MFJ $400k W-2 + $200k ISO bargain: AMT ~$42,771");
 //     $100,525-$191,950 → marginal 0.24.
 //   Regular tax: $1,160 + $4,266 + $11,742.50 + ($165,400 − $100,525) × 0.24
 //     = $1,160 + $4,266 + $11,742.50 + $15,570 = $32,738.50.
-//   AMTI = $165,400 + $50,000 = $215,400. Single exemption $85,700.
-//   AMT base = $215,400 − $85,700 = $129,700.
-//   Tentative (under $232,600 → all 26%): $129,700 × 0.26 = $33,722.
-//   amtTax = max(0, $33,722 − $32,738.50) = $983.50 ≈ $984.
-header("G1.5+3 — Single $180k + $50k ISO: AMT ~$984");
+//   AMTI = $165,400 + $50,000 + $14,600 std-ded addback (F2) = $230,000. Single exemption $85,700.
+//   AMT base = $230,000 − $85,700 = $144,300.
+//   Tentative (under $232,600 → all 26%): $144,300 × 0.26 = $37,518.
+//   amtTax = max(0, $37,518 − $32,738.50) = $4,779.50 ≈ $4,780.
+header("G1.5+3 — Single $180k + $50k ISO: AMT ~$4,780");
 {
   const hits = runPlanning({
     client: { filingStatus: "single", state: "FL", taxYear: 2024 },
@@ -1146,7 +1147,7 @@ header("G1.5+3 — Single $180k + $50k ISO: AMT ~$984");
   const hit = findHit(hits, "G1.5");
   checkTruthy("G1.5+3", "AMT-ISO hit fires (small AMT)", hit != null, true);
   if (hit) {
-    check("G1.5+3", "estSavings ≈ $984", hit.estSavings, 984, 5);
+    check("G1.5+3", "estSavings ≈ $4,780", hit.estSavings, 4780, 5);
   }
 }
 
@@ -1185,12 +1186,11 @@ header("G1.5-5 — ISO bargain but no AMT suppresses (negative)");
 }
 
 // --- G1.5±6 — Boundary: tiny ISO bargain that just triggers AMT ---
-// Set bargain just large enough to clip AMT. Single $250k W-2 → AMTI base
-// $235,400. Without prefs, tentative on AMTI − $85,700 = $149,700 × 0.26 =
-// $38,922 (less than regular tax $53k → no AMT). Add $60k ISO → AMTI
-// $295,400, base $209,700, tentative $54,522 → amtTax = $54,522 − $53,014.50 =
-// $1,507.50. Fires with that small amount.
-header("G1.5±6 — Single $250k + $60k ISO: small AMT ~$1,508");
+// Set bargain just large enough to clip AMT. Single $250k W-2, std ded; the
+// $14,600 std-ded addback (F2) is in AMTI. Add $60k ISO → AMTI = 235,400 +
+// 60,000 + 14,600 = $310,000, base $224,300, tentative (all 26%) $58,318 →
+// amtTax = $58,318 − $53,014.50 = $5,303.50. Fires with that amount.
+header("G1.5±6 — Single $250k + $60k ISO: small AMT ~$5,304");
 {
   const hits = runPlanning({
     client: { filingStatus: "single", state: "FL", taxYear: 2024 },
@@ -1202,7 +1202,7 @@ header("G1.5±6 — Single $250k + $60k ISO: small AMT ~$1,508");
   const hit = findHit(hits, "G1.5");
   checkTruthy("G1.5±6", "G1.5 fires with small AMT", hit != null, true);
   if (hit) {
-    check("G1.5±6", "estSavings ≈ $1,508", hit.estSavings, 1508, 5);
+    check("G1.5±6", "estSavings ≈ $5,304", hit.estSavings, 5304, 5);
   }
 }
 

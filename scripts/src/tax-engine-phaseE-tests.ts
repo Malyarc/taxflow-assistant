@@ -199,15 +199,16 @@ header("E2+2 — Year B: AMT still binds + $30k carryforward in, no credit appli
 //     32% × ($243,725 - $191,950) = $16,568.00
 //     35% × ($285,400 - $243,725) = $14,586.25
 //   Sum = $70,264.75
-//   AMTI (no preferences) = taxable = $285,400 (per current engine model)
+//   AMTI = taxable $285,400 + $14,600 std-ded addback (Form 6251 line 2a /
+//     §56(b)(1)(E), audit F2) = $300,000
 //   AMT exemption 2024 single = $85,700, phase-out begins $609,350 → no phase
-//   AMT base = $285,400 - $85,700 = $199,700
-//   AMT @ 26% = $51,922.00 (under $232,600 breakpoint)
-//   TMT = $51,922 < regular $70,264.75 → AMT doesn't bind, amtTax = 0
-//   Spread (regularTax - TMT) = $70,264.75 - $51,922.00 = $18,342.75
-//   amtCreditApplied = min($30,000, $18,342.75, availableForNonRefundable)
-//     ≈ $18,342.75 (assuming sufficient non-refundable headroom)
-//   Carryforward out = $30,000 + 0 (generated) - $18,342.75 ≈ $11,657.25
+//   AMT base = $300,000 - $85,700 = $214,300
+//   AMT @ 26% = $55,718.00 (under $232,600 breakpoint)
+//   TMT = $55,718 < regular $70,264.75 → AMT doesn't bind, amtTax = 0
+//   Spread (regularTax - TMT) = $70,264.75 - $55,718.00 = $14,546.75
+//   amtCreditApplied = min($30,000, $14,546.75, availableForNonRefundable)
+//     ≈ $14,546.75 (assuming sufficient non-refundable headroom)
+//   Carryforward out = $30,000 + 0 (generated) - $14,546.75 ≈ $15,453.25
 header("E2+3 — Year B alt: No ISO this year, $30k cf applies up to TMT spread");
 {
   const computed = computeTaxReturnPure({
@@ -220,12 +221,12 @@ header("E2+3 — Year B alt: No ISO this year, $30k cf applies up to TMT spread"
     taxYear: 2024,
   });
   check("E2+3", "amtTax = 0 (AMT doesn't bind)", computed.amtTax, 0, 1);
-  check("E2+3", "amtCreditApplied ≈ $18,343",
-    computed.amtCreditApplied, 18342.75, 5,
-    "min(cf, regularTax - TMT) = min(30000, 70264.75 - 51922.00)");
-  // Carryforward out = $30,000 - $18,342.75 = $11,657.25 (no new AMT generated)
-  check("E2+3", "carryforward out ≈ $11,657",
-    computed.amtCreditCarryforwardRemaining, 11657.25, 5);
+  check("E2+3", "amtCreditApplied ≈ $14,547",
+    computed.amtCreditApplied, 14546.75, 5,
+    "min(cf, regularTax - TMT) = min(30000, 70264.75 - 55718.00)");
+  // Carryforward out = $30,000 - $14,546.75 = $15,453.25 (no new AMT generated)
+  check("E2+3", "carryforward out ≈ $15,453",
+    computed.amtCreditCarryforwardRemaining, 15453.25, 5);
   check("E2+3", "amtCreditGenerated = 0", computed.amtCreditGenerated, 0, 1);
 }
 
@@ -247,8 +248,9 @@ header("E2-1 — Normal W-2 client, no carryforward, no AMT");
 
 // --- E2 boundary: Carryforward larger than applicable spread ---
 // Hand-calc: Same as E2+3 but cf = $100,000 (way more than spread).
-// Applied = $18,342.75 (capped by spread); carryforward out = $100k - $18,343 ≈ $81,657
-header("E2 boundary — Large carryforward $100k, only $18,343 applied (spread cap binds)");
+// Applied = $14,546.75 (capped by spread; F2 std-ded addback raised TMT);
+// carryforward out = $100k - $14,547 ≈ $85,453
+header("E2 boundary — Large carryforward $100k, only $14,547 applied (spread cap binds)");
 {
   const computed = computeTaxReturnPure({
     client: { filingStatus: "single", state: "TX", taxYear: 2024 },
@@ -259,9 +261,9 @@ header("E2 boundary — Large carryforward $100k, only $18,343 applied (spread c
     ],
     taxYear: 2024,
   });
-  check("E2±", "amtCreditApplied capped by spread", computed.amtCreditApplied, 18342.75, 5);
-  check("E2±", "remaining carryforward = $100k - $18,343",
-    computed.amtCreditCarryforwardRemaining, 81657.25, 5);
+  check("E2±", "amtCreditApplied capped by spread", computed.amtCreditApplied, 14546.75, 5);
+  check("E2±", "remaining carryforward = $100k - $14,547",
+    computed.amtCreditCarryforwardRemaining, 85453.25, 5);
 }
 
 // ============================================================================

@@ -226,7 +226,7 @@ async function run() {
     checkExact("TY2024 sums only 2024 W-2 ($80k)", ty24.totalIncome, 80000);
     checkExact("TY2025 sums only 2025 W-2 ($90k)", ty25.totalIncome, 90000);
     checkExact("TY2024 std ded = $14,600", ty24.standardDeduction, 14600);
-    checkExact("TY2025 std ded = $15,000", ty25.standardDeduction, 15000);
+    checkExact("TY2025 std ded = $15,750 (OBBBA)", ty25.standardDeduction, 15750);
   });
 
   console.log("\n── Integration: cascade delete cleans up ──");

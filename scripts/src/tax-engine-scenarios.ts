@@ -530,8 +530,8 @@ async function main() {
       const t25 = allReturns.find(r => r.taxYear === 2025);
       // 2024: $80k - $14,600 std = $65,400 taxable. 1160 + 4266 + (65400-47150)×.22 = $9,441
       assert(ctx, "TY2024 federal tax", Number(t24?.federalTaxLiability), 9441, 1);
-      // 2025: $85k - $15,000 std = $70,000 taxable. 1192.5 + 4386 + (70000-48475)×.22 = $1192.5 + 4386 + 4735.5 = $10,314
-      assert(ctx, "TY2025 federal tax", Number(t25?.federalTaxLiability), 10314, 1);
+      // 2025: $85k - $15,750 OBBBA std = $69,250 taxable. 1192.5 + 4386 + (69250-48475)×.22 = 1192.5 + 4386 + 4570.5 = $10,149
+      assert(ctx, "TY2025 federal tax", Number(t25?.federalTaxLiability), 10149, 1);
     } finally { await delClient(cid); }
   });
 

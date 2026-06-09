@@ -4279,9 +4279,10 @@ components:
       required: [horizonYears, traditionalIraBalance]
       properties:
         horizonYears:
-          description: Number of years to ladder conversions over (>= 1).
+          description: Number of years to ladder conversions over (1-75; a human planning horizon).
           type: integer
           minimum: 1
+          maximum: 75
         traditionalIraBalance:
           description: Current traditional/SEP/SIMPLE IRA balance available to convert.
           type: number

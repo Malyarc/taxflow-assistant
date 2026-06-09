@@ -2391,13 +2391,18 @@ export const RunRothOptimizerParams = zod.object({
   clientId: zod.coerce.number(),
 });
 
+export const runRothOptimizerBodyHorizonYearsMax = 75;
+
 export const runRothOptimizerBodyTraditionalIraBalanceMin = 0;
 
 export const RunRothOptimizerBody = zod.object({
   horizonYears: zod
     .number()
     .min(1)
-    .describe("Number of years to ladder conversions over (>= 1)."),
+    .max(runRothOptimizerBodyHorizonYearsMax)
+    .describe(
+      "Number of years to ladder conversions over (1-75; a human planning horizon).",
+    ),
   traditionalIraBalance: zod
     .number()
     .min(runRothOptimizerBodyTraditionalIraBalanceMin)

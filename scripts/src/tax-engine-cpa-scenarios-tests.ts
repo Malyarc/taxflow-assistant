@@ -94,10 +94,11 @@ section("Scenario 1 — Single CA designer with SEP/HSA/QBI/ISO bargain");
   approx("S1", "AGI ≈ $122,983", r.adjustedGrossIncome, 122983, 50);
   approx("S1", "QBI deduction ≈ $21,677", r.qbiDeduction, 21677, 50);
   approx("S1", "SE tax ≈ $25,433", r.selfEmploymentTax, 25433, 20);
-  // AMT just under regular → 0
-  exact("S1", "AMT = 0 (just below regular)", r.amtTax, 0,
-    "26% × ~$51k AMT base < ordinary ~$14.1k → no AMT");
-  approx("S1", "Federal liability ≈ $39,561", r.federalTaxLiability, 39561, 100);
+  // AMT was "just under" regular; the §56(b)(1)(E) std-ded addback (audit F2)
+  // raises AMTI by the $14,600 std ded → TMT +$3,796 (26%), tipping it ~$2,929
+  // over regular tax. So AMT now correctly binds (the ISO bargain pref is real).
+  approx("S1", "AMT ≈ $2,929 (std-ded addback tips TMT over regular)", r.amtTax, 2929, 5);
+  approx("S1", "Federal liability ≈ $42,491", r.federalTaxLiability, 42491, 100);
   approx("S1", "State (CA) tax ≈ $7,465", r.stateTaxLiability, 7465, 50);
 }
 

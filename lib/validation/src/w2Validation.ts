@@ -49,6 +49,7 @@ const SS_WAGE_BASE_BY_YEAR: Record<number, number> = {
   2023: 160200,
   2024: 168600,
   2025: 176100,
+  2026: 184500, // SSA 2025 fact sheet; keep in sync with taxCalculator SS_WAGE_BASE
 };
 const SS_TAX_RATE = 0.062;
 const MEDICARE_TAX_RATE = 0.0145;

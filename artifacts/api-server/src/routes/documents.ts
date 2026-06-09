@@ -443,8 +443,11 @@ router.post("/clients/:clientId/documents/:documentId/approve", async (req, res)
       return;
     }
     // Capture the narrowed (non-null) formType — TS narrowing from the guard
-    // above does not propagate into the transaction closure below.
-    const formType = parsed.data.formType;
+    // above does not propagate into the transaction closure below. Normalize to
+    // lowercase: the ApproveExtractionBody enum is UPPERCASE ("INT") but the
+    // engine's summarize1099s + the manual-create path use lowercase ("int").
+    // Storing uppercase made the engine drop the record's income. (Audit F1.)
+    const formType = parsed.data.formType.toLowerCase();
     // Insert the 1099 record AND approve the document atomically (see W-2 note).
     const { record, updatedDoc } = await db.transaction(async (tx) => {
       const [inserted] = await tx

@@ -292,13 +292,14 @@ header("H15. NIIT base — wages not in net investment income");
 // H16. AMT exemption phase-out arithmetic check — MFJ $1,218,700 start.
 header("H16. AMT MFJ exemption phase-out start $1,218,700");
 {
-  // MFJ AMTI = $1,300,000. Reduction = 25% × (1,300,000 − 1,218,700) = $20,325.
-  // Exemption = $133,300 − $20,325 = $112,975.
+  // Taxable = 1,329,200 − 29,200 std ded = 1,300,000. AMTI = 1,300,000 + 29,200
+  // std-ded addback (Form 6251 line 2a / §56(b)(1)(E), audit F2) = 1,329,200.
+  // Reduction = 25% × (1,329,200 − 1,218,700) = $27,625.
+  // Exemption = $133,300 − $27,625 = $105,675.
   const r = run({ client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024 },
     w2s: [{ taxYear: 2024, wagesBox1: 1329200, stateCode: "FL" }] });
-  // Taxable = 1,329,200 − 29,200 = 1,300,000 = AMTI (no prefs).
-  check("H16", "MFJ AMTI $1.3M → exemption $112,975",
-    r.detail.amt.exemption, 112975, 1,
+  check("H16", "MFJ AMTI $1.3294M (std-ded added back) → exemption $105,675",
+    r.detail.amt.exemption, 105675, 1,
     "IRC §55(d)(2)(A) — MFJ phase-out");
 }
 
@@ -997,28 +998,29 @@ header("K3. AMT × LTCG: Form 6251 Part III preferential rates — CLOSED");
   //       = 1160 + 4266 + 11742.50 + 20370 = 37538.50
   //     LTCG 100k @ 15% = 15000
   //     Regular tax ≈ 52538.50
-  //   AMTI = 285,400 + 250,000 (ISO pref) = 535,400.
+  //   AMTI = 285,400 + 250,000 (ISO pref) + 14,600 std-ded addback (Form 6251
+  //     line 2a / §56(b)(1)(E), audit F2) = 550,000.
   //   AMT exemption single 2024 = $85,700, phase-out starts $609,350.
   //     AMTI under phase-out → full exemption $85,700.
-  //   AMT base = 535,400 - 85,700 = $449,700.
-  //   Path 1 (full 26/28%): 232,600*.26 + (449700-232600)*.28 = 60476 + 60788 = 121264.
-  //   Path 2 (LTCG preserved): ordinary = 449,700 - 100,000 = 349,700.
-  //     AMT on ordinary 349,700: 232600*.26 + (349700-232600)*.28 = 60476 + 32788 = 93264.
-  //     LTCG 100k preferential stacking: ordinary stack 349,700 > $518,900 0%-cap? No, 349,700 < 518,900 → all $100k at 15% = $15,000.
-  //     Total path 2 = 93264 + 15000 = 108264.
-  //   Tentative AMT = MIN(121264, 108264) = 108264.
-  //   AMT delta = 108264 - 52538.50 = 55725.50. (Down from 121264 - 52538.50 = $68,725.50 pre-K3.)
-  //   K3 saves the filer ~$13,000.
+  //   AMT base = 550,000 - 85,700 = $464,300.
+  //   Path 1 (full 26/28%): 232,600*.26 + (464300-232600)*.28 = 60476 + 64876 = 125352.
+  //   Path 2 (LTCG preserved): ordinary = 464,300 - 100,000 = 364,300.
+  //     AMT on ordinary 364,300: 232600*.26 + (364300-232600)*.28 = 60476 + 36876 = 97352.
+  //     LTCG 100k preferential stacking: 364,300 < 518,900 → all $100k at 15% = $15,000.
+  //     Total path 2 = 97352 + 15000 = 112352.
+  //   Tentative AMT = MIN(125352, 112352) = 112352.
+  //   AMT delta = 112352 - 52538.50 = 59813.50.
+  //   K3 (LTCG-preserved path) still saves the filer ~$13,000 vs full 26/28%.
   const c = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
     w2s: [{ taxYear: 2024, wagesBox1: 200000, stateCode: "FL" }],
     form1099s: [{ taxYear: 2024, formType: "b", payerName: "X", longTermGainLoss: 100000 }],
     adjustments: [{ adjustmentType: "amt_iso_bargain_element", amount: 250000, isApplied: true }] });
-  check("K3c", "$200k W-2 + $100k LTCG + $250k ISO → AMT $55,725.50 (was ~$68,725 pre-K3)",
-    c.amtTax, 55725.50, 50, "Form 6251 Part III — LTCG at 15% inside AMT");
-  check("K3c", "amtWithPreferentialRates = $108,264.50",
-    c.detail.amt.amtWithPreferentialRates, 108264.50, 50, "Path 2: 26/28% on ordinary + 15% on LTCG");
-  check("K3c", "amtAtFullRateOnAmtBase = $121,264 (full 26/28%)",
-    c.detail.amt.amtAtFullRateOnAmtBase, 121264, 50, "Path 1 unchanged from pre-K3 behavior");
+  check("K3c", "$200k W-2 + $100k LTCG + $250k ISO → AMT $59,813.50 (incl. std-ded addback)",
+    c.amtTax, 59813.50, 50, "Form 6251 Part III — LTCG at 15% inside AMT");
+  check("K3c", "amtWithPreferentialRates = $112,352",
+    c.detail.amt.amtWithPreferentialRates, 112352, 50, "Path 2: 26/28% on ordinary + 15% on LTCG");
+  check("K3c", "amtAtFullRateOnAmtBase = $125,352 (full 26/28%)",
+    c.detail.amt.amtAtFullRateOnAmtBase, 125352, 50, "Path 1 — 26/28% on the full AMT base");
   check("K3c", "ltcgQdivInAmtBase = $100k (the $100k LTCG)",
     c.detail.amt.ltcgQdivInAmtBase, 100000, 0.01);
 

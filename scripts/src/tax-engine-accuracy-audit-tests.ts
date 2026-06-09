@@ -292,8 +292,9 @@ header("A9. AMT single exemption phase-out");
     r1.amtTax ?? 0, 0, 1,
     "Rev. Proc. 2023-34");
   // At taxable above start, exemption shrinks. Test at $700k wages.
-  // AGI ≈ 700k. Taxable = 685,400.
-  // AMT exemption: 85,700 − 0.25×(685,400 − 609,350) = 85,700 − 19,012.50 = 66,687.50.
+  // AGI ≈ 700k. Taxable = 685,400. AMTI = 685,400 + 14,600 std-ded addback
+  // (Form 6251 line 2a / §56(b)(1)(E), audit F2) = 700,000.
+  // AMT exemption: 85,700 − 0.25×(700,000 − 609,350) = 85,700 − 22,662.50 = 63,037.50.
   // AMT base = 685,400 − 66,687.50 = 618,712.50.
   // AMT = 232,600 × 0.26 + (618,712.50 − 232,600) × 0.28 = 60,476 + 108,111.50 = 168,587.50.
   // Reg tax 2024 single on $685,400:
@@ -308,8 +309,8 @@ header("A9. AMT single exemption phase-out");
   });
   // Internal AMT exemption check via detail.amt
   check("A9", "Single $700k AMTI in phase-out: shrunken exemption",
-    r2.detail.amt.exemption, 66687.50, 1,
-    "Rev. Proc. 2023-34 — 25% phase-out above $609,350");
+    r2.detail.amt.exemption, 63037.50, 1,
+    "Rev. Proc. 2023-34 — 25% phase-out above $609,350 (AMTI incl. std-ded addback)");
 }
 
 // A10. Cap gains 0% bracket boundary: $47,025 single 2024 (Rev. Proc. 2023-34).
@@ -427,17 +428,18 @@ header("A14. AMT rate breakpoint $232,600 (26%→28%)");
 {
   // Single, $400k W-2 + $200k ISO bargain = high AMTI to exceed breakpoint.
   // Std ded $14,600. Taxable = 385,400. ISO bargain = 200,000.
-  // AMTI = 385,400 + 200,000 = 585,400. Exemption (no phase-out yet, AMTI < 609,350) = 85,700.
-  // AMT base = 585,400 − 85,700 = 499,700.
-  // AMT = 232,600 × 0.26 + (499,700 − 232,600) × 0.28 = 60,476 + 74,788 = 135,264.
+  // AMTI = 385,400 + 200,000 + 14,600 std-ded addback (F2) = 600,000.
+  // Exemption (no phase-out yet, AMTI < 609,350) = 85,700.
+  // AMT base = 600,000 − 85,700 = 514,300.
+  // AMT = 232,600 × 0.26 + (514,300 − 232,600) × 0.28 = 60,476 + 78,876 = 139,352.
   const r = run({
     client: { filingStatus: "single", state: "FL", taxYear: 2024 },
     w2s: [{ taxYear: 2024, wagesBox1: 400000, stateCode: "FL" }],
     adjustments: [{ adjustmentType: "amt_iso_bargain_element", amount: 200000, isApplied: true }],
   });
-  check("A14", "Single AMTI = $585,400 → AMT-before-regular $135,264",
-    r.detail.amt.amtBeforeRegular, 135264, 5,
-    "IRC §55(b)(1)(A) — 26% to $232,600, 28% above");
+  check("A14", "Single AMTI = $600,000 → AMT-before-regular $139,352",
+    r.detail.amt.amtBeforeRegular, 139352, 5,
+    "IRC §55(b)(1)(A) — 26% to $232,600, 28% above (AMTI incl. std-ded addback)");
 }
 
 // A15. Std deduction over-65 add-on for 2024: $1,950 single (additional);

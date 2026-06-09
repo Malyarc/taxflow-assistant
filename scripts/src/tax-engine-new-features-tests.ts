@@ -80,7 +80,7 @@ async function run() {
     check("TY2024 row reflects 2024 W-2 only ($80k)", Number(r24.totalIncome), 80000);
     check("TY2025 row reflects 2025 W-2 only ($85k)", Number(r25.totalIncome), 85000);
     check("TY2024 row has TY2024 std deduction ($14,600)", Number(r24.standardDeduction), 14600);
-    check("TY2025 row has TY2025 std deduction ($15,000)", Number(r25.standardDeduction), 15000);
+    check("TY2025 row has TY2025 std deduction ($15,750, OBBBA)", Number(r25.standardDeduction), 15750);
   });
 
   console.log("\n── Self-employment income via adjustment → SE tax ──");

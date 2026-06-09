@@ -19,6 +19,10 @@ import { calculateFederalTaxWithBreakdown } from "./taxCalculator";
 //
 // PURE — no DB/framework. Ports 1:1 into Haven's @haven/tax-planning.
 
+// Each projected year runs the full engine 1-2×; an unbounded horizon is a DoS
+// vector (audit 2026-06-08 SEC2). 75 covers any realistic human planning span.
+const MAX_PLANNING_HORIZON = 75;
+
 export interface RothLadderYear {
   /** 0-based offset from the baseline year. */
   yearIndex: number;
@@ -138,7 +142,10 @@ export function projectRmdAvoidance(
   if (baseAge == null) return null;
   const incomeGrowth = opts.incomeGrowth ?? 1.03;
   const iraGrowth = opts.iraGrowth ?? 1.05;
-  const horizon = Math.max(1, Math.floor(opts.valueHorizonYears));
+  // Clamp to a human planning horizon — each year runs the full engine twice,
+  // so an unbounded horizon is a DoS (audit 2026-06-08 SEC2). Belt-and-braces
+  // with the openapi `maximum: 75`; protects direct/Haven callers too.
+  const horizon = Math.min(MAX_PLANNING_HORIZON, Math.max(1, Math.floor(opts.valueHorizonYears)));
 
   const addIncome = (inputs: TaxReturnInputs, amt: number): TaxReturnInputs =>
     amt > 0
@@ -247,6 +254,8 @@ export function optimizeRothConversionLadder(
   },
 ): RothLadderPlan {
   if (opts.horizonYears < 1) throw new Error("horizonYears must be >= 1");
+  // Clamp the loop bound (DoS guard, audit SEC2) — mirrors the openapi maximum.
+  const horizonYears = Math.min(MAX_PLANNING_HORIZON, Math.floor(opts.horizonYears));
   const incomeGrowth = opts.incomeGrowth ?? 1.03;
   const iraGrowth = opts.iraGrowth ?? 1.05;
   let iraBalance = Math.max(0, opts.traditionalIraBalance);
@@ -255,7 +264,7 @@ export function optimizeRothConversionLadder(
   let totalConverted = 0;
   let totalCost = 0;
 
-  for (let y = 0; y < opts.horizonYears; y++) {
+  for (let y = 0; y < horizonYears; y++) {
     const projected = projectYearForward(baseline, y, { incomeGrowth });
     const baseReturn = computeTaxReturnPure(projected);
     const taxableBefore = Math.max(0, baseReturn.taxableIncome);
@@ -309,7 +318,7 @@ export function optimizeRothConversionLadder(
       ? projectRmdAvoidance(baseline, {
           startingIraBalance: opts.traditionalIraBalance,
           conversionsByYear: years.map((yr) => yr.conversion),
-          valueHorizonYears: Math.max(opts.horizonYears, Math.min(40, Math.max(1, 92 - baseAge))),
+          valueHorizonYears: Math.max(horizonYears, Math.min(40, Math.max(1, 92 - baseAge))),
           incomeGrowth,
           iraGrowth,
         })
@@ -321,7 +330,7 @@ export function optimizeRothConversionLadder(
     totalConversionTaxCost: Math.round(totalCost),
     blendedConversionRate: totalConverted > 0 ? totalCost / totalConverted : 0,
     startingIraBalance: Math.round(opts.traditionalIraBalance),
-    horizonYears: opts.horizonYears,
+    horizonYears,
     incomeGrowth,
     iraGrowth,
     rmdAvoidance,
