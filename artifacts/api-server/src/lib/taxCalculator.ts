@@ -849,7 +849,7 @@ export const LOCAL_TAX_DATA: Record<string, LocalityInfo> = {
   "MD-CALVERT":       { jurisdictionLabel: "Calvert County, MD",        state: "MD", rate: 0.0300, base: "state_taxable" },
   "MD-CAROLINE":      { jurisdictionLabel: "Caroline County, MD",       state: "MD", rate: 0.0320, base: "state_taxable" },
   "MD-CARROLL":       { jurisdictionLabel: "Carroll County, MD",        state: "MD", rate: 0.0303, base: "state_taxable" },
-  "MD-CECIL":         { jurisdictionLabel: "Cecil County, MD",          state: "MD", rate: 0.0280, base: "state_taxable" },
+  "MD-CECIL":         { jurisdictionLabel: "Cecil County, MD",          state: "MD", rate: 0.0275, base: "state_taxable" },
   "MD-CHARLES":       { jurisdictionLabel: "Charles County, MD",        state: "MD", rate: 0.0303, base: "state_taxable" },
   "MD-DORCHESTER":    { jurisdictionLabel: "Dorchester County, MD",     state: "MD", rate: 0.0320, base: "state_taxable" },
   "MD-FREDERICK":     { jurisdictionLabel: "Frederick County, MD",      state: "MD", rate: 0.0275, base: "state_taxable" },
@@ -860,7 +860,7 @@ export const LOCAL_TAX_DATA: Record<string, LocalityInfo> = {
   "MD-MONTGOMERY":    { jurisdictionLabel: "Montgomery County, MD",     state: "MD", rate: 0.0320, base: "state_taxable" },
   "MD-PRINCE_GEORGES":{ jurisdictionLabel: "Prince George's County, MD",state: "MD", rate: 0.0320, base: "state_taxable" },
   "MD-QUEEN_ANNES":   { jurisdictionLabel: "Queen Anne's County, MD",   state: "MD", rate: 0.0320, base: "state_taxable" },
-  "MD-ST_MARYS":      { jurisdictionLabel: "St. Mary's County, MD",     state: "MD", rate: 0.0310, base: "state_taxable" },
+  "MD-ST_MARYS":      { jurisdictionLabel: "St. Mary's County, MD",     state: "MD", rate: 0.0300, base: "state_taxable" },
   "MD-SOMERSET":      { jurisdictionLabel: "Somerset County, MD",       state: "MD", rate: 0.0320, base: "state_taxable" },
   "MD-TALBOT":        { jurisdictionLabel: "Talbot County, MD",         state: "MD", rate: 0.0240, base: "state_taxable" },
   "MD-WASHINGTON":    { jurisdictionLabel: "Washington County, MD",     state: "MD", rate: 0.0295, base: "state_taxable" },
@@ -888,7 +888,7 @@ export const LOCAL_TAX_DATA: Record<string, LocalityInfo> = {
 
   // ── Indiana counties — CAGIT/COIT 2024 rates ─────────────────────────────
   // Source: IN Department of Revenue Departmental Notice #1 (2024).
-  "IN-ALLEN":         { jurisdictionLabel: "Allen County, IN",          state: "IN", rate: 0.0148, base: "state_taxable" },
+  "IN-ALLEN":         { jurisdictionLabel: "Allen County, IN",          state: "IN", rate: 0.0159, base: "state_taxable" },
   "IN-ELKHART":       { jurisdictionLabel: "Elkhart County, IN",        state: "IN", rate: 0.0200, base: "state_taxable" },
   "IN-HAMILTON":      { jurisdictionLabel: "Hamilton County, IN",       state: "IN", rate: 0.0110, base: "state_taxable" },
   "IN-LAKE":          { jurisdictionLabel: "Lake County, IN",           state: "IN", rate: 0.0150, base: "state_taxable" },
@@ -897,7 +897,7 @@ export const LOCAL_TAX_DATA: Record<string, LocalityInfo> = {
   "IN-PORTER":        { jurisdictionLabel: "Porter County, IN",         state: "IN", rate: 0.0050, base: "state_taxable" },
   "IN-ST_JOSEPH":     { jurisdictionLabel: "St. Joseph County, IN",     state: "IN", rate: 0.0175, base: "state_taxable" },
   "IN-TIPPECANOE":    { jurisdictionLabel: "Tippecanoe County, IN",     state: "IN", rate: 0.0128, base: "state_taxable" },
-  "IN-VANDERBURGH":   { jurisdictionLabel: "Vanderburgh County, IN",    state: "IN", rate: 0.0120, base: "state_taxable" },
+  "IN-VANDERBURGH":   { jurisdictionLabel: "Vanderburgh County, IN",    state: "IN", rate: 0.0125, base: "state_taxable" },
 
   // ── Kentucky local occupational license taxes (KRS 67.083 / 92) ──────────
   // Local payroll taxes on wages + SE net profits earned in the jurisdiction.

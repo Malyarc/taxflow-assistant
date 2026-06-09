@@ -88,10 +88,11 @@ function checkStr(label: string, actual: string, expected: string): void {
   const r = calculateStateIndividualMandatePenalty({ state: "RI", filingStatus: "single", uninsuredAdults: 1, uninsuredChildren: 0, householdIncome: 25000, filingThreshold: 14600, monthsUninsured: 12, taxYear: 2024 });
   check("M9 RI flat $695", r.penalty, 695);
 }
-// M10 — DC single, low income → frozen federal $695.
+// M10 — DC single, low income → DC indexes (audit M1): 2024 = $745 (not the
+// frozen federal $695). pct=(25,000−14,600)·2.5%=$260 < $745.
 {
   const r = calculateStateIndividualMandatePenalty({ state: "DC", filingStatus: "single", uninsuredAdults: 1, uninsuredChildren: 0, householdIncome: 25000, filingThreshold: 14600, monthsUninsured: 12, taxYear: 2024 });
-  check("M10 DC flat $695", r.penalty, 695);
+  check("M10 DC flat $745 (2024 indexed)", r.penalty, 745);
 }
 
 // MA — 2023 confirmed schedule (FPL 1-person $14,580; +$5,140/person).

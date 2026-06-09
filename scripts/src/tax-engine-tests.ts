@@ -244,7 +244,8 @@ header("D. State tax: 2025 — known rate changes from TY2024");
 // IN dropped 3.05% → 3.00% in 2025; $1,000 personal exemption (single) modeled (#7)
 check("IN 2025 $80k single (3.0%, $1k exemption)", calculateStateTax(80000, "IN", "single", 2025), (80000 - 1000) * 0.03);
 // KY dropped 4.0% → 3.5%, std $3,270
-check("KY 2025 $80k single (3.5% over std $3,270)", calculateStateTax(80000, "KY", "single", 2025), (80000 - 3270) * 0.035);
+// KY 2025 = 4.0% (UNCHANGED from 2024; HB1's 3.5% cut starts 2026). std ded $3,270. (Audit S11.)
+check("KY 2025 $80k single (4.0% over std $3,270)", calculateStateTax(80000, "KY", "single", 2025), (80000 - 3270) * 0.04);
 // MS dropped to 4.4%
 check("MS 2025 $80k single (4.4%)", calculateStateTax(80000, "MS", "single", 2025), (80000 - 12300) * 0.044);
 // NC dropped to 4.25%

@@ -13,6 +13,7 @@ import {
 import { calculateStateTax, saversCreditRateFor, getDependentStandardDeductionBase, calculateAmt } from "../../artifacts/api-server/src/lib/taxCalculator";
 import { validateW2 } from "@workspace/validation";
 import { mapInfoReturnToInputs } from "../../artifacts/api-server/src/lib/documentExtractor";
+import { calculateStateIndividualMandatePenalty } from "../../artifacts/api-server/src/lib/stateMandate";
 
 const PASS: string[] = [];
 const FAIL: string[] = [];
@@ -402,6 +403,28 @@ header("A1/A2 — 1098 Box 4 netting + 1099-INT Box 2 deduction");
   const noP = computeTaxReturnPure({ client: { filingStatus: "single", state: "FL", taxYear: 2024 }, w2s: [{ wagesBox1: 50000, federalTaxWithheldBox2: 0, stateCode: "FL" }], form1099s: [{ formType: "int", interestIncome: 3000 } as never], adjustments: [], taxYear: 2024 });
   const withP = computeTaxReturnPure({ client: { filingStatus: "single", state: "FL", taxYear: 2024 }, w2s: [{ wagesBox1: 50000, federalTaxWithheldBox2: 0, stateCode: "FL" }], form1099s: [{ formType: "int", interestIncome: 3000, earlyWithdrawalPenalty: 2000 } as never], adjustments: [], taxYear: 2024 });
   check("A2 1099-INT $2k early-withdrawal penalty → AGI −$2,000", noP.adjustedGrossIncome - withP.adjustedGrossIncome, 2000, 1);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// State batch 2 — KY/MN/MA/AZ + DC/CA mandate (each DOR/statute-verified).
+// ════════════════════════════════════════════════════════════════════════════
+header("State batch 2 — KY/MN/MA/AZ + DC/CA mandate year-indexing");
+{
+  // S11 — KY 2025 = 4.0% (NOT 3.5% — HB1's 3.5% starts 2026). std ded $3,270.
+  check("KY 2025 $80k = (80k−3,270)×4.0%", calculateStateTax(80000, "KY", "single", 2025), (80000 - 3270) * 0.04, 0.5);
+  check("KY 2026 $80k = (80k−3,360)×3.5%", calculateStateTax(80000, "KY", "single", 2026), (80000 - 3360) * 0.035, 0.5);
+  // S2 — MN 2025 uses its OWN std ded $14,950 (not the federal $15,750). MN 2025
+  // taxable at $40k income = 40,000 − 14,950 = 25,050 (< first bracket $31,690) → 5.35%.
+  check("S2 MN 2025 $40k = (40k−14,950)×5.35%", calculateStateTax(40000, "MN", "single", 2025), (40000 - 14950) * 0.0535, 0.5);
+  // S9 — AZ 2025 conforms to the federal (OBBBA) std ded $15,750, flat 2.5%.
+  check("S9 AZ 2025 $80k = (80k−15,750)×2.5%", calculateStateTax(80000, "AZ", "single", 2025), (80000 - 15750) * 0.025, 0.5);
+  // S8 — MA 4% surtax 2025 threshold $1,083,150 (was $1,053,750). At $1,070,000
+  // taxable, NO surtax in 2025 (below the new threshold); 5% only.
+  check("S8 MA 2025 $1.07M = 5% only (below $1,083,150 surtax)", calculateStateTax(1070000, "MA", "single", 2025), 1070000 * 0.05, 1);
+  // M1 — DC mandate indexes: 2024 $745/adult, 2025 $795.
+  check("M1 DC 2025 single flat $795", calculateStateIndividualMandatePenalty({ state: "DC", filingStatus: "single", uninsuredAdults: 1, uninsuredChildren: 0, householdIncome: 25000, filingThreshold: 14600, monthsUninsured: 12, taxYear: 2025 }).penalty, 795, 0.01);
+  // M2 — CA mandate 2025 $950/adult (was $900 in 2024).
+  check("M2 CA 2025 single flat $950 (low income)", calculateStateIndividualMandatePenalty({ state: "CA", filingStatus: "single", uninsuredAdults: 1, uninsuredChildren: 0, householdIncome: 20000, filingThreshold: 21561, monthsUninsured: 12, taxYear: 2025 }).penalty, 950, 0.01);
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────

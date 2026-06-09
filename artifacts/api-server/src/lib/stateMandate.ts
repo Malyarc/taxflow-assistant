@@ -54,13 +54,31 @@ interface GreaterOfParams {
 // Keyed by the latest CONFIRMED value (held flat across years unless a newer
 // confirmed figure is seeded). Bronze monthly figures are documented statewide
 // averages and act as a high ceiling.
-const GREATER_OF_PARAMS: Record<string, GreaterOfParams> = {
-  // CA 2024 (FTB 3853): $900/$450, max $2,700, 2.5%, bronze $348/mo/person.
-  CA: { adultFlat: 900, childFlat: 450, flatMax: 2700, pct: 0.025, bronzeMonthlyPerPerson: 348 },
-  // NJ/RI/DC: frozen 2018 federal $695/$347.50, max $2,085, 2.5%.
+// CA and DC INDEX their flat penalty amounts annually; NJ and RI are frozen at
+// the 2018 federal $695/$347.50. (Audit M1/M2 — DC was wrongly frozen at $695,
+// and neither CA nor DC was year-indexed.) NJ Worksheet L; CA FTB 3853;
+// DC Health Benefit Exchange Authority annual amounts; RI frozen.
+const NJ_RI = {
   NJ: { adultFlat: 695, childFlat: 347.5, flatMax: 2085, pct: 0.025, bronzeMonthlyPerPerson: 361 },
   RI: { adultFlat: 695, childFlat: 347.5, flatMax: 2085, pct: 0.025, bronzeMonthlyPerPerson: 339 },
-  DC: { adultFlat: 695, childFlat: 347.5, flatMax: 2085, pct: 0.025, bronzeMonthlyPerPerson: 379 },
+} as const;
+const GREATER_OF_PARAMS_BY_YEAR: Record<number, Record<string, GreaterOfParams>> = {
+  2024: {
+    CA: { adultFlat: 900, childFlat: 450, flatMax: 2700, pct: 0.025, bronzeMonthlyPerPerson: 348 },
+    DC: { adultFlat: 745, childFlat: 372.5, flatMax: 2235, pct: 0.025, bronzeMonthlyPerPerson: 366 },
+    ...NJ_RI,
+  },
+  2025: {
+    CA: { adultFlat: 950, childFlat: 475, flatMax: 2850, pct: 0.025, bronzeMonthlyPerPerson: 348 },
+    DC: { adultFlat: 795, childFlat: 397.5, flatMax: 2385, pct: 0.025, bronzeMonthlyPerPerson: 374 },
+    ...NJ_RI,
+  },
+  // 2026 amounts not yet published — hold the 2025 values (documented sub-gap).
+  2026: {
+    CA: { adultFlat: 950, childFlat: 475, flatMax: 2850, pct: 0.025, bronzeMonthlyPerPerson: 348 },
+    DC: { adultFlat: 795, childFlat: 397.5, flatMax: 2385, pct: 0.025, bronzeMonthlyPerPerson: 374 },
+    ...NJ_RI,
+  },
 };
 
 // MA — per-ADULT monthly penalty by income tier (% of FPL). 150% or below → $0.
@@ -164,7 +182,7 @@ export function calculateStateIndividualMandatePenalty(p: StateMandateParams): S
   }
 
   // ── CA / NJ / RI / DC — greater-of(flat, percentage), capped at bronze ──
-  const cfg = GREATER_OF_PARAMS[state];
+  const cfg = (GREATER_OF_PARAMS_BY_YEAR[p.taxYear] ?? GREATER_OF_PARAMS_BY_YEAR[2024])[state];
   if (!cfg) return NONE(state);
   const flatAnnual = Math.min(cfg.flatMax, adults * cfg.adultFlat + children * cfg.childFlat);
   const pctAnnual = Math.max(0, num(p.householdIncome) - num(p.filingThreshold)) * cfg.pct;

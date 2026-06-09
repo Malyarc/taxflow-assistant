@@ -113,7 +113,11 @@ const FED_STD_DEDUCTION_2026 = {
 // Iowa was added 2026-05 — its 2023+ tax reform replaced the historical small IA std deduction
 // with conformity to the federal standard deduction (IA Code §422.9).
 const FED_CONFORMING_STD_DED_STATES = new Set([
-  "CO", "ID", "IA", "MN", "MO", "MT", "NM", "ND", "SC",
+  // AZ ties its std deduction to the FEDERAL §63 amount (A.R.S. §43-1041) →
+  // tracks the OBBBA-boosted 2025/2026 values. MN REMOVED — it has its own,
+  // lower, MN-indexed std deduction (Minn. Stat. §290.0123), NOT the federal
+  // amount; applying FED_STD_DEDUCTION_2025 over-deducted ~$800. (Audit S2/S9.)
+  "AZ", "CO", "ID", "IA", "MO", "MT", "NM", "ND", "SC",
 ]);
 
 // K10 state-SS exclusion — states that TAX Social Security benefits (the
@@ -855,10 +859,13 @@ function build2025Data(): Record<string, StateTaxInfo> {
     ...data.IN,
     brackets: { single: flat(0.03), married_filing_jointly: flat(0.03) },
   };
-  // Kentucky reduced flat rate to 3.5% for 2025
+  // Kentucky 2025 = 4.0% flat (UNCHANGED from 2024 — HB1 of the 2025 session cut
+  // the rate to 3.5% only "for taxable years beginning on or after 2026-01-01",
+  // applied in build2026Data). The prior code wrongly applied the 2026 3.5% rate
+  // to 2025. KY indexes its std deduction → $3,270 for 2025. (Audit S11.)
   data.KY = {
     ...data.KY,
-    brackets: { single: flat(0.035), married_filing_jointly: flat(0.035) },
+    brackets: { single: flat(0.04), married_filing_jointly: flat(0.04) },
     standardDeduction: { single: 3270, married_filing_jointly: 3270 },
   };
   // Mississippi reduced flat rate to 4.4% for 2025
@@ -935,6 +942,19 @@ function build2025Data(): Record<string, StateTaxInfo> {
       married_filing_jointly: [{ upTo: 26050, rate: 0 }, { upTo: 100000, rate: 0.0275 }, { upTo: Infinity, rate: 0.03125 }],
     },
   };
+  // Minnesota 2025 std deduction (MN-indexed, NOT federal — MN was removed from
+  // the conforming set; audit S2): $14,950 single / $29,900 MFJ / $22,500 HoH.
+  // (The 2024 brackets are cloned — MN bracket inflation is a documented sub-gap.)
+  data.MN = {
+    ...data.MN,
+    standardDeduction: { single: 14950, married_filing_jointly: 29900, head_of_household: 22500, married_filing_separately: 14950 },
+  };
+  // Massachusetts 4% surtax threshold indexes annually: 2025 = $1,083,150
+  // (was $1,053,750 in 2024; Mass. Const. Amend. Art. XLIV). (Audit S8.)
+  data.MA = {
+    ...data.MA,
+    surtax: { threshold: 1083150, rate: 0.04 },
+  };
   // California TY2025 brackets (inflation-adjusted ~3%)
   data.CA = {
     ...data.CA,
@@ -990,6 +1010,13 @@ function build2026Data(): Record<string, StateTaxInfo> {
       single: [{ upTo: 26050, rate: 0 }, { upTo: Infinity, rate: 0.0275 }],
       married_filing_jointly: [{ upTo: 26050, rate: 0 }, { upTo: Infinity, rate: 0.0275 }],
     },
+  };
+  // Kentucky reduced the flat rate to 3.5% effective 1/1/2026 (HB1, 2025 session);
+  // KY-indexed std deduction $3,360. (Audit S11.)
+  data.KY = {
+    ...data.KY,
+    brackets: { single: flat(0.035), married_filing_jointly: flat(0.035) },
+    standardDeduction: { single: 3360, married_filing_jointly: 3360 },
   };
   return data;
 }
