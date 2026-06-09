@@ -224,6 +224,16 @@ export const taxReturnsTable = pgTable(
      * year (CPA enters via `nol_carryforward` next year).
      */
     section461lExcessLossAddback: numeric("section_461l_excess_loss_addback", { precision: 14, scale: 2 }).notNull().default("0"),
+    // SCH1 (migration 0015) — surface the T1.1 engine outputs as persisted
+    // columns so the results view can disclose them. Additive, nullable-default.
+    // T1.1c — state individual-mandate (shared-responsibility) penalty.
+    stateIndividualMandatePenalty: numeric("state_individual_mandate_penalty", { precision: 14, scale: 2 }).notNull().default("0"),
+    // T1.1a — unrecaptured §1250 gain (25% max rate, Sch D line 19).
+    unrecapturedSection1250Gain: numeric("unrecaptured_section_1250_gain", { precision: 14, scale: 2 }).notNull().default("0"),
+    // T1.1a — 28%-rate gain: collectibles + taxable §1202 (Sch D line 18).
+    collectibles28RateGain: numeric("collectibles_28_rate_gain", { precision: 14, scale: 2 }).notNull().default("0"),
+    // T1.2 — Schedule H household-employment tax (FICA + FUTA), Sch 2 line 9.
+    householdEmploymentTax: numeric("household_employment_tax", { precision: 14, scale: 2 }).notNull().default("0"),
     /**
      * C4 — Form 1040-X amended-return support.
      *

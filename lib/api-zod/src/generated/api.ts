@@ -1322,6 +1322,30 @@ export const GetTaxReturnResponse = zod.object({
   amtTax: zod.number().nullish(),
   niitTax: zod.number().nullish(),
   additionalMedicareTax: zod.number().nullish(),
+  stateIndividualMandatePenalty: zod
+    .number()
+    .nullish()
+    .describe(
+      "T1.1c state individual-mandate (shared-responsibility) penalty (CA\/NJ\/RI\/DC\/MA).",
+    ),
+  unrecapturedSection1250Gain: zod
+    .number()
+    .nullish()
+    .describe(
+      "T1.1a unrecaptured §1250 gain taxed at the 25% maximum rate (Schedule D line 19).",
+    ),
+  collectibles28RateGain: zod
+    .number()
+    .nullish()
+    .describe(
+      "T1.1a 28%-rate gain (collectibles + taxable §1202, Schedule D line 18).",
+    ),
+  householdEmploymentTax: zod
+    .number()
+    .nullish()
+    .describe(
+      "T1.2 Schedule H household-employment tax (FICA + FUTA), Schedule 2 line 9.",
+    ),
   additionalChildTaxCredit: zod.number().nullish(),
   capitalGainsTax: zod.number().nullish(),
   preferentialIncome: zod.number().nullish(),
@@ -1420,6 +1444,30 @@ export const CalculateTaxReturnResponse = zod.object({
   amtTax: zod.number().nullish(),
   niitTax: zod.number().nullish(),
   additionalMedicareTax: zod.number().nullish(),
+  stateIndividualMandatePenalty: zod
+    .number()
+    .nullish()
+    .describe(
+      "T1.1c state individual-mandate (shared-responsibility) penalty (CA\/NJ\/RI\/DC\/MA).",
+    ),
+  unrecapturedSection1250Gain: zod
+    .number()
+    .nullish()
+    .describe(
+      "T1.1a unrecaptured §1250 gain taxed at the 25% maximum rate (Schedule D line 19).",
+    ),
+  collectibles28RateGain: zod
+    .number()
+    .nullish()
+    .describe(
+      "T1.1a 28%-rate gain (collectibles + taxable §1202, Schedule D line 18).",
+    ),
+  householdEmploymentTax: zod
+    .number()
+    .nullish()
+    .describe(
+      "T1.2 Schedule H household-employment tax (FICA + FUTA), Schedule 2 line 9.",
+    ),
   additionalChildTaxCredit: zod.number().nullish(),
   capitalGainsTax: zod.number().nullish(),
   preferentialIncome: zod.number().nullish(),
@@ -1526,6 +1574,30 @@ export const UpdateTaxReturnResponse = zod.object({
   amtTax: zod.number().nullish(),
   niitTax: zod.number().nullish(),
   additionalMedicareTax: zod.number().nullish(),
+  stateIndividualMandatePenalty: zod
+    .number()
+    .nullish()
+    .describe(
+      "T1.1c state individual-mandate (shared-responsibility) penalty (CA\/NJ\/RI\/DC\/MA).",
+    ),
+  unrecapturedSection1250Gain: zod
+    .number()
+    .nullish()
+    .describe(
+      "T1.1a unrecaptured §1250 gain taxed at the 25% maximum rate (Schedule D line 19).",
+    ),
+  collectibles28RateGain: zod
+    .number()
+    .nullish()
+    .describe(
+      "T1.1a 28%-rate gain (collectibles + taxable §1202, Schedule D line 18).",
+    ),
+  householdEmploymentTax: zod
+    .number()
+    .nullish()
+    .describe(
+      "T1.2 Schedule H household-employment tax (FICA + FUTA), Schedule 2 line 9.",
+    ),
   additionalChildTaxCredit: zod.number().nullish(),
   capitalGainsTax: zod.number().nullish(),
   preferentialIncome: zod.number().nullish(),

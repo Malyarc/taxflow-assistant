@@ -2722,6 +2722,19 @@ components:
           type: ["number", "null"]
         additionalMedicareTax:
           type: ["number", "null"]
+        # SCH1 — T1.1 disclosure scalars surfaced from the engine result.
+        stateIndividualMandatePenalty:
+          type: ["number", "null"]
+          description: T1.1c state individual-mandate (shared-responsibility) penalty (CA/NJ/RI/DC/MA).
+        unrecapturedSection1250Gain:
+          type: ["number", "null"]
+          description: T1.1a unrecaptured §1250 gain taxed at the 25% maximum rate (Schedule D line 19).
+        collectibles28RateGain:
+          type: ["number", "null"]
+          description: T1.1a 28%-rate gain (collectibles + taxable §1202, Schedule D line 18).
+        householdEmploymentTax:
+          type: ["number", "null"]
+          description: T1.2 Schedule H household-employment tax (FICA + FUTA), Schedule 2 line 9.
         additionalChildTaxCredit:
           type: ["number", "null"]
         capitalGainsTax:

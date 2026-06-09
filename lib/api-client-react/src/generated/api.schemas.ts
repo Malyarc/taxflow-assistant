@@ -1103,6 +1103,26 @@ export interface TaxReturn {
   niitTax?: number | null;
   /** @nullable */
   additionalMedicareTax?: number | null;
+  /**
+   * T1.1c state individual-mandate (shared-responsibility) penalty (CA/NJ/RI/DC/MA).
+   * @nullable
+   */
+  stateIndividualMandatePenalty?: number | null;
+  /**
+   * T1.1a unrecaptured §1250 gain taxed at the 25% maximum rate (Schedule D line 19).
+   * @nullable
+   */
+  unrecapturedSection1250Gain?: number | null;
+  /**
+   * T1.1a 28%-rate gain (collectibles + taxable §1202, Schedule D line 18).
+   * @nullable
+   */
+  collectibles28RateGain?: number | null;
+  /**
+   * T1.2 Schedule H household-employment tax (FICA + FUTA), Schedule 2 line 9.
+   * @nullable
+   */
+  householdEmploymentTax?: number | null;
   /** @nullable */
   additionalChildTaxCredit?: number | null;
   /** @nullable */

@@ -106,6 +106,7 @@
     "src/tax-engine-scheduleh-clergy-tests.ts",
     "src/tax-engine-planning-calendar-tests.ts",
     "src/tax-engine-audit-2026-06-08-tests.ts",
+    "src/tax-engine-sch1-surface-integration-tests.ts",
     "src/tax-engine-property-harness.ts"
   ]
 }

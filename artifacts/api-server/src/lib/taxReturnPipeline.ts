@@ -529,6 +529,11 @@ export async function recalculateAndUpsertTaxReturn(
     section163jAllowedDeduction: String(result.section163jAllowedDeduction),
     section163jDisallowedCarryforward: String(result.section163jDisallowedCarryforward),
     section461lExcessLossAddback: String(result.section461lExcessLossAddback),
+    // SCH1 — persist the T1.1 disclosure scalars for the results view.
+    stateIndividualMandatePenalty: String(result.stateIndividualMandatePenalty),
+    unrecapturedSection1250Gain: String(result.unrecapturedSection1250Gain),
+    collectibles28RateGain: String(result.collectibles28RateGain),
+    householdEmploymentTax: String(result.scheduleH.total),
     socialSecurityBenefits: String(result.socialSecurityBenefits),
     socialSecurityTaxable: String(result.socialSecurityTaxable),
     feieTotalExclusion: String(result.feie.totalExclusion),
