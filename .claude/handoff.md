@@ -1,3 +1,40 @@
+# Handoff Note — 2026-06-09 (AUDIT CLOSE-OUT — ZERO DEFERRALS; +8 commits shipped + deployed + prod-verified)
+
+Finished EVERY remaining deferred finding from the full-app audit (ledger:
+`docs/accuracy-audit/full-app-audit-2026-06-08.md`). All 45 ledger findings are now fixed or
+resolved-by-design — **no deferred items remain**. 8 commits on `main` (`869d39a`..`6beb7e0`, all
+pushed + deployed: api-server rebuilt, **migrations 0014+0015+0016** applied, frontend rsynced,
+re-scored, healthz ok; prod-smoked SCH1/M4 exact values + seeded-client + PDF 200). Every value
+hand-calc'd vs the IRS/state primary source; each fix has a regression in
+`tax-engine-audit-2026-06-08-tests.ts` (now **106** assertions) + the new
+`tax-engine-sch1-surface-integration-tests.ts` (11, yes-API). Green bar: 4 typechecks + 80 no-API
+suites / 4,769 + property harness (5,636) + all yes-API integration suites green.
+
+**Shipped this close-out:**
+- **F3** §1250/28% loss-absorption — a coexisting LT loss erodes the 28% bucket first, then §1250;
+  bounded by `grossPositiveLt` (undercount-only → never under-tax).
+- **E2** MFJ per-spouse Sch SE — opt-in `spouse` tag on a self_employment_income adjustment
+  (migration 0014); default stays the conservative over-tax.
+- **S10 WV SS** — HB 4880 phase-out 35%/65%/100% above $50k/$100k AGI; 100% exempt at/below the floor.
+- **M3 MA mandate** — TY2024/2025 6-tier schedules from MA DOR **TIR 24-1 + TIR 25-1** (primary-source).
+- **MD-08** — Anne Arundel + Frederick GRADUATED local brackets (new `localBrackets` on LocalityInfo).
+- **M4** — CA mandate FTB 3853 household-size filing threshold + §5000A bronze cap counts ≤5.
+- **SCH1** — T1.1 outputs persisted (migration 0015, 4 cols) + openapi TaxReturn + ClientDetail card.
+- **PDF2** — summary PDF nets §72(t)/HSA/Sch-H out of "regular tax" + discloses §1250/28%/mandate.
+- **FE1** — H5 Assets dialog money fields → `<CurrencyInput>`. **FE3** — `amendDeltaClass`/`yoyDeltaClass`
+  (refund/credit/deduction green-on-increase, tax/income red-on-increase; 1040-X 3 tables + year-compare).
+- **CF3** — §469(i)(5)(B) MFS-lived-with-spouse barred from the $25k allowance ($0).
+- **E4** — §219(g)(7) spouse-covered IRA phase-out band (migration 0016 + ClientForm checkbox).
+- **A3** — no fix needed (pipeline auto-derives `priorYearItemized` → §111 applies).
+
+**Recommended next:** the T0.3 audit is fully closed. The highest-leverage next move is the
+differential-oracle layer (T0.3 A2/A3 — wire OpenTaxSolver/ustaxes/tenforty + the IRS ATS scenarios as
+a second oracle) to promote `tax-engine-property-harness.ts` from a self-consistency harness to an
+oracle-backed CI suite. Then resume MASTER-TODO T1.2/T1.3 (§280F luxury-auto, Form 2210 annualized,
+the detector-promotion / multi-year-optimizer planning work).
+
+---
+
 # Handoff Note — 2026-06-08g (FIX-ALL pass on the full-app-audit findings — 10 more commits shipped + deployed + prod-verified)
 
 Worked every remaining deferred finding from the 2026-06-08f audit (ledger:

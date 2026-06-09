@@ -82,10 +82,10 @@ const GREATER_OF_PARAMS_BY_YEAR: Record<number, Record<string, GreaterOfParams>>
 };
 
 // MA — per-ADULT monthly penalty by income tier (% of FPL). 150% or below → $0.
-// 2023 amounts CONFIRMED (Mercer/DOR TIR 22-17). 2024/2025 PROVISIONAL — the
-// FY2024 budget expanded ConnectorCare to 500% FPL; confirm the dollar amounts
-// against the annual MA DOR TIR 24-1/25-1 before relying on them. Tests assert
-// only the confirmed 2023 schedule.
+// 2023 amounts CONFIRMED (Mercer/DOR TIR 22-17). 2024/2025 now CONFIRMED against
+// the primary MA DOR TIR 24-1 + TIR 25-1 (audit M3, 2026-06-09) — the FY2024
+// budget expanded ConnectorCare to 500% FPL, adding the 400%/500%/>500% tiers.
+// 2026 holds 2025 until TIR 26-1.
 const MA_TIERS_2023: ReadonlyArray<{ maxFplPct: number; monthly: number }> = [
   { maxFplPct: 150, monthly: 0 },
   { maxFplPct: 200, monthly: 24 },

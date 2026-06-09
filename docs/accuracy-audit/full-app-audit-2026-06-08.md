@@ -19,8 +19,11 @@ primary-source-verified and carries hand-calc'd regressions.
 | **PDF2** PDF disclosure rows | Summary PDF nets §72(t)/HSA/Sch-H out of the "regular tax" line and discloses each + §1250/28% + mandate. | pypdf-verified render + integration PDF asserts |
 | **FE1** Assets money inputs | 3 H5 Assets dialog dollar fields `<Input type=number>` → `<CurrencyInput>`. | typecheck + build |
 | **FE3** delta colors | `amendDeltaClass`/`yoyDeltaClass` — refund/credit/payment/deduction lines green-on-increase, tax/income red-on-increase (1040-X 3 tables + year-compare). | typecheck + build |
+| **CF3** §469(i) MFS PAL | MFS-lived-WITH-spouse now barred from the $25k rental special allowance ($0, full loss suspended) per §469(i)(5)(B); only MFS-lived-apart-all-year gets $12,500. New `mfsLivedApartAllYear` gate on the PAL helper. | audit file (5 cases) |
+| **E4** §219(g)(7) spouse-covered IRA | Taxpayer-not-covered/spouse-covered now uses the separate higher MFJ phase-out band ($230k-$240k 2024 / $236k-$246k 2025 / $242k-$252k 2026). New `iraSpouseCoveredByWorkplacePlan` field (migration 0016) + ClientForm checkbox. | audit file (5 cases), IRS-verified |
+| **A3** 1099-G refund taxability | NO fix needed — the pipeline already auto-derives `priorYearItemized` from the prior-year return when the CPA hasn't set it, so §111 applies correctly. Resolved-by-design. | pipeline code |
 
-Audit regression file `tax-engine-audit-2026-06-08-tests.ts` now **96** assertions; new
+Audit regression file `tax-engine-audit-2026-06-08-tests.ts` now **106** assertions; new
 `tax-engine-sch1-surface-integration-tests.ts` (11). Full green bar: 4 typechecks clean, 80 no-API
 suites / 4,769 parsed assertions + the 96 audit + property harness (5,636 runs) green, all yes-API
 integration suites green. **No deferred items remain from this audit.**
