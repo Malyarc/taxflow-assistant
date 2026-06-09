@@ -105,6 +105,19 @@ export const capitalTransactionsTable = pgTable("capital_transactions", {
    */
   propertyStateSitus: text("property_state_situs"),
 
+  /**
+   * T1.1a — special LTCG rate character (IRC §1(h)) for this LONG-TERM lot:
+   *   "section1250" → unrecaptured §1250 gain (25% max);
+   *   "collectible" → 28%-rate gain (art/metals/coins/gems);
+   *   "section1202" → taxable §1202 §1(h)(7) portion (28%-rate gain).
+   * NULL/empty → the default 0/15/20% adjusted-net-capital-gain treatment.
+   */
+  gainClass: text("gain_class"),
+  /** T1.1a — explicit unrecaptured §1250 portion of this lot's gain (≤ gain),
+   *  for a partial-recapture §1250 lot. NULL → the whole gain when
+   *  gainClass = "section1250". */
+  unrecaptured1250Amount: numeric("unrecaptured_1250_amount", { precision: 14, scale: 2 }),
+
   /** 1099-B Box 12: basis reported to IRS (covered security). */
   isCovered: boolean("is_covered").notNull().default(true),
   /** Did the taxpayer receive a 1099-B for this transaction? */

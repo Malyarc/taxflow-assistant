@@ -94,6 +94,16 @@ import {
   type AdoptionCreditCalculation,
   type RdCreditCalculation,
 } from "./taxCalculator";
+import {
+  computeForm4797,
+  type BusinessPropertySaleFact,
+  type Form4797Result,
+} from "./form4797";
+import {
+  calculateStateIndividualMandatePenalty,
+  STATES_WITH_INDIVIDUAL_MANDATE,
+  type StateMandateResult,
+} from "./stateMandate";
 
 // ── Loose numeric coercion ──────────────────────────────────────────────────
 // Drizzle numeric() columns are strings; Haven might pass plain numbers.
@@ -291,6 +301,26 @@ export interface CapitalTransactionFact {
    * NOT be given a situs.
    */
   propertyStateSitus?: string | null;
+  /**
+   * T1.1a — Special LTCG rate character (IRC §1(h)). Only meaningful on a
+   * LONG-TERM lot (formBox D/E/F). Routes this lot's gain into the Schedule D
+   * Tax Worksheet's special-rate buckets instead of the default 0/15/20%:
+   *   - "collectible"  → 28%-rate gain (§1(h)(4): art, metals, coins, gems…)
+   *   - "section1202"  → the taxable §1202 §1(h)(7) portion (28%-rate gain)
+   *   - "section1250"  → unrecaptured §1250 gain (25% max). When the whole lot
+   *                      gain is depreciation recapture, leave
+   *                      `unrecaptured1250Amount` unset (defaults to the gain);
+   *                      when only PART is recapture and the rest is true
+   *                      appreciation taxed at 0/15/20, set the §1250 portion
+   *                      explicitly via `unrecaptured1250Amount`.
+   * A net LTCG loss in the bucket contributes nothing (floored at 0). Bounded to
+   * the return's net LTCG downstream. The proper channel for depreciated business
+   * property is `form4797` (T1.1b); this is the direct-8949-entry convenience.
+   */
+  gainClass?: "section1250" | "collectible" | "section1202" | string | null;
+  /** T1.1a — explicit unrecaptured §1250 portion of THIS lot's gain (≤ gain).
+   *  Used with gainClass "section1250" for a partial-recapture lot. */
+  unrecaptured1250Amount?: Numish;
 }
 
 /**
@@ -432,6 +462,13 @@ export interface TaxReturnInputs {
    * Inert when omitted/empty. (Migration-seam contract addition — keep PURE.)
    */
   scheduleCAssets?: ScheduleCAsset[];
+  /**
+   * T1.1b — Optional Form 4797 business-property dispositions (§1231/§1245/§1250).
+   * Net §1231 gain → Schedule D (LTCG + 25%/28% character); net §1231 loss +
+   * depreciation recapture → ordinary income. Inert when omitted/empty.
+   * (Migration-seam contract addition — keep PURE.)
+   */
+  form4797?: BusinessPropertySaleFact[];
   /** The resolved tax year. Engine does NOT re-resolve from client.taxYear. */
   taxYear: number;
   overrides?: RecalcOverrides;
@@ -741,6 +778,12 @@ export interface ComputedTaxReturn {
   stateTaxLiability: number;
   stateTaxWithheld: number;
   stateRefundOrOwed: number;
+  /** T1.1c — state individual health-coverage mandate (shared-responsibility)
+   *  penalty (CA/NJ/RI/DC/MA). 0 for non-mandate states or full coverage.
+   *  Raises the amount owed (reduces stateRefundOrOwed) and the effective rate. */
+  stateIndividualMandatePenalty: number;
+  /** T1.1c — full mandate-penalty breakdown (method, flat/percentage/cap). */
+  stateMandate: StateMandateResult;
   effectiveTaxRate: number;
   /** Sum of CPA-authored "credit" adjustments applied (manual entries) */
   manualCreditsApplied: number;
@@ -769,6 +812,15 @@ export interface ComputedTaxReturn {
   investmentInterestDisallowed: number;
   /** §163(d)(4)(B) QDIV/LTCG amount elected as ordinary investment income. */
   investmentInterestElectionAmount: number;
+  /** T1.1a — unrecaptured §1250 gain taxed at the 25% maximum rate (Schedule D
+   *  line 19; a subset of preferentialIncome). 0 when none. */
+  unrecapturedSection1250Gain: number;
+  /** T1.1a — 28%-rate gain: collectibles + taxable §1202 (Schedule D line 18;
+   *  a subset of preferentialIncome). 0 when none. */
+  collectibles28RateGain: number;
+  /** T1.1b — Form 4797 (Sales of Business Property) breakdown, or null when no
+   *  business-property dispositions were supplied. */
+  form4797: Form4797Result | null;
   /** Summary of all 1099 records included in this return */
   form1099Summary: Form1099Summary;
   // ── Phase 1 line items ─────────────────────────────────────────────────
@@ -1380,6 +1432,13 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const rawCapTxnsForYear = (inputs.capitalTransactions ?? []).filter((t) => t.taxYear === taxYear);
   const washSaleResult = detectWashSales(rawCapTxnsForYear);
   const capTxnsForYear = washSaleResult.adjustedTransactions;
+  // T1.1a — per-transaction special LTCG rate amounts (§1(h)): unrecaptured
+  // §1250 (25% bucket) and 28%-rate gain (collectibles + §1202). Accumulated
+  // GROSS here from tagged long-term lots; bounded to the return's net LTCG at
+  // the federal-tax computation. Combined there with the aggregate adjustments
+  // and the Form 4797 output (T1.1b).
+  let capTxnUnrecaptured1250 = 0;
+  let capTxnCollectibles28 = 0;
   let form1099Summary: Form1099Summary;
   if (capTxnsForYear.length > 0) {
     const cgDistributions = form1099Records
@@ -1393,6 +1452,17 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     const ltTransactions = capTxnsForYear.filter((t) =>
       ["D", "E", "F"].includes((t.formBox ?? "").toUpperCase()),
     );
+    for (const t of ltTransactions) {
+      const gain = txnGainLoss(t);
+      if (gain <= 0) continue; // only a net-gain lot contributes to a special bucket
+      const cls = (t.gainClass ?? "").toLowerCase();
+      if (cls === "section1250") {
+        const explicit = toNum(t.unrecaptured1250Amount);
+        capTxnUnrecaptured1250 += explicit > 0 ? Math.min(explicit, gain) : gain;
+      } else if (cls === "collectible" || cls === "section1202") {
+        capTxnCollectibles28 += gain;
+      }
+    }
     const stcgFromTxns = stTransactions.reduce((s, t) => s + txnGainLoss(t), 0);
     const ltcgFromTxns = ltTransactions.reduce((s, t) => s + txnGainLoss(t), 0);
     const newStcg = stcgFromTxns;
@@ -2075,12 +2145,21 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     section461lAutoAddback,
   );
 
+  // T1.1b — Form 4797 (Sales of Business Property). Net §1231 gain joins the
+  // Schedule D netting as LTCG (carrying any unrecaptured §1250 25% character);
+  // depreciation recapture + a net §1231 loss + the §1231(c) 5-year lookback
+  // recharacterization flow to ordinary income below. Inert when no rows.
+  const form4797 = computeForm4797(
+    (inputs.form4797 ?? []).filter((s) => s.taxYear === taxYear),
+    Math.max(0, sumByType("section_1231_lookback_loss")),
+  );
+
   // K-1 net ST/LT capital gain (Box 8 / 9a) joins the cap-gain netting
   // alongside 1099-B-derived gains. Subtract prior-year loss carryforwards.
   // Home-sale taxable remainder (K6) and QSBS taxable remainder (K7) are
   // long-term per §121 (2-of-5 ownership) and §1202 (5-year holding).
   let netSTCG = form1099Summary.shortTermCapitalGains + k1Stcg - stcgCarryforward;
-  let netLTCG = form1099Summary.longTermCapitalGains + k1Ltcg - ltcgCarryforward + homeSaleTaxableGain + qsbsTaxableGain + section1031RecognizedGain + Math.max(0, longTermCapitalGainAdj);
+  let netLTCG = form1099Summary.longTermCapitalGains + k1Ltcg - ltcgCarryforward + homeSaleTaxableGain + qsbsTaxableGain + section1031RecognizedGain + Math.max(0, longTermCapitalGainAdj) + form4797.netSection1231LtcgGain;
 
   // Cross-netting per Schedule D Lines 7, 15, 16
   if (netSTCG > 0 && netLTCG < 0) {
@@ -2369,7 +2448,8 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     isoDisqualifyingDispositionOrdinary +    // C6 — ISO disqualifying disposition comp income
     esppDisqualifyingDispositionOrdinary +   // C6 — §423 ESPP disqualifying disposition comp income
     section461lExcessLossAddback -           // C7 — §461(l) excess business loss addback (positive add)
-    section163jAllowedDeduction;             // C7 — §163(j) allowed business interest (deduction)
+    section163jAllowedDeduction +            // C7 — §163(j) allowed business interest (deduction)
+    form4797.ordinaryComponent;              // T1.1b — Form 4797 ordinary (recapture + §1231(c) lookback + net §1231 loss, signed)
   const provisionalAgiForPal = Math.max(0, totalWages + ordinaryAdditionalIncomeBeforeRental);
 
   let rentalNetAppliedToAgi = 0;
@@ -2774,6 +2854,26 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
                   qualifiedDividends + Math.max(0, ltcgPreferential) + Math.max(0, stcgInOrdinary) +
                   k1InterestIncome + k1OrdinaryDividends)
     : 0;
+  // T1.1a — assemble the Schedule D Tax Worksheet special-rate buckets from all
+  // three channels: per-transaction tags (capTxn*), aggregate adjustments, and
+  // the Form 4797 output (T1.1b — `form4797.unrecaptured1250Gain`). Each is a
+  // SUBSET of the net long-term gain, so bound the total to the post-election
+  // net LTCG (never letting §1250/28% consume the QDIV portion, which is always
+  // 0/15/20). 28% takes priority over 25% within the available LTCG (matches the
+  // worksheet's stacking, and is the taxpayer-correct ordering — the engine then
+  // re-bounds by `prefTaxable` if a deduction eroded the preferential base).
+  const rawUnrecaptured1250 =
+    capTxnUnrecaptured1250 +
+    Math.max(0, sumByType("unrecaptured_section_1250_gain")) +
+    Math.max(0, form4797.unrecaptured1250Gain);
+  const rawCollectibles28 =
+    capTxnCollectibles28 + Math.max(0, sumByType("collectibles_28_rate_gain"));
+  const ltAvailableForSpecial = Math.max(0, ltcgPreferentialAfterElection);
+  const collectibles28Bounded = Math.min(rawCollectibles28, ltAvailableForSpecial);
+  const unrecaptured1250Bounded = Math.min(
+    rawUnrecaptured1250,
+    ltAvailableForSpecial - collectibles28Bounded,
+  );
   const capGains = calculateFederalTaxWithCapitalGains({
     ordinaryTaxableIncome: ordinaryPortionOfTaxable,
     longTermGains: ltcgPreferentialAfterElection,
@@ -2781,6 +2881,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     shortTermGains: 0, // post-netting STCG already in ordinaryPortionOfTaxable
     filingStatus: client.filingStatus,
     taxYear,
+    // T1.1a — unrecaptured §1250 (25% cap) + 28%-rate gain buckets.
+    unrecaptured1250Gain: unrecaptured1250Bounded,
+    collectibles28Gain: collectibles28Bounded,
     // K9 — FEIE stacking rule: tax computed at the marginal rate that
     // would have applied if FEIE were not excluded.
     feieExclusion,
@@ -3566,9 +3669,40 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     stateTaxLiability - stateAdditionalNonRefundable,
   );
 
-  const stateRefundOrOwed = totalStateWithheld - stateTaxLiabilityAfterAdditional + stateEitc.credit + mnCtcRefundable + nycEitcRefundableExcess + stateCtcRefundable + nycSchoolTaxCreditRefundable + stateAdditionalRefundable;
+  // T1.1c — State individual health-coverage mandate penalty (CA/NJ/RI/DC/MA).
+  // Assessed on residents who lack minimum essential coverage. Driven by the
+  // `months_without_minimum_coverage` adjustment (0–12); inert at 0 / non-mandate
+  // states. Assumes the whole household is uninsured for those months (per-person
+  // partial coverage is a documented refinement). The percentage method's filing
+  // threshold uses each state's published value (NJ gross-income threshold;
+  // federal standard deduction proxy for CA/RI/DC — a CPA can refine via their
+  // form software since this is an Option-A overlay).
+  const monthsWithoutCoverage = sumByType("months_without_minimum_coverage");
+  const mandateIsJoint =
+    client.filingStatus === "married_filing_jointly" || client.filingStatus === "qualifying_widow";
+  const mandateFilingThreshold =
+    stateCode.toUpperCase() === "NJ"
+      ? (client.filingStatus === "single" || client.filingStatus === "married_filing_separately" ? 10000 : 20000)
+      : getFederalStandardDeduction(client.filingStatus, taxYear);
+  const stateMandate: StateMandateResult =
+    monthsWithoutCoverage > 0 && STATES_WITH_INDIVIDUAL_MANDATE.has(stateCode.toUpperCase())
+      ? calculateStateIndividualMandatePenalty({
+          state: stateCode,
+          filingStatus: client.filingStatus,
+          uninsuredAdults: 1 + (mandateIsJoint ? 1 : 0),
+          uninsuredChildren: toNum(client.dependentsUnder17),
+          householdIncome: calc.adjustedGrossIncome,
+          filingThreshold: mandateFilingThreshold,
+          monthsUninsured: monthsWithoutCoverage,
+          householdSize: (mandateIsJoint ? 2 : 1) + toNum(client.dependentsUnder17) + toNum(client.otherDependents),
+          taxYear,
+        })
+      : { penalty: 0, state: stateCode, method: "none", flatAmount: 0, percentageAmount: 0, bronzeCapAmount: 0, monthsUninsured: 0 };
+  const stateIndividualMandatePenalty = stateMandate.penalty;
 
-  const totalTaxBurden = totalFederalLiabilityWithRepayment + stateTaxLiabilityAfterAdditional - stateEitc.credit - stateCtcRefundable - nycSchoolTaxCreditRefundable - stateAdditionalRefundable;
+  const stateRefundOrOwed = totalStateWithheld - stateTaxLiabilityAfterAdditional + stateEitc.credit + mnCtcRefundable + nycEitcRefundableExcess + stateCtcRefundable + nycSchoolTaxCreditRefundable + stateAdditionalRefundable - stateIndividualMandatePenalty;
+
+  const totalTaxBurden = totalFederalLiabilityWithRepayment + stateTaxLiabilityAfterAdditional - stateEitc.credit - stateCtcRefundable - nycSchoolTaxCreditRefundable - stateAdditionalRefundable + stateIndividualMandatePenalty;
   const effectiveRate = calc.totalIncome > 0 ? totalTaxBurden / calc.totalIncome : 0;
 
   // ── Compute state retirement exemption (for transparency in result) ──
@@ -3605,6 +3739,8 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     stateTaxLiability,
     stateTaxWithheld: totalStateWithheld,
     stateRefundOrOwed,
+    stateIndividualMandatePenalty,
+    stateMandate,
     effectiveTaxRate: effectiveRate,
     manualCreditsApplied: creditAdjustments,
     childTaxCredit: ctc,
@@ -3618,6 +3754,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     investmentInterestDeduction: allowedInvestmentInterest,
     investmentInterestDisallowed,
     investmentInterestElectionAmount,
+    unrecapturedSection1250Gain: unrecaptured1250Bounded,
+    collectibles28RateGain: collectibles28Bounded,
+    form4797: (inputs.form4797 ?? []).some((s) => s.taxYear === taxYear) ? form4797 : null,
     form1099Summary,
     scheduleA,
     scheduleCExpenses,

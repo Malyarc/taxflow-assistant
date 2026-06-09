@@ -5891,6 +5891,16 @@ export function calculateFederalTaxWithCapitalGains(params: {
     /** Parent's top marginal rate as decimal (e.g., 0.32). */
     parentsTopMarginalRate: number;
   };
+  /** T1.1a — Unrecaptured §1250 gain (IRC §1(h)(1)(E); Schedule D line 19).
+   *  A SUBSET of `longTermGains` (the depreciation portion of a depreciated
+   *  real-property sale) taxed at a MAXIMUM of 25%. Routes the computation
+   *  through the IRS Schedule D Tax Worksheet. Bounded to the net LTCG by the
+   *  caller. Default 0 → the simple Qualified Dividends & Cap Gain worksheet. */
+  unrecaptured1250Gain?: number;
+  /** T1.1a — 28%-rate gain (IRC §1(h)(1)(F)/§1(h)(4)/(5)): collectibles gain +
+   *  the taxable §1202 §1(h)(7) amount. A SUBSET of `longTermGains` taxed at a
+   *  MAXIMUM of 28%. Bounded to (net LTCG − §1250) by the caller. Default 0. */
+  collectibles28Gain?: number;
 }): CapitalGainsCalculation {
   const year = resolveTaxYear(params.taxYear);
   const status = params.filingStatus in FEDERAL_BRACKETS[year] ? params.filingStatus : "single";
@@ -5931,7 +5941,56 @@ export function calculateFederalTaxWithCapitalGains(params: {
   // above (ordinaryWithStcg + feie) so LTCG occupies the right brackets,
   // then no second subtraction is applied (FEIE is ordinary, not LTCG).
   const ltcgStackBase = feie > 0 ? ordinaryWithStcg + feie : ordinaryWithStcg;
-  const prefTax = calculateLtcgQdivStackedTax(ltcgStackBase, prefTaxable, status, year);
+
+  // T1.1a — Schedule D Tax Worksheet (IRC §1(h)). The net preferential amount
+  // (`prefTaxable`) is split into three rate buckets stacked bottom→top above
+  // ordinary income:
+  //   1. 0/15/20% "adjusted net capital gain" (gNormal) — stacked first,
+  //      directly above ordinary income (gets the favorable lower brackets).
+  //   2. Unrecaptured §1250 gain (g25) — stacked above gNormal, taxed at the
+  //      LESSER of 25% or the ordinary rate at that stack position (25% is a CAP).
+  //   3. 28%-rate gain (g28: collectibles + §1202) — stacked at the top, taxed
+  //      at the LESSER of 28% or the ordinary rate there (28% is a CAP).
+  // The buckets are SUBSETS of `prefTaxable`; the 0/15/20 residual absorbs any
+  // deduction-driven reduction (when prefTaxable < total LTCG+QDIV). When both
+  // special buckets are 0 this collapses to exactly the prior single-bucket
+  // (Qualified Dividends & Cap Gain Tax Worksheet) path — zero regression.
+  const g28 = Math.max(0, Math.min(params.collectibles28Gain ?? 0, prefTaxable));
+  const g25 = Math.max(0, Math.min(params.unrecaptured1250Gain ?? 0, prefTaxable - g28));
+  const gNormal = Math.max(0, prefTaxable - g25 - g28);
+
+  // Ordinary tax on an arbitrary stacking height (FEIE-aware): `base` is stacked
+  // above the FEIE-excluded income so the displaced marginal rate is preserved.
+  const ordTaxAtHeight = (base: number): number =>
+    feie > 0
+      ? Math.max(0, calculateFederalTax(Math.max(0, base) + feie, status, year) - calculateFederalTax(feie, status, year))
+      : calculateFederalTax(Math.max(0, base), status, year);
+
+  const tax015 = calculateLtcgQdivStackedTax(ltcgStackBase, gNormal, status, year);
+  let tax25 = 0;
+  let tax28 = 0;
+  if (g25 > 0) {
+    const below = ordinaryWithStcg + gNormal; // ordinary + 0/15/20 gain below the §1250 layer
+    const incrementalOrdinary = ordTaxAtHeight(below + g25) - ordTaxAtHeight(below);
+    tax25 = Math.min(0.25 * g25, Math.max(0, incrementalOrdinary));
+  }
+  if (g28 > 0) {
+    const below = ordinaryWithStcg + gNormal + g25; // ordinary + 0/15/20 + §1250 below the 28% layer
+    const incrementalOrdinary = ordTaxAtHeight(below + g28) - ordTaxAtHeight(below);
+    tax28 = Math.min(0.28 * g28, Math.max(0, incrementalOrdinary));
+  }
+  const hasSpecialBuckets = g25 > 0 || g28 > 0;
+  // Final safety floor (Schedule D Tax Worksheet last line): the preferential
+  // computation may never exceed ordinary-rate tax on the full taxable income.
+  // Only applied when special buckets are present (for the 0/15/20-only path it
+  // is never binding — preferential rates ≤ ordinary rates — so we skip it to
+  // keep byte-for-byte backward compatibility with the prior implementation).
+  const prefTax = hasSpecialBuckets
+    ? Math.min(
+        tax015 + tax25 + tax28,
+        Math.max(0, ordTaxAtHeight(ordinaryWithStcg + prefTaxable) - ordinaryTax),
+      )
+    : tax015;
 
   // K8 — Kiddie tax (Form 8615 Line 18).
   // When the child has net unearned income > $2,600, that excess is taxed

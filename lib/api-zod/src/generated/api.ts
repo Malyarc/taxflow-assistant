@@ -2815,6 +2815,10 @@ export const ListAdjustmentsResponseItem = zod.object({
     "ct_ira_distribution",
     "nonresident_source_allocation",
     "part_year_income_pct_method",
+    "unrecaptured_section_1250_gain",
+    "collectibles_28_rate_gain",
+    "section_1231_lookback_loss",
+    "months_without_minimum_coverage",
   ]),
   amount: zod.number(),
   description: zod.string(),
@@ -2949,6 +2953,10 @@ export const CreateAdjustmentBody = zod.object({
     "ct_ira_distribution",
     "nonresident_source_allocation",
     "part_year_income_pct_method",
+    "unrecaptured_section_1250_gain",
+    "collectibles_28_rate_gain",
+    "section_1231_lookback_loss",
+    "months_without_minimum_coverage",
   ]),
   amount: zod.number(),
   description: zod.string(),
@@ -3082,6 +3090,10 @@ export const UpdateAdjustmentBody = zod.object({
       "ct_ira_distribution",
       "nonresident_source_allocation",
       "part_year_income_pct_method",
+      "unrecaptured_section_1250_gain",
+      "collectibles_28_rate_gain",
+      "section_1231_lookback_loss",
+      "months_without_minimum_coverage",
     ])
     .optional(),
   amount: zod.number().optional(),
@@ -3209,6 +3221,10 @@ export const UpdateAdjustmentResponse = zod.object({
     "ct_ira_distribution",
     "nonresident_source_allocation",
     "part_year_income_pct_method",
+    "unrecaptured_section_1250_gain",
+    "collectibles_28_rate_gain",
+    "section_1231_lookback_loss",
+    "months_without_minimum_coverage",
   ]),
   amount: zod.number(),
   description: zod.string(),
@@ -3842,6 +3858,23 @@ export const ListCapitalTransactionsResponseItem = zod.object({
     .describe(
       "PREP-B1 — 2-letter state code for the situs of the underlying real\/tangible property. With the nonresident_source_allocation marker on, the gain is sourced to that state as non-resident income (real-property situs rule). Intangible gains (stocks\/bonds) carry no situs (4 U.S.C. §114(a)).",
     ),
+  gainClass: zod
+    .union([
+      zod.literal("section1250"),
+      zod.literal("collectible"),
+      zod.literal("section1202"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      'T1.1a — special LTCG rate character (IRC §1(h)) for a long-term lot. \"section1250\" → unrecaptured §1250 gain (25% max); \"collectible\" → 28%-rate gain; \"section1202\" → taxable §1202 portion (28%). Null\/empty → default 0\/15\/20%.',
+    ),
+  unrecaptured1250Amount: zod
+    .number()
+    .nullish()
+    .describe(
+      'T1.1a — explicit unrecaptured §1250 portion of this lot\'s gain (≤ gain), for a partial-recapture §1250 lot. Null → the whole gain when gainClass is \"section1250\".',
+    ),
   isCovered: zod.boolean(),
   received1099B: zod.boolean(),
   notes: zod.string().nullish(),
@@ -3894,6 +3927,23 @@ export const CreateCapitalTransactionBody = zod.object({
     .describe(
       "PREP-B1 — 2-letter state code for the situs of the underlying real\/tangible property. With the nonresident_source_allocation marker on, the gain is sourced to that state as non-resident income (real-property situs rule). Intangible gains (stocks\/bonds) carry no situs (4 U.S.C. §114(a)).",
     ),
+  gainClass: zod
+    .union([
+      zod.literal("section1250"),
+      zod.literal("collectible"),
+      zod.literal("section1202"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      'T1.1a — special LTCG rate character (IRC §1(h)) for a long-term lot. \"section1250\" → unrecaptured §1250 gain (25% max); \"collectible\" → 28%-rate gain; \"section1202\" → taxable §1202 portion (28%). Null\/empty → default 0\/15\/20%.',
+    ),
+  unrecaptured1250Amount: zod
+    .number()
+    .nullish()
+    .describe(
+      'T1.1a — explicit unrecaptured §1250 portion of this lot\'s gain (≤ gain), for a partial-recapture §1250 lot. Null → the whole gain when gainClass is \"section1250\".',
+    ),
   isCovered: zod.boolean().optional(),
   received1099B: zod.boolean().optional(),
   notes: zod.string().nullish(),
@@ -3942,6 +3992,23 @@ export const UpdateCapitalTransactionBody = zod.object({
     .describe(
       "PREP-B1 — 2-letter state code for the situs of the underlying real\/tangible property. With the nonresident_source_allocation marker on, the gain is sourced to that state as non-resident income (real-property situs rule). Intangible gains (stocks\/bonds) carry no situs (4 U.S.C. §114(a)).",
     ),
+  gainClass: zod
+    .union([
+      zod.literal("section1250"),
+      zod.literal("collectible"),
+      zod.literal("section1202"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      'T1.1a — special LTCG rate character (IRC §1(h)) for a long-term lot. \"section1250\" → unrecaptured §1250 gain (25% max); \"collectible\" → 28%-rate gain; \"section1202\" → taxable §1202 portion (28%). Null\/empty → default 0\/15\/20%.',
+    ),
+  unrecaptured1250Amount: zod
+    .number()
+    .nullish()
+    .describe(
+      'T1.1a — explicit unrecaptured §1250 portion of this lot\'s gain (≤ gain), for a partial-recapture §1250 lot. Null → the whole gain when gainClass is \"section1250\".',
+    ),
   isCovered: zod.boolean().optional(),
   received1099B: zod.boolean().optional(),
   notes: zod.string().nullish(),
@@ -3982,6 +4049,23 @@ export const UpdateCapitalTransactionResponse = zod.object({
     .nullish()
     .describe(
       "PREP-B1 — 2-letter state code for the situs of the underlying real\/tangible property. With the nonresident_source_allocation marker on, the gain is sourced to that state as non-resident income (real-property situs rule). Intangible gains (stocks\/bonds) carry no situs (4 U.S.C. §114(a)).",
+    ),
+  gainClass: zod
+    .union([
+      zod.literal("section1250"),
+      zod.literal("collectible"),
+      zod.literal("section1202"),
+      zod.literal(null),
+    ])
+    .nullish()
+    .describe(
+      'T1.1a — special LTCG rate character (IRC §1(h)) for a long-term lot. \"section1250\" → unrecaptured §1250 gain (25% max); \"collectible\" → 28%-rate gain; \"section1202\" → taxable §1202 portion (28%). Null\/empty → default 0\/15\/20%.',
+    ),
+  unrecaptured1250Amount: zod
+    .number()
+    .nullish()
+    .describe(
+      'T1.1a — explicit unrecaptured §1250 portion of this lot\'s gain (≤ gain), for a partial-recapture §1250 lot. Null → the whole gain when gainClass is \"section1250\".',
     ),
   isCovered: zod.boolean(),
   received1099B: zod.boolean(),

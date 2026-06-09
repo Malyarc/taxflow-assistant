@@ -1322,6 +1322,10 @@ export const AdjustmentAdjustmentType = {
   ct_ira_distribution: "ct_ira_distribution",
   nonresident_source_allocation: "nonresident_source_allocation",
   part_year_income_pct_method: "part_year_income_pct_method",
+  unrecaptured_section_1250_gain: "unrecaptured_section_1250_gain",
+  collectibles_28_rate_gain: "collectibles_28_rate_gain",
+  section_1231_lookback_loss: "section_1231_lookback_loss",
+  months_without_minimum_coverage: "months_without_minimum_coverage",
 } as const;
 
 export interface Adjustment {
@@ -1465,6 +1469,10 @@ export const CreateAdjustmentBodyAdjustmentType = {
   ct_ira_distribution: "ct_ira_distribution",
   nonresident_source_allocation: "nonresident_source_allocation",
   part_year_income_pct_method: "part_year_income_pct_method",
+  unrecaptured_section_1250_gain: "unrecaptured_section_1250_gain",
+  collectibles_28_rate_gain: "collectibles_28_rate_gain",
+  section_1231_lookback_loss: "section_1231_lookback_loss",
+  months_without_minimum_coverage: "months_without_minimum_coverage",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -1604,6 +1612,10 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   ct_ira_distribution: "ct_ira_distribution",
   nonresident_source_allocation: "nonresident_source_allocation",
   part_year_income_pct_method: "part_year_income_pct_method",
+  unrecaptured_section_1250_gain: "unrecaptured_section_1250_gain",
+  collectibles_28_rate_gain: "collectibles_28_rate_gain",
+  section_1231_lookback_loss: "section_1231_lookback_loss",
+  months_without_minimum_coverage: "months_without_minimum_coverage",
 } as const;
 
 export interface UpdateAdjustmentBody {
@@ -1981,6 +1993,20 @@ export const CapitalTransactionFormBox = {
   F: "F",
 } as const;
 
+/**
+ * T1.1a — special LTCG rate character (IRC §1(h)) for a long-term lot. "section1250" → unrecaptured §1250 gain (25% max); "collectible" → 28%-rate gain; "section1202" → taxable §1202 portion (28%). Null/empty → default 0/15/20%.
+ * @nullable
+ */
+export type CapitalTransactionGainClass =
+  | (typeof CapitalTransactionGainClass)[keyof typeof CapitalTransactionGainClass]
+  | null;
+
+export const CapitalTransactionGainClass = {
+  section1250: "section1250",
+  collectible: "collectible",
+  section1202: "section1202",
+} as const;
+
 export interface CapitalTransaction {
   id: number;
   clientId: number;
@@ -2014,6 +2040,16 @@ export interface CapitalTransaction {
    * @nullable
    */
   propertyStateSitus?: string | null;
+  /**
+   * T1.1a — special LTCG rate character (IRC §1(h)) for a long-term lot. "section1250" → unrecaptured §1250 gain (25% max); "collectible" → 28%-rate gain; "section1202" → taxable §1202 portion (28%). Null/empty → default 0/15/20%.
+   * @nullable
+   */
+  gainClass?: CapitalTransactionGainClass;
+  /**
+   * T1.1a — explicit unrecaptured §1250 portion of this lot's gain (≤ gain), for a partial-recapture §1250 lot. Null → the whole gain when gainClass is "section1250".
+   * @nullable
+   */
+  unrecaptured1250Amount?: number | null;
   isCovered: boolean;
   received1099B: boolean;
   /** @nullable */
@@ -2032,6 +2068,20 @@ export const CreateCapitalTransactionBodyFormBox = {
   D: "D",
   E: "E",
   F: "F",
+} as const;
+
+/**
+ * T1.1a — special LTCG rate character (IRC §1(h)) for a long-term lot. "section1250" → unrecaptured §1250 gain (25% max); "collectible" → 28%-rate gain; "section1202" → taxable §1202 portion (28%). Null/empty → default 0/15/20%.
+ * @nullable
+ */
+export type CreateCapitalTransactionBodyGainClass =
+  | (typeof CreateCapitalTransactionBodyGainClass)[keyof typeof CreateCapitalTransactionBodyGainClass]
+  | null;
+
+export const CreateCapitalTransactionBodyGainClass = {
+  section1250: "section1250",
+  collectible: "collectible",
+  section1202: "section1202",
 } as const;
 
 export interface CreateCapitalTransactionBody {
@@ -2065,6 +2115,16 @@ export interface CreateCapitalTransactionBody {
    * @nullable
    */
   propertyStateSitus?: string | null;
+  /**
+   * T1.1a — special LTCG rate character (IRC §1(h)) for a long-term lot. "section1250" → unrecaptured §1250 gain (25% max); "collectible" → 28%-rate gain; "section1202" → taxable §1202 portion (28%). Null/empty → default 0/15/20%.
+   * @nullable
+   */
+  gainClass?: CreateCapitalTransactionBodyGainClass;
+  /**
+   * T1.1a — explicit unrecaptured §1250 portion of this lot's gain (≤ gain), for a partial-recapture §1250 lot. Null → the whole gain when gainClass is "section1250".
+   * @nullable
+   */
+  unrecaptured1250Amount?: number | null;
   isCovered?: boolean;
   received1099B?: boolean;
   /** @nullable */
@@ -2081,6 +2141,20 @@ export const UpdateCapitalTransactionBodyFormBox = {
   D: "D",
   E: "E",
   F: "F",
+} as const;
+
+/**
+ * T1.1a — special LTCG rate character (IRC §1(h)) for a long-term lot. "section1250" → unrecaptured §1250 gain (25% max); "collectible" → 28%-rate gain; "section1202" → taxable §1202 portion (28%). Null/empty → default 0/15/20%.
+ * @nullable
+ */
+export type UpdateCapitalTransactionBodyGainClass =
+  | (typeof UpdateCapitalTransactionBodyGainClass)[keyof typeof UpdateCapitalTransactionBodyGainClass]
+  | null;
+
+export const UpdateCapitalTransactionBodyGainClass = {
+  section1250: "section1250",
+  collectible: "collectible",
+  section1202: "section1202",
 } as const;
 
 export interface UpdateCapitalTransactionBody {
@@ -2114,6 +2188,16 @@ export interface UpdateCapitalTransactionBody {
    * @nullable
    */
   propertyStateSitus?: string | null;
+  /**
+   * T1.1a — special LTCG rate character (IRC §1(h)) for a long-term lot. "section1250" → unrecaptured §1250 gain (25% max); "collectible" → 28%-rate gain; "section1202" → taxable §1202 portion (28%). Null/empty → default 0/15/20%.
+   * @nullable
+   */
+  gainClass?: UpdateCapitalTransactionBodyGainClass;
+  /**
+   * T1.1a — explicit unrecaptured §1250 portion of this lot's gain (≤ gain), for a partial-recapture §1250 lot. Null → the whole gain when gainClass is "section1250".
+   * @nullable
+   */
+  unrecaptured1250Amount?: number | null;
   isCovered?: boolean;
   received1099B?: boolean;
   /** @nullable */
