@@ -76,6 +76,7 @@ export interface Client {
   spouseEarnedIncome?: number | null;
   hsaIsFamilyCoverage?: boolean;
   iraCoveredByWorkplacePlan?: boolean;
+  iraSpouseCoveredByWorkplacePlan?: boolean;
   /** Count of eligible K-12 educators on the return (0/1/2). Each gets up to $300 above-the-line. */
   eligibleEducatorCount?: number;
   /**
@@ -246,6 +247,7 @@ export interface CreateClientBody {
   spouseEarnedIncome?: number | null;
   hsaIsFamilyCoverage?: boolean;
   iraCoveredByWorkplacePlan?: boolean;
+  iraSpouseCoveredByWorkplacePlan?: boolean;
   eligibleEducatorCount?: number;
   /** @nullable */
   acaAnnualPremium?: number | null;
@@ -347,6 +349,7 @@ export interface UpdateClientBody {
   spouseEarnedIncome?: number | null;
   hsaIsFamilyCoverage?: boolean;
   iraCoveredByWorkplacePlan?: boolean;
+  iraSpouseCoveredByWorkplacePlan?: boolean;
   eligibleEducatorCount?: number;
   /** @nullable */
   acaAnnualPremium?: number | null;

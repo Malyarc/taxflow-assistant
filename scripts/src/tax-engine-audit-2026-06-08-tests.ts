@@ -10,7 +10,7 @@ import {
   summarize1099s,
   type TaxReturnInputs,
 } from "../../artifacts/api-server/src/lib/taxReturnEngine";
-import { calculateStateTax, saversCreditRateFor, getDependentStandardDeductionBase, calculateAmt, nycEitcRateForAgi, calculateMultiStateTax } from "../../artifacts/api-server/src/lib/taxCalculator";
+import { calculateStateTax, saversCreditRateFor, getDependentStandardDeductionBase, calculateAmt, nycEitcRateForAgi, calculateMultiStateTax, calculatePassiveActivityLossAllowance, calculateRetirementDeductions } from "../../artifacts/api-server/src/lib/taxCalculator";
 import { validateW2 } from "@workspace/validation";
 import { mapInfoReturnToInputs } from "../../artifacts/api-server/src/lib/documentExtractor";
 import { calculateStateIndividualMandatePenalty, caFilingThreshold } from "../../artifacts/api-server/src/lib/stateMandate";
@@ -612,6 +612,50 @@ header("M4 — CA FTB 3853 filing threshold + bronze cap headcount ≤ 5");
   });
   check("CA bronze cap counts 5 not 8 → $348×12×5 = $20,880", bronzeCase.penalty, 20880.0, 0.02);
   ok("CA bronze cap is what binds (not uncapped 8-person)", bronzeCase.method === "bronze_cap");
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// CF3 — §469(i)(5)(B): a married-filing-separately taxpayer who lived WITH their
+// spouse at any time during the year gets a $0 rental special allowance (not the
+// $12,500 lived-apart amount). The engine granted $12,500 unconditionally.
+// ════════════════════════════════════════════════════════════════════════════
+header("CF3 — §469(i) MFS-lived-together → $0 special allowance");
+{
+  const pal = (mfsLivedApartAllYear: boolean, status: string, magi: number) =>
+    calculatePassiveActivityLossAllowance({
+      rentalLoss: 20000, modifiedAgi: magi, filingStatus: status,
+      isActiveParticipant: true, isRealEstateProfessional: false, mfsLivedApartAllYear,
+    });
+  check("MFS lived TOGETHER, MAGI $40k → $0 allowed (was $12,500)", pal(false, "married_filing_separately", 40000).allowedThisYear, 0, 0.01);
+  ok("MFS lived together → full loss suspended", pal(false, "married_filing_separately", 40000).suspendedToNextYear === 20000);
+  check("MFS lived APART, MAGI $40k → $12,500 allowed", pal(true, "married_filing_separately", 40000).allowedThisYear, 12500, 0.01);
+  // MFS lived apart, MAGI $60k in the $50k-$75k phase-out: 12,500 − (10,000×0.5) = 7,500.
+  check("MFS lived apart, MAGI $60k → $7,500 (phase-out)", pal(true, "married_filing_separately", 60000).allowedThisYear, 7500, 0.01);
+  // Non-MFS is unaffected: single, MAGI $90k (< $100k phaseStart) → full $20k loss allowed.
+  check("Single MAGI $90k → full $20,000 (unaffected)", pal(false, "single", 90000).allowedThisYear, 20000, 0.01);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// E4 — §219(g)(7): taxpayer NOT covered by a workplace plan but SPOUSE is →
+// the separate higher MFJ phase-out band ($230k-$240k 2024 / $236k-$246k 2025).
+// The engine previously allowed the full deduction regardless of AGI.
+// ════════════════════════════════════════════════════════════════════════════
+header("E4 — §219(g)(7) spouse-covered IRA phase-out band");
+{
+  const ira = (spouseCovered: boolean, agi: number, year: number, covered = false) =>
+    calculateRetirementDeductions({
+      hsaContribution: 0, hsaIsFamilyCoverage: false, iraContribution: 7000,
+      iraCoveredByWorkplacePlan: covered, iraSpouseCoveredByWorkplacePlan: spouseCovered,
+      age: 40, agi, filingStatus: "married_filing_jointly", taxYear: year,
+    }).iraDeductible;
+  // 2024 band $230k-$240k: AGI $235k → ($240k−$235k)/$10k × $7,000 = $3,500.
+  check("MFJ spouse-covered AGI $235k 2024 → $3,500", ira(true, 235000, 2024), 3500, 0.01);
+  check("MFJ spouse-covered AGI $245k 2024 → $0 (above band)", ira(true, 245000, 2024), 0, 0.01);
+  check("MFJ spouse-covered AGI $225k 2024 → $7,000 (below band)", ira(true, 225000, 2024), 7000, 0.01);
+  // 2025 band $236k-$246k: AGI $241k → ($246k−$241k)/$10k × $7,000 = $3,500.
+  check("MFJ spouse-covered AGI $241k 2025 → $3,500", ira(true, 241000, 2025), 3500, 0.01);
+  // Control: NEITHER spouse covered → full deduction at any AGI.
+  check("MFJ neither covered AGI $300k → full $7,000", ira(false, 300000, 2024), 7000, 0.01);
 }
 
 // ── summary ──────────────────────────────────────────────────────────────────

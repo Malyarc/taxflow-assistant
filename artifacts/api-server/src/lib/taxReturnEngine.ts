@@ -159,6 +159,9 @@ export interface ClientFacts {
   spouseEarnedIncome?: Numish;
   hsaIsFamilyCoverage?: boolean | null;
   iraCoveredByWorkplacePlan?: boolean | null;
+  /** E4 — §219(g)(7): taxpayer NOT covered by a workplace plan but SPOUSE is.
+   *  Triggers the higher MFJ/QSS IRA-deduction phase-out band. */
+  iraSpouseCoveredByWorkplacePlan?: boolean | null;
   eligibleEducatorCount?: number | null;
   acaAnnualPremium?: Numish;
   acaAnnualSlcsp?: Numish;
@@ -2545,6 +2548,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
       filingStatus: client.filingStatus,
       isActiveParticipant: client.rentalActiveParticipant ?? true,
       isRealEstateProfessional: client.rentalRealEstateProfessional ?? false,
+      mfsLivedApartAllYear: client.mfsLivedApartAllYear ?? false,
     });
     rentalNetAppliedToAgi = -passiveLossAllowance.allowedThisYear; // negative = reduces AGI
   }
@@ -2580,6 +2584,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     hsaIsFamilyCoverage: client.hsaIsFamilyCoverage ?? false,
     iraContribution: iraTraditionalAdj,
     iraCoveredByWorkplacePlan: client.iraCoveredByWorkplacePlan ?? false,
+    iraSpouseCoveredByWorkplacePlan: client.iraSpouseCoveredByWorkplacePlan ?? false,
     age: ageTaxpayer,
     agi: Math.max(0, totalIncomeProvisional - (deductionAdjustments + otherDeductions + se.deductibleHalf + sehi.deduction + educatorDeduction + Math.min(hsaContributionAdj, 10000))),
     filingStatus: client.filingStatus,
@@ -2625,6 +2630,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     hsaIsFamilyCoverage: client.hsaIsFamilyCoverage ?? false,
     iraContribution: iraTraditionalAdj,
     iraCoveredByWorkplacePlan: client.iraCoveredByWorkplacePlan ?? false,
+    iraSpouseCoveredByWorkplacePlan: client.iraSpouseCoveredByWorkplacePlan ?? false,
     age: ageTaxpayer,
     agi: magiForIra,
     filingStatus: client.filingStatus,

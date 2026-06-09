@@ -113,6 +113,13 @@
       "when": 1781039804984,
       "tag": "0015_legal_night_thrasher",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1781041630458,
+      "tag": "0016_elite_gamora",
+      "breakpoints": true
     }
   ]
 }

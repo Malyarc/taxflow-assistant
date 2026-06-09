@@ -1828,6 +1828,8 @@ components:
           type: boolean
         iraCoveredByWorkplacePlan:
           type: boolean
+        iraSpouseCoveredByWorkplacePlan:
+          type: boolean
         eligibleEducatorCount:
           type: integer
           description: Count of eligible K-12 educators on the return (0/1/2). Each gets up to $300 above-the-line.
@@ -1996,6 +1998,8 @@ components:
           type: boolean
         iraCoveredByWorkplacePlan:
           type: boolean
+        iraSpouseCoveredByWorkplacePlan:
+          type: boolean
         eligibleEducatorCount:
           type: integer
         acaAnnualPremium:
@@ -2093,6 +2097,8 @@ components:
         hsaIsFamilyCoverage:
           type: boolean
         iraCoveredByWorkplacePlan:
+          type: boolean
+        iraSpouseCoveredByWorkplacePlan:
           type: boolean
         eligibleEducatorCount:
           type: integer

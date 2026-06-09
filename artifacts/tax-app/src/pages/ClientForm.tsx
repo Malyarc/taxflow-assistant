@@ -52,6 +52,7 @@ interface FormState {
   spouseEarnedIncome: string;
   hsaIsFamilyCoverage: boolean;
   iraCoveredByWorkplacePlan: boolean;
+  iraSpouseCoveredByWorkplacePlan: boolean;
   // Phase 1.5 — educator count, ACA PTC inputs
   eligibleEducatorCount: number;
   acaAnnualPremium: string;
@@ -100,6 +101,7 @@ const defaultForm: FormState = {
   spouseEarnedIncome: "",
   hsaIsFamilyCoverage: false,
   iraCoveredByWorkplacePlan: false,
+  iraSpouseCoveredByWorkplacePlan: false,
   eligibleEducatorCount: 0,
   acaAnnualPremium: "",
   acaAnnualSlcsp: "",
@@ -151,6 +153,7 @@ export default function ClientForm({ editId }: Props) {
         spouseEarnedIncome?: number | null;
         hsaIsFamilyCoverage?: boolean;
         iraCoveredByWorkplacePlan?: boolean;
+        iraSpouseCoveredByWorkplacePlan?: boolean;
       };
       setForm({
         firstName: existing.firstName || "",
@@ -172,6 +175,7 @@ export default function ClientForm({ editId }: Props) {
         spouseEarnedIncome: e.spouseEarnedIncome != null ? String(e.spouseEarnedIncome) : "",
         hsaIsFamilyCoverage: e.hsaIsFamilyCoverage ?? false,
         iraCoveredByWorkplacePlan: e.iraCoveredByWorkplacePlan ?? false,
+        iraSpouseCoveredByWorkplacePlan: e.iraSpouseCoveredByWorkplacePlan ?? false,
         eligibleEducatorCount: e.eligibleEducatorCount ?? 0,
         acaAnnualPremium: e.acaAnnualPremium != null ? String(e.acaAnnualPremium) : "",
         acaAnnualSlcsp: e.acaAnnualSlcsp != null ? String(e.acaAnnualSlcsp) : "",
@@ -237,6 +241,7 @@ export default function ClientForm({ editId }: Props) {
       spouseEarnedIncome: form.spouseEarnedIncome === "" ? null : Number(form.spouseEarnedIncome),
       hsaIsFamilyCoverage: Boolean(form.hsaIsFamilyCoverage),
       iraCoveredByWorkplacePlan: Boolean(form.iraCoveredByWorkplacePlan),
+      iraSpouseCoveredByWorkplacePlan: Boolean(form.iraSpouseCoveredByWorkplacePlan),
       eligibleEducatorCount: Number(form.eligibleEducatorCount) || 0,
       acaAnnualPremium: form.acaAnnualPremium === "" ? null : Number(form.acaAnnualPremium),
       acaAnnualSlcsp: form.acaAnnualSlcsp === "" ? null : Number(form.acaAnnualSlcsp),
@@ -583,6 +588,19 @@ export default function ClientForm({ editId }: Props) {
                 <Label htmlFor="ira-plan" className="font-normal">
                   IRA: Covered by workplace retirement plan
                   <p className="text-xs text-muted-foreground mt-1">Triggers IRA deduction phase-out by AGI.</p>
+                </Label>
+              </div>
+              <div className="flex items-start gap-2">
+                <input
+                  id="ira-spouse-plan"
+                  type="checkbox"
+                  className="mt-1"
+                  checked={form.iraSpouseCoveredByWorkplacePlan}
+                  onChange={(e) => set("iraSpouseCoveredByWorkplacePlan", e.target.checked)}
+                />
+                <Label htmlFor="ira-spouse-plan" className="font-normal">
+                  IRA: Spouse covered (you are not) — §219(g)(7)
+                  <p className="text-xs text-muted-foreground mt-1">Higher MFJ/QSS phase-out band ($230k–$240k for 2024).</p>
                 </Label>
               </div>
             </div>

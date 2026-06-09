@@ -4388,6 +4388,17 @@ const IRA_DEDUCTION_PHASE_OUT: Record<TaxYear, Record<string, { start: number; e
   },
 };
 
+// E4 — IRC §219(g)(7): when the taxpayer is NOT an active participant but their
+// SPOUSE is, a separate (higher) MFJ/QSS phase-out range applies. MFS-with-a-
+// covered-spouse stays the statutory $0-$10,000 band. Verified vs Rev. Proc.
+// 2023-34 (2024 $230k-$240k), IR-2024-285 (2025 $236k-$246k), IR-2025-111
+// (2026 $242k-$252k).
+const IRA_SPOUSE_COVERED_PHASE_OUT: Record<TaxYear, { joint: { start: number; end: number }; mfs: { start: number; end: number } }> = {
+  2024: { joint: { start: 230000, end: 240000 }, mfs: { start: 0, end: 10000 } },
+  2025: { joint: { start: 236000, end: 246000 }, mfs: { start: 0, end: 10000 } },
+  2026: { joint: { start: 242000, end: 252000 }, mfs: { start: 0, end: 10000 } },
+};
+
 export interface RetirementDeductionsCalculation {
   hsaContribution: number;
   hsaLimit: number;
@@ -4414,6 +4425,9 @@ export function calculateRetirementDeductions(params: {
   hsaEmployerContribution?: number;
   iraContribution: number;
   iraCoveredByWorkplacePlan: boolean;
+  /** E4 — §219(g)(7): taxpayer NOT covered but SPOUSE is covered by a workplace
+   *  plan. Triggers the separate higher MFJ/QSS phase-out band. */
+  iraSpouseCoveredByWorkplacePlan?: boolean;
   age: number; // 55+ HSA catch-up; 50+ IRA catch-up
   agi: number; // For IRA phase-out
   filingStatus: string;
@@ -4448,6 +4462,19 @@ export function calculateRetirementDeductions(params: {
     if (params.agi >= phase.end) iraPhaseOutFraction = 0;
     else if (params.agi > phase.start) {
       iraPhaseOutFraction = (phase.end - params.agi) / (phase.end - phase.start);
+    }
+  } else if (params.iraSpouseCoveredByWorkplacePlan) {
+    // E4 — §219(g)(7): taxpayer not covered but spouse is. Only meaningful for
+    // a joint return (MFJ/QSS) or MFS; a single/HoH filer has no spouse, so the
+    // deduction stays fully allowed.
+    const isJoint = params.filingStatus === "married_filing_jointly" || params.filingStatus === "qualifying_widow";
+    const isMfs = params.filingStatus === "married_filing_separately";
+    if (isJoint || isMfs) {
+      const phase = isMfs ? IRA_SPOUSE_COVERED_PHASE_OUT[year].mfs : IRA_SPOUSE_COVERED_PHASE_OUT[year].joint;
+      if (params.agi >= phase.end) iraPhaseOutFraction = 0;
+      else if (params.agi > phase.start) {
+        iraPhaseOutFraction = (phase.end - params.agi) / (phase.end - phase.start);
+      }
     }
   }
   const iraDeductible = iraContributionCapped * iraPhaseOutFraction;
@@ -5693,6 +5720,11 @@ export function calculatePassiveActivityLossAllowance(params: {
   filingStatus: string;
   isActiveParticipant: boolean;
   isRealEstateProfessional: boolean;
+  /** CF3 — §469(i)(5)(B): a married-filing-separately taxpayer who lived WITH
+   *  their spouse at any time during the year gets a $0 special allowance (not
+   *  the $12,500 lived-apart amount). Defaults false (the conservative MFS
+   *  assumption is "lived together" → $0). */
+  mfsLivedApartAllYear?: boolean;
 }): PassiveActivityLossResult {
   const result = {
     rentalLoss: params.rentalLoss,
@@ -5717,6 +5749,13 @@ export function calculatePassiveActivityLossAllowance(params: {
   // Active participant → $25k allowance with MAGI phase-out
   if (params.isActiveParticipant) {
     const isMfs = params.filingStatus === "married_filing_separately";
+    // CF3 — §469(i)(5)(B): MFS taxpayers who lived with their spouse at ANY
+    // time during the year are barred from the special allowance entirely
+    // ($0, full loss suspended). Only MFS-lived-apart-all-year gets $12,500.
+    if (isMfs && !params.mfsLivedApartAllYear) {
+      result.suspendedToNextYear = params.rentalLoss;
+      return result;
+    }
     const cap = isMfs ? 12500 : 25000;
     const phaseStart = isMfs ? 50000 : 100000;
     const phaseEnd = isMfs ? 75000 : 150000;

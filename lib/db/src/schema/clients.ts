@@ -34,6 +34,8 @@ export const clientsTable = pgTable("clients", {
   hsaIsFamilyCoverage: boolean("hsa_is_family_coverage").notNull().default(false),
   /** Whether taxpayer is covered by a workplace retirement plan — drives IRA deduction phase-out */
   iraCoveredByWorkplacePlan: boolean("ira_covered_by_workplace_plan").notNull().default(false),
+  // E4 (migration 0016) — §219(g)(7): taxpayer not covered but spouse is.
+  iraSpouseCoveredByWorkplacePlan: boolean("ira_spouse_covered_by_workplace_plan").notNull().default(false),
   /** Count of eligible K-12 educators (0/1/2). Each eligible educator gets a $300 above-the-line deduction. */
   eligibleEducatorCount: integer("eligible_educator_count").notNull().default(0),
   /** ACA: Form 1095-A annual premium total. Required for PTC reconciliation. */

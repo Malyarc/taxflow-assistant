@@ -1,5 +1,30 @@
 # Full-App Maximum Audit — 2026-06-08 (T0.3)
 
+## FINAL OUTCOME — ZERO DEFERRALS REMAINING (2026-06-09 close-out, +8 commits, shipped + deployed + prod-verified)
+Every remaining deferred finding is now FIXED. The 8 closing commits (`869d39a` F3+E2,
+`a64d5c0` state-batch-3, `772b276` M4, `17671c2` SCH1, `3cfd96f` PDF2, `6050ccc` FE1+FE3,
+`ae19308` runner) were deployed to prod (migration 0015 applied, api-server rebuilt, frontend
+rsynced, re-scored, health + SCH1/M4 + seeded-client + PDF prod-smoked green). Each item is
+primary-source-verified and carries hand-calc'd regressions.
+
+| Item | What shipped | Verification |
+|---|---|---|
+| **F3** §1250/28% loss-absorption | A coexisting LT loss now erodes the 28% bucket first, then §1250; buckets bounded by `grossPositiveLt` (undercount-only → never under-tax). | section1250-1231 suite (92) + audit file |
+| **E2** MFJ per-spouse Sch SE | Opt-in `spouse` tag on a self_employment_income adjustment (migration 0014); default stays the conservative over-tax. | audit file (2 cases) |
+| **S10 WV SS phase-out** | HB 4880 decreasing modification 35%/65%/100% above $50k/$100k AGI; 100% exempt at/below the floor (≤). | audit file (5 cases), TIR-cited |
+| **M3 MA mandate** | TY2024/2025 6-tier schedules from MA DOR **TIR 24-1** ($24/48/71/109/127/175) + **TIR 25-1** ($25/49/73/113/132/187); 2026 holds 2025. | audit file (5 cases), primary-source |
+| **MD-08 graduated counties** | Anne Arundel + Frederick graduated local brackets (single vs joint columns) via a new `localBrackets` path on LocalityInfo. | audit file (5 cases), MD Comptroller table |
+| **M4** CA mandate threshold + bronze cap | CA % method now uses the FTB 3853 household-size filing threshold (2024/2025); §5000A bronze cap counts ≤5 individuals (CA/NJ/RI/DC). | audit file (11 cases), FTB-cited; prod-smoked |
+| **SCH1** surface T1.1 outputs | 4 persisted scalar columns (migration 0015) + openapi TaxReturn fields + UI disclosure rows for mandate / §1250 / 28% / Schedule H. | new integration suite (11), prod-smoked exact values |
+| **PDF2** PDF disclosure rows | Summary PDF nets §72(t)/HSA/Sch-H out of the "regular tax" line and discloses each + §1250/28% + mandate. | pypdf-verified render + integration PDF asserts |
+| **FE1** Assets money inputs | 3 H5 Assets dialog dollar fields `<Input type=number>` → `<CurrencyInput>`. | typecheck + build |
+| **FE3** delta colors | `amendDeltaClass`/`yoyDeltaClass` — refund/credit/payment/deduction lines green-on-increase, tax/income red-on-increase (1040-X 3 tables + year-compare). | typecheck + build |
+
+Audit regression file `tax-engine-audit-2026-06-08-tests.ts` now **96** assertions; new
+`tax-engine-sch1-surface-integration-tests.ts` (11). Full green bar: 4 typechecks clean, 80 no-API
+suites / 4,769 parsed assertions + the 96 audit + property harness (5,636 runs) green, all yes-API
+integration suites green. **No deferred items remain from this audit.**
+
 ## FINAL OUTCOME — FIX-ALL PASS (14 commits, all shipped + deployed + prod-verified)
 After the initial 4-commit audit ship (below), a full "fix every remaining finding" pass landed 10
 more commits (`335bde7` C1 · `cf90947` C3 · `d08481b` C4+CF2 · `ce3a943` E1 · `<E3b>` · `43042cd` AI

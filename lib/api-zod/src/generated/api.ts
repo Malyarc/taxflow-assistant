@@ -126,6 +126,7 @@ export const CreateClientBody = zod.object({
   spouseEarnedIncome: zod.number().nullish(),
   hsaIsFamilyCoverage: zod.boolean().optional(),
   iraCoveredByWorkplacePlan: zod.boolean().optional(),
+  iraSpouseCoveredByWorkplacePlan: zod.boolean().optional(),
   eligibleEducatorCount: zod.number().optional(),
   acaAnnualPremium: zod.number().nullish(),
   acaAnnualSlcsp: zod.number().nullish(),
@@ -257,6 +258,7 @@ export const GetClientResponse = zod.object({
   spouseEarnedIncome: zod.number().nullish(),
   hsaIsFamilyCoverage: zod.boolean().optional(),
   iraCoveredByWorkplacePlan: zod.boolean().optional(),
+  iraSpouseCoveredByWorkplacePlan: zod.boolean().optional(),
   eligibleEducatorCount: zod
     .number()
     .optional()
@@ -430,6 +432,7 @@ export const UpdateClientBody = zod.object({
   spouseEarnedIncome: zod.number().nullish(),
   hsaIsFamilyCoverage: zod.boolean().optional(),
   iraCoveredByWorkplacePlan: zod.boolean().optional(),
+  iraSpouseCoveredByWorkplacePlan: zod.boolean().optional(),
   eligibleEducatorCount: zod.number().optional(),
   acaAnnualPremium: zod.number().nullish(),
   acaAnnualSlcsp: zod.number().nullish(),
@@ -554,6 +557,7 @@ export const UpdateClientResponse = zod.object({
   spouseEarnedIncome: zod.number().nullish(),
   hsaIsFamilyCoverage: zod.boolean().optional(),
   iraCoveredByWorkplacePlan: zod.boolean().optional(),
+  iraSpouseCoveredByWorkplacePlan: zod.boolean().optional(),
   eligibleEducatorCount: zod
     .number()
     .optional()
@@ -4502,6 +4506,7 @@ export const GetRecentClientsResponseItem = zod.object({
   spouseEarnedIncome: zod.number().nullish(),
   hsaIsFamilyCoverage: zod.boolean().optional(),
   iraCoveredByWorkplacePlan: zod.boolean().optional(),
+  iraSpouseCoveredByWorkplacePlan: zod.boolean().optional(),
   eligibleEducatorCount: zod
     .number()
     .optional()

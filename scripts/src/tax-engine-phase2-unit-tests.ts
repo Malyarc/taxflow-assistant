@@ -904,15 +904,18 @@ header("§469 PAL — Not active, not pro (full suspension)");
   check("All $10k suspended", r.suspendedToNextYear, 10000);
 }
 
-header("§469 PAL — MFS active participant (halved allowance)");
+header("§469 PAL — MFS active participant, LIVED APART (halved allowance)");
 {
-  // MFS gets $12,500 cap and $50k-$75k phase-out.
+  // MFS who lived APART all year gets the $12,500 cap and $50k-$75k phase-out.
+  // (CF3 — MFS who lived WITH their spouse gets $0 per §469(i)(5)(B); tested in
+  //  the audit suite. This case sets mfsLivedApartAllYear to exercise $12,500.)
   const r = calculatePassiveActivityLossAllowance({
     rentalLoss: 8000,
     modifiedAgi: 60000,
     filingStatus: "married_filing_separately",
     isActiveParticipant: true,
     isRealEstateProfessional: false,
+    mfsLivedApartAllYear: true,
   });
   check("MFS cap = $12,500", r.allowanceCap, 12500);
   // Phase-out at MAGI $60k: ($60k - $50k) × 0.5 = $5k reduction

@@ -1,0 +1,1 @@
+ALTER TABLE "clients" ADD COLUMN "ira_spouse_covered_by_workplace_plan" boolean DEFAULT false NOT NULL;
