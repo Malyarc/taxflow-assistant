@@ -8006,7 +8006,7 @@ function phaseOutLinear(base: number, magi: number, threshold: number, ratePerDo
 }
 const obbbaIsJoint = (fs: string): boolean =>
   fs === "married_filing_jointly" || fs === "qualifying_widow";
-const obbbaFmt = (n: number) =>
+const fmtUsd0 = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 
 function detectTipsDeduction(args: {
@@ -8036,9 +8036,9 @@ function detectTipsDeduction(args: {
     estSavings, confidence: strategy.confidence, cpaEffortHours: strategy.cpaEffortHours,
     recurring: strategy.recurring,
     rationale:
-      `Client reported ${obbbaFmt(Math.round(tips))} of qualified tips. OBBBA §224 deducts up to ` +
-      `${obbbaFmt(Math.min(tips, 25_000))} (cap $25,000), phased out $100 per $1,000 of MAGI over ` +
-      `${obbbaFmt(threshold)} — deductible portion ${obbbaFmt(Math.round(deduction))} this year, above-the-line.`,
+      `Client reported ${fmtUsd0(Math.round(tips))} of qualified tips. OBBBA §224 deducts up to ` +
+      `${fmtUsd0(Math.min(tips, 25_000))} (cap $25,000), phased out $100 per $1,000 of MAGI over ` +
+      `${fmtUsd0(threshold)} — deductible portion ${fmtUsd0(Math.round(deduction))} this year, above-the-line.`,
     action: interpolate(strategy.action, vars),
     prerequisiteData: strategy.prerequisiteData,
     citation: `${strategy.ircSection}; ${strategy.irsPub}`,
@@ -8048,7 +8048,7 @@ function detectTipsDeduction(args: {
     },
     assumptions: [
       `OBBBA (P.L. 119-21) §224 — NEW deduction, TY2025–2028 only; above-the-line (itemizers + non-itemizers).`,
-      `Cap $25,000; phase-out $100 per $1,000 of MAGI over ${obbbaFmt(threshold)} (single $150k / MFJ $300k).`,
+      `Cap $25,000; phase-out $100 per $1,000 of MAGI over ${fmtUsd0(threshold)} (single $150k / MFJ $300k).`,
       `Occupation must have customarily + regularly received tips on/before 2024-12-31 (Treasury TTOC list); SSTB excluded. CPA confirms eligibility + the qualified-tip amount.`,
       `Engine has no occupation data — fires only on an explicit qualified_tips adjustment (CPA-supplied).`,
     ],
@@ -8083,9 +8083,9 @@ function detectOvertimeDeduction(args: {
     estSavings, confidence: strategy.confidence, cpaEffortHours: strategy.cpaEffortHours,
     recurring: strategy.recurring,
     rationale:
-      `Client reported ${obbbaFmt(Math.round(ot))} of qualified overtime premium. OBBBA §225 deducts up to ` +
-      `${obbbaFmt(cap)} (${isJoint ? "MFJ" : "single"} cap), phased out $100 per $1,000 of MAGI over ` +
-      `${obbbaFmt(threshold)} — deductible portion ${obbbaFmt(Math.round(deduction))} this year, above-the-line.`,
+      `Client reported ${fmtUsd0(Math.round(ot))} of qualified overtime premium. OBBBA §225 deducts up to ` +
+      `${fmtUsd0(cap)} (${isJoint ? "MFJ" : "single"} cap), phased out $100 per $1,000 of MAGI over ` +
+      `${fmtUsd0(threshold)} — deductible portion ${fmtUsd0(Math.round(deduction))} this year, above-the-line.`,
     action: interpolate(strategy.action, vars),
     prerequisiteData: strategy.prerequisiteData,
     citation: `${strategy.ircSection}; ${strategy.irsPub}`,
@@ -8095,7 +8095,7 @@ function detectOvertimeDeduction(args: {
     },
     assumptions: [
       `OBBBA (P.L. 119-21) §225 — NEW deduction, TY2025–2028 only; above-the-line (itemizers + non-itemizers).`,
-      `Cap $12,500 single / $25,000 MFJ; phase-out $100 per $1,000 of MAGI over ${obbbaFmt(threshold)}.`,
+      `Cap $12,500 single / $25,000 MFJ; phase-out $100 per $1,000 of MAGI over ${fmtUsd0(threshold)}.`,
       `Only the FLSA premium "half" portion (pay in excess of the regular rate) qualifies — NOT the full time-and-a-half. CPA confirms the qualified-overtime amount from W-2 box reporting.`,
       `Engine has no overtime-hours data — fires only on an explicit qualified_overtime adjustment (CPA-supplied).`,
     ],
@@ -8128,9 +8128,9 @@ function detectCarLoanInterestDeduction(args: {
     estSavings, confidence: strategy.confidence, cpaEffortHours: strategy.cpaEffortHours,
     recurring: strategy.recurring,
     rationale:
-      `Client reported ${obbbaFmt(Math.round(interest))} of qualified passenger-vehicle loan interest. OBBBA ` +
-      `§163(h)(4) deducts up to ${obbbaFmt(10_000)}, phased out $200 per $1,000 of MAGI over ${obbbaFmt(threshold)} ` +
-      `— deductible portion ${obbbaFmt(Math.round(deduction))} this year, above-the-line.`,
+      `Client reported ${fmtUsd0(Math.round(interest))} of qualified passenger-vehicle loan interest. OBBBA ` +
+      `§163(h)(4) deducts up to ${fmtUsd0(10_000)}, phased out $200 per $1,000 of MAGI over ${fmtUsd0(threshold)} ` +
+      `— deductible portion ${fmtUsd0(Math.round(deduction))} this year, above-the-line.`,
     action: interpolate(strategy.action, vars),
     prerequisiteData: strategy.prerequisiteData,
     citation: `${strategy.ircSection}; ${strategy.irsPub}`,
@@ -8140,7 +8140,7 @@ function detectCarLoanInterestDeduction(args: {
     },
     assumptions: [
       `OBBBA (P.L. 119-21) §163(h)(4) — NEW deduction, TY2025–2028 only; above-the-line (itemizers + non-itemizers).`,
-      `Cap $10,000; phase-out $200 per $1,000 of MAGI over ${obbbaFmt(threshold)} (single $100k / MFJ $200k) — DOUBLE the tips/overtime rate.`,
+      `Cap $10,000; phase-out $200 per $1,000 of MAGI over ${fmtUsd0(threshold)} (single $100k / MFJ $200k) — DOUBLE the tips/overtime rate.`,
       `Vehicle must be NEW (original use begins with taxpayer), personal-use, FINAL ASSEMBLY IN THE U.S., loan secured by first lien, VIN reported. Leases + used vehicles do NOT qualify. Loans originated after 2024-12-31.`,
       `Engine has no auto-loan data — fires only on an explicit qualified_car_loan_interest adjustment (CPA-supplied).`,
     ],
@@ -8175,8 +8175,8 @@ function detectSeniorDeduction(args: {
     estSavings, confidence: strategy.confidence, cpaEffortHours: strategy.cpaEffortHours,
     recurring: strategy.recurring,
     rationale:
-      `${numSeniors} taxpayer(s) age 65+ → OBBBA senior bonus deduction base ${obbbaFmt(base)} ` +
-      `(${obbbaFmt(6_000)} each), reduced 6% of MAGI over ${obbbaFmt(threshold)} → ${obbbaFmt(Math.round(deduction))} ` +
+      `${numSeniors} taxpayer(s) age 65+ → OBBBA senior bonus deduction base ${fmtUsd0(base)} ` +
+      `(${fmtUsd0(6_000)} each), reduced 6% of MAGI over ${fmtUsd0(threshold)} → ${fmtUsd0(Math.round(deduction))} ` +
       `deductible this year, above-the-line + on TOP of the existing age-65 additional standard deduction.`,
     action: interpolate(strategy.action, vars),
     prerequisiteData: strategy.prerequisiteData,
@@ -8293,6 +8293,332 @@ export function annotateVerifiedSavings(hits: OpportunityHit[]): void {
  * Returns hits sorted by `estSavings` descending so the highest-impact
  * opportunity is presented first in the Planning tab.
  */
+// ── G1.101–G1.106 — Estate & gift planning touchpoints (qualitative) ──────
+//
+// The individual-1040 engine does NOT compute estate or gift tax, so these are
+// INFORMATIONAL flags: they surface a wealth-transfer opportunity for an
+// affluent client with a clearly-stated, conservative illustrative value and a
+// LOW confidence (0.40–0.50) so they never outrank the engine-verified
+// income-tax strategies. estSavings is an illustrative annual estate-tax
+// reduction (or, for §1014, an income-tax saving); the CPA sizes it to the
+// client's actual balance sheet via the prerequisiteData. These are NOT
+// engine-verified what-ifs — the engine has no estate-tax model to verify them.
+
+/** Annual gift-tax exclusion (§2503(b)). IRS Rev. Proc. 2023-34 / 2024-40 / 2025-32. */
+const ANNUAL_GIFT_EXCLUSION: Record<TaxYear, number> = {
+  2024: 18_000,
+  2025: 19_000,
+  2026: 19_000,
+};
+
+/** Estate/gift basic exclusion amount (BEA). 2024/2025 indexed; 2026 OBBBA $15M permanent. */
+const ESTATE_BASIC_EXCLUSION: Record<TaxYear, number> = {
+  2024: 13_610_000,
+  2025: 13_990_000,
+  2026: 15_000_000,
+};
+
+/** Flat top federal estate/gift-tax rate (§2001(c)). */
+const ESTATE_TOP_RATE = 0.4;
+
+// Illustrative assumptions for the bespoke-structure flags (SLAT/ILIT/GRAT/529).
+// The CPA replaces these with the client's actual numbers — they only set the
+// headline magnitude so the opportunity ranks sensibly below verified items.
+const SUPERFUND_GROWTH_FACTOR = (Math.pow(1.06, 10) - 1) * 0.15; // 10-yr @6%, 15% LTCG ≈ 0.118627
+const SLAT_ILLUSTRATIVE_FUNDING = 1_000_000;
+const SLAT_GROWTH_ASSUMED = 0.06;
+const ILIT_ILLUSTRATIVE_FACE = 2_000_000;
+const ILIT_ANNUALIZE_YEARS = 25;
+const GRAT_ILLUSTRATIVE_FUNDING = 1_000_000;
+const GRAT_GROWTH_ASSUMED = 0.08;
+const GRAT_SECTION_7520_RATE = 0.054;
+const STEPUP_LTCG_RATE_ASSUMED = 0.15;
+
+/** Shared affluent-estate wealth proxy (the engine can't see net worth). */
+function estateWealthProxy(computed: ComputedTaxReturn, agiFloor: number, niiFloor: number): boolean {
+  const agi = computed.adjustedGrossIncome ?? 0;
+  const nii = computed.detail.niit?.investmentIncome ?? 0;
+  return agi >= agiFloor || nii >= niiFloor;
+}
+
+function isMfjLike(client: ClientFacts): boolean {
+  return (
+    client.filingStatus === "married_filing_jointly" ||
+    client.filingStatus === "qualifying_widow"
+  );
+}
+
+// G1.101 — Annual-exclusion gifting (§2503(b)).
+function detectAnnualExclusionGifting(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+}): OpportunityHit | null {
+  const { client, computed } = args;
+  if (!estateWealthProxy(computed, 400_000, 100_000)) return null;
+
+  const year = resolveTaxYear(computed.taxYear);
+  const exclusion = ANNUAL_GIFT_EXCLUSION[year];
+  const bea = ESTATE_BASIC_EXCLUSION[year];
+  const estSavings = Math.round(exclusion * ESTATE_TOP_RATE);
+  const mfj = isMfjLike(client);
+  const nii = Math.round(computed.detail.niit?.investmentIncome ?? 0);
+
+  const strategy = strategyById("G1.101");
+  const vars: Record<string, number | string> = { annualExclusion: exclusion, estSavings };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Affluent profile (AGI ${fmtUsd0(Math.round(computed.adjustedGrossIncome))}, net investment income ` +
+      `${fmtUsd0(nii)}). Annual-exclusion gifting moves ${fmtUsd0(exclusion)} per donee per year — plus all ` +
+      `future appreciation — out of a taxable estate, with no gift-tax return required.` +
+      (mfj ? ` As MFJ, gift-splitting doubles the per-donee exclusion to ${fmtUsd0(exclusion * 2)}.` : ``),
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      agi: Math.round(computed.adjustedGrossIncome),
+      netInvestmentIncome: nii,
+      annualExclusion: exclusion,
+      basicExclusionAmount: bea,
+      estateTopRate: ESTATE_TOP_RATE,
+      filingStatus: client.filingStatus,
+    },
+    assumptions: [
+      `INFORMATIONAL estate flag — the individual-1040 engine does not size the estate. estSavings is the per-donee, per-year estate-tax reduction at the 40% top rate; it applies only if the estate exceeds the federal BEA (${fmtUsd0(bea)} for TY${computed.taxYear}) or a lower STATE estate/inheritance threshold (e.g. MA/OR ~$1-2M).`,
+      `Annual exclusion ${fmtUsd0(exclusion)} per donee for TY${computed.taxYear} (§2503(b); IRS Rev. Proc.). No Form 709 required when each gift is at or below the exclusion.`,
+      `MFJ gift-splitting (§2513) doubles the per-donee exclusion but DOES require a Form 709.`,
+      `The real value compounds: the gifted asset's FUTURE appreciation also escapes the estate.`,
+    ],
+  };
+}
+
+// G1.102 — 529 plan superfunding (§529(c)(2)(B) 5-year election).
+function detect529Superfunding(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+}): OpportunityHit | null {
+  const { client, computed } = args;
+  const dependents = (client.dependentsUnder17 ?? 0) + (client.otherDependents ?? 0);
+  if (dependents < 1) return null;
+  if (!estateWealthProxy(computed, 300_000, 50_000)) return null;
+
+  const year = resolveTaxYear(computed.taxYear);
+  const exclusion = ANNUAL_GIFT_EXCLUSION[year];
+  const superfund = 5 * exclusion;
+  const estSavings = Math.round(superfund * SUPERFUND_GROWTH_FACTOR);
+
+  const strategy = strategyById("G1.102");
+  const vars: Record<string, number | string> = { superfund, estSavings };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Affluent family with ${dependents} dependent${dependents === 1 ? "" : "s"}. The §529(c)(2)(B) election lets ` +
+      `each donor front-load ${fmtUsd0(superfund)} (5× the ${fmtUsd0(exclusion)} annual exclusion) into a 529 in one ` +
+      `year — gift-tax-free and immediately outside the estate — and the earnings then grow income-tax-free for education.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      agi: Math.round(computed.adjustedGrossIncome),
+      dependents,
+      annualExclusion: exclusion,
+      superfund,
+      estSavings,
+    },
+    assumptions: [
+      `INFORMATIONAL flag. estSavings is the illustrative income-tax-free-growth value of the ${fmtUsd0(superfund)} front-load = superfund × ((1.06^10 − 1)) × 15% LTCG (a 10-year, 6%-growth, 15%-rate assumption). Actual value depends on the horizon, return, and the alternative taxable account.`,
+      `5-year election (§529(c)(2)(B)) front-loads 5× the annual exclusion; spread ratably over 5 years on Form 709. If the donor dies within the 5 years, the unused years are pulled back into the estate.`,
+      `Many states ALSO give a state income-tax deduction/credit for 529 contributions (varies by state — confirm).`,
+      `SECURE 2.0 added a limited 529→Roth IRA rollover for long-held accounts — a backstop if the beneficiary doesn't need all the funds.`,
+    ],
+  };
+}
+
+// G1.103 — Spousal Lifetime Access Trust (SLAT).
+function detectSlat(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+}): OpportunityHit | null {
+  const { client, computed } = args;
+  if (!isMfjLike(client)) return null;
+  if (!estateWealthProxy(computed, 750_000, 250_000)) return null;
+
+  const year = resolveTaxYear(computed.taxYear);
+  const bea = ESTATE_BASIC_EXCLUSION[year];
+  const estSavings = Math.round(SLAT_ILLUSTRATIVE_FUNDING * SLAT_GROWTH_ASSUMED * ESTATE_TOP_RATE);
+
+  const strategy = strategyById("G1.103");
+  const vars: Record<string, number | string> = { estSavings };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `High-net-worth married couple (AGI ${fmtUsd0(Math.round(computed.adjustedGrossIncome))}). A Spousal Lifetime ` +
+      `Access Trust removes appreciating assets — and all their future growth — from the taxable estate using one ` +
+      `spouse's exclusion, while the beneficiary spouse retains indirect access to the funds if needed.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      agi: Math.round(computed.adjustedGrossIncome),
+      netInvestmentIncome: Math.round(computed.detail.niit?.investmentIncome ?? 0),
+      illustrativeFunding: SLAT_ILLUSTRATIVE_FUNDING,
+      basicExclusionAmount: bea,
+    },
+    assumptions: [
+      `INFORMATIONAL flag. estSavings is illustrative: ${fmtUsd0(SLAT_ILLUSTRATIVE_FUNDING)} of trust assets × 6%/yr appreciation × 40% estate rate = the future-appreciation removed from the estate each year. The CPA sizes it to the actual funding.`,
+      `The BEA is now ${fmtUsd0(bea)} per person (OBBBA made the higher exclusion permanent) — a SLAT primarily helps estates expecting to exceed ${fmtUsd0(bea)} single / ${fmtUsd0(bea * 2)} per couple, OR a lower STATE estate-tax threshold.`,
+      `SLAT is IRREVOCABLE; the grantor gives up direct control. Access is INDIRECT (through the beneficiary spouse) and ends at that spouse's death or divorce.`,
+      `RECIPROCAL-TRUST DOCTRINE: if both spouses create near-identical SLATs, the IRS can unwind them — they must be meaningfully different.`,
+    ],
+  };
+}
+
+// G1.104 — Irrevocable Life Insurance Trust (ILIT).
+function detectIlit(args: { computed: ComputedTaxReturn }): OpportunityHit | null {
+  const { computed } = args;
+  if (!estateWealthProxy(computed, 750_000, 250_000)) return null;
+
+  const year = resolveTaxYear(computed.taxYear);
+  const bea = ESTATE_BASIC_EXCLUSION[year];
+  const estSavings = Math.round((ILIT_ILLUSTRATIVE_FACE * ESTATE_TOP_RATE) / ILIT_ANNUALIZE_YEARS);
+
+  const strategy = strategyById("G1.104");
+  const vars: Record<string, number | string> = { estSavings };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `High-net-worth profile (AGI ${fmtUsd0(Math.round(computed.adjustedGrossIncome))}). Life-insurance proceeds are ` +
+      `pulled INTO the taxable estate when the insured owns the policy (§2042). Holding the policy in an Irrevocable Life ` +
+      `Insurance Trust keeps the full death benefit out of the estate — at a 40% rate that is real money on a large policy.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      agi: Math.round(computed.adjustedGrossIncome),
+      netInvestmentIncome: Math.round(computed.detail.niit?.investmentIncome ?? 0),
+      illustrativeFaceValue: ILIT_ILLUSTRATIVE_FACE,
+      basicExclusionAmount: bea,
+    },
+    assumptions: [
+      `INFORMATIONAL flag. estSavings is illustrative: an assumed ${fmtUsd0(ILIT_ILLUSTRATIVE_FACE)} death benefit × 40% estate rate, annualized over ${ILIT_ANNUALIZE_YEARS} years for comparability with the annual income-tax strategies. The benefit is realized once, at death; the CPA sizes it to the actual policy face.`,
+      `Only helps an estate above the BEA (${fmtUsd0(bea)}) or a lower STATE estate-tax threshold.`,
+      `§2035 THREE-YEAR LOOKBACK: transferring an EXISTING policy into the ILIT pulls it back into the estate if the insured dies within 3 years. A NEW policy bought by the ILIT avoids this.`,
+      `Premiums are funded by annual gifts to the trust; Crummey withdrawal notices qualify them for the annual exclusion (administrative discipline required).`,
+    ],
+  };
+}
+
+// G1.105 — Grantor Retained Annuity Trust (GRAT).
+function detectGrat(args: { computed: ComputedTaxReturn }): OpportunityHit | null {
+  const { computed } = args;
+  if (!estateWealthProxy(computed, 750_000, 250_000)) return null;
+  const ltcg = computed.form1099Summary?.longTermCapitalGains ?? 0;
+  if (ltcg < 100_000) return null;
+
+  const excessGrowth = GRAT_GROWTH_ASSUMED - GRAT_SECTION_7520_RATE;
+  const estSavings = Math.round(GRAT_ILLUSTRATIVE_FUNDING * excessGrowth * ESTATE_TOP_RATE);
+
+  const strategy = strategyById("G1.105");
+  const vars: Record<string, number | string> = { estSavings };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `High-net-worth client realizing ${fmtUsd0(Math.round(ltcg))} of long-term gains — a signal of concentrated, ` +
+      `appreciating assets. A near-zeroed-out Grantor Retained Annuity Trust passes all appreciation ABOVE the §7520 ` +
+      `hurdle rate to heirs gift-tax-free, using little or none of the lifetime exclusion.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      agi: Math.round(computed.adjustedGrossIncome),
+      longTermCapitalGains: Math.round(ltcg),
+      illustrativeFunding: GRAT_ILLUSTRATIVE_FUNDING,
+      assumedGrowthRate: GRAT_GROWTH_ASSUMED,
+      section7520Rate: GRAT_SECTION_7520_RATE,
+    },
+    assumptions: [
+      `INFORMATIONAL flag. estSavings is illustrative: ${fmtUsd0(GRAT_ILLUSTRATIVE_FUNDING)} funding × (8% assumed growth − 5.4% §7520 hurdle) × 40% estate rate. The §7520 rate updates MONTHLY — confirm the current rate before modeling.`,
+      `A "zeroed-out" GRAT (Walton) sets the retained annuity so the taxable gift ≈ $0 — only the EXCESS over the §7520 rate transfers, so there is little downside if the asset underperforms.`,
+      `MORTALITY RISK: the grantor must OUTLIVE the GRAT term or the assets revert to the estate. Short-term, rolling GRATs mitigate this.`,
+      `Works best with volatile / high-expected-return assets (pre-IPO stock, concentrated equity) where the growth most exceeds the hurdle.`,
+    ],
+  };
+}
+
+// G1.106 — Step-up-in-basis hold (§1014).
+function detectStepUpBasisHold(args: {
+  client: ClientFacts;
+  computed: ComputedTaxReturn;
+}): OpportunityHit | null {
+  const { client, computed } = args;
+  const age = client.taxpayerAge ?? 0;
+  if (age < 65) return null;
+  const ltcg = computed.form1099Summary?.longTermCapitalGains ?? 0;
+  if (ltcg < 50_000) return null;
+
+  const estSavings = Math.round(ltcg * STEPUP_LTCG_RATE_ASSUMED);
+
+  const strategy = strategyById("G1.106");
+  const vars: Record<string, number | string> = { ltcg: Math.round(ltcg), estSavings };
+  return {
+    strategyId: strategy.id,
+    name: strategy.name,
+    category: strategy.category,
+    estSavings,
+    confidence: strategy.confidence,
+    cpaEffortHours: strategy.cpaEffortHours,
+    recurring: strategy.recurring,
+    rationale:
+      `Client is ${age} and realized ${fmtUsd0(Math.round(ltcg))} of long-term gains. For appreciated assets the ` +
+      `client does NOT need to sell, holding until death gives heirs a §1014 basis step-up to fair market value — the ` +
+      `entire built-in gain is then never income-taxed. Weigh against diversification and liquidity needs.`,
+    action: interpolate(strategy.action, vars),
+    prerequisiteData: strategy.prerequisiteData,
+    citation: `${strategy.ircSection}; ${strategy.irsPub}`,
+    inputs: {
+      taxpayerAge: age,
+      longTermCapitalGains: Math.round(ltcg),
+      assumedLtcgRate: STEPUP_LTCG_RATE_ASSUMED,
+    },
+    assumptions: [
+      `INFORMATIONAL flag (INCOME-tax, not estate). estSavings = realized LTCG × 15% — an illustrative proxy for the income tax a comparable block of held-to-death appreciated assets would avoid via the §1014 step-up. Use the client's actual LTCG rate (0/15/20% + 3.8% NIIT) and embedded gain for precision.`,
+      `§1014 steps up basis to date-of-death FMV. This does NOT apply to "income in respect of a decedent" (traditional IRAs, annuities, NQDC) — those keep their built-in income.`,
+      `Community-property states give a DOUBLE step-up (both halves) on the first spouse's death — a large benefit there.`,
+      `This is a HOLD recommendation; it trades the step-up benefit against concentration risk and the client's liquidity needs.`,
+    ],
+  };
+}
+
 export function evaluatePlanningOpportunities(args: PlanningInputs): OpportunityHit[] {
   const hits: OpportunityHit[] = [];
   const { client, computed, adjustments, baselineInputs } = args;
@@ -8527,6 +8853,19 @@ export function evaluatePlanningOpportunities(args: PlanningInputs): Opportunity
   if (carLoanDed) hits.push(carLoanDed);
   const seniorDed = detectSeniorDeduction({ client, computed });
   if (seniorDed) hits.push(seniorDed);
+  // T1.3 — G1.101–G1.106 estate & gift planning touchpoints (qualitative flags).
+  const gifting = detectAnnualExclusionGifting({ client, computed });
+  if (gifting) hits.push(gifting);
+  const superfund529 = detect529Superfunding({ client, computed });
+  if (superfund529) hits.push(superfund529);
+  const slat = detectSlat({ client, computed });
+  if (slat) hits.push(slat);
+  const ilit = detectIlit({ computed });
+  if (ilit) hits.push(ilit);
+  const grat = detectGrat({ computed });
+  if (grat) hits.push(grat);
+  const stepUp = detectStepUpBasisHold({ client, computed });
+  if (stepUp) hits.push(stepUp);
   // PLAN-08 — drop hits whose catalog entry has expired for this return's tax
   // year (stale TY-specific thresholds). Today every strategy is validUntil
   // 2026-12-31, so TY2024/2025 returns are unaffected; a TY2027+ return correctly

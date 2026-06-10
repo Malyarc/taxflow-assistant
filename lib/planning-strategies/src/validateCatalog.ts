@@ -8,6 +8,7 @@ const KNOWN_CATEGORIES: ReadonlySet<StrategyCategory> = new Set<StrategyCategory
   "business",
   "investment",
   "credits",
+  "estate",
 ]);
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;

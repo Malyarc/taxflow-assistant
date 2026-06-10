@@ -27,6 +27,7 @@ import {
   useGetPlanningMultiYear,
   useRunStateComparison,
   useRunRothOptimizer,
+  useRunWhatIfScenario,
   useGetPeerBenchmark,
   useGetPlanningDiscovery,
   useGetSettings,
@@ -50,6 +51,7 @@ import type {
   CreateAdjustmentBodyAdjustmentType,
   UpdateAdjustmentBodyAdjustmentType,
   CreateForm1099DataBodyFormType,
+  WhatIfMutation,
 } from "@workspace/api-client-react";
 import { useQueryClient, useQuery, useMutation } from "@tanstack/react-query";
 import { useState, useRef, useEffect } from "react";
@@ -69,6 +71,7 @@ import { CurrencyInput } from "@/components/ui/currency-input";
 import { toast } from "@/hooks/use-toast";
 import { ReviewExtractionModal } from "@/components/ReviewExtractionModal";
 import { localityLabel } from "@/lib/localityLabels";
+import { ADJUSTMENT_TYPE_LABELS } from "@/lib/adjustmentLabels";
 import {
   FileText, FileSpreadsheet, Files, CandlestickChart, Building2, Network,
   Wallet, Calculator, GitCompareArrows, SlidersHorizontal, Target,
@@ -2866,141 +2869,9 @@ function AdjustmentsTab({ clientId }: { clientId: number }) {
     }
   }
 
-  const TYPE_LABELS: Record<string, string> = {
-    // FE2 (audit 2026-06-08) — the 36 adjustment types previously missing a
-    // label (incl. all the T1.1 types) showed the raw enum key in the dropdown +
-    // badges. Added below.
-    unrecaptured_section_1250_gain: "Unrecaptured §1250 gain (25% rate)",
-    collectibles_28_rate_gain: "Collectibles / §1202 gain (28% rate)",
-    section_1231_lookback_loss: "§1231(c) 5-year lookback loss",
-    months_without_minimum_coverage: "Months without minimum health coverage",
-    household_employee_cash_wages: "Household employee cash wages (Schedule H)",
-    household_employee_futa_wages: "Household employee FUTA wages (Schedule H)",
-    clergy_housing_allowance: "Clergy housing allowance (SE-taxed, income-tax-exempt)",
-    amt_credit_carryforward: "AMT credit carryforward (Form 8801)",
-    charitable_carryforward_cash: "Charitable cash carryforward (prior year)",
-    bonus_depreciation_basis: "Bonus depreciation basis (§168(k))",
-    section_179_expense_election: "§179 expense election",
-    hsa_employer_contribution: "HSA employer contribution",
-    nondeductible_ira_contribution: "Nondeductible IRA contribution (Form 8606 basis)",
-    roth_conversion_amount: "Roth conversion amount",
-    roth_conversion_basis: "Roth conversion basis",
-    roth_conversion_basis_within_5yr: "Roth conversion basis (within 5-year window)",
-    roth_ira_distribution: "Roth IRA distribution",
-    traditional_ira_distribution: "Traditional IRA distribution",
-    mega_backdoor_roth_after_tax_contribution: "Mega-backdoor Roth after-tax contribution",
-    nua_lump_sum_employer_stock: "NUA — lump-sum employer stock",
-    augusta_rule_rent: "Augusta Rule rent (§280A(g))",
-    foreign_source_taxable_income: "Foreign-source taxable income (Form 1116)",
-    college_tuition_qualified: "Qualified college tuition (NY credit)",
-    k12_education_expenses: "K-12 education expenses (IL credit)",
-    annual_rent_paid: "Annual rent paid (renter's credit)",
-    ca_renter_months: "CA renter — months rented",
-    ga_disabled_home_purchase_cost: "GA disabled-access home purchase cost",
-    ma_assessed_home_value: "MA assessed home value (circuit breaker)",
-    ma_lead_paint_removal_cost: "MA lead-paint removal cost",
-    ma_water_sewer_half: "MA water/sewer charges (½)",
-    mi_home_heating_cost: "MI home-heating cost",
-    mi_household_resources: "MI household resources",
-    pa_eligibility_income: "PA eligibility income (Schedule SP)",
-    oh_sdit_traditional_base: "OH SDIT — traditional base",
-    part_year_use_w2_source: "Part-year: allocate W-2 by source state",
-    part_year_use_full_source_allocation: "Part-year: full per-source allocation",
-    deduction: "Deduction (above-the-line)",
-    credit: "Credit (non-refundable)",
-    additional_income: "Additional Income",
-    withholding_adjustment: "Withholding / Estimated Payment",
-    self_employment_income: "Self-Employment Income",
-    investment_income: "Investment Income (NIIT)",
-    qbi_income: "Qualified Business Income (QBI)",
-    qbi_sstb_flag: "QBI — Specified Service Trade/Business (SSTB) flag",
-    hi_employer_funded_pension: "HI — Employer-funded pension (excludable portion; employee 401(k)/IRA stays taxable)",
-    ny_government_pension: "NY — Government pension (NYS/local/federal/military; IT-201 Line 26, fully excluded)",
-    ct_ira_distribution: "CT — Non-Roth IRA portion of retirement income (50/75/100% by year; rest treated as pension/annuity 100%)",
-    nonresident_source_allocation: "Multi-state — Source out-of-state K-1 business + rental real estate to its state for non-resident tax (flag; uses each K-1/rental sourceState)",
-    part_year_income_pct_method: "Part-year — Use the IT-203/540NR income-% method for the resident-period tax in method-(a) states (flag; more accurate than day-prorated brackets)",
-    oh_work_city_tax_paid: "OH — Municipal tax paid to WORK city (resident cross-city credit, ORC ch. 718)",
-    nyc_ubt_business_income: "NYC — Unincorporated Business Tax: NYC-allocated net business income (4% UBT, Form NYC-202)",
-    amt_preferences: "AMT Preferences (catch-all — line 2 misc)",
-    amt_iso_bargain_element: "AMT — ISO Bargain Element (Form 6251 line 2k)",
-    amt_state_tax_addback_override: "AMT — SALT Addback Override (Form 6251 line 2g; replaces auto)",
-    amt_depreciation_adjustment: "AMT — MACRS-vs-ADS Depreciation (Form 6251 line 2i; regular − AMT depr, ± reversal)",
-    amt_nol_carryforward: "AMT NOL Carryforward — ATNOLD (§56(d); AMT-basis NOL, capped at 90% of AMTI)",
-    // Schedule A line items (itemized deductions)
-    medical_expenses: "Medical/Dental Expenses (Sched A)",
-    state_income_tax: "State Income Tax (Sched A SALT)",
-    state_property_tax: "State Property Tax (Sched A SALT)",
-    state_sales_tax: "State Sales Tax (Sched A SALT alt)",
-    mortgage_interest: "Mortgage Interest (Sched A)",
-    charitable_cash: "Charitable Cash (Sched A)",
-    charitable_property: "Charitable Property (Sched A)",
-    // Above-the-line retirement / health
-    hsa_contribution: "HSA Contribution",
-    ira_contribution_traditional: "Traditional IRA Contribution",
-    ira_contribution_roth: "Roth IRA Contribution",
-    self_employed_health_insurance_premiums: "Self-Employed Health Insurance Premiums (Form 7206, Sched 1 L17)",
-    // OBBBA NEW deductions (Schedule 1-A → Form 1040 line 13b; reduce taxable income;
-    // TY2025–2028). Senior $6k deduction is age-based (auto-applied from age fields).
-    qualified_tips: "OBBBA — Qualified Tips (§224 'no tax on tips'; ≤$25k, phases out >$150k/$300k MAGI; TY2025–2028)",
-    qualified_overtime: "OBBBA — Qualified Overtime premium (§225; ≤$12.5k single/$25k MFJ; phases out >$150k/$300k; FLSA 'half' only; TY2025–2028)",
-    qualified_car_loan_interest: "OBBBA — Car Loan Interest (§163(h)(4); NEW US-assembled vehicle; ≤$10k, phases out >$100k/$200k; TY2025–2028)",
-    home_sale_gross_gain_primary_residence: "Home Sale — Primary Residence Gross Gain (§121 exclusion auto-applied)",
-    foreign_earned_income: "Foreign Earned Income — Primary Filer (Form 2555 §911, capped at $126,500 TY2024)",
-    foreign_earned_income_spouse: "Foreign Earned Income — Spouse (MFJ only; same per-spouse cap)",
-    nol_carryforward: "NOL Carryforward (post-TCJA 80% limit, IRC §172)",
-    qsbs_gross_gain: "§1202 QSBS Gross Gain (exclusion auto-applied: max($10M, 10× basis))",
-    qsbs_adjusted_basis: "§1202 QSBS Adjusted Basis (for the 10× cap)",
-    section_1031_realized_gain: "§1031 Like-Kind Exchange — Realized Gain (real property only; aggregated across exchanges)",
-    section_1031_boot_received: "§1031 Like-Kind Exchange — Boot Received (cash + non-like-kind; drives recognition = min(realized, boot))",
-    iso_disqualifying_disposition_ordinary: "ISO Disqualifying Disposition — Ordinary Comp (IRC §421(b)/§422; not FICA-taxed; CPA hand-calcs min(FMV-at-exercise, sale-price) − strike)",
-    espp_disqualifying_disposition_ordinary: "§423 ESPP Disqualifying Disposition — Ordinary Comp (FMV-at-purchase − purchase-price; not FICA-taxed per Rev Rul 71-52)",
-    section_163j_business_interest_expense: "§163(j) Business Interest Expense — Gross (engine applies 30%-of-ATI cap)",
-    section_163j_business_interest_income: "§163(j) Business Interest Income (adds to allowance dollar-for-dollar)",
-    section_163j_carryforward_from_prior: "§163(j) Carryforward from Prior Year (stacks on gross, subject to same 30% cap)",
-    section_163j_floor_plan_financing_interest: "§163(j) Floor Plan Financing Interest (100% allowed; never capped)",
-    section_163j_gross_receipts: "§163(j) 3-yr Avg Gross Receipts — §448(c) (≤ threshold → small-biz EXEMPT, no 30% cap; $30M 2024 / $31M 2025 / $32M 2026)",
-    section_461l_excess_loss_addback: "§461(l) Excess Business Loss Addback (TY2024 thresholds $305k/$610k; CPA pre-computes)",
-    // Schedule C
-    schedule_c_expenses: "Schedule C Business Expenses",
-    // Credit-driving expenses
-    dependent_care_expenses: "Dependent Care Expenses",
-    qualified_education_expenses_aoc: "Education Expenses — AOC (per student)",
-    qualified_education_expenses_llc: "Education Expenses — LLC",
-    retirement_contributions_savers: "Retirement Contributions (Saver's Credit)",
-    qualified_adoption_expenses: "Adoption Expenses (Form 8839 §23, per child)",
-    adoption_special_needs: "Adoption — Special Needs (full credit, enter 1)",
-    adoption_credit_carryforward: "Adoption Credit Carryforward (prior-year §23(c))",
-    long_term_capital_gain: "Long-Term Capital Gain (additional — not on 1099-B/Sch D)",
-    investment_interest_expense: "Investment Interest Expense (§163(d), Form 4952)",
-    investment_interest_election_amount: "§163(d)(4)(B) Election — QDIV/LTCG as investment income",
-    qualified_research_expenses: "R&D Qualified Research Expenses (§41, Form 6765)",
-    qualified_research_expenses_prior_avg: "R&D — prior 3-yr avg QRE (ASC base; blank = startup 6%)",
-    investment_interest_carryforward: "Investment Interest Carryforward (§163(d)(2), prior year)",
-    rd_credit_carryforward: "R&D Credit Carryforward (§39, prior year)",
-    general_business_credit_carryforward: "General Business Credit Carryforward (§39 §51/§45S, prior year)",
-    schedule_c_section179_carryforward: "Schedule C §179 Carryforward (§179(b)(3)(B), prior year)",
-    wotc_credit: "Work Opportunity Tax Credit (§51, Form 5884)",
-    fmla_credit: "Paid Family & Medical Leave Credit (§45S, Form 8994)",
-    scorp_reasonable_comp: "S-corp Reasonable Comp (RC Reports/BLS benchmark; G1.17)",
-    schedule_c_depreciation: "Schedule C Depreciation (Form 4562 — reduces SE/QBI)",
-    // Phase 1.5
-    educator_expenses: "Educator Expenses (K-12, $300/educator)",
-    student_loan_interest: "Student Loan Interest (1098-E)",
-    foreign_tax_paid: "Foreign Tax Paid (1099-DIV Box 7)",
-    residential_clean_energy: "Residential Clean Energy (§25D — solar/wind/geo, 30%)",
-    energy_efficient_home: "Energy Efficient Home (§25C — windows/doors/insulation)",
-    energy_efficient_heatpump: "Energy Efficient Heat Pump (§25C — heat pump/biomass)",
-    ev_charger_property: "EV Charger Property (§30C — Form 8911)",
-    // Phase 2
-    capital_loss_carryforward_short: "Capital Loss Carryforward — Short-term (from prior year)",
-    capital_loss_carryforward_long: "Capital Loss Carryforward — Long-term (from prior year)",
-    schedule_e_rental_income: "Schedule E Rental Income (gross rents received)",
-    schedule_e_rental_expenses: "Schedule E Rental Expenses (excl. depreciation)",
-    schedule_e_macrs_depreciation: "Schedule E MACRS Depreciation",
-    schedule_e_passive_loss_carryforward: "Schedule E Passive Loss Carryforward (prior year suspended)",
-    k1_passive_loss_carryforward: "K-1 Passive Loss Carryforward (prior year suspended; non-rental-RE passive)",
-    other: "Other",
-  };
+  // Canonical labels live in the shared module so the what-if scenario builder
+  // (Planning tab) and this editor stay in lock-step. See adjustmentLabels.ts.
+  const TYPE_LABELS = ADJUSTMENT_TYPE_LABELS;
 
   if (isLoading) return <Skeleton className="h-40 w-full" />;
 
@@ -4754,6 +4625,7 @@ const PLANNING_CATEGORY_LABEL: Record<string, string> = {
   business: "Business",
   investment: "Investment",
   credits: "Credits",
+  estate: "Estate & Gift",
 };
 
 const PLANNING_CATEGORY_BADGE: Record<string, string> = {
@@ -4764,6 +4636,7 @@ const PLANNING_CATEGORY_BADGE: Record<string, string> = {
   business: "bg-brand/10 text-primary",
   investment: "bg-brand/10 text-primary",
   credits: "bg-brand/10 text-primary",
+  estate: "bg-purple-100 text-purple-900",
 };
 
 function confidenceBadgeColor(confidence: number): string {
@@ -4904,6 +4777,8 @@ function PlanningTab({ clientId }: { clientId: number }) {
       <PlanningSynthesisPanel clientId={clientId} enabled={synthesisOn} />
 
       <CrossStrategyCard crossStrategy={data.crossStrategy} />
+
+      <WhatIfScenarioBuilderCard clientId={clientId} />
 
       <AiDiscoveryCard clientId={clientId} />
 
@@ -5502,6 +5377,436 @@ function StateResidencyComparisonCard({ clientId }: { clientId: number }) {
           Click "Compare states" to run the analysis.
         </CardContent>
       ) : null}
+    </Card>
+  );
+}
+
+// ── T1.3 — Interactive what-if scenario builder ──────────────────────────
+// A CPA composes arbitrary engine mutations (add/replace/remove an adjustment,
+// or change a client fact like filing status / state / age) and runs them
+// through the pure tax engine via POST /clients/:id/what-if. Shows the
+// engine-computed federal + state delta side-by-side. No math is estimated —
+// every number is the real `computeTaxReturnPure` output.
+
+const WHATIF_KIND_LABELS: Record<WhatIfMutation["kind"], string> = {
+  add_adjustment: "Add adjustment",
+  set_adjustment: "Set adjustment (replace existing)",
+  remove_adjustment: "Remove adjustment",
+  set_client_field: "Change a client fact",
+};
+
+// Curated set of client facts that are meaningful what-if levers. The engine
+// accepts any ClientFacts key, but these are the ones a CPA actually models
+// (e.g. "what if they filed MFS instead of MFJ", "what if they moved to TX").
+const WHATIF_CLIENT_FIELDS: Record<string, string> = {
+  filingStatus: "Filing status",
+  state: "Resident state",
+  taxpayerAge: "Taxpayer age",
+  spouseAge: "Spouse age",
+  dependentsUnder17: "Dependents under 17 (CTC)",
+  otherDependents: "Other dependents",
+};
+
+const WHATIF_FILING_STATUS_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "single", label: "Single" },
+  { value: "married_filing_jointly", label: "Married Filing Jointly" },
+  { value: "married_filing_separately", label: "Married Filing Separately" },
+  { value: "head_of_household", label: "Head of Household" },
+  { value: "qualifying_widow", label: "Qualifying Widow(er)" },
+];
+
+// Client fields whose value the engine reads as a number — coerce on submit.
+const WHATIF_NUMERIC_FIELDS = new Set([
+  "taxpayerAge",
+  "spouseAge",
+  "dependentsUnder17",
+  "otherDependents",
+]);
+
+type WhatIfKind = WhatIfMutation["kind"];
+
+type WhatIfRow = {
+  id: number;
+  kind: WhatIfKind;
+  adjustmentType: string;
+  amount: string;
+  field: string;
+  value: string;
+};
+
+let whatIfRowSeq = 0;
+function newWhatIfRow(): WhatIfRow {
+  return {
+    id: ++whatIfRowSeq,
+    kind: "add_adjustment",
+    adjustmentType: "deduction",
+    amount: "",
+    field: "filingStatus",
+    value: "",
+  };
+}
+
+/** Convert a builder row into a wire mutation, or null if the row is incomplete. */
+function whatIfRowToMutation(r: WhatIfRow): WhatIfMutation | null {
+  switch (r.kind) {
+    case "add_adjustment":
+    case "set_adjustment": {
+      if (!r.adjustmentType) return null;
+      // Strip first, THEN require the cleaned string to be non-empty. Testing the
+      // un-stripped string would let garbage ("abc", "$") through as Number("")===0.
+      const cleaned = String(r.amount).replace(/[^0-9.-]/g, "");
+      if (cleaned === "") return null;
+      const amt = Number(cleaned);
+      if (!Number.isFinite(amt)) return null;
+      return { kind: r.kind, adjustmentType: r.adjustmentType, amount: amt };
+    }
+    case "remove_adjustment": {
+      if (!r.adjustmentType) return null;
+      return { kind: "remove_adjustment", adjustmentType: r.adjustmentType };
+    }
+    case "set_client_field": {
+      const v = String(r.value).trim();
+      if (!r.field || v === "") return null;
+      if (WHATIF_NUMERIC_FIELDS.has(r.field)) {
+        // Same guard as the amount path: reject non-numeric text instead of
+        // silently coercing it to 0 (age 0 / 0 dependents would be a wrong model).
+        const cleaned = v.replace(/[^0-9.-]/g, "");
+        if (cleaned === "") return null;
+        const n = Number(cleaned);
+        if (!Number.isFinite(n)) return null;
+        return { kind: "set_client_field", field: r.field, value: n };
+      }
+      return {
+        kind: "set_client_field",
+        field: r.field,
+        value: r.field === "state" ? v.toUpperCase() : v,
+      };
+    }
+    default:
+      return null;
+  }
+}
+
+function WhatIfComparisonRow({
+  label,
+  baseline,
+  scenario,
+  kind,
+}: {
+  label: string;
+  baseline: number;
+  scenario: number;
+  // money: plain $, decrease is good (tax). signedMoney: signed $, increase is
+  // good (refund/owed). neutralMoney: plain $, delta carries NO good/bad signal
+  // (AGI / taxable income are informational, not favorable-when-up-or-down).
+  // pct: percentage, decrease is good (effective rate).
+  kind: "money" | "signedMoney" | "neutralMoney" | "pct";
+}) {
+  const delta = scenario - baseline;
+  const fmtCell = (n: number) =>
+    kind === "pct" ? `${(n * 100).toFixed(2)}%` : kind === "signedMoney" ? signedFmt(n) : fmt(n);
+  const deltaText = kind === "pct" ? `${delta >= 0 ? "+" : ""}${(delta * 100).toFixed(2)}%` : signedFmt(delta);
+  // Tax/effective-rate rows: decrease is good. Refund rows: increase is good.
+  // AGI/taxable (neutralMoney): no good/bad signal — the tax & refund rows carry it.
+  const goodWhenDown = kind === "money" || kind === "pct";
+  const deltaClass =
+    kind === "neutralMoney" || Math.abs(delta) < 0.005
+      ? "text-muted-foreground"
+      : (goodWhenDown ? delta < 0 : delta > 0)
+        ? "text-success"
+        : "text-destructive";
+  return (
+    <tr className="border-t border-brand/15">
+      <td className="px-3 py-1.5 text-muted-foreground">{label}</td>
+      <td className="px-3 py-1.5 text-right tabular-nums">{fmtCell(baseline)}</td>
+      <td className="px-3 py-1.5 text-right tabular-nums font-medium">{fmtCell(scenario)}</td>
+      <td className={`px-3 py-1.5 text-right tabular-nums ${deltaClass}`}>{deltaText}</td>
+    </tr>
+  );
+}
+
+function WhatIfScenarioBuilderCard({ clientId }: { clientId: number }) {
+  const mutation = useRunWhatIfScenario();
+  const [label, setLabel] = React.useState("");
+  const [rows, setRows] = React.useState<WhatIfRow[]>(() => [newWhatIfRow()]);
+  const data = mutation.data;
+
+  const updateRow = (id: number, patch: Partial<WhatIfRow>) =>
+    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  const addRow = () => setRows((rs) => [...rs, newWhatIfRow()]);
+  const removeRow = (id: number) => setRows((rs) => rs.filter((r) => r.id !== id));
+
+  const mutations = rows
+    .map(whatIfRowToMutation)
+    .filter((m): m is WhatIfMutation => m != null);
+  const canRun = mutations.length > 0 && !mutation.isPending;
+
+  const handleRun = () => {
+    if (mutations.length === 0) return;
+    mutation.mutate({
+      clientId,
+      data: { label: label.trim() || "Custom what-if scenario", mutations },
+    });
+  };
+
+  const combinedTaxDelta = data ? Number(data.delta.combinedTaxDelta ?? 0) : 0;
+  const refundDelta = data ? Number(data.delta.combinedRefundDelta ?? 0) : 0;
+  // Drive the verdict off the cash impact (refund / amount owed), not the
+  // pre-credit tax-liability delta: a credit-only scenario (e.g. FTC) leaves tax
+  // liability flat while the refund moves — the lesson PlanningHitWhatIfPanel
+  // already encodes by ranking on combinedRefundDelta.
+  const isSavings = refundDelta > 0.5;
+  const isCost = refundDelta < -0.5;
+
+  return (
+    <Card className="border-brand/40 bg-brand/5">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base text-primary">What-if scenario builder</CardTitle>
+        <div className="text-xs text-brand-ink mt-1">
+          Compose any change to this client's return — add or remove an adjustment,
+          or change a client fact (filing status, state, age) — and run it through
+          the tax engine for an exact federal + state delta. Nothing is estimated.
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-medium text-brand-ink">Scenario label (optional)</label>
+          <Input
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            placeholder="e.g. Max out SEP + switch to MFS"
+            className="max-w-md"
+          />
+        </div>
+
+        <div className="space-y-2">
+          {rows.length === 0 ? (
+            <div className="text-xs text-muted-foreground">No changes yet — add one below.</div>
+          ) : null}
+          {rows.map((r) => (
+            <div
+              key={r.id}
+              className="flex flex-wrap items-end gap-2 rounded border border-brand/20 bg-white/50 p-2"
+            >
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Change</span>
+                <Select value={r.kind} onValueChange={(v) => updateRow(r.id, { kind: v as WhatIfKind })}>
+                  <SelectTrigger className="h-9 w-48 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(WHATIF_KIND_LABELS).map(([k, v]) => (
+                      <SelectItem key={k} value={k} className="text-xs">
+                        {v}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {r.kind === "set_client_field" ? (
+                <>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Client fact</span>
+                    <Select value={r.field} onValueChange={(v) => updateRow(r.id, { field: v, value: "" })}>
+                      <SelectTrigger className="h-9 w-44 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(WHATIF_CLIENT_FIELDS).map(([k, v]) => (
+                          <SelectItem key={k} value={k} className="text-xs">
+                            {v}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] uppercase tracking-wide text-muted-foreground">New value</span>
+                    {r.field === "filingStatus" ? (
+                      <Select value={r.value} onValueChange={(v) => updateRow(r.id, { value: v })}>
+                        <SelectTrigger className="h-9 w-52 text-xs">
+                          <SelectValue placeholder="Select status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {WHATIF_FILING_STATUS_OPTIONS.map((o) => (
+                            <SelectItem key={o.value} value={o.value} className="text-xs">
+                              {o.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Input
+                        value={r.value}
+                        onChange={(e) => updateRow(r.id, { value: e.target.value })}
+                        placeholder={r.field === "state" ? "e.g. TX" : "0"}
+                        inputMode={WHATIF_NUMERIC_FIELDS.has(r.field) ? "numeric" : "text"}
+                        className="h-9 w-40 text-xs"
+                      />
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Adjustment type</span>
+                    <Select
+                      value={r.adjustmentType}
+                      onValueChange={(v) => updateRow(r.id, { adjustmentType: v })}
+                    >
+                      <SelectTrigger className="h-9 w-64 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(ADJUSTMENT_TYPE_LABELS).map(([k, v]) => (
+                          <SelectItem key={k} value={k} className="text-xs">
+                            {v}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {r.kind !== "remove_adjustment" ? (
+                    <div className="flex flex-col gap-1">
+                      <span className="text-[10px] uppercase tracking-wide text-muted-foreground">Amount</span>
+                      <div className="w-36">
+                        <CurrencyInput
+                          value={r.amount}
+                          onChange={(v) => updateRow(r.id, { amount: v })}
+                          placeholder="$0"
+                        />
+                      </div>
+                    </div>
+                  ) : null}
+                </>
+              )}
+
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-9 text-destructive hover:text-destructive"
+                onClick={() => removeRow(r.id)}
+                aria-label="Remove this change"
+              >
+                Remove
+              </Button>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="outline" onClick={addRow}>
+            + Add another change
+          </Button>
+          <Button size="sm" onClick={handleRun} disabled={!canRun}>
+            {mutation.isPending ? "Running..." : "Run scenario"}
+          </Button>
+          {rows.length > 0 && mutations.length === 0 ? (
+            <span className="text-xs text-muted-foreground">
+              Fill in an amount or value to run.
+            </span>
+          ) : null}
+        </div>
+
+        {mutation.isError ? (
+          <div className="text-sm text-destructive">
+            Could not run the scenario. Check that each change is complete (the server
+            rejects an adjustment without an amount).
+          </div>
+        ) : null}
+
+        {data ? (
+          <div className="space-y-3 pt-1">
+            <div
+              className={`rounded border p-3 ${
+                isSavings
+                  ? "border-success/30 bg-success/5"
+                  : isCost
+                    ? "border-destructive/30 bg-destructive/5"
+                    : "border-brand/20 bg-white/40"
+              }`}
+            >
+              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                Combined federal + state cash impact (refund / amount owed)
+              </div>
+              <div
+                className={`text-2xl font-semibold tabular-nums ${
+                  isSavings ? "text-success" : isCost ? "text-destructive" : "text-foreground"
+                }`}
+              >
+                {signedFmt(refundDelta)}
+              </div>
+              <div className="text-xs text-muted-foreground mt-0.5">
+                {isSavings
+                  ? `This scenario improves the combined refund (or lowers the amount owed) by ${fmt(Math.abs(refundDelta))}.`
+                  : isCost
+                    ? `This scenario reduces the combined refund (or raises the amount owed) by ${fmt(Math.abs(refundDelta))} — a current-year cost; weigh against any long-term benefit.`
+                    : "No combined cash impact."}
+                {" "}Combined tax-liability change: <span className="font-medium">{signedFmt(combinedTaxDelta)}</span>.
+              </div>
+            </div>
+
+            <div className="rounded border border-brand/20 bg-white/40 overflow-hidden">
+              <table className="w-full text-xs">
+                <thead className="bg-brand/10 text-primary">
+                  <tr>
+                    <th className="px-3 py-2 text-left font-medium">Metric</th>
+                    <th className="px-3 py-2 text-right font-medium">Baseline</th>
+                    <th className="px-3 py-2 text-right font-medium">Scenario</th>
+                    <th className="px-3 py-2 text-right font-medium">Δ</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <WhatIfComparisonRow label="Adjusted gross income" baseline={Number(data.baseline.adjustedGrossIncome ?? 0)} scenario={Number(data.scenario.adjustedGrossIncome ?? 0)} kind="neutralMoney" />
+                  <WhatIfComparisonRow label="Taxable income" baseline={Number(data.baseline.taxableIncome ?? 0)} scenario={Number(data.scenario.taxableIncome ?? 0)} kind="neutralMoney" />
+                  <WhatIfComparisonRow label="Federal tax" baseline={Number(data.baseline.federalTaxLiability ?? 0)} scenario={Number(data.scenario.federalTaxLiability ?? 0)} kind="money" />
+                  <WhatIfComparisonRow label="State tax" baseline={Number(data.baseline.stateTaxLiability ?? 0)} scenario={Number(data.scenario.stateTaxLiability ?? 0)} kind="money" />
+                  <WhatIfComparisonRow label="Federal refund / (owed)" baseline={Number(data.baseline.federalRefundOrOwed ?? 0)} scenario={Number(data.scenario.federalRefundOrOwed ?? 0)} kind="signedMoney" />
+                  <WhatIfComparisonRow label="State refund / (owed)" baseline={Number(data.baseline.stateRefundOrOwed ?? 0)} scenario={Number(data.scenario.stateRefundOrOwed ?? 0)} kind="signedMoney" />
+                  <WhatIfComparisonRow label="Effective tax rate" baseline={Number(data.baseline.effectiveTaxRate ?? 0)} scenario={Number(data.scenario.effectiveTaxRate ?? 0)} kind="pct" />
+                </tbody>
+              </table>
+            </div>
+
+            <details className="text-xs text-muted-foreground">
+              <summary className="cursor-pointer font-medium">Other tax components &amp; the exact mutations run</summary>
+              <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 sm:grid-cols-3">
+                {([
+                  ["SE tax", data.delta.selfEmploymentTax],
+                  ["NIIT", data.delta.niitTax],
+                  ["AMT", data.delta.amtTax],
+                  ["Add'l Medicare", data.delta.additionalMedicareTax],
+                  ["QBI deduction", data.delta.qbiDeduction],
+                  ["EITC", data.delta.eitc],
+                  ["Add'l CTC", data.delta.additionalChildTaxCredit],
+                ] as Array<[string, number | string | undefined]>)
+                  .filter(([, v]) => Math.abs(Number(v ?? 0)) >= 0.5)
+                  .map(([k, v]) => (
+                    <div key={k} className="flex justify-between gap-2">
+                      <span>{k}</span>
+                      <span className="tabular-nums">{signedFmt(Number(v ?? 0))}</span>
+                    </div>
+                  ))}
+              </div>
+              <ul className="mt-2 list-disc pl-5 space-y-0.5">
+                {(data.mutations ?? []).map((m, i) => (
+                  <li key={i}>
+                    <span className="font-medium">{WHATIF_KIND_LABELS[m.kind as WhatIfKind] ?? m.kind}</span>
+                    {m.adjustmentType
+                      ? ` — ${ADJUSTMENT_TYPE_LABELS[m.adjustmentType] ?? m.adjustmentType}${
+                          m.amount != null ? ` = ${fmt(Number(m.amount))}` : ""
+                        }`
+                      : m.field
+                        ? ` — ${WHATIF_CLIENT_FIELDS[m.field] ?? m.field} = ${String(m.value)}`
+                        : ""}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          </div>
+        ) : null}
+      </CardContent>
     </Card>
   );
 }

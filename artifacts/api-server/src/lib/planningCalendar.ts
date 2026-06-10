@@ -52,6 +52,12 @@ const DEADLINE_BY_ID: Record<string, DeadlineType> = {
   "G1.96": "year_end", // §132(f) transit (per-month elections within the year)
   // Estimated-tax safe harbor.
   "G1.52": "quarterly", // §6654 estimated-tax safe harbor
+  // Estate — bespoke structures are structural (no hard Dec-31 deadline); the
+  // gifting/529-superfund flags keep the "estate" category's year_end default.
+  "G1.103": "ongoing", // SLAT
+  "G1.104": "ongoing", // ILIT
+  "G1.105": "ongoing", // GRAT
+  "G1.106": "ongoing", // Step-up-in-basis hold (§1014)
 };
 
 const DEADLINE_BY_CATEGORY: Record<StrategyCategory, DeadlineType> = {
@@ -62,6 +68,7 @@ const DEADLINE_BY_CATEGORY: Record<StrategyCategory, DeadlineType> = {
   credits: "filing_deadline",
   business: "ongoing",
   state: "ongoing",
+  estate: "year_end", // annual-exclusion gifting + 529 superfunding are Dec-31 deadlines
 };
 
 const MONTHS = [

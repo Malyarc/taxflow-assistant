@@ -586,7 +586,7 @@ paths:
           required: false
           schema:
             type: string
-            enum: [retirement, state, charitable, timing, business, investment, credits]
+            enum: [retirement, state, charitable, timing, business, investment, credits, estate]
         - name: minAgi
           in: query
           required: false
@@ -3806,7 +3806,7 @@ components:
           type: string
         category:
           type: string
-          enum: [retirement, state, charitable, timing, business, investment, credits]
+          enum: [retirement, state, charitable, timing, business, investment, credits, estate]
         estSavings:
           type: number
         confidence:

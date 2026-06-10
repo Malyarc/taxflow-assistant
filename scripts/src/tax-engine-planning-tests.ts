@@ -5710,6 +5710,204 @@ header("AUDIT G1.53 — kiddie threshold year-correct ($2,600 TY2024 / $2,700 TY
 }
 
 // ============================================================================
+// T1.3 — G1.101–G1.106 Estate & gift planning touchpoints (qualitative flags)
+// The individual-1040 engine has NO estate-tax model, so estSavings is an
+// illustrative figure with documented assumptions. Hand-calc'd:
+//   G1.101 gifting:       annualExclusion × 0.40            (2024 18k→7,200; 2025 19k→7,600)
+//   G1.102 529 superfund: round(5×excl × ((1.06^10−1))×0.15)(2025 95k→11,270; 2024 90k→10,676)
+//   G1.103 SLAT:          round(1,000,000 × 6% × 40%)       = 24,000
+//   G1.104 ILIT:          round(2,000,000 × 40% / 25)       = 32,000
+//   G1.105 GRAT:          round(1,000,000 × (8%−5.4%) × 40%)= 10,400
+//   G1.106 step-up:       round(LTCG × 15%)                 (60k→9,000)
+// ============================================================================
+section("T1.3 estate & gift — G1.101–G1.106 (qualitative touchpoints)");
+
+// ── G1.101 annual-exclusion gifting (§2503(b)) — AGI ≥ $400k OR NII ≥ $100k ──
+header("G1.101+1 — single $500k wages TY2024: fires, estSavings $7,200");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 500000, stateCode: "FL" }],
+  });
+  const hit = findHit(hits, "G1.101");
+  checkTruthy("G1.101+1", "fires at AGI $500k", hit != null, true, "§2503(b) affluent-estate proxy");
+  if (hit) {
+    check("G1.101+1", "estSavings $7,200 (18,000 × 40%)", hit.estSavings, 7200, 0, "§2503(b) 2024 $18k × 40% estate rate");
+    checkTruthy("G1.101+1", "category = estate", hit.category === "estate", true);
+    check("G1.101+1", "annualExclusion input 18,000", Number(hit.inputs.annualExclusion), 18000, 0);
+  }
+}
+header("G1.101+2 — MFJ $900k TY2025: fires, estSavings $7,600 (year-indexed $19k)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2025 },
+    w2s: [{ taxYear: 2025, wagesBox1: 900000, stateCode: "FL" }],
+  });
+  const hit = findHit(hits, "G1.101");
+  checkTruthy("G1.101+2", "fires", hit != null, true);
+  if (hit) check("G1.101+2", "estSavings $7,600 (19,000 × 40%)", hit.estSavings, 7600, 0, "§2503(b) 2025 $19k × 40%");
+}
+header("G1.101-1 — single $300k, no investment income: no fire");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 300000, stateCode: "FL" }],
+  });
+  checkTruthy("G1.101-1", "no fire below $400k proxy", findHit(hits, "G1.101") == null, true);
+}
+
+// ── G1.102 529 superfunding (§529(c)(2)(B)) — deps ≥ 1 AND (AGI ≥ $300k OR NII ≥ $50k) ──
+header("G1.102+1 — MFJ $400k + 2 kids TY2025: fires, superfund $95k, estSavings $11,270");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2025, dependentsUnder17: 2 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2025, wagesBox1: 400000, stateCode: "FL" }],
+  });
+  const hit = findHit(hits, "G1.102");
+  checkTruthy("G1.102+1", "fires (deps + AGI $400k)", hit != null, true);
+  if (hit) {
+    check("G1.102+1", "superfund $95,000 (5 × $19k)", Number(hit.inputs.superfund), 95000, 0);
+    check("G1.102+1", "estSavings $11,270 (95k × 0.1186271)", hit.estSavings, 11270, 0, "5×excl × ((1.06^10−1)) × 15% LTCG");
+  }
+}
+header("G1.102+2 — MFJ $400k + 2 kids TY2024: estSavings $10,676 (90k front-load)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024, dependentsUnder17: 2 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 400000, stateCode: "FL" }],
+  });
+  const hit = findHit(hits, "G1.102");
+  checkTruthy("G1.102+2", "fires", hit != null, true);
+  if (hit) check("G1.102+2", "estSavings $10,676 (90k × 0.1186271)", hit.estSavings, 10676, 0);
+}
+header("G1.102-1 — MFJ $400k, NO dependents: no fire");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2025 },
+    w2s: [{ taxYear: 2025, wagesBox1: 400000, stateCode: "FL" }],
+  });
+  checkTruthy("G1.102-1", "no fire without dependents", findHit(hits, "G1.102") == null, true);
+}
+header("G1.102-2 — MFJ $200k + 2 kids: no fire (below $300k AGI proxy)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2025, dependentsUnder17: 2 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2025, wagesBox1: 200000, stateCode: "FL" }],
+  });
+  checkTruthy("G1.102-2", "no fire below $300k AGI", findHit(hits, "G1.102") == null, true);
+}
+
+// ── G1.103 SLAT (§2523) — MFJ AND (AGI ≥ $750k OR NII ≥ $250k) ──
+header("G1.103+1 — MFJ $900k TY2024: fires, estSavings $24,000 (1M × 6% × 40%)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 900000, stateCode: "FL" }],
+  });
+  const hit = findHit(hits, "G1.103");
+  checkTruthy("G1.103+1", "fires (MFJ + AGI $900k)", hit != null, true);
+  if (hit) check("G1.103+1", "estSavings $24,000", hit.estSavings, 24000, 0, "$1M illustrative × 6% growth × 40% estate");
+}
+header("G1.103-1 — SINGLE $900k: no fire (needs MFJ)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 900000, stateCode: "FL" }],
+  });
+  checkTruthy("G1.103-1", "no fire when single", findHit(hits, "G1.103") == null, true);
+}
+header("G1.103-2 — MFJ $500k: no fire (below $750k proxy)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 500000, stateCode: "FL" }],
+  });
+  checkTruthy("G1.103-2", "no fire below proxy", findHit(hits, "G1.103") == null, true);
+}
+
+// ── G1.104 ILIT (§2042) — AGI ≥ $750k OR NII ≥ $250k ──
+header("G1.104+1 — single $900k TY2024: fires, estSavings $32,000 (2M × 40% / 25)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 900000, stateCode: "FL" }],
+  });
+  const hit = findHit(hits, "G1.104");
+  checkTruthy("G1.104+1", "fires (AGI $900k)", hit != null, true);
+  if (hit) check("G1.104+1", "estSavings $32,000", hit.estSavings, 32000, 0, "$2M illustrative face × 40% / 25-yr");
+}
+header("G1.104-1 — single $500k: no fire (below $750k)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 500000, stateCode: "FL" }],
+  });
+  checkTruthy("G1.104-1", "no fire below $750k", findHit(hits, "G1.104") == null, true);
+}
+
+// ── G1.105 GRAT (§2702) — (AGI ≥ $750k OR NII ≥ $250k) AND LTCG ≥ $100k ──
+header("G1.105+1 — single $900k + $200k LTCG TY2024: fires, estSavings $10,400");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 900000, stateCode: "FL" }],
+    form1099s: [{ taxYear: 2024, formType: "b", payerName: "Brokerage", longTermGainLoss: 200000 } as unknown as TaxReturnInputs["form1099s"][number]],
+  });
+  const hit = findHit(hits, "G1.105");
+  checkTruthy("G1.105+1", "fires (proxy + LTCG ≥ $100k)", hit != null, true);
+  if (hit) check("G1.105+1", "estSavings $10,400 (1M × 2.6% × 40%)", hit.estSavings, 10400, 0, "$1M × (8% − 5.4% §7520) × 40%");
+}
+header("G1.105-1 — single $900k + $50k LTCG: no fire (LTCG < $100k)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 900000, stateCode: "FL" }],
+    form1099s: [{ taxYear: 2024, formType: "b", payerName: "Brokerage", longTermGainLoss: 50000 } as unknown as TaxReturnInputs["form1099s"][number]],
+  });
+  checkTruthy("G1.105-1", "no fire LTCG < $100k", findHit(hits, "G1.105") == null, true);
+}
+header("G1.105-2 — $400k wages + $200k LTCG: no fire (AGI $600k, NII $200k both < proxy)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 400000, stateCode: "FL" }],
+    form1099s: [{ taxYear: 2024, formType: "b", payerName: "Brokerage", longTermGainLoss: 200000 } as unknown as TaxReturnInputs["form1099s"][number]],
+  });
+  checkTruthy("G1.105-2", "no fire below wealth proxy", findHit(hits, "G1.105") == null, true);
+}
+
+// ── G1.106 step-up-in-basis hold (§1014) — age ≥ 65 AND LTCG ≥ $50k ──
+header("G1.106+1 — single age 67 + $60k LTCG TY2024: fires, estSavings $9,000 (60k × 15%)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 67 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 90000, stateCode: "FL" }],
+    form1099s: [{ taxYear: 2024, formType: "b", payerName: "Brokerage", longTermGainLoss: 60000 } as unknown as TaxReturnInputs["form1099s"][number]],
+  });
+  const hit = findHit(hits, "G1.106");
+  checkTruthy("G1.106+1", "fires (age 67 + LTCG $60k)", hit != null, true);
+  if (hit) check("G1.106+1", "estSavings $9,000", hit.estSavings, 9000, 0, "§1014 — LTCG $60k × 15% illustrative");
+}
+header("G1.106-1 — age 50 + $60k LTCG: no fire (under 65)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 50 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 90000, stateCode: "FL" }],
+    form1099s: [{ taxYear: 2024, formType: "b", payerName: "Brokerage", longTermGainLoss: 60000 } as unknown as TaxReturnInputs["form1099s"][number]],
+  });
+  checkTruthy("G1.106-1", "no fire under 65", findHit(hits, "G1.106") == null, true);
+}
+header("G1.106-2 — age 67 + $40k LTCG: no fire (LTCG < $50k)");
+{
+  const hits = runPlanning({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024, taxpayerAge: 67 } as unknown as TaxReturnInputs["client"],
+    w2s: [{ taxYear: 2024, wagesBox1: 90000, stateCode: "FL" }],
+    form1099s: [{ taxYear: 2024, formType: "b", payerName: "Brokerage", longTermGainLoss: 40000 } as unknown as TaxReturnInputs["form1099s"][number]],
+  });
+  checkTruthy("G1.106-2", "no fire LTCG < $50k", findHit(hits, "G1.106") == null, true);
+}
+
+// ============================================================================
 // RESULTS
 // ============================================================================
 

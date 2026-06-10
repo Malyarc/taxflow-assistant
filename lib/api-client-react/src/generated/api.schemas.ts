@@ -2489,6 +2489,7 @@ export const OpportunityHitCategory = {
   business: "business",
   investment: "investment",
   credits: "credits",
+  estate: "estate",
 } as const;
 
 export type OpportunityHitInputs = { [key: string]: unknown };
@@ -2956,6 +2957,7 @@ export const GetPlanningHitListCategory = {
   business: "business",
   investment: "investment",
   credits: "credits",
+  estate: "estate",
 } as const;
 
 export type GetPeerBenchmarkParams = {

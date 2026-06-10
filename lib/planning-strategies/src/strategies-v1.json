@@ -1,6 +1,6 @@
 {
-  "version": "v1.20.0",
-  "reviewedAt": "2026-06-05",
+  "version": "v1.21.0",
+  "reviewedAt": "2026-06-09",
   "strategies": [
     {
       "id": "G1.1",
@@ -2225,6 +2225,126 @@
         "MAGI (drives the 6%-of-excess phase-out over $75k single / $150k MFJ)"
       ],
       "action": "Claim the OBBBA senior bonus deduction ($6,000 per individual age 65+) — deductible portion ~{{deduction}} this year after the MAGI phase-out. Estimated tax savings ~{{estSavings}}.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.101",
+      "name": "Annual-exclusion gifting (estate reduction)",
+      "category": "estate",
+      "ircSection": "IRC §2503(b); §2010",
+      "irsPub": "Rev. Proc. 2023-34 ($18k 2024); Rev. Proc. 2024-40 ($19k 2025); Rev. Proc. 2025-32 ($19k 2026). Basic exclusion amount (BEA) $13.61M 2024 / $13.99M 2025 / $15M 2026 (OBBBA-permanent).",
+      "trigger": "Affluent-estate proxy: AGI >= $400k OR net investment income >= $100k.",
+      "formula": "estSavings = annual gift exclusion x 40% top estate rate (one donee/year removed from a taxable estate, plus its future appreciation). Per donee, per year; MFJ gift-splitting doubles it. Only benefits an estate above the federal BEA or a lower state estate-tax threshold.",
+      "confidence": 0.5,
+      "cpaEffortHours": 1.0,
+      "recurring": true,
+      "validUntil": "2099-12-31",
+      "prerequisiteData": [
+        "Total estate / net worth vs the federal BEA (and any state estate/inheritance threshold)",
+        "Number of intended donees (children, grandchildren, others)",
+        "MFJ gift-splitting consent (doubles the per-donee exclusion; requires Form 709)"
+      ],
+      "action": "Gift up to {{annualExclusion}} per donee this year (gift-tax-free under §2503(b)) — removes that amount plus its future appreciation from a taxable estate. Per-donee estate-tax reduction ~{{estSavings}} at the 40% rate; MFJ gift-splitting doubles the exclusion.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.102",
+      "name": "529 plan superfunding (5-year gift election)",
+      "category": "estate",
+      "ircSection": "IRC §529(c)(2)(B)",
+      "irsPub": "Form 709; Rev. Proc. 2024-40. Front-loads 5x the annual exclusion; SECURE 2.0 added a limited 529->Roth rollover for long-held accounts.",
+      "trigger": "Has dependents AND (AGI >= $300k OR net investment income >= $50k).",
+      "formula": "Front-load 5 x annual exclusion ($90k 2024 / $95k 2025-26) into a 529 with the §529(c)(2)(B) election. estSavings = illustrative income-tax-free growth value = superfund x ((1.06^10 - 1)) x 15% LTCG (10-yr, 6% growth assumption).",
+      "confidence": 0.5,
+      "cpaEffortHours": 1.5,
+      "recurring": false,
+      "validUntil": "2099-12-31",
+      "prerequisiteData": [
+        "Beneficiary (child/grandchild) and current 529 balance",
+        "State 529 income-tax deduction/credit (varies by state)",
+        "Whether the donor expects to survive the 5-year election period (else partial estate add-back)"
+      ],
+      "action": "Front-load {{superfund}} into a 529 plan using the §529(c)(2)(B) 5-year election — gift-tax-free and out of the estate immediately. Illustrative income-tax-free-growth value ~{{estSavings}} (6%/10-yr assumption).",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.103",
+      "name": "Spousal Lifetime Access Trust (SLAT)",
+      "category": "estate",
+      "ircSection": "IRC §2501; §2523",
+      "irsPub": "Form 709. Uses the donor-spouse's BEA ($13.99M 2025 / $15M 2026 OBBBA-permanent); the beneficiary spouse retains indirect access.",
+      "trigger": "MFJ AND (AGI >= $750k OR net investment income >= $250k).",
+      "formula": "Illustrative annual estate-tax shelter on an assumed $1M of trust assets appreciating 6%/yr, removed from a 40% estate: $1,000,000 x 6% x 40% = $24,000/yr. CPA sizes to actual funding.",
+      "confidence": 0.4,
+      "cpaEffortHours": 5.0,
+      "recurring": false,
+      "validUntil": "2099-12-31",
+      "prerequisiteData": [
+        "Assets available to fund the trust (and not needed for the grantor's own support)",
+        "Whether both spouses fund SLATs (reciprocal-trust doctrine risk if identical)",
+        "Estate value vs the BEA ($30M for a couple)"
+      ],
+      "action": "Fund a Spousal Lifetime Access Trust to remove appreciating assets (and their growth) from the estate while the beneficiary spouse retains indirect access. Illustrative shelter ~{{estSavings}}/yr on a $1M illustrative funding — size to the client's balance sheet.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.104",
+      "name": "Irrevocable Life Insurance Trust (ILIT)",
+      "category": "estate",
+      "ircSection": "IRC §2042; §2035",
+      "irsPub": "Form 709 (Crummey-notice gifts). Removes the death benefit from the taxable estate when the ILIT (not the insured) owns the policy.",
+      "trigger": "AGI >= $750k OR net investment income >= $250k.",
+      "formula": "Illustrative: assumed $2M death benefit removed from a 40% estate, annualized over 25 yrs = $2,000,000 x 40% / 25 = $32,000/yr-equivalent. CPA sizes to the actual policy.",
+      "confidence": 0.4,
+      "cpaEffortHours": 4.0,
+      "recurring": false,
+      "validUntil": "2099-12-31",
+      "prerequisiteData": [
+        "Existing/planned life-insurance face value and ownership",
+        "Whether transferring an EXISTING policy (triggers the §2035 3-year lookback)",
+        "Trustee + annual Crummey-notice administration capacity"
+      ],
+      "action": "Hold life insurance in an Irrevocable Life Insurance Trust so the death benefit escapes the taxable estate (§2042). Illustrative annualized estate-tax benefit ~{{estSavings}} on an assumed $2M face — size to the actual policy.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.105",
+      "name": "Grantor Retained Annuity Trust (GRAT)",
+      "category": "estate",
+      "ircSection": "IRC §2702",
+      "irsPub": "Form 709; §7520 rate (updated monthly). Transfers appreciation above the §7520 hurdle gift-tax-free.",
+      "trigger": "(AGI >= $750k OR net investment income >= $250k) AND long-term capital gains >= $100k.",
+      "formula": "Illustrative: assumed $1M funding; appreciation above the ~5.4% §7520 hurdle is removed. At 8% growth, excess = 2.6% x $1M = $26k/yr, x 40% estate = $10,400/yr.",
+      "confidence": 0.4,
+      "cpaEffortHours": 4.5,
+      "recurring": false,
+      "validUntil": "2099-12-31",
+      "prerequisiteData": [
+        "Concentrated/appreciating asset suitable for a near-zeroed-out GRAT",
+        "Current §7520 rate (sets the hurdle the assets must beat)",
+        "Whether the grantor is likely to survive the GRAT term (mortality risk)"
+      ],
+      "action": "Fund a (near-zeroed-out) Grantor Retained Annuity Trust with appreciating assets — appreciation above the §7520 hurdle passes to heirs gift-tax-free. Illustrative benefit ~{{estSavings}}/yr (8% growth vs 5.4% hurdle on $1M) — size to the actual asset.",
+      "formulaRev": 1
+    },
+    {
+      "id": "G1.106",
+      "name": "Step-up-in-basis hold (§1014)",
+      "category": "estate",
+      "ircSection": "IRC §1014",
+      "irsPub": "Pub 551. Inherited capital assets take a date-of-death FMV basis — the built-in gain is never income-taxed. IRD assets (IRAs, annuities) do NOT step up.",
+      "trigger": "taxpayerAge >= 65 AND long-term capital gains >= $50k.",
+      "formula": "estSavings = realized LTCG x 15% (illustrative — a comparable block of appreciated assets held until death avoids ~15% LTCG via the §1014 step-up). Community-property states get a double step-up.",
+      "confidence": 0.45,
+      "cpaEffortHours": 1.0,
+      "recurring": false,
+      "validUntil": "2099-12-31",
+      "prerequisiteData": [
+        "Embedded (unrealized) gain in the client's taxable, non-retirement holdings",
+        "Whether the client needs liquidity/diversification that argues for selling anyway",
+        "Community-property status (double step-up for a surviving spouse)"
+      ],
+      "action": "For appreciated assets the client doesn't need to sell, consider HOLDING until death — heirs get a §1014 basis step-up to FMV and the built-in gain is never income-taxed. On the {{ltcg}} of gains realized this year, the step-up equivalent is ~{{estSavings}} of avoided LTCG.",
       "formulaRev": 1
     },
     {

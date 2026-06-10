@@ -16,7 +16,8 @@ export type StrategyCategory =
   | "timing"
   | "business"
   | "investment"
-  | "credits";
+  | "credits"
+  | "estate";
 
 /**
  * One strategy entry. `id` is stable forever; the math is implemented by a
