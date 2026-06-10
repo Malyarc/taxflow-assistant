@@ -60,7 +60,8 @@ const NUMERIC_RETURN_COLUMNS: readonly string[] = Object.entries(
   .filter(([, col]) => col.columnType === "PgNumeric")
   .map(([key]) => key);
 
-function mapReturn(r: typeof taxReturnsTable.$inferSelect) {
+// Exported for the cpa-tools engagement endpoints (same response contract).
+export function mapReturn(r: typeof taxReturnsTable.$inferSelect) {
   const out: Record<string, unknown> = { ...r };
   for (const key of NUMERIC_RETURN_COLUMNS) {
     const v = (r as Record<string, unknown>)[key];

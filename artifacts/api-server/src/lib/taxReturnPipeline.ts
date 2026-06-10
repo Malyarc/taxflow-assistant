@@ -241,6 +241,9 @@ export async function loadTaxReturnInputs(
 /**
  * Auto-load prior-year carryforwards as synthetic adjustments.
  *
+ * Exported for the T2.2 roll-forward endpoint, which reports the same list
+ * (single source of truth for "what will auto-seed in year N").
+ *
  * For tax year N, we look up the stored tax_returns row for year N-1 and pull
  * forward:
  *   - capital_loss_carryforward_short  (Sched D, preserves short character per Pub 550)
@@ -254,7 +257,7 @@ export async function loadTaxReturnInputs(
  *
  * Returns synthetic AdjustmentFact rows (in-memory only; never written to DB).
  */
-async function synthesizePriorYearCarryforwards(
+export async function synthesizePriorYearCarryforwards(
   clientId: number,
   currentYear: number,
   existingAdjustments: AdjustmentFact[],

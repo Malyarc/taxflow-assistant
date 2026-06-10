@@ -30,6 +30,7 @@ import {
   useRunWhatIfScenario,
   useGetPeerBenchmark,
   useGetPlanningDiscovery,
+  useAskReturnQuestion,
   useGetSettings,
   getGetPlanningOpportunitiesQueryKey,
   getGetPlanningMemoQueryKey,
@@ -4732,6 +4733,65 @@ function PlanningSynthesisPanel({ clientId, enabled }: { clientId: number; enabl
   );
 }
 
+/**
+ * T2.2 D3 — Ask the computed return a plain-English question. The answer is
+ * LLM-narrated from the engine's grounding snapshot (the LLM never does math)
+ * and §7216-gated server-side: without consent/AI it returns the
+ * deterministic key-figures summary, flagged via aiUsed.
+ */
+function ReturnQaCard({ clientId }: { clientId: number }) {
+  const [question, setQuestion] = useState("");
+  const [answer, setAnswer] = useState<{ text: string; aiUsed: boolean } | null>(null);
+  const ask = useAskReturnQuestion();
+  const onAsk = async () => {
+    const q = question.trim();
+    if (!q) return;
+    setAnswer(null);
+    try {
+      const r = (await ask.mutateAsync({ clientId, data: { question: q } })) as unknown as {
+        answer: string;
+        aiUsed: boolean;
+      };
+      setAnswer({ text: r.answer, aiUsed: r.aiUsed });
+    } catch {
+      setAnswer({ text: "The question could not be answered — try rephrasing.", aiUsed: false });
+    }
+  };
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Ask this return a question</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="flex gap-2">
+          <Input
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void onAsk();
+            }}
+            maxLength={1000}
+            placeholder='e.g. "Why is the refund smaller than the withholding suggests?"'
+          />
+          <Button size="sm" onClick={() => void onAsk()} disabled={ask.isPending || question.trim().length === 0}>
+            {ask.isPending ? "Thinking…" : "Ask"}
+          </Button>
+        </div>
+        {answer && (
+          <div className="rounded-lg border bg-muted/30 p-3">
+            <p className="whitespace-pre-wrap text-sm">{answer.text}</p>
+            <p className="mt-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+              {answer.aiUsed
+                ? "AI-narrated from engine-computed figures only — verify before relying on it."
+                : "Deterministic engine figures (AI narration off or §7216 consent not on file)."}
+            </p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function PlanningTab({ clientId }: { clientId: number }) {
   const { data, isLoading, error } = useGetPlanningOpportunities(clientId, {
     query: { queryKey: getGetPlanningOpportunitiesQueryKey(clientId) },
@@ -4785,6 +4845,21 @@ function PlanningTab({ clientId }: { clientId: number }) {
             <div className="text-xs text-muted-foreground">
               Catalog {data.catalogVersion} · Tax year {data.taxYear} · {hits.length} opportunit{hits.length === 1 ? "y" : "ies"}
             </div>
+            <Button
+              size="sm"
+              variant="outline"
+              title="Branded client-facing planning report: headline savings, per-opportunity detail, action calendar, disclosures. Deterministic engine numbers only."
+              onClick={() => {
+                const link = document.createElement("a");
+                link.href = `/api/clients/${clientId}/planning-report/pdf`;
+                link.download = "";
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+              }}
+            >
+              Client report (PDF)
+            </Button>
             {hits.length > 0 ? (
               <Button size="sm" variant={synthesisOn ? "outline" : "default"} onClick={() => setSynthesisOn((v) => !v)}>
                 {synthesisOn ? "Hide AI memo" : "Generate AI memo"}
@@ -4793,6 +4868,8 @@ function PlanningTab({ clientId }: { clientId: number }) {
           </div>
         </CardContent>
       </Card>
+
+      <ReturnQaCard clientId={clientId} />
 
       <PlanningSynthesisPanel clientId={clientId} enabled={synthesisOn} />
 

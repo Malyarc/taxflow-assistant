@@ -1,9 +1,12 @@
 /**
- * T2.2 — CPA Tools tab: tax projection + 1040-ES, MFJ-vs-MFS optimizer, and
- * year-over-year + threshold alerts. Reads the T2.2 planning endpoints via the
- * generated React Query hooks; types the (permissively-schema'd) responses
- * locally against the api-server lib shapes.
+ * T2.2 — CPA Tools tab: tax projection + 1040-ES, MFJ-vs-MFS optimizer,
+ * year-over-year + threshold alerts, entity choice (S-corp reasonable comp),
+ * engagement tracking, the client organizer, and prior-year roll-forward.
+ * Reads the T2.2 endpoints via the generated React Query hooks; types the
+ * (permissively-schema'd) responses locally against the api-server lib shapes.
  */
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   useGetTaxProjection,
   getGetTaxProjectionQueryKey,
@@ -11,9 +14,27 @@ import {
   getGetMfjVsMfsQueryKey,
   useGetYearOverYear,
   getGetYearOverYearQueryKey,
+  useGetEntityChoice,
+  getGetEntityChoiceQueryKey,
+  useGetClientOrganizer,
+  getGetClientOrganizerQueryKey,
+  useGetTaxReturn,
+  getGetTaxReturnQueryKey,
+  useUpdateEngagement,
+  useRollForwardClient,
+  type UpdateEngagementBody,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 const usd = (n: number | null | undefined): string =>
   n == null
@@ -312,12 +333,326 @@ function YoySwingRow({ d, isRate, taxLike }: { d: LineDelta; isRate: boolean; ta
   );
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// Card 4 — Entity choice (sole prop vs S-corp reasonable-comp split)
+// ════════════════════════════════════════════════════════════════════════════
+interface EntityOption {
+  reasonableComp: number;
+  sCorpOrdinaryIncome: number;
+  employerFica: number;
+  futa: number;
+  employeeFica: number;
+  engineNetTaxAfterCredits: number;
+  totalCost: number;
+  savingsVsSoleProp: number;
+  scenario: { qbiDeduction: number };
+}
+interface EntityChoiceResp {
+  applicable: boolean;
+  reason?: string;
+  businessProfit: number;
+  soleProp: { netTaxAfterCredits: number; selfEmploymentTax: number; qbiDeduction: number };
+  options: EntityOption[];
+  bestOption: EntityOption | null;
+  assumptions: string[];
+}
+function EntityChoiceCard({ clientId }: { clientId: number }) {
+  const { data, isLoading, error } = useGetEntityChoice(clientId, undefined, {
+    query: { queryKey: getGetEntityChoiceQueryKey(clientId) },
+  });
+  const [showAssumptions, setShowAssumptions] = useState(false);
+  if (isLoading) return <Skeleton className="h-40 w-full" />;
+  if (error || !data) return null;
+  const e = data as unknown as EntityChoiceResp;
+  if (!e.applicable) {
+    return (
+      <Card className="border-dashed">
+        <CardContent className="py-4 text-xs text-muted-foreground">
+          Entity choice (S-corp election): {e.reason ?? "no modelable Schedule C business."}
+        </CardContent>
+      </Card>
+    );
+  }
+  const best = e.bestOption;
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">
+          Entity choice: sole prop vs S-corp
+          <span className="ml-2 text-xs font-normal text-muted-foreground">
+            Schedule C profit {usd(e.businessProfit)} · sole-prop net tax {usd(e.soleProp.netTaxAfterCredits)}
+          </span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {best && best.savingsVsSoleProp > 0.5 ? (
+          <div className="rounded-lg bg-success/10 p-3 text-sm font-medium text-success">
+            Best modeled comp level {usd(best.reasonableComp)} saves {usd(best.savingsVsSoleProp)}/yr vs sole prop —
+            net the payroll/1120-S admin costs and validate the comp benchmark before electing.
+          </div>
+        ) : (
+          <div className="rounded-lg bg-muted/40 p-3 text-sm font-medium">
+            The S-corp election does not beat sole-prop at the modeled comp levels.
+          </div>
+        )}
+        <div className="grid grid-cols-5 gap-2 text-sm">
+          <div className="font-medium text-muted-foreground">W-2 comp</div>
+          <div className="text-right font-medium text-muted-foreground">K-1 income</div>
+          <div className="text-right font-medium text-muted-foreground">Payroll taxes</div>
+          <div className="text-right font-medium text-muted-foreground">Total cost</div>
+          <div className="text-right font-medium text-muted-foreground">Savings</div>
+          {e.options.map((o) => (
+            <EntityOptionRow key={o.reasonableComp} o={o} isBest={o.reasonableComp === best?.reasonableComp} />
+          ))}
+        </div>
+        <button
+          type="button"
+          className="text-[11px] text-brand-ink underline-offset-2 hover:underline"
+          onClick={() => setShowAssumptions((v) => !v)}
+        >
+          {showAssumptions ? "Hide" : "Show"} model assumptions ({e.assumptions.length})
+        </button>
+        {showAssumptions && (
+          <ul className="space-y-1 border-t pt-2 text-[11px] text-muted-foreground">
+            {e.assumptions.map((a, i) => (
+              <li key={i}>• {a}</li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+function EntityOptionRow({ o, isBest }: { o: EntityOption; isBest: boolean }) {
+  const payroll = o.employerFica + o.employeeFica + o.futa;
+  return (
+    <>
+      <div className={isBest ? "font-semibold" : ""}>{usd(o.reasonableComp)}</div>
+      <div className="text-right tabular-nums">{usd(o.sCorpOrdinaryIncome)}</div>
+      <div className="text-right tabular-nums">{usd(payroll)}</div>
+      <div className={`text-right tabular-nums ${isBest ? "font-semibold" : ""}`}>{usd(o.totalCost)}</div>
+      <div className={`text-right tabular-nums ${o.savingsVsSoleProp > 0 ? "text-success" : "text-destructive"}`}>
+        {o.savingsVsSoleProp > 0 ? "+" : ""}
+        {usd(o.savingsVsSoleProp)}
+      </div>
+    </>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Card 5 — Engagement status + filing deadline
+// ════════════════════════════════════════════════════════════════════════════
+const ENGAGEMENT_LABELS: Record<string, string> = {
+  not_started: "Not started",
+  awaiting_documents: "Awaiting documents",
+  in_preparation: "In preparation",
+  in_review: "In review",
+  ready_to_file: "Ready to file",
+  filed: "Filed",
+};
+function EngagementCard({ clientId }: { clientId: number }) {
+  const queryClient = useQueryClient();
+  const { data, isLoading } = useGetTaxReturn(clientId, {
+    query: { queryKey: getGetTaxReturnQueryKey(clientId) },
+  });
+  const update = useUpdateEngagement();
+  if (isLoading) return <Skeleton className="h-24 w-full" />;
+  if (!data) return null;
+  const ret = data as unknown as { taxYear: number; engagementStatus?: string; extensionFiled?: boolean };
+  const status = ret.engagementStatus ?? "not_started";
+  const extended = ret.extensionFiled ?? false;
+  const patch = async (body: UpdateEngagementBody) => {
+    try {
+      await update.mutateAsync({ clientId, data: body });
+      await queryClient.invalidateQueries({ queryKey: getGetTaxReturnQueryKey(clientId) });
+    } catch {
+      // Leave the server value; the next refetch shows the truth.
+    }
+  };
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">
+          Engagement
+          <span className="ml-2 text-xs font-normal text-muted-foreground">TY{ret.taxYear}</span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-wrap items-center gap-4">
+        <Select
+          value={status}
+          onValueChange={(v) => {
+            // Radix can fire an empty value before items mount — never PATCH it.
+            if (!v || !(v in ENGAGEMENT_LABELS)) return;
+            void patch({ engagementStatus: v as UpdateEngagementBody["engagementStatus"] });
+          }}
+        >
+          <SelectTrigger className="w-48">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {Object.entries(ENGAGEMENT_LABELS).map(([value, label]) => (
+              <SelectItem key={value} value={value}>
+                {label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <label className="flex items-center gap-2 text-sm">
+          <Checkbox checked={extended} onCheckedChange={(c) => void patch({ extensionFiled: c === true })} />
+          Extension filed (Form 4868)
+        </label>
+        <span className="text-xs text-muted-foreground">
+          Deadline: <span className="font-medium text-foreground">{extended ? "Oct 15" : "Apr 15"}, {ret.taxYear + 1}</span>
+          {extended ? " (extended)" : ""}
+        </span>
+        {update.isPending && <span className="text-xs text-muted-foreground">Saving…</span>}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Card 6 — Client organizer (document-request checklist)
+// ════════════════════════════════════════════════════════════════════════════
+interface OrganizerItemResp { id: string; category: string; title: string; detail: string; status: string }
+interface OrganizerResp {
+  taxYear: number;
+  priorYear: number;
+  items: OrganizerItemResp[];
+  counts: { missing: number; received: number; questions: number };
+}
+function OrganizerCard({ clientId }: { clientId: number }) {
+  const { data, isLoading, error } = useGetClientOrganizer(clientId, undefined, {
+    query: { queryKey: getGetClientOrganizerQueryKey(clientId) },
+  });
+  const [expanded, setExpanded] = useState(false);
+  if (isLoading) return <Skeleton className="h-24 w-full" />;
+  if (error || !data) return null;
+  const o = data as unknown as OrganizerResp;
+  const visible = expanded ? o.items : o.items.filter((i) => i.status === "missing").slice(0, 6);
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center justify-between text-base">
+          <span>
+            Client organizer
+            <span className="ml-2 text-xs font-normal text-muted-foreground">
+              TY{o.taxYear} · {o.counts.missing} outstanding · {o.counts.received} received
+            </span>
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            title="Branded printable checklist personalized from last year's documents"
+            onClick={() => {
+              const link = document.createElement("a");
+              link.href = `/api/clients/${clientId}/organizer/pdf?taxYear=${o.taxYear}`;
+              link.download = "";
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+            }}
+          >
+            Organizer (PDF)
+          </Button>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-1.5">
+        {visible.map((i) => (
+          <div key={i.id} className="flex items-start gap-2 text-sm">
+            <span className={i.status === "received" ? "text-success" : i.status === "question" ? "text-brand-ink" : "text-muted-foreground"}>
+              {i.status === "received" ? "✓" : i.status === "question" ? "?" : "☐"}
+            </span>
+            <span className={i.status === "received" ? "text-muted-foreground line-through" : ""}>{i.title}</span>
+          </div>
+        ))}
+        <button
+          type="button"
+          className="pt-1 text-[11px] text-brand-ink underline-offset-2 hover:underline"
+          onClick={() => setExpanded((v) => !v)}
+        >
+          {expanded ? "Show outstanding only" : `Show all ${o.items.length} items (incl. questionnaire)`}
+        </button>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Card 7 — Prior-year roll-forward (proforma)
+// ════════════════════════════════════════════════════════════════════════════
+interface RollForwardResp {
+  fromYear: number;
+  toYear: number;
+  copied: Record<string, number>;
+  carryforwardsSeeded: Array<{ type: string; amount: number }>;
+}
+function RollForwardCard({ clientId }: { clientId: number }) {
+  const queryClient = useQueryClient();
+  const roll = useRollForwardClient();
+  const [result, setResult] = useState<RollForwardResp | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const onRoll = async () => {
+    setErrorMsg(null);
+    try {
+      const r = await roll.mutateAsync({ clientId, data: {} });
+      setResult(r as unknown as RollForwardResp);
+      // Everything about this client changed year — refetch the world.
+      await queryClient.invalidateQueries();
+    } catch (e) {
+      const detail = (e as { response?: { data?: { error?: string } }; message?: string });
+      setErrorMsg(detail.response?.data?.error ?? detail.message ?? "Roll-forward failed");
+    }
+  };
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Prior-year roll-forward (proforma)</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-xs text-muted-foreground">
+          Copies last year's W-2 employers, 1099 payers, K-1 entities (basis rolled), rentals, and account
+          balances into the next tax year as estimates, advances the client's year, and auto-seeds every
+          engine carryforward. Capital transactions and disposed rentals never roll.
+        </p>
+        <Button size="sm" onClick={() => void onRoll()} disabled={roll.isPending}>
+          {roll.isPending ? "Rolling…" : "Roll forward to next year"}
+        </Button>
+        {errorMsg && <p className="text-xs text-destructive">{errorMsg}</p>}
+        {result && (
+          <div className="rounded-lg border bg-muted/30 p-3 text-xs">
+            <p className="font-medium text-success">
+              Rolled TY{result.fromYear} → TY{result.toYear}.
+            </p>
+            <p className="mt-1 text-muted-foreground">
+              Copied: {Object.entries(result.copied)
+                .filter(([, n]) => n > 0)
+                .map(([k, n]) => `${n} ${k}`)
+                .join(", ") || "no input rows"}
+              .
+            </p>
+            {result.carryforwardsSeeded.length > 0 && (
+              <p className="mt-1 text-muted-foreground">
+                Carryforwards auto-seeded: {result.carryforwardsSeeded.map((c) => `${c.type} ${usd(c.amount)}`).join("; ")}.
+              </p>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function CpaToolsTab({ clientId }: { clientId: number }) {
   return (
     <div className="space-y-4">
+      <EngagementCard clientId={clientId} />
       <ProjectionCard clientId={clientId} />
       <MfjVsMfsCard clientId={clientId} />
+      <EntityChoiceCard clientId={clientId} />
       <YearOverYearCard clientId={clientId} />
+      <OrganizerCard clientId={clientId} />
+      <RollForwardCard clientId={clientId} />
     </div>
   );
 }

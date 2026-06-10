@@ -44,13 +44,18 @@ function tagOf(spouse: unknown): "taxpayer" | "spouse" {
   return spouse === "spouse" ? "spouse" : "taxpayer";
 }
 
-/** Net household tax after credits (withholding-independent). */
-function netTax(ret: ComputedTaxReturn): number {
+/**
+ * Net household tax after credits (withholding-independent). By the engine's
+ * refund identity, withheld − refund = liability − credits on both the federal
+ * and state side. Shared with the entity-choice calculator (same metric).
+ */
+export function netTaxAfterCredits(ret: ComputedTaxReturn): number {
   return (
     ret.federalTaxWithheld - ret.federalRefundOrOwed +
     (ret.stateTaxWithheld - ret.stateRefundOrOwed)
   );
 }
+const netTax = netTaxAfterCredits;
 
 interface MfsSplit {
   taxpayer: TaxReturnInputs;

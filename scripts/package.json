@@ -20,6 +20,7 @@
   "devDependencies": {
     "@types/node": "catalog:",
     "@types/pdfkit": "^0.17.6",
+    "fast-check": "^4.8.0",
     "tsx": "catalog:"
   }
 }

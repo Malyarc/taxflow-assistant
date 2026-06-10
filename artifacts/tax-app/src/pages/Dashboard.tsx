@@ -1,16 +1,21 @@
+import { useState } from "react";
 import {
   useGetDashboardSummary,
   useGetPlanningHitList,
   useGetSettings,
+  useListPlanningCampaigns,
+  getListPlanningCampaignsQueryKey,
+  useDraftCampaignEmail,
   getGetPlanningHitListQueryKey,
   getGetSettingsQueryKey,
 } from "@workspace/api-client-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Link } from "wouter";
 import { UpgradeProCard } from "@/components/UpgradeProCard";
-import { Users, FileClock, Banknote, Receipt, Target, ChevronRight, type LucideIcon } from "lucide-react";
+import { Users, FileClock, Banknote, Receipt, Target, Megaphone, ChevronRight, type LucideIcon } from "lucide-react";
 
 function fmt(n: number | null | undefined): string {
   if (n == null) return "—";
@@ -79,7 +84,108 @@ export default function Dashboard() {
       )}
 
       {planningGated ? <UpgradeProCard variant="widget" /> : <PlanningHitListWidget />}
+      {planningGated ? null : <PlanningCampaignsWidget />}
     </div>
+  );
+}
+
+// ── T2.2 D3 — firm-wide planning campaigns (cohorts by strategy) ─────────────
+interface CampaignMember { clientId: number; firstName: string; lastName: string; estSavings: number }
+interface Campaign {
+  strategyId: string;
+  name: string;
+  clientCount: number;
+  totalEstSavings: number;
+  medianEstSavings: number;
+  clients: CampaignMember[];
+}
+function PlanningCampaignsWidget() {
+  const { data, isLoading, isError } = useListPlanningCampaigns(undefined, {
+    query: { queryKey: getListPlanningCampaignsQueryKey() },
+  });
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [draft, setDraft] = useState<{ strategyId: string; template: string; aiUsed: boolean } | null>(null);
+  const draftEmail = useDraftCampaignEmail();
+  if (isLoading) return <Skeleton className="h-32 w-full" />;
+  if (isError || !data) return null;
+  const campaigns = ((data as unknown as { campaigns: Campaign[] }).campaigns ?? []).slice(0, 6);
+  if (campaigns.length === 0) return null;
+
+  const onDraft = async (strategyId: string) => {
+    setDraft(null);
+    try {
+      const r = (await draftEmail.mutateAsync({ data: { strategyId } })) as unknown as {
+        template: string;
+        aiUsed: boolean;
+      };
+      setDraft({ strategyId, template: r.template, aiUsed: r.aiUsed });
+    } catch {
+      setDraft({ strategyId, template: "Draft failed — try again.", aiUsed: false });
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2.5">
+          <span className="grid h-8 w-8 place-items-center rounded-lg bg-brand/10 text-brand-ink">
+            <Megaphone className="h-4 w-4" strokeWidth={2} />
+          </span>
+          <CardTitle className="text-lg">Planning campaigns</CardTitle>
+        </div>
+        <p className="text-xs text-muted-foreground mt-1.5">
+          Clients grouped by strategy across the firm's top planning targets — the batch-outreach view.
+          "Draft email" writes a {"{{firstName}}"}/{"{{estSavings}}"} mail-merge template (no client data
+          is sent to the AI; the merge happens locally).
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {campaigns.map((c) => (
+          <div key={c.strategyId} className="rounded-lg border border-border p-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="font-medium truncate">{c.name}</div>
+                <div className="text-xs text-muted-foreground">
+                  {c.strategyId} · {c.clientCount} client{c.clientCount === 1 ? "" : "s"} · median {fmt(c.medianEstSavings)}
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <div className="text-base font-semibold tabular-nums text-success">{fmt(c.totalEstSavings)}</div>
+                <Button size="sm" variant="outline" onClick={() => setOpenId(openId === c.strategyId ? null : c.strategyId)}>
+                  {openId === c.strategyId ? "Hide" : "Cohort"}
+                </Button>
+                <Button size="sm" onClick={() => void onDraft(c.strategyId)} disabled={draftEmail.isPending}>
+                  {draftEmail.isPending && draft?.strategyId !== c.strategyId ? "…" : "Draft email"}
+                </Button>
+              </div>
+            </div>
+            {openId === c.strategyId && (
+              <div className="mt-2 space-y-1 border-t pt-2">
+                {c.clients.slice(0, 10).map((m) => (
+                  <Link key={m.clientId} href={`/clients/${m.clientId}`}>
+                    <div className="flex cursor-pointer items-center justify-between rounded px-2 py-1 text-sm hover:bg-accent">
+                      <span>{m.firstName} {m.lastName}</span>
+                      <span className="tabular-nums text-success">{fmt(m.estSavings)}</span>
+                    </div>
+                  </Link>
+                ))}
+                {c.clients.length > 10 && (
+                  <div className="px-2 text-xs text-muted-foreground">+{c.clients.length - 10} more</div>
+                )}
+              </div>
+            )}
+            {draft?.strategyId === c.strategyId && (
+              <div className="mt-2 rounded border bg-muted/30 p-3">
+                <pre className="whitespace-pre-wrap font-sans text-xs">{draft.template}</pre>
+                <p className="mt-2 text-[10px] uppercase tracking-wide text-muted-foreground">
+                  {draft.aiUsed ? "AI-drafted template — review before sending." : "Deterministic template (AI off)."}
+                </p>
+              </div>
+            )}
+          </div>
+        ))}
+      </CardContent>
+    </Card>
   );
 }
 

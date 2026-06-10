@@ -1407,6 +1407,25 @@ export const GetTaxReturnResponse = zod.object({
   daysCurrentStateResident: zod
     .number()
     .describe("E12 — Days resident in current state (changeDate to Dec 31)."),
+  engagementStatus: zod
+    .enum([
+      "not_started",
+      "awaiting_documents",
+      "in_preparation",
+      "in_review",
+      "ready_to_file",
+      "filed",
+    ])
+    .optional()
+    .describe(
+      "T2.2 D2 — engagement workflow status for the firm busy-season view.",
+    ),
+  extensionFiled: zod
+    .boolean()
+    .optional()
+    .describe(
+      "T2.2 D2 — Form 4868 extension filed (the Oct 15 deadline governs).",
+    ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -1529,6 +1548,25 @@ export const CalculateTaxReturnResponse = zod.object({
   daysCurrentStateResident: zod
     .number()
     .describe("E12 — Days resident in current state (changeDate to Dec 31)."),
+  engagementStatus: zod
+    .enum([
+      "not_started",
+      "awaiting_documents",
+      "in_preparation",
+      "in_review",
+      "ready_to_file",
+      "filed",
+    ])
+    .optional()
+    .describe(
+      "T2.2 D2 — engagement workflow status for the firm busy-season view.",
+    ),
+  extensionFiled: zod
+    .boolean()
+    .optional()
+    .describe(
+      "T2.2 D2 — Form 4868 extension filed (the Oct 15 deadline governs).",
+    ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -1659,6 +1697,25 @@ export const UpdateTaxReturnResponse = zod.object({
   daysCurrentStateResident: zod
     .number()
     .describe("E12 — Days resident in current state (changeDate to Dec 31)."),
+  engagementStatus: zod
+    .enum([
+      "not_started",
+      "awaiting_documents",
+      "in_preparation",
+      "in_review",
+      "ready_to_file",
+      "filed",
+    ])
+    .optional()
+    .describe(
+      "T2.2 D2 — engagement workflow status for the firm busy-season view.",
+    ),
+  extensionFiled: zod
+    .boolean()
+    .optional()
+    .describe(
+      "T2.2 D2 — Form 4868 extension filed (the Oct 15 deadline governs).",
+    ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -4729,3 +4786,310 @@ export const GetYearOverYearQueryParams = zod.object({
 });
 
 export const GetYearOverYearResponse = zod.record(zod.string(), zod.unknown());
+
+/**
+ * Compares the client's sole-proprietor baseline against an S-corp election at one or more reasonable-comp levels using REAL engine runs (W-2 + active S-corp K-1 replace the Schedule C inputs) plus the statutory payroll-tax adders (employer/employee FICA + FUTA). Returns { applicable: false, reason } when there is no modelable Schedule C.
+
+ * @summary Entity-choice / S-corp reasonable-comp calculator (T2.2)
+ */
+export const GetEntityChoiceParams = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const GetEntityChoiceQueryParams = zod.object({
+  reasonableComp: zod.coerce
+    .number()
+    .optional()
+    .describe(
+      "Explicit W-2 comp level to model (replaces the default 35\/50\/60% sweep).",
+    ),
+});
+
+export const GetEntityChoiceResponse = zod.record(zod.string(), zod.unknown());
+
+/**
+ * Copies the prior year's W-2s, 1099s, K-1s (basis rolled to the prior ending basis), rental properties (disposed ones skipped), and asset balances into the target year as prior-year estimates, advances client.taxYear, and recalculates. Engine carryforwards (capital loss, §469 PAL, NOL, charitable, AMT credit, FTC, §163(j), §179, GBC, adoption) auto-seed from the persisted prior-year return — the response lists them. Refuses (409) when the target year already has input rows. Capital transactions never roll (one-time events).
+
+ * @summary Roll the client's per-year inputs forward to a new tax year (T2.2 proforma)
+ */
+export const RollForwardClientParams = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const RollForwardClientBody = zod.object({
+  toYear: zod
+    .number()
+    .nullish()
+    .describe(
+      "Target tax year (defaults to client.taxYear + 1). Source year is toYear − 1.",
+    ),
+});
+
+export const RollForwardClientResponse = zod.record(
+  zod.string(),
+  zod.unknown(),
+);
+
+/**
+ * The year-start "please send us…" checklist personalized from the prior year's actual documents (every W-2 employer, 1099 payer, K-1 entity, rental, account) plus profile-driven deduction reminders and the life-events questionnaire. Items flip to "received" as matching current-year records are entered/approved.
+
+ * @summary Personalized client organizer / document-request list (T2.2)
+ */
+export const GetClientOrganizerParams = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const GetClientOrganizerQueryParams = zod.object({
+  taxYear: zod.coerce.number().optional(),
+});
+
+export const GetClientOrganizerResponse = zod.record(
+  zod.string(),
+  zod.unknown(),
+);
+
+/**
+ * @summary Client organizer as a branded printable PDF checklist (T2.2)
+ */
+export const GetClientOrganizerPdfParams = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const GetClientOrganizerPdfQueryParams = zod.object({
+  taxYear: zod.coerce.number().optional(),
+});
+
+/**
+ * @summary Update the return's engagement status / extension flag (T2.2)
+ */
+export const UpdateEngagementParams = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const UpdateEngagementQueryParams = zod.object({
+  taxYear: zod.coerce.number().optional(),
+});
+
+export const UpdateEngagementBody = zod.object({
+  engagementStatus: zod
+    .union([
+      zod.literal("not_started"),
+      zod.literal("awaiting_documents"),
+      zod.literal("in_preparation"),
+      zod.literal("in_review"),
+      zod.literal("ready_to_file"),
+      zod.literal("filed"),
+      zod.literal(null),
+    ])
+    .nullish(),
+  extensionFiled: zod.boolean().nullish(),
+});
+
+export const UpdateEngagementResponse = zod.object({
+  id: zod.number(),
+  clientId: zod.number(),
+  taxYear: zod.number(),
+  filingStatus: zod.string().nullish(),
+  totalIncome: zod.number().nullish(),
+  adjustedGrossIncome: zod.number().nullish(),
+  standardDeduction: zod.number().nullish(),
+  itemizedDeductions: zod.number().nullish(),
+  taxableIncome: zod.number().nullish(),
+  federalTaxLiability: zod.number().nullish(),
+  federalTaxWithheld: zod.number().nullish(),
+  federalRefundOrOwed: zod.number().nullish(),
+  stateTaxLiability: zod.number().nullish(),
+  stateTaxWithheld: zod.number().nullish(),
+  stateRefundOrOwed: zod.number().nullish(),
+  effectiveTaxRate: zod.number().nullish(),
+  selfEmploymentTax: zod.number().nullish(),
+  qbiDeduction: zod.number().nullish(),
+  amtTax: zod.number().nullish(),
+  niitTax: zod.number().nullish(),
+  additionalMedicareTax: zod.number().nullish(),
+  stateIndividualMandatePenalty: zod
+    .number()
+    .nullish()
+    .describe(
+      "T1.1c state individual-mandate (shared-responsibility) penalty (CA\/NJ\/RI\/DC\/MA).",
+    ),
+  unrecapturedSection1250Gain: zod
+    .number()
+    .nullish()
+    .describe(
+      "T1.1a unrecaptured §1250 gain taxed at the 25% maximum rate (Schedule D line 19).",
+    ),
+  collectibles28RateGain: zod
+    .number()
+    .nullish()
+    .describe(
+      "T1.1a 28%-rate gain (collectibles + taxable §1202, Schedule D line 18).",
+    ),
+  householdEmploymentTax: zod
+    .number()
+    .nullish()
+    .describe(
+      "T1.2 Schedule H household-employment tax (FICA + FUTA), Schedule 2 line 9.",
+    ),
+  additionalChildTaxCredit: zod.number().nullish(),
+  capitalGainsTax: zod.number().nullish(),
+  preferentialIncome: zod.number().nullish(),
+  medicalDeductible: zod.number().nullish(),
+  saltDeductible: zod.number().nullish(),
+  mortgageDeductible: zod.number().nullish(),
+  charitableDeductible: zod.number().nullish(),
+  hsaDeduction: zod.number().nullish(),
+  iraDeduction: zod.number().nullish(),
+  sehiDeduction: zod.number().nullish(),
+  homeSaleGrossGain: zod.number().nullish(),
+  homeSaleSection121Exclusion: zod.number().nullish(),
+  homeSaleTaxableGain: zod.number().nullish(),
+  socialSecurityBenefits: zod.number().nullish(),
+  socialSecurityTaxable: zod.number().nullish(),
+  feieTotalExclusion: zod.number().nullish(),
+  nolDeduction: zod.number().nullish(),
+  nolCarryforwardRemaining: zod.number().nullish(),
+  qsbsGrossGain: zod.number().nullish(),
+  qsbsSection1202Exclusion: zod.number().nullish(),
+  qsbsTaxableGain: zod.number().nullish(),
+  eitc: zod.number().nullish(),
+  aocCredit: zod.number().nullish(),
+  aocRefundablePortion: zod.number().nullish(),
+  llcCredit: zod.number().nullish(),
+  saversCredit: zod.number().nullish(),
+  dependentCareCredit: zod.number().nullish(),
+  scheduleCExpenses: zod.number().nullish(),
+  localTaxLiability: zod.number().nullish(),
+  localTaxJurisdiction: zod.string().nullish(),
+  washSalesDetected: zod
+    .number()
+    .describe(
+      'E13 — Number of wash sales auto-detected by the engine (excludes broker-reported via adjustmentCode \"W\").',
+    ),
+  washSaleLossDisallowed: zod
+    .number()
+    .describe(
+      "E13 — Total $ of capital loss disallowed by IRC §1091 auto-detection.",
+    ),
+  formerStateTax: zod
+    .number()
+    .describe(
+      "E12 — Tax computed for the prior resident state on its pro-rated AGI. 0 when full-year.",
+    ),
+  formerStateCode: zod
+    .string()
+    .nullish()
+    .describe(
+      "E12 — Two-letter code of the prior resident state. Null when full-year.",
+    ),
+  daysFormerStateResident: zod
+    .number()
+    .describe("E12 — Days resident in former state (Jan 1 to changeDate)."),
+  daysCurrentStateResident: zod
+    .number()
+    .describe("E12 — Days resident in current state (changeDate to Dec 31)."),
+  engagementStatus: zod
+    .enum([
+      "not_started",
+      "awaiting_documents",
+      "in_preparation",
+      "in_review",
+      "ready_to_file",
+      "filed",
+    ])
+    .optional()
+    .describe(
+      "T2.2 D2 — engagement workflow status for the firm busy-season view.",
+    ),
+  extensionFiled: zod
+    .boolean()
+    .optional()
+    .describe(
+      "T2.2 D2 — Form 4868 extension filed (the Oct 15 deadline governs).",
+    ),
+  notes: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * Every client's current-year return with engagement status, extension flag, the §6072(a)/§6081 deadlines (weekend-rolled), days remaining, and a per-status count summary. Sorted by effective deadline then status urgency.
+
+ * @summary Firm-wide engagement tracker (T2.2 busy-season view)
+ */
+export const ListEngagementsQueryParams = zod.object({
+  status: zod.coerce.string().optional(),
+  taxYear: zod.coerce.number().optional(),
+});
+
+export const ListEngagementsResponse = zod.record(zod.string(), zod.unknown());
+
+/**
+ * The polished planning deliverable for the client: branded cover with the headline savings, executive summary, per-opportunity detail (rationale, next step, citation, confidence), the deadline calendar, multi-year trends, and disclosures. All dollar values are deterministic engine output — no LLM involved.
+
+ * @summary Client-facing branded planning report PDF (T2.2)
+ */
+export const GetPlanningReportPdfParams = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+/**
+ * Answers a plain-English question about the client's computed return. The LLM narrates ONLY from the engine-computed grounding snapshot (it never calculates); the question is treated as untrusted data. §7216-gated — without consent (or with AI disabled) it returns the deterministic key-figures summary with aiUsed=false.
+
+ * @summary Natural-language Q&A grounded in the computed return (T2.2 D3)
+ */
+export const AskReturnQuestionParams = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const askReturnQuestionBodyQuestionMax = 1000;
+
+export const AskReturnQuestionBody = zod.object({
+  question: zod
+    .string()
+    .min(1)
+    .max(askReturnQuestionBodyQuestionMax)
+    .describe(
+      "Plain-English question about the computed return (≤1,000 chars; treated as untrusted data).",
+    ),
+});
+
+export const AskReturnQuestionResponse = zod.record(
+  zod.string(),
+  zod.unknown(),
+);
+
+/**
+ * Groups the firm's top planning-score clients (bounded re-run, same machinery as the hit-list) into one campaign per strategy: client cohort, per-client engine savings, and combined totals — the target list for batch outreach.
+
+ * @summary Firm-wide planning campaigns — clients grouped by strategy (T2.2 D3)
+ */
+export const ListPlanningCampaignsQueryParams = zod.object({
+  limit: zod.coerce
+    .number()
+    .optional()
+    .describe("Max clients evaluated (default 100, cap 200)."),
+});
+
+export const ListPlanningCampaignsResponse = zod.record(
+  zod.string(),
+  zod.unknown(),
+);
+
+/**
+ * Drafts a reusable {{firstName}}/{{estSavings}} mail-merge template for the strategy's cohort. Privacy by design — the LLM receives ONLY the catalog strategy text + anonymous cohort statistics (no client names or per-client figures), so no per-client §7216 consent is required; the merge happens locally. Falls back to a deterministic template when AI is disabled or the draft loses the merge fields.
+
+ * @summary Draft a mail-merge outreach template for one campaign (T2.2 D3)
+ */
+export const DraftCampaignEmailBody = zod.object({
+  strategyId: zod
+    .string()
+    .describe(
+      'Catalog strategy id (e.g. \"G1.2\") whose cohort the template targets.',
+    ),
+});
+
+export const DraftCampaignEmailResponse = zod.record(
+  zod.string(),
+  zod.unknown(),
+);

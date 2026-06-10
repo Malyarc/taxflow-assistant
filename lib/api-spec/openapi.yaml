@@ -1856,6 +1856,309 @@ paths:
               schema: { type: object, additionalProperties: true }
         "404": { description: Client not found }
 
+  /clients/{clientId}/entity-choice:
+    get:
+      operationId: getEntityChoice
+      tags: [planning]
+      summary: Entity-choice / S-corp reasonable-comp calculator (T2.2)
+      description: >
+        Compares the client's sole-proprietor baseline against an S-corp
+        election at one or more reasonable-comp levels using REAL engine runs
+        (W-2 + active S-corp K-1 replace the Schedule C inputs) plus the
+        statutory payroll-tax adders (employer/employee FICA + FUTA). Returns
+        { applicable: false, reason } when there is no modelable Schedule C.
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema: { type: integer }
+        - name: reasonableComp
+          in: query
+          required: false
+          description: Explicit W-2 comp level to model (replaces the default 35/50/60% sweep).
+          schema: { type: number }
+      responses:
+        "200":
+          description: Sole-prop vs S-corp comparison (or applicable=false)
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { description: Invalid reasonableComp }
+        "404": { description: Client not found }
+
+  /clients/{clientId}/roll-forward:
+    post:
+      operationId: rollForwardClient
+      tags: [taxReturns]
+      summary: Roll the client's per-year inputs forward to a new tax year (T2.2 proforma)
+      description: >
+        Copies the prior year's W-2s, 1099s, K-1s (basis rolled to the prior
+        ending basis), rental properties (disposed ones skipped), and asset
+        balances into the target year as prior-year estimates, advances
+        client.taxYear, and recalculates. Engine carryforwards (capital loss,
+        §469 PAL, NOL, charitable, AMT credit, FTC, §163(j), §179, GBC,
+        adoption) auto-seed from the persisted prior-year return — the
+        response lists them. Refuses (409) when the target year already has
+        input rows. Capital transactions never roll (one-time events).
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RollForwardBody"
+      responses:
+        "200":
+          description: Counts of copied rows + the carryforwards that will auto-seed
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { description: Invalid target year / no prior-year data }
+        "404": { description: Client not found }
+        "409": { description: Target year already has input rows }
+
+  /clients/{clientId}/organizer:
+    get:
+      operationId: getClientOrganizer
+      tags: [clients]
+      summary: Personalized client organizer / document-request list (T2.2)
+      description: >
+        The year-start "please send us…" checklist personalized from the prior
+        year's actual documents (every W-2 employer, 1099 payer, K-1 entity,
+        rental, account) plus profile-driven deduction reminders and the
+        life-events questionnaire. Items flip to "received" as matching
+        current-year records are entered/approved.
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema: { type: integer }
+        - name: taxYear
+          in: query
+          required: false
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Organizer items + missing/received counts
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "404": { description: Client not found }
+
+  /clients/{clientId}/organizer/pdf:
+    get:
+      operationId: getClientOrganizerPdf
+      tags: [clients]
+      summary: Client organizer as a branded printable PDF checklist (T2.2)
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema: { type: integer }
+        - name: taxYear
+          in: query
+          required: false
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Organizer checklist PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        "404": { description: Client not found }
+
+  /clients/{clientId}/tax-return/engagement:
+    patch:
+      operationId: updateEngagement
+      tags: [taxReturns]
+      summary: Update the return's engagement status / extension flag (T2.2)
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema: { type: integer }
+        - name: taxYear
+          in: query
+          required: false
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateEngagementBody"
+      responses:
+        "200":
+          description: The updated tax return row
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaxReturn"
+        "400": { description: Invalid status }
+        "404": { description: No tax return row for this client/year }
+
+  /engagements:
+    get:
+      operationId: listEngagements
+      tags: [taxReturns]
+      summary: Firm-wide engagement tracker (T2.2 busy-season view)
+      description: >
+        Every client's current-year return with engagement status, extension
+        flag, the §6072(a)/§6081 deadlines (weekend-rolled), days remaining,
+        and a per-status count summary. Sorted by effective deadline then
+        status urgency.
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema: { type: string }
+        - name: taxYear
+          in: query
+          required: false
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Engagement entries + status counts
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+
+  /clients/{clientId}/planning-report/pdf:
+    get:
+      operationId: getPlanningReportPdf
+      tags: [planning]
+      summary: Client-facing branded planning report PDF (T2.2)
+      description: >
+        The polished planning deliverable for the client: branded cover with
+        the headline savings, executive summary, per-opportunity detail
+        (rationale, next step, citation, confidence), the deadline calendar,
+        multi-year trends, and disclosures. All dollar values are
+        deterministic engine output — no LLM involved.
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Planning report PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        "402":
+          description: Pro tier disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProTierRequired"
+        "404": { description: Client not found }
+
+  /clients/{clientId}/return-qa:
+    post:
+      operationId: askReturnQuestion
+      tags: [planning]
+      summary: Natural-language Q&A grounded in the computed return (T2.2 D3)
+      description: >
+        Answers a plain-English question about the client's computed return.
+        The LLM narrates ONLY from the engine-computed grounding snapshot
+        (it never calculates); the question is treated as untrusted data.
+        §7216-gated — without consent (or with AI disabled) it returns the
+        deterministic key-figures summary with aiUsed=false.
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema: { type: integer }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReturnQaBody"
+      responses:
+        "200":
+          description: Grounded answer + the snapshot it was grounded in
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { description: Missing/empty question }
+        "402":
+          description: Pro tier disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProTierRequired"
+        "404": { description: Client not found }
+
+  /planning-campaigns:
+    get:
+      operationId: listPlanningCampaigns
+      tags: [planning]
+      summary: Firm-wide planning campaigns — clients grouped by strategy (T2.2 D3)
+      description: >
+        Groups the firm's top planning-score clients (bounded re-run, same
+        machinery as the hit-list) into one campaign per strategy: client
+        cohort, per-client engine savings, and combined totals — the target
+        list for batch outreach.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Max clients evaluated (default 100, cap 200).
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Campaigns sorted by combined savings
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "402":
+          description: Pro tier disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProTierRequired"
+
+  /planning-campaigns/email-draft:
+    post:
+      operationId: draftCampaignEmail
+      tags: [planning]
+      summary: Draft a mail-merge outreach template for one campaign (T2.2 D3)
+      description: >
+        Drafts a reusable {{firstName}}/{{estSavings}} mail-merge template for
+        the strategy's cohort. Privacy by design — the LLM receives ONLY the
+        catalog strategy text + anonymous cohort statistics (no client names
+        or per-client figures), so no per-client §7216 consent is required;
+        the merge happens locally. Falls back to a deterministic template
+        when AI is disabled or the draft loses the merge fields.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CampaignEmailDraftBody"
+      responses:
+        "200":
+          description: Mail-merge template + cohort
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { description: Unknown strategyId }
+        "402":
+          description: Pro tier disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProTierRequired"
+
 components:
   schemas:
     HealthStatus:
@@ -2940,6 +3243,14 @@ components:
         daysCurrentStateResident:
           type: integer
           description: E12 — Days resident in current state (changeDate to Dec 31).
+        # T2.2 D2 — engagement workflow tracking
+        engagementStatus:
+          type: string
+          enum: [not_started, awaiting_documents, in_preparation, in_review, ready_to_file, filed]
+          description: T2.2 D2 — engagement workflow status for the firm busy-season view.
+        extensionFiled:
+          type: boolean
+          description: T2.2 D2 — Form 4868 extension filed (the Oct 15 deadline governs).
         notes:
           type: ["string", "null"]
         createdAt:
@@ -4219,6 +4530,40 @@ components:
           type: string
         value:
           description: Required for set_client_field. The replacement value (string, number, boolean, or null).
+
+    RollForwardBody:
+      type: object
+      properties:
+        toYear:
+          description: Target tax year (defaults to client.taxYear + 1). Source year is toYear − 1.
+          type: ["integer", "null"]
+
+    UpdateEngagementBody:
+      type: object
+      properties:
+        engagementStatus:
+          type: ["string", "null"]
+          enum: [not_started, awaiting_documents, in_preparation, in_review, ready_to_file, filed, null]
+        extensionFiled:
+          type: ["boolean", "null"]
+
+    ReturnQaBody:
+      type: object
+      required: [question]
+      properties:
+        question:
+          description: Plain-English question about the computed return (≤1,000 chars; treated as untrusted data).
+          type: string
+          minLength: 1
+          maxLength: 1000
+
+    CampaignEmailDraftBody:
+      type: object
+      required: [strategyId]
+      properties:
+        strategyId:
+          description: Catalog strategy id (e.g. "G1.2") whose cohort the template targets.
+          type: string
 
     WhatIfScenarioBody:
       type: object

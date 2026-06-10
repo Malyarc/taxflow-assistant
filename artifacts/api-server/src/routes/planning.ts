@@ -15,6 +15,8 @@ import {
   RunRothOptimizerParams,
   RunRothOptimizerBody,
   GetPeerBenchmarkParams,
+  AskReturnQuestionBody,
+  DraftCampaignEmailBody,
 } from "@workspace/api-zod";
 import { CATALOG_V1, type OpportunityHit } from "@workspace/planning-strategies";
 import {
@@ -36,6 +38,15 @@ import {
 import { consentRequired, hasValidConsent, AI_EXTRACTION_SCOPE } from "../lib/consentGate";
 import { computeTaxReturn, loadTaxReturnInputs } from "../lib/taxReturnPipeline";
 import { buildPlanningCalendar } from "../lib/planningCalendar";
+import { buildPlanningReportPdf } from "../lib/planningReportPdf";
+import { sanitizeQuestion, answerReturnQuestion } from "../lib/returnQa";
+import {
+  aggregateCampaigns,
+  cohortStats,
+  draftCampaignEmail,
+  type CampaignClientHit,
+} from "../lib/planningCampaigns";
+import { setSecureDownloadHeaders } from "../lib/httpSecurity";
 import { optimizeRothConversionLadder } from "../lib/rothOptimizer";
 import { runMonteCarlo } from "../lib/monteCarloEngine";
 import { optimizeBracketFilling } from "../lib/multiYearOptimizer";
@@ -932,6 +943,215 @@ router.post("/clients/:clientId/what-if", async (req, res): Promise<void> => {
   } catch (err) {
     logger.error({ err, clientId: params.data.clientId }, "What-if scenario failed");
     res.status(500).json({ error: "What-if scenario failed" });
+  }
+});
+
+// ── T2.2 D1 — client-facing branded planning report (PDF) ─────────────────
+router.get("/clients/:clientId/planning-report/pdf", async (req, res): Promise<void> => {
+  const params = GetPlanningOpportunitiesParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  try {
+    const ctx = await loadPlanningContext(params.data.clientId);
+    if (!ctx) {
+      res.status(404).json({ error: "Client not found" });
+      return;
+    }
+    // Multi-year trend hits (same source as /planning-multi-year) — optional
+    // section; an empty history simply omits it.
+    const historyRows = await db
+      .select()
+      .from(taxReturnsTable)
+      .where(eq(taxReturnsTable.clientId, params.data.clientId))
+      .orderBy(desc(taxReturnsTable.taxYear));
+    const multiYearHits = evaluateMultiYearOpportunities({
+      client: ctx.client as ClientFacts,
+      history: historyRows.map((r) => ({
+        taxYear: r.taxYear,
+        filingStatus: r.filingStatus ?? ctx.client.filingStatus,
+        adjustedGrossIncome: num(r.adjustedGrossIncome),
+        taxableIncome: num(r.taxableIncome),
+        itemizedDeductions: num(r.itemizedDeductions),
+        amtTax: num(r.amtTax),
+        niitTax: num(r.niitTax),
+        medicalDeductible: num(r.medicalDeductible),
+        saltDeductible: num(r.saltDeductible),
+        mortgageDeductible: num(r.mortgageDeductible),
+        charitableDeductible: num(r.charitableDeductible),
+        capitalLossCarryforwardShort: num(r.capitalLossCarryforwardShort),
+        capitalLossCarryforwardLong: num(r.capitalLossCarryforwardLong),
+        scheduleEPassiveLossSuspended: num(r.scheduleEPassiveLossSuspended),
+        k1PassiveLossSuspended: num(r.k1PassiveLossSuspended),
+      })),
+    });
+    const pdf = await buildPlanningReportPdf({
+      client: ctx.client,
+      taxYear: ctx.computed.taxYear,
+      hits: ctx.hits,
+      calendar: buildPlanningCalendar(ctx.hits, ctx.computed.taxYear),
+      multiYearHits,
+      preparedDate: new Date().toISOString().slice(0, 10),
+      firmName: process.env.FIRM_NAME,
+    });
+    setSecureDownloadHeaders(res, {
+      fileName: `planning-report-${params.data.clientId}-TY${ctx.computed.taxYear}.pdf`,
+      contentType: "application/pdf",
+      disposition: "attachment",
+      length: pdf.length,
+    });
+    res.send(pdf);
+  } catch (err) {
+    logger.error({ err, clientId: params.data.clientId }, "Planning report PDF failed");
+    res.status(500).json({ error: "Planning report PDF failed" });
+  }
+});
+
+// ── T2.2 D3 — natural-language Q&A grounded in the computed return ────────
+router.post("/clients/:clientId/return-qa", async (req, res): Promise<void> => {
+  const params = GetPlanningOpportunitiesParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const body = AskReturnQuestionBody.safeParse(req.body ?? {});
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+  const question = sanitizeQuestion(body.data.question);
+  if (!question) {
+    res.status(400).json({ error: "question must be non-empty text" });
+    return;
+  }
+  try {
+    const ctx = await loadPlanningContext(params.data.clientId);
+    if (!ctx) {
+      res.status(404).json({ error: "Client not found" });
+      return;
+    }
+    const result = await answerReturnQuestion({
+      client: ctx.client,
+      computed: ctx.computed,
+      hits: ctx.hits,
+      question,
+      // §7216 — the grounding snapshot is tax-return information.
+      forceDeterministic: await aiDisclosureBlocked(params.data.clientId),
+    });
+    res.json({
+      clientId: params.data.clientId,
+      taxYear: ctx.computed.taxYear,
+      question,
+      answer: result.answer,
+      aiUsed: result.aiUsed,
+      model: result.model,
+    });
+  } catch (err) {
+    logger.error({ err, clientId: params.data.clientId }, "Return Q&A failed");
+    res.status(500).json({ error: "Return Q&A failed" });
+  }
+});
+
+// ── T2.2 D3 — firm-wide planning campaigns ─────────────────────────────────
+
+/**
+ * Evaluate the firm's top-N clients by the precomputed planning score (the
+ * hit-list fast path: one indexed query, then the engine for only those N).
+ * Error-isolated per client. Shared by the campaigns list + email draft.
+ */
+async function evaluateTopClientHits(limit: number): Promise<CampaignClientHit[]> {
+  const ranked = await db
+    .select({ clientId: taxReturnsTable.clientId })
+    .from(taxReturnsTable)
+    .innerJoin(
+      clientsTable,
+      and(eq(clientsTable.id, taxReturnsTable.clientId), eq(clientsTable.taxYear, taxReturnsTable.taxYear)),
+    )
+    .where(gt(taxReturnsTable.planningScore, "0"))
+    .orderBy(desc(taxReturnsTable.planningScore))
+    .limit(limit);
+  const out: CampaignClientHit[] = [];
+  for (const { clientId } of ranked) {
+    try {
+      const computed = await computeTaxReturn(clientId);
+      if (!computed) continue;
+      // No baselineInputs — skip the what-if re-runs (hit-list scoring parity;
+      // keeps the bounded fan-out cheap).
+      const hits = evaluatePlanningOpportunities({
+        client: computed.client,
+        computed: computed.result,
+        adjustments: computed.inputs.adjustments,
+      });
+      if (hits.length === 0) continue;
+      out.push({
+        clientId,
+        firstName: computed.client.firstName,
+        lastName: computed.client.lastName,
+        email: computed.client.email ?? null,
+        hits,
+      });
+    } catch (err) {
+      logger.warn({ err, clientId }, "Planning campaigns: skipping client (per-client compute failed)");
+    }
+  }
+  return out;
+}
+
+function campaignLimit(raw: unknown): number {
+  const n = typeof raw === "string" ? Number(raw) : NaN;
+  if (!Number.isFinite(n) || n <= 0) return 100;
+  return Math.min(Math.floor(n), 200);
+}
+
+router.get("/planning-campaigns", async (req, res): Promise<void> => {
+  try {
+    const limit = campaignLimit(req.query.limit);
+    const clientHits = await evaluateTopClientHits(limit);
+    const campaigns = aggregateCampaigns(clientHits);
+    res.json({
+      catalogVersion: CATALOG_V1.version,
+      clientsEvaluated: clientHits.length,
+      campaigns,
+    });
+  } catch (err) {
+    logger.error({ err }, "Planning campaigns failed");
+    res.status(500).json({ error: "Planning campaigns failed" });
+  }
+});
+
+router.post("/planning-campaigns/email-draft", async (req, res): Promise<void> => {
+  const body = DraftCampaignEmailBody.safeParse(req.body ?? {});
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+  const strategy = CATALOG_V1.strategies.find((s) => s.id === body.data.strategyId);
+  if (!strategy) {
+    res.status(400).json({ error: `Unknown strategyId "${body.data.strategyId}"` });
+    return;
+  }
+  try {
+    const clientHits = await evaluateTopClientHits(campaignLimit(req.query.limit));
+    const campaign = aggregateCampaigns(clientHits).find((c) => c.strategyId === strategy.id);
+    const members = campaign?.clients ?? [];
+    // §7216 by design — the LLM sees ONLY the strategy text + these anonymous
+    // stats; client names + per-client figures stay local for the mail merge.
+    const stats = cohortStats(members);
+    const draft = await draftCampaignEmail({ strategy, stats });
+    res.json({
+      strategyId: strategy.id,
+      strategyName: strategy.name,
+      template: draft.template,
+      mergeFields: draft.mergeFields,
+      aiUsed: draft.aiUsed,
+      model: draft.model,
+      cohort: members,
+      cohortStats: stats,
+    });
+  } catch (err) {
+    logger.error({ err, strategyId: body.data.strategyId }, "Campaign email draft failed");
+    res.status(500).json({ error: "Campaign email draft failed" });
   }
 });
 

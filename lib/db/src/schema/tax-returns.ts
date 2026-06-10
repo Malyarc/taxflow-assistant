@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, numeric, timestamp, unique, index, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, numeric, timestamp, unique, index, jsonb, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { clientsTable } from "./clients";
@@ -264,6 +264,15 @@ export const taxReturnsTable = pgTable(
     planningScore: numeric("planning_score", { precision: 14, scale: 2 }),
     /** #14 — Client's federal marginal rate at this return (a planningScore weight); stored for display + audit. */
     planningMarginalRate: numeric("planning_marginal_rate", { precision: 5, scale: 4 }),
+    /**
+     * T2.2 D2 — engagement workflow status for the firm's busy-season view.
+     * One of ENGAGEMENT_STATUSES (lib/engagement.ts): not_started /
+     * awaiting_documents / in_preparation / in_review / ready_to_file / filed.
+     * Enforced at the route (Zod enum), not as a DB enum — additive evolution.
+     */
+    engagementStatus: text("engagement_status").notNull().default("not_started"),
+    /** T2.2 D2 — Form 4868 extension filed → the Oct 15 deadline governs. */
+    extensionFiled: boolean("extension_filed").notNull().default(false),
     notes: text("notes"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),

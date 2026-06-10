@@ -1,3 +1,76 @@
+# Handoff Note — 2026-06-10c (T2 COMPLETE — the T2.2 completion batch: entity-choice, roll-forward, organizer, engagement, branded planning report, return-Q&A, campaigns)
+
+**T2 is ENGINEERING-COMPLETE.** This session (branch `claude/dreamy-bardeen-kspyig`,
+built in the cloud sandbox — **NOT yet deployed**; deploy needs the EC2 key from
+the local machine) closed every remaining T2.2 item:
+
+**D1:**
+- **Entity-choice / S-corp reasonable-comp calculator** (`entityChoice.ts`,
+  `GET /clients/:id/entity-choice?reasonableComp=`): real engine runs — the Sch C
+  inputs are swapped for a W-2 + ACTIVE S-corp K-1 (QBI = Box 1, §199A wage limit
+  fed by owner comp, SSTB flag propagated) + statutory payroll adders (employer
+  FICA per-employer, employee FICA per-person net of other W-2 SS wages, net FUTA
+  $42). Default 35/50/60% sweep; SEHI = net-zero under S-corp (Notice 2008-1);
+  "cheapest MODELED level", never a comp opinion (Rev. Rul. 74-44). 62 hand-calc'd
+  tests (E1: $200k/$80k → savings $9,503.38 exact).
+- **Branded planning report PDF** (`planningReportPdf.ts`,
+  `GET /clients/:id/planning-report/pdf`, pro-gated): Brookhaven cover + headline
+  savings + per-opportunity detail + deadline calendar + multi-year + disclosures.
+  Deterministic (no LLM).
+
+**D2:**
+- **Client organizer** (`clientOrganizer.ts` + `organizerPdf.ts`,
+  `GET /clients/:id/organizer[/pdf]`): prior-year-personalized request list
+  (employers/payers/K-1s/rentals/accounts flip to "received" on matching
+  current-year rows) + deduction reminders + life-events questionnaire. 43 tests.
+- **Prior-year roll-forward** (`rollForward.ts` pure mappers +
+  `POST /clients/:id/roll-forward`): proforma W-2/1099/K-1/rental/asset rows into
+  the new year (K-1 basis start ← prior ending; disposed rentals skipped; doc
+  links detached), advances client.taxYear, transaction-wrapped, 409 on re-roll;
+  reports the carryforwards the pipeline auto-seeds
+  (`synthesizePriorYearCarryforwards` now exported = single source of truth).
+  37 tests.
+- **Engagement tracking** (`engagement.ts`, **migration 0019** additive:
+  engagement_status + extension_filed on tax_returns): 6-status enum, §6072(a)/
+  §6081 deadlines with §7503 weekend roll (holiday shift documented not-modeled),
+  `PATCH /clients/:id/tax-return/engagement`, firm-wide `GET /engagements`
+  (deadline-sorted + status counts). 21 hand-verified date tests.
+
+**D3 (LLM never does math; §7216-gated):**
+- **Return Q&A** (`returnQa.ts`, `POST /clients/:id/return-qa`): LLM narrates from
+  a ~50-field engine grounding snapshot (first-name-only; key-scan test proves no
+  PII fields); question sanitized + treated as untrusted; no consent/AI → the
+  deterministic key-figures fallback. 29 tests.
+- **Campaign tool** (`planningCampaigns.ts`, `GET /planning-campaigns` +
+  `POST /planning-campaigns/email-draft`): hit-list-fast-path cohorts grouped per
+  strategy; the LLM email draft sees ONLY strategy text + anonymous $100-rounded
+  stats (no client data → no per-client consent needed); {{firstName}}/
+  {{estSavings}} merge happens locally; deterministic fallback when the draft
+  loses the merge fields. 25 tests.
+
+**Frontend:** CPA Tools tab → 7 cards (+engagement select/extension, entity-choice
+sweep table, organizer checklist + PDF, roll-forward action); Planning tab →
+"Client report (PDF)" + the Q&A card; Dashboard → campaigns widget. Vite build OK.
+
+**Quality bar:** 7 new no-API suites (~226 hand-calc'd/fixture assertions, all
+summary lines in the runner-parseable RESULTS format) + the cpa-tools yes-API
+suite expanded to ~60 assertions (needs a live DB — couldn't run in the sandbox);
+4 typechecks clean; full no-API battery green; **`fast-check` added to scripts
+devDependencies — the property harness's dep was in NO manifest (typecheck:tests
+had 10 pre-existing errors → now 0) and the harness runs green on v4.8.0 (5,636
+runs).** Migration 0019 reviewed (2 additive ADD COLUMNs).
+
+**Deploy checklist (run from the local machine per CLAUDE.md):** merge to main →
+EC2 deploy cycle (pulls + `migrate` applies 0019 + build + pm2 restart) →
+frontend rsync → healthz + prod-smoke (engagements list, entity-choice on a
+seeded client, organizer PDF, planning-report PDF, campaigns).
+
+**Still open in T2 (NOT engineering):** T2.1 CPA legibility sign-off + T2.2
+design-partner validation (both gated on the T4 partner); the (Haven platform)
+items stay deferred by design.
+
+---
+
 # Handoff Note — 2026-06-10b (T2.2 CPA-FIRM FEATURES — projection/1040-ES + MFJ-vs-MFS + ready-to-file + YoY/threshold-alerts; shipped + deployed + browser-verified)
 
 Built **the second half of T2 — MASTER-TODO T2.2 (GAME PLAN D)**, the pure-engine

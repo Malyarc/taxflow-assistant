@@ -133,6 +133,13 @@
     "src/tax-engine-tax-projection-tests.ts",
     "src/tax-engine-filing-status-optimizer-tests.ts",
     "src/tax-engine-year-over-year-tests.ts",
-    "src/tax-engine-cpa-tools-integration-tests.ts"
+    "src/tax-engine-cpa-tools-integration-tests.ts",
+    "src/tax-engine-entity-choice-tests.ts",
+    "src/tax-engine-engagement-tests.ts",
+    "src/tax-engine-client-organizer-tests.ts",
+    "src/tax-engine-roll-forward-tests.ts",
+    "src/tax-engine-return-qa-tests.ts",
+    "src/tax-engine-planning-campaigns-tests.ts",
+    "src/tax-engine-cpa-deliverables-pdf-tests.ts"
   ]
 }

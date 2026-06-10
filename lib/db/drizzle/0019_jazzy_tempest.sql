@@ -1,0 +1,2 @@
+ALTER TABLE "tax_returns" ADD COLUMN "engagement_status" text DEFAULT 'not_started' NOT NULL;--> statement-breakpoint
+ALTER TABLE "tax_returns" ADD COLUMN "extension_filed" boolean DEFAULT false NOT NULL;

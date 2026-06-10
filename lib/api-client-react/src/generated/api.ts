@@ -19,8 +19,10 @@ import type {
 import type {
   Adjustment,
   ApproveExtractionBody,
+  AskReturnQuestion200,
   AssetBalance,
   CalculateTaxReturnBody,
+  CampaignEmailDraftBody,
   CapitalTransaction,
   Client,
   ClientListPage,
@@ -34,8 +36,14 @@ import type {
   CreateScheduleK1Body,
   CreateW2DataBody,
   DashboardSummary,
+  DraftCampaignEmail200,
   Form1099Data,
   Form8606Result,
+  GetClientOrganizer200,
+  GetClientOrganizerParams,
+  GetClientOrganizerPdfParams,
+  GetEntityChoice200,
+  GetEntityChoiceParams,
   GetForm8824200,
   GetForm8824Params,
   GetForm8824PdfParams,
@@ -52,6 +60,10 @@ import type {
   GetYearOverYearParams,
   HealthStatus,
   ListClientsParams,
+  ListEngagements200,
+  ListEngagementsParams,
+  ListPlanningCampaigns200,
+  ListPlanningCampaignsParams,
   PeerBenchmarkResponse,
   PlanningDiscovery,
   PlanningHitList,
@@ -62,6 +74,9 @@ import type {
   ProTierRequired,
   RejectExtractionBody,
   RentalProperty,
+  ReturnQaBody,
+  RollForwardBody,
+  RollForwardClient200,
   RothOptimizerBody,
   RothOptimizerResponse,
   ScheduleCAsset,
@@ -75,6 +90,8 @@ import type {
   UpdateAssetBalanceBody,
   UpdateCapitalTransactionBody,
   UpdateClientBody,
+  UpdateEngagementBody,
+  UpdateEngagementParams,
   UpdateForm1099DataBody,
   UpdateRentalPropertyBody,
   UpdateScheduleCAssetBody,
@@ -6689,3 +6706,1045 @@ export function useGetYearOverYear<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+/**
+ * Compares the client's sole-proprietor baseline against an S-corp election at one or more reasonable-comp levels using REAL engine runs (W-2 + active S-corp K-1 replace the Schedule C inputs) plus the statutory payroll-tax adders (employer/employee FICA + FUTA). Returns { applicable: false, reason } when there is no modelable Schedule C.
+
+ * @summary Entity-choice / S-corp reasonable-comp calculator (T2.2)
+ */
+export const getGetEntityChoiceUrl = (
+  clientId: number,
+  params?: GetEntityChoiceParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/clients/${clientId}/entity-choice?${stringifiedParams}`
+    : `/api/clients/${clientId}/entity-choice`;
+};
+
+export const getEntityChoice = async (
+  clientId: number,
+  params?: GetEntityChoiceParams,
+  options?: RequestInit,
+): Promise<GetEntityChoice200> => {
+  return customFetch<GetEntityChoice200>(
+    getGetEntityChoiceUrl(clientId, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetEntityChoiceQueryKey = (
+  clientId: number,
+  params?: GetEntityChoiceParams,
+) => {
+  return [
+    `/api/clients/${clientId}/entity-choice`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetEntityChoiceQueryOptions = <
+  TData = Awaited<ReturnType<typeof getEntityChoice>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  params?: GetEntityChoiceParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEntityChoice>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetEntityChoiceQueryKey(clientId, params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getEntityChoice>>> = ({
+    signal,
+  }) => getEntityChoice(clientId, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!clientId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getEntityChoice>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetEntityChoiceQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getEntityChoice>>
+>;
+export type GetEntityChoiceQueryError = ErrorType<void>;
+
+/**
+ * @summary Entity-choice / S-corp reasonable-comp calculator (T2.2)
+ */
+
+export function useGetEntityChoice<
+  TData = Awaited<ReturnType<typeof getEntityChoice>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  params?: GetEntityChoiceParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getEntityChoice>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetEntityChoiceQueryOptions(
+    clientId,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Copies the prior year's W-2s, 1099s, K-1s (basis rolled to the prior ending basis), rental properties (disposed ones skipped), and asset balances into the target year as prior-year estimates, advances client.taxYear, and recalculates. Engine carryforwards (capital loss, §469 PAL, NOL, charitable, AMT credit, FTC, §163(j), §179, GBC, adoption) auto-seed from the persisted prior-year return — the response lists them. Refuses (409) when the target year already has input rows. Capital transactions never roll (one-time events).
+
+ * @summary Roll the client's per-year inputs forward to a new tax year (T2.2 proforma)
+ */
+export const getRollForwardClientUrl = (clientId: number) => {
+  return `/api/clients/${clientId}/roll-forward`;
+};
+
+export const rollForwardClient = async (
+  clientId: number,
+  rollForwardBody?: RollForwardBody,
+  options?: RequestInit,
+): Promise<RollForwardClient200> => {
+  return customFetch<RollForwardClient200>(getRollForwardClientUrl(clientId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(rollForwardBody),
+  });
+};
+
+export const getRollForwardClientMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rollForwardClient>>,
+    TError,
+    { clientId: number; data: BodyType<RollForwardBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof rollForwardClient>>,
+  TError,
+  { clientId: number; data: BodyType<RollForwardBody> },
+  TContext
+> => {
+  const mutationKey = ["rollForwardClient"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof rollForwardClient>>,
+    { clientId: number; data: BodyType<RollForwardBody> }
+  > = (props) => {
+    const { clientId, data } = props ?? {};
+
+    return rollForwardClient(clientId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RollForwardClientMutationResult = NonNullable<
+  Awaited<ReturnType<typeof rollForwardClient>>
+>;
+export type RollForwardClientMutationBody = BodyType<RollForwardBody>;
+export type RollForwardClientMutationError = ErrorType<void>;
+
+/**
+ * @summary Roll the client's per-year inputs forward to a new tax year (T2.2 proforma)
+ */
+export const useRollForwardClient = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof rollForwardClient>>,
+    TError,
+    { clientId: number; data: BodyType<RollForwardBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof rollForwardClient>>,
+  TError,
+  { clientId: number; data: BodyType<RollForwardBody> },
+  TContext
+> => {
+  return useMutation(getRollForwardClientMutationOptions(options));
+};
+
+/**
+ * The year-start "please send us…" checklist personalized from the prior year's actual documents (every W-2 employer, 1099 payer, K-1 entity, rental, account) plus profile-driven deduction reminders and the life-events questionnaire. Items flip to "received" as matching current-year records are entered/approved.
+
+ * @summary Personalized client organizer / document-request list (T2.2)
+ */
+export const getGetClientOrganizerUrl = (
+  clientId: number,
+  params?: GetClientOrganizerParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/clients/${clientId}/organizer?${stringifiedParams}`
+    : `/api/clients/${clientId}/organizer`;
+};
+
+export const getClientOrganizer = async (
+  clientId: number,
+  params?: GetClientOrganizerParams,
+  options?: RequestInit,
+): Promise<GetClientOrganizer200> => {
+  return customFetch<GetClientOrganizer200>(
+    getGetClientOrganizerUrl(clientId, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetClientOrganizerQueryKey = (
+  clientId: number,
+  params?: GetClientOrganizerParams,
+) => {
+  return [
+    `/api/clients/${clientId}/organizer`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetClientOrganizerQueryOptions = <
+  TData = Awaited<ReturnType<typeof getClientOrganizer>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  params?: GetClientOrganizerParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getClientOrganizer>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetClientOrganizerQueryKey(clientId, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getClientOrganizer>>
+  > = ({ signal }) =>
+    getClientOrganizer(clientId, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!clientId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getClientOrganizer>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetClientOrganizerQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getClientOrganizer>>
+>;
+export type GetClientOrganizerQueryError = ErrorType<void>;
+
+/**
+ * @summary Personalized client organizer / document-request list (T2.2)
+ */
+
+export function useGetClientOrganizer<
+  TData = Awaited<ReturnType<typeof getClientOrganizer>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  params?: GetClientOrganizerParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getClientOrganizer>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetClientOrganizerQueryOptions(
+    clientId,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Client organizer as a branded printable PDF checklist (T2.2)
+ */
+export const getGetClientOrganizerPdfUrl = (
+  clientId: number,
+  params?: GetClientOrganizerPdfParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/clients/${clientId}/organizer/pdf?${stringifiedParams}`
+    : `/api/clients/${clientId}/organizer/pdf`;
+};
+
+export const getClientOrganizerPdf = async (
+  clientId: number,
+  params?: GetClientOrganizerPdfParams,
+  options?: RequestInit,
+): Promise<Blob> => {
+  return customFetch<Blob>(getGetClientOrganizerPdfUrl(clientId, params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetClientOrganizerPdfQueryKey = (
+  clientId: number,
+  params?: GetClientOrganizerPdfParams,
+) => {
+  return [
+    `/api/clients/${clientId}/organizer/pdf`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetClientOrganizerPdfQueryOptions = <
+  TData = Awaited<ReturnType<typeof getClientOrganizerPdf>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  params?: GetClientOrganizerPdfParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getClientOrganizerPdf>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getGetClientOrganizerPdfQueryKey(clientId, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getClientOrganizerPdf>>
+  > = ({ signal }) =>
+    getClientOrganizerPdf(clientId, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!clientId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getClientOrganizerPdf>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetClientOrganizerPdfQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getClientOrganizerPdf>>
+>;
+export type GetClientOrganizerPdfQueryError = ErrorType<void>;
+
+/**
+ * @summary Client organizer as a branded printable PDF checklist (T2.2)
+ */
+
+export function useGetClientOrganizerPdf<
+  TData = Awaited<ReturnType<typeof getClientOrganizerPdf>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  params?: GetClientOrganizerPdfParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getClientOrganizerPdf>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetClientOrganizerPdfQueryOptions(
+    clientId,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Update the return's engagement status / extension flag (T2.2)
+ */
+export const getUpdateEngagementUrl = (
+  clientId: number,
+  params?: UpdateEngagementParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/clients/${clientId}/tax-return/engagement?${stringifiedParams}`
+    : `/api/clients/${clientId}/tax-return/engagement`;
+};
+
+export const updateEngagement = async (
+  clientId: number,
+  updateEngagementBody: UpdateEngagementBody,
+  params?: UpdateEngagementParams,
+  options?: RequestInit,
+): Promise<TaxReturn> => {
+  return customFetch<TaxReturn>(getUpdateEngagementUrl(clientId, params), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateEngagementBody),
+  });
+};
+
+export const getUpdateEngagementMutationOptions = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateEngagement>>,
+    TError,
+    {
+      clientId: number;
+      data: BodyType<UpdateEngagementBody>;
+      params?: UpdateEngagementParams;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateEngagement>>,
+  TError,
+  {
+    clientId: number;
+    data: BodyType<UpdateEngagementBody>;
+    params?: UpdateEngagementParams;
+  },
+  TContext
+> => {
+  const mutationKey = ["updateEngagement"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateEngagement>>,
+    {
+      clientId: number;
+      data: BodyType<UpdateEngagementBody>;
+      params?: UpdateEngagementParams;
+    }
+  > = (props) => {
+    const { clientId, data, params } = props ?? {};
+
+    return updateEngagement(clientId, data, params, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateEngagementMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateEngagement>>
+>;
+export type UpdateEngagementMutationBody = BodyType<UpdateEngagementBody>;
+export type UpdateEngagementMutationError = ErrorType<void>;
+
+/**
+ * @summary Update the return's engagement status / extension flag (T2.2)
+ */
+export const useUpdateEngagement = <
+  TError = ErrorType<void>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateEngagement>>,
+    TError,
+    {
+      clientId: number;
+      data: BodyType<UpdateEngagementBody>;
+      params?: UpdateEngagementParams;
+    },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateEngagement>>,
+  TError,
+  {
+    clientId: number;
+    data: BodyType<UpdateEngagementBody>;
+    params?: UpdateEngagementParams;
+  },
+  TContext
+> => {
+  return useMutation(getUpdateEngagementMutationOptions(options));
+};
+
+/**
+ * Every client's current-year return with engagement status, extension flag, the §6072(a)/§6081 deadlines (weekend-rolled), days remaining, and a per-status count summary. Sorted by effective deadline then status urgency.
+
+ * @summary Firm-wide engagement tracker (T2.2 busy-season view)
+ */
+export const getListEngagementsUrl = (params?: ListEngagementsParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/engagements?${stringifiedParams}`
+    : `/api/engagements`;
+};
+
+export const listEngagements = async (
+  params?: ListEngagementsParams,
+  options?: RequestInit,
+): Promise<ListEngagements200> => {
+  return customFetch<ListEngagements200>(getListEngagementsUrl(params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListEngagementsQueryKey = (params?: ListEngagementsParams) => {
+  return [`/api/engagements`, ...(params ? [params] : [])] as const;
+};
+
+export const getListEngagementsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listEngagements>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListEngagementsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEngagements>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListEngagementsQueryKey(params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listEngagements>>> = ({
+    signal,
+  }) => listEngagements(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listEngagements>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListEngagementsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listEngagements>>
+>;
+export type ListEngagementsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary Firm-wide engagement tracker (T2.2 busy-season view)
+ */
+
+export function useListEngagements<
+  TData = Awaited<ReturnType<typeof listEngagements>>,
+  TError = ErrorType<unknown>,
+>(
+  params?: ListEngagementsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listEngagements>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListEngagementsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * The polished planning deliverable for the client: branded cover with the headline savings, executive summary, per-opportunity detail (rationale, next step, citation, confidence), the deadline calendar, multi-year trends, and disclosures. All dollar values are deterministic engine output — no LLM involved.
+
+ * @summary Client-facing branded planning report PDF (T2.2)
+ */
+export const getGetPlanningReportPdfUrl = (clientId: number) => {
+  return `/api/clients/${clientId}/planning-report/pdf`;
+};
+
+export const getPlanningReportPdf = async (
+  clientId: number,
+  options?: RequestInit,
+): Promise<Blob> => {
+  return customFetch<Blob>(getGetPlanningReportPdfUrl(clientId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetPlanningReportPdfQueryKey = (clientId: number) => {
+  return [`/api/clients/${clientId}/planning-report/pdf`] as const;
+};
+
+export const getGetPlanningReportPdfQueryOptions = <
+  TData = Awaited<ReturnType<typeof getPlanningReportPdf>>,
+  TError = ErrorType<ProTierRequired | void>,
+>(
+  clientId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPlanningReportPdf>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetPlanningReportPdfQueryKey(clientId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getPlanningReportPdf>>
+  > = ({ signal }) =>
+    getPlanningReportPdf(clientId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!clientId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getPlanningReportPdf>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetPlanningReportPdfQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getPlanningReportPdf>>
+>;
+export type GetPlanningReportPdfQueryError = ErrorType<ProTierRequired | void>;
+
+/**
+ * @summary Client-facing branded planning report PDF (T2.2)
+ */
+
+export function useGetPlanningReportPdf<
+  TData = Awaited<ReturnType<typeof getPlanningReportPdf>>,
+  TError = ErrorType<ProTierRequired | void>,
+>(
+  clientId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getPlanningReportPdf>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetPlanningReportPdfQueryOptions(clientId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Answers a plain-English question about the client's computed return. The LLM narrates ONLY from the engine-computed grounding snapshot (it never calculates); the question is treated as untrusted data. §7216-gated — without consent (or with AI disabled) it returns the deterministic key-figures summary with aiUsed=false.
+
+ * @summary Natural-language Q&A grounded in the computed return (T2.2 D3)
+ */
+export const getAskReturnQuestionUrl = (clientId: number) => {
+  return `/api/clients/${clientId}/return-qa`;
+};
+
+export const askReturnQuestion = async (
+  clientId: number,
+  returnQaBody: ReturnQaBody,
+  options?: RequestInit,
+): Promise<AskReturnQuestion200> => {
+  return customFetch<AskReturnQuestion200>(getAskReturnQuestionUrl(clientId), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(returnQaBody),
+  });
+};
+
+export const getAskReturnQuestionMutationOptions = <
+  TError = ErrorType<void | ProTierRequired>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof askReturnQuestion>>,
+    TError,
+    { clientId: number; data: BodyType<ReturnQaBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof askReturnQuestion>>,
+  TError,
+  { clientId: number; data: BodyType<ReturnQaBody> },
+  TContext
+> => {
+  const mutationKey = ["askReturnQuestion"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof askReturnQuestion>>,
+    { clientId: number; data: BodyType<ReturnQaBody> }
+  > = (props) => {
+    const { clientId, data } = props ?? {};
+
+    return askReturnQuestion(clientId, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type AskReturnQuestionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof askReturnQuestion>>
+>;
+export type AskReturnQuestionMutationBody = BodyType<ReturnQaBody>;
+export type AskReturnQuestionMutationError = ErrorType<void | ProTierRequired>;
+
+/**
+ * @summary Natural-language Q&A grounded in the computed return (T2.2 D3)
+ */
+export const useAskReturnQuestion = <
+  TError = ErrorType<void | ProTierRequired>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof askReturnQuestion>>,
+    TError,
+    { clientId: number; data: BodyType<ReturnQaBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof askReturnQuestion>>,
+  TError,
+  { clientId: number; data: BodyType<ReturnQaBody> },
+  TContext
+> => {
+  return useMutation(getAskReturnQuestionMutationOptions(options));
+};
+
+/**
+ * Groups the firm's top planning-score clients (bounded re-run, same machinery as the hit-list) into one campaign per strategy: client cohort, per-client engine savings, and combined totals — the target list for batch outreach.
+
+ * @summary Firm-wide planning campaigns — clients grouped by strategy (T2.2 D3)
+ */
+export const getListPlanningCampaignsUrl = (
+  params?: ListPlanningCampaignsParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/planning-campaigns?${stringifiedParams}`
+    : `/api/planning-campaigns`;
+};
+
+export const listPlanningCampaigns = async (
+  params?: ListPlanningCampaignsParams,
+  options?: RequestInit,
+): Promise<ListPlanningCampaigns200> => {
+  return customFetch<ListPlanningCampaigns200>(
+    getListPlanningCampaignsUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListPlanningCampaignsQueryKey = (
+  params?: ListPlanningCampaignsParams,
+) => {
+  return [`/api/planning-campaigns`, ...(params ? [params] : [])] as const;
+};
+
+export const getListPlanningCampaignsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listPlanningCampaigns>>,
+  TError = ErrorType<ProTierRequired>,
+>(
+  params?: ListPlanningCampaignsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listPlanningCampaigns>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListPlanningCampaignsQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listPlanningCampaigns>>
+  > = ({ signal }) =>
+    listPlanningCampaigns(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listPlanningCampaigns>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListPlanningCampaignsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listPlanningCampaigns>>
+>;
+export type ListPlanningCampaignsQueryError = ErrorType<ProTierRequired>;
+
+/**
+ * @summary Firm-wide planning campaigns — clients grouped by strategy (T2.2 D3)
+ */
+
+export function useListPlanningCampaigns<
+  TData = Awaited<ReturnType<typeof listPlanningCampaigns>>,
+  TError = ErrorType<ProTierRequired>,
+>(
+  params?: ListPlanningCampaignsParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof listPlanningCampaigns>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListPlanningCampaignsQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Drafts a reusable {{firstName}}/{{estSavings}} mail-merge template for the strategy's cohort. Privacy by design — the LLM receives ONLY the catalog strategy text + anonymous cohort statistics (no client names or per-client figures), so no per-client §7216 consent is required; the merge happens locally. Falls back to a deterministic template when AI is disabled or the draft loses the merge fields.
+
+ * @summary Draft a mail-merge outreach template for one campaign (T2.2 D3)
+ */
+export const getDraftCampaignEmailUrl = () => {
+  return `/api/planning-campaigns/email-draft`;
+};
+
+export const draftCampaignEmail = async (
+  campaignEmailDraftBody: CampaignEmailDraftBody,
+  options?: RequestInit,
+): Promise<DraftCampaignEmail200> => {
+  return customFetch<DraftCampaignEmail200>(getDraftCampaignEmailUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(campaignEmailDraftBody),
+  });
+};
+
+export const getDraftCampaignEmailMutationOptions = <
+  TError = ErrorType<void | ProTierRequired>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof draftCampaignEmail>>,
+    TError,
+    { data: BodyType<CampaignEmailDraftBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof draftCampaignEmail>>,
+  TError,
+  { data: BodyType<CampaignEmailDraftBody> },
+  TContext
+> => {
+  const mutationKey = ["draftCampaignEmail"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof draftCampaignEmail>>,
+    { data: BodyType<CampaignEmailDraftBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return draftCampaignEmail(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DraftCampaignEmailMutationResult = NonNullable<
+  Awaited<ReturnType<typeof draftCampaignEmail>>
+>;
+export type DraftCampaignEmailMutationBody = BodyType<CampaignEmailDraftBody>;
+export type DraftCampaignEmailMutationError = ErrorType<void | ProTierRequired>;
+
+/**
+ * @summary Draft a mail-merge outreach template for one campaign (T2.2 D3)
+ */
+export const useDraftCampaignEmail = <
+  TError = ErrorType<void | ProTierRequired>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof draftCampaignEmail>>,
+    TError,
+    { data: BodyType<CampaignEmailDraftBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof draftCampaignEmail>>,
+  TError,
+  { data: BodyType<CampaignEmailDraftBody> },
+  TContext
+> => {
+  return useMutation(getDraftCampaignEmailMutationOptions(options));
+};

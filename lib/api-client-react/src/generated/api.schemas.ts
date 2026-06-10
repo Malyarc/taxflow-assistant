@@ -1066,6 +1066,21 @@ export interface UpdateForm1099DataBody {
   spouse?: UpdateForm1099DataBodySpouse;
 }
 
+/**
+ * T2.2 D2 — engagement workflow status for the firm busy-season view.
+ */
+export type TaxReturnEngagementStatus =
+  (typeof TaxReturnEngagementStatus)[keyof typeof TaxReturnEngagementStatus];
+
+export const TaxReturnEngagementStatus = {
+  not_started: "not_started",
+  awaiting_documents: "awaiting_documents",
+  in_preparation: "in_preparation",
+  in_review: "in_review",
+  ready_to_file: "ready_to_file",
+  filed: "filed",
+} as const;
+
 export interface TaxReturn {
   id: number;
   clientId: number;
@@ -1201,6 +1216,10 @@ export interface TaxReturn {
   daysFormerStateResident: number;
   /** E12 — Days resident in current state (changeDate to Dec 31). */
   daysCurrentStateResident: number;
+  /** T2.2 D2 — engagement workflow status for the firm busy-season view. */
+  engagementStatus?: TaxReturnEngagementStatus;
+  /** T2.2 D2 — Form 4868 extension filed (the Oct 15 deadline governs). */
+  extensionFiled?: boolean;
   /** @nullable */
   notes?: string | null;
   createdAt: string;
@@ -2692,6 +2711,51 @@ export interface PlanningMultiYear {
   yearsCovered: number[];
 }
 
+export interface RollForwardBody {
+  /**
+   * Target tax year (defaults to client.taxYear + 1). Source year is toYear − 1.
+   * @nullable
+   */
+  toYear?: number | null;
+}
+
+/**
+ * @nullable
+ */
+export type UpdateEngagementBodyEngagementStatus =
+  | (typeof UpdateEngagementBodyEngagementStatus)[keyof typeof UpdateEngagementBodyEngagementStatus]
+  | null;
+
+export const UpdateEngagementBodyEngagementStatus = {
+  not_started: "not_started",
+  awaiting_documents: "awaiting_documents",
+  in_preparation: "in_preparation",
+  in_review: "in_review",
+  ready_to_file: "ready_to_file",
+  filed: "filed",
+} as const;
+
+export interface UpdateEngagementBody {
+  /** @nullable */
+  engagementStatus?: UpdateEngagementBodyEngagementStatus;
+  /** @nullable */
+  extensionFiled?: boolean | null;
+}
+
+export interface ReturnQaBody {
+  /**
+   * Plain-English question about the computed return (≤1,000 chars; treated as untrusted data).
+   * @minLength 1
+   * @maxLength 1000
+   */
+  question: string;
+}
+
+export interface CampaignEmailDraftBody {
+  /** Catalog strategy id (e.g. "G1.2") whose cohort the template targets. */
+  strategyId: string;
+}
+
 export interface WhatIfScenarioBody {
   /**
    * Optional stable identifier (e.g. "G1.1-sep-14800") echoed back in the response.
@@ -3004,3 +3068,48 @@ export type GetYearOverYearParams = {
 };
 
 export type GetYearOverYear200 = { [key: string]: unknown };
+
+export type GetEntityChoiceParams = {
+  /**
+   * Explicit W-2 comp level to model (replaces the default 35/50/60% sweep).
+   */
+  reasonableComp?: number;
+};
+
+export type GetEntityChoice200 = { [key: string]: unknown };
+
+export type RollForwardClient200 = { [key: string]: unknown };
+
+export type GetClientOrganizerParams = {
+  taxYear?: number;
+};
+
+export type GetClientOrganizer200 = { [key: string]: unknown };
+
+export type GetClientOrganizerPdfParams = {
+  taxYear?: number;
+};
+
+export type UpdateEngagementParams = {
+  taxYear?: number;
+};
+
+export type ListEngagementsParams = {
+  status?: string;
+  taxYear?: number;
+};
+
+export type ListEngagements200 = { [key: string]: unknown };
+
+export type AskReturnQuestion200 = { [key: string]: unknown };
+
+export type ListPlanningCampaignsParams = {
+  /**
+   * Max clients evaluated (default 100, cap 200).
+   */
+  limit?: number;
+};
+
+export type ListPlanningCampaigns200 = { [key: string]: unknown };
+
+export type DraftCampaignEmail200 = { [key: string]: unknown };
