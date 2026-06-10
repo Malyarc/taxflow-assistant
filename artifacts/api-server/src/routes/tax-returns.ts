@@ -35,6 +35,9 @@ import {
   buildTaxReturnSummaryText,
 } from "../lib/taxReturnExports";
 import { setSecureDownloadHeaders } from "../lib/httpSecurity";
+import { buildAllFormInstances } from "../lib/forms/registry";
+import { buildWorkpaperPacketPdf } from "../lib/forms/formRenderer";
+import type { WorkpaperTaxpayer } from "../lib/forms/formSpec";
 import { logger } from "../lib/logger";
 import {
   calculateFederalTaxWithBreakdown,
@@ -147,6 +150,49 @@ router.get("/clients/:clientId/tax-return/pdf", async (req, res): Promise<void> 
   }
   const pdf = await buildTaxReturnPdf(computed.client, computed.result);
   const fileName = `tax-return-${computed.client.firstName}-${computed.client.lastName}-${computed.result.taxYear}.pdf`;
+  setSecureDownloadHeaders(res, {
+    fileName, contentType: "application/pdf", disposition: "attachment",
+    length: pdf.length, fallbackExt: ".pdf",
+  });
+  res.send(pdf);
+});
+
+// T2.1 — One-click workpaper packet: cover page + reconciliation worksheet +
+// every applicable substitute form (1040, schedules, credit/other-tax/detail
+// forms, state summary), DRAFT-watermarked on every page. The CPA's
+// line-by-line cross-check against their prep software.
+router.get("/clients/:clientId/tax-return/workpapers/pdf", async (req, res): Promise<void> => {
+  const params = GetTaxReturnParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const yearRaw = req.query.taxYear;
+  const overrideYear = typeof yearRaw === "string" && Number.isFinite(Number(yearRaw))
+    ? Number(yearRaw)
+    : undefined;
+  const computed = await computeTaxReturn(params.data.clientId, overrideYear ? { taxYear: overrideYear } : {});
+  if (!computed) {
+    res.status(404).json({ error: "Client not found" });
+    return;
+  }
+  const c = computed.client;
+  const taxpayer: WorkpaperTaxpayer = {
+    firstName: c.firstName,
+    lastName: c.lastName,
+    email: c.email,
+    filingStatus: c.filingStatus,
+    state: c.state,
+    dependentsUnder17: c.dependentsUnder17,
+    otherDependents: c.otherDependents,
+    taxpayerAge: c.taxpayerAge,
+    spouseAge: c.spouseAge,
+    isKiddieTaxFiler: c.isKiddieTaxFiler,
+    parentsTopMarginalRate: c.parentsTopMarginalRate != null ? Number(c.parentsTopMarginalRate) : null,
+  };
+  const instances = buildAllFormInstances({ taxpayer, ret: computed.result, inputs: computed.inputs });
+  const pdf = await buildWorkpaperPacketPdf({ taxpayer, instances, taxYear: computed.result.taxYear });
+  const fileName = `workpapers-${c.firstName}-${c.lastName}-${computed.result.taxYear}.pdf`;
   setSecureDownloadHeaders(res, {
     fileName, contentType: "application/pdf", disposition: "attachment",
     length: pdf.length, fallbackExt: ".pdf",

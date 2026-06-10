@@ -1856,6 +1856,21 @@ function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: nu
 
           <div className="flex flex-wrap justify-end gap-2 print:hidden">
             <Button
+              variant="default"
+              size="sm"
+              title="One-click workpaper packet: reconciliation worksheet + every applicable substitute form (1040, schedules, credits, AMT/NIIT, state) — the line-by-line cross-check against your prep software. DRAFT-watermarked."
+              onClick={() => {
+                const link = document.createElement("a");
+                link.href = `/api/clients/${clientId}/tax-return/workpapers/pdf?taxYear=${taxYear}`;
+                link.download = "";
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+              }}
+            >
+              Workpaper packet (PDF)
+            </Button>
+            <Button
               variant="outline"
               size="sm"
               title="Custom one-page tax-return summary (TaxFlow layout) for client email or print"
@@ -1871,7 +1886,7 @@ function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: nu
               Download PDF (summary)
             </Button>
             <Button
-              variant="default"
+              variant="outline"
               size="sm"
               title="Official IRS Form 1040 with values filled in via pdf-lib (TY2024 template)"
               onClick={() => {

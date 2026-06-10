@@ -3552,6 +3552,19 @@ export const GetForm8606PdfParams = zod.object({
 });
 
 /**
+ * Cover page + 1040 reconciliation worksheet + every applicable substitute form (Form 1040, Schedules 1/1-A/2/3/A/B/C/D/E/SE/H, Form 8949, credit forms 8812/8863/8880/2441/8962/5695/8839/1116, other-tax forms 6251/8959/8960/8615/5329, detail forms 8995/4562/8582/4952/2555/7206/8283/4797, and a state summary), DRAFT-watermarked on every page. CPA review workpapers — not for filing.
+
+ * @summary Download the one-click workpaper packet PDF (T2.1)
+ */
+export const GetWorkpaperPacketPdfParams = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const GetWorkpaperPacketPdfQueryParams = zod.object({
+  taxYear: zod.coerce.number().optional(),
+});
+
+/**
  * Reads the client's §1031 adjustments (section_1031_realized_gain, section_1031_boot_received) and returns the structured Form 8824 line items (recognized + deferred gain, boot, basis). Optional query params let the CPA supply property descriptions + dates.
 
  * @summary Compute Form 8824 §1031 like-kind exchange data (C3 follow-up)

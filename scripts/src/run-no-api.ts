@@ -34,6 +34,7 @@ const NEEDS_API = new Set<string>([
   "tax-engine-pro-tier-tests.ts",
   "tax-engine-schedule-c-assets-integration-tests.ts",
   "tax-engine-sch1-surface-integration-tests.ts",
+  "tax-engine-workpapers-integration-tests.ts",
 ]);
 
 const suites = readdirSync(srcDir)

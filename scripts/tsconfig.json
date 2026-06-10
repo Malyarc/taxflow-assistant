@@ -113,6 +113,21 @@
     "src/tax-engine-carryforward-audit-tests.ts",
     "src/tax-engine-montecarlo-tests.ts",
     "src/tax-engine-optimizer-tests.ts",
-    "src/tax-engine-property-harness.ts"
+    "src/tax-engine-property-harness.ts",
+    "src/tax-engine-workpaper-core-1040-tests.ts",
+    "src/tax-engine-workpaper-schedule-ab-tests.ts",
+    "src/tax-engine-workpaper-schedules-123-tests.ts",
+    "src/tax-engine-workpaper-schedule-cse-tests.ts",
+    "src/tax-engine-workpaper-schedule-d-8949-tests.ts",
+    "src/tax-engine-workpaper-schedule-e-h-tests.ts",
+    "src/tax-engine-workpaper-credit-forms-1-tests.ts",
+    "src/tax-engine-workpaper-credit-forms-2-tests.ts",
+    "src/tax-engine-workpaper-other-tax-forms-tests.ts",
+    "src/tax-engine-workpaper-detail-forms-a-tests.ts",
+    "src/tax-engine-workpaper-detail-forms-b-tests.ts",
+    "src/tax-engine-workpaper-state-ca-ny-tests.ts",
+    "src/tax-engine-workpaper-state-njmapa-generic-tests.ts",
+    "src/tax-engine-workpaper-recon-tests.ts",
+    "src/tax-engine-workpapers-integration-tests.ts"
   ]
 }

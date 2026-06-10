@@ -1127,6 +1127,42 @@ paths:
         "404":
           description: Client not found
 
+  # ── Workpaper packet (T2.1 — GAME PLAN B) ─────────────────────────────────
+  /clients/{clientId}/tax-return/workpapers/pdf:
+    get:
+      operationId: getWorkpaperPacketPdf
+      tags: [taxReturns]
+      summary: Download the one-click workpaper packet PDF (T2.1)
+      description: >
+        Cover page + 1040 reconciliation worksheet + every applicable
+        substitute form (Form 1040, Schedules 1/1-A/2/3/A/B/C/D/E/SE/H,
+        Form 8949, credit forms 8812/8863/8880/2441/8962/5695/8839/1116,
+        other-tax forms 6251/8959/8960/8615/5329, detail forms
+        8995/4562/8582/4952/2555/7206/8283/4797, and a state summary),
+        DRAFT-watermarked on every page. CPA review workpapers — not for
+        filing.
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema:
+            type: integer
+        - name: taxYear
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Workpaper packet PDF
+          content:
+            application/pdf:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Client not found
+
   # ── Form 8824 (C3 follow-up — §1031 like-kind exchange PDF) ───────────────
   /clients/{clientId}/form-8824:
     get:

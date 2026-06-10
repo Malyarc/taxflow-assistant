@@ -44,6 +44,7 @@ import type {
   GetForm8990PdfParams,
   GetPeerBenchmarkParams,
   GetPlanningHitListParams,
+  GetWorkpaperPacketPdfParams,
   HealthStatus,
   ListClientsParams,
   PeerBenchmarkResponse,
@@ -3753,6 +3754,126 @@ export function useGetForm8606Pdf<
   },
 ): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetForm8606PdfQueryOptions(clientId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Cover page + 1040 reconciliation worksheet + every applicable substitute form (Form 1040, Schedules 1/1-A/2/3/A/B/C/D/E/SE/H, Form 8949, credit forms 8812/8863/8880/2441/8962/5695/8839/1116, other-tax forms 6251/8959/8960/8615/5329, detail forms 8995/4562/8582/4952/2555/7206/8283/4797, and a state summary), DRAFT-watermarked on every page. CPA review workpapers — not for filing.
+
+ * @summary Download the one-click workpaper packet PDF (T2.1)
+ */
+export const getGetWorkpaperPacketPdfUrl = (
+  clientId: number,
+  params?: GetWorkpaperPacketPdfParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/clients/${clientId}/tax-return/workpapers/pdf?${stringifiedParams}`
+    : `/api/clients/${clientId}/tax-return/workpapers/pdf`;
+};
+
+export const getWorkpaperPacketPdf = async (
+  clientId: number,
+  params?: GetWorkpaperPacketPdfParams,
+  options?: RequestInit,
+): Promise<Blob> => {
+  return customFetch<Blob>(getGetWorkpaperPacketPdfUrl(clientId, params), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetWorkpaperPacketPdfQueryKey = (
+  clientId: number,
+  params?: GetWorkpaperPacketPdfParams,
+) => {
+  return [
+    `/api/clients/${clientId}/tax-return/workpapers/pdf`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetWorkpaperPacketPdfQueryOptions = <
+  TData = Awaited<ReturnType<typeof getWorkpaperPacketPdf>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  params?: GetWorkpaperPacketPdfParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getWorkpaperPacketPdf>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ??
+    getGetWorkpaperPacketPdfQueryKey(clientId, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getWorkpaperPacketPdf>>
+  > = ({ signal }) =>
+    getWorkpaperPacketPdf(clientId, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!clientId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getWorkpaperPacketPdf>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetWorkpaperPacketPdfQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getWorkpaperPacketPdf>>
+>;
+export type GetWorkpaperPacketPdfQueryError = ErrorType<void>;
+
+/**
+ * @summary Download the one-click workpaper packet PDF (T2.1)
+ */
+
+export function useGetWorkpaperPacketPdf<
+  TData = Awaited<ReturnType<typeof getWorkpaperPacketPdf>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  params?: GetWorkpaperPacketPdfParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getWorkpaperPacketPdf>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetWorkpaperPacketPdfQueryOptions(
+    clientId,
+    params,
+    options,
+  );
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

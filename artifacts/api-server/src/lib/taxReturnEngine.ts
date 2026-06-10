@@ -34,6 +34,7 @@ import {
   qbiPhaseInBand,
   resolveTaxYear,
   calculateObbbaSchedule1ADeductions,
+  type ObbbaSchedule1ADeductions,
   calculateAmt,
   calculateFederalTaxWithCapitalGains,
   calculateScheduleA,
@@ -832,12 +833,30 @@ export interface ComputedTaxReturn {
    *  K-1), each limited independently then summed. */
   qbiPerBusiness: PerBusinessQbiLimit[] | null;
   taxableIncome: number;
+  /** T2.1 — OBBBA Schedule 1-A deduction detail (tips §224 / overtime §225 /
+   *  car-loan §163(h)(4) / senior §151(d)). Subtracted from taxable income
+   *  (Form 1040 line 13b), NOT from AGI. All-zero outside TY2025–2028 or when
+   *  none claimed. Exposed so the workpaper packet can render Schedule 1-A
+   *  and the reconciliation worksheet can tie the taxable-income chain. */
+  obbbaSchedule1A: ObbbaSchedule1ADeductions;
   federalTaxLiability: number;
   federalTaxWithheld: number;
   federalRefundOrOwed: number;
+  /** Pre-additional-credit state tax (multiState.totalStateTax). The state
+   *  refund nets the additional-credit package below off this first. */
   stateTaxLiability: number;
   stateTaxWithheld: number;
   stateRefundOrOwed: number;
+  /** T2.1 — state additional-credit package (the 31-credit state set, e.g. MA
+   *  Circuit Breaker / NJ property tax / OH JFC): nonrefundable portion
+   *  reduces state tax (floored at 0); refundable portion adds to the state
+   *  refund. Exposed so the workpaper reconciliation ties to the cent. */
+  stateAdditionalCreditsNonRefundable: number;
+  stateAdditionalCreditsRefundable: number;
+  /** T2.1 — refundable state child tax credit (CA YCTC / CO / NJ / IL / NM / VT). */
+  stateChildTaxCredit: number;
+  /** T2.1 — NYC EITC in excess of NYC tax, refunded via the state refund. */
+  nycEitcRefundableExcess: number;
   /** T1.1c — state individual health-coverage mandate (shared-responsibility)
    *  penalty (CA/NJ/RI/DC/MA). 0 for non-mandate states or full coverage.
    *  Raises the amount owed (reduces stateRefundOrOwed) and the effective rate. */
@@ -4078,12 +4097,17 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     qbiDeduction: qbi.finalDeduction,
     qbiPerBusiness: qbi.perBusiness ?? null,
     taxableIncome: taxableAfterObbba,
+    obbbaSchedule1A: obbbaDeductions,
     federalTaxLiability: totalFederalLiabilityWithRepayment,
     federalTaxWithheld: totalFederalWithheld + withholdingAdjustments,
     federalRefundOrOwed,
     stateTaxLiability,
     stateTaxWithheld: totalStateWithheld,
     stateRefundOrOwed,
+    stateAdditionalCreditsNonRefundable: stateAdditionalNonRefundable,
+    stateAdditionalCreditsRefundable: stateAdditionalRefundable,
+    stateChildTaxCredit: stateCtcRefundable,
+    nycEitcRefundableExcess,
     stateIndividualMandatePenalty,
     stateMandate,
     effectiveTaxRate: effectiveRate,

@@ -2967,6 +2967,10 @@ export type GetPeerBenchmarkParams = {
   bandWidth?: number;
 };
 
+export type GetWorkpaperPacketPdfParams = {
+  taxYear?: number;
+};
+
 export type GetForm8824Params = {
   taxYear?: number;
 };
