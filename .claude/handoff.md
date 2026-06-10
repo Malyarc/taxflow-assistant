@@ -1,3 +1,88 @@
+# Handoff Note — 2026-06-09d (T1.3 PLANNING POLISH — what-if UI + estate/gift touchpoints + heuristic-promotion triage; shipped + deployed + browser-verified)
+
+Finished the **remaining MASTER-TODO T1.3 items** (all of T1.3 is now done or
+deliberately-resolved). 1 commit on `main` (`4541a2c`), pushed, deployed
+(api-server rebuilt, frontend rsynced, re-scored, healthz ok), **PROD-SMOKED +
+BROWSER-VERIFIED**. Full green bar: 4 typechecks + CI test-typecheck + 86 no-API
+suites / **4,838** assertions + property harness (5,636). A full **`/code-review
+max --fix`** pass (6 parallel finder-angles + verify + sweep) found **5 real
+issues — all fixed** before deploy.
+
+**What shipped:**
+- **Interactive what-if scenario builder UI** (the highest-demo-leverage T1.3
+  item). A new flagship card on the Planning tab over the existing
+  `POST /clients/:id/what-if` engine: a CPA composes arbitrary mutations
+  (add/replace/remove an adjustment, or change a client fact — filing status /
+  state / age) and gets the EXACT engine federal+state delta, side-by-side
+  baseline-vs-scenario + per-component breakdown. **Browser-verified end-to-end**
+  (a $50k deduction on a $1.1M single client → AGI $1,100,000→$1,050,000, federal
+  tax $338,964→$320,464, Δ −$18,500 = exactly 50k×37% top marginal). Reuses the
+  existing `useRunWhatIfScenario` hook; Pro-tier-gated (inside the Planning tab).
+- **Estate & gift touchpoints**: a NEW `"estate"` StrategyCategory + 6 catalog
+  strategies + detectors **G1.101–G1.106** — annual-exclusion gifting (§2503(b)),
+  529 superfunding (§529(c)(2)(B)), SLAT, ILIT, GRAT, §1014 step-up-in-basis hold.
+  These are **qualitative INFORMATIONAL flags** (confidence 0.40–0.50, so they
+  never outrank the engine-verified income-tax strategies) because the
+  individual-1040 engine has no estate-tax model — each estSavings is an
+  illustrative figure with disclosed assumptions; the CPA sizes it via the
+  prerequisiteData. New year-indexed `ANNUAL_GIFT_EXCLUSION`/`ESTATE_BASIC_EXCLUSION`
+  (`Record<TaxYear>`). Catalog **v1.21.0**. +29 hand-calc'd planning assertions
+  (planning-tests 556→585). Wired through openapi (both category enums) + codegen
+  + frontend label/badge maps + the planning-calendar deadline classifier.
+- **Heuristic-detector promotion — evidence-based re-triage** (NEW
+  `docs/planning-detector-promotion-triage.md`). Independently re-confirmed the
+  2026-06-06i finding: the cleanly-modelable detectors (current-year,
+  income-tax-complete, determinable amount) are ALREADY engine-verified (§1244 /
+  §453 / §41 / §163(d) / §221 / Saver's / adoption / PTC / SEP / HSA / SEHI / …);
+  the remaining ~50 are deliberately heuristic for documented reasons —
+  multi-year/future-growth (no current-year delta), engine-invisible component
+  (DCFSA's FICA), qualitative/structural (trusts, entity elections), or
+  requires-a-guessed-input. **Force-wiring them would inject incomplete/
+  falsely-precise "verified" numbers — explicitly NOT done** (the "model the
+  mechanic first or leave heuristic" rule). **If you want specific ones promoted
+  despite the documented limitations, say which.**
+- **Shared `adjustmentLabels.ts`**: hoisted the 122-entry `TYPE_LABELS` out of
+  `AdjustmentsTab` into a shared module so the editor + the what-if builder share
+  one source of truth (verified 1:1, zero keys dropped).
+
+**`/code-review max --fix` — 5 fixes applied (all re-verified green + the UI ones
+browser-verified on the post-fix build):**
+1. **Inverted delta coloring** — the AGI/Taxable-income comparison rows used
+   `signedMoney` → GREEN on increase (an income rise shown as "good"). New
+   `neutralMoney` kind → AGI/taxable carry no good/bad signal; only the tax
+   (down=good) + refund (up=good) rows do. Browser-confirmed AGI delta now
+   `text-muted-foreground`.
+2. **openapi `OpportunityHit.category` enum** was missing `estate` (only the
+   hit-list query-param enum got it — different indentation) → the generated
+   `OpportunityHitCategory` union + api-zod under-declared a value the server
+   returns. Fixed + re-ran codegen (both enums now include `estate`).
+3. **`Number("")===0` footgun** in `whatIfRowToMutation` (amount + numeric-field
+   paths) — garbage text ("abc", "$") stripped to "" and `Number("")===0` passed
+   because the empty-guard tested the UN-stripped string → a silent `amount:0` /
+   `age:0` / `0-dependents` mutation. Now rejects when the CLEANED string is empty.
+4. **Credit-only headline** — the verdict led with `combinedTaxDelta`, so a
+   credit-only scenario (tax liability flat, refund moves) showed "$0 / No
+   combined tax change". Now drives off `combinedRefundDelta` (the cash impact,
+   the lesson `PlanningHitWhatIfPanel` already encodes) + dropped the awkward
+   `data.label`-possessive copy. Browser-confirmed.
+5. **`estateFmt` duplicated the module-scope `obbbaFmt`** byte-for-byte →
+   consolidated both into one shared `fmtUsd0`.
+   **Skipped (by-design / false-positive, each reasoned):** GRAT/step-up firing
+   off gross-LTCG (consistent with the existing CRT detector; qualitative flags),
+   the unfiltered adjustment-type dropdown (the user wanted ARBITRARY mutations),
+   the Radix empty-Select (benign — static items, no async prefill), the
+   module-global row-seq counter (no cross-card collision), toLocaleString in
+   Layer-2 display strings (never an asserted value).
+
+**Recommended next:** T1 is complete. The highest-leverage remaining engineering
+move is the **T0.3 differential-ORACLE layer** (A0/A2 — wire OpenTaxSolver /
+ustaxes / tenforty + the IRS ATS scenarios as a second oracle) to promote the
+property harness from self-consistency to oracle-backed cross-validation — the
+last unmet T0.3 technique. Then T2 (forms/workpaper generator) once a CPA design
+partner is in hand.
+
+---
+
 # Handoff Note — 2026-06-09c (T1 A+ HARDENING — independent multi-agent + /code-review + /security-review; 12 bugs found + fixed + deployed)
 
 After the T1 ship, ran the review pass the first T1 pass skipped: `/code-review`
