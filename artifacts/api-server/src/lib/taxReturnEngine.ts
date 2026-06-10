@@ -2722,26 +2722,18 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     // A2 — 1099-INT Box 2 early-withdrawal-of-savings penalty (§62(a)(9)).
     form1099Summary.interestEarlyWithdrawalPenalty;
 
-  const magiForSli = Math.max(0, totalIncomeProvisional - aboveTheLineDeterministic);
-  const studentLoanInterest = calculateStudentLoanInterest({
-    interestPaid: studentLoanInterestAdj,
-    magi: magiForSli,
-    filingStatus: client.filingStatus,
-    taxYear,
-  });
-  const sliDeduction = studentLoanInterest.deductible;
-
-  const aboveTheLineExcludingIra = aboveTheLineDeterministic + sliDeduction;
-  const agiBeforeIra = Math.max(0, totalIncomeProvisional - aboveTheLineExcludingIra);
-
+  // ── IRA deduction FIRST. Its Pub 590-A MAGI excludes BOTH the IRA and the
+  //    student-loan-interest deductions, so it is independent of the SLI figure
+  //    (the SLI add-back cancels its own subtraction) — no circular dependency.
+  //    Computing it before §221 lets the SLI MAGI below subtract the IRA
+  //    deduction, as the AGI definition requires.
+  //
   // C4 (audit 2026-06-08) — MAGI for the traditional-IRA-deduction phase-out
-  // (Pub 590-A Worksheet 1-1) = AGI (without the IRA deduction) PLUS the
-  // student-loan-interest deduction and the §911 FEIE/foreign-housing exclusion,
-  // both ADDED BACK. `agiBeforeIra` already subtracted SLI, so add it back here;
-  // and add the FEIE that was netted out of total income. (Was passing
-  // agiBeforeIra directly → SLI/FEIE understated MAGI → over-allowed the IRA
-  // deduction in the phase-out band.)
-  const magiForIra = agiBeforeIra + sliDeduction + feieExclusion;
+  // (Pub 590-A Worksheet 1-1) = AGI without the IRA deduction, with the SLI
+  // deduction and the §911 FEIE/foreign-housing exclusion ADDED BACK. Excluding
+  // both IRA and SLI from the subtraction yields exactly that.
+  const agiExcludingIraAndSli = Math.max(0, totalIncomeProvisional - aboveTheLineDeterministic);
+  const magiForIra = agiExcludingIraAndSli + feieExclusion;
 
   const retirement = calculateRetirementDeductions({
     hsaContribution: hsaContributionAdj,
@@ -2757,6 +2749,23 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   });
   const iraDeduction = retirement.iraDeductible;
 
+  // ── §221 student-loan-interest MAGI (Pub 970 Worksheet 4-1) = AGI figured
+  //    WITHOUT the SLI deduction (i.e. NET of the IRA deduction), PLUS the §911
+  //    FEIE/foreign-housing exclusion added back. Subtracting iraDeduction here
+  //    is the correctness fix: previously SLI MAGI omitted it, so a deductible
+  //    IRA inflated MAGI and over-phased-out §221 near the $80k/$165k band
+  //    (single $90k SE + $4k IRA + $1,500 SLI → $1,135.83 instead of $1,500).
+  //    Filers without a deductible IRA are unaffected (iraDeduction = 0).
+  const magiForSli = Math.max(0, totalIncomeProvisional - aboveTheLineDeterministic - iraDeduction) + feieExclusion;
+  const studentLoanInterest = calculateStudentLoanInterest({
+    interestPaid: studentLoanInterestAdj,
+    magi: magiForSli,
+    filingStatus: client.filingStatus,
+    taxYear,
+  });
+  const sliDeduction = studentLoanInterest.deductible;
+
+  const aboveTheLineExcludingIra = aboveTheLineDeterministic + sliDeduction;
   const aboveTheLineAdjustments = aboveTheLineExcludingIra + iraDeduction;
 
   // ── K10 — Social Security taxability (Pub 915 Worksheet) ──────────

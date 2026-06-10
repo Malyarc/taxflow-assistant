@@ -33,16 +33,18 @@ state-njmapa-generic), wired the registry + tsconfig + run-no-api, fixed 1 wrong
 test expectation (CA Personal Exemption Credit $144 — verified correct, not a
 bug), reviewed inline (no multi-agent).
 
-**⚠ ENGINE BUG flagged (NOT fixed — own task, chip spawned):** student-loan-interest
-(§221) MAGI omits the IRA deduction → over-phases-out §221 when a deductible IRA
-pushes MAGI across the $80k/$165k band (`taxReturnEngine.ts` ~L2725 `magiForSli`).
-Repro: single $90k SE + $4k IRA + $1,500 SLI → $1,135.83, should be $1,500. Fix:
-subtract `iraDeduction` from `magiForSli` (move SLI block after the IRA deduction)
-+ Pub 970 regression. Real-money under-deduction.
+**§221 SLI-MAGI ENGINE BUG — FIXED + DEPLOYED (same session, commit after df94d5e):**
+the student-loan-interest MAGI omitted the IRA deduction → over-phased-out §221
+when a deductible IRA pushed MAGI across the $80k/$165k band. Fixed per Pub 970
+Worksheet 4-1: IRA deduction now computed FIRST (its Pub 590-A MAGI is independent
+of SLI), then SLI MAGI = AGI-without-SLI (net of IRA) + FEIE add-back. Repro
+single $90k SE + $4k IRA + $1,500 SLI now deducts the full $1,500 (was $1,135.83);
+no-IRA filers byte-for-byte unchanged. Regression `tax-engine-section221-sli-magi-tests.ts`
+(10 hand-calc'd). Full battery 101 suites / 6,355 / 0 failed.
 
-**Next (per MASTER-TODO):** T2.1 CPA legibility sign-off (gated on a design
-partner, T4) · T2.2 firm features (Game Plan D) · the deferred T0.3-A0/A2
-differential-oracle layer · the §221 MAGI fix above.
+**Next (per MASTER-TODO):** T2.2 firm features (Game Plan D — the "second half of
+T2") · T2.1 CPA legibility sign-off (gated on a design partner, T4) · the deferred
+T0.3-A0/A2 differential-oracle layer.
 
 ---
 

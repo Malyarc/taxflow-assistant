@@ -193,6 +193,7 @@ Future-you will be tempted to "simplify" these. Don't.
   | `tax-engine-workpaper-state-njmapa-generic-tests.ts` | no (T2.1 — 33: `buildNj1040`/`buildMaForm1`/`buildPa40` (3.07%) + `buildStateGeneric` (catch-all + WA cap-gains excise); component tie-outs, no per-state refund.) |
   | `tax-engine-workpaper-recon-tests.ts` | no (T2.1 — 174: `buildReconciliationWorksheet` (8-part income→settlement→carryforward tie-out identities) + `buildWorkpaperPacketPdf` PDF smoke + the new engine output scalars.) |
   | `tax-engine-workpapers-integration-tests.ts` | yes (T2.1 — 7: `GET /clients/:id/tax-return/workpapers/pdf` live — 200 + `%PDF-` + multi-form packet, taxYear override, 404. PROD-smoked.) |
+  | `tax-engine-section221-sli-magi-tests.ts` | no (**2026-06-10** — 10 hand-calc'd for the §221 student-loan-interest MAGI fix: SLI MAGI now subtracts the IRA deduction (Pub 970 Worksheet 4-1) + FEIE add-back. Repro single $90k SE + $4k IRA → full $1,500 (was $1,135.83); no-IRA control unchanged; MFJ band; IRA-deduction preservation; FEIE add-back → $0.) |
 
 **Non-test scripts:**
 - `build-validation-packet-v2.ts` — generates 15 new validation packet cases (Cases 11-25: Form 8606 backdoor Roth, §1031, §121, §1202, kiddie tax, FEIE, ACA PTC, HSA, Roth conv, NOL, cap-loss CF, multi-state NR, part-year residency, §163(j), §461(l)). Pure-function; no live API needed.
