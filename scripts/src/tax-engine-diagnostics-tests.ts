@@ -297,6 +297,107 @@ header("Severity ordering");
   checkExact("severity-sorted", monotonic, true);
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// T2.2 D2 — "ready to file" gate + audit-risk (DIF) checks
+// ════════════════════════════════════════════════════════════════════════════
+
+header("RF1 — EITC qualifying children exceed claimed dependents");
+{
+  const r = diag({
+    client: { filingStatus: "head_of_household", state: "FL", taxYear: 2024, dependentsUnder17: 1, eitcQualifyingChildren: 3 },
+    w2s: [{ taxYear: 2024, wagesBox1: 28000, federalTaxWithheldBox2: 0 }],
+    form1099s: [],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  checkExact("RF1 eitc-exceeds-dependents fires", has(r, "eitc-exceeds-dependents"), true);
+  checkExact("RF1 is a warning", sevOf(r, "eitc-exceeds-dependents"), "warning");
+}
+
+header("RF2 — qualifying-child SSN reminder when refundable child/EITC claimed");
+{
+  const r = diag({
+    client: { filingStatus: "head_of_household", state: "FL", taxYear: 2024, dependentsUnder17: 2, eitcQualifyingChildren: 2 },
+    w2s: [{ taxYear: 2024, wagesBox1: 30000, federalTaxWithheldBox2: 0 }],
+    form1099s: [],
+    adjustments: [],
+    taxYear: 2024,
+  });
+  checkExact("RF2 ssn-reminder fires", has(r, "qualifying-child-ssn-reminder"), true);
+  checkExact("RF2 is info", sevOf(r, "qualifying-child-ssn-reminder"), "info");
+  const clean = diag({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 60000, federalTaxWithheldBox2: 7000 }],
+    form1099s: [], adjustments: [], taxYear: 2024,
+  });
+  checkExact("RF2 no reminder for childless single", has(clean, "qualifying-child-ssn-reminder"), false);
+}
+
+header("RF3 — large Schedule E rental loss (DIF)");
+{
+  const r = diag({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 80000, federalTaxWithheldBox2: 8000 }],
+    form1099s: [],
+    adjustments: [
+      { adjustmentType: "schedule_e_rental_income", amount: 5000, isApplied: true },
+      { adjustmentType: "schedule_e_rental_expenses", amount: 30000, isApplied: true },
+    ],
+    taxYear: 2024,
+  });
+  checkExact("RF3 dif-rental-loss fires", has(r, "dif-rental-loss"), true);
+  checkExact("RF3 is info", sevOf(r, "dif-rental-loss"), "info");
+  checkExact("RF3 category is Audit risk (DIF)", r.diagnostics.find((d) => d.id === "dif-rental-loss")?.category, "Audit risk (DIF)");
+}
+
+header("RF4 — high charitable-to-AGI ratio (DIF)");
+{
+  const r = diag({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 100000, federalTaxWithheldBox2: 15000 }],
+    form1099s: [],
+    adjustments: [{ adjustmentType: "charitable_cash", amount: 40000, isApplied: true }],
+    taxYear: 2024,
+  });
+  checkExact("RF4 dif-charitable-ratio fires (40% of AGI)", has(r, "dif-charitable-ratio"), true);
+  checkExact("RF4 is info", sevOf(r, "dif-charitable-ratio"), "info");
+  const modest = diag({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 100000, federalTaxWithheldBox2: 15000 }],
+    form1099s: [],
+    adjustments: [{ adjustmentType: "charitable_cash", amount: 5000, isApplied: true }],
+    taxYear: 2024,
+  });
+  checkExact("RF4 no flag at 5% of AGI", has(modest, "dif-charitable-ratio"), false);
+}
+
+header("RF5 — material carryforwards generated for next year");
+{
+  const r = diag({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 80000, federalTaxWithheldBox2: 8000 }],
+    form1099s: [],
+    adjustments: [{ adjustmentType: "capital_loss_carryforward_long", amount: 20000, isApplied: true }],
+    taxYear: 2024,
+  });
+  checkExact("RF5 carryforwards-to-next-year fires", has(r, "carryforwards-to-next-year"), true);
+  checkExact("RF5 is info", sevOf(r, "carryforwards-to-next-year"), "info");
+  const d = r.diagnostics.find((x) => x.id === "carryforwards-to-next-year");
+  checkExact("RF5 detail mentions capital loss", Boolean(d?.detail.includes("capital loss")), true);
+}
+
+header("RF — clean return fires none of the new checks (no false positives)");
+{
+  const r = diag({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 60000, federalTaxWithheldBox2: 7000 }],
+    form1099s: [], adjustments: [], taxYear: 2024,
+  });
+  const newIds = ["eitc-exceeds-dependents", "qualifying-child-ssn-reminder", "dif-rental-loss", "dif-charitable-ratio", "carryforwards-to-next-year"];
+  checkExact("RF clean return: none of the new checks fire", newIds.some((id) => has(r, id)), false);
+  checkExact("RF clean return still ready to hand off", r.readyToHandOff, true);
+}
+
 // ─── Report ───
 console.log(`\n${"=".repeat(50)}`);
 console.log(`RESULTS: ${PASS.length} passed, ${FAIL.length} failed`);

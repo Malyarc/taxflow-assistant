@@ -1,3 +1,44 @@
+# Handoff Note — 2026-06-10b (T2.2 CPA-FIRM FEATURES — projection/1040-ES + MFJ-vs-MFS + ready-to-file + YoY/threshold-alerts; shipped + deployed + browser-verified)
+
+Built **the second half of T2 — MASTER-TODO T2.2 (GAME PLAN D)**, the pure-engine
+CPA-firm features. Same session as the §221 fix + T2.1. All on `main`, pushed,
+deployed (api-server + frontend rsync + healthz), **PROD-SMOKED + browser-verified**.
+
+**What landed (4 pure-engine modules + endpoints + a "CPA Tools" frontend tab):**
+- **Tax projection + 1040-ES** (`taxProjection.ts`, `GET /clients/:id/tax-projection`):
+  projects next year, sizes the four §6654 safe-harbor quarterly vouchers
+  (min(90%-projected, 100%/110%-prior)), YoY + OBBBA deltas. 35 tests.
+- **MFJ-vs-MFS optimizer** (`filingStatusOptimizer.ts`, `GET /mfj-vs-mfs`): joint vs
+  two-MFS (income by spouse tag, §63(c)(6)(A) coupling, withholding-independent
+  net-tax metric), recommend + delta. 28 tests (doubled-bracket symmetry + a real
+  MFS-win + coupling).
+- **"Ready to file" gate** (expanded `returnDiagnostics.ts`): EITC-vs-dependents
+  cross-check, qualifying-child-SSN reminder, new "Audit risk (DIF)" category
+  (rental-loss + charitable-ratio), carryforward awareness. 52 diagnostics tests.
+- **Year-over-year + OBBBA + threshold alerts** (`yearOverYear.ts`, `GET /year-over-year`):
+  line deltas + notable swings + crossings (NIIT/Add'l-Medicare/AMT/§199A/IRMAA/
+  refund→owed, entered/exited) + the OBBBA law-change benefit. 25 tests.
+- Frontend: new **"CPA Tools" tab** (`components/CpaToolsTab.tsx`) — 3 cards over the
+  generated hooks; browser-verified (projection $195k→$200,850 ×1.03, 1040-ES
+  $8,945/qtr, MFJ-vs-MFS recommendation, all in the Brookhaven palette, 0 console
+  errors).
+- OpenAPI: 3 endpoints (permissive object responses → generated hooks) + codegen.
+- Tests: 3 no-API suites (88) + `tax-engine-cpa-tools-integration-tests.ts` (yes-API,
+  20). **Full battery 104 suites / 6,459 no-API assertions, 0 failed; 4 typechecks
+  clean.**
+
+**Deferred (flagged, NOT done — need product/infra decisions):** D1 entity-choice /
+S-corp reasonable-comp + client-facing branded deliverable; D2 client organizer +
+prior-year roll-forward + engagement tracking; **D3 LLM features (NL Q&A, firm-wide
+campaign tool) — gated on §7216 consent + the "LLM never does math" architecture**;
+the **(Likely Haven)** items (e-sign, billing, review-notes, client portal).
+
+**Next:** T2.2 entity-choice/S-corp calc + prior-year roll-forward (the next
+pure-engine D-items) · the deferred T0.3-A0/A2 differential-oracle layer · T2.1 +
+T2.2 CPA design-partner validation (T4).
+
+---
+
 # Handoff Note — 2026-06-10 (T2.1 WORKPAPER/FORM GENERATOR — one-click CPA review packet; shipped + deployed + prod-smoked)
 
 Built **MASTER-TODO T2.1 (GAME PLAN B), Phases B0–B4** — "the first half of T2."

@@ -129,6 +129,10 @@
     "src/tax-engine-workpaper-state-njmapa-generic-tests.ts",
     "src/tax-engine-workpaper-recon-tests.ts",
     "src/tax-engine-workpapers-integration-tests.ts",
-    "src/tax-engine-section221-sli-magi-tests.ts"
+    "src/tax-engine-section221-sli-magi-tests.ts",
+    "src/tax-engine-tax-projection-tests.ts",
+    "src/tax-engine-filing-status-optimizer-tests.ts",
+    "src/tax-engine-year-over-year-tests.ts",
+    "src/tax-engine-cpa-tools-integration-tests.ts"
   ]
 }

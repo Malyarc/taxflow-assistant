@@ -141,24 +141,25 @@ secure, audited to the hilt, and validated by a CPA before any tax number ships.
 
 > **Engine bug surfaced during T2.1 — FIXED + DEPLOYED 2026-06-10 (commit after df94d5e):** the **student-loan-interest (§221) MAGI omitted the traditional-IRA deduction** (`taxReturnEngine.ts` `magiForSli`), over-phasing-out §221 when a deductible IRA pushed MAGI across the $80k/$165k band. Fixed per Pub 970 Worksheet 4-1: the engine now computes the IRA deduction FIRST (its Pub 590-A MAGI is independent of SLI) and SLI MAGI = AGI-without-SLI (net of IRA) + FEIE add-back. Repro single $90k SE + $4k IRA + $1,500 SLI now deducts the full $1,500 (was $1,135.83); no-IRA filers unchanged. Regression: `tax-engine-section221-sli-magi-tests.ts` (10 hand-calc'd, incl. the FEIE add-back). Full battery green (101 suites / 6,355).
 
-### T2.2 CPA-firm features — **GAME PLAN D** (each ships with T0.3 audit rigor + T0.2 security)
+### T2.2 CPA-firm features — **GAME PLAN D** (each ships with T0.3 audit rigor + T0.2 security) — **[~] CORE SHIPPED + DEPLOYED 2026-06-10: the pure-engine D1/D2/D3 features done; the LLM (D3) + Haven items deferred.**
 - **Phase D1 — Recurring-revenue / planning:**
-  - [ ] **Tax projection + quarterly estimates** (next-year projection + 1040-ES vouchers + safe-harbor) — turns a 1-time return into a recurring relationship.
-  - [ ] **MFJ-vs-MFS optimizer** (compute both, recommend).
-  - [ ] **Entity-choice / S-corp reasonable-comp calculator** ("should this Sch C be an S-corp"; G1.17 is the seed).
-  - [ ] **Year-over-year + OBBBA-impact analysis** (flag swings; quantify the law-change delta).
-  - [ ] **Client-facing branded planning deliverable** (polish the memo into a firm sales artifact).
+  - [x] **Tax projection + quarterly estimates** — DONE. `taxProjection.ts` (`computeTaxProjection`): projects next year (reuses `projectYearForward`), sizes the four §6654 safe-harbor 1040-ES vouchers (reuses `computeForm2210`: min(90%-projected, 100%/110%-prior)), YoY + OBBBA deltas. `GET /clients/:id/tax-projection?incomeGrowth=`. 35 hand-calc'd tests.
+  - [x] **MFJ-vs-MFS optimizer** — DONE. `filingStatusOptimizer.ts` (`optimizeFilingStatus`): computes the joint return + two MFS returns (income split by spouse tags, §63(c)(6)(A) itemized coupling, withholding-independent net-tax metric), recommends + quantifies. `GET /clients/:id/mfj-vs-mfs`. 28 hand-calc'd tests (incl. the doubled-bracket symmetry + a real MFS-win).
+  - [ ] **Entity-choice / S-corp reasonable-comp calculator** — STILL OPEN (G1.17 is the seed).
+  - [x] **Year-over-year + OBBBA-impact analysis** — DONE. `yearOverYear.ts` (`computeYearOverYear`): line-by-line deltas + notable swings + the OBBBA Schedule 1-A law-change benefit. `GET /clients/:id/year-over-year?priorYear=`. 25 hand-calc'd tests.
+  - [ ] **Client-facing branded planning deliverable** — STILL OPEN (polish the memo into a sales artifact).
 - **Phase D2 — Prep-workflow efficiency:**
-  - [ ] **Personalized client organizer / document-request list** (derive from last year's return).
-  - [ ] **"Ready to file" gate** (expand diagnostics: dependent-TIN completeness, CTC/EITC eligibility cross-checks, unbalanced-return checks).
-  - [ ] **Prior-year roll-forward** (carry the client + auto-seed carryforwards).
-  - [ ] **Audit-risk / DIF-style flagging** (outsized Sch C loss, charitable-to-income ratio, home office).
-  - [ ] **Engagement status + extension/due-date tracking** (confirm vs Haven first).
+  - [ ] **Personalized client organizer / document-request list** — STILL OPEN.
+  - [x] **"Ready to file" gate** — DONE (expanded `returnDiagnostics.ts`): EITC-exceeds-dependents cross-check, qualifying-child-SSN reminder, + the new "Audit risk (DIF)" category (large rental loss, charitable-to-AGI > 30%) + material-carryforward awareness. 52 diagnostics tests. (Dependent-TIN completeness is NOT data-model-backed — surfaced as an SSN reminder instead.)
+  - [ ] **Prior-year roll-forward** — STILL OPEN (carry the client + auto-seed carryforwards; the carryforward-awareness flag is the seed).
+  - [x] **Audit-risk / DIF-style flagging** — DONE (folded into the ready-to-file gate above: rental-loss + charitable-ratio DIF flags; outsized-Sch-C-loss is undetectable from the output [SE base floored at 0] so the rental loss is the business-loss signal).
+  - [ ] **Engagement status + extension/due-date tracking** — STILL OPEN (confirm vs Haven first).
 - **Phase D3 — AI differentiators (LLM never does math):**
-  - [ ] **NL Q&A grounded in the computed return** ("why did the refund drop $4k?" via RAG over engine output).
-  - [ ] **Proactive threshold alerts** (crossed NIIT/IRMAA/§199A-phase-in).
-  - [ ] **Firm-wide planning campaign tool** ("these 12 clients should convert before year-end" → one-click memos).
-- **(Likely Haven — confirm before building):** e-signature (§7216 + engagement letters) · per-return/per-plan billing · review-notes/collaboration · client portal.
+  - [ ] **NL Q&A grounded in the computed return** — DEFERRED (LLM + §7216 consent-gated).
+  - [x] **Proactive threshold alerts** — DONE (folded into `yearOverYear.ts`): observed crossings of NIIT / Additional Medicare / AMT / §199A wage-UBIA phase-in / IRMAA Medicare-premium tier / refund→balance-due, with direction (entered/exited) + the planning action.
+  - [ ] **Firm-wide planning campaign tool** — DEFERRED (LLM; the firm-wide hit-list is the seed).
+- **(Likely Haven — confirm before building, DEFERRED):** e-signature (§7216 + engagement letters) · per-return/per-plan billing · review-notes/collaboration · client portal.
+- **Frontend:** new "CPA Tools" tab on ClientDetail (`components/CpaToolsTab.tsx`) with the 3 cards (projection+1040-ES, MFJ-vs-MFS, YoY+threshold-alerts); browser-verified. Tests: 3 no-API suites (88 assertions) + `tax-engine-cpa-tools-integration-tests.ts` (yes-API, 20). Full battery 104 suites / 6,459 green; deployed + prod-smoked.
 
 ---
 

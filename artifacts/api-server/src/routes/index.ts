@@ -14,6 +14,7 @@ import scheduleK1Router from "./schedule-k1";
 import assetBalancesRouter from "./asset-balances";
 import scheduleCAssetsRouter from "./schedule-c-assets";
 import planningRouter from "./planning";
+import cpaToolsRouter from "./cpa-tools";
 import settingsRouter from "./settings";
 import disclosureConsentsRouter from "./disclosure-consents";
 import { requireApiAuth } from "../middlewares/auth";
@@ -40,5 +41,6 @@ router.use(scheduleK1Router);
 router.use(assetBalancesRouter);
 router.use(scheduleCAssetsRouter);
 router.use(planningRouter);
+router.use(cpaToolsRouter);
 
 export default router;

@@ -44,7 +44,8 @@ export type DiagnosticCategory =
   | "Income documents"
   | "State & local"
   | "Payments & balance"
-  | "Health coverage (ACA)";
+  | "Health coverage (ACA)"
+  | "Audit risk (DIF)";
 
 export interface ReturnDiagnostic {
   /** Stable check id (e.g. "state-code-invalid") — lets the UI dedupe / suppress. */
@@ -393,6 +394,105 @@ export function computeReturnDiagnostics(args: {
       title: "ACA household size not set",
       detail: "Marketplace premiums are present but the household size for the FPL determination is not set. The engine defaults to filer + dependents; confirm it matches Form 1095-A.",
       field: "acaHouseholdSize",
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Category: Dependents & credits — "ready to file" cross-checks (T2.2 D2)
+  // ─────────────────────────────────────────────────────────────────────
+
+  // RF1 — EITC qualifying-children count exceeds the claimed dependents. EITC
+  // qualifying children must also be the taxpayer's dependents; a higher EITC
+  // count than (under-17 + other dependents) is an inconsistency that inflates
+  // the refundable credit and is a top IRS examination trigger.
+  const eitcKids = toNum(client.eitcQualifyingChildren);
+  const totalDependents = under17 + toNum(client.otherDependents);
+  if (eitcKids > 0 && eitcKids > totalDependents) {
+    push({
+      id: "eitc-exceeds-dependents",
+      severity: "warning",
+      category: "Dependents & credits",
+      title: `EITC qualifying children (${eitcKids}) exceed claimed dependents (${totalDependents})`,
+      detail: "The number of EITC qualifying children is greater than the dependents on the return. EITC children must also be claimed as dependents (with valid SSNs); reconcile the counts before filing — a mismatch inflates the refundable EITC and is a common audit trigger.",
+      field: "eitcQualifyingChildren",
+    });
+  }
+
+  // RF2 — refundable child/earned-income credits claimed → SSN reminder. The
+  // engine models dependent COUNTS, not per-dependent SSNs; ACTC (§24(h)(7)) and
+  // EITC require a valid SSN issued by the return due date. Surface a reminder
+  // so the CPA confirms each qualifying child's SSN before filing.
+  const refundableChildEitc = toNum(computed.additionalChildTaxCredit) + toNum(eitc?.appliedCredit);
+  if (refundableChildEitc > 0 && (under17 > 0 || eitcKids > 0)) {
+    push({
+      id: "qualifying-child-ssn-reminder",
+      severity: "info",
+      category: "Dependents & credits",
+      title: "Confirm each qualifying child's SSN before filing",
+      detail: "Refundable child / earned-income credits are claimed. The ACTC (§24(h)(7)) and EITC require each qualifying child to have a valid SSN issued before the return due date (an ITIN does not qualify for these credits). Verify the SSNs — the engine tracks counts, not SSNs.",
+      field: null,
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Category: Audit risk (DIF) — data-driven examination-likelihood flags
+  // ─────────────────────────────────────────────────────────────────────
+
+  // RF3 — large Schedule E rental loss. A sizable rental loss (especially one
+  // deducted against ordinary income via a real-estate-professional / active-
+  // participation claim) is a known DIF / §469 examination flag. The engine's
+  // signed gross rental net is exposed; the SE-base Schedule C loss is floored
+  // to $0 in the outputs, so the rental loss is the detectable business-loss
+  // DIF signal here.
+  const rentalNet = toNum(computed.scheduleERentalGrossNet);
+  if (rentalNet < -10_000) {
+    push({
+      id: "dif-rental-loss",
+      severity: "info",
+      category: "Audit risk (DIF)",
+      title: `Schedule E rental loss of $${Math.round(-rentalNet).toLocaleString()}`,
+      detail: "A sizable rental real-estate loss raises the IRS DIF score (§469 passive-loss limits / real-estate-professional substantiation). Confirm material-participation hours if claiming real-estate-professional status, the $25k active-participation allowance phase-out, and that suspended passive losses are tracked.",
+      field: null,
+    });
+  }
+
+  // RF4 — high charitable-to-AGI ratio. Large noncash or cash charitable
+  // relative to income is a top DIF flag (and large noncash needs Form 8283 /
+  // a qualified appraisal over $5,000).
+  const charitable = toNum(computed.scheduleA?.charitableDeductible);
+  const agi = toNum(computed.adjustedGrossIncome);
+  if (charitable > 0 && agi > 0 && charitable / agi > 0.30) {
+    push({
+      id: "dif-charitable-ratio",
+      severity: "info",
+      category: "Audit risk (DIF)",
+      title: `Charitable deduction is ${Math.round((charitable / agi) * 100)}% of AGI`,
+      detail: "Charitable contributions large relative to AGI raise the DIF score. Verify contemporaneous written acknowledgments for gifts ≥ $250, and that noncash gifts over $500 have Form 8283 (over $5,000 a qualified appraisal). The engine applies the 60%/30%/50%-of-AGI ceilings and carries the excess forward.",
+      field: null,
+    });
+  }
+
+  // RF5 — material carryforwards generated to next year. A planning heads-up so
+  // the CPA threads them into next year's return (the prior-year roll-forward).
+  const carryforwards: Array<[string, number]> = [
+    ["net operating loss (§172)", toNum(computed.nolCarryforwardRemaining)],
+    ["capital loss (short)", toNum(computed.capitalLossCarryforwardShort)],
+    ["capital loss (long)", toNum(computed.capitalLossCarryforwardLong)],
+    ["passive activity loss (§469)", toNum(computed.scheduleEPassiveLossSuspended)],
+    ["charitable (§170(d)(1))", toNum(computed.charitableCarryforwardCashRemaining)],
+  ];
+  const materialCfs = carryforwards.filter(([, v]) => v > 1_000);
+  if (materialCfs.length > 0) {
+    push({
+      id: "carryforwards-to-next-year",
+      severity: "info",
+      category: "Payments & balance",
+      title: `${materialCfs.length} carryforward${materialCfs.length > 1 ? "s" : ""} generated for next year`,
+      detail:
+        "This return generates carryforwards that must be threaded into next year's return: " +
+        materialCfs.map(([name, v]) => `${name} $${Math.round(v).toLocaleString()}`).join("; ") +
+        ". Roll them forward when preparing the next year so the deductions aren't lost.",
+      field: null,
     });
   }
 

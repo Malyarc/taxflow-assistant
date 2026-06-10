@@ -42,9 +42,14 @@ import type {
   GetForm8990200,
   GetForm8990Params,
   GetForm8990PdfParams,
+  GetMfjVsMfs200,
   GetPeerBenchmarkParams,
   GetPlanningHitListParams,
+  GetTaxProjection200,
+  GetTaxProjectionParams,
   GetWorkpaperPacketPdfParams,
+  GetYearOverYear200,
+  GetYearOverYearParams,
   HealthStatus,
   ListClientsParams,
   PeerBenchmarkResponse,
@@ -6345,6 +6350,338 @@ export function useGetRecentClients<
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
   const queryOptions = getGetRecentClientsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Projects next year's return from this year's (income grown by the optional incomeGrowth factor, default 1.03), sizes the four §6654 safe-harbor estimated-tax vouchers, and reports the year-over-year + OBBBA-impact deltas.
+
+ * @summary Next-year tax projection + quarterly 1040-ES estimates (T2.2)
+ */
+export const getGetTaxProjectionUrl = (
+  clientId: number,
+  params?: GetTaxProjectionParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/clients/${clientId}/tax-projection?${stringifiedParams}`
+    : `/api/clients/${clientId}/tax-projection`;
+};
+
+export const getTaxProjection = async (
+  clientId: number,
+  params?: GetTaxProjectionParams,
+  options?: RequestInit,
+): Promise<GetTaxProjection200> => {
+  return customFetch<GetTaxProjection200>(
+    getGetTaxProjectionUrl(clientId, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetTaxProjectionQueryKey = (
+  clientId: number,
+  params?: GetTaxProjectionParams,
+) => {
+  return [
+    `/api/clients/${clientId}/tax-projection`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetTaxProjectionQueryOptions = <
+  TData = Awaited<ReturnType<typeof getTaxProjection>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  params?: GetTaxProjectionParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getTaxProjection>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetTaxProjectionQueryKey(clientId, params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getTaxProjection>>
+  > = ({ signal }) =>
+    getTaxProjection(clientId, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!clientId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getTaxProjection>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetTaxProjectionQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getTaxProjection>>
+>;
+export type GetTaxProjectionQueryError = ErrorType<void>;
+
+/**
+ * @summary Next-year tax projection + quarterly 1040-ES estimates (T2.2)
+ */
+
+export function useGetTaxProjection<
+  TData = Awaited<ReturnType<typeof getTaxProjection>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  params?: GetTaxProjectionParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getTaxProjection>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetTaxProjectionQueryOptions(
+    clientId,
+    params,
+    options,
+  );
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Computes a married couple's tax both as Married Filing Jointly and as two Married-Filing-Separately returns (income split by spouse tags), and recommends the cheaper option with the dollar delta. Returns { applicable: false } when the baseline is not MFJ.
+
+ * @summary MFJ-vs-MFS filing-status optimizer (T2.2)
+ */
+export const getGetMfjVsMfsUrl = (clientId: number) => {
+  return `/api/clients/${clientId}/mfj-vs-mfs`;
+};
+
+export const getMfjVsMfs = async (
+  clientId: number,
+  options?: RequestInit,
+): Promise<GetMfjVsMfs200> => {
+  return customFetch<GetMfjVsMfs200>(getGetMfjVsMfsUrl(clientId), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetMfjVsMfsQueryKey = (clientId: number) => {
+  return [`/api/clients/${clientId}/mfj-vs-mfs`] as const;
+};
+
+export const getGetMfjVsMfsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getMfjVsMfs>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getMfjVsMfs>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetMfjVsMfsQueryKey(clientId);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getMfjVsMfs>>> = ({
+    signal,
+  }) => getMfjVsMfs(clientId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!clientId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getMfjVsMfs>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetMfjVsMfsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getMfjVsMfs>>
+>;
+export type GetMfjVsMfsQueryError = ErrorType<void>;
+
+/**
+ * @summary MFJ-vs-MFS filing-status optimizer (T2.2)
+ */
+
+export function useGetMfjVsMfs<
+  TData = Awaited<ReturnType<typeof getMfjVsMfs>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getMfjVsMfs>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetMfjVsMfsQueryOptions(clientId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * Compares the current vs prior tax year (line-by-line deltas, notable swings), the OBBBA Schedule 1-A law-change benefit, and threshold crossings (NIIT / Additional Medicare / AMT / §199A phase-in / IRMAA / refund→balance-due). priorYear defaults to currentYear − 1.
+
+ * @summary Year-over-year comparison + OBBBA impact + threshold alerts (T2.2)
+ */
+export const getGetYearOverYearUrl = (
+  clientId: number,
+  params?: GetYearOverYearParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/clients/${clientId}/year-over-year?${stringifiedParams}`
+    : `/api/clients/${clientId}/year-over-year`;
+};
+
+export const getYearOverYear = async (
+  clientId: number,
+  params?: GetYearOverYearParams,
+  options?: RequestInit,
+): Promise<GetYearOverYear200> => {
+  return customFetch<GetYearOverYear200>(
+    getGetYearOverYearUrl(clientId, params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetYearOverYearQueryKey = (
+  clientId: number,
+  params?: GetYearOverYearParams,
+) => {
+  return [
+    `/api/clients/${clientId}/year-over-year`,
+    ...(params ? [params] : []),
+  ] as const;
+};
+
+export const getGetYearOverYearQueryOptions = <
+  TData = Awaited<ReturnType<typeof getYearOverYear>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  params?: GetYearOverYearParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getYearOverYear>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetYearOverYearQueryKey(clientId, params);
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getYearOverYear>>> = ({
+    signal,
+  }) => getYearOverYear(clientId, params, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!clientId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getYearOverYear>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetYearOverYearQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getYearOverYear>>
+>;
+export type GetYearOverYearQueryError = ErrorType<void>;
+
+/**
+ * @summary Year-over-year comparison + OBBBA impact + threshold alerts (T2.2)
+ */
+
+export function useGetYearOverYear<
+  TData = Awaited<ReturnType<typeof getYearOverYear>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  params?: GetYearOverYearParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getYearOverYear>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetYearOverYearQueryOptions(
+    clientId,
+    params,
+    options,
+  );
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;

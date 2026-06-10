@@ -1778,6 +1778,84 @@ paths:
                 items:
                   $ref: "#/components/schemas/Client"
 
+  # ── T2.2 — CPA-firm tools (GAME PLAN D) ───────────────────────────────────
+  /clients/{clientId}/tax-projection:
+    get:
+      operationId: getTaxProjection
+      tags: [planning]
+      summary: Next-year tax projection + quarterly 1040-ES estimates (T2.2)
+      description: >
+        Projects next year's return from this year's (income grown by the
+        optional incomeGrowth factor, default 1.03), sizes the four §6654
+        safe-harbor estimated-tax vouchers, and reports the year-over-year +
+        OBBBA-impact deltas.
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema: { type: integer }
+        - name: incomeGrowth
+          in: query
+          required: false
+          schema: { type: number }
+      responses:
+        "200":
+          description: Tax projection + 1040-ES quarterly estimates
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "404": { description: Client not found }
+
+  /clients/{clientId}/mfj-vs-mfs:
+    get:
+      operationId: getMfjVsMfs
+      tags: [planning]
+      summary: MFJ-vs-MFS filing-status optimizer (T2.2)
+      description: >
+        Computes a married couple's tax both as Married Filing Jointly and as
+        two Married-Filing-Separately returns (income split by spouse tags),
+        and recommends the cheaper option with the dollar delta. Returns
+        { applicable: false } when the baseline is not MFJ.
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Filing-status comparison (or applicable=false)
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "404": { description: Client not found }
+
+  /clients/{clientId}/year-over-year:
+    get:
+      operationId: getYearOverYear
+      tags: [planning]
+      summary: Year-over-year comparison + OBBBA impact + threshold alerts (T2.2)
+      description: >
+        Compares the current vs prior tax year (line-by-line deltas, notable
+        swings), the OBBBA Schedule 1-A law-change benefit, and threshold
+        crossings (NIIT / Additional Medicare / AMT / §199A phase-in / IRMAA /
+        refund→balance-due). priorYear defaults to currentYear − 1.
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema: { type: integer }
+        - name: priorYear
+          in: query
+          required: false
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Year-over-year analysis
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "404": { description: Client not found }
+
 components:
   schemas:
     HealthStatus:

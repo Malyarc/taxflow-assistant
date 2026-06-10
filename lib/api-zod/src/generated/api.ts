@@ -4688,3 +4688,44 @@ export const GetRecentClientsResponseItem = zod.object({
   updatedAt: zod.coerce.date(),
 });
 export const GetRecentClientsResponse = zod.array(GetRecentClientsResponseItem);
+
+/**
+ * Projects next year's return from this year's (income grown by the optional incomeGrowth factor, default 1.03), sizes the four §6654 safe-harbor estimated-tax vouchers, and reports the year-over-year + OBBBA-impact deltas.
+
+ * @summary Next-year tax projection + quarterly 1040-ES estimates (T2.2)
+ */
+export const GetTaxProjectionParams = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const GetTaxProjectionQueryParams = zod.object({
+  incomeGrowth: zod.coerce.number().optional(),
+});
+
+export const GetTaxProjectionResponse = zod.record(zod.string(), zod.unknown());
+
+/**
+ * Computes a married couple's tax both as Married Filing Jointly and as two Married-Filing-Separately returns (income split by spouse tags), and recommends the cheaper option with the dollar delta. Returns { applicable: false } when the baseline is not MFJ.
+
+ * @summary MFJ-vs-MFS filing-status optimizer (T2.2)
+ */
+export const GetMfjVsMfsParams = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const GetMfjVsMfsResponse = zod.record(zod.string(), zod.unknown());
+
+/**
+ * Compares the current vs prior tax year (line-by-line deltas, notable swings), the OBBBA Schedule 1-A law-change benefit, and threshold crossings (NIIT / Additional Medicare / AMT / §199A phase-in / IRMAA / refund→balance-due). priorYear defaults to currentYear − 1.
+
+ * @summary Year-over-year comparison + OBBBA impact + threshold alerts (T2.2)
+ */
+export const GetYearOverYearParams = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const GetYearOverYearQueryParams = zod.object({
+  priorYear: zod.coerce.number().optional(),
+});
+
+export const GetYearOverYearResponse = zod.record(zod.string(), zod.unknown());

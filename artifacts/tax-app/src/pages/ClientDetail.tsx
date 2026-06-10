@@ -76,8 +76,9 @@ import {
   FileText, FileSpreadsheet, Files, CandlestickChart, Building2, Network,
   Wallet, Calculator, GitCompareArrows, SlidersHorizontal, Target,
   FileDown, Briefcase, Pencil, ArrowLeft, Boxes,
-  CheckCircle2, AlertTriangle, AlertCircle, Info,
+  CheckCircle2, AlertTriangle, AlertCircle, Info, TrendingUp,
 } from "lucide-react";
+import { CpaToolsTab } from "@/components/CpaToolsTab";
 
 const FILING_STATUS_LABELS: Record<string, string> = {
   single: "Single",
@@ -3102,6 +3103,7 @@ export default function ClientDetail() {
             <TabsTrigger value="assets" className={TAB_TRIGGER_CLS}><Wallet className="h-4 w-4" />Assets</TabsTrigger>
             <TabsTrigger value="calculator" className={TAB_TRIGGER_CLS}><Calculator className="h-4 w-4" />Tax Calculator</TabsTrigger>
             <TabsTrigger value="compare" className={TAB_TRIGGER_CLS}><GitCompareArrows className="h-4 w-4" />Year Compare</TabsTrigger>
+            <TabsTrigger value="cpaTools" className={TAB_TRIGGER_CLS}><TrendingUp className="h-4 w-4" />CPA Tools</TabsTrigger>
             <TabsTrigger value="adjustments" className={TAB_TRIGGER_CLS}><SlidersHorizontal className="h-4 w-4" />Adjustments</TabsTrigger>
             {proTierEnabled ? <TabsTrigger value="planning" className={TAB_TRIGGER_CLS}><Target className="h-4 w-4" />Planning</TabsTrigger> : null}
           </TabsList>
@@ -3149,6 +3151,9 @@ export default function ClientDetail() {
             <PlanningTab clientId={clientId} />
           </TabsContent>
         ) : null}
+        <TabsContent value="cpaTools" className="mt-6">
+          <CpaToolsTab clientId={clientId} />
+        </TabsContent>
         </div>
       </Tabs>
     </div>

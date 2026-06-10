@@ -2990,3 +2990,17 @@ export type GetForm8990200 = { [key: string]: unknown };
 export type GetForm8990PdfParams = {
   taxYear?: number;
 };
+
+export type GetTaxProjectionParams = {
+  incomeGrowth?: number;
+};
+
+export type GetTaxProjection200 = { [key: string]: unknown };
+
+export type GetMfjVsMfs200 = { [key: string]: unknown };
+
+export type GetYearOverYearParams = {
+  priorYear?: number;
+};
+
+export type GetYearOverYear200 = { [key: string]: unknown };
