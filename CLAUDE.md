@@ -178,6 +178,21 @@ Future-you will be tempted to "simplify" these. Don't.
   | `tax-engine-c9-c10-bulk-tests.ts` | no (C9 v3 + C10 v3 — 35 hand-calc'd assertions for the bulk PA EIT registry (~175 munis) + bulk OH SDIT registry (~226 SDs). Verifies PSD-code AND name-keyed lookup, both `earned_income` and `traditional` (oh_traditional) bases, state-mismatch rejection, E2E pipeline. NEW 2026-05-27 PM.) |
   | `tax-engine-c11-part-year-w2-tests.ts` | no (C11 v2 — 11 hand-calc'd assertions for OPT-IN per-W-2-stateCode wage allocation via `part_year_use_w2_source` adjustment. Verifies wage source-state allocation AND pure-pro-rata default unchanged.) |
   | `tax-engine-c11-deeper-sourcing-tests.ts` | no (C11 v3 — 20 hand-calc'd assertions for per-K-1 + per-rental source-state allocation via `part_year_use_full_source_allocation` adjustment. K-1 + rental net income flows to source state; intangibles still pro-rate to resident state by days. Backward-compat verified. NEW 2026-05-27 PM.) |
+  | `tax-engine-workpaper-core-1040-tests.ts` | no (**T2.1, 2026-06-10** — 92 hand-calc'd for `build1040` (Form 1040 substitute workpaper): the income/AGI/taxable/tax/refund chain + tie-out checkLines.) |
+  | `tax-engine-workpaper-schedule-ab-tests.ts` | no (T2.1 — 125: `buildScheduleA` (medical 7.5% floor, SALT cap, charitable AGI caps + carryforward) + `buildScheduleB` (per-payer interest/dividends, $1,500 threshold).) |
+  | `tax-engine-workpaper-schedules-123-tests.ts` | no (T2.1 — 36: `buildSchedule1`/`buildSchedule2`/`buildSchedule3`/`buildSchedule1A` (additional income + adjustments, other taxes, credits, OBBBA tips/overtime/car-loan/senior) + tie-outs + null gates.) |
+  | `tax-engine-workpaper-schedule-cse-tests.ts` | no (T2.1 — 104: `buildScheduleC` + `buildScheduleSE` (SE-tax Part I math, SS wage base sharing).) |
+  | `tax-engine-workpaper-schedule-d-8949-tests.ts` | no (T2.1 — 153: `buildScheduleD` + `buildForm8949` (netting, $3k limit + carryforward, §1250/28% subsets, wash sale, per-lot rows).) |
+  | `tax-engine-workpaper-schedule-e-h-tests.ts` | no (T2.1 — 115: `buildScheduleE` (per-property + K-1 page 2, §469 PAL) + `buildScheduleHForm` (FICA + FUTA).) |
+  | `tax-engine-workpaper-credit-forms-1-tests.ts` | no (T2.1 — 155: 8812/8863/8880/2441 (CTC+ACTC ordering, AOC+LLC, savers, dependent care).) |
+  | `tax-engine-workpaper-credit-forms-2-tests.ts` | no (T2.1 — 138: 8962/5695/8839/1116 (PTC reconciliation, §25D/§25C energy, adoption, FTC).) |
+  | `tax-engine-workpaper-other-tax-forms-tests.ts` | no (T2.1 — 116: 6251/8959/8960/8615/5329 (AMT, Add'l Medicare, NIIT, kiddie, §72(t)/§4973).) |
+  | `tax-engine-workpaper-detail-forms-a-tests.ts` | no (T2.1 — 29: 8995 (QBI), 4562 (§179/MACRS), 8582 (PAL §469(i) allowance), 4952 (§163(d) inv interest).) |
+  | `tax-engine-workpaper-detail-forms-b-tests.ts` | no (T2.1 — 165: 2555 (FEIE), 7206 (SEHI), 8283 (noncash charitable), 4797 (§1231/§1245/§1250).) |
+  | `tax-engine-workpaper-state-ca-ny-tests.ts` | no (T2.1 — 72: `buildCa540` + `buildNyIt201` summary workpapers (resident/NR/part-year + CalEITC/NYC).) |
+  | `tax-engine-workpaper-state-njmapa-generic-tests.ts` | no (T2.1 — 33: `buildNj1040`/`buildMaForm1`/`buildPa40` (3.07%) + `buildStateGeneric` (catch-all + WA cap-gains excise); component tie-outs, no per-state refund.) |
+  | `tax-engine-workpaper-recon-tests.ts` | no (T2.1 — 174: `buildReconciliationWorksheet` (8-part income→settlement→carryforward tie-out identities) + `buildWorkpaperPacketPdf` PDF smoke + the new engine output scalars.) |
+  | `tax-engine-workpapers-integration-tests.ts` | yes (T2.1 — 7: `GET /clients/:id/tax-return/workpapers/pdf` live — 200 + `%PDF-` + multi-form packet, taxYear override, 404. PROD-smoked.) |
 
 **Non-test scripts:**
 - `build-validation-packet-v2.ts` — generates 15 new validation packet cases (Cases 11-25: Form 8606 backdoor Roth, §1031, §121, §1202, kiddie tax, FEIE, ACA PTC, HSA, Roth conv, NOL, cap-loss CF, multi-state NR, part-year residency, §163(j), §461(l)). Pure-function; no live API needed.

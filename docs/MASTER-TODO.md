@@ -127,15 +127,19 @@ secure, audited to the hilt, and validated by a CPA before any tax number ships.
 
 ## T2 — WIN THE FIRM (the features a CPA pays for)
 
-### T2.1 Form / workpaper generator — **GAME PLAN B**
+### T2.1 Form / workpaper generator — **GAME PLAN B** — **[x] B0–B4 DONE + DEPLOYED 2026-06-10 (commit df94d5e). Remaining: A6-style CPA legibility sign-off (needs a design partner, T4).**
 > The engine already computes ~30 forms; the high-value feature is a **workpaper / review packet** (CPA cross-checks their prep software line-by-line; client gets a clean packet) — **not** filed forms (Option A; filed forms need Pub 1167 substitute approval + MeF XML — parked).
-- **Phase B0 — Architecture:** a reusable form-template engine (generalize the pdfkit substitute-PDF pattern; decide official-PDF-overlay vs substitute) + the **form ↔ `ComputedTaxReturn` field mapping** (data model = the reconciliation worksheet).
-- **Phase B1 — Core packet:** 1040 + Sch 1/2/3 + Sch A/B/C/D+8949/E/SE + the **1040 reconciliation worksheet** (every value → its form+line; the single best CPA cross-check).
-- **Phase B2 — Credits + other-taxes:** 8812, 8863, 8880, 2441, 8962, 5695, 8839, 1116 · 6251, 8959, 8960, 8615, 5329.
-- **Phase B3 — Detail forms:** 8995/8995-A, 4562, 8582, 4952, 2555, 7206, 8283.
-- **Phase B4 — Top-5 state main forms** (CA 540, NY IT-201, …) — per-state rendering; start small.
-- **Exit criteria:** a one-click "workpaper packet" produces every computed form as a labeled PDF + the reconciliation worksheet; a CPA validates legibility + correctness vs their software on the T0.3 scenario matrix.
+- [x] **Phase B0 — Architecture:** pure `FormSpec` data model + generic pdfkit renderer + registry. `artifacts/api-server/src/lib/forms/`: `formSpec.ts` (FormInstance/FormLine + line constructors + the `checkLine` ✓/⚠ tie-out device), `formRenderer.ts` (THE only pdfkit dep — substitute-form renderer + packet assembler: cover page, DRAFT watermark every page, numbered footers), `registry.ts` (packet order). Builders are pure `(ctx) => FormInstance | null` — Haven-portable (no Date/random/DB), unit-tested on line values (no PDF parsing). Substitute-form approach (not official-PDF overlay) for portability.
+- [x] **Phase B1 — Core packet:** `reconciliationWorksheet.ts` (8 parts: income→AGI→taxable→tax composition→credits→federal settlement→state settlement→carryforwards, each tied with engine-exact ✓/⚠ rows mirroring the engine's OWN assembly identities; residual rows make each section tie by construction). 1040 + Sch 1/1-A/2/3 + Sch A/B/C/D+8949/E/SE/H builders.
+- [x] **Phase B2 — Credits + other-taxes:** 8812, 8863, 8880, 2441, 8962, 5695, 8839, 1116 · 6251, 8959, 8960, 8615, 5329.
+- [x] **Phase B3 — Detail forms:** 8995/8995-A, 4562, 8582, 4952, 2555, 7206, 8283, 4797.
+- [x] **Phase B4 — state main forms** CA 540, NY IT-201, NJ-1040, MA Form 1, PA-40 + a **generic state fallback** (covers the other ~44 states). Summary-workpaper style (the engine exposes state aggregates, not per-line state build-up) — honestly labeled, no per-state refund (engine settles state-side in aggregate → cross-refs Reconciliation Worksheet Part 7).
+- **Endpoint:** `GET /clients/:id/tax-return/workpapers/pdf` (OpenAPI `getWorkpaperPacketPdf`); frontend "Workpaper packet (PDF)" primary button on ClientDetail. Engine additions (additive, zero regression): `obbbaSchedule1A` detail + 4 state-credit scalars exposed on `ComputedTaxReturn` so settlements tie to the cent.
+- **Tests:** 13 no-API hand-calc'd suites (`tax-engine-workpaper-*-tests.ts`, ~1,724 assertions) + `tax-engine-workpapers-integration-tests.ts` (yes-API). Full battery green (100 suites / 6,345 no-API assertions); 40-form packet render smoke + prod smoke green.
+- [ ] **Exit criteria — REMAINING:** a CPA validates legibility + correctness vs their software on the T0.3 scenario matrix (needs a design partner — gated on T4).
 - [ ] **(Parked) Filable official/substitute forms + MeF e-file XML** — only if Option B / real filing resurfaces.
+
+> **Engine bug surfaced during T2.1 (flagged, NOT yet fixed — own task):** the **student-loan-interest (§221) MAGI omits the traditional-IRA deduction** (`taxReturnEngine.ts` ~L2725 `magiForSli`), over-phasing-out the §221 deduction when a deductible IRA pushes MAGI across the $80k/$165k band. Repro: single, $90k SE, $4k IRA, $1,500 SLI → engine deducts $1,135.83, correct is $1,500. Fix = subtract `iraDeduction` from `magiForSli` (move the SLI block after the IRA deduction is known) + Pub 970 regression. Real-money under-deduction.
 
 ### T2.2 CPA-firm features — **GAME PLAN D** (each ships with T0.3 audit rigor + T0.2 security)
 - **Phase D1 — Recurring-revenue / planning:**

@@ -1,3 +1,51 @@
+# Handoff Note — 2026-06-10 (T2.1 WORKPAPER/FORM GENERATOR — one-click CPA review packet; shipped + deployed + prod-smoked)
+
+Built **MASTER-TODO T2.1 (GAME PLAN B), Phases B0–B4** — "the first half of T2."
+1 commit on `main` (`df94d5e`), pushed, deployed (api-server rebuilt + restarted,
+frontend rsynced, migrate no-op, healthz ok), **PROD-SMOKED** (workpaper PDF 200
++ valid `%PDF-` for a real seeded client; 404 path; summary PDF unregressed;
+frontend serves).
+
+**What landed:** a one-click **workpaper packet** PDF = cover page + **1040
+reconciliation worksheet** (the headline CPA cross-check: every computed value
+tied to its form+line with engine-exact ✓/⚠ tie-out rows) + **40 substitute-form
+builders** (1040, Sch 1/1-A/2/3/A/B/C/D/E/SE/H, 8949; credit forms 8812/8863/
+8880/2441/8962/5695/8839/1116; other-tax 6251/8959/8960/8615/5329; detail 8995/
+4562/8582/4952/2555/7206/8283/4797; state CA-540/NY-IT-201/NJ-1040/MA-Form-1/PA-40
++ a generic-state fallback). Pure `FormSpec` builders (Haven-portable) + ONE
+generic pdfkit renderer (DRAFT-watermarked, not for filing).
+- Architecture: `artifacts/api-server/src/lib/forms/` (formSpec, formRenderer,
+  registry, reconciliationWorksheet + 40 `*Spec.ts`).
+- Endpoint `GET /clients/:id/tax-return/workpapers/pdf`; ClientDetail "Workpaper
+  packet (PDF)" button. Engine: additive `obbbaSchedule1A` + 4 state-credit
+  scalars exposed on `ComputedTaxReturn` (zero regression).
+- Tests: 13 no-API suites (`tax-engine-workpaper-*-tests.ts`) + 1 yes-API
+  (`tax-engine-workpapers-integration-tests.ts`). **Full battery green: 100
+  suites / 6,345 no-API assertions, 0 failed; 4 typechecks clean; 40-form render
+  smoke + prod smoke green.**
+
+**Recovery note:** the ultracode fan-out hit the session limit twice mid-run, but
+the agents had written most builder files to disk before being cut off — 33 of 40
+builders + 10 test files landed and turned out typecheck-clean + test-green once
+re-run. Finished solo: wrote the 7 missing builders (Sch 2/3/1-A, 8582, 4952,
+PA-40, generic-state) + 3 missing test files (schedules-123, detail-forms-a,
+state-njmapa-generic), wired the registry + tsconfig + run-no-api, fixed 1 wrong
+test expectation (CA Personal Exemption Credit $144 — verified correct, not a
+bug), reviewed inline (no multi-agent).
+
+**⚠ ENGINE BUG flagged (NOT fixed — own task, chip spawned):** student-loan-interest
+(§221) MAGI omits the IRA deduction → over-phases-out §221 when a deductible IRA
+pushes MAGI across the $80k/$165k band (`taxReturnEngine.ts` ~L2725 `magiForSli`).
+Repro: single $90k SE + $4k IRA + $1,500 SLI → $1,135.83, should be $1,500. Fix:
+subtract `iraDeduction` from `magiForSli` (move SLI block after the IRA deduction)
++ Pub 970 regression. Real-money under-deduction.
+
+**Next (per MASTER-TODO):** T2.1 CPA legibility sign-off (gated on a design
+partner, T4) · T2.2 firm features (Game Plan D) · the deferred T0.3-A0/A2
+differential-oracle layer · the §221 MAGI fix above.
+
+---
+
 # Handoff Note — 2026-06-09d (T1.3 PLANNING POLISH — what-if UI + estate/gift touchpoints + heuristic-promotion triage; shipped + deployed + browser-verified)
 
 Finished the **remaining MASTER-TODO T1.3 items** (all of T1.3 is now done or
