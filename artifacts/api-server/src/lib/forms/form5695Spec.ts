@@ -40,26 +40,44 @@ export function buildForm5695(ctx: FormBuildContext): FormInstance | null {
   const { ret } = ctx;
   const re = ret.residentialEnergyCredits;
 
-  // Applicable only when the package computes a credit.
-  if (!(re.total > 0)) return null;
+  // Applicable when the package computes a credit OR a §25D carryforward is
+  // in play (applied or rolling forward) — FC-11.
+  if (!(re.total > 0 || ret.residentialCleanEnergyApplied > 0 || ret.residentialCleanEnergyCarryforward > 0)) return null;
 
   const parts: FormPart[] = [];
 
   // ── Part I — Residential Clean Energy Credit (§25D) ──
-  if (nz(re.cleanEnergySpend) || nz(re.cleanEnergyCredit)) {
+  if (nz(re.cleanEnergySpend) || nz(re.cleanEnergyCredit) || nz(ret.residentialCleanEnergyApplied) || nz(ret.residentialCleanEnergyCarryforward)) {
+    const carryforwardIn = Math.max(
+      0,
+      ret.residentialCleanEnergyApplied + ret.residentialCleanEnergyCarryforward - re.cleanEnergyCredit,
+    );
     const partI: FormLine[] = [
       moneyLine("1", "Qualified clean energy property costs", re.cleanEnergySpend, {
         note: "Engine aggregate of all §25D property types (solar electric/water heating, small wind, geothermal, battery storage ≥3 kWh) — lines 1–5b are not split per type.",
       }),
       moneyLine("6a", "Total qualified clean energy property costs (lines 1 through 5b)", re.cleanEnergySpend),
-      moneyLine("6b", "Multiply line 6a by 30% (0.30)", re.cleanEnergyCredit),
-      moneyLine("13", "Total residential clean energy credit (§25D)", re.cleanEnergyCredit, {
+      moneyLine("6b", "Multiply line 6a by 30% (0.30)", re.cleanEnergyCredit, {
+        note: ret.taxYear >= 2026
+          ? "OBBBA §70506 terminated §25D for expenditures made after 12/31/2025 — current-year spend earns $0 on a TY2026+ return; only a prior-year carryforward (line 12) still applies."
+          : undefined,
+      }),
+      moneyLine("12", "Credit carryforward from prior year (§25D(c))", carryforwardIn),
+      moneyLine("13", "Add lines 6b and 12 — total available §25D credit", re.cleanEnergyCredit + carryforwardIn, {
         emphasis: true,
-        note: "No annual dollar cap and no income limit; 30% rate through 2032.",
+        note: "No annual dollar cap and no income limit.",
       }),
-      textLine("15", "Residential clean energy credit (smaller of line 13 or the line 14 limitation)", null, {
-        note: "(not modeled at the form level — the engine applies the tax-liability cap in Schedule 3 credit ordering; the unused-§25D carryforward, lines 12/16, is not tracked — CPA supplies)",
+      moneyLine("15", "Residential clean energy credit applied (smaller of line 13 or the line 14 tax-liability limitation)", ret.residentialCleanEnergyApplied, {
+        note: "FC-11 — applied AFTER the child tax credit in the engine's credit ordering (the §25D credit-limit worksheet subtracts Form 1040 line 19; §25D is NOT in the Schedule 8812 Credit Limit Worksheet list).",
       }),
+      moneyLine("16", "Credit carryforward to next year (line 13 minus line 15)", ret.residentialCleanEnergyCarryforward, {
+        note: "Auto-seeded next year as the residential_clean_energy_carryforward adjustment. Survives the OBBBA termination (only post-2025 EXPENDITURES lose the credit; §25D(c) was not amended).",
+      }),
+      checkLine(
+        "Line 16 ties: line 13 − line 15",
+        re.cleanEnergyCredit + carryforwardIn - ret.residentialCleanEnergyApplied,
+        ret.residentialCleanEnergyCarryforward,
+      ),
     ];
     parts.push({ title: "Part I — Residential Clean Energy Credit (§25D)", lines: partI });
   }
@@ -130,9 +148,10 @@ export function buildForm5695(ctx: FormBuildContext): FormInstance | null {
     parts,
     footnotes: [
       "The §25D bucket is an engine aggregate of all clean-energy property types; the fuel-cell sub-computation (lines 7–11, $500 per half-kW) is not modeled.",
-      "Form 5695 lines 12/14/15/16 (prior-year §25D carryforward in, tax-liability limitation, carryforward out) are not modeled — the engine caps each nonrefundable credit at remaining income tax in Schedule 3 ordering and does NOT track an unused-§25D carryforward.",
+      "FC-11 — the §25D tax-liability limitation and carryforward (lines 12/15/16) ARE now modeled: §25D applies AFTER the child tax credit and its unused balance rolls forward under §25D(c) (auto-seeded next year). The line-14 worksheet detail itself is engine-internal credit ordering.",
+      "FC-02 — OBBBA terminations: §25C (P.L. 119-21 §70505) for property placed in service after 12/31/2025 and §25D (§70506) for expenditures made after 12/31/2025 — both are $0 for TY2026+ current-year spend (a §25D expenditure is 'made' when the original installation completes, §25D(e)(8)(A)). A pre-2026 §25D carryforward still applies. §30C terminates only for property placed in service after 6/30/2026 (CPA verifies the install date on a TY2026 claim).",
       "§25C per-item sub-caps (windows $600, doors $250 each / $500 total, home energy audit $150, $600 per item of residential energy property) are not modeled — only the $1,200 general aggregate and the $2,000 heat-pump cap.",
-      "Credits shown are BEFORE the tax-liability limitation. When income tax is insufficient, the applied amount is smaller — see the reconciliation worksheet's nonrefundable-credit section for the applied total.",
+      "§25C/§30C credits shown are BEFORE the tax-liability limitation. When income tax is insufficient, the applied amount is smaller — see the reconciliation worksheet's nonrefundable-credit section for the applied total.",
       "§30C (EV charger) is officially claimed on Form 8911 (Schedule 3 line 6j), not Form 5695; the engine bundles it into this package, so it is disclosed here as a labeled extra section.",
     ],
   };

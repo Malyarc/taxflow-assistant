@@ -1,0 +1,1 @@
+ALTER TABLE "tax_returns" ADD COLUMN "residential_clean_energy_carryforward" numeric(14, 2);

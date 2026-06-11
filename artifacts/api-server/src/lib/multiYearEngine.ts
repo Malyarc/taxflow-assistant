@@ -160,7 +160,7 @@ function scaleK1(k: ScheduleK1Fact, factor: number, newTaxYear: number): Schedul
     const scaled = scaleNumish(next[f], factor);
     if (scaled != null) next[f] = scaled;
   }
-  return next as ScheduleK1Fact;
+  return next as unknown as ScheduleK1Fact;
 }
 
 /**
@@ -179,7 +179,7 @@ function scaleRental(r: RentalPropertyFact, factor: number, newTaxYear: number):
     const scaled = scaleNumish(next[f], factor);
     if (scaled != null) next[f] = scaled;
   }
-  return next as RentalPropertyFact;
+  return next as unknown as RentalPropertyFact;
 }
 
 /**

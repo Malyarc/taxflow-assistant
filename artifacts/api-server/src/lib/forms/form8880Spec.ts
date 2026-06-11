@@ -38,7 +38,11 @@ function toNum(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-/** Regular income tax + AMT — exact inversion of the engine's liability assembly. */
+/** Form 1040 line 18 — the base nonrefundable credits offset: regular income
+ *  tax + AMT + the Schedule 2 line 2 excess-APTC repayment (FC-09: §36B(f)(2)(A)
+ *  makes the repayment chapter-1 tax and it is NOT in the §26(b)(2) exclusion
+ *  list, so every credit-limit worksheet starts from line 18). Exact inversion
+ *  of the engine's liability assembly (the repayment STAYS in the base). */
 function incomeTaxOnly(ret: ComputedTaxReturn): number {
   return (
     ret.federalTaxLiability -
@@ -47,8 +51,7 @@ function incomeTaxOnly(ret: ComputedTaxReturn): number {
     ret.additionalMedicareTax -
     ret.earlyWithdrawalPenalty -
     ret.hsaExcessExcise -
-    ret.scheduleH.total -
-    Math.max(0, -ret.premiumTaxCredit.netPtc)
+    ret.scheduleH.total
   );
 }
 
@@ -95,7 +98,9 @@ export function buildForm8880(ctx: FormBuildContext): FormInstance | null {
     moneyLine("7", "Eligible contribution after the per-filer cap", sc.eligibleContribution, {
       note: "$2,000 cap per person (Form 8880 line 6 columns); the engine caps the COMBINED amount at $4,000 for MFJ — see footnote.",
     }),
-    moneyLine("8", "Adjusted gross income (Form 1040 line 11)", sc.agi),
+    moneyLine("8", "Modified adjusted gross income (§25B(e): AGI + §911 exclusion)", sc.agi, {
+      note: "FC-14 — the engine adds the §911 FEIE exclusion back to AGI for the §25B rate bands (equals plain Form 1040 line 11 AGI for non-FEIE filers).",
+    }),
     pctLine("9", "Applicable decimal (50% / 20% / 10% by AGI tier)", sc.rate, {
       note: "From the engine's year-indexed §25B AGI bands (Rev. Proc. tables). QSS uses the single column per Form 8880.",
     }),
@@ -138,7 +143,7 @@ export function buildForm8880(ctx: FormBuildContext): FormInstance | null {
       "NONREFUNDABLE: the credit offsets income tax only (line 12 caps at the Credit Limit Worksheet amount) and does not carry forward.",
       "Per-spouse columns are NOT modeled — the official form caps EACH spouse's line 6 at $2,000, while the engine caps the combined contributions at $4,000 MFJ. When one spouse contributed more than $2,000 and the other less, the engine can overstate line 7 — CPA verifies the per-column split.",
       "Line 4 testing-period distributions (current year + 2 prior years + through the return due date, §25B(d)(2)) are not modeled — they reduce eligible contributions.",
-      "Eligibility gates the engine does not check: full-time students, dependents claimed on another return, and filers under 18 are INELIGIBLE (§25B(c)) — CPA verifies.",
+      "Eligibility gates: a filer claimed as a dependent on another return IS barred by the engine (§25B(c)(2)(B), FC-15 — client claimedAsDependent flag). Full-time students and filers under 18 remain CPA-verified (no engine field).",
       "Workpaper amounts are engine-exact (cents); the official form rounds to whole dollars.",
     ],
   };

@@ -39,8 +39,11 @@ import {
  */
 const ACTC_PER_CHILD_CAP: Record<number, number> = { 2024: 1700, 2025: 1700, 2026: 1700 };
 
-/** Regular income tax + AMT — the only base non-refundable credits offset.
- *  Exact inversion of the engine's federalTaxLiability assembly. */
+/** Form 1040 line 18 — the base non-refundable credits offset: regular income
+ *  tax + AMT + the Schedule 2 line 2 excess-APTC repayment (FC-09: the
+ *  repayment is chapter-1 tax per §36B(f)(2)(A) and every credit-limit
+ *  worksheet starts from line 18). Exact inversion of the engine's
+ *  federalTaxLiability assembly (the repayment STAYS in the base). */
 function incomeTaxOnly(ret: ComputedTaxReturn): number {
   return (
     ret.federalTaxLiability -
@@ -49,8 +52,7 @@ function incomeTaxOnly(ret: ComputedTaxReturn): number {
     ret.additionalMedicareTax -
     ret.earlyWithdrawalPenalty -
     ret.hsaExcessExcise -
-    ret.scheduleH.total -
-    Math.max(0, -ret.premiumTaxCredit.netPtc)
+    ret.scheduleH.total
   );
 }
 
@@ -73,20 +75,25 @@ export function buildForm8812(ctx: FormBuildContext): FormInstance | null {
   const line12 = Math.max(0, ctc.preliminaryCredit - ctc.phaseOutReduction);
 
   // Line 13 — EXACT pre-CTC residual tax, from the engine's own applied totals.
+  // FC-11: the §25D residential clean energy credit applies AFTER the CTC
+  // (it is NOT in the Credit Limit Worksheet's line-2 list), so it is backed
+  // out of the "before CTC" set along with the §53/§38 credits.
   const schedule3AppliedBeforeCtc =
     ret.totalNonRefundableApplied -
     ctc.nonRefundablePortion -
+    ret.residentialCleanEnergyApplied -
     ret.amtCreditApplied -
     ret.rdCreditApplied -
     ret.otherGeneralBusinessCreditApplied;
   const line13 = Math.max(0, incomeTaxOnly(ret) - schedule3AppliedBeforeCtc);
 
   // ── Part I-A — Child tax credit & credit for other dependents ──
+  const ctcMagi = ret.adjustedGrossIncome + ret.feie.totalExclusion;
   const partI: FormLine[] = [
-    moneyLine("1", "Adjusted gross income (Form 1040 line 11)", ret.adjustedGrossIncome, {
-      note: "Engine CTC MAGI = AGI; the §911/§931/§933 foreign-exclusion add-backs (lines 2a–2d) are not modeled.",
+    moneyLine("1", "Adjusted gross income (Form 1040 line 11)", ret.adjustedGrossIncome),
+    moneyLine("3", "Modified adjusted gross income (line 1 + §911 foreign earned income exclusion, lines 2a–2d)", ctcMagi, {
+      note: "FC-14 — §24(b)(1) MAGI adds back the §911 FEIE (the §931/§933 possessions exclusions have no engine input).",
     }),
-    moneyLine("3", "Modified adjusted gross income", ret.adjustedGrossIncome),
     countLine("4", "Number of qualifying children under age 17 with the required SSN", ctc.qualifyingChildren),
     moneyLine("5", `Line 4 × $${perChildCredit.toLocaleString("en-US")} per child`, line5, {
       note: "Per-child credit derived from the engine's preliminary-credit composition: $2,000 TY2024; $2,200 TY2025+ (OBBBA §70104, §24(h)).",
@@ -142,7 +149,7 @@ export function buildForm8812(ctx: FormBuildContext): FormInstance | null {
     }
     partII.push(
       textLine("18a–26", "Earned-income limit (15% of earned income over $2,500) and the 3-or-more-children Social Security tax alternative", null, {
-        note: "Applied inside the engine: ACTC = min(line 17, 15% × (earned income − $2,500)). Earned income = W-2 wages + net SE earnings − ½ SE tax (engine-internal). The Part II-B withheld-SS alternative for 3+ children is NOT modeled (may understate ACTC for large low-earned-income families).",
+        note: "Applied inside the engine: ACTC = min(line 17, larger of [15% × (earned income − $2,500)] and — with 3+ qualifying children (Part II-B, FC-13) — [SS/Medicare/Additional-Medicare taxes + ½ SE tax − EIC]). Earned income = W-2 wages + net SE earnings − ½ SE tax (engine-internal).",
       }),
     );
   }
@@ -169,10 +176,10 @@ export function buildForm8812(ctx: FormBuildContext): FormInstance | null {
   ];
 
   const footnotes = [
-    "CRITICAL ordering note: the engine applies the CTC AFTER the Schedule-3 personal credits (foreign tax → dependent care → education → Saver's → residential energy → adoption) per the IRS Schedule 8812 Credit Limit Worksheet. Line 13 and the non-refundable portion on line 14 therefore reflect the tax REMAINING after those credits; the unused non-refundable balance spills to the refundable ACTC.",
-    "Engine MAGI (lines 1/3) = AGI without the §911/§931/§933 foreign-income-exclusion add-backs of lines 2a–2d — the phase-out may be understated for FEIE/possessions filers.",
+    "CRITICAL ordering note: the engine applies the CTC AFTER the Schedule-3 personal credits in the Credit Limit Worksheet's line-2 list (foreign tax → dependent care → education → Saver's → §25C energy/§30C → adoption) per the IRS Schedule 8812 Credit Limit Worksheet; the §25D residential clean energy credit is NOT in that list and applies AFTER the CTC (FC-11). Line 13 and the non-refundable portion on line 14 therefore reflect the tax REMAINING after the pre-CTC credits; the unused non-refundable balance spills to the refundable ACTC.",
+    "Engine MAGI (line 3) = AGI + the §911 FEIE exclusion (FC-14); the §931/§933 possessions exclusions have no engine input.",
     "Qualifying-child SSN status (line 4) and the under-17/residency/support tests are CPA-verified facts; the engine counts the client's dependentsUnder17 field as-is.",
-    "Part II-B (3 or more qualifying children: larger of the 15% earned-income amount or withheld Social Security/Medicare taxes less EIC) is not modeled — the engine uses only the 15% rule, which can understate the ACTC for large families with low earned income.",
+    "Part II-B (3 or more qualifying children): the engine uses the larger of the 15% earned-income amount or (employee SS/Medicare + Additional Medicare + ½ SE tax − EIC) per lines 21–26 (FC-13). Employee FICA is modeled from W-2 boxes 3/5 (6.2% capped at the wage base + 1.45%), not boxes 4/6 withholding; Schedule 2 lines 5/6/13 unreported-FICA amounts are not modeled.",
     "Workpaper amounts are engine-exact (cents); the official form rounds to whole dollars.",
   ];
 

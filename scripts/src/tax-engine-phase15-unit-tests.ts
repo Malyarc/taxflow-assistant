@@ -187,43 +187,43 @@ header("Foreign tax credit");
 header("Residential energy credits");
 {
   // §25D: $20k solar PV → 30% = $6,000 (no cap)
-  const r = calculateResidentialEnergyCredits({ cleanEnergySpend: 20000, efficientHomeSpend: 0, heatPumpSpend: 0, evChargerSpend: 0 });
+  const r = calculateResidentialEnergyCredits({ cleanEnergySpend: 20000, efficientHomeSpend: 0, heatPumpSpend: 0, evChargerSpend: 0, taxYear: 2024 });
   check("Solar $20k → $6,000 (30% no cap)", r.cleanEnergyCredit, 6000);
   check("Total = $6,000", r.total, 6000);
 }
 {
   // §25D: $100k solar → 30% = $30,000 (no cap)
-  const r = calculateResidentialEnergyCredits({ cleanEnergySpend: 100000, efficientHomeSpend: 0, heatPumpSpend: 0, evChargerSpend: 0 });
+  const r = calculateResidentialEnergyCredits({ cleanEnergySpend: 100000, efficientHomeSpend: 0, heatPumpSpend: 0, evChargerSpend: 0, taxYear: 2024 });
   check("Big solar $100k → $30,000 (no cap)", r.cleanEnergyCredit, 30000);
 }
 {
   // §25C general: $2,000 of windows/insulation → 30% × $2,000 = $600 (under $1,200 cap)
-  const r = calculateResidentialEnergyCredits({ cleanEnergySpend: 0, efficientHomeSpend: 2000, heatPumpSpend: 0, evChargerSpend: 0 });
+  const r = calculateResidentialEnergyCredits({ cleanEnergySpend: 0, efficientHomeSpend: 2000, heatPumpSpend: 0, evChargerSpend: 0, taxYear: 2024 });
   check("§25C $2k → $600 (30%, under $1,200 cap)", r.efficientHomeCredit, 600);
 }
 {
   // §25C general: $5,000 of qualifying spend → 30% × $5,000 = $1,500 → capped at $1,200
-  const r = calculateResidentialEnergyCredits({ cleanEnergySpend: 0, efficientHomeSpend: 5000, heatPumpSpend: 0, evChargerSpend: 0 });
+  const r = calculateResidentialEnergyCredits({ cleanEnergySpend: 0, efficientHomeSpend: 5000, heatPumpSpend: 0, evChargerSpend: 0, taxYear: 2024 });
   check("§25C $5k → $1,200 (general cap)", r.efficientHomeCredit, 1200);
 }
 {
   // §25C heat pump: $5,000 → 30% × $5,000 = $1,500 (under $2,000 heat pump cap)
-  const r = calculateResidentialEnergyCredits({ cleanEnergySpend: 0, efficientHomeSpend: 0, heatPumpSpend: 5000, evChargerSpend: 0 });
+  const r = calculateResidentialEnergyCredits({ cleanEnergySpend: 0, efficientHomeSpend: 0, heatPumpSpend: 5000, evChargerSpend: 0, taxYear: 2024 });
   check("Heat pump $5k → $1,500 (under $2k cap)", r.heatPumpCredit, 1500);
 }
 {
   // §25C heat pump: $10,000 → 30% × $10,000 = $3,000 → capped at $2,000
-  const r = calculateResidentialEnergyCredits({ cleanEnergySpend: 0, efficientHomeSpend: 0, heatPumpSpend: 10000, evChargerSpend: 0 });
+  const r = calculateResidentialEnergyCredits({ cleanEnergySpend: 0, efficientHomeSpend: 0, heatPumpSpend: 10000, evChargerSpend: 0, taxYear: 2024 });
   check("Heat pump $10k → $2,000 (heat pump cap)", r.heatPumpCredit, 2000);
 }
 {
   // §30C EV charger: $2,000 → 30% × $2,000 = $600 (under $1,000 cap)
-  const r = calculateResidentialEnergyCredits({ cleanEnergySpend: 0, efficientHomeSpend: 0, heatPumpSpend: 0, evChargerSpend: 2000 });
+  const r = calculateResidentialEnergyCredits({ cleanEnergySpend: 0, efficientHomeSpend: 0, heatPumpSpend: 0, evChargerSpend: 2000, taxYear: 2024 });
   check("EV charger $2k → $600 (under $1k cap)", r.evChargerCredit, 600);
 }
 {
   // §30C EV charger: $5,000 → 30% × $5,000 = $1,500 → capped at $1,000
-  const r = calculateResidentialEnergyCredits({ cleanEnergySpend: 0, efficientHomeSpend: 0, heatPumpSpend: 0, evChargerSpend: 5000 });
+  const r = calculateResidentialEnergyCredits({ cleanEnergySpend: 0, efficientHomeSpend: 0, heatPumpSpend: 0, evChargerSpend: 5000, taxYear: 2024 });
   check("EV charger $5k → $1,000 (charger cap)", r.evChargerCredit, 1000);
 }
 {
@@ -233,7 +233,7 @@ header("Residential energy credits");
   // §25C heat pump: min(30%×$10k, $2,000) = $2,000
   // §30C: min(30%×$5k, $1,000) = $1,000
   // Total = $9,000 + $1,200 + $2,000 + $1,000 = $13,200
-  const r = calculateResidentialEnergyCredits({ cleanEnergySpend: 30000, efficientHomeSpend: 5000, heatPumpSpend: 10000, evChargerSpend: 5000 });
+  const r = calculateResidentialEnergyCredits({ cleanEnergySpend: 30000, efficientHomeSpend: 5000, heatPumpSpend: 10000, evChargerSpend: 5000, taxYear: 2024 });
   check("All four — combined", r.total, 13200);
   check("§25D portion", r.cleanEnergyCredit, 9000);
   check("§25C general portion", r.efficientHomeCredit, 1200);
@@ -266,15 +266,32 @@ header("ACA Premium Tax Credit");
   check("Net PTC = $2,000 refundable", r.netPtc, 2000, 1);
 }
 {
-  // Single, MAGI $14k (below 150% FPL of $21,870 → ratio ~0.96 < 1.50). Applicable figure = 0.
-  // Expected contribution = 0. PTC = min($6,000, $6,500) = $6,000.
-  // No advance, net PTC = $6,000.
+  // FC-22 (re-derived 2026-06-11) — single, MAGI $14k, household 1, TY2024.
+  // Hand-calc: $14,000 / $14,580 = 0.9602 < 100% FPL → §36B(c)(1)(A): NOT an
+  // applicable taxpayer (household income must be at least 100% of FPL —
+  // ARPA removed only the 400% ceiling, never the floor). No APTC advanced →
+  // PTC = $0, net = $0. (The old "$6,000 full premium" expectation predated
+  // the FC-22 floor and was WRONG — it granted a PTC to a Medicaid-range
+  // filer.)
   const r = calculatePremiumTaxCredit({
     annualPremium: 6000, annualSlcsp: 6500, advanceAptc: 0,
     modifiedAgi: 14000, householdSize: 1, filingStatus: "single", taxYear: 2024,
   });
-  check("Below 150% FPL: applicable figure = 0", r.applicableFigure, 0);
-  check("Below 150% FPL: net PTC = full premium $6,000", r.netPtc, 6000, 1);
+  check("Below 100% FPL: no PTC (§36B(c)(1)(A) floor)", r.computedPtc, 0);
+  check("Below 100% FPL: net PTC = 0 (no advance)", r.netPtc, 0, 0.01);
+  checkExact("Below 100% FPL: eligible = false", r.eligible, false);
+}
+{
+  // Control (FC-22) — single, MAGI $16k, household 1, TY2024.
+  // Hand-calc: $16,000 / $14,580 = 1.0974 → ≥100% and <150% FPL → ARPA
+  // applicable figure = 0 → expected contribution $0 → PTC uncapped =
+  // $6,500 − $0 = $6,500 → capped at premium $6,000. No advance → net $6,000.
+  const r = calculatePremiumTaxCredit({
+    annualPremium: 6000, annualSlcsp: 6500, advanceAptc: 0,
+    modifiedAgi: 16000, householdSize: 1, filingStatus: "single", taxYear: 2024,
+  });
+  check("100-150% FPL (ARPA): applicable figure = 0", r.applicableFigure, 0);
+  check("100-150% FPL (ARPA): net PTC = full premium $6,000", r.netPtc, 6000, 1);
 }
 {
   // MFJ, household 4, MAGI $80k. 2023 FPL 4-person = $14,580 + 3×$5,140 = $30,000.
@@ -338,13 +355,22 @@ header("ACA Premium Tax Credit");
   checkExact("Repayment cap = Infinity (no cap above 400%)", r.repaymentCap, Infinity);
 }
 {
-  // MFS — ineligible, must repay all advance APTC uncapped
+  // FC-10 (re-derived 2026-06-11) — MFS: ineligible for the PTC
+  // (§36B(c)(1)(C)) but the §36B(f)(2)(B) repayment limitation APPLIES (8962
+  // instructions: Table 5 "appl[ies] to you and your spouse separately based
+  // on the household income reported on each tax return").
+  // Hand-calc: MAGI $30,000 / FPL $14,580 (household 1) = 2.0576 → the
+  // 200–<300% tier; MFS is NOT a §1(c) single → "all other filing statuses"
+  // column = $1,950 (TY2024, Rev. Proc. 2023-34). Excess APTC = $3,000 − $0
+  // = $3,000 → capped at $1,950. (The old uncapped −$3,000 expectation
+  // predated FC-10 and was WRONG.)
   const r = calculatePremiumTaxCredit({
     annualPremium: 6000, annualSlcsp: 6500, advanceAptc: 3000,
     modifiedAgi: 30000, householdSize: 1, filingStatus: "married_filing_separately", taxYear: 2024,
   });
   checkExact("MFS ineligible", r.eligible, false);
-  check("MFS must repay all advance ($3,000)", r.netPtc, -3000, 0.01);
+  check("MFS repayment capped at $1,950 (Table 5 other-statuses column)", r.netPtc, -1950, 0.01);
+  check("MFS repayment cap value", r.repaymentCap, 1950);
 }
 {
   // No premium → no eligibility (not enrolled in Marketplace)

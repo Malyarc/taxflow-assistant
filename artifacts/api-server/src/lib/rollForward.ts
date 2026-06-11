@@ -41,7 +41,16 @@ import type {
 /** W-2: keep employer identity + amounts; detach from the prior-year source document. */
 export function rollForwardW2(row: W2Data, toYear: number): InsertW2Data {
   const { id: _id, createdAt: _c, updatedAt: _u, ...rest } = row;
-  return { ...rest, taxYear: toYear, documentId: null, fieldBoxes: null, proforma: true };
+  return {
+    ...rest,
+    taxYear: toYear,
+    documentId: null,
+    fieldBoxes: null,
+    // T1.0j — the jsonb select type is `unknown`; re-assert the insert shape
+    // (Box 12 code/amount pairs roll forward as estimates like the dollar boxes).
+    box12Codes: (row.box12Codes ?? null) as InsertW2Data["box12Codes"],
+    proforma: true,
+  };
 }
 
 /** 1099: keep payer identity + amounts; detach from the prior-year source document. */

@@ -211,7 +211,9 @@ const warnCount = (inst: FormInstance): number => allLines(inst).filter((l) => l
     check("S4 Part I line 1 clean energy costs $20,000", num(findLine(inst, "1")), 20000);
     check("S4 line 6b = 30% of line 6a = $6,000", num(findLine(inst, "6b")), 6000);
     check("S4 line 13 §25D credit $6,000", num(findLine(inst, "13")), 6000);
-    checkTrue("S4 line 15 disclosure row present (liability limit not modeled)", findLine(inst, "15") != null && findLine(inst, "15")!.value == null);
+    // FC-11: line 15 now carries the REAL §25D applied amount (liability limit
+    // + §25D(c) carryforward are modeled; tax $37,538.50 ≫ package → full $6,000).
+    check("S4 line 15 §25D applied $6,000 (liability limit modeled)", num(findLine(inst, "15")), 6000);
     check("S4 §25C general bucket costs $5,000", num(findLine(inst, "18–25")), 5000);
     const generalCredit = num(findByLabel(inst, "$1,200 general annual limit"));
     check("S4 §25C general credit capped at $1,200", generalCredit, 1200);

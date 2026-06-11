@@ -33,7 +33,11 @@ import {
   type FormLine,
 } from "./formSpec";
 
-/** Regular income tax + AMT — exact inversion of the engine's liability assembly. */
+/** Form 1040 line 18 — the base nonrefundable credits offset: regular income
+ *  tax + AMT + the Schedule 2 line 2 excess-APTC repayment (FC-09: §36B(f)(2)(A)
+ *  makes the repayment chapter-1 tax and it is NOT in the §26(b)(2) exclusion
+ *  list, so every credit-limit worksheet starts from line 18). Exact inversion
+ *  of the engine's liability assembly (the repayment STAYS in the base). */
 function incomeTaxOnly(ret: ComputedTaxReturn): number {
   return (
     ret.federalTaxLiability -
@@ -42,8 +46,7 @@ function incomeTaxOnly(ret: ComputedTaxReturn): number {
     ret.additionalMedicareTax -
     ret.earlyWithdrawalPenalty -
     ret.hsaExcessExcise -
-    ret.scheduleH.total -
-    Math.max(0, -ret.premiumTaxCredit.netPtc)
+    ret.scheduleH.total
   );
 }
 

@@ -1484,6 +1484,8 @@ export const AdjustmentAdjustmentType = {
   se_optional_method_nonfarm: "se_optional_method_nonfarm",
   crypto_staking_income: "crypto_staking_income",
   crypto_mining_income: "crypto_mining_income",
+  residential_clean_energy_carryforward:
+    "residential_clean_energy_carryforward",
 } as const;
 
 export interface Adjustment {
@@ -1649,6 +1651,8 @@ export const CreateAdjustmentBodyAdjustmentType = {
   se_optional_method_nonfarm: "se_optional_method_nonfarm",
   crypto_staking_income: "crypto_staking_income",
   crypto_mining_income: "crypto_mining_income",
+  residential_clean_energy_carryforward:
+    "residential_clean_energy_carryforward",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -1810,6 +1814,8 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   se_optional_method_nonfarm: "se_optional_method_nonfarm",
   crypto_staking_income: "crypto_staking_income",
   crypto_mining_income: "crypto_mining_income",
+  residential_clean_energy_carryforward:
+    "residential_clean_energy_carryforward",
 } as const;
 
 export interface UpdateAdjustmentBody {
