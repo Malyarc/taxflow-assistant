@@ -56,6 +56,7 @@ secure, audited to the hilt, and validated by a CPA before any tax number ships.
   - [ ] **Immutable, hash-chained disclosure/use ledger** (§7216/§6713): every disclosure/use of tax-return info (to the LLM, an export, an email, a share) → append-only, tamper-evident (what/to-whom/under-which-consent/by-whom).
 - **Phase C2 — PII handling:**
   - [ ] Masked-by-default rendering (SSN last-4; explicit reveal is logged) · field-crypto key **rotation** + KMS · document-blob S3+SSE-KMS · tokenization.
+  - [ ] **(2026-06-11 audit)** `tax_documents.extracted_text` carries plaintext SSN/TIN even with `PII_ENCRYPTION_KEY` set AND is echoed by the documents LIST — strip/encrypt at the extraction write seam + drop from list projections (sibling of the blob gap). · `Cache-Control: no-store` on W-2/1099 JSON GETs returning decrypted TINs.
   - [ ] Data retention + **secure deletion (crypto-shred)** — IRS 3-yr preparer retention + state variants + client deletion rights (delete the per-record key).
 - **Phase C3 — Workflow + output controls:**
   - [ ] Tax-workflow segregation of duties (preparer/reviewer/signer) + a **two-person "ready to file" dual-control gate** + §6695 signature controls.
@@ -63,6 +64,7 @@ secure, audited to the hilt, and validated by a CPA before any tax number ships.
 - **Phase C4 — AI governance + hardening + program:**
   - [ ] AI data governance: no-training DPA enforcement, per-call TRI request/response logging, prompt-injection defense (built), firm-wide AI kill-switch.
   - [ ] Engine input hardening: DoS caps on `capitalTransactions`/K-1 array sizes, ReDoS-safe parsing, fail-loud on NaN/Infinity.
+  - [ ] **(2026-06-11 audit)** Bound the what-if `mutations` array (`.max()` + string/finite caps — CPU DoS today) · fix `trust proxy: 1` on the no-proxy box (X-Forwarded-For spoofing defeats the per-IP rate limiter) · validate the §7216 consent POST fields (`durationDays` bound) · `CORS_ALLOW_ALL` must not reflect arbitrary origins with credentials · neutralize formula-leading names in TXT/JSON exports (CSV already done).
   - [ ] WISP / FTC-Safeguards operationalization: documented program (built) + named Qualified Individual + annual risk assessment + breach-response runbook + sub-processor management.
   - [ ] Secrets management: env-var secrets → a secrets manager + short-lived scoped AI keys.
 - **Exit criteria:** `/security-review` clean on the full diff · independent pen-test of the data path · the compliance checklist green · counsel sign-off · no plaintext PII at rest anywhere.
@@ -94,7 +96,57 @@ secure, audited to the hilt, and validated by a CPA before any tax number ships.
 
 ## T1 — PERFECT THE ENGINES (accuracy + the real capability gaps)
 
-> **Honest answer to "are the engines perfected?": no.** Accuracy auditing (T0.3) refines what's *modeled*; these add *capability*. The first group are **latent correctness bugs** (a client gets a wrong number today) — verified absent in code 2026-06-08.
+> **Honest answer to "are the engines perfected?": no.** Accuracy auditing (T0.3) refines what's *modeled*; these add *capability*. ~~Verified absent in code 2026-06-08~~ — **RE-OPENED 2026-06-11: the differential-oracle + 13-agent audit found ~40 more confirmed correctness bugs (9 fixed on PR #2; the rest are T1.0 below).** "Zero known bugs" is a state you re-earn after every audit technique, not a permanent badge.
+
+### T1.0 [P0-within-T1] Correctness backlog RE-OPENED — the 2026-06-11 audit (~40 confirmed findings, each with file:line + live repro)
+> Source of truth: **`docs/accuracy-audit/full-app-audit-2026-06-11.md`** (ranked ledger) + the 13 verbatim agent reports in `agent-reports-2026-06-11/`. Work top-down; every fix ships with a hand-calc'd regression + /code-review (the standing engine-change rule). Severity tags are the audit's.
+- **(a) Federal credits & TY2026 law currency [Tier 1]:**
+  - [ ] TY2026 PTC still on the expired ARPA schedule — restore the 400%-FPL cliff + pre-ARPA applicable figures (Rev. Proc. 2025-25). (FC-01)
+  - [ ] §25C/§25D residential energy credits not terminated for TY2026 (OBBBA §§70505-06). (FC-02)
+  - [ ] §25D applied BEFORE the CTC — Sch 8812 CLW includes §25C but NOT §25D; inflates ACTC. + add §25D carryforward. (FC-11)
+  - [ ] EITC §32(a)(2) phase-out subtracted from the phase-in amount instead of the max credit. (FC-03)
+  - [ ] Form 8962 Table 5: MFS repayment uncapped + HoH given single half-caps. (FC-10) · excess-APTC repayment excluded from the nonrefundable-credit base. (FC-09)
+  - [ ] EITC gates: Form 2555/FEIE bar · 0-child age 25-64 check · §32(i) annuity over-inclusion. (FC-12) · ACTC Part II-B (3+ kids SS-tax alternative). (FC-13)
+  - [ ] §911 FEIE MAGI add-back missing on CTC/§25A/§25B (present on IRA/SLI/NIIT/adoption). (FC-14) · saver's `claimedAsDependent` gate. (FC-15) · PTC <100%-FPL gate + MAGI components (tax-exempt interest, nontaxable SS, FEIE). (FC-22/23)
+- **(b) AMT credit + other taxes [Tier 1]:**
+  - [ ] §53(c) + §38(c) limits use GROSS income tax — must net other nonrefundable credits (Form 8801 / "net income tax"). (F-2/FC-07/08)
+  - [ ] MTC generation = 100% of AMT ignoring §53(d) exclusion items (SALT/std-ded AMT generates $0 credit) AND it's auto-seeded next year → build Form 8801 Part I. (F-3)
+  - [ ] OBBBA senior deduction AMTI addback (2025 Form 6251 line 1b). (F-4)
+  - [ ] Excess-SS-withholding credit (Sch 3 line 11; W-2 Box 4 already captured). (F-5) · Form 8959 Part IV withholding reconciliation. (F-6)
+  - [ ] Sch H 2026 FICA threshold $3,000 (SSA). (F-7) · NIIT allows the −$3,000 capital loss (8960 line 5a). (F-8) · non-qualified annuity income in NII. (F-10)
+- **(c) Business / QBI / losses [Tier 1]:**
+  - [ ] §461(l) auto-aggregation must NET profitable businesses (repro: $395k phantom addback) + TY2026 thresholds $256k/$512k (Rev. Proc. 2025-32 — LOWER than held values).
+  - [ ] NOL is a Schedule 1 line 8a ABOVE-the-line deduction — every MAGI-keyed item currently runs on overstated AGI.
+  - [ ] QBI auto-default: subtract SEHI (§1.199A-3(b)(1)(vi)) + §199A(c)(2) negative-QBI netting + qualified-business-loss carryforward.
+  - [ ] OBBBA Sch 1-A MFS bar (tips/overtime/senior statutorily require joint). · §1231(c)-vs-§1250 lookback ordering (Notice 97-59). · §179 carryover re-cap (Reg §1.179-3(b)) + cap-disallowed-basis MACRS. · above-the-line §179 income limit must include W-2 wages.
+- **(d) Cross-cutting / K-1 / MAGI [Tier 1]:**
+  - [ ] K-1 partner SE earnings → EITC/ACTC/dep-care EARNED income ($8,825 swing repro; §32(c)(2)(A)(ii)).
+  - [ ] K-1 Box 2 QBI double-dip (QBI on §469-suspended income) + K-1 6a/6b dividend double-count vs the 1099-DIV netting convention.
+  - [ ] Negative `capital_loss_carryforward_*` creates phantom income (unfloored). · NaN totality on count fields (toNum covers Numish only). · adjustments need a `taxYear` column (cross-year leakage; migration). · enum hygiene: add the 6 engine-read types missing from openapi; decide each of the ~10 no-op types (wire or remove); populate `inputs.form4797` (needs an input surface) or retire `section_1231_lookback_loss`.
+- **(e) State-law currency [Tier 1 — each vs the DOR primary source]:**
+  - [ ] KS: SB 1 (2024) never applied — rates/std-ded/exemptions + SS now 100% exempt (remove from STATES_TAXING_SS).
+  - [ ] PA: Schedule SP applied TWICE + $250 (not $1,000) phase-out steps + leaks into the NR fallback.
+  - [ ] CO 2025 TABOR 4.25% · WV TY2024 holds TY2025 rates · HI Act 46 2025/26 phase-ins · NM HB 252 · MD HB 352 (new brackets + std-ded + 2% cap-gains surtax) · ME/LA/DC/VA std-ded corrections · IL CTC = % × IL EITC (child<12) · CA AMT exemption constants (FTB Sched P) · TY2026 cuts batch (IN/MS/NC/NE/GA/MT/OK) · DC EITC ≥85%/100%.
+  - [ ] SS-exclusion DEPTH for the binary STATES_TAXING_SS set: NM ≤$100k/$150k, CO 65+, VT, MN/RI thresholds, UT credit.
+  - [ ] Pipeline passes `childrenUnder6: 0` → CA YCTC/NJ/VT CTCs never fire in the live product (wire a real input). · VT CTC $20-per-$1k phase-out. · MS exemption fold-in. · `calculateStateTaxWithBreakdown` parity (skips WI slide/exemptions/forgiveness).
+- **(f) Multistate + local [Tier 1/2]:**
+  - [ ] MCTMT: tax the ENTIRE net SE earnings once over the threshold (cliff, §801(b)) + TY2026 $150k threshold.
+  - [ ] Locality bases must subtract taxable SS (NYC/MD/IN/OH retiree over-tax). · Reading PA 3.6%. · OR out of NR_AS_IF_RESIDENT_STATES (method b). · NYC school credit HoH $63. · resident credit per-state (not aggregated). · `wages_only` locality bases should use Box 5/qualifying wages. · 2025/26 locality-rate refresh (MD Dorchester/Kent/Allegany, IN Monroe, Philly Jul-2025). · part-year SS/retirement exclusion proration. · AZ reciprocity (CA/IN/OR/VA).
+- **(g) Planning engine [Tier 2]:**
+  - [ ] `projectYearForward` must advance taxYear on K-1s/rentals/capitalTransactions/form4797 (out-years currently DROP that income — G4/Roth/MC/G1.47 all affected; values labeled "engine-verified").
+  - [ ] G1.34/G1.37 conditional purchases must not carry the engine-verified badge (the G1.33/Q2 rule). · G1.92 cap at compensation (§402(g)/§415). · G1.61 year-indexed gate. · wage-proxy gating for G1.96/G1.72/G1.87/G1.57. · G1.33/G1.24 OBBBA-sunset copy. · `Math.abs` on signed refund deltas. · G4 validUntil filter. · cap heuristic mega-numbers (G1.39 $238k) below engine-verified hits in ranking.
+- **(h) CPA tools [Tier 2]:**
+  - [ ] filingStatusOptimizer: the §63(c)(6)(A) forced-itemize override is a NO-OP (engine max()) + the household itemized fallback leaks into BOTH MFS halves → phantom "MFS saves $X". Model the legal pairs (both-itemize AND both-standard) + community-property caveat. (FS-1/2/4)
+  - [ ] taxProjection: consume carryforwards via captureCarryforwards/applyCarryforwards (TP-1) · complete the scale-exclusion set (TP-2) · §7503 roll on voucher dates (TP-3) · disclose withholding-growth assumption (TP-4).
+  - [ ] yearOverYear: IRMAA tiers → Record<TaxYear> + MFS table (YOY-1) · year-scoped adjustments caveat (YOY-2).
+- **(i) Forms / exports [Tier 2]:**
+  - [ ] 1040 workpaper + recon Part 3: include the NOL step (false ⚠ today). · 1040-X payments-half line numbers (17-21) + Sch-H/§72(t)/HSA in other-taxes. · 4868 lines 4/5 net of nonrefundable credits. · `irsForm1040Pdf.ts` rewrite-or-retire (wrong 3a/3b/7/1a/16/23/25a/33 — stale sibling of the correct workpapers). · summary PDF: itemized-vs-std display + APTC repayment netting. · WinAnsi-safe glyphs everywhere (U+2212 DISAPPEARS — negatives can read positive). · recon 1099-MISC row + Part-5 capped credits. · Sch A/B gating edges. · CSV/.gen row completeness (Sch H/§72(t)/HSA/APTC/mandate/§1250). · 8824/8995-A/Sch-3 line labels.
+- **(j) AI extraction [Tier 2]:**
+  - [ ] SSA-1099 Box 6 withholding → approve mapping. · 1098 Box 4 netting dead in the review modal (FieldDef + INFO_RETURN_VALUE_KEYS). · approve double-submit TOCTOU (status predicate in the UPDATE). · 1099-B Box 1g wash-sale. · W-2 Box 12 codes/Box 13 retirement-plan (drives the IRA band)/Box 10/locals 18-20. · year-scope info-return adjustments (pairs with the (d) taxYear migration). · wire or delete `validateInfoReturn` (dead code the docs claim is live).
+- **(k) Frontend [Tier 2 — display/data-loss]:**
+  - [ ] FE-A1 formReady email-compare bug (typing in Email swaps the form to skeletons; edits lost) — also the K-1 dialog. · FE-A2 four raw-fetch dialogs ignore res.ok (error → success toast, silent data loss). · FE-A3 cleared W-2/1099 boxes must send null (can't clear a value today). · FE-A4 add the 5 missing TYPE_LABELS. · FE-A5 CTC card hardcodes $2,000 (engine: $2,200 TY2025+). · FE-A6 YoY regex coloring (credits shown red-on-increase). · AssetBalances + roll-forward query-key invalidation. · PDF/CSV downloads check content-type. · locality dropdown parity (Yonkers/Philly/OH SDs unreachable). · add an error boundary.
+- **(l) Robustness / adjudications [Tier 3]:**
+  - [ ] `returnQa` falls back to the deterministic answer on a THROWN LLM error (today: 500). · oracle harness: distinguish skip-vs-error. · **CONTESTED:** §1(h) 25%/28% interleaving — dedicated Schedule-D-Tax-Worksheet line-by-line session before ANY change (3 prior adjudications say flat).
 
 ### T1.1 Tax calculator — correctness-affecting gaps (HIGH; the audit will surface these) — **ALL DONE 2026-06-08 (commit 2cb182d)**
 - [x] **Unrecaptured §1250 gain (25% rate)** — DONE. Schedule D Tax Worksheet 25% bucket (`taxCalculator.calculateFederalTaxWithCapitalGains`); per-lot `capitalTransactions.gainClass`/`unrecaptured1250Amount` + the `unrecaptured_section_1250_gain` adjustment + Form 4797 feed it. 79 hand-calc'd tests.
@@ -122,6 +174,17 @@ secure, audited to the hilt, and validated by a CPA before any tax number ships.
 - [x] **Interactive what-if scenario builder** (frontend UI over the existing what-if engine) — DONE 2026-06-09d. `WhatIfScenarioBuilderCard` on the Planning tab: compose arbitrary mutations (add/replace/remove adjustment, change a client fact) → exact engine federal+state delta, baseline-vs-scenario table. Browser-verified ($50k deduction → −$18,500 = 50k×37%).
 - [ ] **New + state-specific strategies** as law evolves — STILL OPEN (forward work as the law changes).
 - [x] **Estate/gift planning touchpoints** (qualitative flags) — DONE 2026-06-09d. New `"estate"` category + G1.101–G1.106 (annual-exclusion gifting §2503(b), 529 superfunding §529(c)(2)(B), SLAT, ILIT, GRAT, §1014 step-up). Confidence 0.40–0.50 (informational — no estate-tax engine); year-indexed annual excl $18k/$19k/$19k + BEA $13.61M/$13.99M/$15M. Catalog v1.21.0; +29 hand-calc'd tests.
+
+### T1.5 Accuracy DEEPENING — "the most accurate engine" program (beyond bug-fixing; each item raises the ceiling)
+- [ ] **IRS Tax-Table emulation mode** (<$100k taxable, $50-bracket midpoint) — match FILED returns to the dollar (today: exact formula, ±$14 vs the table); per-line IRS-rounding option; document both modes.
+- [ ] **Golden-test pack from IRS worked examples** — encode every form-instruction + Pub 17 worked example (8812/8863/2441/6251/8962/8606/2210/SE…) as fixtures; CI-pinned. The strongest authoritative oracle there is.
+- [ ] **Second + third oracles**: IRS ATS/MeF published test scenarios; optionally `ustaxes`. Extend the differential harness: dependents/CTC-aware columns, itemized batches, SE-with-QBI modeled comparisons, NY/NJ/MA state batches, cross-year metamorphic relations.
+- [ ] **MeF business-rules diagnostics** — encode the public e-file reject rules as return diagnostics (catch what a CPA's filing software would bounce).
+- [ ] **Per-dependent data model** (DOB/SSN-present/relationship/months-in-home) — unlocks EXACT CTC vs ODC vs EITC-child vs 2441 vs 8615 gating (today: counts only). Migration + organizer + roll-forward.
+- [ ] **Community-property MFS** (CA/TX/WA/AZ/ID/LA/NV/NM/WI splitting) — makes the MFS optimizer legally correct in 9 states.
+- [ ] **Form 8801 full MTC model** (with (b)) + **§1(h) worksheet adjudication** (with (l)).
+- [ ] **Law-watch pipeline**: per-state DOR-pinned fixture tests (the year-coverage test only checks finiteness — this audit proved that misses real rate changes) + a quarterly law-currency sweep runbook + a `lawWatch.md` register of pending effective dates (OBBBA sunsets, state triggers).
+- [ ] **Filing-status trait table** (`filingStatusTraits.ts`): ONE source of truth for the QSS/MFS classification per provision (the 2026-06-11 QSS cluster existed because ~40 sites each re-encode "is QSS joint here?" inline). Refactor call sites to it; property-test the table against the statute list.
 
 ---
 
@@ -162,6 +225,17 @@ secure, audited to the hilt, and validated by a CPA before any tax number ships.
 - **Frontend:** "CPA Tools" tab now 7 cards (engagement, projection+1040-ES, MFJ-vs-MFS, entity-choice, YoY+threshold-alerts, organizer+PDF, roll-forward); Planning tab + "Client report (PDF)" + the return-Q&A card; Dashboard + the campaigns widget. Tests: 10 no-API suites (~340 assertions incl. the review-regression pins + PDF smokes) + `tax-engine-cpa-tools-integration-tests.ts` (yes-API, expanded to ~60 assertions across all 10 endpoints). **Migrations 0019 + 0020** (both additive; 0020 = the `proforma` flag on the 5 rolled tables). `fast-check` added to scripts devDependencies (the property harness's missing dep — typecheck:tests now 0 errors vs the 10 pre-existing).
 - **The 9-angle /code-review max pass + the post-fix gap sweep (2026-06-10, the standing engine-change rule) found + FIXED 19 real defects before ship** (the sweep's three: the E7 aggregate §179 election VANISHING in the S-corp scenario — income-capped at the scenario's $0 SE earnings, now taken by the entity inside Box 1; the `qbi_income` Sch-C override stacking on the modeled K-1's QBI — savings overstated ~$6.6k; a digit-boundary bug in the roll-forward cache-invalidation predicate), the headline five: (1) the pipeline-synthesized `schedule_c_section179_carryforward` survived into the entity-choice S-corp scenario → the same §179 dollars deducted twice (savings overstated ~$4.4k on the verified repro; entity-choice profit now reads the NEW engine output `netScheduleCProfit` — the deep seam — and the carryforward joined the removal set); (2) the modeled K-1's explicit §199A QBI flipped the engine's GLOBAL auto-default off for the client's OTHER K-1s (regime now matched to the baseline; E11 pin); (3) roll-forward copied the per-property rental `suspendedLossCarryforward` while the aggregate §469 auto-seed flows the same dollars → 2× the loss released in a disposal year (now nulled; mapper test pins it); (4) roll-forward marked every organizer item "received" (name-identical copies) → the **proforma flag system** (migration 0020): rolled rows are estimates the organizer keeps requesting until a CPA PATCH (which clears the flag) or a real document; (5) a pdfkit footer-pass bug forked one JUNK PAGE per real page in BOTH new deliverable PDFs **and the shipped T2.1 workpaper packet** (text below maxY auto-paginates even with lineBreak:false — fixed via `pdfBrand.applyBrandFooters` margins.bottom=0; page-count smoke pins). Plus: the planning router's pathless Pro-tier gate was 402-ing EVERY cpa-tools endpoint when PRO_TIER_ENABLED=false (mount-order swap — pre-existing since the D1 trio); the ✓ glyph isn't WinAnsi-encodable (vector check now); explicit-Box-3=0 falsy-zero in the FICA adder; the carryforward report ignoring manual-override semantics (now passes the client's real adjustments); roll-forward year guard vs SUPPORTED_TAX_YEARS (freshness invariant); /engagements statusCounts computed post-filter; engagement PATCH/GET year-resolution mismatch (3-tier now + DERIVED weekend-rolled deadlines on every TaxReturn response); the email-draft re-running the 100-client fan-out per click (now forwards the campaign's anonymous stats — zero engine runs); HSA reminder firing for every client (NOT NULL DEFAULT false column). Cleanups: shared `pdfBrand`/`downloadFile`/engine-`toNum`(clamped)/`rankedClientIdsByPlanningScore`/`loadMultiYearHistory`; dashboard campaigns widget bounded (limit 25 + 5-min staleTime); scoped roll-forward cache invalidation.
 
+### T2.3 UX/UI 2.0 — modern design system (FOUNDER-SANCTIONED 2026-06-11; supersedes the blanket "no SPA refactors" for the TOKEN/PATTERN layer)
+> Scope discipline: build the **portable layer** (design tokens, component patterns, IA spec, a11y rules — all of which transfer to Haven's portals) first; treat page-level rebuilds as demos of the system, not an SPA rewrite. Brookhaven palette stays; this modernizes structure + density + trust cues.
+- [ ] **D1 Tokens v2** — type scale/spacing/elevation/motion + a dark-mode token set on the existing Brookhaven palette; semantic-token lint (no raw Tailwind palette classes).
+- [ ] **D2 IA + navigation** — workspace nav (Today/Clients/Planning/Firm), ⌘K command palette (jump to client/action), global search. *Brings: 10× faster firm-scale navigation.*
+- [ ] **D3 Return workspace** — ClientDetail becomes a 3-pane review surface: form-tree rail · line-item grid (dense, keyboard-first entry, Enter-to-advance) · diagnostics rail. *Brings: prep-software-grade review ergonomics — the thing CPAs actually live in.*
+- [ ] **D4 Provenance ("why this number")** — click ANY figure → its source chain (form line ← engine identity ← inputs ← source document w/ bounding box). The checkLine/tie-out machinery already computes this; surface it. *Brings: the trust differentiator no competitor shows.*
+- [ ] **D5 Diff language** — one visual grammar for YoY / 1040-X / what-if / roll-forward deltas (the FE3 color conventions, applied everywhere incl. the CpaTools regex fix).
+- [ ] **D6 Workflow surfaces** — engagement-status board (deadline-sorted), doc-request tracker states, firm dashboard refresh with campaign + hit-list cards.
+- [ ] **D7 Accessibility + output polish** — WCAG AA pass, focus order, print styles matching the branded PDFs.
+- [ ] **D8 Claude-Design concept round** — 3 explorations (modern-dense "Linear-like", classic-professional, hybrid) → pick → ship tokens+components; document in `docs/design/ux2.md`.
+
 ---
 
 ## T3 — Haven migration (P3)
@@ -174,21 +248,35 @@ secure, audited to the hilt, and validated by a CPA before any tax number ships.
 - [ ] Reset pricing (per-return $50–150 or a Holistiplan-adjacent tier).
 - [ ] Confirm the game: "migrate the brain into Haven" — stop straddling.
 
+## T5 — GROWTH: new revenue features for CPA firms (entrepreneur tier, 2026-06-11)
+> Market frame: Holistiplan leads (~39% share) on INSTANT 1040-upload analysis; Corvee sells strategy DEPTH (1,500+); TaxPlanIQ sells ~$12k/yr workflows; SafeSend/TaxDome own the last mile; 8821 transcript monitoring is the hottest recurring-revenue add (firms report $50k–$300k/yr). We already own the rarest asset — a REAL computing engine (they estimate; we compute). Every item below: §7216 consent + disclosure-ledger + no-PII-to-LLM by construction; 8821/2848 scope respected.
+- [ ] **G-1 IRS Account Monitor** (8821-based transcript monitoring): nightly transcript pulls per consenting client → alerts (new notice, balance change, CP2000 signature, audit flags) → AI-drafted, CPA-reviewed response letters grounded in OUR computed return. *What it brings: a $30–50/client/yr subscription line + the #1 retention hook ("we see IRS problems before the letter arrives"). The engine grounding makes responses better than generic tools.*
+- [ ] **G-2 Second-Look Prospect Analyzer** (lead-gen): upload any prior-year 1040 PDF → OCR the full return (extend the extractor beyond source docs) → run OUR engine + 107-strategy detector → branded "missed savings" teaser → book-a-consult. Firm-website embeddable. *Brings: the Holistiplan-killer demo + a measurable new-client funnel for firms. Compliance: prospect consent at upload; PII handled under T0 controls.*
+- [ ] **G-3 Advisory Proposal + ROI packager**: turn verified savings into a fee proposal ("$12,400 found vs $2,500 planning fee — 5.0× ROI"), engagement letter, e-sign. *Brings: converts our engine output into the firm's PRICING moment; the single biggest "make firms money" lever.*
+- [ ] **G-4 Quarterly Estimate Autopilot** (subscription advisory): QBO/Gusto/Plaid feeds → quarterly safe-harbor recalc (engine already does §6654) → refreshed vouchers + client reminders with IRS Direct Pay links. *Brings: converts 1×/yr prep clients into 4×/yr advisory subscriptions; near-zero marginal CPA time.*
+- [ ] **G-5 Entity Scenario Lab** (expand entity-choice): S-corp vs partnership vs C-corp(+§1202 QSBS timeline) side-by-side, multi-year, with reasonable-comp benchmark ranges + payroll-cost realism. *Brings: the $1,500–$5,000 entity-study deliverable firms sell to every profitable Sch-C client.*
+- [ ] **G-6 K-1 package ingestion**: multi-page K-1s w/ footnotes + state schedules → extractor → per-state K-1 facts (we already compute downstream). *Brings: the single most-hated manual task in HNW prep; SurePrep-grade pain, mid-market price.*
+- [ ] **G-7 Annual "Tax Health Report"** (extend the planning report): YoY + thresholds crossed + carryforward inventory + next-year calendar, branded. *Brings: the artifact firms attach to every delivered return — visible value = referrals.*
+- [ ] **G-8 Specialty-credit referral detector**: flag cost-seg / R&D-study / DB-plan / ERC-adjacent candidates from data we already hold (rentals>$X, QRE markers, SE>$300k) → partner-referral workflow. *Brings: referral revenue share + advisory depth without in-house specialists.*
+- [ ] **G-9 Firm benchmarking analytics**: anonymized, $100-rounded cross-client stats (effective-rate distributions, strategy-adoption gaps) → "your book vs opportunity" report. *Brings: practice-management insight; reuses the campaigns anonymization ethos.*
+- [ ] **G-10 Client notifications layer** (Haven-side when portals land): deadline/voucher/doc-request push + SMS. *Brings: the SafeSend-style last-mile polish; defer the UI to Haven, build the event spine here.*
+- **Sequencing:** G-3 + G-7 first (pure packaging of EXISTING engine output — weeks, zero new compliance surface) → G-2 (extends extraction; the demo that lands T4's design partner) → G-1 (new external integration; biggest recurring line) → G-4/G-5 → G-6/G-8/G-9/G-10.
+
 ## Explicitly DON'T invest (Haven replaces it, or wait for demand)
-- SPA refactors / login UI / code-splitting / dark mode — Haven's portals replace the SPA.
+- SPA refactors / login UI / code-splitting — Haven's portals replace the SPA. **EXCEPTION (2026-06-11): T2.3 UX/UI 2.0 is sanctioned for the PORTABLE layer (tokens/components/IA/a11y — they transfer to Haven); page-level rebuilds stay scoped to demos of the system.**
 - Real UltraTax / SDE write-back — multi-month, gated on a paying partner confirming it's their blocker.
 - Trust/estate (1041), partnership (1065), S/C-corp (1120-S/1120), 706/709, e-filing — out of scope per Option A (see T1.2 business-returns flag).
 - Long-tail state credits / PA EIT (~1,800 munis) / OH SDIT long tail / MD per-dependent / HSA last-month — only when a customer asks.
 
 ---
 
-## Suggested execution order (highest leverage first)
+## Suggested execution order (highest leverage first — REORDERED 2026-06-11)
 
-1. **T0.1** (yours — rotate creds; it unblocks everything). — still open.
-2. ~~**T0.3 Phase A1** — machine-driven bug-finding harness~~ **✓ DONE** (property/fuzz/boundary/metamorphic, 5,636 runs).
-3. ~~**T1.1** — §1250 / collectibles / §1231 / state-mandate correctness gaps~~ **✓ DONE** (+ the full-app fan-out audit closed all ~45 findings).
-4. **T0.3 Phase A0 + A2** — the differential-**oracle** layer (OpenTaxSolver/ustaxes/tenforty + IRS ATS). **← NEXT highest-leverage engineering move:** turns the self-consistency harness into oracle-backed cross-validation, the last unmet T0.3 technique.
-5. **T0.2 Phase C1–C2** — consent ledger + PII, in parallel (different skill set).
-6. **T1.2/T1.3** — capability enhancements (§280F luxury-auto is the top T1.2; promote heuristic planning detectors / multi-year optimizer for T1.3).
-7. ~~**T2** — forms/workpapers + firm features~~ **✓ ENGINEERING-COMPLETE 2026-06-10b** (T2.1 workpapers + all T2.2 firm features; remaining lines are externally gated or Haven-deferred by design).
-8. **T3/T4** — Haven + business (a CPA design partner also unblocks T0.3-A6 sign-off + the T2.1 legibility sign-off).
+1. **T0.1** (yours — rotate creds; unblocks everything). Still the one red gate.
+2. **T1.0 (a)–(f)** — the re-opened Tier-1 correctness backlog (wrong filed numbers in shipped code: TY2026 credits on expired law, §53/§38 limits, §461(l), NOL-AGI, K-1 earned income, KS/PA/CO/WV/HI/NM/MD state currency, MCTMT). Batch by subsystem; /code-review every batch.
+3. **T1.0 (g)–(l)** — planning projection year-advance + CPA-tools optimizer fixes + forms/extraction/frontend display batch.
+4. **T1.5** — accuracy deepening: golden-test pack + tax-table mode + the filing-status trait table (the anti-QSS-cluster refactor) + the law-watch pipeline; then the second-oracle expansion.
+5. **T0.2 C1–C2** (+ the new audit security items) — consent ledger + PII; parallel-trackable.
+6. **T5 G-3 + G-7** — proposal/ROI packager + tax-health report (pure packaging, fast revenue story) → **G-2** second-look analyzer (the design-partner demo) → **G-1** transcript monitor.
+7. **T2.3** — UX/UI 2.0 portable layer (tokens → return workspace → provenance UI).
+8. **T3/T4** — Haven + business gates (the CPA partner also unblocks T0.3-A6 + T2.1 sign-offs).
