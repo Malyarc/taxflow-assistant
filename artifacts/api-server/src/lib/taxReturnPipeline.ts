@@ -317,8 +317,14 @@ export async function synthesizePriorYearCarryforwards(
 
   // E2 — Form 8801 minimum-tax credit carryforward (IRC §53). Synthesize
   // the prior-year ending balance as a current-year input adjustment.
-  // Engine applies it against the spread between regular tax and tentative
-  // minimum tax (when AMT doesn't bind this year).
+  // Engine applies it against (regular tax − other nonrefundable credits) −
+  // tentative minimum tax (§53(c); zero when AMT binds this year).
+  // F-3 (audit 2026-06-11): the persisted amtCreditCarryforwardRemaining is
+  // now the §53(d) DEFERRAL-ITEM-ONLY credit (Form 8801 Part I — exclusion-
+  // item AMT such as the SALT/std-ded addbacks generates NO credit). Rows
+  // computed BEFORE the F-3 fix may carry the old inflated 100%-of-AMT value
+  // until their year is recalculated; a CPA can override via a manual
+  // `amt_credit_carryforward` adjustment as before.
   const amtCreditCarry = Number(priorReturn.amtCreditCarryforwardRemaining ?? 0);
   if (amtCreditCarry > 0 && !hasManualOverride("amt_credit_carryforward")) {
     synthetic.push({
@@ -540,6 +546,11 @@ export async function recalculateAndUpsertTaxReturn(
     unrecapturedSection1250Gain: String(result.unrecapturedSection1250Gain),
     collectibles28RateGain: String(result.collectibles28RateGain),
     householdEmploymentTax: String(result.scheduleH.total),
+    // T1.0b (audit 2026-06-11) — payment-side credits: F-5 Schedule 3 line 11
+    // excess-SS withholding + F-6 Form 8959 Part IV Additional-Medicare
+    // withholding (1040 line 25c). Both already inside federalRefundOrOwed.
+    excessSocialSecurityCredit: String(result.excessSocialSecurityCredit),
+    additionalMedicareWithholding: String(result.additionalMedicareWithholding),
     socialSecurityBenefits: String(result.socialSecurityBenefits),
     socialSecurityTaxable: String(result.socialSecurityTaxable),
     feieTotalExclusion: String(result.feie.totalExclusion),

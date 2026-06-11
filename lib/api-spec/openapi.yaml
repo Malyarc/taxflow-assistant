@@ -3163,6 +3163,13 @@ components:
         householdEmploymentTax:
           type: ["number", "null"]
           description: T1.2 Schedule H household-employment tax (FICA + FUTA), Schedule 2 line 9.
+        # T1.0b (audit 2026-06-11) — payment-side credits.
+        excessSocialSecurityCredit:
+          type: ["number", "null"]
+          description: F-5 Schedule 3 line 11 excess Social Security withholding credit (2+ employers over the year's 6.2% × wage-base maximum; per-spouse for MFJ).
+        additionalMedicareWithholding:
+          type: ["number", "null"]
+          description: F-6 Form 8959 Part IV Additional-Medicare-Tax withholding (W-2 Box 6 over 1.45% × Box 5), included in 1040 line 25c withholding.
         additionalChildTaxCredit:
           type: ["number", "null"]
         capitalGainsTax:

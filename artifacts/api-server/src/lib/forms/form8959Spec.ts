@@ -6,14 +6,18 @@
  *   Part II  — lines 8–13 (Additional Medicare Tax on self-employment income)
  *   Part III — lines 14–17 (RRTA compensation — not modeled)
  *   line 18  — total Additional Medicare Tax
- *   Part IV  — lines 19–24 (Medicare-withholding reconciliation — not modeled)
+ *   Part IV  — lines 19–24 (Medicare-withholding reconciliation — F-6: rendered
+ *              as the engine's aggregate `additionalMedicareWithholding`)
  *
  * Source: ret.detail.additionalMedicare (`calculateAdditionalMedicareTax`,
  * taxCalculator.ts) — 0.9% (IRC §3101(b)(2)/§1401(b)(2)) on Medicare wages +
  * SE net earnings above the filing-status threshold; wages consume the
  * threshold first (Form 8959 lines 10–11).
  *
- * Applicability: ret.additionalMedicareTax > 0.
+ * Applicability: ret.additionalMedicareTax > 0 OR Additional-Medicare
+ * withholding was credited (Part IV is required to claim the withholding even
+ * when no Additional Medicare Tax is owed — e.g. one spouse over the
+ * per-employer $200k withholding trigger but under the joint $250k threshold).
  *
  * PURE — no Date / randomness / DB / pdfkit.
  */
@@ -31,7 +35,7 @@ const RATE = 0.009;
 
 export function buildForm8959(ctx: FormBuildContext): FormInstance | null {
   const { ret } = ctx;
-  if (!(ret.additionalMedicareTax > 0)) return null;
+  if (!(ret.additionalMedicareTax > 0 || (ret.additionalMedicareWithholding ?? 0) > 0)) return null;
 
   const am = ret.detail.additionalMedicare;
 
@@ -92,6 +96,22 @@ export function buildForm8959(ctx: FormBuildContext): FormInstance | null {
   ];
   parts.push({ title: "Total Additional Medicare Tax (line 18)", lines: totalLines });
 
+  // ── Part IV — withholding reconciliation (F-6, audit 2026-06-11) ──
+  // Rendered when the engine credited Additional-Medicare withholding (the
+  // W-2 box 6 excess over 1.45% × box 5). Line 24 is included in 1040 line 25c
+  // federal income tax withholding per the Form 8959 instructions.
+  if ((ret.additionalMedicareWithholding ?? 0) > 0) {
+    const partIV: FormLine[] = [
+      moneyLine("22", "Additional Medicare Tax withholding (box 6 over 1.45% × box 5)", ret.additionalMedicareWithholding, {
+        note: "Aggregate across W-2s that report box 6 (lines 19–21 detail not re-rendered).",
+      }),
+      moneyLine("24", "Total Additional Medicare Tax withholding — include on Form 1040, line 25c", ret.additionalMedicareWithholding, {
+        emphasis: true,
+      }),
+    ];
+    parts.push({ title: "Part IV — Withholding Reconciliation (lines 19–24)", lines: partIV });
+  }
+
   return {
     formId: "8959",
     formNumber: "Form 8959",
@@ -101,7 +121,7 @@ export function buildForm8959(ctx: FormBuildContext): FormInstance | null {
     parts,
     footnotes: [
       "Lines 2–3 (unreported tips, Form 4137; Form 8919 wages) and Part III (RRTA compensation, lines 14–17) are not modeled — the engine computes Additional Medicare Tax from W-2 Medicare wages + Schedule SE net earnings only.",
-      "Part IV (lines 19–24, Medicare-withholding reconciliation) is not modeled: the engine does not capture W-2 box 6, so any Additional Medicare Tax the employer withheld is NOT credited on the engine's 1040 line 25 — the engine can overstate the balance due for high-wage W-2 filers whose employers withheld the mandatory extra 0.9% over $200,000. CPA reconciles box 6 manually.",
+      "Part IV (lines 19–24): the engine credits Additional-Medicare withholding from W-2 box 6 (max(0, total box 6 − 1.45% × total box 5), aggregated across W-2s that report box 6) into 1040 line 25c. W-2s without a box 6 value are excluded from the reconciliation — enter box 6 on every W-2 for an exact Part IV.",
     ],
   };
 }
