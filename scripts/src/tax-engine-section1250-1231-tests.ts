@@ -9,7 +9,10 @@
  * References:
  *   • IRC §1(h) — preferential rates; §1(h)(1)(E) unrecaptured §1250 (25% cap);
  *     §1(h)(1)(F)/(4)/(5) 28%-rate gain (collectibles + §1202).
- *   • IRS Schedule D Tax Worksheet (stacks ordinary → 0/15/20 → 25% → 28%).
+ *   • IRS Schedule D Tax Worksheet (lines 1–47; T1.0(l) 2026-06-11: the §1250/
+ *     28% layers INTERLEAVE — absorbed at ordinary rates up to the 24%-bracket
+ *     top via line 21, consuming the 0% zone via line 14; 25%/28% only on the
+ *     line-39/42 remainders; line-47 global min).
  *   • IRC §1231/§1245/§1250 + 2024 Form 4797 instructions; §1231(c) lookback.
  *   • 2024 single brackets (Rev. Proc. 2023-34): 10% to 11,600 / 12% to 47,150 /
  *     22% to 100,525 / 24% to 191,950 / 32% to 243,725 / 35% to 609,350 / 37%.
@@ -54,11 +57,12 @@ function wsTax(p: {
   });
 }
 
-// W1 — Low-income §1250: the FLAT 25% (0.25·60k=15,000) is capped by the GLOBAL
-// final-min (preferential tax ≤ ordinary tax on all income). ordinary $40k + §1250 $60k.
-//   ordinaryTax(40k)=1,160+0.12·28,400=4,568.
-//   flat §1250 = 0.25·60k = 15,000; global floor = ordTax(100k)−ordTax(40k)=12,485 BINDS.
-//   prefTax=min(15,000, 12,485)=12,485. total=4,568+12,485=17,053 (= all-ordinary).
+// W1 — Low-income §1250 = all-ordinary. ordinary $40k + §1250 $60k (taxable 100k).
+//   Worksheet (T1.0(l)): l13=0 → l14=100,000; l20=min(100,000, min(l1,191,950))
+//   =100,000; l21=max(40,000,100,000)=100,000 — the WHOLE §1250 absorbed at
+//   ordinary rates (§1(h)(1)(A)(ii)); l35..l39: l38=60,000+100,000−100,000=60,000
+//   → l39=0. l47=l44=tax(100,000)=17,053 (same value the old global-min gave).
+//   pref piece = 17,053 − tax(40k)=4,568 → 12,485.
 {
   const r = wsTax({ ord: 40000, lt: 60000, u1250: 60000 });
   check("W1 §1250 low-income total = ordinary rate", r.totalFederalTax, 17053);
@@ -102,31 +106,50 @@ function wsTax(p: {
   check("W5 three-bucket preferential piece", r.preferentialRateTax, 49000);
 }
 
-// W6 — 0%-bracket PRESERVATION + FLAT 25% on §1250. ordinary $10k + regular
-//   LTCG $30k + §1250 $20k. The regular 30k stacks 10k→40k entirely under the
-//   0% breakpoint (47,025) → $0 (the §1250 does NOT steal the regular gain's
-//   0% bracket). The §1250 is taxed at a FLAT 25% (NOT the 12/22% bracket it
-//   physically occupies): 0.25·20k = 5,000. The global floor ord(60k)−ord(10k)
-//   = 8,253−1,000 = 7,253 is SLACK, so it does not reduce the flat result.
-//   total = 1,000(ord 10k) + 0 + 5,000 = 6,000.
+// W6 — Schedule D Tax Worksheet INTERLEAVING (T1.0(l) adjudication 2026-06-11;
+//   supersedes the 2026-06-08 flat-25% expectation of 6,000, which was proven
+//   wrong by the line-by-line worksheet). ordinary $10k + ANCG $30k + §1250
+//   $20k (lt 50k total). 2024 Sch D Tax Worksheet, single:
+//     l1=60,000; l9=50,000; l10=50,000; l11=20,000; l12=20,000; l13=30,000
+//     l14=60,000−30,000=30,000; l15=47,025; l16=min(60,000,47,025)=47,025
+//     l17=min(30,000,47,025)=30,000; l18=60,000−50,000=10,000
+//     l19=min(60,000,191,950)=60,000; l20=min(30,000,60,000)=30,000
+//     l21=max(10,000,30,000)=30,000 ← the §1250 absorbed at ORDINARY 10/12%
+//     l22=47,025−30,000=17,025 @0% ← the §1250 layer CONSUMED 0%-zone space
+//     l23=30,000; l24=17,025; l25=12,975; l27=60,000; l28=47,025; l29=12,975
+//     l30=12,975 @15% → l31=1,946.25; l32=30,000
+//     l33=0; l35=20,000; l36=50,000+30,000=80,000; l38=80,000−60,000=20,000
+//     l39=20,000−20,000=0 → l40=0 (§1250 fully absorbed into line 21)
+//     l44=tax(30,000)=1,160+0.12·18,400=3,368; l45=1,946.25+3,368=5,314.25
+//     l46=tax(60,000)=8,253 → l47=5,314.25.
+//   pref piece = 5,314.25 − tax(10,000)=1,000 → 4,314.25.
 {
   const r = wsTax({ ord: 10000, lt: 50000, u1250: 20000 });
-  check("W6 0%-bracket preserved; §1250 at FLAT 25% (not its 12/22% bracket)", r.totalFederalTax, 6000);
-  check("W6 preferential piece = flat 25% §1250", r.preferentialRateTax, 5000);
+  check("W6 worksheet interleave: §1250 absorbed at 10/12%, ANCG 0%-zone consumed", r.totalFederalTax, 5314.25);
+  check("W6 preferential piece (wksht l47 − tax(ord))", r.preferentialRateTax, 4314.25);
 }
 
-// W8 — REGRESSION (independent review 2026-06-08): the per-layer-min bug. A
-//   regular gain pushes the §1250 layer into a sub-25% ordinary bracket while
-//   the global floor is SLACK. ordinary $20k + regular LTCG $20k + §1250 $40k.
-//   The OLD per-layer min wrongly taxed §1250 at its 12/22% blend ($8,085 →
-//   total $10,253); the IRS worksheet (IRC §1(h)(1)(E)) taxes it FLAT 25%.
-//   ord(20k)=2,168. tax015: reg 20k stacks 20k→40k @0% = 0. §1250 flat = 0.25·40k
-//   = 10,000. global floor ord(80k)−ord(20k)=12,653−2,168=10,485 (slack).
-//   total = 2,168 + 10,000 = 12,168.
+// W8 — Schedule D Tax Worksheet (T1.0(l) adjudication 2026-06-11; supersedes
+//   BOTH prior readings: the original per-layer-min 10,253 AND the 2026-06-08
+//   flat-25% 12,168 — the worksheet interleaves instead). ordinary $20k +
+//   ANCG $20k + §1250 $40k (lt 60k). 2024 Sch D Tax Worksheet, single:
+//     l1=80,000; l9=60,000; l10=60,000; l11=40,000; l12=40,000; l13=20,000
+//     l14=80,000−20,000=60,000; l16=min(80,000,47,025)=47,025
+//     l17=min(60,000,47,025)=47,025; l18=80,000−60,000=20,000
+//     l19=min(80,000,191,950)=80,000; l20=min(60,000,80,000)=60,000
+//     l21=max(20,000,60,000)=60,000 ← §1250 absorbed at ORDINARY 12/22%
+//     l22=47,025−47,025=0 @0%
+//     l23=20,000; l24=0; l25=20,000; l27=80,000; l28=60,000; l29=20,000
+//     l30=20,000 @15% → l31=3,000; l32=20,000
+//     l33=0; l35=40,000; l36=60,000+60,000=120,000; l38=120,000−80,000=40,000
+//     l39=40,000−40,000=0 → l40=0 (§1250 fully absorbed into line 21)
+//     l44=tax(60,000)=8,253; l45=3,000+8,253=11,253
+//     l46=tax(80,000)=12,653 → l47=11,253.
+//   pref piece = 11,253 − tax(20,000)=2,168 → 9,085.
 {
   const r = wsTax({ ord: 20000, lt: 60000, u1250: 40000 });
-  check("W8 flat 25% (not per-layer marginal) on mid-income §1250", r.totalFederalTax, 12168);
-  check("W8 §1250 flat 25% piece", r.preferentialRateTax, 10000);
+  check("W8 worksheet interleave on mid-income §1250 (not flat 25%)", r.totalFederalTax, 11253);
+  check("W8 preferential piece (wksht l47 − tax(ord))", r.preferentialRateTax, 9085);
 }
 
 // W7 — Backward-compat: no special buckets → plain QDCGT worksheet.
