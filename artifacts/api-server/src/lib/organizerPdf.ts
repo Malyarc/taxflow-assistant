@@ -7,12 +7,8 @@
  */
 import PDFDocument from "pdfkit";
 import type { OrganizerResult, OrganizerItem, OrganizerCategory } from "./clientOrganizer";
+import { TRUSTED_BLUE, BRAND_BLUE, SUCCESS, INK, MUTED, applyBrandFooters } from "./pdfBrand";
 
-const TRUSTED_BLUE = "#231F55";
-const BRAND_BLUE = "#41B9EA";
-const SUCCESS = "#15803d";
-const INK = "#1f2430";
-const MUTED = "#6b7280";
 const PAGE_BOTTOM = 730;
 
 const CATEGORY_LABELS: Record<OrganizerCategory, string> = {
@@ -53,17 +49,26 @@ export function buildOrganizerPdf(args: BuildOrganizerPdfArgs): Promise<Buffer> 
     doc.y = 130;
     doc.fontSize(9.5).font("Helvetica").fillColor(INK).text(
       `This checklist is personalized from your ${organizer.priorYear} return. Check items off as you gather them — ` +
-      `items marked ✓ are already on file with us. ${organizer.counts.missing} item${organizer.counts.missing === 1 ? "" : "s"} outstanding.`,
+      `checked items are already on file with us. ${organizer.counts.missing} item${organizer.counts.missing === 1 ? "" : "s"} outstanding.`,
       54, doc.y, { width: 504 },
     );
+
+    // U+2713 is not WinAnsi-encodable in the standard-14 Helvetica fonts —
+    // draw the check as two stroked vector segments instead of a glyph.
+    const drawCheck = (x: number, y: number) => {
+      doc.save();
+      doc.moveTo(x + 2.2, y + 5.8).lineTo(x + 4.4, y + 8.2).lineTo(x + 8.8, y + 2.8)
+        .lineWidth(1.6).strokeColor(SUCCESS).stroke();
+      doc.restore();
+    };
 
     const drawItem = (item: OrganizerItem) => {
       if (doc.y + 44 > PAGE_BOTTOM) doc.addPage();
       const y = doc.y + 6;
-      // Checkbox: ✓-filled when received, empty box otherwise; "?" for questions.
+      // Checkbox: vector-check-filled when received, empty box otherwise.
       if (item.status === "received") {
         doc.rect(54, y, 11, 11).lineWidth(1).strokeColor(SUCCESS).stroke();
-        doc.fontSize(9).font("Helvetica-Bold").fillColor(SUCCESS).text("✓", 56.5, y + 1.5, { lineBreak: false });
+        drawCheck(54, y);
       } else if (item.status === "question") {
         doc.rect(54, y, 11, 11).lineWidth(1).strokeColor(BRAND_BLUE).stroke();
       } else {
@@ -96,14 +101,9 @@ export function buildOrganizerPdf(args: BuildOrganizerPdfArgs): Promise<Buffer> 
       54, doc.y, { width: 504 },
     );
 
-    const range = doc.bufferedPageRange();
-    for (let i = range.start; i < range.start + range.count; i++) {
-      doc.switchToPage(i);
-      doc.fontSize(7.5).fillColor(MUTED).text(
-        `${firmName} · ${organizer.taxYear} Tax Organizer · ${clientName} · page ${i + 1} of ${range.count}`,
-        54, 752, { width: 504, align: "center", lineBreak: false },
-      );
-    }
+    applyBrandFooters(doc, (i, count) =>
+      `${firmName} · ${organizer.taxYear} Tax Organizer · ${clientName} · page ${i + 1} of ${count}`,
+    );
     doc.end();
   });
 }

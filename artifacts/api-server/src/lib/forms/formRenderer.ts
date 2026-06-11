@@ -284,9 +284,15 @@ export function buildWorkpaperPacketPdf(
     }
 
     // ── Footer pass (page numbers need the full count) ──
+    // Zero the bottom margin per page first: y=764 is below maxY (792 − 54),
+    // and pdfkit's line wrapper forks a new page for any text past maxY even
+    // with lineBreak:false — every packet was silently doubling its page
+    // count (caught by the 2026-06-10 /code-review; same fix as the T2.2
+    // deliverable PDFs).
     const range = doc.bufferedPageRange();
     for (let i = range.start; i < range.start + range.count; i++) {
       doc.switchToPage(i);
+      doc.page.margins.bottom = 0;
       doc
         .font("Helvetica")
         .fontSize(7)

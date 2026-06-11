@@ -55,7 +55,6 @@ export function netTaxAfterCredits(ret: ComputedTaxReturn): number {
     (ret.stateTaxWithheld - ret.stateRefundOrOwed)
   );
 }
-const netTax = netTaxAfterCredits;
 
 interface MfsSplit {
   taxpayer: TaxReturnInputs;
@@ -174,7 +173,7 @@ function summarize(ret: ComputedTaxReturn): FilingStatusReturnSummary {
     taxableIncome: ret.taxableIncome,
     federalTaxLiability: ret.federalTaxLiability,
     stateTaxLiability: ret.stateTaxLiability,
-    netTaxAfterCredits: netTax(ret),
+    netTaxAfterCredits: netTaxAfterCredits(ret),
     itemized: ret.itemizedDeductions != null,
   };
 }
@@ -212,8 +211,8 @@ export function optimizeFilingStatus(
     spRet = computeTaxReturnPure(forceItemized(split.spouse));
   }
 
-  const mfjNet = netTax(jointReturn);
-  const mfsNet = netTax(tpRet) + netTax(spRet);
+  const mfjNet = netTaxAfterCredits(jointReturn);
+  const mfsNet = netTaxAfterCredits(tpRet) + netTaxAfterCredits(spRet);
   const recommendation: "mfj" | "mfs" = mfsNet < mfjNet - 0.5 ? "mfs" : "mfj";
   const savings = Math.abs(mfjNet - mfsNet);
 

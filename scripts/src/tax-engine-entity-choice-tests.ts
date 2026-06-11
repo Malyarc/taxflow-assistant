@@ -309,6 +309,76 @@ function analyze(inputs: TaxReturnInputs, reasonableComp?: number) {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// E9 — §179 income-limit carryforward (REGRESSION, /code-review 2026-06-10):
+//   the pipeline-synthesized `schedule_c_section179_carryforward` must NOT
+//   survive into the scenario — P is already net of the applied §179, so a
+//   surviving adjustment deducted the same $20k AGAIN (scenario AGI came out
+//   $56,898 instead of $76,898 pre-fix).
+//   P = 100,000 − 20,000 = 80,000; comp $40k → ER 2,480+580=3,060, FUTA 42 →
+//   Box 1 = 80,000 − 40,000 − 3,060 − 42 = 36,898 → scenario AGI 76,898.
+// ════════════════════════════════════════════════════════════════════════════
+{
+  const inputs: TaxReturnInputs = {
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [],
+    form1099s: [{ taxYear: 2024, formType: "nec", nonemployeeCompensation: 100_000 }],
+    // The pipeline synthesizes this from the prior-year return row; the engine
+    // deducts it via the asset calculator even with no new assets.
+    adjustments: [{ adjustmentType: "schedule_c_section179_carryforward", amount: 20_000, isApplied: true }],
+    taxYear: 2024,
+  };
+  const r = analyze(inputs, 40_000);
+  checkTrue("E9 applicable", r.applicable);
+  check("E9 profit nets the §179 carryforward = $80,000", r.businessProfit, 80_000, 0.005);
+  check("E9 Box 1 $36,898", r.options[0].sCorpOrdinaryIncome, 36_898, 0.005);
+  check("E9 scenario AGI $76,898 (no double deduction)", r.options[0].scenario.adjustedGrossIncome, 76_898, 0.01);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// E10 — explicit Box 3 = 0 (SS-exempt W-2 wages, REGRESSION): a day job with
+//   wagesBox1 $150k but socialSecurityWagesBox3 EXPLICITLY 0 must leave the
+//   full per-person SS room — employee FICA on $50k comp = 7.65% = $3,825
+//   (pre-fix the falsy-zero fallback consumed $150k of room → $1,852.20).
+// ════════════════════════════════════════════════════════════════════════════
+{
+  const r = analyze({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [{ taxYear: 2024, wagesBox1: 150_000, socialSecurityWagesBox3: 0, medicareWagesBox5: 150_000 }],
+    form1099s: [{ taxYear: 2024, formType: "nec", nonemployeeCompensation: 100_000 }],
+    adjustments: [], taxYear: 2024,
+  }, 50_000);
+  check("E10 employee FICA full $3,825 (explicit Box 3 = 0 respected)", r.options[0].employeeFica, 3825, 0.005);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// E11 — QBI-regime preservation (REGRESSION): client also holds an ACTIVE
+//   partnership K-1 (no §199A fields → engine auto-default QBI). The modeled
+//   S-corp K-1 must not flip the global auto-default off for it.
+//   P = $120k NEC; comp $60k → ER 3,720+870=4,590, FUTA 42 → Box 1 = 55,368.
+//   Scenario QBI = 20% × (50,000 partnership auto + 55,368 s-corp auto)
+//   = 21,073.60 (income 165,368 − std 14,600 = 150,768 pre-QBI; cap
+//   30,153.60 not binding; under the $191,950 threshold → no wage limit).
+//   Pre-fix the explicit injected QBI killed the partnership's auto-default →
+//   QBI was only $11,073.60.
+// ════════════════════════════════════════════════════════════════════════════
+{
+  const r = analyze({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [],
+    form1099s: [{ taxYear: 2024, formType: "nec", nonemployeeCompensation: 120_000 }],
+    adjustments: [],
+    scheduleK1: [{
+      taxYear: 2024, entityName: "Side Partnership", entityType: "partnership",
+      activityType: "active", box1OrdinaryIncome: 50_000,
+    }],
+    taxYear: 2024,
+  }, 60_000);
+  checkTrue("E11 applicable", r.applicable);
+  check("E11 Box 1 $55,368", r.options[0].sCorpOrdinaryIncome, 55_368, 0.005);
+  check("E11 scenario QBI keeps the partnership auto-default = $21,073.60",
+    r.options[0].scenario.qbiDeduction, 21073.6, 0.01);
+}
+
 console.log(`\nRESULTS: ${PASS.length} passed, ${FAIL.length} failed`);
 if (FAIL.length > 0) {
   for (const f of FAIL) console.error(f);

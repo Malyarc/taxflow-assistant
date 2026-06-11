@@ -123,7 +123,9 @@ type Numish = string | number | null | undefined;
 // suspenders so the pure seam degrades safely instead of producing Infinity.
 // (Audit 2026-06-08 SEC1 — fuzzing found two -1e308 wages summing to -Infinity.)
 const MAX_MONEY = 1e13;
-function toNum(val: Numish): number {
+// Exported so sibling modules (entityChoice, clientOrganizer, …) coerce raw DB
+// values with the SAME hardened clamp instead of growing unclamped copies.
+export function toNum(val: Numish): number {
   if (val == null) return 0;
   const n = Number(val);
   if (!Number.isFinite(n)) return 0; // NaN/Infinity garbage → 0
@@ -908,6 +910,11 @@ export interface ComputedTaxReturn {
   // ── Phase 1 line items ─────────────────────────────────────────────────
   scheduleA: ScheduleACalculation;
   scheduleCExpenses: number;
+  /** T2.2 — SIGNED Schedule C net profit (gross SE income − expenses −
+   *  depreciation incl. the asset register; before the SE floor). THE seam for
+   *  consumers that need "the business's bottom line" (entity-choice) — when
+   *  the engine's Sch C composition evolves, this evolves with it. */
+  netScheduleCProfit: number;
   /** P2 — Schedule C depreciation reducing the SE base = the manual
    *  `schedule_c_depreciation` adjustment + the asset-register calculator total. */
   scheduleCDepreciation: number;
@@ -4139,6 +4146,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     form1099Summary,
     scheduleA,
     scheduleCExpenses,
+    netScheduleCProfit: scheduleCNetSigned,
     scheduleCDepreciation: scheduleCDepreciationAdj,
     scheduleCAssetDepreciation,
     retirementDeductions: retirement,

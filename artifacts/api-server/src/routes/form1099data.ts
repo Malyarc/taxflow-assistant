@@ -94,7 +94,9 @@ router.patch("/clients/:clientId/form1099data/:form1099Id", async (req, res): Pr
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const updateData = stringifyNumerics({ ...parsed.data, updatedAt: new Date() });
+    // T2.2 — a CPA edit makes a roll-forward proforma row REAL (the organizer
+  // then counts it as received).
+  const updateData = stringifyNumerics({ ...parsed.data, proforma: false, updatedAt: new Date() });
   if (updateData.payerTin != null) updateData.payerTin = encryptField(updateData.payerTin as string);
   if (updateData.recipientTin != null) updateData.recipientTin = encryptField(updateData.recipientTin as string);
   const [before] = await db

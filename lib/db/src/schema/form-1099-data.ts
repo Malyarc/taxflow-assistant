@@ -5,7 +5,7 @@
  * One table with all possible columns; per-form fields are NULL when not
  * applicable. The `formType` column discriminates which fields apply.
  */
-import { pgTable, text, serial, integer, numeric, timestamp, jsonb, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, numeric, timestamp, jsonb, index, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { clientsTable } from "./clients";
@@ -72,6 +72,9 @@ export const form1099DataTable = pgTable("form_1099_data", {
 
   // ── 1099-K: Payment card / third-party network ──────────────────────
   grossPaymentAmount: numeric("gross_payment_amount", { precision: 12, scale: 2 }),
+
+  /** T2.2 — roll-forward proforma estimate flag (see w2-data.ts). */
+  proforma: boolean("proforma").notNull().default(false),
 
   /** Per-field bounding boxes from AI extraction (0–1000 normalized image coords) */
   fieldBoxes: jsonb("field_boxes"),

@@ -50,6 +50,7 @@
 
 import {
   computeTaxReturnPure,
+  toNum,
   type TaxReturnInputs,
   type ComputedTaxReturn,
   type Form1099Fact,
@@ -67,19 +68,23 @@ const MIN_PROFIT = 10_000;
 const FUTA_NET_RATE = 0.006;
 const FUTA_WAGE_CAP = 7_000;
 
+/**
+ * Adjustment types that belong to the Schedule C business and must NOT survive
+ * into the S-corp scenario (their dollars are already inside profit P / the
+ * modeled K-1). Includes the PIPELINE-SYNTHESIZED §179 income-limit
+ * carryforward: P is computed net of the §179 the asset calculator applied,
+ * so leaving the carryforward in would deduct the same dollars a second time
+ * in the scenario run (the modeled W-2 even lifts the §179 income limit).
+ */
 const SE_INCOME_TYPES = new Set([
   "self_employment_income",
   "schedule_c_expenses",
   "schedule_c_depreciation",
+  "schedule_c_section179_carryforward",
   "qbi_sstb_flag",
   // Notice 2008-1 — modeled as net-zero under the S-corp (see module doc).
   "self_employed_health_insurance_premiums",
 ]);
-
-function toNum(v: unknown): number {
-  const n = Number(v ?? 0);
-  return Number.isFinite(n) ? n : 0;
-}
 
 function isNec(f: Form1099Fact): boolean {
   return (f.formType ?? "").toLowerCase() === "nec";
@@ -216,14 +221,12 @@ export function analyzeEntityChoice(args: AnalyzeEntityChoiceArgs): EntityChoice
   }
   const owner: "taxpayer" | "spouse" = spouseTags.has("spouse") ? "spouse" : "taxpayer";
 
-  // Net Schedule C profit P (the engine's own composition: NEC + SE adjustments
-  // − expenses − manual depreciation − the asset-register depreciation).
-  const necTotal = necRows.reduce((s, f) => s + toNum(f.nonemployeeCompensation), 0);
-  const seAdjTotal = sumAdj(adjustments, "self_employment_income");
-  const expenses = Math.max(0, sumAdj(adjustments, "schedule_c_expenses"));
-  const manualDep = sumAdj(adjustments, "schedule_c_depreciation");
-  const assetDep = baselineReturn.scheduleCAssetDepreciation?.totalDepreciation ?? 0;
-  const profit = round2(necTotal + seAdjTotal - expenses - manualDep - assetDep);
+  // Net Schedule C profit P — taken from the ENGINE's own signed Schedule C
+  // bottom line (so this module can never diverge from the engine's Sch C
+  // composition), minus crypto-mining income, which stays behind on Schedule
+  // C/SE in both runs (engine clamps mining ≥ 0; mirror that).
+  const miningIncome = Math.max(0, sumAdj(adjustments, "crypto_mining_income"));
+  const profit = round2(baselineReturn.netScheduleCProfit - miningIncome);
 
   if (profit < MIN_PROFIT) {
     return notApplicable(
@@ -232,10 +235,15 @@ export function analyzeEntityChoice(args: AnalyzeEntityChoiceArgs): EntityChoice
   }
 
   // Per-person SS wages already used by the owner's other W-2 jobs (employee
-  // excess-SS credit basis — see employeeFicaOnWages).
+  // excess-SS credit basis — see employeeFicaOnWages). Null-aware fallback per
+  // the engine's own convention: an EXPLICIT Box 3 of 0 (SS-exempt wages, e.g.
+  // clergy or some government jobs) is 0, not "missing → use Box 1".
   const otherW2Ss = (baselineInputs.w2s ?? [])
     .filter((w) => (owner === "spouse" ? w.spouse === "spouse" : w.spouse !== "spouse"))
-    .reduce((s, w) => s + (toNum(w.socialSecurityWagesBox3) || toNum(w.wagesBox1)), 0);
+    .reduce(
+      (s, w) => s + (w.socialSecurityWagesBox3 != null ? toNum(w.socialSecurityWagesBox3) : toNum(w.wagesBox1)),
+      0,
+    );
 
   // Comp levels: an explicit level, or a default sweep across the defensible
   // range (the curve is the deliverable — the CPA picks the defensible point).
@@ -246,6 +254,16 @@ export function analyzeEntityChoice(args: AnalyzeEntityChoiceArgs): EntityChoice
       : [0.35, 0.5, 0.6].map((f) => Math.round((profit * f) / 1000) * 1000).filter((w) => w > 0);
 
   const schCIsSstb = sumAdj(adjustments, "qbi_sstb_flag") > 0;
+
+  // QBI-regime preservation: the engine's K-1 Box-1 auto-default is GLOBAL —
+  // it runs only when NO K-1 supplies an explicit §199A QBI figure. Match the
+  // baseline's regime so the comparison never flips it for the client's OTHER
+  // K-1s: explicit-regime baselines get an explicit figure on the modeled
+  // K-1; auto-regime baselines leave it unset (the auto-default picks up
+  // Box 1, and the per-business wage limit still reads section199aW2Wages).
+  const baselineHasExplicitK1Qbi = (baselineInputs.scheduleK1 ?? []).some(
+    (k) => toNum(k.section199aQbi) > 0,
+  );
 
   const buildScenario = (wages: number, sCorpBox1: number): TaxReturnInputs => {
     const w2: W2Fact = {
@@ -263,7 +281,7 @@ export function analyzeEntityChoice(args: AnalyzeEntityChoiceArgs): EntityChoice
       entityType: "s_corp",
       activityType: "active",
       box1OrdinaryIncome: sCorpBox1,
-      section199aQbi: sCorpBox1,
+      section199aQbi: baselineHasExplicitK1Qbi ? sCorpBox1 : 0,
       section199aW2Wages: wages,
       isSstb: schCIsSstb,
     };

@@ -22,6 +22,16 @@ function checkTrue(label: string, cond: boolean): void {
   else FAIL.push(`✗ ${label}`);
 }
 
+/**
+ * Count page objects in the PDF (uncompressed page-tree nodes). REGRESSION
+ * device for the /code-review 2026-06-10 footer bug: text written below maxY
+ * during the footer pass forked one junk page per real page (a 1-page doc
+ * emitted 2 pages) until the margins.bottom=0 fix.
+ */
+function pageCount(pdf: Buffer): number {
+  return (pdf.toString("latin1").match(/\/Type\s*\/Page[^s]/g) ?? []).length;
+}
+
 function hit(strategyId: string, name: string, estSavings: number, verifiedSavings?: number): OpportunityHit {
   return {
     strategyId, name, category: "retirement", estSavings,
@@ -66,6 +76,8 @@ async function main() {
     });
     checkTrue("zero-hit report renders", pdf.subarray(0, 5).toString("ascii") === "%PDF-");
     checkTrue("zero-hit report non-trivial", pdf.length > 1200);
+    checkTrue(`zero-hit report is EXACTLY 1 page (footer pass must not fork pages; got ${pageCount(pdf)})`,
+      pageCount(pdf) === 1);
   }
 
   // ── Planning report: many hits forces pagination ──
@@ -114,6 +126,7 @@ async function main() {
     });
     const pdf2 = await buildOrganizerPdf({ clientName: "Bo Blank", organizer: emptyOrganizer, preparedDate: "2026-01-05" });
     checkTrue("questions-only organizer PDF renders", pdf2.subarray(0, 5).toString("ascii") === "%PDF-");
+    checkTrue(`questions-only organizer is EXACTLY 1 page (got ${pageCount(pdf2)})`, pageCount(pdf2) === 1);
   }
 
   console.log(`\nRESULTS: ${PASS.length} passed, ${FAIL.length} failed`);

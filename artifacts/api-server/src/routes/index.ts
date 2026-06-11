@@ -40,7 +40,12 @@ router.use(capitalTransactionsRouter);
 router.use(scheduleK1Router);
 router.use(assetBalancesRouter);
 router.use(scheduleCAssetsRouter);
-router.use(planningRouter);
+// cpa-tools MUST mount BEFORE planning: the planning router opens with a
+// pathless Pro-tier gate (402 when PRO_TIER_ENABLED=false) that would
+// otherwise swallow every request still travelling toward cpa-tools — the
+// prep-workflow features (projection, entity-choice, organizer, roll-forward,
+// engagements) are NOT Pro-gated by the G5 contract.
 router.use(cpaToolsRouter);
+router.use(planningRouter);
 
 export default router;

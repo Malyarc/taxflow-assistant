@@ -106,7 +106,9 @@ router.patch("/clients/:clientId/k1s/:k1Id", async (req, res): Promise<void> => 
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const updateData: Record<string, unknown> = { ...parsed.data, updatedAt: new Date() };
+    // T2.2 — a CPA edit makes a roll-forward proforma row REAL (the organizer
+  // then counts it as received).
+  const updateData: Record<string, unknown> = { ...parsed.data, proforma: false, updatedAt: new Date() };
   for (const f of NUMERIC_FIELDS) {
     if (updateData[f] != null) updateData[f] = String(updateData[f]);
   }

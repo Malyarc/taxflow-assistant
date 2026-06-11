@@ -126,13 +126,28 @@ async function run(): Promise<void> {
     const rfAgain = await api(`/clients/${sp}/roll-forward`, { method: "POST", body: JSON.stringify({ toYear: 2025 }) });
     ok("re-roll same year → 409", rfAgain.status === 409, String(rfAgain.status));
     const f99s = await api<any[]>(`/clients/${sp}/form1099data`);
-    ok("rolled 1099 exists in TY2025", Array.isArray(f99s.body) && f99s.body.some((r) => r.taxYear === 2025 && r.payerName === "BigCo"));
+    const rolled = Array.isArray(f99s.body) ? f99s.body.find((r) => r.taxYear === 2025 && r.payerName === "BigCo") : undefined;
+    ok("rolled 1099 exists in TY2025", rolled != null);
     const clientAfter = await api<Record<string, any>>(`/clients/${sp}`);
     ok("client.taxYear advanced to 2025", clientAfter.body?.taxYear === 2025);
-    // After the roll the organizer shows the SAME payer as received.
+    // PROFORMA semantics (/code-review 2026-06-10): the rolled copy is an
+    // estimate, NOT a received document — the organizer keeps requesting it
+    // until the CPA confirms (PATCH clears the flag) or a real doc lands.
     const org2 = await api<Record<string, any>>(`/clients/${sp}/organizer?taxYear=2025`);
-    ok("organizer flips the rolled 1099 to received",
-      org2.body?.items?.some((i: any) => i.id === "1099:nec:bigco" && i.status === "received") === true);
+    ok("organizer keeps the rolled (proforma) 1099 as missing",
+      org2.body?.items?.some((i: any) => i.id === "1099:nec:bigco" && i.status === "missing") === true);
+    // CPA confirms the rolled row → proforma clears → received.
+    if (rolled?.id != null) {
+      await api(`/clients/${sp}/form1099data/${rolled.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ nonemployeeCompensation: 210000 }),
+      });
+      const org3 = await api<Record<string, any>>(`/clients/${sp}/organizer?taxYear=2025`);
+      ok("organizer flips to received after the CPA confirms the row",
+        org3.body?.items?.some((i: any) => i.id === "1099:nec:bigco" && i.status === "received") === true);
+    } else {
+      ok("organizer confirm-flow skipped (no rolled row id)", false, "rolled row missing id");
+    }
 
     // Engagement: PATCH status + extension; firm list includes the client.
     const eng = await api<Record<string, any>>(`/clients/${sp}/tax-return/engagement`, {

@@ -10,13 +10,21 @@
  * PURE (no Date/random/DB) — the route loads the rows; fixtures drive tests.
  *
  * Status semantics:
- *   received — a matching record exists in the target year's per-year tables.
- *   missing  — expected (from prior year / profile) but no record yet.
+ *   received — a matching NON-PROFORMA record exists in the target year's
+ *              per-year tables. Roll-forward copies are proforma estimates
+ *              (no document behind them) and deliberately do NOT count —
+ *              otherwise rolling a client forward would mark every document
+ *              "already on file" and defeat the request list. A proforma row
+ *              flips real when the CPA updates it (PATCH clears the flag) or
+ *              when a document-backed/new row is created.
+ *   missing  — expected (from prior year / profile) but no real record yet.
  *   question — yes/no items we can't detect from data (life events).
  * Deduction-document reminders are always "missing": adjustments are not
  * year-scoped in this schema, so receipt can't be auto-detected — the CPA
  * checks them off on the printed/PDF list.
  */
+
+import { toNum } from "./taxReturnEngine";
 
 export type OrganizerCategory = "income" | "business_rental" | "deductions_credits" | "life_events";
 export type OrganizerStatus = "missing" | "received" | "question";
@@ -39,20 +47,21 @@ export interface OrganizerResult {
 }
 
 // Structural row shapes (satisfied by the Drizzle rows AND plain fixtures).
-export interface OrganizerW2Row { employerName?: string | null }
-export interface Organizer1099Row { formType: string; payerName?: string | null }
-export interface OrganizerK1Row { entityName?: string | null; entityType?: string | null }
-export interface OrganizerRentalRow { address?: string | null }
-export interface OrganizerAssetRow { accountName?: string | null; assetType?: string | null }
+// `proforma` marks roll-forward estimates — never counted as received.
+export interface OrganizerW2Row { employerName?: string | null; proforma?: boolean | null }
+export interface Organizer1099Row { formType: string; payerName?: string | null; proforma?: boolean | null }
+export interface OrganizerK1Row { entityName?: string | null; entityType?: string | null; proforma?: boolean | null }
+export interface OrganizerRentalRow { address?: string | null; proforma?: boolean | null }
+export interface OrganizerAssetRow { accountName?: string | null; assetType?: string | null; proforma?: boolean | null }
 
 export interface OrganizerClientFacts {
   filingStatus: string;
-  socialSecurityBenefits?: unknown;
+  socialSecurityBenefits?: number | string | null;
   dependentsUnder17?: number | null;
   otherDependents?: number | null;
   dependentsForCareCredit?: number | null;
   hsaIsFamilyCoverage?: boolean | null;
-  acaAnnualPremium?: unknown;
+  acaAnnualPremium?: number | string | null;
 }
 
 /** The prior-year persisted return values that drive deduction reminders. */
@@ -95,9 +104,9 @@ function norm(s: string | null | undefined): string {
   return (s ?? "").trim().toLowerCase();
 }
 
-function toNum(v: unknown): number {
-  const n = Number(v ?? 0);
-  return Number.isFinite(n) ? n : 0;
+/** Receipt detection ignores proforma (roll-forward estimate) rows. */
+function real<T extends { proforma?: boolean | null }>(rows: T[]): T[] {
+  return rows.filter((r) => r.proforma !== true);
 }
 
 export function buildClientOrganizer(args: BuildOrganizerArgs): OrganizerResult {
@@ -111,12 +120,13 @@ export function buildClientOrganizer(args: BuildOrganizerArgs): OrganizerResult 
   };
 
   // ── Income documents expected from the prior year ─────────────────────────
-  const currentW2Names = new Set(currentYear.w2s.map((w) => norm(w.employerName)));
+  const realW2s = real(currentYear.w2s);
+  const currentW2Names = new Set(realW2s.map((w) => norm(w.employerName)));
   for (const w2 of priorYear.w2s) {
     const name = norm(w2.employerName);
     const label = w2.employerName?.trim() || "(unnamed employer)";
     // An unnamed prior W-2 matches ANY current-year W-2 (best effort).
-    const received = name ? currentW2Names.has(name) : currentYear.w2s.length > 0;
+    const received = name ? currentW2Names.has(name) : realW2s.length > 0;
     push({
       id: `w2:${name || "unnamed"}`,
       category: "income",
@@ -127,10 +137,9 @@ export function buildClientOrganizer(args: BuildOrganizerArgs): OrganizerResult 
     });
   }
 
-  const current1099Keys = new Set(
-    currentYear.form1099s.map((f) => `${norm(f.formType)}|${norm(f.payerName)}`),
-  );
-  const current1099Types = new Set(currentYear.form1099s.map((f) => norm(f.formType)));
+  const real1099s = real(currentYear.form1099s);
+  const current1099Keys = new Set(real1099s.map((f) => `${norm(f.formType)}|${norm(f.payerName)}`));
+  const current1099Types = new Set(real1099s.map((f) => norm(f.formType)));
   for (const f of priorYear.form1099s) {
     const type = norm(f.formType);
     const formLabel = FORM_1099_LABELS[type] ?? `1099-${type.toUpperCase()}`;
@@ -148,7 +157,7 @@ export function buildClientOrganizer(args: BuildOrganizerArgs): OrganizerResult 
     });
   }
 
-  const currentK1Names = new Set(currentYear.scheduleK1s.map((k) => norm(k.entityName)));
+  const currentK1Names = new Set(real(currentYear.scheduleK1s).map((k) => norm(k.entityName)));
   for (const k1 of priorYear.scheduleK1s) {
     const name = k1.entityName?.trim() || "(unnamed entity)";
     const form = (k1.entityType ?? "") === "s_corp" ? "1120-S" : "1065";
@@ -174,7 +183,7 @@ export function buildClientOrganizer(args: BuildOrganizerArgs): OrganizerResult 
   }
 
   // ── Business / rental ──────────────────────────────────────────────────────
-  const currentRentals = new Set(currentYear.rentalProperties.map((r) => norm(r.address)));
+  const currentRentals = new Set(real(currentYear.rentalProperties).map((r) => norm(r.address)));
   for (const r of priorYear.rentalProperties) {
     const label = r.address?.trim() || "(rental property)";
     push({
@@ -208,7 +217,7 @@ export function buildClientOrganizer(args: BuildOrganizerArgs): OrganizerResult 
     });
   }
 
-  const currentAccounts = new Set(currentYear.assetBalances.map((a) => norm(a.accountName)));
+  const currentAccounts = new Set(real(currentYear.assetBalances).map((a) => norm(a.accountName)));
   for (const a of priorYear.assetBalances) {
     const label = a.accountName?.trim() || "(account)";
     push({
@@ -232,7 +241,9 @@ export function buildClientOrganizer(args: BuildOrganizerArgs): OrganizerResult 
   reminder("ded:salt", "Property tax + state payment records", "Property-tax bills paid and any state estimated/balance-due payments (SALT-cap inputs).", toNum(priorReturn?.saltDeductible) > 0);
   reminder("ded:1098t", "Form 1098-T — tuition statement", "From the school, plus receipts for books/required materials (education credits).", toNum(priorReturn?.aocCredit) + toNum(priorReturn?.llcCredit) > 0);
   reminder("ded:1098e", "Form 1098-E — student loan interest", "Servicer statement for the §221 deduction.", toNum(priorReturn?.studentLoanInterestDeduction) > 0);
-  reminder("ded:hsa", "Forms 5498-SA / 1099-SA — HSA", "Contribution + distribution statements for Form 8889.", toNum(priorReturn?.hsaDeduction) > 0 || client.hsaIsFamilyCoverage != null);
+  // hsaIsFamilyCoverage is NOT NULL DEFAULT false on the clients table — only an
+  // EXPLICIT true (or a prior-year HSA deduction) signals an HSA exists.
+  reminder("ded:hsa", "Forms 5498-SA / 1099-SA — HSA", "Contribution + distribution statements for Form 8889.", toNum(priorReturn?.hsaDeduction) > 0 || client.hsaIsFamilyCoverage === true);
   reminder("ded:ira", "Form 5498 — IRA contributions", "Contribution confirmation (deductibility re-tested each year).", toNum(priorReturn?.iraDeduction) > 0);
   reminder("ded:sehi", "Health insurance premium statements", "Self-employed health premiums paid (Form 7206 §162(l) deduction).", toNum(priorReturn?.sehiDeduction) > 0);
   if (toNum(client.dependentsForCareCredit) > 0) {

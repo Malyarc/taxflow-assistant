@@ -52,13 +52,28 @@ the local machine) closed every remaining T2.2 item:
 sweep table, organizer checklist + PDF, roll-forward action); Planning tab →
 "Client report (PDF)" + the Q&A card; Dashboard → campaigns widget. Vite build OK.
 
-**Quality bar:** 7 new no-API suites (~226 hand-calc'd/fixture assertions, all
-summary lines in the runner-parseable RESULTS format) + the cpa-tools yes-API
-suite expanded to ~60 assertions (needs a live DB — couldn't run in the sandbox);
-4 typechecks clean; full no-API battery green; **`fast-check` added to scripts
-devDependencies — the property harness's dep was in NO manifest (typecheck:tests
-had 10 pre-existing errors → now 0) and the harness runs green on v4.8.0 (5,636
-runs).** Migration 0019 reviewed (2 additive ADD COLUMNs).
+**Quality bar:** 7 new no-API suites (~240 hand-calc'd/fixture assertions incl.
+review-regression pins, all summary lines in the runner-parseable RESULTS
+format) + the cpa-tools yes-API suite expanded to ~60 assertions (needs a live
+DB — couldn't run in the sandbox); 4 typechecks clean; full no-API battery
+green; **`fast-check` added to scripts devDependencies — the property harness's
+dep was in NO manifest (typecheck:tests had 10 pre-existing errors → now 0) and
+the harness runs green on v4.8.0 (5,636 runs).** Migrations 0019 + 0020
+reviewed (additive only).
+
+**The 9-angle /code-review max pass found + fixed 16 real defects pre-ship**
+(full ledger in MASTER-TODO §T2.2): entity-choice §179-CF double-count + QBI
+regime flip + Box-3 falsy-zero (now reads the NEW engine output
+`netScheduleCProfit`); rental suspended-loss double-release; the PROFORMA flag
+system (migration 0020 — rolled rows aren't "received"; CPA PATCH clears);
+pdfkit footer page-fork in BOTH new PDFs AND the shipped workpaper packet
+(pdfBrand.applyBrandFooters); the planning router's Pro-tier gate 402-ing ALL
+cpa-tools endpoints when off (mount-order swap; pre-existing); WinAnsi ✓ glyph;
+manual-override-aware carryforward report; SUPPORTED_TAX_YEARS roll guard;
+engagement PATCH 3-tier year resolution + derived weekend-rolled deadlines on
+TaxReturn responses; statusCounts pre-filter; email-draft fan-out eliminated
+(stats ride the campaign payload). Reuse: pdfBrand / downloadFile / clamped
+engine toNum / rankedClientIdsByPlanningScore / loadMultiYearHistory shared.
 
 **Deploy checklist (run from the local machine per CLAUDE.md):** merge to main →
 EC2 deploy cycle (pulls + `migrate` applies 0019 + build + pm2 restart) →

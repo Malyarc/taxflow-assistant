@@ -91,6 +91,7 @@ export default function Dashboard() {
 
 // ── T2.2 D3 — firm-wide planning campaigns (cohorts by strategy) ─────────────
 interface CampaignMember { clientId: number; firstName: string; lastName: string; estSavings: number }
+interface CampaignStats { clientCount: number; minSavings: number; medianSavings: number; maxSavings: number }
 interface Campaign {
   strategyId: string;
   name: string;
@@ -98,12 +99,17 @@ interface Campaign {
   totalEstSavings: number;
   medianEstSavings: number;
   clients: CampaignMember[];
+  stats: CampaignStats;
 }
 function PlanningCampaignsWidget() {
-  const { data, isLoading, isError } = useListPlanningCampaigns(undefined, {
-    query: { queryKey: getListPlanningCampaignsQueryKey() },
-  });
+  // Bounded fan-out (25 clients) + 5-min freshness: this is the dashboard's
+  // second firm-wide aggregation — don't re-pay it on every visit/refocus.
+  const { data, isLoading, isError } = useListPlanningCampaigns(
+    { limit: 25 },
+    { query: { queryKey: getListPlanningCampaignsQueryKey({ limit: 25 }), staleTime: 5 * 60 * 1000 } },
+  );
   const [openId, setOpenId] = useState<string | null>(null);
+  const [pendingId, setPendingId] = useState<string | null>(null);
   const [draft, setDraft] = useState<{ strategyId: string; template: string; aiUsed: boolean } | null>(null);
   const draftEmail = useDraftCampaignEmail();
   if (isLoading) return <Skeleton className="h-32 w-full" />;
@@ -111,16 +117,20 @@ function PlanningCampaignsWidget() {
   const campaigns = ((data as unknown as { campaigns: Campaign[] }).campaigns ?? []).slice(0, 6);
   if (campaigns.length === 0) return null;
 
-  const onDraft = async (strategyId: string) => {
+  const onDraft = async (campaign: Campaign) => {
     setDraft(null);
+    setPendingId(campaign.strategyId);
     try {
-      const r = (await draftEmail.mutateAsync({ data: { strategyId } })) as unknown as {
-        template: string;
-        aiUsed: boolean;
-      };
-      setDraft({ strategyId, template: r.template, aiUsed: r.aiUsed });
+      // The anonymous stats ride along from THIS response — the server runs
+      // no engine passes for a draft.
+      const r = (await draftEmail.mutateAsync({
+        data: { strategyId: campaign.strategyId, cohortStats: campaign.stats },
+      })) as unknown as { template: string; aiUsed: boolean };
+      setDraft({ strategyId: campaign.strategyId, template: r.template, aiUsed: r.aiUsed });
     } catch {
-      setDraft({ strategyId, template: "Draft failed — try again.", aiUsed: false });
+      setDraft({ strategyId: campaign.strategyId, template: "Draft failed — try again.", aiUsed: false });
+    } finally {
+      setPendingId(null);
     }
   };
 
@@ -154,8 +164,8 @@ function PlanningCampaignsWidget() {
                 <Button size="sm" variant="outline" onClick={() => setOpenId(openId === c.strategyId ? null : c.strategyId)}>
                   {openId === c.strategyId ? "Hide" : "Cohort"}
                 </Button>
-                <Button size="sm" onClick={() => void onDraft(c.strategyId)} disabled={draftEmail.isPending}>
-                  {draftEmail.isPending && draft?.strategyId !== c.strategyId ? "…" : "Draft email"}
+                <Button size="sm" onClick={() => void onDraft(c)} disabled={draftEmail.isPending}>
+                  {pendingId === c.strategyId ? "Drafting…" : "Draft email"}
                 </Button>
               </div>
             </div>

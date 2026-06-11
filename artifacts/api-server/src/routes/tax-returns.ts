@@ -28,6 +28,7 @@ import {
 import { buildForm8824Pdf, type Form8824Data } from "../lib/form8824";
 import { buildForm8990Pdf, type Form8990Data } from "../lib/form8990";
 import { computeReturnDiagnostics } from "../lib/returnDiagnostics";
+import { filingDeadlinesFor, effectiveDeadline } from "../lib/engagement";
 import { decryptField, isDecryptErrorSentinel } from "../lib/fieldCrypto";
 import {
   buildTaxReturnCsvExport,
@@ -67,6 +68,12 @@ export function mapReturn(r: typeof taxReturnsTable.$inferSelect) {
     const v = (r as Record<string, unknown>)[key];
     out[key] = v != null ? Number(v) : null;
   }
+  // T2.2 D2 — derived §6072(a)/§6081 deadlines (weekend-rolled) so the UI
+  // never re-derives (and gets wrong) the statutory dates from taxYear.
+  const deadlines = filingDeadlinesFor(r.taxYear);
+  out.filingDeadline = deadlines.filingDeadline;
+  out.extendedDeadline = deadlines.extendedDeadline;
+  out.effectiveDeadline = effectiveDeadline(r.taxYear, r.extensionFiled);
   return out;
 }
 

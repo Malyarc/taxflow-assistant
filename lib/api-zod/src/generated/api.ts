@@ -1426,6 +1426,24 @@ export const GetTaxReturnResponse = zod.object({
     .describe(
       "T2.2 D2 — Form 4868 extension filed (the Oct 15 deadline governs).",
     ),
+  filingDeadline: zod
+    .string()
+    .optional()
+    .describe(
+      "DERIVED — §6072(a) deadline for this taxYear (Apr 15 + §7503 weekend roll), ISO date.",
+    ),
+  extendedDeadline: zod
+    .string()
+    .optional()
+    .describe(
+      "DERIVED — §6081 extended deadline (Oct 15 + weekend roll), ISO date.",
+    ),
+  effectiveDeadline: zod
+    .string()
+    .optional()
+    .describe(
+      "DERIVED — the deadline this return works toward given extensionFiled.",
+    ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -1566,6 +1584,24 @@ export const CalculateTaxReturnResponse = zod.object({
     .optional()
     .describe(
       "T2.2 D2 — Form 4868 extension filed (the Oct 15 deadline governs).",
+    ),
+  filingDeadline: zod
+    .string()
+    .optional()
+    .describe(
+      "DERIVED — §6072(a) deadline for this taxYear (Apr 15 + §7503 weekend roll), ISO date.",
+    ),
+  extendedDeadline: zod
+    .string()
+    .optional()
+    .describe(
+      "DERIVED — §6081 extended deadline (Oct 15 + weekend roll), ISO date.",
+    ),
+  effectiveDeadline: zod
+    .string()
+    .optional()
+    .describe(
+      "DERIVED — the deadline this return works toward given extensionFiled.",
     ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
@@ -1715,6 +1751,24 @@ export const UpdateTaxReturnResponse = zod.object({
     .optional()
     .describe(
       "T2.2 D2 — Form 4868 extension filed (the Oct 15 deadline governs).",
+    ),
+  filingDeadline: zod
+    .string()
+    .optional()
+    .describe(
+      "DERIVED — §6072(a) deadline for this taxYear (Apr 15 + §7503 weekend roll), ISO date.",
+    ),
+  extendedDeadline: zod
+    .string()
+    .optional()
+    .describe(
+      "DERIVED — §6081 extended deadline (Oct 15 + weekend roll), ISO date.",
+    ),
+  effectiveDeadline: zod
+    .string()
+    .optional()
+    .describe(
+      "DERIVED — the deadline this return works toward given extensionFiled.",
     ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
@@ -5007,6 +5061,24 @@ export const UpdateEngagementResponse = zod.object({
     .describe(
       "T2.2 D2 — Form 4868 extension filed (the Oct 15 deadline governs).",
     ),
+  filingDeadline: zod
+    .string()
+    .optional()
+    .describe(
+      "DERIVED — §6072(a) deadline for this taxYear (Apr 15 + §7503 weekend roll), ISO date.",
+    ),
+  extendedDeadline: zod
+    .string()
+    .optional()
+    .describe(
+      "DERIVED — §6081 extended deadline (Oct 15 + weekend roll), ISO date.",
+    ),
+  effectiveDeadline: zod
+    .string()
+    .optional()
+    .describe(
+      "DERIVED — the deadline this return works toward given extensionFiled.",
+    ),
   notes: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -5077,7 +5149,7 @@ export const ListPlanningCampaignsResponse = zod.record(
 );
 
 /**
- * Drafts a reusable {{firstName}}/{{estSavings}} mail-merge template for the strategy's cohort. Privacy by design — the LLM receives ONLY the catalog strategy text + anonymous cohort statistics (no client names or per-client figures), so no per-client §7216 consent is required; the merge happens locally. Falls back to a deterministic template when AI is disabled or the draft loses the merge fields.
+ * Drafts a reusable {{firstName}}/{{estSavings}} mail-merge template for the strategy's cohort. Privacy by design — the LLM receives ONLY the catalog strategy text + anonymous $100-rounded cohort statistics (no client names or per-client figures), so no per-client §7216 consent is required; the merge happens locally against the cohort the caller already holds from GET /planning-campaigns. No engine runs — pass the campaign's `stats` in the body. Falls back to a deterministic template when AI is disabled or the draft loses the merge fields.
 
  * @summary Draft a mail-merge outreach template for one campaign (T2.2 D3)
  */
@@ -5086,6 +5158,17 @@ export const DraftCampaignEmailBody = zod.object({
     .string()
     .describe(
       'Catalog strategy id (e.g. \"G1.2\") whose cohort the template targets.',
+    ),
+  cohortStats: zod
+    .object({
+      clientCount: zod.number().optional(),
+      minSavings: zod.number().optional(),
+      medianSavings: zod.number().optional(),
+      maxSavings: zod.number().optional(),
+    })
+    .nullish()
+    .describe(
+      "Anonymous cohort statistics from the GET \/planning-campaigns response (each campaign carries `stats`). Optional — the draft works with zeros. The server re-sanitizes ($100 rounding, non-negative) before anything reaches the LLM.\n",
     ),
 });
 

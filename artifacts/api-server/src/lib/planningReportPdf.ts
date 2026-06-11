@@ -18,13 +18,7 @@
 import PDFDocument from "pdfkit";
 import type { OpportunityHit } from "@workspace/planning-strategies";
 import type { PlanningCalendar } from "./planningCalendar";
-
-const TRUSTED_BLUE = "#231F55";
-const BRAND_BLUE = "#41B9EA";
-const GOLD = "#F0CA17";
-const SUCCESS = "#15803d";
-const INK = "#1f2430";
-const MUTED = "#6b7280";
+import { TRUSTED_BLUE, BRAND_BLUE, GOLD, SUCCESS, INK, MUTED, usd, applyBrandFooters } from "./pdfBrand";
 
 const PAGE_BOTTOM = 720; // letter height 792 − ~72 margin
 
@@ -46,10 +40,6 @@ export interface BuildPlanningReportArgs {
   preparedDate: string;
   /** Firm name on the cover / footer. */
   firmName?: string;
-}
-
-function usd(n: number): string {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 }
 
 function headlineSavings(h: OpportunityHit): number {
@@ -203,15 +193,9 @@ export function buildPlanningReportPdf(args: BuildPlanningReportArgs): Promise<B
       54, doc.y, { width: 504 },
     );
 
-    // Footer on every page (bufferPages keeps them addressable until end()).
-    const range = doc.bufferedPageRange();
-    for (let i = range.start; i < range.start + range.count; i++) {
-      doc.switchToPage(i);
-      doc.fontSize(7.5).fillColor(MUTED).text(
-        `${firmName} · Tax Planning Report · ${client.firstName} ${client.lastName} · TY${taxYear} · page ${i + 1} of ${range.count}`,
-        54, 752, { width: 504, align: "center", lineBreak: false },
-      );
-    }
+    applyBrandFooters(doc, (i, count) =>
+      `${firmName} · Tax Planning Report · ${client.firstName} ${client.lastName} · TY${taxYear} · page ${i + 1} of ${count}`,
+    );
 
     doc.end();
   });

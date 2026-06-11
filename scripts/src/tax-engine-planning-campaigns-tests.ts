@@ -65,6 +65,11 @@ function client(clientId: number, firstName: string, hits: OpportunityHit[]): Ca
   checkEq("C1 SEP top member = Ann $5,000", campaigns[0].clients[0].estSavings, 5000);
   checkEq("C1 SEP last member = Cyd $1,000", campaigns[0].clients[2].estSavings, 1000);
   checkEq("C1 Bob's SEP savings = verified $3,000", campaigns[0].clients.find((m) => m.clientId === 2)?.estSavings, 3000);
+  // Each campaign carries its anonymous stats (what the email-draft forwards).
+  checkEq("C1 SEP stats count 3", campaigns[0].stats.clientCount, 3);
+  checkEq("C1 SEP stats min $1,000", campaigns[0].stats.minSavings, 1000);
+  checkEq("C1 SEP stats median $3,000", campaigns[0].stats.medianSavings, 3000);
+  checkEq("C1 SEP stats max $5,000", campaigns[0].stats.maxSavings, 5000);
   checkEq("C1 empty input → no campaigns", aggregateCampaigns([]).length, 0);
 }
 

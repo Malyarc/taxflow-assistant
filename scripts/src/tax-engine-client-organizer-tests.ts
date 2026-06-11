@@ -182,6 +182,64 @@ const baseArgs = (over: Partial<BuildOrganizerArgs>): BuildOrganizerArgs => ({
     r2.items.length, r2.counts.missing + r2.counts.received + r2.counts.questions);
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// O7 — PROFORMA rows never count as received (REGRESSION, /code-review
+//   2026-06-10): roll-forward copies name-identical rows into the target year;
+//   without this rule a January roll-forward marked every document "already on
+//   file" and defeated the request list. A real (non-proforma) row still counts.
+// ════════════════════════════════════════════════════════════════════════════
+{
+  const r = buildClientOrganizer(baseArgs({
+    priorYear: { ...empty(),
+      w2s: [{ employerName: "Acme Corp" }],
+      form1099s: [{ formType: "nec", payerName: "BigCo" }],
+      scheduleK1s: [{ entityName: "Fund LP" }],
+      rentalProperties: [{ address: "12 Main St" }],
+      assetBalances: [{ accountName: "Vanguard IRA", assetType: "traditional_ira" }],
+    },
+    currentYear: { ...empty(),
+      w2s: [{ employerName: "Acme Corp", proforma: true }],
+      form1099s: [{ formType: "nec", payerName: "BigCo", proforma: true }],
+      scheduleK1s: [{ entityName: "Fund LP", proforma: true }],
+      rentalProperties: [{ address: "12 Main St", proforma: true }],
+      assetBalances: [{ accountName: "Vanguard IRA", assetType: "traditional_ira", proforma: true }],
+    },
+  }));
+  checkStr("O7 proforma W-2 stays missing", r.items.find((i) => i.id === "w2:acme corp")?.status, "missing");
+  checkStr("O7 proforma 1099 stays missing", r.items.find((i) => i.id === "1099:nec:bigco")?.status, "missing");
+  checkStr("O7 proforma K-1 stays missing", r.items.find((i) => i.id === "k1:fund lp")?.status, "missing");
+  checkStr("O7 proforma rental stays missing", r.items.find((i) => i.id === "rental:12 main st")?.status, "missing");
+  checkStr("O7 proforma account stays missing", r.items.find((i) => i.id === "account:vanguard ira")?.status, "missing");
+
+  // The CPA confirms the W-2 (PATCH clears the flag) → it flips to received.
+  const r2 = buildClientOrganizer(baseArgs({
+    priorYear: { ...empty(), w2s: [{ employerName: "Acme Corp" }] },
+    currentYear: { ...empty(), w2s: [{ employerName: "Acme Corp", proforma: false }] },
+  }));
+  checkStr("O7 confirmed (non-proforma) W-2 → received", r2.items.find((i) => i.id === "w2:acme corp")?.status, "received");
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// O8 — HSA reminder requires an EXPLICIT signal (REGRESSION): the clients
+//   column is NOT NULL DEFAULT false, so `!= null` fired for EVERY client.
+// ════════════════════════════════════════════════════════════════════════════
+{
+  const noHsa = buildClientOrganizer(baseArgs({
+    client: { filingStatus: "single", hsaIsFamilyCoverage: false },
+  }));
+  checkTrue("O8 hsaIsFamilyCoverage=false (DB default) → NO HSA reminder",
+    !noHsa.items.some((i) => i.id === "ded:hsa"));
+  const hsaTrue = buildClientOrganizer(baseArgs({
+    client: { filingStatus: "single", hsaIsFamilyCoverage: true },
+  }));
+  checkTrue("O8 hsaIsFamilyCoverage=true → HSA reminder", hsaTrue.items.some((i) => i.id === "ded:hsa"));
+  const hsaDed = buildClientOrganizer(baseArgs({
+    client: { filingStatus: "single", hsaIsFamilyCoverage: false },
+    priorReturn: { hsaDeduction: 4150 },
+  }));
+  checkTrue("O8 prior-year HSA deduction → HSA reminder", hsaDed.items.some((i) => i.id === "ded:hsa"));
+}
+
 console.log(`\nRESULTS: ${PASS.length} passed, ${FAIL.length} failed`);
 if (FAIL.length > 0) {
   for (const f of FAIL) console.error(f);

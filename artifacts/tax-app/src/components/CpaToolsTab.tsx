@@ -35,6 +35,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { downloadFile } from "@/lib/download";
+
+// These read-only analyses cost full engine runs server-side (entity-choice
+// alone is 4) — keep them fresh for 5 minutes instead of refetching on every
+// tab flip during data entry.
+const ANALYSIS_STALE_MS = 5 * 60 * 1000;
 
 const usd = (n: number | null | undefined): string =>
   n == null
@@ -114,7 +120,7 @@ function deltaClass(n: number, goodWhenUp = false): string {
 // ════════════════════════════════════════════════════════════════════════════
 function ProjectionCard({ clientId }: { clientId: number }) {
   const { data, isLoading, error } = useGetTaxProjection(clientId, undefined, {
-    query: { queryKey: getGetTaxProjectionQueryKey(clientId) },
+    query: { queryKey: getGetTaxProjectionQueryKey(clientId), staleTime: ANALYSIS_STALE_MS },
   });
   if (isLoading) return <Skeleton className="h-48 w-full" />;
   if (error || !data) return null;
@@ -200,7 +206,7 @@ function ProjRow({ label, a, b, isRate }: { label: string; a: number; b: number;
 // ════════════════════════════════════════════════════════════════════════════
 function MfjVsMfsCard({ clientId }: { clientId: number }) {
   const { data, isLoading, error } = useGetMfjVsMfs(clientId, {
-    query: { queryKey: getGetMfjVsMfsQueryKey(clientId) },
+    query: { queryKey: getGetMfjVsMfsQueryKey(clientId), staleTime: ANALYSIS_STALE_MS },
   });
   if (isLoading) return <Skeleton className="h-40 w-full" />;
   if (error || !data) return null;
@@ -255,7 +261,7 @@ function MfjVsMfsCard({ clientId }: { clientId: number }) {
 // ════════════════════════════════════════════════════════════════════════════
 function YearOverYearCard({ clientId }: { clientId: number }) {
   const { data, isLoading, error } = useGetYearOverYear(clientId, undefined, {
-    query: { queryKey: getGetYearOverYearQueryKey(clientId) },
+    query: { queryKey: getGetYearOverYearQueryKey(clientId), staleTime: ANALYSIS_STALE_MS },
   });
   if (isLoading) return <Skeleton className="h-40 w-full" />;
   if (error || !data) return null;
@@ -358,7 +364,7 @@ interface EntityChoiceResp {
 }
 function EntityChoiceCard({ clientId }: { clientId: number }) {
   const { data, isLoading, error } = useGetEntityChoice(clientId, undefined, {
-    query: { queryKey: getGetEntityChoiceQueryKey(clientId) },
+    query: { queryKey: getGetEntityChoiceQueryKey(clientId), staleTime: ANALYSIS_STALE_MS },
   });
   const [showAssumptions, setShowAssumptions] = useState(false);
   if (isLoading) return <Skeleton className="h-40 w-full" />;
@@ -458,7 +464,12 @@ function EngagementCard({ clientId }: { clientId: number }) {
   const update = useUpdateEngagement();
   if (isLoading) return <Skeleton className="h-24 w-full" />;
   if (!data) return null;
-  const ret = data as unknown as { taxYear: number; engagementStatus?: string; extensionFiled?: boolean };
+  const ret = data as unknown as {
+    taxYear: number;
+    engagementStatus?: string;
+    extensionFiled?: boolean;
+    effectiveDeadline?: string;
+  };
   const status = ret.engagementStatus ?? "not_started";
   const extended = ret.extensionFiled ?? false;
   const patch = async (body: UpdateEngagementBody) => {
@@ -502,7 +513,11 @@ function EngagementCard({ clientId }: { clientId: number }) {
           Extension filed (Form 4868)
         </label>
         <span className="text-xs text-muted-foreground">
-          Deadline: <span className="font-medium text-foreground">{extended ? "Oct 15" : "Apr 15"}, {ret.taxYear + 1}</span>
+          {/* Server-computed §6072(a)/§6081 date (weekend-rolled) — never re-derived in JSX. */}
+          Deadline:{" "}
+          <span className="font-medium text-foreground">
+            {ret.effectiveDeadline ?? `${ret.taxYear + 1}-${extended ? "10" : "04"}-15`}
+          </span>
           {extended ? " (extended)" : ""}
         </span>
         {update.isPending && <span className="text-xs text-muted-foreground">Saving…</span>}
@@ -544,14 +559,7 @@ function OrganizerCard({ clientId }: { clientId: number }) {
             variant="outline"
             size="sm"
             title="Branded printable checklist personalized from last year's documents"
-            onClick={() => {
-              const link = document.createElement("a");
-              link.href = `/api/clients/${clientId}/organizer/pdf?taxYear=${o.taxYear}`;
-              link.download = "";
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
-            }}
+            onClick={() => downloadFile(`/api/clients/${clientId}/organizer/pdf?taxYear=${o.taxYear}`)}
           >
             Organizer (PDF)
           </Button>
@@ -597,8 +605,15 @@ function RollForwardCard({ clientId }: { clientId: number }) {
     try {
       const r = await roll.mutateAsync({ clientId, data: {} });
       setResult(r as unknown as RollForwardResp);
-      // Everything about this client changed year — refetch the world.
-      await queryClient.invalidateQueries();
+      // Everything about THIS CLIENT changed year (every per-client query key
+      // starts with /api/clients/:id) + the firm-wide views that aggregate it.
+      // A blanket invalidateQueries() would refetch every heavy firm-wide
+      // query in the cache for no reason.
+      const prefix = `/api/clients/${clientId}`;
+      await queryClient.invalidateQueries({
+        predicate: (q) => typeof q.queryKey[0] === "string" && (q.queryKey[0] as string).startsWith(prefix),
+      });
+      await queryClient.invalidateQueries({ queryKey: ["/api/engagements"], exact: false });
     } catch (e) {
       const detail = (e as { response?: { data?: { error?: string } }; message?: string });
       setErrorMsg(detail.response?.data?.error ?? detail.message ?? "Roll-forward failed");

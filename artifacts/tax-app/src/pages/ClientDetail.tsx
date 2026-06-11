@@ -72,6 +72,7 @@ import { CurrencyInput } from "@/components/ui/currency-input";
 import { toast } from "@/hooks/use-toast";
 import { ReviewExtractionModal } from "@/components/ReviewExtractionModal";
 import { localityLabel } from "@/lib/localityLabels";
+import { downloadFile } from "@/lib/download";
 import { ADJUSTMENT_TYPE_LABELS } from "@/lib/adjustmentLabels";
 import {
   FileText, FileSpreadsheet, Files, CandlestickChart, Building2, Network,
@@ -125,15 +126,6 @@ function maskTin(tin: string | null | undefined): string {
 const TAB_TRIGGER_CLS =
   "gap-2 whitespace-nowrap rounded-lg px-3.5 py-2 text-muted-foreground hover:text-foreground data-[state=active]:bg-card data-[state=active]:text-primary data-[state=active]:shadow-sm lg:w-full lg:justify-start";
 
-/** Trigger a browser download for a same-origin file URL (PDF / CSV / etc.). */
-function downloadFile(url: string) {
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = "";
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-}
 
 // ─── Documents Tab ───────────────────────────────────────────────────────────
 
@@ -4768,7 +4760,9 @@ function ReturnQaCard({ clientId }: { clientId: number }) {
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") void onAsk();
+              // Pending guard — repeated Enter must not fire concurrent
+              // mutations (racing answers + duplicate LLM spend).
+              if (e.key === "Enter" && !ask.isPending) void onAsk();
             }}
             maxLength={1000}
             placeholder='e.g. "Why is the refund smaller than the withholding suggests?"'
@@ -4849,14 +4843,7 @@ function PlanningTab({ clientId }: { clientId: number }) {
               size="sm"
               variant="outline"
               title="Branded client-facing planning report: headline savings, per-opportunity detail, action calendar, disclosures. Deterministic engine numbers only."
-              onClick={() => {
-                const link = document.createElement("a");
-                link.href = `/api/clients/${clientId}/planning-report/pdf`;
-                link.download = "";
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-              }}
+              onClick={() => downloadFile(`/api/clients/${clientId}/planning-report/pdf`)}
             >
               Client report (PDF)
             </Button>

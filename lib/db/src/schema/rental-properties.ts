@@ -62,6 +62,9 @@ export const rentalPropertiesTable = pgTable("rental_properties", {
   /** T1.2 — accumulated suspended passive loss from prior years (released on full
    *  disposition). Positive number. */
   suspendedLossCarryforward: numeric("suspended_loss_carryforward", { precision: 14, scale: 2 }),
+  /** T2.2 — roll-forward proforma estimate flag (see w2-data.ts). */
+  proforma: boolean("proforma").notNull().default(false),
+
   /** Optional CPA notes. */
   notes: text("notes"),
 

@@ -18,11 +18,12 @@
  */
 
 import { Router, type IRouter } from "express";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import {
   db,
   clientsTable,
   taxReturnsTable,
+  adjustmentsTable,
   w2DataTable,
   form1099DataTable,
   scheduleK1DataTable,
@@ -38,7 +39,9 @@ import {
   computeTaxReturn,
   recalculateAfterMutation,
   synthesizePriorYearCarryforwards,
+  type AdjustmentFact,
 } from "../lib/taxReturnPipeline";
+import { SUPPORTED_TAX_YEARS } from "../lib/taxCalculator";
 import { computeTaxProjection } from "../lib/taxProjection";
 import { optimizeFilingStatus } from "../lib/filingStatusOptimizer";
 import { computeYearOverYear } from "../lib/yearOverYear";
@@ -217,6 +220,15 @@ router.post("/clients/:clientId/roll-forward", async (req, res): Promise<void> =
     res.status(400).json({ error: "toYear must be a 4-digit tax year" });
     return;
   }
+  // Freshness invariant (2026-06-05c): unsupported years must FAIL LOUDLY, not
+  // silently clamp to the newest year's law. Rolling INTO an unsupported year
+  // would persist a "TY{toYear}" return computed under TY{LATEST} rules.
+  if (!(SUPPORTED_TAX_YEARS as readonly number[]).includes(toYear)) {
+    res.status(400).json({
+      error: `TY${toYear} is not an activated tax year (supported: ${SUPPORTED_TAX_YEARS.join(", ")}). Activate the year (SUPPORTED_TAX_YEARS + the year-indexed maps) before rolling clients into it.`,
+    });
+    return;
+  }
   const fromYear = toYear - 1;
 
   const yearRows = async (taxYear: number) => {
@@ -277,11 +289,18 @@ router.post("/clients/:clientId/roll-forward", async (req, res): Promise<void> =
   }
 
   // Recalculate the new year (also writes the tax_returns row the carryforward
-  // auto-seed reads from next time) and report what WILL auto-seed — same
-  // single source of truth the engine pipeline uses.
+  // auto-seed reads from next time) and report what WILL auto-seed — via the
+  // pipeline's own synthesizer WITH the client's real adjustments, so the
+  // manual-override suppression ("an applied carryforward adjustment beats the
+  // auto-seed") is reflected in the report exactly as the engine applies it.
   await recalculateAfterMutation(clientId, toYear);
-  const carryforwardsSeeded = (await synthesizePriorYearCarryforwards(clientId, toYear, []))
-    .map((a) => ({ type: a.adjustmentType, amount: Number(a.amount) }));
+  const clientAdjustments = await db
+    .select()
+    .from(adjustmentsTable)
+    .where(eq(adjustmentsTable.clientId, clientId));
+  const carryforwardsSeeded = (
+    await synthesizePriorYearCarryforwards(clientId, toYear, clientAdjustments as AdjustmentFact[])
+  ).map((a) => ({ type: a.adjustmentType, amount: Number(a.amount) }));
 
   res.json({
     clientId,
@@ -416,18 +435,18 @@ router.patch("/clients/:clientId/tax-return/engagement", async (req, res): Promi
     res.status(400).json({ error: body.error.message });
     return;
   }
+  // The generated zod body already enforces the status enum; only the
+  // both-fields-absent case needs a route-level check.
   const { engagementStatus, extensionFiled } = body.data;
-  if (engagementStatus != null && !isEngagementStatus(engagementStatus)) {
-    res.status(400).json({ error: `engagementStatus must be one of: ${ENGAGEMENT_STATUSES.join(", ")}` });
-    return;
-  }
   if (engagementStatus == null && extensionFiled == null) {
     res.status(400).json({ error: "Provide engagementStatus and/or extensionFiled" });
     return;
   }
   const clientId = params.data.clientId;
-  // Resolve the year exactly like GET /tax-return: explicit query > client.taxYear.
-  let taxYear: number | null = null;
+  // Resolve the TARGET ROW with the same 3-tier rule as GET /tax-return
+  // (explicit ?taxYear → client.taxYear row → most-recently-updated row), so
+  // the row the EngagementCard displays is the row this PATCH updates.
+  let targetRow: typeof taxReturnsTable.$inferSelect | undefined;
   const yearRaw = req.query.taxYear;
   if (typeof yearRaw === "string" && yearRaw.length > 0) {
     const y = Number(yearRaw);
@@ -435,12 +454,28 @@ router.patch("/clients/:clientId/tax-return/engagement", async (req, res): Promi
       res.status(400).json({ error: "Invalid taxYear query parameter" });
       return;
     }
-    taxYear = y;
+    [targetRow] = await db
+      .select()
+      .from(taxReturnsTable)
+      .where(and(eq(taxReturnsTable.clientId, clientId), eq(taxReturnsTable.taxYear, y)));
   } else {
     const [client] = await db.select().from(clientsTable).where(eq(clientsTable.id, clientId));
-    taxYear = client?.taxYear ?? null;
+    if (client?.taxYear != null) {
+      [targetRow] = await db
+        .select()
+        .from(taxReturnsTable)
+        .where(and(eq(taxReturnsTable.clientId, clientId), eq(taxReturnsTable.taxYear, client.taxYear)));
+    }
+    if (!targetRow) {
+      [targetRow] = await db
+        .select()
+        .from(taxReturnsTable)
+        .where(eq(taxReturnsTable.clientId, clientId))
+        .orderBy(desc(taxReturnsTable.updatedAt))
+        .limit(1);
+    }
   }
-  if (taxYear == null) {
+  if (!targetRow) {
     res.status(404).json({ error: "No tax return row for this client/year" });
     return;
   }
@@ -450,12 +485,8 @@ router.patch("/clients/:clientId/tax-return/engagement", async (req, res): Promi
       ...(engagementStatus != null ? { engagementStatus } : {}),
       ...(extensionFiled != null ? { extensionFiled } : {}),
     })
-    .where(and(eq(taxReturnsTable.clientId, clientId), eq(taxReturnsTable.taxYear, taxYear)))
+    .where(eq(taxReturnsTable.id, targetRow.id))
     .returning();
-  if (!row) {
-    res.status(404).json({ error: "No tax return row for this client/year" });
-    return;
-  }
   res.json(mapReturn(row));
 });
 
@@ -480,7 +511,9 @@ router.get("/engagements", async (req, res): Promise<void> => {
   }
 
   // Pin each client to their current-year return (clients.taxYear), the same
-  // join the hit-list uses, unless an explicit year is requested.
+  // join the hit-list uses, unless an explicit year is requested. Ordering is
+  // applied in JS below (effective deadline needs the extension flag) — no
+  // SQL ORDER BY, so nobody mistakes it for the response order.
   const rows = await db
     .select({
       clientId: clientsTable.id,
@@ -497,11 +530,19 @@ router.get("/engagements", async (req, res): Promise<void> => {
       yearFilter != null
         ? and(eq(clientsTable.id, taxReturnsTable.clientId), eq(taxReturnsTable.taxYear, yearFilter))
         : and(eq(clientsTable.id, taxReturnsTable.clientId), eq(clientsTable.taxYear, taxReturnsTable.taxYear)),
-    )
-    .orderBy(asc(clientsTable.lastName), asc(clientsTable.firstName));
+    );
 
+  // asOf is the UTC calendar date (deterministic server-side; for US-local
+  // evenings it runs up to a day AHEAD — i.e. conservative, never late). The
+  // field is returned so consumers can see exactly which date was used.
   const today = new Date().toISOString().slice(0, 10);
-  const statusOrder = new Map(ENGAGEMENT_STATUSES.map((s, i) => [s, i] as const));
+  // statusCounts reflect the FIRM-WIDE distribution (pre-filter); the ?status=
+  // filter narrows only the entries list.
+  const statusCounts: Record<string, number> = {};
+  for (const s of ENGAGEMENT_STATUSES) statusCounts[s] = 0;
+  for (const r of rows) statusCounts[r.engagementStatus] = (statusCounts[r.engagementStatus] ?? 0) + 1;
+
+  const statusOrder = new Map<string, number>(ENGAGEMENT_STATUSES.map((s, i) => [s, i]));
   const entries = rows
     .filter((r) => statusFilter == null || r.engagementStatus === statusFilter)
     .map((r) => {
@@ -522,13 +563,10 @@ router.get("/engagements", async (req, res): Promise<void> => {
     .sort(
       (a, b) =>
         a.effectiveDeadline.localeCompare(b.effectiveDeadline) ||
-        (statusOrder.get(a.engagementStatus as never) ?? 99) - (statusOrder.get(b.engagementStatus as never) ?? 99) ||
-        a.lastName.localeCompare(b.lastName),
+        (statusOrder.get(a.engagementStatus) ?? 99) - (statusOrder.get(b.engagementStatus) ?? 99) ||
+        a.lastName.localeCompare(b.lastName) ||
+        a.firstName.localeCompare(b.firstName),
     );
-
-  const statusCounts: Record<string, number> = {};
-  for (const s of ENGAGEMENT_STATUSES) statusCounts[s] = 0;
-  for (const e of entries) statusCounts[e.engagementStatus] = (statusCounts[e.engagementStatus] ?? 0) + 1;
 
   res.json({ asOf: today, entries, statusCounts });
 });

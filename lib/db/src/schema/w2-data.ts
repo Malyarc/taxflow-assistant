@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, numeric, timestamp, jsonb, index } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, numeric, timestamp, jsonb, index, boolean } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { clientsTable } from "./clients";
@@ -31,6 +31,10 @@ export const w2DataTable = pgTable(
      *  Used only for MFJ per-spouse Sch SE Line 9 SS wage base computation.
      *  Default "taxpayer". Ignored for non-MFJ filing statuses. */
     spouse: text("spouse").notNull().default("taxpayer"),
+    /** T2.2 — TRUE when this row is a roll-forward proforma ESTIMATE (copied
+     *  from the prior year, no document behind it). The organizer treats
+     *  proforma rows as NOT received; any CPA update clears the flag. */
+    proforma: boolean("proforma").notNull().default(false),
     /** Per-field bounding boxes in 0-1000 normalized image coordinates (set when AI extracted from image/PDF) */
     fieldBoxes: jsonb("field_boxes"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

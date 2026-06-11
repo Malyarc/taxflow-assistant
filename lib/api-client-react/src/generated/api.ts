@@ -7317,7 +7317,7 @@ export const getListEngagementsQueryKey = (params?: ListEngagementsParams) => {
 
 export const getListEngagementsQueryOptions = <
   TData = Awaited<ReturnType<typeof listEngagements>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<void>,
 >(
   params?: ListEngagementsParams,
   options?: {
@@ -7347,7 +7347,7 @@ export const getListEngagementsQueryOptions = <
 export type ListEngagementsQueryResult = NonNullable<
   Awaited<ReturnType<typeof listEngagements>>
 >;
-export type ListEngagementsQueryError = ErrorType<unknown>;
+export type ListEngagementsQueryError = ErrorType<void>;
 
 /**
  * @summary Firm-wide engagement tracker (T2.2 busy-season view)
@@ -7355,7 +7355,7 @@ export type ListEngagementsQueryError = ErrorType<unknown>;
 
 export function useListEngagements<
   TData = Awaited<ReturnType<typeof listEngagements>>,
-  TError = ErrorType<unknown>,
+  TError = ErrorType<void>,
 >(
   params?: ListEngagementsParams,
   options?: {
@@ -7662,7 +7662,7 @@ export function useListPlanningCampaigns<
 }
 
 /**
- * Drafts a reusable {{firstName}}/{{estSavings}} mail-merge template for the strategy's cohort. Privacy by design — the LLM receives ONLY the catalog strategy text + anonymous cohort statistics (no client names or per-client figures), so no per-client §7216 consent is required; the merge happens locally. Falls back to a deterministic template when AI is disabled or the draft loses the merge fields.
+ * Drafts a reusable {{firstName}}/{{estSavings}} mail-merge template for the strategy's cohort. Privacy by design — the LLM receives ONLY the catalog strategy text + anonymous $100-rounded cohort statistics (no client names or per-client figures), so no per-client §7216 consent is required; the merge happens locally against the cohort the caller already holds from GET /planning-campaigns. No engine runs — pass the campaign's `stats` in the body. Falls back to a deterministic template when AI is disabled or the draft loses the merge fields.
 
  * @summary Draft a mail-merge outreach template for one campaign (T2.2 D3)
  */

@@ -1220,6 +1220,12 @@ export interface TaxReturn {
   engagementStatus?: TaxReturnEngagementStatus;
   /** T2.2 D2 — Form 4868 extension filed (the Oct 15 deadline governs). */
   extensionFiled?: boolean;
+  /** DERIVED — §6072(a) deadline for this taxYear (Apr 15 + §7503 weekend roll), ISO date. */
+  filingDeadline?: string;
+  /** DERIVED — §6081 extended deadline (Oct 15 + weekend roll), ISO date. */
+  extendedDeadline?: string;
+  /** DERIVED — the deadline this return works toward given extensionFiled. */
+  effectiveDeadline?: string;
   /** @nullable */
   notes?: string | null;
   createdAt: string;
@@ -2751,9 +2757,27 @@ export interface ReturnQaBody {
   question: string;
 }
 
+/**
+ * Anonymous cohort statistics from the GET /planning-campaigns response (each campaign carries `stats`). Optional — the draft works with zeros. The server re-sanitizes ($100 rounding, non-negative) before anything reaches the LLM.
+
+ * @nullable
+ */
+export type CampaignEmailDraftBodyCohortStats = {
+  clientCount?: number;
+  minSavings?: number;
+  medianSavings?: number;
+  maxSavings?: number;
+} | null;
+
 export interface CampaignEmailDraftBody {
   /** Catalog strategy id (e.g. "G1.2") whose cohort the template targets. */
   strategyId: string;
+  /**
+   * Anonymous cohort statistics from the GET /planning-campaigns response (each campaign carries `stats`). Optional — the draft works with zeros. The server re-sanitizes ($100 rounding, non-negative) before anything reaches the LLM.
+
+   * @nullable
+   */
+  cohortStats?: CampaignEmailDraftBodyCohortStats;
 }
 
 export interface WhatIfScenarioBody {

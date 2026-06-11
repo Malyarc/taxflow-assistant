@@ -116,6 +116,9 @@ export const scheduleK1DataTable = pgTable("schedule_k1_data", {
    *  down basis before the Box 1 ordinary loss. Positive number. */
   separatelyStatedDeductions: numeric("separately_stated_deductions", { precision: 14, scale: 2 }),
 
+  /** T2.2 — roll-forward proforma estimate flag (see w2-data.ts). */
+  proforma: boolean("proforma").notNull().default(false),
+
   /** Optional CPA notes. */
   notes: text("notes"),
 

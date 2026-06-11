@@ -45,6 +45,9 @@ export interface PlanningCampaign {
   totalEstSavings: number;
   medianEstSavings: number;
   clients: CampaignCohortMember[];
+  /** Anonymous $100-rounded stats — what the email-draft endpoint forwards to
+   *  the LLM (computed here so the draft never re-runs the firm fan-out). */
+  stats: CampaignCohortStats;
 }
 
 function headline(h: OpportunityHit): number {
@@ -76,6 +79,7 @@ export function aggregateCampaigns(clientHits: CampaignClientHit[]): PlanningCam
           totalEstSavings: 0,
           medianEstSavings: 0,
           clients: [],
+          stats: { clientCount: 0, minSavings: 0, medianSavings: 0, maxSavings: 0 },
         };
         byStrategy.set(h.strategyId, camp);
       }
@@ -94,6 +98,7 @@ export function aggregateCampaigns(clientHits: CampaignClientHit[]): PlanningCam
     camp.clientCount = camp.clients.length;
     camp.totalEstSavings = camp.clients.reduce((s, m) => s + m.estSavings, 0);
     camp.medianEstSavings = Math.round(median(camp.clients.map((m) => m.estSavings).sort((a, b) => a - b)));
+    camp.stats = cohortStats(camp.clients);
   }
   campaigns.sort((a, b) => b.totalEstSavings - a.totalEstSavings);
   return campaigns;

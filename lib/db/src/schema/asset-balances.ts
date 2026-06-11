@@ -76,6 +76,9 @@ export const assetBalancesTable = pgTable("client_asset_balances", {
    * distribution with NUA election. CPAs check plan document.
    */
   nuaEligible: boolean("nua_eligible").notNull().default(false),
+  /** T2.2 — roll-forward proforma estimate flag (see w2-data.ts). */
+  proforma: boolean("proforma").notNull().default(false),
+
   /** Optional CPA notes (account number partial / institution / restrictions). */
   notes: text("notes"),
 

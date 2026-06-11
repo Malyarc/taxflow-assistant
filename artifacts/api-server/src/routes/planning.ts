@@ -42,7 +42,6 @@ import { buildPlanningReportPdf } from "../lib/planningReportPdf";
 import { sanitizeQuestion, answerReturnQuestion } from "../lib/returnQa";
 import {
   aggregateCampaigns,
-  cohortStats,
   draftCampaignEmail,
   type CampaignClientHit,
 } from "../lib/planningCampaigns";
@@ -87,6 +86,34 @@ async function loadPlanningContext(clientId: number) {
     baselineInputs: computed.inputs,
   });
   return { computed: computed.result, client: computed.client, hits };
+}
+
+/**
+ * THE firm-wide ranking query (#14 / DB-02-03): top-N client ids by the
+ * precomputed planning_score, each client pinned to their current-year return
+ * (clients.tax_year = tax_returns.tax_year), score > 0, served by
+ * tax_returns_planning_score_idx. The SINGLE source of this contract — shared
+ * by the hit-list fast path and the campaigns cohort so they can never rank
+ * different universes (and so a future firm_id scope lands in one place).
+ */
+async function rankedClientIdsByPlanningScore(
+  limit: number,
+  extraConditions: SQL[] = [],
+): Promise<number[]> {
+  const ranked = await db
+    .select({ clientId: taxReturnsTable.clientId })
+    .from(taxReturnsTable)
+    .innerJoin(
+      clientsTable,
+      and(
+        eq(clientsTable.id, taxReturnsTable.clientId),
+        eq(clientsTable.taxYear, taxReturnsTable.taxYear),
+      ),
+    )
+    .where(and(gt(taxReturnsTable.planningScore, "0"), ...extraConditions))
+    .orderBy(desc(taxReturnsTable.planningScore))
+    .limit(limit);
+  return ranked.map((r) => r.clientId);
 }
 
 const router: IRouter = Router();
@@ -202,6 +229,41 @@ router.get("/clients/:clientId/planning-calendar", async (req, res): Promise<voi
   }
 });
 
+/**
+ * Load a client's persisted return history as TaxReturnSnapshot[] (most-recent
+ * first; missing filingStatus on older rows falls back to the client's so the
+ * detectors can still compute marginal rates). Shared by /planning-multi-year
+ * and the planning-report PDF — ONE mapping, so a new snapshot field can't
+ * silently reach one surface and not the other.
+ */
+async function loadMultiYearHistory(
+  clientId: number,
+  fallbackFilingStatus: string,
+): Promise<TaxReturnSnapshot[]> {
+  const rows = await db
+    .select()
+    .from(taxReturnsTable)
+    .where(eq(taxReturnsTable.clientId, clientId))
+    .orderBy(desc(taxReturnsTable.taxYear));
+  return rows.map((r) => ({
+    taxYear: r.taxYear,
+    filingStatus: r.filingStatus ?? fallbackFilingStatus,
+    adjustedGrossIncome: num(r.adjustedGrossIncome),
+    taxableIncome: num(r.taxableIncome),
+    itemizedDeductions: num(r.itemizedDeductions),
+    amtTax: num(r.amtTax),
+    niitTax: num(r.niitTax),
+    medicalDeductible: num(r.medicalDeductible),
+    saltDeductible: num(r.saltDeductible),
+    mortgageDeductible: num(r.mortgageDeductible),
+    charitableDeductible: num(r.charitableDeductible),
+    capitalLossCarryforwardShort: num(r.capitalLossCarryforwardShort),
+    capitalLossCarryforwardLong: num(r.capitalLossCarryforwardLong),
+    scheduleEPassiveLossSuspended: num(r.scheduleEPassiveLossSuspended),
+    k1PassiveLossSuspended: num(r.k1PassiveLossSuspended),
+  }));
+}
+
 router.get("/clients/:clientId/planning-multi-year", async (req, res): Promise<void> => {
   const params = GetPlanningMultiYearParams.safeParse(req.params);
   if (!params.success) {
@@ -218,32 +280,7 @@ router.get("/clients/:clientId/planning-multi-year", async (req, res): Promise<v
       return;
     }
 
-    const rows = await db
-      .select()
-      .from(taxReturnsTable)
-      .where(eq(taxReturnsTable.clientId, params.data.clientId))
-      .orderBy(desc(taxReturnsTable.taxYear));
-
-    // Build TaxReturnSnapshot[] in most-recent-first order. Missing
-    // filingStatus (older rows) falls back to client.filingStatus so the
-    // detector can still compute marginal rates.
-    const history: TaxReturnSnapshot[] = rows.map((r) => ({
-      taxYear: r.taxYear,
-      filingStatus: r.filingStatus ?? client.filingStatus,
-      adjustedGrossIncome: num(r.adjustedGrossIncome),
-      taxableIncome: num(r.taxableIncome),
-      itemizedDeductions: num(r.itemizedDeductions),
-      amtTax: num(r.amtTax),
-      niitTax: num(r.niitTax),
-      medicalDeductible: num(r.medicalDeductible),
-      saltDeductible: num(r.saltDeductible),
-      mortgageDeductible: num(r.mortgageDeductible),
-      charitableDeductible: num(r.charitableDeductible),
-      capitalLossCarryforwardShort: num(r.capitalLossCarryforwardShort),
-      capitalLossCarryforwardLong: num(r.capitalLossCarryforwardLong),
-      scheduleEPassiveLossSuspended: num(r.scheduleEPassiveLossSuspended),
-      k1PassiveLossSuspended: num(r.k1PassiveLossSuspended),
-    }));
+    const history = await loadMultiYearHistory(params.data.clientId, client.filingStatus);
 
     const hits = evaluateMultiYearOpportunities({
       client: client as ClientFacts,
@@ -449,9 +486,8 @@ router.get("/planning-hit-list", async (req, res): Promise<void> => {
       // FAST PATH (dashboard Top-10 + default hit-list) — rank by the precomputed
       // planning_score with a SINGLE indexed query (tax_returns_planning_score_idx),
       // pushing the state/AGI filters into SQL, and take the top-N. Display details
-      // are then computed for ONLY those N clients — not the whole firm. The join
-      // pins each client to their current-year return (clients.tax_year).
-      const conditions: SQL[] = [gt(taxReturnsTable.planningScore, "0")];
+      // are then computed for ONLY those N clients — not the whole firm.
+      const conditions: SQL[] = [];
       if (stateFilter) conditions.push(eq(sql`upper(${clientsTable.state})`, stateFilter));
       if (minAgi != null && Number.isFinite(minAgi)) {
         conditions.push(gte(taxReturnsTable.adjustedGrossIncome, String(minAgi)));
@@ -459,20 +495,7 @@ router.get("/planning-hit-list", async (req, res): Promise<void> => {
       if (maxAgi != null && Number.isFinite(maxAgi)) {
         conditions.push(lte(taxReturnsTable.adjustedGrossIncome, String(maxAgi)));
       }
-      const ranked = await db
-        .select({ clientId: taxReturnsTable.clientId })
-        .from(taxReturnsTable)
-        .innerJoin(
-          clientsTable,
-          and(
-            eq(clientsTable.id, taxReturnsTable.clientId),
-            eq(clientsTable.taxYear, taxReturnsTable.taxYear),
-          ),
-        )
-        .where(and(...conditions))
-        .orderBy(desc(taxReturnsTable.planningScore))
-        .limit(effectiveLimit);
-      candidateClientIds = ranked.map((r) => r.clientId);
+      candidateClientIds = await rankedClientIdsByPlanningScore(effectiveLimit, conditions);
     }
 
     const entries: Entry[] = [];
@@ -959,32 +982,11 @@ router.get("/clients/:clientId/planning-report/pdf", async (req, res): Promise<v
       res.status(404).json({ error: "Client not found" });
       return;
     }
-    // Multi-year trend hits (same source as /planning-multi-year) — optional
-    // section; an empty history simply omits it.
-    const historyRows = await db
-      .select()
-      .from(taxReturnsTable)
-      .where(eq(taxReturnsTable.clientId, params.data.clientId))
-      .orderBy(desc(taxReturnsTable.taxYear));
+    // Multi-year trend hits (same source + mapping as /planning-multi-year) —
+    // optional section; an empty history simply omits it.
     const multiYearHits = evaluateMultiYearOpportunities({
       client: ctx.client as ClientFacts,
-      history: historyRows.map((r) => ({
-        taxYear: r.taxYear,
-        filingStatus: r.filingStatus ?? ctx.client.filingStatus,
-        adjustedGrossIncome: num(r.adjustedGrossIncome),
-        taxableIncome: num(r.taxableIncome),
-        itemizedDeductions: num(r.itemizedDeductions),
-        amtTax: num(r.amtTax),
-        niitTax: num(r.niitTax),
-        medicalDeductible: num(r.medicalDeductible),
-        saltDeductible: num(r.saltDeductible),
-        mortgageDeductible: num(r.mortgageDeductible),
-        charitableDeductible: num(r.charitableDeductible),
-        capitalLossCarryforwardShort: num(r.capitalLossCarryforwardShort),
-        capitalLossCarryforwardLong: num(r.capitalLossCarryforwardLong),
-        scheduleEPassiveLossSuspended: num(r.scheduleEPassiveLossSuspended),
-        k1PassiveLossSuspended: num(r.k1PassiveLossSuspended),
-      })),
+      history: await loadMultiYearHistory(params.data.clientId, ctx.client.filingStatus),
     });
     const pdf = await buildPlanningReportPdf({
       client: ctx.client,
@@ -1061,18 +1063,9 @@ router.post("/clients/:clientId/return-qa", async (req, res): Promise<void> => {
  * Error-isolated per client. Shared by the campaigns list + email draft.
  */
 async function evaluateTopClientHits(limit: number): Promise<CampaignClientHit[]> {
-  const ranked = await db
-    .select({ clientId: taxReturnsTable.clientId })
-    .from(taxReturnsTable)
-    .innerJoin(
-      clientsTable,
-      and(eq(clientsTable.id, taxReturnsTable.clientId), eq(clientsTable.taxYear, taxReturnsTable.taxYear)),
-    )
-    .where(gt(taxReturnsTable.planningScore, "0"))
-    .orderBy(desc(taxReturnsTable.planningScore))
-    .limit(limit);
+  const ranked = await rankedClientIdsByPlanningScore(limit);
   const out: CampaignClientHit[] = [];
-  for (const { clientId } of ranked) {
+  for (const clientId of ranked) {
     try {
       const computed = await computeTaxReturn(clientId);
       if (!computed) continue;
@@ -1098,9 +1091,11 @@ async function evaluateTopClientHits(limit: number): Promise<CampaignClientHit[]
   return out;
 }
 
+// Default matches the hit-list's page size; cap 200 keeps the per-client
+// engine fan-out bounded.
 function campaignLimit(raw: unknown): number {
   const n = typeof raw === "string" ? Number(raw) : NaN;
-  if (!Number.isFinite(n) || n <= 0) return 100;
+  if (!Number.isFinite(n) || n <= 0) return 50;
   return Math.min(Math.floor(n), 200);
 }
 
@@ -1132,12 +1127,23 @@ router.post("/planning-campaigns/email-draft", async (req, res): Promise<void> =
     return;
   }
   try {
-    const clientHits = await evaluateTopClientHits(campaignLimit(req.query.limit));
-    const campaign = aggregateCampaigns(clientHits).find((c) => c.strategyId === strategy.id);
-    const members = campaign?.clients ?? [];
-    // §7216 by design — the LLM sees ONLY the strategy text + these anonymous
-    // stats; client names + per-client figures stay local for the mail merge.
-    const stats = cohortStats(members);
+    // The cohort stats ride in from the caller's GET /planning-campaigns
+    // response (each campaign carries them) — the draft itself never re-runs
+    // the firm-wide engine fan-out. SANITIZED server-side regardless of what
+    // the client sent: the §7216-by-design boundary is that the LLM only ever
+    // sees non-negative, $100-rounded aggregates.
+    const r100 = (v: unknown) => {
+      const n = Number(v);
+      if (!Number.isFinite(n) || n <= 0) return 0;
+      return Math.round(Math.min(n, 1e9) / 100) * 100;
+    };
+    const raw = body.data.cohortStats;
+    const stats = {
+      clientCount: Math.min(Math.max(0, Math.floor(Number(raw?.clientCount) || 0)), 100_000),
+      minSavings: r100(raw?.minSavings),
+      medianSavings: r100(raw?.medianSavings),
+      maxSavings: r100(raw?.maxSavings),
+    };
     const draft = await draftCampaignEmail({ strategy, stats });
     res.json({
       strategyId: strategy.id,
@@ -1146,7 +1152,6 @@ router.post("/planning-campaigns/email-draft", async (req, res): Promise<void> =
       mergeFields: draft.mergeFields,
       aiUsed: draft.aiUsed,
       model: draft.model,
-      cohort: members,
       cohortStats: stats,
     });
   } catch (err) {

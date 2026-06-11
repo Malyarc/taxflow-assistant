@@ -56,6 +56,7 @@ const NOW = new Date("2026-01-15T00:00:00Z");
   checkEq("W2 wages copied as estimate", out.wagesBox1, "120000.00");
   checkEq("W2 spouse tag kept", out.spouse, "spouse");
   checkEq("W2 clientId kept", out.clientId, 3);
+  checkEq("W2 marked proforma", out.proforma, true);
   checkTrue("W2 id dropped", !("id" in out));
   checkTrue("W2 createdAt dropped", !("createdAt" in out));
   checkTrue("W2 updatedAt dropped", !("updatedAt" in out));
@@ -79,6 +80,7 @@ const NOW = new Date("2026-01-15T00:00:00Z");
   checkEq("1099 payer kept", out.payerName, "ClientCo");
   checkEq("1099 amount copied", out.nonemployeeCompensation, "80000.00");
   checkEq("1099 schema-drift column rolls through", out.someFutureColumn, "rolls through");
+  checkEq("1099 marked proforma", out.proforma, true);
   checkTrue("1099 id dropped", !("id" in out));
 }
 
@@ -107,6 +109,7 @@ const NOW = new Date("2026-01-15T00:00:00Z");
   checkEq("K1 entity kept", out.entityName, "Fund LP");
   checkEq("K1 Box 1 copied as estimate", out.box1OrdinaryIncome, "25000.00");
   checkEq("K1 activityType kept", out.activityType, "passive");
+  checkEq("K1 marked proforma", out.proforma, true);
 
   // No ending basis recorded → keep the prior opening basis.
   const out2 = rollForwardK1({ ...row, basisAtYearEnd: null } as unknown as ScheduleK1Data, 2026);
@@ -131,8 +134,12 @@ const NOW = new Date("2026-01-15T00:00:00Z");
   checkEq("rental taxYear advanced", out.taxYear, 2026);
   checkEq("rental disposal flag reset", out.fullyDisposedThisYear, false);
   checkEq("rental income copied as estimate", out.rentalIncome, "30000.00");
-  checkEq("rental suspended-loss column carried (CPA-maintained)", out.suspendedLossCarryforward, "8000.00");
+  // REGRESSION (/code-review 2026-06-10): pre-arming the per-property suspended
+  // loss would DOUBLE-DEDUCT against the engine's aggregate §469 auto-seed in
+  // a disposal year (§469(g) release + the seeded carryforward = 2× the loss).
+  checkEq("rental suspended-loss column NOT rolled (double-count guard)", out.suspendedLossCarryforward, null);
   checkEq("rental MACRS inputs kept", out.placedInServiceYear, 2020);
+  checkEq("rental marked proforma", out.proforma, true);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -149,6 +156,7 @@ const NOW = new Date("2026-01-15T00:00:00Z");
   checkEq("asset taxYear advanced", out.taxYear, 2026);
   checkEq("asset balance carried as opening baseline", out.balance, "500000.00");
   checkEq("asset after-tax basis carried (Form 8606 continuity)", out.afterTaxBasis, "20000.00");
+  checkEq("asset marked proforma", out.proforma, true);
   checkTrue("asset id dropped", !("id" in out));
 }
 

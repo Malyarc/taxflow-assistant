@@ -142,7 +142,9 @@ router.patch("/clients/:clientId/w2data/:w2Id", async (req, res): Promise<void> 
     res.status(400).json({ error: parsed.error.message });
     return;
   }
-  const updateData: Record<string, unknown> = { ...parsed.data, updatedAt: new Date() };
+    // T2.2 — a CPA edit makes a roll-forward proforma row REAL (the organizer
+  // then counts it as received).
+  const updateData: Record<string, unknown> = { ...parsed.data, proforma: false, updatedAt: new Date() };
   const numericFields = ["wagesBox1","federalTaxWithheldBox2","socialSecurityWagesBox3","socialSecurityTaxBox4","medicareWagesBox5","medicareTaxBox6","stateTaxWithheldBox17","stateWagesBox16"];
   for (const field of numericFields) {
     if (updateData[field] != null) updateData[field] = String(updateData[field]);
