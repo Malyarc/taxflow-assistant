@@ -249,6 +249,9 @@ export interface Form1099Fact {
   // form-specific fields, all coerced via toNum
   nonemployeeCompensation?: Numish;
   interestIncome?: Numish;
+  /** 1099-INT Box 3 — interest on US Savings Bonds + Treasury obligations.
+   *  Federally TAXABLE (Schedule B line 1), state-exempt. Disjoint from Box 1. */
+  usTreasuryInterest?: Numish;
   taxExemptInterest?: Numish;
   /** A2 — 1099-INT Box 2: penalty on early withdrawal of savings (a forfeited-
    *  interest penalty on breaking a CD early). An ABOVE-THE-LINE deduction
@@ -539,11 +542,15 @@ export interface ScheduleBPayer {
 export interface Form1099Summary {
   /** Self-employment income (1099-NEC) */
   seIncome: number;
-  /** Ordinary interest (1099-INT minus tax-exempt portion) */
+  /** Taxable interest (1099-INT Box 1 + Box 3 Treasury — Form 1040 line 2b) */
   interestIncome: number;
   /** Tax-exempt interest (1099-INT Box 8 — excluded from AGI; used for K10
    *  Pub 915 SS taxability provisional-income calc). */
   taxExemptInterest: number;
+  /** US Savings Bond / Treasury interest (1099-INT Box 3) — a SUBSET already
+   *  included in `interestIncome` (federally taxable). Surfaced separately so
+   *  the state-tax base can subtract it (state-exempt by federal preemption). */
+  usTreasuryInterest: number;
   /** Ordinary (non-qualified) dividends from 1099-DIV */
   ordinaryDividends: number;
   /** Qualified dividends — LTCG rates */
@@ -608,9 +615,14 @@ export function summarize1099s(records: Form1099Fact[]): Form1099Summary {
 
   const seIncome = necRecords.reduce((s, r) => s + toNum(r.nonemployeeCompensation), 0);
 
-  // Interest: total minus tax-exempt portion
+  // Taxable interest = 1099-INT Box 1 + Box 3 (US Savings Bond / Treasury
+  // obligation interest — federally TAXABLE, reported on Sch B line 1; only
+  // state-exempt). Box 8 (tax-exempt interest) is a DISJOINT box on the form
+  // and is summed separately below for the Pub 915 SS provisional-income calc
+  // — it must NOT be netted out of Box 1 (doing so silently understated taxable
+  // interest on every brokerage 1099-INT carrying muni interest).
   const interestIncome = intRecords.reduce(
-    (s, r) => s + Math.max(0, toNum(r.interestIncome) - toNum(r.taxExemptInterest)),
+    (s, r) => s + Math.max(0, toNum(r.interestIncome)) + Math.max(0, toNum(r.usTreasuryInterest)),
     0,
   );
   // A2 — 1099-INT Box 2 early-withdrawal-of-savings penalty → above-the-line
@@ -622,6 +634,10 @@ export function summarize1099s(records: Form1099Fact[]): Form1099Summary {
   // Pub 915 SS taxability provisional-income calculation (K10).
   const taxExemptInterest = intRecords.reduce(
     (s, r) => s + toNum(r.taxExemptInterest), 0);
+  // 1099-INT Box 3 (US Savings Bond / Treasury) — federally taxable (already in
+  // interestIncome above) but state-exempt; surfaced for the state subtraction.
+  const usTreasuryInterest = intRecords.reduce(
+    (s, r) => s + Math.max(0, toNum(r.usTreasuryInterest)), 0);
 
   const qualifiedDividends = divRecords.reduce((s, r) => s + toNum(r.qualifiedDividends), 0);
   // Ordinary dividends per IRS Form 1040 = box 1a - box 1b (qualified portion subtracted)
@@ -737,7 +753,10 @@ export function summarize1099s(records: Form1099Fact[]): Form1099Summary {
 
   for (const r of intRecords) {
     const p = ensurePayer(r.payerName);
-    p.interestIncome += Math.max(0, toNum(r.interestIncome) - toNum(r.taxExemptInterest));
+    // Box 1 + Box 3 (Treasury) = taxable interest; Box 8 is DISJOINT tax-exempt
+    // (tracked separately, shown on the workpaper as a note — must NOT net out
+    // of Box 1). Matches the taxable-interest total + @workspace/validation.
+    p.interestIncome += Math.max(0, toNum(r.interestIncome)) + Math.max(0, toNum(r.usTreasuryInterest));
     p.taxExemptInterest += toNum(r.taxExemptInterest);
     p.federalWithheld += toNum(r.federalTaxWithheld);
   }
@@ -762,6 +781,7 @@ export function summarize1099s(records: Form1099Fact[]): Form1099Summary {
     seIncome,
     interestIncome,
     taxExemptInterest,
+    usTreasuryInterest,
     ordinaryDividends,
     qualifiedDividends,
     longTermCapitalGains,
@@ -3545,7 +3565,11 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
       // state-taxable (added); US-Treasury interest is state-exempt (subtracted).
       // CPA-supplied via adjustments; 0 → undefined → no-op.
       muniBondAddBack: sumByType("out_of_state_muni_interest") || undefined,
-      usTreasurySubtraction: sumByType("us_treasury_interest") || undefined,
+      // US-Treasury interest is state-exempt: the CPA `us_treasury_interest`
+      // adjustment PLUS any 1099-INT Box 3 (now folded into federal taxable
+      // interest) — both must be subtracted from the state base.
+      usTreasurySubtraction:
+        (sumByType("us_treasury_interest") + form1099Summary.usTreasuryInterest) || undefined,
       // E11 — Dependent count for PA Schedule SP Tax Forgiveness bracket
       // adjustment ($9,500 per dependent). Only applied when resident is PA.
       dependentCount: (client.dependentsUnder17 ?? 0) + (client.otherDependents ?? 0),

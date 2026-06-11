@@ -169,9 +169,11 @@ header("Foreign tax credit");
   checkExact("MFJ simplified path used at limit", r.usedSimplifiedPath, true);
 }
 {
-  // QW also uses MFJ limit
-  const r = calculateForeignTaxCredit({ foreignTaxPaid: 600, filingStatus: "qualifying_widow" });
-  check("QW $600 FTC simplified limit", r.simplifiedLimit, 600);
+  // §904(j)(2)(C): the $600 simplified limit is for "a joint return" only; a
+  // §2(a) qualifying surviving spouse files singly → $300 (NOT the MFJ $600).
+  const r = calculateForeignTaxCredit({ foreignTaxPaid: 250, filingStatus: "qualifying_widow" });
+  check("QW FTC simplified limit = $300 (single, not joint)", r.simplifiedLimit, 300);
+  checkExact("QW $250 ≤ $300 → simplified path", r.exceededSimplifiedLimit, false);
 }
 {
   // Negative input → 0

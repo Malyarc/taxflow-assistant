@@ -193,7 +193,11 @@ const adj = (adjustmentType: string, amount: number): TaxReturnInputs["adjustmen
     taxYear: 2024,
   };
   const ret = computeTaxReturnPure(inputs);
-  check("S2 engine taxable interest $1,400", ret.form1099Summary.interestIncome, 1400);
+  // 1099-INT Box 1 (taxable) and Box 8 (tax-exempt) are DISJOINT on the form:
+  // Credit Union West reports $700 taxable (Box 1) + $200 tax-exempt (Box 8).
+  // Taxable interest = $900 + $700 = $1,600 (Box 8 is shown as a workpaper note,
+  // never netted out of Box 1). (Was $1,400 under the since-fixed Box-8 subtraction.)
+  check("S2 engine taxable interest $1,600", ret.form1099Summary.interestIncome, 1600);
   check(
     "S2 engine box-1a dividends $1,700",
     ret.form1099Summary.ordinaryDividends + ret.form1099Summary.qualifiedDividends,
@@ -208,11 +212,11 @@ const adj = (adjustmentType: string, amount: number): TaxReturnInputs["adjustmen
   const interestRows = (partI?.lines ?? []).filter((l) => l.line === "1");
   check("S2 Part I has 2 payer rows", interestRows.length, 2);
   checkStr("S2 Part I rows sorted: Credit Union West first", interestRows[0]?.label ?? "", "Credit Union West");
-  check("S2 Credit Union West taxable interest $500 (700 − 200 exempt)", Number(interestRows[0]?.value), 500);
+  check("S2 Credit Union West taxable interest $700 (Box 1; Box 8 exempt is separate)", Number(interestRows[0]?.value), 700);
   checkStr("S2 Credit Union West note shows $200 tax-exempt", interestRows[0]?.note ?? "", "$200.00 tax-exempt");
   check("S2 First National Bank $900", Number(interestRows[1]?.value), 900);
-  check("S2 line 2 total interest $1,400", lineVal(b, "2"), 1400);
-  check("S2 line 4 → 1040 line 2b $1,400", lineVal(b, "4"), 1400);
+  check("S2 line 2 total interest $1,600", lineVal(b, "2"), 1600);
+  check("S2 line 4 → 1040 line 2b $1,600", lineVal(b, "4"), 1600);
   checkStr("S2 line 4 tie row ✓", tieRow(b, "Line 4 ties"), "ties");
   const divRows = (partII?.lines ?? []).filter((l) => l.line === "5");
   check("S2 Part II has 2 payer rows", divRows.length, 2);

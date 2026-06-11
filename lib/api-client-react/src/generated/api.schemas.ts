@@ -958,6 +958,10 @@ export interface CreateForm1099DataBody {
   /** @nullable */
   interestIncome?: number | null;
   /** @nullable */
+  earlyWithdrawalPenalty?: number | null;
+  /** @nullable */
+  usTreasuryInterest?: number | null;
+  /** @nullable */
   taxExemptInterest?: number | null;
   /** @nullable */
   ordinaryDividends?: number | null;
@@ -1035,6 +1039,10 @@ export interface UpdateForm1099DataBody {
   otherIncome?: number | null;
   /** @nullable */
   interestIncome?: number | null;
+  /** @nullable */
+  earlyWithdrawalPenalty?: number | null;
+  /** @nullable */
+  usTreasuryInterest?: number | null;
   /** @nullable */
   taxExemptInterest?: number | null;
   /** @nullable */

@@ -110,7 +110,12 @@ section("N3 — FED-06 EITC disqualified by tax-exempt interest");
   const disq = computeTaxReturnPure({
     client: { filingStatus: "single", state: "FL", taxYear: 2024, dependentsUnder17: 2 },
     w2s: [{ taxYear: 2024, wagesBox1: 20000, stateCode: "FL" }],
-    form1099s: [{ taxYear: 2024, formType: "int", interestIncome: 12000, taxExemptInterest: 12000 }],
+    // $12,000 of PURE tax-exempt muni interest = 1099-INT Box 8 only (Box 1 = 0).
+    // Box 1 (taxable) and Box 8 (tax-exempt) are DISJOINT on the form — the muni
+    // amount is NOT taxable interest, but §32(i)(2)(B) counts it toward the EITC
+    // investment-income limit. (Previously mis-modeled as Box1=Box8=12000, which
+    // only "worked" via a since-fixed bug that subtracted Box 8 out of Box 1.)
+    form1099s: [{ taxYear: 2024, formType: "int", taxExemptInterest: 12000 }],
     adjustments: [],
     taxYear: 2024,
   });
@@ -120,7 +125,7 @@ section("N3 — FED-06 EITC disqualified by tax-exempt interest");
   const ok = computeTaxReturnPure({
     client: { filingStatus: "single", state: "FL", taxYear: 2024, dependentsUnder17: 2 },
     w2s: [{ taxYear: 2024, wagesBox1: 20000, stateCode: "FL" }],
-    form1099s: [{ taxYear: 2024, formType: "int", interestIncome: 11000, taxExemptInterest: 11000 }],
+    form1099s: [{ taxYear: 2024, formType: "int", taxExemptInterest: 11000 }],
     adjustments: [],
     taxYear: 2024,
   });

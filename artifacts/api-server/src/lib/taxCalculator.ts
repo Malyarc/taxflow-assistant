@@ -2895,7 +2895,10 @@ export function calculateEitc(params: {
   }
 
   const numChildren = Math.min(3, Math.max(0, Math.floor(qualifyingChildren))) as 0 | 1 | 2 | 3;
-  const status = filingStatus === "married_filing_jointly" || filingStatus === "qualifying_widow"
+  // EITC: the §32(b)(2)(B) phase-out increase is ONLY for "a joint return".
+  // A §2(a) qualifying surviving spouse is NOT filing a joint return, so it
+  // uses the single/HoH column (Pub 596 EIC table groups QSS with single/HoH).
+  const status = filingStatus === "married_filing_jointly"
     ? "married_filing_jointly" as const
     : "single" as const;
 
@@ -4359,7 +4362,10 @@ export function calculateEducationCredits(params: {
     };
   }
 
-  const isMfj = filingStatus === "married_filing_jointly" || filingStatus === "qualifying_widow";
+  // §25A(d)(2): the doubled MAGI phase-out band is for "a joint return" only.
+  // A §2(a) qualifying surviving spouse is NOT a joint return (Form 8863 /
+  // Pub 970 put QSS in the single $80–90k / $90–110k band).
+  const isMfj = filingStatus === "married_filing_jointly";
   const phaseRange = isMfj ? EDUCATION_PHASE_OUT_MFJ : EDUCATION_PHASE_OUT_SINGLE;
 
   // Phase-out fraction: 1 below start, 0 above end, linear in between
@@ -4691,9 +4697,11 @@ export function calculateDependentCareCredit(params: {
     };
   }
 
-  // Both spouses must have earned income for MFJ; the credit caps at the lesser of the two
+  // §21(d)(1): only "a taxpayer who is married" is limited by the spouse's
+  // earned income. A §2(a) qualifying surviving spouse is NOT married (the
+  // spouse is deceased) — only the taxpayer's earned income limits the credit.
   let earnedIncomeLimit = earnedIncomeTaxpayer;
-  if (filingStatus === "married_filing_jointly" || filingStatus === "qualifying_widow") {
+  if (filingStatus === "married_filing_jointly") {
     earnedIncomeLimit = Math.min(earnedIncomeTaxpayer, earnedIncomeSpouse ?? 0);
   }
   if (earnedIncomeLimit <= 0 || qualifyingDependents <= 0) {
@@ -4987,14 +4995,16 @@ const SLI_PHASE_OUT: Record<TaxYear, Record<string, { start: number; end: number
   2024: {
     single: { start: 80000, end: 95000 },
     head_of_household: { start: 80000, end: 95000 },
-    qualifying_widow: { start: 165000, end: 195000 },
+    // §221(b)(2)(B): the doubled phase-out is for "a joint return" only; a
+    // §2(a) surviving spouse is not a joint return → single band (Pub 970).
+    qualifying_widow: { start: 80000, end: 95000 },
     married_filing_jointly: { start: 165000, end: 195000 },
     married_filing_separately: null,
   },
   2025: {
     single: { start: 85000, end: 100000 },
     head_of_household: { start: 85000, end: 100000 },
-    qualifying_widow: { start: 170000, end: 200000 },
+    qualifying_widow: { start: 85000, end: 100000 },
     married_filing_jointly: { start: 170000, end: 200000 },
     married_filing_separately: null,
   },
@@ -5002,7 +5012,7 @@ const SLI_PHASE_OUT: Record<TaxYear, Record<string, { start: number; end: number
   2026: {
     single: { start: 85000, end: 100000 },
     head_of_household: { start: 85000, end: 100000 },
-    qualifying_widow: { start: 175000, end: 205000 },
+    qualifying_widow: { start: 85000, end: 100000 },
     married_filing_jointly: { start: 175000, end: 205000 },
     married_filing_separately: null,
   },
@@ -5091,9 +5101,9 @@ export function calculateForeignTaxCredit(params: {
   totalTaxableIncome?: number;
   preCreditUsTax?: number;
 }): ForeignTaxCreditCalculation {
-  const isMfj =
-    params.filingStatus === "married_filing_jointly" ||
-    params.filingStatus === "qualifying_widow";
+  // §904(j)(2)(C): the $600 simplified (no-Form-1116) limit is for "a joint
+  // return" only; a §2(a) qualifying surviving spouse files singly → $300.
+  const isMfj = params.filingStatus === "married_filing_jointly";
   const simplifiedLimit = isMfj ? FTC_SIMPLIFIED_LIMIT_MFJ : FTC_SIMPLIFIED_LIMIT_SINGLE;
   const amount = Math.max(0, params.foreignTaxPaid);
   const exceededSimplifiedLimit = amount > simplifiedLimit;
@@ -6642,8 +6652,11 @@ export function calculateSocialSecurityTaxability(params: {
   const halfSs = ssBenefits / 2;
   const provisional = Math.max(0, params.agiExcludingSs) + Math.max(0, params.taxExemptInterest) + halfSs;
 
-  const isMfj = params.filingStatus === "married_filing_jointly" ||
-                params.filingStatus === "qualifying_widow";
+  // §86(c): the $32,000/$44,000 base amounts are for "a joint return" only.
+  // A §2(a) qualifying surviving spouse is NOT married and NOT filing a joint
+  // return → §86(c)(1)(A) "any other case" = $25,000/$34,000 (Pub 915 groups
+  // QSS with single/HoH). (Contrast §1411 NIIT, which DOES group QSS with joint.)
+  const isMfj = params.filingStatus === "married_filing_jointly";
   const isMfsWithSpouse = params.filingStatus === "married_filing_separately" &&
                           !params.mfsLivedApartAllYear;
 
@@ -6749,12 +6762,17 @@ const ADDITIONAL_MEDICARE_RATE = 0.009;
 function additionalMedicareThreshold(filingStatus: string): number {
   switch (filingStatus) {
     case "married_filing_jointly":
-    case "qualifying_widow":
       return 250000;
     case "married_filing_separately":
       return 125000;
+    // NOTE: qualifying surviving spouse falls in the §3101(b)(2)(C)/§1401(b)(2)(C)
+    // "any other case" bucket = $200,000 (Form 8959 lists QSS with single/HoH).
+    // A §2(a) surviving spouse files singly, NOT a "joint return", so the
+    // $250,000 joint threshold does NOT apply — UNLIKE NIIT (§1411(b)(1), which
+    // explicitly groups "surviving spouse" with joint at $250,000) and unlike
+    // the income-tax brackets/standard deduction. Falls through to default.
     default:
-      return 200000;
+      return 200000; // single, head_of_household, qualifying_widow
   }
 }
 
@@ -7054,7 +7072,11 @@ export function calculateObbbaSchedule1ADeductions(params: {
   const zero: ObbbaSchedule1ADeductions = { tips: 0, overtime: 0, carLoanInterest: 0, senior: 0, total: 0 };
   // TY2025–2028 only (OBBBA temporary window).
   if (params.taxYear < 2025 || params.taxYear > 2028) return zero;
-  const isJoint = params.filingStatus === "married_filing_jointly" || params.filingStatus === "qualifying_widow";
+  // The OBBBA Schedule 1-A doubled caps + phase-out thresholds key on "a joint
+  // return"; a §2(a) qualifying surviving spouse files singly → the single caps/
+  // thresholds, and the senior bonus counts only the (one) living taxpayer, not
+  // the deceased spouse. (Same "joint return" exclusion as §86/§221/§25A/§32.)
+  const isJoint = params.filingStatus === "married_filing_jointly";
   const magi = Math.max(0, params.magi);
 
   // §224 tips: cap $25,000 (single + MFJ); phase-out $150k/$300k, −$100 per $1,000.

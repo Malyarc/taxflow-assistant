@@ -3009,6 +3009,10 @@ components:
           type: ["number", "null"]
         interestIncome:
           type: ["number", "null"]
+        earlyWithdrawalPenalty:
+          type: ["number", "null"]
+        usTreasuryInterest:
+          type: ["number", "null"]
         taxExemptInterest:
           type: ["number", "null"]
         ordinaryDividends:
@@ -3070,6 +3074,10 @@ components:
         otherIncome:
           type: ["number", "null"]
         interestIncome:
+          type: ["number", "null"]
+        earlyWithdrawalPenalty:
+          type: ["number", "null"]
+        usTreasuryInterest:
           type: ["number", "null"]
         taxExemptInterest:
           type: ["number", "null"]

@@ -245,9 +245,11 @@ header("H13. Tax-exempt interest in SS MAGI (Pub 915)");
   const r = run({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
     form1099s: [
       { taxYear: 2024, formType: "r", payerName: "Pension", taxableAmount: 20000 },
-      { taxYear: 2024, formType: "int", payerName: "Muni", interestIncome: 30000, taxExemptInterest: 30000 },
+      // $30k PURE tax-exempt muni interest = 1099-INT Box 8 only (Box 1 = 0;
+      // the boxes are disjoint — Box 8 is never netted out of taxable Box 1).
+      { taxYear: 2024, formType: "int", payerName: "Muni", taxExemptInterest: 30000 },
     ] });
-  // AGI = $20k taxable retirement + $0 net interest (tax-exempt portion subtracted).
+  // AGI = $20k taxable retirement + $0 taxable interest (all interest is exempt).
   check("H13", "Tax-exempt interest correctly excluded from AGI",
     r.adjustedGrossIncome, 20000, 1,
     "Form 1040 Line 2a tax-exempt; not included in AGI");

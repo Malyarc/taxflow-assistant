@@ -85,18 +85,18 @@ async function run() {
     check("AGI = $50k - 1/2 SE tax", Number(ret.adjustedGrossIncome), 50000 - 7064.78 / 2, 1);
   });
 
-  // ── Test 2: 1099-INT with tax-exempt portion subtracts correctly ──
-  console.log("\n── 2. 1099-INT tax-exempt portion is subtracted from taxable interest ──");
+  // ── Test 2: 1099-INT Box 1 and Box 8 are DISJOINT (Box 8 not netted) ──
+  console.log("\n── 2. 1099-INT Box 8 (tax-exempt) is NOT subtracted from taxable Box 1 ──");
   await withTempClient({}, async (cid) => {
-    // $10k total interest, $4k tax-exempt
+    // Box 1 (taxable) = $10k, Box 8 (tax-exempt) = $4k — disjoint on the form.
     await api(`/clients/${cid}/form1099data`, {
       method: "POST",
       body: JSON.stringify({ taxYear: 2024, formType: "int", payerName: "Bank", interestIncome: 10000, taxExemptInterest: 4000 }),
     });
     await settle();
     const ret = await api<any>(`/clients/${cid}/tax-return`);
-    // Taxable interest = $6k (10k - 4k)
-    check("Tax-exempt subtracted: total income = $6k", Number(ret.totalIncome), 6000);
+    // Taxable interest = Box 1 = $10k (Box 8 is separate tax-exempt, never netted).
+    check("Box 8 not subtracted: total income = $10k", Number(ret.totalIncome), 10000);
   });
 
   // ── Test 3: 1099-DIV qualified dividends count once ──
