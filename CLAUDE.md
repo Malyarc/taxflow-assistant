@@ -6,6 +6,8 @@ Project-level notes for Claude sessions. Things that change every sprint live in
 
 ## Deploy policy (STANDING — set by John 2026-06-03)
 
+**Git workflow (STANDING — set by John 2026-06-11): finish every chunk of work on `main`.** Work may be staged on a feature branch, but always end by merging (fast-forward preferred) into `main` and pushing `main` — do not leave finished work stranded on a side branch. **At the START of every session: `git fetch origin` + `git pull` (or fast-forward) the current branch AND `main`, and reconcile any divergence (rebase/merge as appropriate) BEFORE building anything new** — sessions may run from different machines/environments (local Mac, cloud sandbox), so never assume the local clone is current.
+
 **Always merge to `main` and deploy EVERYTHING to prod (api-server + frontend rsync + DB schema) after completing a chunk of work — do NOT ask first.** Work may be staged on a feature branch, but finish by fast-forwarding `main`, pushing, running the full EC2 deploy cycle (see "EC2 deploy" below) + the frontend rsync, applying any schema change to the prod DB, then health-check.
 
 **DB schema → prod — VERSIONED MIGRATIONS are now the source of truth (cutover COMPLETE 2026-06-04: dev + prod baselined to `0000`+`0001`; the EC2 deploy runs `drizzle-kit migrate`).** Normal path: edit `lib/db/src/schema/*` → `pnpm --filter @workspace/db run generate` → **REVIEW the generated SQL** (catch any drop/rename) → commit → the deploy's `migrate` step applies it. The additive/destructive rules below still govern any *out-of-band* hotfix DDL (when you can't do a full deploy):**
