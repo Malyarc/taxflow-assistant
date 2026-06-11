@@ -14,6 +14,16 @@ export const adjustmentsTable = pgTable("adjustments", {
   /** E2 — optional spouse attribution ("taxpayer" | "spouse"), used for MFJ
    *  per-spouse Sch SE Line-9 attribution of a self_employment_income adjustment. */
   spouse: text("spouse"),
+  /**
+   * T1.0j (M-4) — optional tax-year scoping. NULL = the adjustment applies to
+   * EVERY tax year (the historical behavior — all pre-existing rows are NULL,
+   * so nothing changes for them). A non-null year restricts the adjustment to
+   * that year only (the pipeline filters `tax_year IS NULL OR tax_year = :year`).
+   * The AI document-approve path writes the approved document's tax year here
+   * so a TY2024 1098 approved next to a TY2025 1098 no longer double-counts
+   * mortgage interest into both years.
+   */
+  taxYear: integer("tax_year"),
   isApplied: boolean("is_applied").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),

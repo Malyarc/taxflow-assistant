@@ -18,11 +18,27 @@ import {
   extract1099DataFromFile,
   extractInfoReturnFromFile,
   mapInfoReturnToInputs,
+  applyWashSaleAddBack,
+  shouldSuggestIraCoverage,
   type InfoReturnType,
   detectMimeType,
   isVisualMimeType,
   validateAndResolveMimeType,
 } from "../lib/documentExtractor";
+
+/**
+ * T1.0j (M-2) — thrown inside an approve/reject transaction when the
+ * status-guarded document UPDATE matched 0 rows: a concurrent request already
+ * flipped the doc out of `pending_review`. The throw ROLLS BACK the income-
+ * record insert (preventing the double-approve → doubled-income race) and the
+ * handler maps it to HTTP 409.
+ */
+class DocumentStatusConflictError extends Error {
+  constructor() {
+    super("Document is no longer pending review — a concurrent request already approved or rejected it.");
+    this.name = "DocumentStatusConflictError";
+  }
+}
 
 /** Document types routed to the unified information-return extractor (1098 /
  *  1098-T / 1098-E / 1095-A / SSA-1099 / W-2G). */
@@ -378,39 +394,83 @@ router.post("/clients/:clientId/documents/:documentId/approve", async (req, res)
     // Without a transaction, a failure between the two writes could orphan the
     // W-2 row while leaving the document `pending_review` (re-approvable →
     // double-counted income).
-    const { record, updatedDoc } = await db.transaction(async (tx) => {
-      const [inserted] = await tx
-        .insert(w2DataTable)
-        .values({
-          clientId: params.data.clientId,
-          documentId: doc.id,
-          taxYear: parsed.data.taxYear,
-          employerName: parsed.data.employerName ?? undefined,
-          employerEin: parsed.data.employerEin ?? undefined,
-          employeeSSN: encryptField(parsed.data.employeeSSN) ?? undefined,
-          wagesBox1: numericToString(parsed.data.wagesBox1),
-          federalTaxWithheldBox2: numericToString(parsed.data.federalTaxWithheldBox2),
-          socialSecurityWagesBox3: numericToString(parsed.data.socialSecurityWagesBox3),
-          socialSecurityTaxBox4: numericToString(parsed.data.socialSecurityTaxBox4),
-          medicareWagesBox5: numericToString(parsed.data.medicareWagesBox5),
-          medicareTaxBox6: numericToString(parsed.data.medicareTaxBox6),
-          stateTaxWithheldBox17: numericToString(parsed.data.stateTaxWithheldBox17),
-          stateWagesBox16: numericToString(parsed.data.stateWagesBox16),
-          stateCode: parsed.data.stateCode ?? undefined,
-          fieldBoxes,
-        })
-        .returning();
-      const [doc2] = await tx
-        .update(taxDocumentsTable)
-        .set({
-          status: "approved",
-          linkedRecordId: inserted.id,
-          linkedRecordType: "w2",
-        })
-        .where(eq(taxDocumentsTable.id, doc.id))
-        .returning();
-      return { record: inserted, updatedDoc: doc2 };
-    });
+    let txResult: { record: typeof w2DataTable.$inferSelect; updatedDoc: typeof taxDocumentsTable.$inferSelect; iraFlagSet: boolean };
+    try {
+      txResult = await db.transaction(async (tx) => {
+        const [inserted] = await tx
+          .insert(w2DataTable)
+          .values({
+            clientId: params.data.clientId,
+            documentId: doc.id,
+            taxYear: parsed.data.taxYear,
+            employerName: parsed.data.employerName ?? undefined,
+            employerEin: parsed.data.employerEin ?? undefined,
+            employeeSSN: encryptField(parsed.data.employeeSSN) ?? undefined,
+            wagesBox1: numericToString(parsed.data.wagesBox1),
+            federalTaxWithheldBox2: numericToString(parsed.data.federalTaxWithheldBox2),
+            socialSecurityWagesBox3: numericToString(parsed.data.socialSecurityWagesBox3),
+            socialSecurityTaxBox4: numericToString(parsed.data.socialSecurityTaxBox4),
+            medicareWagesBox5: numericToString(parsed.data.medicareWagesBox5),
+            medicareTaxBox6: numericToString(parsed.data.medicareTaxBox6),
+            stateTaxWithheldBox17: numericToString(parsed.data.stateTaxWithheldBox17),
+            stateWagesBox16: numericToString(parsed.data.stateWagesBox16),
+            stateCode: parsed.data.stateCode ?? undefined,
+            // T1.0j (M-5) — W-2 extraction depth: Box 10 / Box 12 codes /
+            // Box 13 retirement-plan / Boxes 18-20 local. Persisted for CPA
+            // reference; Box 13 additionally drives the IRA-coverage suggestion
+            // below. The rest are NOT yet engine-wired (documented on the
+            // schema columns).
+            dependentCareBenefitsBox10: numericToString(parsed.data.dependentCareBenefitsBox10),
+            box12Codes: parsed.data.box12Codes && parsed.data.box12Codes.length > 0 ? parsed.data.box12Codes : null,
+            retirementPlanBox13: parsed.data.retirementPlanBox13 ?? null,
+            localWagesBox18: numericToString(parsed.data.localWagesBox18),
+            localTaxBox19: numericToString(parsed.data.localTaxBox19),
+            localityNameBox20: parsed.data.localityNameBox20 ?? undefined,
+            fieldBoxes,
+          })
+          .returning();
+        // T1.0j (M-5) — Box 13 "Retirement plan" checked → suggest the client's
+        // iraCoveredByWorkplacePlan flag (drives the §219(g) IRA-deduction
+        // phase-out). Applied ONLY when the flag is currently false/null — an
+        // approve never silently overwrites a CPA's explicit setting, and an
+        // unchecked box never UNSETS it. Surfaced in the response `notes`.
+        let iraFlagSet = false;
+        if (parsed.data.retirementPlanBox13 === true) {
+          const [clientRow] = await tx
+            .select({ iraCoveredByWorkplacePlan: clientsTable.iraCoveredByWorkplacePlan })
+            .from(clientsTable)
+            .where(eq(clientsTable.id, params.data.clientId));
+          if (clientRow && shouldSuggestIraCoverage(true, clientRow.iraCoveredByWorkplacePlan)) {
+            await tx
+              .update(clientsTable)
+              .set({ iraCoveredByWorkplacePlan: true })
+              .where(eq(clientsTable.id, params.data.clientId));
+            iraFlagSet = true;
+          }
+        }
+        // T1.0j (M-2) — STATUS-GUARDED update: only an actually-pending doc can
+        // flip to approved. 0 rows = a concurrent approve/reject won the race →
+        // throw to roll back the W-2 insert above (no doubled income).
+        const [doc2] = await tx
+          .update(taxDocumentsTable)
+          .set({
+            status: "approved",
+            linkedRecordId: inserted.id,
+            linkedRecordType: "w2",
+          })
+          .where(and(eq(taxDocumentsTable.id, doc.id), eq(taxDocumentsTable.status, "pending_review")))
+          .returning();
+        if (!doc2) throw new DocumentStatusConflictError();
+        return { record: inserted, updatedDoc: doc2, iraFlagSet };
+      });
+    } catch (err) {
+      if (err instanceof DocumentStatusConflictError) {
+        res.status(409).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
+    const { record, updatedDoc, iraFlagSet } = txResult;
     await writeAudit({
       clientId: params.data.clientId,
       action: "create",
@@ -419,6 +479,16 @@ router.post("/clients/:clientId/documents/:documentId/approve", async (req, res)
       after: record,
       source: auditSource,
     });
+    if (iraFlagSet) {
+      await writeAudit({
+        clientId: params.data.clientId,
+        action: "update",
+        entityType: "client",
+        entityId: params.data.clientId,
+        after: { iraCoveredByWorkplacePlan: true },
+        source: `${auditSource} — W-2 Box 13 'Retirement plan' checked`,
+      });
+    }
     await writeAudit({
       clientId: params.data.clientId,
       action: "update",
@@ -432,7 +502,16 @@ router.post("/clients/:clientId/documents/:documentId/approve", async (req, res)
     // default year). Approving a prior-year W-2/1099 must refresh THAT year's
     // return row; passing the year also avoids recomputing an unrelated year.
     await recalculateAfterMutation(params.data.clientId, parsed.data.taxYear);
-    res.json(updatedDoc);
+    res.json({
+      ...updatedDoc,
+      ...(iraFlagSet
+        ? {
+            notes: [
+              "W-2 Box 13 'Retirement plan' is checked — the client's 'IRA: covered by workplace plan' flag was turned ON (it drives the §219(g) IRA-deduction phase-out). Adjust it on the client form if that's wrong.",
+            ],
+          }
+        : {}),
+    });
     return;
   }
 
@@ -448,11 +527,21 @@ router.post("/clients/:clientId/documents/:documentId/approve", async (req, res)
     // engine's summarize1099s + the manual-create path use lowercase ("int").
     // Storing uppercase made the engine drop the record's income. (Audit F1.)
     const formType = parsed.data.formType.toLowerCase();
+    // T1.0j (M-3) — 1099-B Box 1g wash-sale add-back. The extraction reports
+    // RAW realized ST/LT totals plus Box 1g separately; per Form 8949 code "W"
+    // the disallowed loss is a POSITIVE adjustment (gain = proceeds − basis +
+    // 1g), so fold it back into the stored short-term aggregate at approve —
+    // the quick path can then never overstate losses. See applyWashSaleAddBack.
+    const bGainLoss = formType === "b"
+      ? applyWashSaleAddBack(parsed.data.shortTermGainLoss, parsed.data.longTermGainLoss, parsed.data.washSaleLossDisallowed)
+      : { shortTermGainLoss: parsed.data.shortTermGainLoss ?? null, longTermGainLoss: parsed.data.longTermGainLoss ?? null };
     // Insert the 1099 record AND approve the document atomically (see W-2 note).
-    const { record, updatedDoc } = await db.transaction(async (tx) => {
-      const [inserted] = await tx
-        .insert(form1099DataTable)
-        .values({
+    let txResult1099: { record: typeof form1099DataTable.$inferSelect; updatedDoc: typeof taxDocumentsTable.$inferSelect };
+    try {
+      txResult1099 = await db.transaction(async (tx) => {
+        const [inserted] = await tx
+          .insert(form1099DataTable)
+          .values({
           clientId: params.data.clientId,
           documentId: doc.id,
           taxYear: parsed.data.taxYear,
@@ -479,8 +568,10 @@ router.post("/clients/:clientId/documents/:documentId/approve", async (req, res)
           nondividendDistributions: numericToString(parsed.data.nondividendDistributions),
           proceeds: numericToString(parsed.data.proceeds),
           costBasis: numericToString(parsed.data.costBasis),
-          shortTermGainLoss: numericToString(parsed.data.shortTermGainLoss),
-          longTermGainLoss: numericToString(parsed.data.longTermGainLoss),
+          // T1.0j (M-3) — ST/LT after the Box 1g wash-sale add-back (no-op for
+          // non-B subtypes / absent 1g).
+          shortTermGainLoss: numericToString(bGainLoss.shortTermGainLoss),
+          longTermGainLoss: numericToString(bGainLoss.longTermGainLoss),
           grossDistribution: numericToString(parsed.data.grossDistribution),
           taxableAmount: numericToString(parsed.data.taxableAmount),
           distributionCode: parsed.data.distributionCode ?? undefined,
@@ -491,17 +582,27 @@ router.post("/clients/:clientId/documents/:documentId/approve", async (req, res)
           fieldBoxes,
         })
         .returning();
-      const [doc2] = await tx
-        .update(taxDocumentsTable)
-        .set({
-          status: "approved",
-          linkedRecordId: inserted.id,
-          linkedRecordType: "form1099",
-        })
-        .where(eq(taxDocumentsTable.id, doc.id))
-        .returning();
-      return { record: inserted, updatedDoc: doc2 };
-    });
+        // T1.0j (M-2) — status-guarded update (see the W-2 branch).
+        const [doc2] = await tx
+          .update(taxDocumentsTable)
+          .set({
+            status: "approved",
+            linkedRecordId: inserted.id,
+            linkedRecordType: "form1099",
+          })
+          .where(and(eq(taxDocumentsTable.id, doc.id), eq(taxDocumentsTable.status, "pending_review")))
+          .returning();
+        if (!doc2) throw new DocumentStatusConflictError();
+        return { record: inserted, updatedDoc: doc2 };
+      });
+    } catch (err) {
+      if (err instanceof DocumentStatusConflictError) {
+        res.status(409).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
+    const { record, updatedDoc } = txResult1099;
     await writeAudit({
       clientId: params.data.clientId,
       action: "create",
@@ -546,6 +647,9 @@ router.post("/clients/:clientId/documents/:documentId/approve", async (req, res)
         annualSlcsp: parsed.data.annualSlcsp ?? undefined,
         annualAdvancePtc: parsed.data.annualAdvancePtc ?? undefined,
         netSocialSecurityBenefits: parsed.data.netSocialSecurityBenefits ?? undefined,
+        // T1.0j (H-1) — SSA-1099 Box 6 voluntary federal withholding →
+        // withholding_adjustment (the W-2G Box 4 pattern).
+        voluntaryFederalWithholding: parsed.data.voluntaryFederalWithholding ?? undefined,
         gamblingWinnings: parsed.data.gamblingWinnings ?? undefined,
         gamblingFederalWithheld: parsed.data.gamblingFederalWithheld ?? undefined,
       },
@@ -557,7 +661,9 @@ router.post("/clients/:clientId/documents/:documentId/approve", async (req, res)
     }
     const patch = mapping.clientPatch;
     const hasPatch = Object.keys(patch).length > 0;
-    const { insertedAdjustments, firstId, updatedDoc } = await db.transaction(async (tx) => {
+    let txResultInfo: { insertedAdjustments: Array<typeof adjustmentsTable.$inferSelect>; firstId: number | null; updatedDoc: typeof taxDocumentsTable.$inferSelect };
+    try {
+      txResultInfo = await db.transaction(async (tx) => {
       const inserted = mapping.adjustments.length > 0
         ? await tx.insert(adjustmentsTable).values(
             mapping.adjustments.map((a) => ({
@@ -566,6 +672,11 @@ router.post("/clients/:clientId/documents/:documentId/approve", async (req, res)
               amount: String(a.amount),
               description: a.description,
               category: "ai_extracted",
+              // T1.0j (M-4) — scope the adjustment to the APPROVED document's
+              // tax year so a TY2024 1098 + a TY2025 1098 no longer stack their
+              // mortgage interest into every year's return. (Manual adjustments
+              // keep NULL = all years; see the adjustments schema comment.)
+              taxYear: parsed.data.taxYear,
               isApplied: true,
             })),
           ).returning()
@@ -581,12 +692,22 @@ router.post("/clients/:clientId/documents/:documentId/approve", async (req, res)
           .where(eq(clientsTable.id, params.data.clientId));
       }
       const linkedId = inserted[0]?.id ?? null;
+      // T1.0j (M-2) — status-guarded update (see the W-2 branch).
       const [doc2] = await tx.update(taxDocumentsTable)
         .set({ status: "approved", linkedRecordId: linkedId, linkedRecordType: "info_return" })
-        .where(eq(taxDocumentsTable.id, doc.id))
+        .where(and(eq(taxDocumentsTable.id, doc.id), eq(taxDocumentsTable.status, "pending_review")))
         .returning();
+      if (!doc2) throw new DocumentStatusConflictError();
       return { insertedAdjustments: inserted, firstId: linkedId, updatedDoc: doc2 };
-    });
+      });
+    } catch (err) {
+      if (err instanceof DocumentStatusConflictError) {
+        res.status(409).json({ error: err.message });
+        return;
+      }
+      throw err;
+    }
+    const { insertedAdjustments, firstId, updatedDoc } = txResultInfo;
     for (const a of insertedAdjustments) {
       await writeAudit({ clientId: params.data.clientId, action: "create", entityType: "adjustment", entityId: a.id, after: a, source: auditSource });
     }
@@ -646,14 +767,20 @@ router.post("/clients/:clientId/documents/:documentId/reject", async (req, res):
     return;
   }
 
+  // T1.0j (M-2) — status-guarded update: a reject racing an approve must not
+  // mark an already-approved doc (whose income record exists) as rejected.
   const [updatedDoc] = await db
     .update(taxDocumentsTable)
     .set({
       status: "rejected",
       rejectionReason: parsed.data.reason ?? null,
     })
-    .where(eq(taxDocumentsTable.id, doc.id))
+    .where(and(eq(taxDocumentsTable.id, doc.id), eq(taxDocumentsTable.status, "pending_review")))
     .returning();
+  if (!updatedDoc) {
+    res.status(409).json({ error: "Document is no longer pending review — a concurrent request already approved or rejected it." });
+    return;
+  }
 
   await writeAudit({
     clientId: params.data.clientId,

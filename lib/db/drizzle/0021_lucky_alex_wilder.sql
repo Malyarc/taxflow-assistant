@@ -1,2 +1,0 @@
-ALTER TABLE "tax_returns" ADD COLUMN "excess_social_security_credit" numeric(14, 2) DEFAULT '0' NOT NULL;--> statement-breakpoint
-ALTER TABLE "tax_returns" ADD COLUMN "additional_medicare_withholding" numeric(14, 2) DEFAULT '0' NOT NULL;

@@ -8,7 +8,7 @@ import {
   UpdateTaxReturnParams,
   UpdateTaxReturnBody,
 } from "@workspace/api-zod";
-import { recalculateAndUpsertTaxReturn, computeTaxReturn } from "../lib/taxReturnPipeline";
+import { recalculateAndUpsertTaxReturn, computeTaxReturn, filterAdjustmentsForYear } from "../lib/taxReturnPipeline";
 import { buildTaxReturnPdf } from "../lib/pdfExport";
 import { buildIrsForm1040Pdf } from "../lib/irsForm1040Pdf";
 import { calculateForm4868, buildForm4868Pdf, type Form4868Input } from "../lib/form4868";
@@ -454,11 +454,14 @@ router.get("/clients/:clientId/tax-return/diagnostics", async (req, res): Promis
  *     balances (sum across all traditional_ira, sep_ira, simple_ira types)
  */
 async function loadForm8606Inputs(clientId: number) {
-  const [adjustments, assets, clientRows] = await Promise.all([
+  const [allAdjustmentRows, assets, clientRows] = await Promise.all([
     db.select().from(adjustmentsTable).where(eq(adjustmentsTable.clientId, clientId)),
     db.select().from(assetBalancesTable).where(eq(assetBalancesTable.clientId, clientId)),
     db.select().from(clientsTable).where(eq(clientsTable.id, clientId)),
   ]);
+  // T1.0j (M-4) — scope to the client's current tax year (NULL rows = all years).
+  const clientTaxYear = clientRows[0]?.taxYear ?? new Date().getFullYear() - 1;
+  const adjustments = filterAdjustmentsForYear(allAdjustmentRows, clientTaxYear);
   const num = (v: string | number | null | undefined): number => {
     if (v == null) return 0;
     const n = Number(v);
@@ -1111,10 +1114,14 @@ async function loadForm8990Data(
   computed: { result: import("../lib/taxReturnEngine").ComputedTaxReturn; client: { firstName?: string | null; lastName?: string | null; filingStatus: string }; clientId: number },
 ): Promise<Form8990Data> {
   const ret = computed.result;
-  const adjustments = await db
-    .select()
-    .from(adjustmentsTable)
-    .where(eq(adjustmentsTable.clientId, computed.clientId));
+  // T1.0j (M-4) — year-scoped rows only count for their own year.
+  const adjustments = filterAdjustmentsForYear(
+    await db
+      .select()
+      .from(adjustmentsTable)
+      .where(eq(adjustmentsTable.clientId, computed.clientId)),
+    ret.taxYear,
+  );
   const num = (v: string | number | null | undefined): number => {
     if (v == null) return 0;
     const n = Number(v);

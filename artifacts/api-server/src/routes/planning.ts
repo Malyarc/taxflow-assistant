@@ -36,7 +36,7 @@ import {
   discoverPlanningCandidates,
 } from "../lib/planningMemo";
 import { consentRequired, hasValidConsent, AI_EXTRACTION_SCOPE } from "../lib/consentGate";
-import { computeTaxReturn, loadTaxReturnInputs } from "../lib/taxReturnPipeline";
+import { computeTaxReturn, loadTaxReturnInputs, filterAdjustmentsForYear } from "../lib/taxReturnPipeline";
 import { buildPlanningCalendar } from "../lib/planningCalendar";
 import { buildPlanningReportPdf } from "../lib/planningReportPdf";
 import { sanitizeQuestion, answerReturnQuestion } from "../lib/returnQa";
@@ -73,10 +73,14 @@ function num(v: string | number | null | undefined): number {
 async function loadPlanningContext(clientId: number) {
   const computed = await computeTaxReturn(clientId);
   if (!computed) return null;
-  const adjustments = await db
-    .select()
-    .from(adjustmentsTable)
-    .where(eq(adjustmentsTable.clientId, clientId));
+  // T1.0j (M-4) — drop adjustments year-scoped to a DIFFERENT year.
+  const adjustments = filterAdjustmentsForYear(
+    await db
+      .select()
+      .from(adjustmentsTable)
+      .where(eq(adjustmentsTable.clientId, clientId)),
+    computed.result.taxYear,
+  );
   // H2 — pass the assembled inputs so detectors can run what-if scenarios
   // for engine-verified deltas.
   const hits = evaluatePlanningOpportunities({
@@ -155,10 +159,14 @@ router.get("/clients/:clientId/planning-opportunities", async (req, res): Promis
     // Pull adjustments separately — computeTaxReturn doesn't surface them
     // but the planning detectors need them (e.g., G1.1 SEP-IRA suppression,
     // G1.2 PTET SALT lookup, G1.5 ISO bargain element, etc.).
-    const adjustments = await db
-      .select()
-      .from(adjustmentsTable)
-      .where(eq(adjustmentsTable.clientId, params.data.clientId));
+    // T1.0j (M-4) — year-scoped rows only count for their own year.
+    const adjustments = filterAdjustmentsForYear(
+      await db
+        .select()
+        .from(adjustmentsTable)
+        .where(eq(adjustmentsTable.clientId, params.data.clientId)),
+      computed.result.taxYear,
+    );
 
     // H2 — pass baselineInputs so detectors can attach engine-verified
     // whatIf data to each opportunity hit.
@@ -207,10 +215,14 @@ router.get("/clients/:clientId/planning-calendar", async (req, res): Promise<voi
       res.status(404).json({ error: "Client not found" });
       return;
     }
-    const adjustments = await db
-      .select()
-      .from(adjustmentsTable)
-      .where(eq(adjustmentsTable.clientId, params.data.clientId));
+    // T1.0j (M-4) — year-scoped rows only count for their own year.
+    const adjustments = filterAdjustmentsForYear(
+      await db
+        .select()
+        .from(adjustmentsTable)
+        .where(eq(adjustmentsTable.clientId, params.data.clientId)),
+      computed.result.taxYear,
+    );
     const hits = evaluatePlanningOpportunities({
       client: computed.client,
       computed: computed.result,

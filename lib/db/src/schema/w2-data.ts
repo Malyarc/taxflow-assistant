@@ -27,6 +27,29 @@ export const w2DataTable = pgTable(
     stateTaxWithheldBox17: numeric("state_tax_withheld_box17", { precision: 12, scale: 2 }),
     stateWagesBox16: numeric("state_wages_box16", { precision: 12, scale: 2 }),
     stateCode: text("state_code"),
+    /**
+     * T1.0j (M-5) — W-2 extraction depth. Box 10 dependent-care benefits.
+     * PERSISTED ONLY for now: the engine has no dependent-care-benefits concept
+     * yet (the §21 credit reads the `dependent_care_expenses` adjustment; a DCB
+     * exclusion/Form 2441 Part III model is a documented follow-up). Captured so
+     * the CPA sees it and nothing is silently lost.
+     */
+    dependentCareBenefitsBox10: numeric("dependent_care_benefits_box10", { precision: 12, scale: 2 }),
+    /** T1.0j (M-5) — Box 12 codes (a–d) as an array of { code, amount } pairs,
+     *  e.g. [{"code":"D","amount":23000},{"code":"W","amount":4150}]. Persisted
+     *  for CPA reference; not yet auto-wired into the engine. */
+    box12Codes: jsonb("box12_codes"),
+    /** T1.0j (M-5) — Box 13 "Retirement plan" checkbox. NULL = not extracted.
+     *  At document-approve, TRUE suggests setting the client's
+     *  iraCoveredByWorkplacePlan flag (drives the §219(g) IRA phase-out) —
+     *  applied only when the client flag is currently false (never overwrites). */
+    retirementPlanBox13: boolean("retirement_plan_box13"),
+    /** T1.0j (M-5) — Boxes 18–20 local wages / local income tax / locality name.
+     *  Persisted for CPA reference (the engine's local tax model is driven by
+     *  client.localityCode, not per-W-2 boxes). */
+    localWagesBox18: numeric("local_wages_box18", { precision: 12, scale: 2 }),
+    localTaxBox19: numeric("local_tax_box19", { precision: 12, scale: 2 }),
+    localityNameBox20: text("locality_name_box20"),
     /** K1 MFJ sub-gap — which spouse this W-2 belongs to ("taxpayer" or "spouse").
      *  Used only for MFJ per-spouse Sch SE Line 9 SS wage base computation.
      *  Default "taxpayer". Ignored for non-MFJ filing statuses. */

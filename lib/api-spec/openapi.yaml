@@ -2607,9 +2607,21 @@ components:
           description: PK of the w2_data / form_1099_data row this doc was approved into.
         linkedRecordType:
           type: ["string", "null"]
-          enum: [w2, form1099, null]
+          # info_return: the doc was approved into adjustments / client fields
+          # (1098 / 1098-T / 1098-E / 1095-A / SSA-1099 / W-2G) — the server has
+          # written this value since the info-return approve path shipped.
+          enum: [w2, form1099, info_return, null]
         rejectionReason:
           type: ["string", "null"]
+        notes:
+          type: array
+          items:
+            type: string
+          description: |
+            T1.0j — optional, RESPONSE-ONLY (never persisted): side-effect notes
+            from the approve handler the CPA should see (e.g. "W-2 Box 13
+            'Retirement plan' is checked — the client's IRA-coverage flag was
+            turned on").
         createdAt:
           type: string
           format: date-time
@@ -2663,6 +2675,30 @@ components:
           type: ["number", "null"]
         stateTaxWithheldBox17:
           type: ["number", "null"]
+        # T1.0j (M-5) — W-2 extraction depth: Box 10 / Box 12 codes / Box 13
+        # retirement-plan checkbox / Boxes 18-20 local. Persisted on w2_data;
+        # Box 13 TRUE additionally suggests the client's iraCoveredByWorkplacePlan
+        # flag (only set when currently false; noted in the response `notes`).
+        dependentCareBenefitsBox10:
+          type: ["number", "null"]
+        box12Codes:
+          type: array
+          items:
+            type: object
+            required: [code, amount]
+            properties:
+              code:
+                type: string
+              amount:
+                type: number
+        retirementPlanBox13:
+          type: ["boolean", "null"]
+        localWagesBox18:
+          type: ["number", "null"]
+        localTaxBox19:
+          type: ["number", "null"]
+        localityNameBox20:
+          type: ["string", "null"]
         # 1099 fields (relevant when recordType === "form1099")
         formType:
           type: ["string", "null"]
@@ -2717,6 +2753,14 @@ components:
           type: ["number", "null"]
         longTermGainLoss:
           type: ["number", "null"]
+        washSaleLossDisallowed:
+          type: ["number", "null"]
+          description: |
+            T1.0j (M-3) — 1099-B Box 1g wash sale loss disallowed (IRC §1091).
+            Added BACK into the stored short-term gain/loss at approve (Form 8949
+            code "W" positive adjustment) so the aggregate path can't overstate
+            losses. Enter $0 if the broker's ST/LT totals already include the
+            wash-sale adjustment.
         # 1099-R
         grossDistribution:
           type: ["number", "null"]
@@ -2761,6 +2805,12 @@ components:
           type: ["number", "null"]
         netSocialSecurityBenefits:
           type: ["number", "null"]
+        voluntaryFederalWithholding:
+          type: ["number", "null"]
+          description: |
+            T1.0j (H-1) — SSA-1099 Box 6 voluntary federal income tax withheld
+            (W-4V election). Mapped to a withholding_adjustment on approve (the
+            W-2G Box 4 pattern) — previously extracted but silently dropped.
         gamblingWinnings:
           type: ["number", "null"]
         gamblingFederalWithheld:
@@ -2808,6 +2858,28 @@ components:
         stateWagesBox16:
           type: ["number", "null"]
         stateCode:
+          type: ["string", "null"]
+        # T1.0j (M-5) — W-2 extraction depth (persisted from the AI approve path;
+        # Box 13 also drives the client IRA-coverage suggestion at approve).
+        dependentCareBenefitsBox10:
+          type: ["number", "null"]
+        box12Codes:
+          type: ["array", "null"]
+          items:
+            type: object
+            required: [code, amount]
+            properties:
+              code:
+                type: string
+              amount:
+                type: number
+        retirementPlanBox13:
+          type: ["boolean", "null"]
+        localWagesBox18:
+          type: ["number", "null"]
+        localTaxBox19:
+          type: ["number", "null"]
+        localityNameBox20:
           type: ["string", "null"]
         spouse:
           type: string
@@ -3351,6 +3423,9 @@ components:
         spouse:
           type: ["string", "null"]
           description: E2 — optional MFJ spouse attribution ("taxpayer" | "spouse") for a self_employment_income adjustment's Sch SE Line-9 SS-wage-base credit.
+        taxYear:
+          type: ["integer", "null"]
+          description: T1.0j (M-4) — optional tax-year scoping. NULL (default) = applies to EVERY tax year (the historical behavior); a year restricts the adjustment to that year only. The AI document-approve path writes the approved document's tax year.
         isApplied:
           type: boolean
         createdAt:
@@ -3376,6 +3451,9 @@ components:
         spouse:
           type: ["string", "null"]
           description: E2 — optional MFJ spouse attribution ("taxpayer" | "spouse") for a self_employment_income adjustment's Sch SE Line-9 SS-wage-base credit.
+        taxYear:
+          type: ["integer", "null"]
+          description: T1.0j (M-4) — optional tax-year scoping. Omit/NULL = applies to every tax year; a year restricts the adjustment to that year only.
         isApplied:
           type: boolean
 
@@ -3394,6 +3472,9 @@ components:
         spouse:
           type: ["string", "null"]
           description: E2 — optional MFJ spouse attribution ("taxpayer" | "spouse") for a self_employment_income adjustment's Sch SE Line-9 SS-wage-base credit.
+        taxYear:
+          type: ["integer", "null"]
+          description: T1.0j (M-4) — optional tax-year scoping. NULL = applies to every tax year; a year restricts the adjustment to that year only.
         isApplied:
           type: boolean
 
