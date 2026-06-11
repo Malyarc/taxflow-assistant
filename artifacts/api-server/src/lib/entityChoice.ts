@@ -81,6 +81,17 @@ const SE_INCOME_TYPES = new Set([
   "schedule_c_expenses",
   "schedule_c_depreciation",
   "schedule_c_section179_carryforward",
+  // E7 aggregate §179 election — capped at netSeEarnings, which collapses to 0
+  // in the scenario (the deduction would silently vanish). Removed here; the
+  // baseline-applied amount is taken by the ENTITY instead (subtracted from
+  // K-1 Box 1 below), mirroring a real S-corp's separately-stated §179.
+  "section_179_expense_election",
+  // The explicit Sch-C QBI override family — the Schedule C is gone in the
+  // scenario, so a surviving override would DOUBLE-COUNT against the modeled
+  // K-1's QBI (the engine treats qbi_income as Sch-C QBI regardless).
+  "qbi_income",
+  "qbi_w2_wages",
+  "qbi_ubia",
   "qbi_sstb_flag",
   // Notice 2008-1 — modeled as net-zero under the S-corp (see module doc).
   "self_employed_health_insurance_premiums",
@@ -296,10 +307,17 @@ export function analyzeEntityChoice(args: AnalyzeEntityChoiceArgs): EntityChoice
   };
 
   const solePropNet = netTaxAfterCredits(baselineReturn);
+  // E7 aggregate §179 election — the engine deducts it ABOVE THE LINE capped
+  // at net SE earnings, so it is NOT inside netScheduleCProfit and would
+  // vanish in the scenario (cap → 0). The ENTITY takes the same deduction
+  // instead: subtract the baseline-APPLIED amount from K-1 Box 1 (a real
+  // S-corp's separately-stated §179). The unapplied carryforward stays the
+  // CPA's ledger either way.
+  const section179Applied = baselineReturn.section179Applied;
   const options: EntityChoiceOption[] = [];
   for (const wages of levels) {
     const { employerFica, futa } = employerPayrollTaxes(wages, taxYear);
-    const sCorpBox1 = round2(profit - wages - employerFica - futa);
+    const sCorpBox1 = round2(profit - wages - employerFica - futa - section179Applied);
     // Wages at/above profit make the election strictly worse (entity loss +
     // full FICA) — skip the level rather than chart nonsense.
     if (sCorpBox1 < 0) continue;
@@ -343,6 +361,7 @@ export function analyzeEntityChoice(args: AnalyzeEntityChoiceArgs): EntityChoice
     "Employee 6.2% SS respects the per-person annual base across other W-2 jobs (excess SS withholding is credited on the 1040); Additional Medicare 0.9% is computed by the engine on the W-2.",
     "SE health premiums: deducted in the sole-prop baseline (§162(l)); modeled net-zero under the S-corp (Box-1 wages offset by the §162(l) deduction per Notice 2008-1).",
     "Existing retirement contributions are held at baseline amounts — an S-corp plan keys off W-2 comp (e.g. SEP = 25% × wages), so re-run after choosing the comp level.",
+    "An aggregate §179 election (E7 adjustment) moves WITH the business: the baseline-applied amount reduces S-corp ordinary income (separately-stated §179); bonus depreciation deducts identically in both runs (no income limit) and cancels in the comparison.",
     "§199A interplay is modeled for real: K-1 QBI = S-corp ordinary income with W-2 wages = owner comp feeding the wage/UBIA limit (and the SSTB phase-out when flagged).",
     "Crypto-mining, statutory-employee, and clergy income stay on Schedule C/SE in both runs (identical → they cancel in the comparison).",
   ];

@@ -379,6 +379,50 @@ function analyze(inputs: TaxReturnInputs, reasonableComp?: number) {
     r.options[0].scenario.qbiDeduction, 21073.6, 0.01);
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// E12 — E7 aggregate §179 election moves WITH the business (sweep REGRESSION):
+//   the engine caps `section_179_expense_election` at net SE earnings, which
+//   collapses to 0 in the scenario — pre-fix the $30k deduction silently
+//   VANISHED (scenario AGI 193,838; savings understated $5,760). Now the
+//   ENTITY takes the baseline-applied amount: Box 1 = 200,000 − 80,000 −
+//   6,120 − 42 − 30,000 = 83,838 → scenario AGI = 80,000 + 83,838 = 163,838
+//   (= the no-§179 control 193,838 − 30,000, mirroring the baseline).
+// ════════════════════════════════════════════════════════════════════════════
+{
+  const r = analyze({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [],
+    form1099s: [{ taxYear: 2024, formType: "nec", nonemployeeCompensation: 200_000 }],
+    adjustments: [{ adjustmentType: "section_179_expense_election", amount: 30_000, isApplied: true }],
+    taxYear: 2024,
+  }, 80_000);
+  checkTrue("E12 applicable", r.applicable);
+  check("E12 profit $200,000 (§179 is above-the-line, not in Sch C net)", r.businessProfit, 200_000, 0.005);
+  check("E12 Box 1 nets the applied §179 = $83,838", r.options[0].sCorpOrdinaryIncome, 83_838, 0.005);
+  check("E12 scenario AGI $163,838 (deduction preserved)", r.options[0].scenario.adjustedGrossIncome, 163_838, 0.01);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// E13 — explicit `qbi_income` Sch-C override must NOT survive into the
+//   scenario (sweep REGRESSION): pre-fix the override stacked ON TOP of the
+//   modeled K-1's auto-default QBI (scenario QBI $35,847.60 — savings
+//   overstated ~$6,608, the dangerous direction). Post-fix the scenario is
+//   byte-identical to the no-override E1 scenario: QBI $22,767.60, total
+//   S-corp cost $42,877.40.
+// ════════════════════════════════════════════════════════════════════════════
+{
+  const r = analyze({
+    client: { filingStatus: "single", state: "FL", taxYear: 2024 },
+    w2s: [],
+    form1099s: [{ taxYear: 2024, formType: "nec", nonemployeeCompensation: 200_000 }],
+    adjustments: [{ adjustmentType: "qbi_income", amount: 100_000, isApplied: true }],
+    taxYear: 2024,
+  }, 80_000);
+  checkTrue("E13 applicable", r.applicable);
+  check("E13 scenario QBI $22,767.60 (no override stacking)", r.options[0].scenario.qbiDeduction, 22767.6, 0.01);
+  check("E13 total S-corp cost $42,877.40 (= the E1 scenario)", r.options[0].totalCost, 42877.4, 0.01);
+}
+
 console.log(`\nRESULTS: ${PASS.length} passed, ${FAIL.length} failed`);
 if (FAIL.length > 0) {
   for (const f of FAIL) console.error(f);

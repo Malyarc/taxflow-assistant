@@ -608,10 +608,15 @@ function RollForwardCard({ clientId }: { clientId: number }) {
       // Everything about THIS CLIENT changed year (every per-client query key
       // starts with /api/clients/:id) + the firm-wide views that aggregate it.
       // A blanket invalidateQueries() would refetch every heavy firm-wide
-      // query in the cache for no reason.
+      // query in the cache for no reason. The boundary check matters: a bare
+      // startsWith would make client 1 match /api/clients/10/… too.
       const prefix = `/api/clients/${clientId}`;
       await queryClient.invalidateQueries({
-        predicate: (q) => typeof q.queryKey[0] === "string" && (q.queryKey[0] as string).startsWith(prefix),
+        predicate: (q) => {
+          const key = q.queryKey[0];
+          if (typeof key !== "string") return false;
+          return key === prefix || key.startsWith(`${prefix}/`) || key.startsWith(`${prefix}?`);
+        },
       });
       await queryClient.invalidateQueries({ queryKey: ["/api/engagements"], exact: false });
     } catch (e) {
