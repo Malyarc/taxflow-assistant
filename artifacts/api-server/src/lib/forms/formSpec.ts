@@ -180,12 +180,17 @@ export function checkLine(
 ): FormLine {
   const delta = actual - expected;
   const ties = Math.abs(delta) < 0.01;
+  // NOTE: the sign uses the ASCII hyphen "-", NOT U+2212 — the minus sign is
+  // not WinAnsi-encodable and silently DISAPPEARED in the rendered PDF, so a
+  // negative variance could be read as positive (audit 2026-06-11 M5). The
+  // ✓/⚠ label glyphs are mapped to "OK"/"!" at the renderer seam (pdfBrand
+  // winAnsiSafe); they stay here so JSON consumers keep the richer marker.
   return {
     line: "",
     label: `${ties ? "✓" : "⚠"} ${label}`,
     value: ties
       ? "ties"
-      : `off by ${delta < 0 ? "−" : "+"}$${Math.abs(delta).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+      : `off by ${delta < 0 ? "-" : "+"}$${Math.abs(delta).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
     kind: "text",
     emphasis: !ties,
     ...opts,

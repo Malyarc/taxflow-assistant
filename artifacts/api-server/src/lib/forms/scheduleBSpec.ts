@@ -165,10 +165,20 @@ export function buildScheduleB(ctx: FormBuildContext): FormInstance | null {
     lines: partIII,
   });
 
+  // M9b — the engine's scheduleBRequired flag counts K-1 portfolio interest +
+  // dividends toward the official $1,500 trigger (Schedule B instructions —
+  // partnership/S-corp portfolio income belongs on Schedule B). The payer
+  // rows above are 1099-only; disclose the K-1 amounts that contributed.
+  const k1Interest = ret.scheduleK1.totalInterestIncome;
+  const k1Box1aDividends = ret.scheduleK1.totalOrdinaryDividends + ret.scheduleK1.totalQualifiedDividends;
+  const k1TriggerNote =
+    k1Interest > 0 || k1Box1aDividends > 0
+      ? ` K-1 portfolio amounts COUNT toward the trigger and belong on Schedule B (interest ${usd(k1Interest)}, box-1a dividends ${usd(k1Box1aDividends)}) but are not in the 1099 payer rows above — list the entity as the payer when transcribing.`
+      : "";
   footnotes.push(
     f99.scheduleBRequired
-      ? `Schedule B is REQUIRED for this return: taxable interest (${usd(f99.interestIncome)}) or box-1a ordinary dividends (${usd(box1aTotal)}) exceed the $1,500 threshold.`
-      : `Taxable interest (${usd(f99.interestIncome)}) and box-1a ordinary dividends (${usd(box1aTotal)}) are each at or below the $1,500 threshold — Schedule B is not strictly required; payer detail is included as workpaper support.`,
+      ? `Schedule B is REQUIRED for this return: taxable interest (${usd(f99.interestIncome)} + K-1 ${usd(k1Interest)}) or box-1a ordinary dividends (${usd(box1aTotal)} + K-1 ${usd(k1Box1aDividends)}) exceed the $1,500 threshold.${k1TriggerNote}`
+      : `Taxable interest (${usd(f99.interestIncome)}) and box-1a ordinary dividends (${usd(box1aTotal)}), each including any K-1 portfolio portion, are at or below the $1,500 threshold — Schedule B is not strictly required; payer detail is included as workpaper support.${k1TriggerNote}`,
   );
   footnotes.push(
     "Other mandatory Schedule B triggers are NOT modeled (CPA judgment): seller-financed mortgage interest, accrued bond interest, nominee distributions, OID adjustments, frozen deposits, and the Form 8815 savings-bond exclusion — Schedule B can be required regardless of the $1,500 threshold when foreign accounts/trusts exist (Part III).",

@@ -190,15 +190,24 @@ export async function answerReturnQuestion(input: AnswerReturnQuestionInput): Pr
     planningOpportunities: grounding.planningOpportunities,
     question: input.question,
   };
-  const response = await openai.chat.completions.create({
-    model: QA_MODEL,
-    max_completion_tokens: 700,
-    messages: [
-      { role: "system", content: QA_SYSTEM_PROMPT },
-      { role: "user", content: JSON.stringify(payload) },
-    ],
-  });
-  const answer = (response.choices[0]?.message?.content ?? "").trim();
+  // T1.0 group (l) — an LLM-call THROW (bad/dummy API key, network failure,
+  // provider 5xx) must degrade to the same deterministic key-figures answer
+  // as the empty-answer path, not bubble a 500 to the route (this also
+  // un-blocks the cpa-tools yes-API suite in keyless environments).
+  let answer = "";
+  try {
+    const response = await openai.chat.completions.create({
+      model: QA_MODEL,
+      max_completion_tokens: 700,
+      messages: [
+        { role: "system", content: QA_SYSTEM_PROMPT },
+        { role: "user", content: JSON.stringify(payload) },
+      ],
+    });
+    answer = (response.choices[0]?.message?.content ?? "").trim();
+  } catch {
+    return { answer: deterministicAnswer(grounding), aiUsed: false, model: "error" };
+  }
   if (!answer) {
     return { answer: deterministicAnswer(grounding), aiUsed: false, model: "error" };
   }

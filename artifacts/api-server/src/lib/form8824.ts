@@ -27,6 +27,7 @@
  */
 
 import PDFDocument from "pdfkit";
+import { winAnsiSafePdf } from "./pdfBrand";
 
 export interface Form8824Data {
   /** Tax year (e.g. 2024). */
@@ -50,15 +51,15 @@ export interface Form8824Data {
   dateIdentified?: string;
   /** Date the replacement property was actually received (must be ≤ 180 days). */
   dateReceived?: string;
-  /** Line 12 — FMV of like-kind property received. */
+  /** Line 16 — FMV of like-kind property received. */
   fmvLikeKindReceived?: number;
-  /** Line 13 — Adjusted basis of property given up. */
+  /** Line 18 — Adjusted basis of like-kind property given up (+ net amounts paid + exchange expenses). */
   adjustedBasisGivenUp?: number;
   /** Line 15 — Cash + FMV of non-like-kind property received (boot). */
   bootReceived: number;
-  /** Line 18 — Realized gain or (loss). */
+  /** Line 19 — Realized gain or (loss) (line 17 − line 18). */
   realizedGain: number;
-  /** Line 22 — Recognized gain (= LESSER OF realized OR boot received). */
+  /** Line 23 — Recognized gain (= LESSER OF realized OR boot received; lines 21 + 22). */
   recognizedGain: number;
   /** Line 24 — Deferred gain or (loss) (= realized − recognized). */
   deferredGain: number;
@@ -131,7 +132,7 @@ export function buildForm8824Pdf(
 ): Promise<Buffer> {
   const { data } = options;
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: "letter", margin: 54 });
+    const doc = winAnsiSafePdf(new PDFDocument({ size: "letter", margin: 54 })); // M5 WinAnsi glyph seam
     const chunks: Buffer[] = [];
     doc.on("data", (c: Buffer) => chunks.push(c));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
@@ -269,14 +270,14 @@ export function buildForm8824Pdf(
     if (data.fmvLikeKindReceived != null) {
       moneyLine(
         doc,
-        "Line 12. FMV of like-kind property received",
+        "Line 16. FMV of like-kind property received",
         data.fmvLikeKindReceived,
       );
     }
     if (data.adjustedBasisGivenUp != null) {
       moneyLine(
         doc,
-        "Line 13. Adjusted basis of like-kind property given up",
+        "Line 18. Adjusted basis of like-kind property given up (+ net amounts paid + exchange expenses)",
         data.adjustedBasisGivenUp,
       );
     }
@@ -285,16 +286,16 @@ export function buildForm8824Pdf(
       "Line 15. Cash + FMV of non-like-kind property received (boot)",
       data.bootReceived,
     );
-    moneyLine(doc, "Line 18. Realized gain or (loss)", data.realizedGain);
+    moneyLine(doc, "Line 19. Realized gain or (loss) (= Line 17 − Line 18)", data.realizedGain);
     moneyLine(
       doc,
-      "Line 22. Recognized gain (= MIN of Line 18 OR Line 15)",
+      "Line 23. Recognized gain (= MIN of Line 19 OR Line 15)",
       data.recognizedGain,
       true,
     );
     moneyLine(
       doc,
-      "Line 24. Deferred gain or (loss) (= Line 18 − Line 22)",
+      "Line 24. Deferred gain or (loss) (= Line 19 − Line 23)",
       data.deferredGain,
       true,
     );
@@ -317,7 +318,7 @@ export function buildForm8824Pdf(
     doc.fontSize(9).font("Helvetica").fillColor("#444");
     doc.text(
       `Realized gain = ${fmtCurrency(data.realizedGain)}.  Boot received = ${fmtCurrency(data.bootReceived)}.  ` +
-        `Recognized gain = MIN(realized, boot) = ${fmtCurrency(data.recognizedGain)} (flows to Schedule D Line 13 as long-term capital gain). ` +
+        `Recognized gain = MIN(realized, boot) = ${fmtCurrency(data.recognizedGain)} (flows to Schedule D Line 11 as long-term capital gain). ` +
         `Deferred gain = ${fmtCurrency(data.deferredGain)} (reduces basis of replacement property under §1031(d)). ` +
         `Engine assumes the §1031 transaction qualifies — CPA must verify the property is real property held for ` +
         `productive use in a trade/business or for investment, that the timing rules (45/180 day) are met, and that ` +

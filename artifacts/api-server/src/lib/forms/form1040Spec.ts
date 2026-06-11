@@ -185,11 +185,23 @@ export function build1040(ctx: FormBuildContext): FormInstance {
   const line13a = ret.qbiDeduction;
   const line13b = ret.obbbaSchedule1A.total;
   const line14 = deductionUsed + line13a + line13b;
-  // Engine identity (taxReturnEngine.ts final assembly): per-step floors.
-  const taxableComputed = Math.max(
-    0,
-    Math.max(0, Math.max(0, ret.adjustedGrossIncome - deductionUsed) - line13a) - line13b,
-  );
+  // Engine identity (taxReturnEngine.ts final assembly): per-step floors, with
+  // the §172 NOL deduction applied BETWEEN the line-12 deduction and the QBI
+  // step (taxableAfterNol = max(0, taxable − nolDeduction) — engine ~2977).
+  // The NOL amount is read from the ENGINE OUTPUT (ret.nolDeduction), never
+  // re-derived. Merge-safety: if a future engine moves the NOL above-the-line
+  // (inside AGI, the official Schedule 1 line 8a placement), the no-NOL chain
+  // ties instead — detect that and drop the NOL step so this workpaper stays
+  // correct under either engine architecture (audit 2026-06-11 H1).
+  const nolApplied = Math.max(0, ret.nolDeduction);
+  const chainWith = (nol: number) =>
+    Math.max(
+      0,
+      Math.max(0, Math.max(0, Math.max(0, ret.adjustedGrossIncome - deductionUsed) - nol) - line13a) - line13b,
+    );
+  const nolInTaxableChain =
+    nolApplied > 0 && Math.abs(chainWith(0) - ret.taxableIncome) < 0.01 ? 0 : nolApplied;
+  const taxableComputed = chainWith(nolInTaxableChain);
 
   const agiLines: FormLine[] = [
     moneyLine("10", "Adjustments to income from Schedule 1, line 26", line10, {
@@ -204,6 +216,13 @@ export function build1040(ctx: FormBuildContext): FormInstance {
       deductionUsed,
     ),
   ];
+  if (nz(nolInTaxableChain)) {
+    agiLines.push(
+      moneyLine("", "NOL carryforward deduction (§172, 80% limit) — engine deducts here", nolInTaxableChain, {
+        note: "Officially Schedule 1 line 8a (inside AGI); the engine instead nets the NOL between lines 12 and 13 — same disclosed deviation as the Schedule 1 workpaper's informational 8a row.",
+      }),
+    );
+  }
   if (nz(line13a)) {
     agiLines.push(
       moneyLine("13a", "Qualified business income deduction (Form 8995/8995-A, §199A)", line13a),
@@ -218,11 +237,19 @@ export function build1040(ctx: FormBuildContext): FormInstance {
       ),
     );
   }
-  agiLines.push(moneyLine("14", "Add lines 12, 13a, and 13b", line14));
+  agiLines.push(
+    moneyLine("14", "Add lines 12, 13a, and 13b", line14, {
+      note: nz(nolInTaxableChain)
+        ? "Official sum only — the NOL row above is additionally deducted in arriving at line 15 (see the tie-out)."
+        : undefined,
+    }),
+  );
   agiLines.push(moneyLine("15", "Taxable income", ret.taxableIncome, { emphasis: true }));
   agiLines.push(
     checkLine(
-      "Taxable income ties: max(0, AGI − line 12 − 13a − 13b) (engine per-step floors)",
+      nz(nolInTaxableChain)
+        ? "Taxable income ties: max(0, AGI − line 12 − NOL − 13a − 13b) (engine per-step floors)"
+        : "Taxable income ties: max(0, AGI − line 12 − 13a − 13b) (engine per-step floors)",
       taxableComputed,
       ret.taxableIncome,
     ),

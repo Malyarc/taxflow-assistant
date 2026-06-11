@@ -18,7 +18,7 @@
 import PDFDocument from "pdfkit";
 import type { OpportunityHit } from "@workspace/planning-strategies";
 import type { PlanningCalendar } from "./planningCalendar";
-import { TRUSTED_BLUE, BRAND_BLUE, GOLD, SUCCESS, INK, MUTED, usd, applyBrandFooters } from "./pdfBrand";
+import { TRUSTED_BLUE, BRAND_BLUE, GOLD, SUCCESS, INK, MUTED, usd, applyBrandFooters, winAnsiSafePdf } from "./pdfBrand";
 
 const PAGE_BOTTOM = 720; // letter height 792 − ~72 margin
 
@@ -76,7 +76,7 @@ export function buildPlanningReportPdf(args: BuildPlanningReportArgs): Promise<B
   const totalSavings = hits.reduce((s, h) => s + headlineSavings(h), 0);
 
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: "letter", margin: 54, bufferPages: true });
+    const doc = winAnsiSafePdf(new PDFDocument({ size: "letter", margin: 54, bufferPages: true })); // M5 WinAnsi glyph seam
     const chunks: Buffer[] = [];
     doc.on("data", (c: Buffer) => chunks.push(c));
     doc.on("end", () => resolve(Buffer.concat(chunks)));

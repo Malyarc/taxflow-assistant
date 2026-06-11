@@ -29,6 +29,7 @@
  */
 
 import PDFDocument from "pdfkit";
+import { winAnsiSafePdf } from "./pdfBrand";
 import type { clientsTable } from "@workspace/db";
 
 type Client = typeof clientsTable.$inferSelect;
@@ -340,7 +341,7 @@ export interface BuildForm8606PdfOptions {
 export function buildForm8606Pdf(options: BuildForm8606PdfOptions): Promise<Buffer> {
   const { client, taxYear, result, partIII } = options;
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: "letter", margin: 50 });
+    const doc = winAnsiSafePdf(new PDFDocument({ size: "letter", margin: 50 })); // M5 WinAnsi glyph seam
     const chunks: Buffer[] = [];
     doc.on("data", (c: Buffer) => chunks.push(c));
     doc.on("end", () => resolve(Buffer.concat(chunks)));

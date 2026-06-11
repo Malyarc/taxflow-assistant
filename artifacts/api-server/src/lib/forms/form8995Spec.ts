@@ -156,7 +156,7 @@ export function buildForm8995(ctx: FormBuildContext): FormInstance | null {
       partII.push(moneyLine("3", `${label} — 20% of QBI (tentative)`, b.tentativeDeduction, { indent: 1 }));
       if (b.wageUbiaLimit > 0 || b.limitApplied) {
         partII.push(
-          moneyLine("9", `${label} — wage/UBIA limit: greater of 50% W-2 wages or 25% wages + 2.5% UBIA`, b.wageUbiaLimit, {
+          moneyLine("10", `${label} — wage/UBIA limit: greater of 50% W-2 wages or 25% wages + 2.5% UBIA`, b.wageUbiaLimit, {
             indent: 1,
             note: b.limitApplied
               ? "Limit reduced this business's deductible amount (phased per the §199A band)."
@@ -165,19 +165,19 @@ export function buildForm8995(ctx: FormBuildContext): FormInstance | null {
         );
       } else {
         partII.push(
-          textLine("9", `${label} — wage/UBIA limit`, null, {
+          textLine("10", `${label} — wage/UBIA limit`, null, {
             indent: 1,
             note: "No W-2 wage / UBIA data supplied — engine leaves this business unlimited (CPA applies §199A(b)(2) externally).",
           }),
         );
       }
       partII.push(
-        moneyLine("12", `${label} — QBI component after wage/UBIA limit`, b.deductibleAmount, { indent: 1, emphasis: true }),
+        moneyLine("15", `${label} — QBI component after wage/UBIA limit`, b.deductibleAmount, { indent: 1, emphasis: true }),
       );
     });
 
     const partIV: FormLine[] = [
-      moneyLine("27", "Total QBI component (sum of per-business line 12)", sumPerBizDeductible, { emphasis: true }),
+      moneyLine("27", "Total QBI component (Form 8995-A line 16 = sum of per-business line 15)", sumPerBizDeductible, { emphasis: true }),
       moneyLine("32", "QBI deduction before income limitation", sumPerBizDeductible, {
         note: "REIT/PTP component (lines 28–31) not modeled — line 32 = line 27.",
       }),
