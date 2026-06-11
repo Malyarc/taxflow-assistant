@@ -1254,6 +1254,8 @@ export interface TaxReturn {
   /** @nullable */
   nolCarryforwardRemaining?: number | null;
   /** @nullable */
+  qbiLossCarryforwardRemaining?: number | null;
+  /** @nullable */
   qsbsGrossGain?: number | null;
   /** @nullable */
   qsbsSection1202Exclusion?: number | null;
@@ -1486,6 +1488,13 @@ export const AdjustmentAdjustmentType = {
   crypto_mining_income: "crypto_mining_income",
   residential_clean_energy_carryforward:
     "residential_clean_energy_carryforward",
+  qbi_loss_carryforward: "qbi_loss_carryforward",
+  bonus_depreciation_basis_obbba: "bonus_depreciation_basis_obbba",
+  qbi_w2_wages: "qbi_w2_wages",
+  qbi_ubia: "qbi_ubia",
+  qsbs_exclusion_pct: "qsbs_exclusion_pct",
+  out_of_state_muni_interest: "out_of_state_muni_interest",
+  us_treasury_interest: "us_treasury_interest",
 } as const;
 
 export interface Adjustment {
@@ -1653,6 +1662,13 @@ export const CreateAdjustmentBodyAdjustmentType = {
   crypto_mining_income: "crypto_mining_income",
   residential_clean_energy_carryforward:
     "residential_clean_energy_carryforward",
+  qbi_loss_carryforward: "qbi_loss_carryforward",
+  bonus_depreciation_basis_obbba: "bonus_depreciation_basis_obbba",
+  qbi_w2_wages: "qbi_w2_wages",
+  qbi_ubia: "qbi_ubia",
+  qsbs_exclusion_pct: "qsbs_exclusion_pct",
+  out_of_state_muni_interest: "out_of_state_muni_interest",
+  us_treasury_interest: "us_treasury_interest",
 } as const;
 
 export interface CreateAdjustmentBody {
@@ -1816,6 +1832,13 @@ export const UpdateAdjustmentBodyAdjustmentType = {
   crypto_mining_income: "crypto_mining_income",
   residential_clean_energy_carryforward:
     "residential_clean_energy_carryforward",
+  qbi_loss_carryforward: "qbi_loss_carryforward",
+  bonus_depreciation_basis_obbba: "bonus_depreciation_basis_obbba",
+  qbi_w2_wages: "qbi_w2_wages",
+  qbi_ubia: "qbi_ubia",
+  qsbs_exclusion_pct: "qsbs_exclusion_pct",
+  out_of_state_muni_interest: "out_of_state_muni_interest",
+  us_treasury_interest: "us_treasury_interest",
 } as const;
 
 export interface UpdateAdjustmentBody {

@@ -465,6 +465,20 @@ export async function synthesizePriorYearCarryforwards(
     });
   }
 
+  // T1.0c #4(ii) — §199A(c)(2)(B) net qualified-business-LOSS carryforward.
+  // A year whose combined QBI netted NEGATIVE produced a $0 deduction plus
+  // qbiLossCarryforwardRemaining; that loss is treated as a loss from a
+  // separate qualified trade/business in the NEXT year (reduces next year's
+  // combined QBI). Auto-load it like every sibling carryforward above.
+  const qbiLossCarry = Number(priorReturn.qbiLossCarryforwardRemaining ?? 0);
+  if (qbiLossCarry > 0 && !hasManualOverride("qbi_loss_carryforward")) {
+    synthetic.push({
+      adjustmentType: "qbi_loss_carryforward",
+      amount: qbiLossCarry,
+      isApplied: true,
+    });
+  }
+
   // CF2 — §163(j)(2) disallowed business-interest carryforward (indefinite).
   // Same gap: the engine writes section163jDisallowedCarryforward but didn't
   // auto-load it; the engine adds it to this year's business interest before
@@ -602,6 +616,7 @@ export async function recalculateAndUpsertTaxReturn(
     feieTotalExclusion: String(result.feie.totalExclusion),
     nolDeduction: String(result.nolDeduction),
     nolCarryforwardRemaining: String(result.nolCarryforwardRemaining),
+    qbiLossCarryforwardRemaining: String(result.qbiLossCarryforward),
     amtCreditApplied: String(result.amtCreditApplied),
     amtCreditGenerated: String(result.amtCreditGenerated),
     amtCreditCarryforwardRemaining: String(result.amtCreditCarryforwardRemaining),

@@ -126,16 +126,16 @@ export function buildForm8962(ctx: FormBuildContext): FormInstance | null {
   ];
   if (repayment > 0 || ptc.advanceAptc > ptc.computedPtc) {
     const excess = Math.max(0, ptc.advanceAptc - ptc.computedPtc);
-    // FC-10 — the Table 5 limitation now applies on EVERY path it legally
-    // applies to (including MFS — the 8962 instructions apply Table 5 to each
-    // MFS spouse separately — and the <100%-FPL clawback). A finite
-    // repaymentCap IS the engine's Table 5 amount; Infinity = no limitation
-    // (≥400% FPL, TY2026+ post-OBBBA repeal, or no determinable tier).
-    const capIsReal = Number.isFinite(ptc.repaymentCap);
+    // FC-10 + T1.0d #14 — the engine's repayment-cap sentinel is NULL (no
+    // limitation: ≥400% FPL, TY2026+ post-OBBBA repeal, or no determinable
+    // tier). A real finite cap renders the Table-5 row — including on the MFS
+    // path (the 8962 instructions apply Table 5 to each MFS spouse
+    // separately, "all other filing statuses" column).
+    const realCap = ptc.repaymentCap != null && ptc.repaymentCap > 0 ? ptc.repaymentCap : null;
     const partIII: FormLine[] = [
       moneyLine("27", "Excess advance payment of PTC (line 25 − line 24)", excess),
-      capIsReal
-        ? moneyLine("28", "Repayment limitation (instructions Table 5, by household income tier)", ptc.repaymentCap, {
+      realCap != null
+        ? moneyLine("28", "Repayment limitation (instructions Table 5, by household income tier)", realCap, {
             note: isMfs
               ? "MFS — ineligible for the PTC (§36B(c)(1)(C)) but Table 5 still limits the repayment, applied to each spouse separately ('all other filing statuses' column)."
               : "Applies only when household income < 400% of FPL — see the cap-tier footnote.",
@@ -153,7 +153,7 @@ export function buildForm8962(ctx: FormBuildContext): FormInstance | null {
         emphasis: true,
         note: "Bundled into the engine's total federal tax liability.",
       }),
-      checkLine("Repayment ties: min(excess, limitation)", Math.min(excess, capIsReal ? ptc.repaymentCap : Infinity), repayment),
+      checkLine("Repayment ties: min(excess, limitation)", realCap != null ? Math.min(excess, realCap) : excess, repayment),
     ];
     parts.push({ title: "Part III — Repayment of Excess Advance Payment of the Premium Tax Credit", lines: partIII });
   }

@@ -200,11 +200,17 @@ export function computeForm4797(
     section1231LookbackRecapture = Math.min(netSection1231, Math.max(0, lookbackLoss));
     ordinaryComponent += section1231LookbackRecapture;
     netSection1231LtcgGain = netSection1231 - section1231LookbackRecapture;
-    // The 25% bucket survives only to the extent the §1231 gain survives as LTCG.
-    // The lookback is treated as recharacterizing the regular (0/15/20%) §1231
-    // gain first (the IRS Unrecaptured §1250 Gain Worksheet does not net the
-    // §1231(c) recapture against the §1250 amount) — so §1250 is bounded last.
-    unrecaptured1250Gain = Math.min(unrecaptured1250Pool, netSection1231LtcgGain);
+    // T1.0c #6 (audit 2026-06-11 M2) — CHARACTER ORDERING of the recharacterized
+    // gain per Notice 97-59 and Treas. Reg. §1.453-12 Example 3: net §1231 gain
+    // recharacterized as ordinary under §1231(c) is treated as coming FIRST from
+    // 28%-rate gain (none arises in this module), THEN from UNRECAPTURED §1250
+    // GAIN, and only then from adjusted net capital gain (0/15/20%). So the
+    // recapture ABSORBS the 25% pool before touching the 0/15/20 gain — the
+    // prior code did the reverse (preserving the 25% pool against the surviving
+    // gain), over-taxing by up to (25% − 15/20%) × min(pool, recapture).
+    const poolAfterRecapture = Math.max(0, unrecaptured1250Pool - section1231LookbackRecapture);
+    // Still bounded by the §1231 gain that actually survives as LTCG.
+    unrecaptured1250Gain = Math.min(poolAfterRecapture, netSection1231LtcgGain);
   } else {
     // Net §1231 loss → fully ordinary (signed, reduces ordinary income).
     ordinaryComponent += netSection1231; // netSection1231 ≤ 0 here

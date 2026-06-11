@@ -162,6 +162,13 @@
       "when": 1781180859119,
       "tag": "0022_third_lethal_legion",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1781182772180,
+      "tag": "0023_soft_valeria_richards",
+      "breakpoints": true
     }
   ]
 }

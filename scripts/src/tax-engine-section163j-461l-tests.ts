@@ -334,11 +334,17 @@ function adj(type: string, amount: number, id = Math.floor(Math.random() * 1e9))
 }
 
 // ── Case L2-TY2025/26: §461(l) threshold is year-indexed (was stale TY2024) ──
-// Same $500k Sch C loss vs $500k W-2, but TY2025/TY2026 → threshold $313,000
-// (Rev. Proc. 2024-40), NOT the stale TY2024 $305,000. addback = 500,000 −
-// 313,000 = $187,000; AGI = 500,000 − 500,000 + 187,000 = $187,000.
-// (PRE-FIX both years used the hard-coded TY2024 $305k → $195k, Case-L2's number.)
-for (const ty of [2025, 2026]) {
+// Same $500k Sch C loss vs $500k W-2, per-year thresholds:
+//   TY2025 $313,000 (Rev. Proc. 2024-40) → addback = 500,000 − 313,000 = $187,000.
+//   TY2026 $256,000 (Rev. Proc. 2025-32 §4.31 — RE-DERIVED 2026-06-11, T1.0c #2:
+//     OBBBA, P.L. 119-21, made §461(l) permanent and RE-BASED the indexation,
+//     rolling the threshold back toward the TCJA $250k/$500k amounts, so TY2026
+//     is LOWER than TY2025; the prior expectation held 2026 at the 2025 value)
+//     → addback = 500,000 − 256,000 = $244,000.
+// AGI = 500,000 − 500,000 + addback. W-2 wages stay OUT of the aggregation
+// (performing services as an employee is not a §461(l) trade or business).
+for (const [ty, threshold] of [[2025, 313000], [2026, 256000]] as const) {
+  const addback = 500000 - threshold;
   const base = baseInputs({ adjustments: [adj("self_employment_income", -500000)] });
   const inp: TaxReturnInputs = {
     ...base,
@@ -347,8 +353,8 @@ for (const ty of [2025, 2026]) {
     w2s: [{ ...base.w2s[0], taxYear: ty, wagesBox1: "500000" }],
   };
   const r = computeTaxReturnPure(inp);
-  check(`Case L2-TY${ty} §461(l) addback = $187k (threshold $313k, not $305k)`, r.section461lExcessLossAddback, 187000);
-  check(`Case L2-TY${ty} AGI = $187k`, r.adjustedGrossIncome, 187000);
+  check(`Case L2-TY${ty} §461(l) addback = $${addback / 1000}k (threshold $${threshold / 1000}k)`, r.section461lExcessLossAddback, addback);
+  check(`Case L2-TY${ty} AGI = $${addback / 1000}k`, r.adjustedGrossIncome, addback);
 }
 
 // ── Case L3: MFJ §461(l) higher threshold ($610k) ────────────────────────

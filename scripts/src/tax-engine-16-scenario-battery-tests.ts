@@ -61,18 +61,22 @@ section("N1 — FED-03 NIIT MAGI FEIE add-back");
 // N2 — FED-04: QBI §199A cap computed on POST-NOL taxable income
 // ════════════════════════════════════════════════════════════════════════════
 // Profile: Single, FL, Schedule C net $200,000 + $300,000 NOL carryforward. TY2024.
-// Hand-calc:
+// Hand-calc (RE-DERIVED 2026-06-11, T1.0c #3 — the §172 NOL is a Schedule 1
+// line 8a deduction, i.e. ABOVE THE LINE → it now reduces AGI; the 80% cap
+// stays measured on taxable income computed WITHOUT the NOL/QBI per
+// §172(a)(2)(B)(ii), so the deduction/remaining amounts are unchanged):
 //   SE: net SE = 200,000 × 0.9235 = 184,700.
 //     OASDI = min(184,700, 168,600) × 12.4% = 168,600 × .124 = 20,906.40
 //     Medicare = 184,700 × 2.9% = 5,356.30 → SE tax = 26,262.70; half = 13,131.35.
-//   AGI = 200,000 − 13,131.35 = 186,868.65 (NOL is below-the-line, not in AGI).
-//   Pre-QBI taxable = 186,868.65 − 14,600 std = 172,268.65.
-//   NOL deduction = min(300,000, 80% × 172,268.65 = 137,814.92) = 137,814.92
-//     (IRC §172(a)(2) 80% limit on pre-NOL taxable). Remaining NOL = 162,185.08.
-//   Taxable after NOL = 172,268.65 − 137,814.92 = 34,453.73.
+//   80%-cap base (taxable w/o NOL or QBI): AGI-w/o-NOL 186,868.65 − 14,600 std
+//     = 172,268.65.
+//   NOL deduction = min(300,000, 80% × 172,268.65 = 137,814.92) = 137,814.92.
+//     Remaining NOL = 162,185.08.
+//   AGI = 200,000 − 13,131.35 (½ SE) − 137,814.92 (NOL, Sch 1 line 8a)
+//       = 49,053.73   ← NOL is an AGI deduction now.
+//   Taxable pre-QBI = 49,053.73 − 14,600 std = 34,453.73 (post-NOL inherently).
 //   Prelim QBI = 20% × (200,000 − 13,131.35) = 20% × 186,868.65 = 37,373.73.
 //   QBI cap = 20% × POST-NOL taxable 34,453.73 = 6,890.75   ← THE FED-04 FIX.
-//     (Pre-fix cap used pre-NOL 172,268.65 → wrongly allowed 34,453.73.)
 //   Final QBI = min(37,373.73, 6,890.75) = 6,890.75.
 //   Final taxable = 34,453.73 − 6,890.75 = 27,562.98.
 section("N2 — FED-04 QBI cap on post-NOL taxable income");
@@ -87,7 +91,8 @@ section("N2 — FED-04 QBI cap on post-NOL taxable income");
     ],
     taxYear: 2024,
   });
-  check("N2 AGI = $186,868.65", r.adjustedGrossIncome, 186868.65, 1);
+  // NOL is a Sch 1 line 8a AGI deduction (T1.0c #3) — AGI now $49,053.73.
+  check("N2 AGI = $49,053.73 (200,000 − 13,131.35 − NOL 137,814.92)", r.adjustedGrossIncome, 49053.73, 1);
   check("N2 NOL deduction = $137,814.92 (80% of pre-NOL taxable)", r.nolDeduction, 137814.92, 1);
   check("N2 NOL remaining = $162,185.08", r.nolCarryforwardRemaining, 162185.08, 1);
   check("N2 QBI deduction = $6,890.75 (capped by POST-NOL taxable)", r.qbiDeduction, 6890.75, 1);

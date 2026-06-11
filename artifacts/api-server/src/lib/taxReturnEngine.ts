@@ -1053,10 +1053,20 @@ export interface ComputedTaxReturn {
   socialSecurityTaxabilityDetail: SsTaxabilityCalculation;
   /** K9 — Foreign Earned Income Exclusion detail (Form 2555). */
   feie: FeieCalculation;
-  /** K4 — NOL carryforward applied this year (capped at 80% of taxable income). */
+  /** K4 — NOL carryforward applied this year (capped at 80% of taxable income
+   *  computed without the NOL/QBI per §172(a)(2)(B)(ii)). T1.0c #3: applied
+   *  ABOVE THE LINE (Schedule 1 line 8a → AGI), not at the taxable-income step. */
   nolDeduction: number;
   /** K4 — NOL carryforward remaining for next tax year. */
   nolCarryforwardRemaining: number;
+  /** T1.0c #4(ii) — §199A(c)(2) net qualified-business LOSS carried to next
+   *  year (when combined QBI nets negative: deduction $0 + this carryforward;
+   *  auto-seeded next year as the `qbi_loss_carryforward` adjustment). */
+  qbiLossCarryforward: number;
+  /** T1.0d #16 — §1231(c) lookback recharacterized against gainClass=
+   *  "section1250" capital-transaction gains (the live-app §1231 channel):
+   *  moved from LTCG (25% pool first, Notice 97-59) to ordinary income. */
+  section1231TxnLookbackRecharacterized: number;
   /** ATNOLD (§56(d)) applied against AMTI this year (capped at 90% of AMTI). */
   amtNolDeduction: number;
   /** ATNOLD AMT-basis NOL carryforward remaining for next tax year. */
@@ -1533,12 +1543,15 @@ const BONUS_RATE_BY_ACQUISITION_YEAR: Readonly<Record<number, number>> = {
   2026: 1.0, 2027: 1.0, 2028: 1.0, 2029: 1.0, 2030: 1.0,
 };
 // §461(l)(3)(B) excess-business-loss threshold, inflation-indexed: TY2024
-// $305k/$610k; TY2025 $313k/$626k (Rev. Proc. 2024-40). TY2026 not yet
-// published — held at TY2025.
+// $305k/$610k (Rev. Proc. 2023-34); TY2025 $313k/$626k (Rev. Proc. 2024-40).
+// TY2026 $256k/$512k per Rev. Proc. 2025-32 §4.31 — OBBBA (P.L. 119-21) made
+// §461(l) permanent and RE-BASED the indexation, rolling the thresholds back
+// toward the original TCJA amounts, so TY2026 is LOWER than TY2025 (holding at
+// the TY2025 values under-stated the addback by up to $57k/$114k — T1.0c #2).
 const SECTION_461L_THRESHOLDS: Record<TaxYear, Record<string, number>> = {
   2024: { single: 305_000, head_of_household: 305_000, married_filing_separately: 305_000, qualifying_widow: 610_000, married_filing_jointly: 610_000 },
   2025: { single: 313_000, head_of_household: 313_000, married_filing_separately: 313_000, qualifying_widow: 626_000, married_filing_jointly: 626_000 },
-  2026: { single: 313_000, head_of_household: 313_000, married_filing_separately: 313_000, qualifying_widow: 626_000, married_filing_jointly: 626_000 },
+  2026: { single: 256_000, head_of_household: 256_000, married_filing_separately: 256_000, qualifying_widow: 512_000, married_filing_jointly: 512_000 },
 };
 // §448(c) gross-receipts small-business threshold for the §163(j) exemption
 // (Rev. Proc. 2023-34 / 2024-40 / 2025-32): TY2024 $30M · TY2025 $31M · TY2026 $32M.
@@ -1563,7 +1576,37 @@ const SECTION_448C_THRESHOLD: Record<TaxYear, number> = {
  *   5. Dep care MFJ taxpayer earned income = household − spouseEarnedIncome
  */
 export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn {
-  const { client, w2s, form1099s, adjustments, taxYear, overrides = {} } = inputs;
+  const { client: clientRaw, w2s, form1099s, adjustments, taxYear, overrides = {} } = inputs;
+  // ── Engine-seam totality for NON-money client fields (T1.0d #14) ──────────
+  // The money fields all flow through the ±1e13-clamped `toNum`, but the plain
+  // `number` COUNT fields (dependents, educators, ACA household) and AGES were
+  // typed-but-unguarded: a NaN `eitcQualifyingChildren`/`dependentsUnder17`
+  // THREW inside calculateEitc (undefined EITC-table entry) and a NaN
+  // `otherDependents`/`eligibleEducatorCount`/`dependentsForCareCredit`/
+  // `acaHouseholdSize` propagated NaN into filed outputs (the property-harness
+  // P2 fuzz findings). Clamp ONCE here so every downstream consumer — engine
+  // blocks and taxCalculator helpers alike — sees a sane integer. Counts clamp
+  // to 0..50; ages to 0..130; null/undefined are PRESERVED (several consumers
+  // distinguish "absent" from 0, e.g. eitcQualifyingChildren ?? dependentsUnder17
+  // and the acaHouseholdSize default).
+  const toCount = (v: number | null | undefined, max = 50): number | null => {
+    if (v == null) return null;
+    const n = typeof v === "number" ? v : Number(v);
+    if (!Number.isFinite(n)) return 0; // NaN/Infinity → safest neutral count
+    return Math.min(max, Math.max(0, Math.floor(n)));
+  };
+  const client: ClientFacts = {
+    ...clientRaw,
+    dependentsUnder17: toCount(clientRaw.dependentsUnder17),
+    otherDependents: toCount(clientRaw.otherDependents),
+    dependentsForCareCredit: toCount(clientRaw.dependentsForCareCredit),
+    eitcQualifyingChildren: toCount(clientRaw.eitcQualifyingChildren),
+    eligibleEducatorCount: toCount(clientRaw.eligibleEducatorCount),
+    acaHouseholdSize: toCount(clientRaw.acaHouseholdSize),
+    taxpayerAge: toCount(clientRaw.taxpayerAge, 130),
+    spouseAge: toCount(clientRaw.spouseAge, 130),
+    targetRetirementAge: toCount(clientRaw.targetRetirementAge, 130),
+  };
   // Year used to index §179/bonus/§461(l)/§448(c) maps below. Clamp to the
   // supported range (resolveTaxYear: <2024→2024, >LATEST→latest) so these maps
   // resolve IDENTICALLY to every other year-indexed value in the engine. Multi-
@@ -1685,6 +1728,10 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // and the Form 4797 output (T1.1b).
   let capTxnUnrecaptured1250 = 0;
   let capTxnCollectibles28 = 0;
+  // T1.0d #16 — total positive LT gain on gainClass="section1250" lots (real
+  // business property — the live app's §1231 channel). The §1231(c) lookback
+  // recharacterization below applies against this when no form4797 rows exist.
+  let capTxnSection1250GainTotal = 0;
   let form1099Summary: Form1099Summary;
   if (capTxnsForYear.length > 0) {
     const cgDistributions = form1099Records
@@ -1705,6 +1752,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
       if (cls === "section1250") {
         const explicit = toNum(t.unrecaptured1250Amount);
         capTxnUnrecaptured1250 += explicit > 0 ? Math.min(explicit, gain) : gain;
+        capTxnSection1250GainTotal += gain; // T1.0d #16 — §1231 gain pool for the lookback
       } else if (cls === "collectible" || cls === "section1202") {
         capTxnCollectibles28 += gain;
       }
@@ -1838,7 +1886,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // E3 — Prior-year cash charitable carryforward (IRC §170(d)(1)).
   // Auto-loaded by pipeline from prior tax_returns.charitableCarryforwardCashRemaining;
   // CPA can override via `charitable_carryforward_cash` adjustment.
-  const charitableCarryforwardCashAdj = sumByType("charitable_carryforward_cash");
+  const charitableCarryforwardCashAdj = Math.max(0, sumByType("charitable_carryforward_cash")); // T1.0d #13 floored
   // Above-the-line
   const hsaContributionAdj = sumByType("hsa_contribution");
   // E4 — HSA employer contribution (W-2 Box 12 code W). Counts against
@@ -1881,10 +1929,50 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const feieTaxpayerAdj = sumByType("foreign_earned_income");
   const feieSpouseAdj = sumByType("foreign_earned_income_spouse");
   // K4: NOL carryforward (post-TCJA 80% taxable income limit, IRC §172(a)(2)).
-  // CPA enters prior-year NOL available. Engine caps deduction at 80% of
-  // taxable income computed without the NOL. Unused remainder carries to
-  // next year (engine returns nolCarryforwardRemaining for transparency).
+  // CPA enters prior-year NOL available. Unused remainder carries to next year
+  // (engine returns nolCarryforwardRemaining for transparency).
+  //
+  // T1.0c #3 (audit 2026-06-11 M5) — the §172 NOL deduction is an ABOVE-THE-LINE
+  // item for individuals (Schedule 1 line 8a "other income", entered as a
+  // NEGATIVE → Form 1040 line 8 → line 9 total income → line 11 AGI). The engine
+  // previously subtracted it BELOW the line (post-taxable-income), leaving AGI
+  // over-stated for every AGI/MAGI-keyed computation (NIIT MAGI, §36B PTC,
+  // medical 7.5% floor, charitable AGI ceilings, IRA/SLI phase-outs, SALT
+  // §164(b)(7) phase-down, EITC, state tax base...). Now the ALLOWED NOL flows
+  // into total income (see ordinaryAdditionalIncome below) so AGI and every
+  // downstream consumer shift correctly.
+  //
+  // The §172(a)(2)(B)(ii) 80% limitation is measured against taxable income
+  // computed WITHOUT REGARD TO (I) the §172 NOL deduction itself and (II) the
+  // §199A and §250 deductions. That is inherently circular against a single
+  // linear pass (the cap needs taxable income; taxable income needs the NOL in
+  // AGI), so the engine resolves it the way the statute words it: a BASELINE
+  // pass of this same pure function with the NOL adjustments STRIPPED yields
+  // "taxable income without regard to §172" (its own §199A deduction is added
+  // back per (II); §250 is out of individual scope; the OBBBA Schedule 1-A
+  // deductions remain subtracted — they are not §172/§199A/§250 deductions).
+  //   allowedNol = min(carryforward, 0.80 × max(0, baselineTaxable + baselineQbi))
+  // The recursion terminates because the stripped inputs have no nol_carryforward
+  // (this branch is gated on a positive carryforward); it costs one extra engine
+  // run ONLY for NOL-bearing returns. Purity is preserved (no I/O, same inputs →
+  // same outputs). Engine models all carryforwards as post-2017 NOLs (the
+  // pre-2018 100%-of-taxable vintage is not tracked — documented sub-gap).
   const nolCarryforwardAdj = sumByType("nol_carryforward");
+  const nolCarryforwardAvailable = Math.max(0, nolCarryforwardAdj); // T1.0d #13 floored
+  let nolDeduction = 0;
+  if (nolCarryforwardAvailable > 0) {
+    const baselineNoNol = computeTaxReturnPure({
+      ...inputs,
+      adjustments: adjustments.filter((a) => a.adjustmentType !== "nol_carryforward"),
+    });
+    // §172(a)(2)(B)(ii)(I)-(II): taxable income without the NOL and without §199A.
+    const taxableWithoutNolOrQbi = Math.max(
+      0,
+      baselineNoNol.taxableIncome + baselineNoNol.qbiDeduction,
+    );
+    nolDeduction = Math.min(nolCarryforwardAvailable, 0.80 * taxableWithoutNolOrQbi);
+  }
+  const nolCarryforwardRemaining = Math.max(0, nolCarryforwardAvailable - nolDeduction);
   // K7: §1202 QSBS exclusion. CPA enters gross gain on QSBS sale + adjusted
   // basis. Engine excludes min(gross, max(10_000_000, 10 × basis)). Remainder
   // flows to LTCG. Defaults to 100% post-2010-09-27 acquisitions (most
@@ -1989,9 +2077,13 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
 
   // Phase 2b: Capital loss carryforward from prior years (preserves short/long character)
   // User enters via adjustment types; engine adds to current year's netting.
-  // (Auto-loading from prior-year tax_returns row is a future enhancement.)
-  const stcgCarryforward = sumByType("capital_loss_carryforward_short");
-  const ltcgCarryforward = sumByType("capital_loss_carryforward_long");
+  // T1.0d #13 — carryforward adjustments are MAGNITUDES (a loss carried in is a
+  // positive number, per the auto-seed convention): floor every carryforward
+  // read at ≥ 0 so a CPA who plausibly types the loss as NEGATIVE can't
+  // manufacture phantom INCOME (a −$50k `capital_loss_carryforward_short`
+  // previously ADDED $50k to AGI — audit 2026-06-11 cross-cutting M2).
+  const stcgCarryforward = Math.max(0, sumByType("capital_loss_carryforward_short"));
+  const ltcgCarryforward = Math.max(0, sumByType("capital_loss_carryforward_long"));
 
   // Phase 2e: Schedule E rental real estate
   // ── Schedule E rental real estate ──
@@ -2059,7 +2151,8 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // so it doesn't lower that phase-out base.)
   const section469gReleasedLoss = disposedSuspendedReleased;
   const section469gAgiEffect = disposedRentalNet - disposedSuspendedReleased;
-  const scheduleEPassiveLossCarryforwardAdj = sumByType("schedule_e_passive_loss_carryforward");
+  // T1.0d #13 — floored (a negative carryforward must not ADD rental income).
+  const scheduleEPassiveLossCarryforwardAdj = Math.max(0, sumByType("schedule_e_passive_loss_carryforward"));
 
   // ── Phase B+: Schedule K-1 (partnership 1065 + S-corp 1120-S) ──
   // Pass-through entities. Per-K-1 box income is summed for the year and
@@ -2096,12 +2189,23 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // to basisAtYearStart (the basis available to absorb losses); it does not
   // model basis consumed by distributions / separately-stated deductions.
   let k1BasisAtRiskLossSuspended = 0;
+  // T1.0d — per-K-1 ALLOWED Box 1 (signed; a loss is capped by basis/at-risk).
+  // Recorded so the §199A(c)(2) negative-QBI netting below uses the loss
+  // actually ALLOWED into AGI (a basis/at-risk-SUSPENDED loss is excluded from
+  // QBI until the year allowed, §1.199A-3(b)(1)(iv)).
+  const k1AllowedBox1ByIndex = new Map<ScheduleK1Fact, number>();
   const k1ActiveBox1Capped = k1sForYear.filter(k1IsActive).reduce((s, k) => {
     const box1 = toNum(k.box1OrdinaryIncome);
-    if (box1 >= 0) return s + box1;
+    if (box1 >= 0) {
+      k1AllowedBox1ByIndex.set(k, box1);
+      return s + box1;
+    }
     const tracksBasis = k.basisAtYearStart != null;
     const tracksAtRisk = k.atRiskAmount != null;
-    if (!tracksBasis && !tracksAtRisk) return s + box1; // not tracked → unlimited
+    if (!tracksBasis && !tracksAtRisk) {
+      k1AllowedBox1ByIndex.set(k, box1);
+      return s + box1; // not tracked → unlimited
+    }
     // P2-6 (b) — §1367/§1368 ordering: distributions + separately-stated
     // deductions reduce outside basis BEFORE the Box 1 ordinary loss, so the
     // basis available to absorb the loss is beginning basis net of both. (The
@@ -2112,6 +2216,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     const atRiskLimit = tracksAtRisk ? Math.max(0, toNum(k.atRiskAmount)) : Infinity;
     const allowedMag = Math.min(Math.abs(box1), basisLimit, atRiskLimit);
     k1BasisAtRiskLossSuspended += Math.abs(box1) - allowedMag;
+    k1AllowedBox1ByIndex.set(k, -allowedMag);
     return s - allowedMag;
   }, 0);
   const k1ActiveOrdinary =
@@ -2126,7 +2231,17 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     sumK1Where(() => true, (k) => k.box2RentalRealEstate) +
     sumK1Where(k1IsPassive, (k) => k.box3OtherRentalIncome);
   const k1InterestIncome = sumK1Where(() => true, (k) => k.interestIncome);
-  const k1OrdinaryDividends = sumK1Where(() => true, (k) => k.ordinaryDividends);
+  // T1.0d #12 (audit 2026-06-11 H3) — K-1 Box 6a/6b mirror 1099-DIV 1a/1b:
+  // Box 6b QUALIFIED dividends are a SUBSET of Box 6a ordinary dividends (per
+  // the 1065/1120-S K-1 instructions and this DB schema's own field docs). The
+  // engine previously added both raw, double-counting the qualified subset in
+  // AGI (and NIIT): $10k total / $8k qualified entered as a real K-1 reads
+  // produced $18k of income. Net per K-1 exactly like summarize1099s does:
+  //   non-qualified ordinary = max(0, 6a − 6b); qualified = 6b.
+  // k1OrdinaryDividends is therefore the NON-QUALIFIED portion everywhere
+  // downstream (AGI assembly, §163(d) NII, NIIT, kiddie, Schedule B output).
+  const k1OrdinaryDividends = sumK1Where(() => true, (k) =>
+    Math.max(0, toNum(k.ordinaryDividends) - toNum(k.qualifiedDividends)));
   const k1QualifiedDividends = sumK1Where(() => true, (k) => k.qualifiedDividends);
   const k1Royalties = sumK1Where(() => true, (k) => k.royalties);
 
@@ -2173,10 +2288,27 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // loss (carryforward adjustment), then if net is income flow to AGI;
   // if net is loss, fully suspend (no allowance bucket for non-rental-RE
   // passive activity at the individual level).
-  const k1PassiveLossCarryforwardAdj = sumByType("k1_passive_loss_carryforward");
+  // T1.0d #13 — floored (a negative carryforward must not ADD passive income).
+  const k1PassiveLossCarryforwardAdj = Math.max(0, sumByType("k1_passive_loss_carryforward"));
   const k1PassiveAfterCarry = k1PassiveCurrentYear - k1PassiveLossCarryforwardAdj;
   const k1PassiveAppliedToAgi = k1PassiveAfterCarry > 0 ? k1PassiveAfterCarry : 0;
   const k1PassiveLossSuspended = k1PassiveAfterCarry < 0 ? -k1PassiveAfterCarry : 0;
+  // T1.0d #11 (audit 2026-06-11 H2) — fraction of the passive bucket's gross
+  // POSITIVE income that actually reached AGI after §469 netting/suspension.
+  // Used by the QBI auto-default: an active K-1's Box 2 rental income may be
+  // QBI only to the extent it was ALLOWED into AGI this year (income fully
+  // offset by suspended passive losses is "not taken into account" for §199A
+  // until allowed — §1.199A-3(b)(1)(iv) symmetry). 0 when nothing was allowed.
+  const k1PassiveGrossPositive = k1sForYear.reduce((s, k) => {
+    const passive = k1IsPassive(k);
+    return (
+      s +
+      (passive ? Math.max(0, toNum(k.box1OrdinaryIncome)) + Math.max(0, toNum(k.box3OtherRentalIncome)) : 0) +
+      Math.max(0, toNum(k.box2RentalRealEstate))
+    );
+  }, 0);
+  const k1PassiveAllowedFraction =
+    k1PassiveGrossPositive > 0 ? Math.min(1, k1PassiveAppliedToAgi / k1PassiveGrossPositive) : 0;
 
   // ── Step 1: Schedule C — net SE income before SE tax ─────────────────
   // Schedule C net SE income flows BOTH to AGI (as ordinary income) and to
@@ -2452,24 +2584,12 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
 
   // C7 — §461(l) excess business loss addback.
   //
-  // C3 follow-up (2026-05-27 PM): engine now AUTO-AGGREGATES net business
-  // loss across Sch C / Sch E rental / K-1 active when CPA hasn't supplied
-  // the explicit `section_461l_excess_loss_addback` adjustment. The §461(l)
-  // threshold TY2024:
-  //   - Single/HoH/MFS/QSS: $305,000
-  //   - MFJ:                $610,000
-  // (Rev. Proc. 2023-34. TY2025 indexed amounts ~$320k / $640k — engine
-  // uses TY2024 for both years pending Rev. Proc. 2024-40 confirmation.)
-  //
-  // Aggregate net biz loss includes:
-  //   1. Sch C loss = max(0, scheduleCExpensesInput − grossSeIncome)
-  //   2. Sch E rental loss (PRE-PAL) = max(0, -grossRentalNet)
-  //      NOTE: §469 PAL suspension may reduce the actual deductible loss;
-  //      engine over-aggregates here (sub-gap — conservative result).
-  //   3. K-1 active trade-or-business loss = max(0, -k1ActiveOrdinary)
-  //
-  // CPA-supplied `section_461l_excess_loss_addback` adjustment STILL WINS
-  // when set. Engine auto-computes the addback only when not supplied.
+  // Engine AUTO-AGGREGATES the NET business income/loss across Sch C / Sch E
+  // rental / K-1 active when the CPA hasn't supplied the explicit
+  // `section_461l_excess_loss_addback` adjustment (which always wins when set).
+  // Thresholds (SECTION_461L_THRESHOLDS, module-scope Record<TaxYear>):
+  // TY2024 $305k/$610k · TY2025 $313k/$626k · TY2026 $256k/$512k (Rev. Proc.
+  // 2025-32 §4.31 — OBBBA re-based, LOWER than 2025).
   //
   // Sub-gaps (documented):
   //   * No spouse aggregation for MFJ — engine treats both spouses' losses
@@ -2482,31 +2602,47 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   //   * Active K-1 losses are already net of the §704(d)/§1366(d) basis +
   //     §465 at-risk limit (k1ActiveOrdinary uses the capped loss), so the
   //     §461(l) aggregation correctly excludes basis/at-risk-disallowed losses.
-  // SECTION_461L_THRESHOLDS is module-scope (typed Record<TaxYear>).
   const section461lThreshold = SECTION_461L_THRESHOLDS[resolvedMapYear];
   // §461(l) auto-aggregation: compute when CPA didn't supply an explicit addback.
+  //
+  // T1.0c #1 (audit 2026-06-11 H2) — Form 461 NETS aggregate trade-or-business
+  // DEDUCTIONS against aggregate trade-or-business GROSS INCOME (§461(l)(3)(A);
+  // Form 461 lines 1–9): a PROFITABLE business offsets a lossy one. The prior
+  // code summed only the per-bucket LOSSES (max(0, −net) per bucket), so a
+  // Sch C +$400k / active-K-1 −$700k filer (true NET business loss $300k <
+  // the $305k TY2024 threshold → addback $0) was auto-charged a $395k addback
+  // — a silent massive over-tax for any multi-entity filer mixing a large loss
+  // with a profitable business. Now: excess business loss =
+  //   max(0, −(net aggregate business income) − threshold).
+  // Pure-loss single-business returns are unchanged (net = −loss).
+  // W-2 wages stay OUT of the aggregation (§461(l)(6): performing services as
+  // an employee is not a trade or business for this purpose). K-1 guaranteed
+  // payments also stay out (conservative — including the income side would
+  // shrink the addback; CPA overrides for exactness).
   let section461lAutoAddback = 0;
   if (section461lExcessLossAddbackAdj <= 0) {
-    const schCLoss = Math.max(0, scheduleCExpensesInput + scheduleCDepreciationAdj - grossSeIncome);
-    // Rental: compute pre-PAL net (income − expenses − MACRS) from properties / aggregate adjustments.
-    // grossRentalNet isn't yet computed; use the inputs we know.
-    const aggregateRentalIncome = scheduleERentalIncomeAdj;
-    const aggregateRentalExpenses = scheduleERentalExpensesAdj + scheduleEMacrsDepreciationAdj;
-    const rentalNetPrePal = aggregateRentalIncome - aggregateRentalExpenses;
-    const rentalLossPrePal = Math.max(0, -rentalNetPrePal);
-    const k1ActiveLoss = Math.max(0, -k1ActiveOrdinary);
+    // Sch C SIGNED net (gross − expenses − depreciation) — same derivation as
+    // scheduleCNetSigned below (uses the UNCAPPED expenses input).
+    const schCNetSigned = grossSeIncome - Math.max(0, scheduleCExpensesInput) - scheduleCDepreciationAdj;
+    // Rental: SIGNED pre-PAL net (income − expenses − MACRS) from properties /
+    // aggregate adjustments. grossRentalNet isn't yet computed; use the inputs
+    // we know. (Sub-gap, documented: §461(l) technically takes POST-§469
+    // amounts; pre-PAL over-states a loss → conservative over-addback.)
+    const rentalNetPrePal =
+      scheduleERentalIncomeAdj - (scheduleERentalExpensesAdj + scheduleEMacrsDepreciationAdj);
+    // K-1 active SIGNED net — already net of the §704(d)/§1366(d) basis +
+    // §465 at-risk caps (basis/at-risk-disallowed losses correctly excluded).
+    const k1ActiveNetSigned = k1ActiveOrdinary;
     // Sub-gap (independent review 2026-06-08): a net §1231 loss from Form 4797
     // (`form4797.ordinaryComponent` < 0) is also an excess-business-loss
     // component under §461(l)(3)(B), but form4797 is computed below (line ~2170)
     // so it is NOT in this auto-aggregation. Direction is conservative (under-
     // addback → never over-taxes). A CPA supplies the figure via the explicit
     // `section_461l_excess_loss_addback` override (which always wins above).
-    const aggregateBizLoss = schCLoss + rentalLossPrePal + k1ActiveLoss;
+    const netAggregateBusinessIncome = schCNetSigned + rentalNetPrePal + k1ActiveNetSigned;
     const threshold =
       section461lThreshold[client.filingStatus] ?? section461lThreshold.single;
-    if (aggregateBizLoss > threshold) {
-      section461lAutoAddback = aggregateBizLoss - threshold;
-    }
+    section461lAutoAddback = Math.max(0, -netAggregateBusinessIncome - threshold);
   }
   const section461lExcessLossAddback = Math.max(
     section461lExcessLossAddbackAdj,
@@ -2523,17 +2659,41 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // (§1411(c)(1)); the engine has no active/passive flag on a 4797 disposition,
   // so it over-includes (conservative — over-states NIIT, never under-taxes),
   // consistent with the engine's existing NIIT posture (§1031/§121/QSBS gains).
+  const section1231LookbackLossAdj = Math.max(0, sumByType("section_1231_lookback_loss"));
   const form4797 = computeForm4797(
     (inputs.form4797 ?? []).filter((s) => s.taxYear === taxYear),
-    Math.max(0, sumByType("section_1231_lookback_loss")),
+    section1231LookbackLossAdj,
   );
+
+  // T1.0d #16 (audit 2026-06-11 H6) — §1231(c) lookback for the LIVE-APP §1231
+  // channel. `TaxReturnInputs.form4797` has no DB table, so the enum'd
+  // `section_1231_lookback_loss` adjustment was a no-op in the live app
+  // (computeForm4797 returns EMPTY with zero sales — nothing to recharacterize).
+  // The app expresses §1231 real-property gains via capitalTransactions rows
+  // tagged gainClass="section1250"; apply the UNUSED portion of the lookback
+  // (after any form4797 recapture) against those gains: the recharacterized
+  // amount moves from LTCG to ORDINARY income (§1231(c)), absorbing the
+  // unrecaptured-§1250 25% pool FIRST (Notice 97-59 ordering — 28% first
+  // [none in this channel], then 25%, then 0/15/20; see rawUnrecaptured1250).
+  // AGI is unchanged (−LTCG +ordinary); the rate benefit is what's lost.
+  // Like the form4797 lookback, the recharacterized ordinary amount stays OUT
+  // of the §1411 NII capital-gain base (documented, matches the 4797 path).
+  const lookbackUnusedByForm4797 = Math.max(
+    0,
+    section1231LookbackLossAdj - form4797.section1231LookbackRecapture,
+  );
+  const txnSection1231LookbackRecharacterized =
+    lookbackUnusedByForm4797 > 0 && capTxnSection1250GainTotal > 0
+      ? Math.min(lookbackUnusedByForm4797, capTxnSection1250GainTotal)
+      : 0;
 
   // K-1 net ST/LT capital gain (Box 8 / 9a) joins the cap-gain netting
   // alongside 1099-B-derived gains. Subtract prior-year loss carryforwards.
   // Home-sale taxable remainder (K6) and QSBS taxable remainder (K7) are
   // long-term per §121 (2-of-5 ownership) and §1202 (5-year holding).
   let netSTCG = form1099Summary.shortTermCapitalGains + k1Stcg - stcgCarryforward;
-  let netLTCG = form1099Summary.longTermCapitalGains + k1Ltcg - ltcgCarryforward + homeSaleTaxableGain + qsbsTaxableGain + section1031RecognizedGain + Math.max(0, longTermCapitalGainAdj) + form4797.netSection1231LtcgGain;
+  let netLTCG = form1099Summary.longTermCapitalGains + k1Ltcg - ltcgCarryforward + homeSaleTaxableGain + qsbsTaxableGain + section1031RecognizedGain + Math.max(0, longTermCapitalGainAdj) + form4797.netSection1231LtcgGain
+    - txnSection1231LookbackRecharacterized; // T1.0d #16 — §1231(c) recharacterized to ordinary
 
   // Cross-netting per Schedule D Lines 7, 15, 16
   if (netSTCG > 0 && netLTCG < 0) {
@@ -2610,12 +2770,17 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // prior return; a CPA can also enter it directly.
   const investmentInterestExpenseAdj = Math.max(
     0,
-    sumByType("investment_interest_expense") + sumByType("investment_interest_carryforward"),
+    // T1.0d #13 — the carryforward itself floors at ≥ 0 (a negative entry must
+    // not erode the CURRENT-year expense before the aggregate floor).
+    sumByType("investment_interest_expense") + Math.max(0, sumByType("investment_interest_carryforward")),
   );
+  // T1.0d #12 (audit 2026-06-11 M5) — BOTH dividend aggregates are ALREADY net
+  // of their qualified subsets (summarize1099s nets 1a−1b; k1OrdinaryDividends
+  // nets 6a−6b above). The prior code subtracted the qualified totals AGAIN,
+  // double-subtracting and under-stating the §163(d) NII cap.
   const nonQualifiedDividends = Math.max(
     0,
-    (form1099Summary.ordinaryDividends + k1OrdinaryDividends) -
-      (form1099Summary.qualifiedDividends + k1QualifiedDividends),
+    form1099Summary.ordinaryDividends + k1OrdinaryDividends,
   );
   const baseNetInvestmentIncome = Math.max(
     0,
@@ -2826,7 +2991,8 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     esppDisqualifyingDispositionOrdinary +   // C6 — §423 ESPP disqualifying disposition comp income
     section461lExcessLossAddback -           // C7 — §461(l) excess business loss addback (positive add)
     section163jAllowedDeduction +            // C7 — §163(j) allowed business interest (deduction)
-    form4797.ordinaryComponent;              // T1.1b — Form 4797 ordinary (recapture + §1231(c) lookback + net §1231 loss, signed)
+    form4797.ordinaryComponent +             // T1.1b — Form 4797 ordinary (recapture + §1231(c) lookback + net §1231 loss, signed)
+    txnSection1231LookbackRecharacterized;   // T1.0d #16 — §1231(c) lookback on the capital-transaction channel (LTCG → ordinary)
   const provisionalAgiForPal = Math.max(0, totalWages + ordinaryAdditionalIncomeBeforeRental);
 
   let rentalNetAppliedToAgi = 0;
@@ -2858,7 +3024,16 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
       ? computeForm8582Breakdown({ properties: perPropertyNets, palResult: passiveLossAllowance })
       : null;
 
-  const ordinaryAdditionalIncome = ordinaryAdditionalIncomeBeforeRental + rentalNetAppliedToAgi + section469gAgiEffect;
+  // T1.0c #3 — the allowed §172 NOL deduction enters TOTAL INCOME here
+  // (Schedule 1 line 8a, negative other income) so AGI reflects it. Placed
+  // AFTER provisionalAgiForPal: the §469(i)(3)(F) MAGI exclusion list does not
+  // mention §172, so strictly the NOL reduces §469 MAGI too — but wiring it in
+  // would re-create the cap circularity (PAL → AGI → NOL cap → AGI → PAL MAGI).
+  // Keeping the §469 MAGI NOL-free yields a HIGHER MAGI → SMALLER rental
+  // allowance → conservative (never under-taxes). Documented sub-gap; binds
+  // only for NOL filers with rental losses in the $100k–$150k MAGI band.
+  const ordinaryAdditionalIncome =
+    ordinaryAdditionalIncomeBeforeRental + rentalNetAppliedToAgi + section469gAgiEffect - nolDeduction;
 
   const totalIncomeProvisional = totalWages + ordinaryAdditionalIncome;
 
@@ -2886,9 +3061,20 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   });
   const hsaDeduction = retirementForLimits.hsaDeductible;
 
-  // E7 — Apply §179 income limit. Can't exceed net business (SE) income;
-  // any unused §179 amount carries forward (CPA tracks externally for now).
-  const section179Applied = Math.min(section179Preliminary, Math.max(0, se.netSeEarnings));
+  // E7 — Apply the §179(b)(3) business-income limit; any unused §179 amount
+  // carries forward (CPA tracks externally for now).
+  // T1.0c #9 (audit 2026-06-11 M7) — the limit base is the aggregate taxable
+  // income from the ACTIVE conduct of all trades/businesses, computed without
+  // regard to the §179 deduction, the ½-SE deduction, or any NOL, and it
+  // INCLUDES W-2 wages (Reg. §1.179-2(c)(6)(iv); Form 4562 line 11
+  // instructions). The prior base — 92.35% × SE earnings only — both shaved
+  // 7.65% off the Sch C profit and ignored wages entirely (a $50k Sch C +
+  // $100k W-2 filer electing $80k was wrongly capped at $46,175). Now:
+  // Sch C signed net + W-2 wages, floored at 0. This matches the asset-register
+  // path (computeScheduleCAssetDepreciation's businessIncomeForSection179).
+  // K-1 active T/B income is still not counted (conservative, both paths).
+  const section179IncomeLimitBase = Math.max(0, scheduleCNetSigned + totalWages);
+  const section179Applied = Math.min(section179Preliminary, section179IncomeLimitBase);
   const section179Carryforward = Math.max(0, section179Preliminary - section179Applied);
   const aboveTheLineDeterministic =
     deductionAdjustments + otherDeductions + se.deductibleHalf + hsaDeduction + educatorDeduction + sehi.deduction +
@@ -2999,7 +3185,13 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // deduction. earnedIncome = wages + net SE profit. Used for BOTH the
   // itemize-vs-standard decision here AND runTaxCalculation below (same value).
   const claimedAsDependent = Boolean(client.claimedAsDependent || client.isKiddieTaxFiler);
-  const earnedIncomeForStdDed = totalWages + seBaseScheduleC + statutoryEmployeeIncome + churchEmployeeIncome;
+  // T1.0d #10 — §63(c)(5)(B) earned income (defined via §911(d)(2): compensation
+  // for personal services) includes a partner's K-1 SE earnings (floored ≥ 0;
+  // the per-K-1 max(Box 14A, GP) aggregate). Clergy housing stays OUT — it is
+  // excluded from gross income (§107), so it isn't §63 earned income.
+  const earnedIncomeForStdDed =
+    totalWages + seBaseScheduleC + statutoryEmployeeIncome + churchEmployeeIncome +
+    Math.max(0, k1SelfEmploymentEarnings);
   const stdDed = claimedAsDependent
     ? getDependentStandardDeductionBase(client.filingStatus, taxYear, earnedIncomeForStdDed)
     : getFederalStandardDeduction(client.filingStatus, taxYear);
@@ -3063,67 +3255,99 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   //     QBI eligibility, REIT/PTP dividends, etc.).
   //
   // Closes Tier-1 finding 4.1 / 6.1 from the C3 shadow-CPA validation.
-  let qbiIncomeEffective = qbiIncome;
-  if (qbiIncomeEffective <= 0) {
-    // Default Sch C contribution: net SE (incl. K-1 partnership 14A passes
-    // through separately via k1SelfEmploymentEarnings — that piece is
-    // NOT QBI-eligible at the Sch C level; it's QBI via the K-1 row).
-    // §1.199A-3(b)(1)(vi): only the ½-SE deduction ATTRIBUTABLE to the qualified
-    // trade/business reduces its QBI. A clergy housing allowance is in the SE
-    // base but is NOT Sch-C QBI income, so the clergy-attributable share of
-    // ½-SE must NOT reduce Sch-C QBI. Exclude it (no-op when there's no clergy
-    // allowance — clergyHousingAllowance/seTaxBase = 0 → identical to before).
-    const clergyShareOfSe = Math.min(1, seTaxBase > 0 ? clergyHousingAllowance / seTaxBase : 0);
-    const schCQbi = Math.max(0, netSeIncome - se.deductibleHalf * (1 - clergyShareOfSe));
-    qbiIncomeEffective = schCQbi;
-    // Sub-gap (independent review 2026-06-08): when K-1 partnership SE earnings
-    // (k1SelfEmploymentEarnings) coexist, the FULL ½-SE still over-reduces Sch-C
-    // QBI by the K-1's share. The general fix (subtract only the Sch-C share,
-    // netSeIncome/seTaxBase) is deferred because the K-1's own ½-SE is not yet
-    // netted into its QBI — a half-done generalization would UNDER-reduce total
-    // QBI (under-taxation). Current state is conservative (over-reduces). Only
-    // the clergy share is carved out here (the new, common, zero-K-1 path).
+  // ── T1.0c #4 (audit 2026-06-11 H3) — QBI auto-default, SIGNED components ──
+  // Two corrections to the auto-default:
+  //  (i) §1.199A-3(b)(1)(vi): QBI is reduced by ALL deductions attributable to
+  //      the trade/business — the ½-SE deduction (already netted, clergy share
+  //      carved out) AND the self-employed-health-insurance deduction (newly
+  //      subtracted here; the engine computes sehi.deduction two pages up).
+  //      SE retirement contributions (SEP/Solo-401k) have no dedicated
+  //      adjustment type (entered via the generic `deduction`), so they cannot
+  //      be attributed — the CPA uses the explicit `qbi_income` override for
+  //      exactness (documented sub-gap, under-reduces QBI in that rare case).
+  //  (ii) §199A(c)(2) NEGATIVE-QBI netting: a Sch C LOSS and an active-K-1
+  //      allowed LOSS net against the other businesses' positive QBI (Form
+  //      8995 lines 1–2). A combined NET NEGATIVE yields a $0 deduction plus a
+  //      qualified-business-LOSS carryforward to next year (§199A(c)(2)(B) —
+  //      treated as a loss from a separate qualified business next year; the
+  //      new `qbi_loss_carryforward` adjustment / `qbiLossCarryforward` output,
+  //      auto-seeded by the pipeline).
+  // Loss-recognition discipline (§1.199A-3(b)(1)(iv)): only losses ALLOWED
+  // into taxable income this year net — the K-1 Box 1 loss is the post-
+  // §704(d)/§1366(d)/§465 allowed amount (k1AllowedBox1ByIndex) and §469-
+  // suspended passive losses never enter. Sub-gap (documented, conservative):
+  // a §461(l)-disallowed excess business loss is NOT carved back out of the
+  // netting (it should defer to the NOL year per the Form 8995 instructions);
+  // over-counting the QBI loss only ever REDUCES a future QBI deduction.
+  //
+  // Sch C component (signed). Explicit `qbi_income` (> 0) wins as override.
+  const clergyShareOfSe = Math.min(1, seTaxBase > 0 ? clergyHousingAllowance / seTaxBase : 0);
+  let schCQbiSigned: number;
+  if (qbiIncome > 0) {
+    schCQbiSigned = qbiIncome;
+  } else if (scheduleCNetSigned >= 0) {
+    // Positive year: net SE minus the attributable ½-SE (clergy share carved
+    // out) minus the SEHI deduction. Floored at 0 — attributable deductions
+    // do not manufacture a loss (conservative-light, matches prior behavior).
+    // Sub-gap (independent review 2026-06-08, unchanged): when K-1 partnership
+    // SE earnings coexist, the FULL ½-SE still over-reduces Sch-C QBI by the
+    // K-1's share (conservative — over-reduces).
+    schCQbiSigned = Math.max(
+      0,
+      netSeIncome - se.deductibleHalf * (1 - clergyShareOfSe) - sehi.deduction,
+    );
+  } else {
+    // Loss year: the signed Sch C loss that flowed to AGI is negative QBI
+    // (§199A(c)(2)). No ½-SE/SEHI to attribute (both are 0 on a loss).
+    schCQbiSigned = scheduleCNetSigned;
   }
   // T1.2 (HIGH-1, independent review 2026-06-09) — statutory-employee Sch C net is
   // §199A-eligible (§1.199A-3; no ½-SE to subtract) and is a SEPARATE income stream
   // from the Sch C / explicit qbi_income, so it is ALWAYS added on top — not gated
   // behind the qbi_income<=0 auto-default (which a CPA-supplied qbi_income would
   // otherwise skip, silently dropping the statutory QBI).
-  qbiIncomeEffective += statutoryEmployeeIncome;
-  // K-1 default: when section199aQbi unset for active K-1, use Box 1.
-  // Per-business SSTB (§199A(d)(2)): track the SSTB portion of K-1 QBI
-  // (k1QbiSstbPortion) so the §199A(d)(3) phase-out below applies ONLY to
-  // SSTB QBI, per K-1 via k.isSstb. k1QbiContributionEffective itself is the
-  // total and its computation is unchanged (backward-compatible).
-  let k1QbiContributionEffective = k1QbiContribution;
-  let k1QbiSstbPortion = 0;
-  // SSTB portion of the explicit K-1 QBI:
-  for (const k of k1sForYear) {
+  const schCComponentSigned = schCQbiSigned + statutoryEmployeeIncome;
+
+  // Per-K-1 SIGNED QBI candidate. An explicit section199aQbi (≠ 0, signed —
+  // the K-1 statement may report a QBI loss) wins per K-1; otherwise the
+  // auto-default (gated, as before, on NO K-1 having supplied an explicit
+  // positive figure) takes, for ACTIVE K-1s only:
+  //   allowed Box 1 (post basis/at-risk, signed)
+  //   + Box 3 (signed — active other-rental flows fully to AGI)
+  //   + max(0, Box 2) × the §469-allowed fraction (T1.0d #11 — Box 2 rides the
+  //     passive bucket for AGI even on an active K-1, so only the portion that
+  //     actually reached AGI is QBI; a NEGATIVE Box 2 contributes 0 — its loss
+  //     is §469-suspended or absorbed non-QBI passive income, either way it is
+  //     not a §199A loss this year).
+  // (Box 4 guaranteed payments stay excluded per §199A(c)(4). S-corp
+  // reasonable-comp linkage remains a documented sub-gap.)
+  const useK1Auto = k1QbiContribution <= 0;
+  const k1QbiCandidateSigned = (k: ScheduleK1Fact): number => {
     const explicitQbi = toNum(k.section199aQbi);
-    if (explicitQbi > 0 && k.isSstb === true) k1QbiSstbPortion += explicitQbi;
-  }
-  if (k1QbiContributionEffective <= 0 && k1sForYear.length > 0) {
-    let k1QbiAutoSum = 0;
-    for (const k of k1sForYear) {
-      const explicitQbi = toNum(k.section199aQbi);
-      if (explicitQbi > 0) continue; // already counted in k1QbiContribution
-      const isActive = (k.activityType ?? "active") !== "passive";
-      if (!isActive) continue; // passive K-1 income isn't QBI for the holder
-      const box1 = toNum(k.box1OrdinaryIncome);
-      const box2 = toNum(k.box2RentalRealEstate);
-      const box3 = toNum(k.box3OtherRentalIncome);
-      // QBI candidate: active ordinary + active other rental (Box 3 from
-      // 1065 = guaranteed payments to partners EXCLUDED; non-self-rental
-      // INCLUDED). Box 2 (rental RE) excluded — typically passive at
-      // the holder level even when active at the partnership level.
-      const qbiCandidate = Math.max(0, box1 + box3 + box2);
-      // For S-corp K-1: reduce by reasonable compensation (W-2) the
-      // shareholder receives from the same S-corp — sub-gap, not modeled
-      // because we don't have linkage between W-2 and S-corp K-1 records.
-      k1QbiAutoSum += qbiCandidate;
-      if (k.isSstb === true) k1QbiSstbPortion += qbiCandidate;
+    if (explicitQbi !== 0) return explicitQbi;
+    if (!useK1Auto) return 0;
+    if ((k.activityType ?? "active") === "passive") return 0; // passive K-1 isn't holder QBI
+    const allowedBox1 = k1AllowedBox1ByIndex.get(k) ?? toNum(k.box1OrdinaryIncome);
+    const box3 = toNum(k.box3OtherRentalIncome);
+    const box2Allowed = Math.max(0, toNum(k.box2RentalRealEstate)) * k1PassiveAllowedFraction;
+    return allowedBox1 + box3 + box2Allowed;
+  };
+  // Aggregate the positive pools (split SSTB / non-SSTB for the §199A(d)(3)
+  // phase) and the loss magnitudes (SSTB losses phase SYMMETRICALLY — above
+  // the band an SSTB's items, INCLUDING losses, are excluded; §1.199A-5(a)(2)).
+  let k1QbiPositiveSstb = 0;
+  let k1QbiPositiveNonSstb = 0;
+  let k1QbiLossSstbMag = 0;
+  let k1QbiLossNonSstbMag = 0;
+  for (const k of k1sForYear) {
+    const c = k1QbiCandidateSigned(k);
+    if (c > 0) {
+      if (k.isSstb === true) k1QbiPositiveSstb += c;
+      else k1QbiPositiveNonSstb += c;
+    } else if (c < 0) {
+      if (k.isSstb === true) k1QbiLossSstbMag += -c;
+      else k1QbiLossNonSstbMag += -c;
     }
-    k1QbiContributionEffective += k1QbiAutoSum;
   }
 
   // SSTB phase-in (§199A(d)(3)). Phase-in band TY2024:
@@ -3145,17 +3369,12 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // post-NOL, pre-QBI taxable income (the §199A(e)(2) "threshold amount" base) —
   // NOT AGI. See the detailed note at its computation site.
 
-  // K4 — NOL carryforward (post-TCJA 80% limit, IRC §172(a)(2)). Computed
-  // BEFORE QBI (FED-04) so the §199A 20%-of-taxable-income cap is keyed to
-  // POST-NOL taxable income (the NOL is subtracted in arriving at §63 taxable
-  // income / Form 8995 Line 11). The 80% NOL limit itself stays on pre-NOL,
-  // pre-QBI taxable income per §172(a)(2) ("without regard to §§172/199A/250").
-  // Unused NOL carries to next year. Engine returns transparency fields.
-  const nolCarryforwardAvailable = Math.max(0, nolCarryforwardAdj);
-  const nolLimit = 0.80 * Math.max(0, calc.taxableIncome);
-  const nolDeduction = Math.min(nolCarryforwardAvailable, Math.max(0, nolLimit));
-  const nolCarryforwardRemaining = Math.max(0, nolCarryforwardAvailable - nolDeduction);
-  const taxableAfterNol = Math.max(0, calc.taxableIncome - nolDeduction);
+  // K4/FED-04 — the §172 NOL is ALREADY inside AGI (T1.0c #3, above), so
+  // calc.taxableIncome is inherently POST-NOL: the §199A 20%-of-taxable-income
+  // cap and the SSTB phase below are keyed to post-NOL taxable income (Form
+  // 8995 Line 11) with no further subtraction. The 80% limit was measured on
+  // the BASELINE (NOL-stripped) pass per §172(a)(2)(B)(ii).
+  const taxableAfterNol = Math.max(0, calc.taxableIncome);
 
   // §199A(e)(2): the SSTB phase-out is keyed to TAXABLE INCOME computed without
   // regard to §199A (Form 8995-A "taxable income before the QBI deduction" =
@@ -3176,13 +3395,26 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   }
 
   // Per-business SSTB split: the Sch C QBI is SSTB when schCIsSstb; each K-1's
-  // SSTB QBI is in k1QbiSstbPortion. Phase-out applies to the SSTB portion only;
-  // the non-SSTB portion keeps full QBI (subject to the wage/UBIA limit below).
-  // Equivalent to the prior whole-QBI × fraction for the pure-Sch-C-SSTB case.
-  const totalQbiRaw = qbiIncomeEffective + k1QbiContributionEffective;
-  const sstbQbiPortion = (schCIsSstb ? Math.max(0, qbiIncomeEffective) : 0) + k1QbiSstbPortion;
-  const nonSstbQbiPortion = totalQbiRaw - sstbQbiPortion;
-  const qbiCombinedIncome = nonSstbQbiPortion + sstbQbiPortion * sstbPhaseFraction;
+  // SSTB QBI is split above. Phase-out applies to the SSTB portions only
+  // (positive AND loss); the non-SSTB portions are unaffected.
+  // T1.0c #4(ii) — §199A(c)(2) netting: positive (post-SSTB-phase) QBI minus
+  // the allowed business-loss magnitudes minus the prior-year qualified-
+  // business-loss carryforward. Net negative → $0 deduction + carryforward out.
+  const schCPositive = Math.max(0, schCComponentSigned);
+  const schCLossMag = Math.max(0, -schCComponentSigned);
+  const sstbQbiPortion = (schCIsSstb ? schCPositive : 0) + k1QbiPositiveSstb;
+  const nonSstbQbiPortion = (schCIsSstb ? 0 : schCPositive) + k1QbiPositiveNonSstb;
+  const sstbLossMag = (schCIsSstb ? schCLossMag : 0) + k1QbiLossSstbMag;
+  const nonSstbLossMag = (schCIsSstb ? 0 : schCLossMag) + k1QbiLossNonSstbMag;
+  // §199A(c)(2)(B) — prior-year net qualified business loss carries in as a
+  // loss from a separate qualified trade/business (T1.0d #13 floored; treated
+  // as non-SSTB — its origin-year SSTB phase was already applied on the way in).
+  const qbiLossCarryforwardIn = Math.max(0, sumByType("qbi_loss_carryforward"));
+  const qbiPositivePhased = nonSstbQbiPortion + sstbQbiPortion * sstbPhaseFraction;
+  const qbiLossesPhased = nonSstbLossMag + sstbLossMag * sstbPhaseFraction + qbiLossCarryforwardIn;
+  const qbiNetSigned = qbiPositivePhased - qbiLossesPhased;
+  const qbiCombinedIncome = Math.max(0, qbiNetSigned);
+  const qbiLossCarryforward = Math.max(0, -qbiNetSigned);
   // K-1 §199A wage/UBIA limit inputs — aggregate the CPA-supplied §199A W-2
   // wages + UBIA across the year's K-1s. Positive values opt into the engine
   // applying the §199A(b)(2)(B) limit above the income threshold; 0/absent
@@ -3203,34 +3435,28 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // (a sole prop WITH employees); default 0 → Sch C stays unlimited (escape).
   const phaseQbi = (raw: number, isSstb: boolean) => (isSstb ? raw * sstbPhaseFraction : raw);
   const qbiBusinesses: Array<{ qbiIncome: number; w2Wages: number; ubia: number; label?: string }> = [];
-  if (qbiIncomeEffective > 0) {
+  if (schCComponentSigned > 0) {
     qbiBusinesses.push({
-      qbiIncome: phaseQbi(qbiIncomeEffective, schCIsSstb),
+      qbiIncome: phaseQbi(schCComponentSigned, schCIsSstb),
       w2Wages: Math.max(0, sumByType("qbi_w2_wages")),
       ubia: Math.max(0, sumByType("qbi_ubia")),
       label: "Schedule C",
     });
   }
-  {
-    // Mirror the aggregate effective-QBI logic per K-1: explicit §199A QBI wins;
-    // otherwise the Box 1/2/3 auto-default applies only when NO K-1 supplied an
-    // explicit figure (matches k1QbiContributionEffective above).
-    const useK1Auto = k1QbiContribution <= 0;
-    for (const k of k1sForYear) {
-      const explicitQbi = toNum(k.section199aQbi);
-      let raw = 0;
-      if (explicitQbi > 0) raw = explicitQbi;
-      else if (useK1Auto && (k.activityType ?? "active") !== "passive") {
-        raw = Math.max(0, toNum(k.box1OrdinaryIncome) + toNum(k.box2RentalRealEstate) + toNum(k.box3OtherRentalIncome));
-      }
-      if (raw <= 0) continue;
-      qbiBusinesses.push({
-        qbiIncome: phaseQbi(raw, k.isSstb === true),
-        w2Wages: Math.max(0, toNum(k.section199aW2Wages)),
-        ubia: Math.max(0, toNum(k.section199aUbia)),
-        label: k.entityName ?? undefined,
-      });
-    }
+  // Mirror the aggregate per-K-1 SIGNED candidates: only POSITIVE businesses
+  // get a per-business row (Form 8995-A Sched A); the loss businesses + the
+  // carryforward were netted into qbiCombinedIncome above, and calculateQbi's
+  // lossScale apportions that net against each positive business pro-rata
+  // (§1.199A-1(d)(2)(iii)(A)) before the per-business wage/UBIA limit.
+  for (const k of k1sForYear) {
+    const raw = k1QbiCandidateSigned(k);
+    if (raw <= 0) continue;
+    qbiBusinesses.push({
+      qbiIncome: phaseQbi(raw, k.isSstb === true),
+      w2Wages: Math.max(0, toNum(k.section199aW2Wages)),
+      ubia: Math.max(0, toNum(k.section199aUbia)),
+      label: k.entityName ?? undefined,
+    });
   }
 
   const qbi = calculateQbi({
@@ -3304,8 +3530,16 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // excess reduces the §1250 pool (IRS 28%-Rate-Gain + Unrecaptured-§1250
   // worksheets, Sched D lines 18/19 — taxpayer-favorable since 28% > 25%). So
   // §1250 takes first claim on the available LTCG; collectibles get the remainder.
+  // T1.0d #16 — the capital-transaction-channel §1231(c) recharacterization
+  // absorbs the unrecaptured-§1250 25% pool FIRST (Notice 97-59; Reg.
+  // §1.453-12 Ex. 3 — ordinary recharacterization comes from 28% gain first
+  // [none in this channel], then 25%, then adjusted net capital gain).
+  const capTxnUnrecaptured1250AfterLookback = Math.max(
+    0,
+    capTxnUnrecaptured1250 - txnSection1231LookbackRecharacterized,
+  );
   const rawUnrecaptured1250 =
-    capTxnUnrecaptured1250 +
+    capTxnUnrecaptured1250AfterLookback +
     Math.max(0, sumByType("unrecaptured_section_1250_gain")) +
     Math.max(0, form4797.unrecaptured1250Gain);
   const rawCollectibles28 =
@@ -3321,10 +3555,16 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // computed as the gross POSITIVE LT gain minus the surviving net LTCG. Using
   // max(0,·) on each component UNDER-counts the gross when a component is itself
   // net (so it can only UNDER-state the loss → over-charge, the safe direction).
-  const grossPositiveLt =
+  const grossPositiveLt = Math.max(
+    0,
     Math.max(0, form1099Summary.longTermCapitalGains) + Math.max(0, k1Ltcg) +
     homeSaleTaxableGain + qsbsTaxableGain + section1031RecognizedGain +
-    Math.max(0, longTermCapitalGainAdj) + Math.max(0, form4797.netSection1231LtcgGain);
+    Math.max(0, longTermCapitalGainAdj) + Math.max(0, form4797.netSection1231LtcgGain) -
+    // T1.0d #16 — the §1231(c)-recharacterized amount left the LT pool entirely
+    // (it is ordinary income now); without this subtraction the loss-absorption
+    // math would wrongly treat it as a loss that erodes the 28%/25% buckets.
+    txnSection1231LookbackRecharacterized,
+  );
   const totalLtLossAbsorbed = Math.max(0, grossPositiveLt - ltAvailableForSpecial);
   const loss28 = Math.min(totalLtLossAbsorbed, rawCollectibles28);
   const collectibles28AfterLoss = rawCollectibles28 - loss28;
@@ -3891,7 +4131,20 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // Medicare/§72(t)/§4973(g)/Sch H stay outside the base per §26(b).)
   let availableForNonRefundable = incomeTaxOnly + excessAdvanceAptcOwed;
 
-  const earnedIncomeHousehold = totalWages + Math.max(0, netSeIncome - se.deductibleHalf);
+  // T1.0d #10 (audit 2026-06-11 H1) — §32(c)(2)(A)(ii) earned income = wages +
+  // NET EARNINGS FROM SELF-EMPLOYMENT (§1402) minus the ½-SE deduction. The
+  // engine's SE base (se.seIncomeReported — the Sch SE line 3/5a aggregate)
+  // already carries EVERY SE-taxed stream: Sch C net (or the elected non-farm
+  // OPTIONAL-method amount, whose whole purpose is to buy EITC/SS credits),
+  // K-1 partnership Box 14A / §707(c) guaranteed payments, clergy housing
+  // (§1402(a)(8) — earned income per Pub 596), and church-employee income.
+  // The prior builder used the Sch-C-only `netSeIncome` while subtracting the
+  // FULL ½-SE (which covers all of them): a partner with identical economics
+  // to a sole prop got $0 EITC/ACTC (an $8,825 swing on the audit repro).
+  // Statutory-employee Sch C income is also earned income (Pub 596) but is
+  // FICA-withheld, not SE-taxed, so it adds outside the SE-base term.
+  const earnedIncomeHousehold =
+    totalWages + statutoryEmployeeIncome + Math.max(0, se.seIncomeReported - se.deductibleHalf);
   // C1 (audit 2026-06-08): the CTC is computed/applied AFTER the Schedule-3
   // personal credits (FTC, dependent care, education, Saver's, energy, adoption)
   // — see below. Per the Schedule 8812 Credit Limit Worksheet, the CTC's
@@ -4051,7 +4304,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const adoptionCredit = calculateAdoptionCredit({
     qualifiedExpenses: sumByType("qualified_adoption_expenses"),
     specialNeeds: sumByType("adoption_special_needs") > 0,
-    priorCarryforward: sumByType("adoption_credit_carryforward"),
+    priorCarryforward: Math.max(0, sumByType("adoption_credit_carryforward")), // T1.0d #13 floored
     magi: calc.adjustedGrossIncome + feieExclusion,
     filingStatus: client.filingStatus,
     availableTax: availableForNonRefundable,
@@ -4216,7 +4469,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   //       over-applying by up to min(otherCredits, regular − TMT)). When AMT
   //       binds this year, regular < TMT → limit 0 → no credit applies.
   //   (c) the remaining `availableForNonRefundable` (can't reduce below $0).
-  const amtCreditCarryforwardIn = sumByType("amt_credit_carryforward");
+  // T1.0d #13 — a NEGATIVE carryforward adjustment must not create phantom
+  // credit/income; carryforward reads are magnitudes (floored at 0).
+  const amtCreditCarryforwardIn = Math.max(0, sumByType("amt_credit_carryforward"));
   const creditsBeforeSection53 = personalCreditsApplied + rdCreditApplied + otherGbcApplied;
   const amtCreditApplicable = Math.max(
     0,
@@ -4617,6 +4872,8 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     feie,
     nolDeduction,
     nolCarryforwardRemaining,
+    qbiLossCarryforward,
+    section1231TxnLookbackRecharacterized: txnSection1231LookbackRecharacterized,
     amtNolDeduction: amt.atnoldApplied,
     amtNolCarryforwardRemaining: amt.atnoldCarryforwardRemaining,
     amtCreditApplied,

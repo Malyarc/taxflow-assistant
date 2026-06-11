@@ -94,6 +94,10 @@ export function buildReconciliationWorksheet(ctx: FormBuildContext): FormInstanc
     ["8", "Form 4797 ordinary component (recapture + §1231 loss)", ret.form4797?.ordinaryComponent ?? 0],
     ["8", "§461(l) excess business loss addback", ret.section461lExcessLossAddback],
     ["8", "§163(j) allowed business interest (deduction)", -ret.section163jAllowedDeduction],
+    // T1.0c #3 — the §172 NOL deduction is ABOVE THE LINE (Sch 1 line 8a,
+    // negative other income → total income → AGI), so it belongs to the INCOME
+    // chain (previously mislisted as an adjustment-to-income row).
+    ["8a", "NOL deduction (§172, Sch 1 line 8a — 80% limit)", -ret.nolDeduction],
   ];
   const incomeLines: FormLine[] = [];
   let incomeListed = 0;
@@ -146,6 +150,7 @@ export function buildReconciliationWorksheet(ctx: FormBuildContext): FormInstanc
     ["18", "Early-withdrawal penalty on savings (1099-INT box 2)", f99.interestEarlyWithdrawalPenalty],
     ["20", "Traditional IRA deduction", rd.iraDeductible],
     ["21", "Student loan interest", ret.studentLoanInterest.deductible],
+    ["8d", "Foreign earned income exclusion (Form 2555)", ret.feie.totalExclusion, "Sch 1 line 8d (negative income; stacking rule applied)"],
   ];
   const atlLines: FormLine[] = [];
   let atlListed = 0;

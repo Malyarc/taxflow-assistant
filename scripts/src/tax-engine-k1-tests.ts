@@ -429,25 +429,29 @@ header("Test G — Partnership K-1 Box 14A SE earnings → Schedule SE");
 // K-1: S-corp active, no Box 1; Box 5 interest=$500, Box 5a ord div=$1,500,
 //      Box 5b qual div=$1,000 (subset of ord div), Box 7 royalties=$2,000,
 //      Box 7 STCG=$3,000, Box 8a LTCG=$4,000.
-// Hand-calc:
+// Hand-calc (RE-DERIVED 2026-06-11, T1.0d #12 — K-1 Box 6a/6b mirror 1099-DIV
+// 1a/1b: Box 6b QUALIFIED dividends are a SUBSET of Box 6a ordinary dividends
+// per the 1065/1120-S K-1 instructions — exactly as this scenario's own setup
+// line says ("subset of ord div"). The engine now nets max(0, 6a − 6b) =
+// non-qualified ordinary, the same way summarize1099s nets 1a − 1b. The PRIOR
+// expectation added both raw, double-counting the $1,000 qualified subset):
 //   STCG to ordinary: 3,000
 //   LTCG to preferential: 4,000
-//   Qualified dividends preferential: 1,000
-//   Ordinary additional income: interest 500 + ord div 1,500 + royalties 2,000 +
-//                               STCG 3,000 + LTCG 4,000 + qual div 1,000 = 12,000
-//   Total income = 50,000 + 12,000 = 62,000. AGI = 62,000.
-//   Std ded = 14,600 → Taxable = 47,400
+//   Dividend income TOTAL = Box 6a 1,500 (non-qualified 500 + qualified 1,000)
+//   Ordinary additional income: interest 500 + non-qual div 500 + royalties 2,000 +
+//                               STCG 3,000 + LTCG 4,000 + qual div 1,000 = 11,000
+//   Total income = 50,000 + 11,000 = 61,000. AGI = 61,000.
+//   Std ded = 14,600 → Taxable = 46,400
 //   Preferential portion = LTCG 4,000 + qual div 1,000 = 5,000
-//   Ordinary portion = 47,400 − 5,000 = 42,400
+//   Ordinary portion = 46,400 − 5,000 = 41,400
 //   Ordinary tax:
 //     10% × 11,600                 = 1,160.00
-//     12% × (42,400 − 11,600)      = 12% × 30,800 = 3,696.00
+//     12% × (41,400 − 11,600)      = 12% × 29,800 = 3,576.00
 //     ─────────────────────────────────────────────
-//     Subtotal                                   = 4,856.00
-//   LTCG/QDIV: 2024 single 0% bracket up to $47,025. Taxable income $47,400
-//     puts $375 of preferential into the 15% rate; $4,625 stays at 0%.
-//     Preferential tax = 15% × 375 = 56.25
-//   Federal tax = 4,856.00 + 56.25 = 4,912.25
+//     Subtotal                                   = 4,736.00
+//   LTCG/QDIV: 2024 single 0% bracket up to $47,025. Taxable income $46,400
+//     ≤ $47,025 → ALL $5,000 of preferential stays at 0%. Preferential tax = 0.
+//   Federal tax = 4,736.00
 header("Test H — K-1 interest/div/royalties/cap gains flow to correct buckets");
 {
   const inputs: TaxReturnInputs = {
@@ -472,12 +476,14 @@ header("Test H — K-1 interest/div/royalties/cap gains flow to correct buckets"
     taxYear: 2024,
   };
   const r = computeTaxReturnPure(inputs);
-  check("Total income = $62,000", r.totalIncome, 62000, 1);
-  check("AGI = $62,000", r.adjustedGrossIncome, 62000, 1);
-  check("Taxable income = $47,400", r.taxableIncome, 47400, 1);
-  check("Federal tax = $4,912.25 (incl. LTCG preferential)", r.federalTaxLiability, 4912.25, 1);
+  check("Total income = $61,000 (6b is a subset of 6a — not double-counted)", r.totalIncome, 61000, 1);
+  check("AGI = $61,000", r.adjustedGrossIncome, 61000, 1);
+  check("Taxable income = $46,400", r.taxableIncome, 46400, 1);
+  check("Federal tax = $4,736.00 (all preferential in the 0% bracket)", r.federalTaxLiability, 4736.00, 1);
   check("K-1 interest = $500", r.scheduleK1.totalInterestIncome, 500, 0.01);
-  check("K-1 ord div = $1,500", r.scheduleK1.totalOrdinaryDividends, 1500, 0.01);
+  // totalOrdinaryDividends reports the NON-QUALIFIED net (6a − 6b), mirroring
+  // form1099Summary.ordinaryDividends (1a − 1b) — T1.0d #12 convention.
+  check("K-1 ord div (non-qualified net 6a−6b) = $500", r.scheduleK1.totalOrdinaryDividends, 500, 0.01);
   check("K-1 qual div = $1,000", r.scheduleK1.totalQualifiedDividends, 1000, 0.01);
   check("K-1 royalties = $2,000", r.scheduleK1.totalRoyalties, 2000, 0.01);
   check("K-1 STCG = $3,000", r.scheduleK1.totalShortTermCapitalGain, 3000, 0.01);

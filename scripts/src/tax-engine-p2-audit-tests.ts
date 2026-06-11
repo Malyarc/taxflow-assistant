@@ -47,7 +47,12 @@ header("S2: QBI per-business + NOL + SSTB");
     ],
     taxYear: 2024,
   } as TaxReturnInputs);
-  check("AGI $400k", r.adjustedGrossIncome, 400000, 1);
+  // RE-DERIVED 2026-06-11 (T1.0c #3): the §172 NOL is a Sch 1 line 8a AGI
+  // deduction — AGI = 400,000 − 50,000 = 350,000. The 80% cap base (taxable
+  // w/o NOL/QBI = 385,400) is unaffected, so the NOL is still fully used; the
+  // QBI numbers are unchanged (post-NOL taxable 335,400 is still above the
+  // single SSTB band top of $241,950 → SSTB $0, non-SSTB wage-limited $25k).
+  check("AGI $350k (post-NOL — Sch 1 line 8a)", r.adjustedGrossIncome, 350000, 1);
   check("NOL deduction $50k", r.nolDeduction, 50000, 1);
   check("QBI = $25k (non-SSTB wage-limited; SSTB → $0)", r.qbiDeduction, 25000, 1);
   check("perBusiness non-SSTB $25k", r.qbiPerBusiness?.[0].deductibleAmount ?? -1, 25000, 1);
