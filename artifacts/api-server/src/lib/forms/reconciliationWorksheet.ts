@@ -236,6 +236,9 @@ export function buildReconciliationWorksheet(ctx: FormBuildContext): FormInstanc
     ["27", "Earned income tax credit", ret.eitc.appliedCredit],
     ["S3-9", "Net premium tax credit (Form 8962)", Math.max(0, ret.premiumTaxCredit.netPtc)],
     ["S3-6c", "Adoption credit — refundable portion (OBBBA)", ret.adoptionCredit.refundablePortion],
+    // F-5 — Schedule 3 line 11: excess SS withholding (2+ employers) is a
+    // payment-side refundable credit inside the engine's federalRefundOrOwed.
+    ["S3-11", "Excess Social Security withholding (2+ employers)", ret.excessSocialSecurityCredit ?? 0],
   ];
   let refundableTotal = 0;
   for (const [line, label, value] of refundables) {

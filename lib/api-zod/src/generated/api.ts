@@ -1354,6 +1354,18 @@ export const GetTaxReturnResponse = zod.object({
     .describe(
       "T1.2 Schedule H household-employment tax (FICA + FUTA), Schedule 2 line 9.",
     ),
+  excessSocialSecurityCredit: zod
+    .number()
+    .nullish()
+    .describe(
+      "F-5 Schedule 3 line 11 excess Social Security withholding credit (2+ employers over the year's 6.2% × wage-base maximum; per-spouse for MFJ).",
+    ),
+  additionalMedicareWithholding: zod
+    .number()
+    .nullish()
+    .describe(
+      "F-6 Form 8959 Part IV Additional-Medicare-Tax withholding (W-2 Box 6 over 1.45% × Box 5), included in 1040 line 25c withholding.",
+    ),
   additionalChildTaxCredit: zod.number().nullish(),
   capitalGainsTax: zod.number().nullish(),
   preferentialIncome: zod.number().nullish(),
@@ -1512,6 +1524,18 @@ export const CalculateTaxReturnResponse = zod.object({
     .nullish()
     .describe(
       "T1.2 Schedule H household-employment tax (FICA + FUTA), Schedule 2 line 9.",
+    ),
+  excessSocialSecurityCredit: zod
+    .number()
+    .nullish()
+    .describe(
+      "F-5 Schedule 3 line 11 excess Social Security withholding credit (2+ employers over the year's 6.2% × wage-base maximum; per-spouse for MFJ).",
+    ),
+  additionalMedicareWithholding: zod
+    .number()
+    .nullish()
+    .describe(
+      "F-6 Form 8959 Part IV Additional-Medicare-Tax withholding (W-2 Box 6 over 1.45% × Box 5), included in 1040 line 25c withholding.",
     ),
   additionalChildTaxCredit: zod.number().nullish(),
   capitalGainsTax: zod.number().nullish(),
@@ -1679,6 +1703,18 @@ export const UpdateTaxReturnResponse = zod.object({
     .nullish()
     .describe(
       "T1.2 Schedule H household-employment tax (FICA + FUTA), Schedule 2 line 9.",
+    ),
+  excessSocialSecurityCredit: zod
+    .number()
+    .nullish()
+    .describe(
+      "F-5 Schedule 3 line 11 excess Social Security withholding credit (2+ employers over the year's 6.2% × wage-base maximum; per-spouse for MFJ).",
+    ),
+  additionalMedicareWithholding: zod
+    .number()
+    .nullish()
+    .describe(
+      "F-6 Form 8959 Part IV Additional-Medicare-Tax withholding (W-2 Box 6 over 1.45% × Box 5), included in 1040 line 25c withholding.",
     ),
   additionalChildTaxCredit: zod.number().nullish(),
   capitalGainsTax: zod.number().nullish(),
@@ -4988,6 +5024,18 @@ export const UpdateEngagementResponse = zod.object({
     .nullish()
     .describe(
       "T1.2 Schedule H household-employment tax (FICA + FUTA), Schedule 2 line 9.",
+    ),
+  excessSocialSecurityCredit: zod
+    .number()
+    .nullish()
+    .describe(
+      "F-5 Schedule 3 line 11 excess Social Security withholding credit (2+ employers over the year's 6.2% × wage-base maximum; per-spouse for MFJ).",
+    ),
+  additionalMedicareWithholding: zod
+    .number()
+    .nullish()
+    .describe(
+      "F-6 Form 8959 Part IV Additional-Medicare-Tax withholding (W-2 Box 6 over 1.45% × Box 5), included in 1040 line 25c withholding.",
     ),
   additionalChildTaxCredit: zod.number().nullish(),
   capitalGainsTax: zod.number().nullish(),

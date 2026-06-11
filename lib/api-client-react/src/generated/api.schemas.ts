@@ -1149,6 +1149,16 @@ export interface TaxReturn {
    * @nullable
    */
   householdEmploymentTax?: number | null;
+  /**
+   * F-5 Schedule 3 line 11 excess Social Security withholding credit (2+ employers over the year's 6.2% × wage-base maximum; per-spouse for MFJ).
+   * @nullable
+   */
+  excessSocialSecurityCredit?: number | null;
+  /**
+   * F-6 Form 8959 Part IV Additional-Medicare-Tax withholding (W-2 Box 6 over 1.45% × Box 5), included in 1040 line 25c withholding.
+   * @nullable
+   */
+  additionalMedicareWithholding?: number | null;
   /** @nullable */
   additionalChildTaxCredit?: number | null;
   /** @nullable */

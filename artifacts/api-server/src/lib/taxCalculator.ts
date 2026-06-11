@@ -7487,6 +7487,91 @@ export function calculateAmt(params: {
   };
 }
 
+// ── Form 8801 Part I — minimum-tax-credit generation (IRC §53(d)) ──────────
+// F-3 (audit 2026-06-11): the §53 minimum tax credit is generated ONLY by the
+// AMT attributable to DEFERRAL items (e.g. ISO bargain element, depreciation
+// timing, ATNOLD), NOT by EXCLUSION items (permanent differences). Per the
+// Instructions for Form 8801 (irs.gov/instructions/i8801), Part I: "AMT is
+// caused by two types of adjustments and preferences — deferral items and
+// exclusion items. … The minimum tax credit is allowed only for the AMT caused
+// by deferral items." Exclusion items are the 6251 adjustments for taxes /
+// the standard deduction (line 2a), the tax refund (2b, negative), investment
+// interest (2c), depletion (2d), tax-exempt private-activity-bond interest
+// (2g), and the §1202 exclusion (2h) — Form 8801 Part I line 2 ("combine
+// lines 2a, 2b, 2c, 2d, 2g, and 2h of your [prior-year] Form 6251"; include
+// the standard deduction if Schedule A was not filed). §53(d)(1)(B)(ii) is the
+// statutory list (§56(b)(1) adjustments + §57(a)(1)/(5)/(6)/(7) preferences).
+//
+// Form 8801 Part I mechanics mirrored here:
+//   • line 1–3:  AMTI recomputed with ONLY exclusion items;
+//   • line 4–13: the exemption (with its own phase-out re-derived on the
+//                exclusion-only AMTI) and the 26/28% rates, with Part III
+//                (8801 lines 27+) preserving the 0/15/20% capital-gain rates —
+//                all reused from calculateAmt;
+//   • line 16:   net minimum tax on exclusion items
+//                = max(0, TMT-on-exclusion-items − regular tax);
+//   • Part II line 19-equivalent: adjusted net minimum tax (the credit
+//                generated) = max(0, actual AMT − net minimum tax on
+//                exclusion items).
+// Sanity identities: all-exclusion preferences → generated $0; all-deferral
+// preferences → exclusion run usually shows TMT ≤ regular tax → generated =
+// the full AMT.
+export interface Form8801GenerationResult {
+  /** AMTI recomputed with only exclusion items (Form 8801 Part I line 3-ish). */
+  exclusionAmti: number;
+  /** Tentative minimum tax on exclusion items (Form 8801 Part I line 14). */
+  tentativeMinTaxOnExclusionItems: number;
+  /** Net minimum tax on exclusion items (Form 8801 Part I line 16). */
+  netMinimumTaxOnExclusionItems: number;
+  /** Adjusted net minimum tax — the §53(d) credit generated this year. */
+  adjustedNetMinimumTax: number;
+}
+
+export function computeForm8801CreditGeneration(params: {
+  /** Form 6251 line 1 equivalent (regular taxable income fed to the AMT). */
+  taxableIncome: number;
+  /** Net EXCLUSION-item adjustments/preferences (may be negative — the
+   *  state-refund removal is a negative exclusion adjustment). */
+  exclusionPreferences: number;
+  /** The year's actual net minimum tax (Form 6251 line 11 = engine amtTax). */
+  amtTax: number;
+  /** Regular tax for AMT purposes (Form 6251 line 10 equivalent). */
+  regularTax: number;
+  filingStatus: string;
+  taxYear: number;
+  /** Part III pass-throughs so the exclusion run keeps preferential rates. */
+  ltcgPlusQdiv?: number;
+  unrecaptured1250Gain?: number;
+  collectibles28Gain?: number;
+}): Form8801GenerationResult {
+  const actualAmt = Math.max(0, params.amtTax);
+  // Recompute the AMT as if ONLY exclusion items existed. Deferral items
+  // (ISO bargain, depreciation adjustment) are omitted by the caller;
+  // the ATNOLD (§56(d)) is a deferral-class deduction (Form 8801 Part I uses
+  // its own MTCNOLD line) — omitting it RAISES the exclusion-only AMTI, which
+  // can only LOWER the credit generated (the conservative direction).
+  const exclusionRun = calculateAmt({
+    taxableIncome: params.taxableIncome,
+    amtPreferences: params.exclusionPreferences,
+    filingStatus: params.filingStatus,
+    regularTax: params.regularTax,
+    taxYear: params.taxYear,
+    ltcgPlusQdiv: params.ltcgPlusQdiv,
+    unrecaptured1250Gain: params.unrecaptured1250Gain,
+    collectibles28Gain: params.collectibles28Gain,
+  });
+  // calculateAmt.amtTax = max(0, TMT − regularTax) — exactly Form 8801 Part I
+  // line 16 ("net minimum tax on exclusion items") for the exclusion run.
+  const netMinimumTaxOnExclusionItems = exclusionRun.amtTax;
+  const adjustedNetMinimumTax = Math.max(0, actualAmt - netMinimumTaxOnExclusionItems);
+  return {
+    exclusionAmti: exclusionRun.amti,
+    tentativeMinTaxOnExclusionItems: exclusionRun.amtBeforeRegular,
+    netMinimumTaxOnExclusionItems,
+    adjustedNetMinimumTax,
+  };
+}
+
 // ── Child Tax Credit (federal) ─────────────────────────────────────────────
 // 2024 + 2025 rules: $2,000 per qualifying child under 17 with SSN; phase out
 // $50 per $1,000 (or fraction) of AGI over $200,000 single ($400,000 MFJ).

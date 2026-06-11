@@ -33,10 +33,15 @@ function num(v: unknown): number {
 }
 
 // Annual cash-wage threshold that triggers FICA (SSA-indexed).
+// F-7 (audit 2026-06-11): 2026 = $3,000 per the SSA employment coverage
+// thresholds (ssa.gov/oact/cola/CovThresh.html) and SSA Pub EN-05-10021
+// "Household Workers (2026)" — "If you pay cash wages of $3,000 or more for
+// 2026 to any one household employee, you generally must withhold 6.2% for
+// Social Security and 1.45% for Medicare". (+$200 from 2025's $2,800.)
 const SS_MEDICARE_THRESHOLD: Record<TaxYear, number> = {
   2024: 2700,
   2025: 2800,
-  2026: 2800, // PROVISIONAL — confirm the SSA 2026 household-employee threshold.
+  2026: 3000, // SSA-published (was $2,800 PROVISIONAL — resolved 2026-06-11)
 };
 const FUTA_WAGE_BASE = 7000;
 const FUTA_NET_RATE = 0.006; // 6.0% gross − 5.4% max state credit

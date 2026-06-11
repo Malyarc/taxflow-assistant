@@ -158,7 +158,17 @@ export function computeForm2210(args: { ret: ComputedTaxReturn; input?: Form2210
     round(ret.federalTaxLiability - ret.totalNonRefundableApplied - refundableCredits),
   );
 
-  const withholding = Math.max(0, round(ret.federalTaxWithheld));
+  // Line 6 — withholding. Per the Form 2210 line 6 instructions + IRC
+  // §6654(g)(1) (the §31 credit — which includes the §31(b) special refund of
+  // excess Social Security withholding — "shall be deemed a payment of
+  // estimated tax"), the Schedule 3 line 11 excess-SS credit counts as
+  // WITHHOLDING here (spread evenly across installments). ret.federalTaxWithheld
+  // already includes the Form 8959 Part IV Additional-Medicare withholding
+  // (1040 line 25c — F-6).
+  const withholding = Math.max(
+    0,
+    round(ret.federalTaxWithheld + (ret.excessSocialSecurityCredit ?? 0)),
+  );
   const estimatedPayments = Math.max(0, round(input.estimatedPaymentsAdditional ?? 0));
   const totalPaid = withholding + estimatedPayments;
 

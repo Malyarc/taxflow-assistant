@@ -234,6 +234,13 @@ export const taxReturnsTable = pgTable(
     collectibles28RateGain: numeric("collectibles_28_rate_gain", { precision: 14, scale: 2 }).notNull().default("0"),
     // T1.2 — Schedule H household-employment tax (FICA + FUTA), Sch 2 line 9.
     householdEmploymentTax: numeric("household_employment_tax", { precision: 14, scale: 2 }).notNull().default("0"),
+    // T1.0b (audit 2026-06-11, migration 0021) — payment-side credits.
+    // F-5 — Schedule 3 line 11 excess Social Security withholding credit
+    // (2+ employers, Box 4 over the year's 6.2% × wage-base maximum).
+    excessSocialSecurityCredit: numeric("excess_social_security_credit", { precision: 14, scale: 2 }).notNull().default("0"),
+    // F-6 — Form 8959 Part IV Additional-Medicare-Tax withholding (W-2 Box 6
+    // over 1.45% × Box 5) credited as federal withholding on 1040 line 25c.
+    additionalMedicareWithholding: numeric("additional_medicare_withholding", { precision: 14, scale: 2 }).notNull().default("0"),
     /**
      * C4 — Form 1040-X amended-return support.
      *

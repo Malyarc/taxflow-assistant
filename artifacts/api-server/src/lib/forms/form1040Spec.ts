@@ -303,9 +303,12 @@ export function build1040(ctx: FormBuildContext): FormInstance {
   const line27 = ret.eitc.appliedCredit;
   const line28 = ret.additionalChildTaxCredit;
   const line29 = ret.educationCredits.aocRefundable;
+  // F-5 — Schedule 3 line 11 (excess SS withholding) flows through Schedule 3
+  // line 13 into 1040 line 31.
   const line31 =
     Math.max(0, ret.premiumTaxCredit.netPtc) +
     ret.adoptionCredit.refundablePortion +
+    (ret.excessSocialSecurityCredit ?? 0) +
     ret.manualCreditsApplied;
   const line32 = line27 + line28 + line29 + line31;
   const line33 = line25d + line32;
@@ -321,7 +324,7 @@ export function build1040(ctx: FormBuildContext): FormInstance {
     paymentLines.push(
       moneyLine("25c", "Federal income tax withheld — other forms", line25c, {
         indent: 1,
-        note: "Residual: manual CPA withholding adjustments.",
+        note: "Residual: Form 8959 Part IV Additional-Medicare withholding (W-2 box 6 excess) + manual CPA withholding adjustments.",
       }),
     );
   }
@@ -341,7 +344,7 @@ export function build1040(ctx: FormBuildContext): FormInstance {
   if (nz(line31)) {
     paymentLines.push(
       moneyLine("31", "Amount from Schedule 3, line 13", line31, {
-        note: "Net premium tax credit (8962) + refundable adoption credit (8839/OBBBA) + manual CPA credit adjustments.",
+        note: "Net premium tax credit (8962) + refundable adoption credit (8839/OBBBA) + excess Social Security withholding (Sch 3 line 11) + manual CPA credit adjustments.",
       }),
     );
   }

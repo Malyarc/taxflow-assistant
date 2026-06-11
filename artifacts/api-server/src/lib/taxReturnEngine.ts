@@ -36,6 +36,9 @@ import {
   calculateObbbaSchedule1ADeductions,
   type ObbbaSchedule1ADeductions,
   calculateAmt,
+  computeForm8801CreditGeneration,
+  type Form8801GenerationResult,
+  SS_WAGE_BASE,
   calculateFederalTaxWithCapitalGains,
   calculateScheduleA,
   calculateEitc,
@@ -224,18 +227,32 @@ export interface ClientFacts {
 
 export interface W2Fact {
   taxYear?: number | null;
+  /** F-5 — employer name (W-2 box c). Used ONLY to count DISTINCT employers
+   *  for the Schedule 3 line 11 excess-SS credit (≥2 employers required;
+   *  a single employer's over-withholding is recovered from the employer,
+   *  not on the 1040 — IRS Topic 608). Unnamed W-2s count as distinct. */
+  employerName?: string | null;
   wagesBox1?: Numish;
   federalTaxWithheldBox2?: Numish;
   /** W-2 Box 3 — Social Security wages. Used for Sch SE Part I Line 9 (SS
    *  wage base shared across W-2 + SE). Falls back to Box 1 when absent. */
   socialSecurityWagesBox3?: Numish;
+  /** F-5 — W-2 Box 4: Social Security tax withheld. Drives the Schedule 3
+   *  line 11 excess-SS refundable credit (2+ employers, total over the year's
+   *  6.2% × wage-base maximum). */
+  socialSecurityTaxBox4?: Numish;
   /** W-2 Box 5 — Medicare wages (no cap). Used for Form 8959 Additional
    *  Medicare tax. Falls back to Box 1 when absent. */
   medicareWagesBox5?: Numish;
+  /** F-6 — W-2 Box 6: Medicare tax withheld. Form 8959 Part IV reconciles
+   *  the Additional-Medicare portion (Box 6 − 1.45% × Box 5) into federal
+   *  income tax withholding (1040 line 25c). */
+  medicareTaxBox6?: Numish;
   stateTaxWithheldBox17?: Numish;
   stateCode?: string | null;
   /** K1 MFJ sub-gap — which spouse this W-2 belongs to. Default "taxpayer".
-   *  Drives per-spouse Sch SE Line 9 SS wage base computation for MFJ. */
+   *  Drives per-spouse Sch SE Line 9 SS wage base computation for MFJ (and
+   *  per-spouse excess-SS Schedule 3 line 11 — F-5). */
   spouse?: "taxpayer" | "spouse" | string | null;
 }
 
@@ -561,6 +578,14 @@ export interface Form1099Summary {
   shortTermCapitalGains: number;
   /** Retirement income (1099-R taxable amount) */
   retirementIncome: number;
+  /** F-10 — taxable 1099-R amounts whose Box 7 carries distribution code "D"
+   *  (non-qualified annuity, e.g. "D", "7D", "1D"). §1411(c)(1)(A)(i) puts
+   *  gross income from annuities OTHER than §401/§403/§408 qualified plans in
+   *  the NIIT base; the Form 8960 instructions + Pub 575 say: "if code 'D' is
+   *  shown in box 7 of Form 1099-R, include on Form 8960, line 3, the taxable
+   *  amount". A SUBSET of retirementIncome (all other 1099-R income stays out
+   *  of NII as §1411(c)(5) qualified-plan distributions). */
+  nonQualifiedAnnuityIncome: number;
   /** E5 — IRC §72(t) early-withdrawal penalty (10% on code "1", 25% on code "S"). Added to total federal liability on Sched 2 Line 8. */
   earlyWithdrawalPenalty: number;
   /** A2 — 1099-INT Box 2 penalty on early withdrawal of SAVINGS (forfeited CD
@@ -658,6 +683,17 @@ export function summarize1099s(records: Form1099Fact[]): Form1099Summary {
     (s, r) => s + toNum(r.taxableAmount ?? r.grossDistribution),
     0,
   );
+  // F-10 — non-qualified annuity income (1099-R Box 7 code "D", alone or as
+  // the second character of a combo like "7D"/"1D"). The ONLY 1099-R income
+  // routed into the §1411 NII base (Form 8960 line 3); qualified-plan
+  // distributions stay excluded under §1411(c)(5). Per the Form 8960
+  // instructions / Pub 575: code D identifies "annuity payments from
+  // nonqualified annuities that may be subject to tax under section 1411."
+  const nonQualifiedAnnuityIncome = rRecords.reduce((s, r) => {
+    const code = (r.distributionCode ?? "").trim().toUpperCase();
+    if (!code.includes("D")) return s;
+    return s + Math.max(0, toNum(r.taxableAmount ?? r.grossDistribution));
+  }, 0);
 
   // E5 — IRC §72(t) Early-Withdrawal Additional Tax (Form 5329 / Sched 2 Line 8).
   // 10% penalty applies on the TAXABLE portion of an early distribution
@@ -787,6 +823,7 @@ export function summarize1099s(records: Form1099Fact[]): Form1099Summary {
     longTermCapitalGains,
     shortTermCapitalGains,
     retirementIncome,
+    nonQualifiedAnnuityIncome,
     earlyWithdrawalPenalty,
     interestEarlyWithdrawalPenalty,
     unemploymentIncome,
@@ -897,6 +934,17 @@ export interface ComputedTaxReturn {
   /** Additional Medicare Tax (0.9% Form 8959, IRC §3101(b)(2)/§1401(b)(2))
    *  on Medicare wages + SE net above filing-status threshold */
   additionalMedicareTax: number;
+  /** F-6 — Form 8959 Part IV (lines 19–24): Additional-Medicare-Tax
+   *  WITHHOLDING = max(0, total W-2 Box 6 − 1.45% × total Box 5). Included in
+   *  federal income tax withholding (1040 line 25c) — a PAYMENT, already
+   *  folded into `federalTaxWithheld` + `federalRefundOrOwed`. */
+  additionalMedicareWithholding: number;
+  /** F-5 — Excess Social Security withholding credit (1040 Schedule 3
+   *  line 11): per-person (taxpayer/spouse) W-2 Box 4 over the year's 6.2% ×
+   *  wage-base maximum, when that person had 2+ employers. A REFUNDABLE
+   *  payment-side credit — added into `federalRefundOrOwed`, NOT a liability
+   *  offset. */
+  excessSocialSecurityCredit: number;
   /** T1.2 — Schedule H household employment tax (FICA + FUTA on a nanny /
    *  household employee's cash wages). Schedule 2 line 9. 0 when none. */
   scheduleH: ScheduleHResult;
@@ -990,8 +1038,14 @@ export interface ComputedTaxReturn {
   amtNolCarryforwardRemaining: number;
   /** E2 — Form 8801 minimum-tax credit applied against regular tax this year. */
   amtCreditApplied: number;
-  /** E2 — Form 8801 minimum-tax credit generated by this year's AMT (simplified: equals amtTax). */
+  /** E2/F-3 — Form 8801 minimum-tax credit generated by this year's AMT.
+   *  §53(d) "adjusted net minimum tax" = AMT minus the net minimum tax on
+   *  EXCLUSION items (Form 8801 Part I recompute) — only the deferral-item
+   *  AMT (ISO bargain, depreciation timing, ATNOLD) generates credit. */
   amtCreditGenerated: number;
+  /** F-3 — Form 8801 Part I detail behind amtCreditGenerated (exclusion-only
+   *  AMTI / TMT / net minimum tax on exclusion items). Null when no AMT. */
+  form8801Generation: Form8801GenerationResult | null;
   /** E2 — Form 8801 unused minimum-tax credit carried forward to next year. */
   amtCreditCarryforwardRemaining: number;
   /** P2-3 — Form 1116 Schedule B / §904(c) unused foreign tax credit carried
@@ -1527,6 +1581,59 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const w2SsBySpouse = w2Records
     .filter((r) => r.spouse === "spouse")
     .reduce((s, r) => s + (r.socialSecurityWagesBox3 != null ? toNum(r.socialSecurityWagesBox3) : toNum(r.wagesBox1)), 0);
+
+  // F-5 (audit 2026-06-11) — Excess Social Security withholding credit
+  // (1040 Schedule 3 line 11). When ONE PERSON had TWO OR MORE employers and
+  // their combined W-2 Box 4 exceeds the year's maximum (6.2% × the SS wage
+  // base: $10,453.20 TY2024 / $10,918.20 TY2025 / $11,439.00 TY2026), the
+  // excess is a REFUNDABLE payment-side credit. Per the Schedule 3 line 11
+  // instructions + IRS Topic 608 + Pub 505: the credit requires 2+ employers
+  // for that person — if any single employer over-withheld, the employee
+  // recovers it from the employer (Form 843 if refused), NOT on the 1040.
+  // MFJ: each spouse's own employers/Box 4 are figured SEPARATELY (Pub 505) —
+  // we group by the W-2 `spouse` tag (default "taxpayer").
+  // Employer count = distinct employerName values; unnamed W-2s each count as
+  // a distinct employer (two W-2 records are overwhelmingly two employers;
+  // duplicate same-employer W-2s carry the same name and collapse to one).
+  const ssMaxWithholding = 0.062 * SS_WAGE_BASE[resolvedMapYear];
+  const excessSsForPerson = (records: W2Fact[]): number => {
+    if (records.length < 2) return 0;
+    const named = new Set<string>();
+    let unnamed = 0;
+    for (const r of records) {
+      const name = (r.employerName ?? "").trim().toLowerCase();
+      if (name) named.add(name);
+      else unnamed += 1;
+    }
+    if (named.size + unnamed < 2) return 0;
+    const totalBox4 = records.reduce((s, r) => s + Math.max(0, toNum(r.socialSecurityTaxBox4)), 0);
+    return Math.max(0, totalBox4 - ssMaxWithholding);
+  };
+  const excessSocialSecurityCredit =
+    excessSsForPerson(w2Records.filter((r) => (r.spouse ?? "taxpayer") === "taxpayer")) +
+    excessSsForPerson(w2Records.filter((r) => r.spouse === "spouse"));
+
+  // F-6 (audit 2026-06-11) — Form 8959 Part IV withholding reconciliation.
+  // Employers MUST withhold the 0.9% Additional Medicare Tax on wages over
+  // $200,000 (per employer); that withholding rides inside W-2 Box 6 (Medicare
+  // tax withheld), NOT Box 2. Form 8959 Part IV: line 19 = total Box 6 across
+  // W-2s; line 20 = total Box 5; line 21 = line 20 × 1.45%; line 22 = line 19
+  // − line 21 = "Additional Medicare Tax withholding"; line 24 → "include this
+  // amount with federal income tax withholding on Form 1040, line 25c"
+  // (Instructions for Form 8959). Computed on the AGGREGATE per the form (not
+  // per-W-2). Only W-2s that actually carry a Box 6 value join the
+  // reconciliation — a record with Box 6 missing (data not entered) must not
+  // erode another employer's excess via its 1.45% × Box 5 term.
+  const w2sWithBox6 = w2Records.filter((r) => r.medicareTaxBox6 != null);
+  const totalMedicareTaxBox6 = w2sWithBox6.reduce((s, r) => s + Math.max(0, toNum(r.medicareTaxBox6)), 0);
+  const totalMedicareWagesForPartIV = w2sWithBox6.reduce(
+    (s, r) => s + (r.medicareWagesBox5 != null ? toNum(r.medicareWagesBox5) : toNum(r.wagesBox1)),
+    0,
+  );
+  const additionalMedicareWithholding = Math.max(
+    0,
+    totalMedicareTaxBox6 - 0.0145 * Math.max(0, totalMedicareWagesForPartIV),
+  );
 
   // ── 1099 aggregation (filter to tax year) + summary ──
   const form1099Records = form1099s.filter((r) => (r.taxYear ?? taxYear) === taxYear);
@@ -3238,7 +3345,20 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // std-deduction filers who hit AMT had federal AMTI understated by the full
   // standard deduction.)
   const stdDeductionAddbackForAmt = useItemizedDeductions ? 0 : calc.standardDeduction;
-  const federalAmtPreferences = totalAmtPreferences + stdDeductionAddbackForAmt;
+  // F-4 (audit 2026-06-11) — 2025 Form 6251 line 1b: the OBBBA §151(d) enhanced
+  // senior deduction ($6,000 per 65+ individual, Schedule 1-A) is "treated as a
+  // personal exemption" (OBBBA §70103 places it in §151(d)) and §56(b)(1)(E)
+  // disallows §151 personal-exemption deductions for AMT — so it is ADDED BACK
+  // to AMTI (the 2025 Form 6251 split line 1 into 1a/1b for exactly this
+  // add-back; 2025 Instructions for Form 6251, What's New). The OTHER three
+  // OBBBA Schedule 1-A deductions (tips §224 / overtime §225 / car-loan
+  // interest §163(h)(4)) are NOT §151 deductions and have no §56(b) add-back —
+  // they reduce AMTI like any other deduction. FEDERAL-ONLY (the state-AMT
+  // approximation keeps the shared totalAmtPreferences — states add back their
+  // own items). Inert for TY2024 / non-senior returns (senior = 0).
+  const seniorDeductionAddbackForAmt = obbbaDeductions.senior;
+  const federalAmtPreferences =
+    totalAmtPreferences + stdDeductionAddbackForAmt + seniorDeductionAddbackForAmt;
 
   const amt = calculateAmt({
     taxableIncome: taxableAfterObbba,
@@ -3304,10 +3424,24 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
       (niitRentalIsNonPassive ? 0 : form1099Summary.rents + Math.max(0, rentalNetAppliedToAgi) + Math.max(0, disposedRentalNet)) +
       // Passive pass-through income (engine already segregates active vs passive):
       Math.max(0, k1PassiveAppliedToAgi) +
+      // F-10 — non-qualified annuity income (1099-R Box 7 code "D").
+      // §1411(c)(1)(A)(i) includes gross income from annuities other than
+      // §401/§403/§408 qualified plans; Form 8960 line 3 + Pub 575: include
+      // the Box 2a taxable amount when Box 7 shows code D. All OTHER 1099-R
+      // income stays excluded (§1411(c)(5) qualified-plan distributions).
+      form1099Summary.nonQualifiedAnnuityIncome +
       // Net gain on disposition: post-netting positive LTCG + STCG (already
-      // folds in 1099-B, K-1 Box 8/9a, §121 remainder, §1031 recognized, QSBS):
+      // folds in 1099-B, K-1 Box 8/9a, §121 remainder, §1031 recognized, QSBS).
+      // F-8 — Form 8960 line 5a is the net gain OR LOSS as included in AGI
+      // (1040 line 7), i.e. AFTER the §1211(b) $3,000/$1,500 limitation — so
+      // the ALLOWED net capital loss (capitalLossDeducted, a positive number
+      // capped at 3,000/1,500) REDUCES the other investment income. In the
+      // net-loss branch ltcgPreferential = stcgInOrdinary = 0, so the capital
+      // component is exactly −capitalLossDeducted; total NII stays floored at
+      // 0 by the surrounding Math.max (NIIT cannot go negative).
       ltcgPreferential +
       stcgInOrdinary -
+      capitalLossDeducted -
       // §1411(c)(1): a §1231 gain from a NON-passive (materially-participated)
       // trade/business is NOT net investment income. Excluded when the CPA flags
       // the Form 4797 disposition `nonPassive` (default off → conservatively
@@ -3766,9 +3900,10 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // personal credits (FTC/dep-care/education/Saver's/energy/adoption) per the
   // Credit Limit Worksheet: `taxBeforeCredit` is the tax remaining after those,
   // so the CTC fills only the residual and the maximum amount spills to the
-  // refundable ACTC. (The §53 AMT credit + §38 GBC below are NOT subtracted in
-  // the CTC limit worksheet, so the CTC takes priority over them — they apply
-  // against what's left after the CTC.)
+  // refundable ACTC. (The §38 GBC + §53 AMT credit below are NOT subtracted in
+  // the CTC limit worksheet — Sch 8812 CLW subtracts Schedule 3 lines 1–4, 5b,
+  // 6c, 6g, 6h but NOT lines 6a/6b — so the CTC takes priority over them; they
+  // apply against what's left after the CTC.)
   const ctc = calculateChildTaxCredit({
     qualifyingChildren: client.dependentsUnder17 ?? 0,
     otherDependents: client.otherDependents ?? 0,
@@ -3780,41 +3915,42 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   });
   availableForNonRefundable = Math.max(0, availableForNonRefundable - ctc.nonRefundablePortion);
 
-  // E2 — Form 8801 Minimum-Tax Credit (IRC §53). Sched 3 Line 6b on TY2024.
-  // Carryforward from prior years can offset regular tax DOWN TO the level
-  // of tentative minimum tax (Form 6251 Line 8 = amt.amtBeforeRegular).
-  // Three caps stack:
-  //   (a) the carryforward balance itself,
-  //   (b) the spread between this year's regular tax and TMT (the IRC §53(c)
-  //       limit — when AMT binds this year, this is 0 → no credit applies),
-  //   (c) the remaining `availableForNonRefundable` (can't reduce below $0).
-  // Simplified §53(b) generation: amtTax generated this year flows to next
-  // year's carryforward in full. CPAs can override via the
-  // `amt_credit_carryforward` adjustment for exclusion-item-only AMT
-  // (state-tax addback dominates → little credit truly generated).
-  const amtCreditCarryforwardIn = sumByType("amt_credit_carryforward");
-  const amtCreditApplicable = Math.max(0, regularFederalTax - amt.amtBeforeRegular);
-  const amtCreditApplied = Math.min(
-    amtCreditCarryforwardIn,
-    amtCreditApplicable,
-    availableForNonRefundable,
-  );
-  availableForNonRefundable = Math.max(0, availableForNonRefundable - amtCreditApplied);
-  const amtCreditGenerated = amt.amtTax;
-  const amtCreditCarryforwardRemaining = Math.max(
-    0,
-    amtCreditCarryforwardIn + amtCreditGenerated - amtCreditApplied,
-  );
+  // FC-08/F-2 (audit 2026-06-11) — the §38(c) and §53(c) limits are NET-of-
+  // credit limits, and the FORM ordering is §38 (Schedule 3 line 6a, Form
+  // 3800) BEFORE §53 (Schedule 3 line 6b, Form 8801):
+  //   • §38(c)(1): the GBC may not exceed "net income tax" minus the greater
+  //     of TMT or 25% of "net regular tax liability" over $25,000 — where BOTH
+  //     net amounts are reduced by the credits allowable under subparts A
+  //     (§§21–26 personal credits incl. CTC/adoption) and B (§27 FTC), but NOT
+  //     by the §53 credit (subpart G). (Form 3800 Part II nets the FTC +
+  //     "certain allowable credits" out of lines 11/13.)
+  //   • §53(c): the MTC may not exceed regular tax reduced by "the credits
+  //     allowable under subparts A, B, D, E, and F" — subpart D IS the §38
+  //     GBC, so the §53 limit nets the GBC out → §53 is applied AFTER §38.
+  //     (Form 8801 Part II mirrors this: "regular income tax liability minus
+  //     allowable credits" = 1040 line 16 + Sch 2 line 1z MINUS 1040 line 19
+  //     and Schedule 3 lines 1 through 6z — including the 6a GBC, excluding
+  //     only the 6b MTC itself and Form 8912.)
+  // The personal credits applied above (subparts A + B) feed both limits:
+  const personalCreditsApplied =
+    foreignTaxApplied +
+    depCareApplied +
+    aocNonRefundableApplied +
+    llcApplied +
+    saversApplied +
+    residentialEnergyApplied +
+    adoptionCredit.nonRefundableApplied +
+    ctc.nonRefundablePortion;
 
   // P2-15c — R&D Credit (Form 6765 / §41), the general business credit. ASC
   // method (14% over 50% of the prior-3-yr QRE avg; 6% startup) with the
   // §280C(c)(3) reduced election applied by default. Subject to the §38(c)(1)
-  // general-business-credit liability limit: net income tax − max(TMT, 25% of
-  // net income tax over $25,000). The excess carries forward (§39, 1-back/
-  // 20-forward; not vintage-tracked, consistent with the other carryforwards).
-  // Applied last in the nonrefundable order (Form 3800). The §41(h) payroll-tax
-  // election (qualified small business → offsets the employer OASDI share, not
-  // income tax) is OUT of the individual income-tax engine's scope — documented.
+  // general-business-credit liability limit (see FC-08 above): NET income tax
+  // − max(TMT, 25% of NET regular tax liability over $25,000). The excess
+  // carries forward (§39, 1-back/20-forward; not vintage-tracked, consistent
+  // with the other carryforwards). The §41(h) payroll-tax election (qualified
+  // small business → offsets the employer OASDI share, not income tax) is OUT
+  // of the individual income-tax engine's scope — documented.
   const rdCredit = calculateRdCredit({
     qualifiedResearchExpenses: sumByType("qualified_research_expenses"),
     priorThreeYearAvgQre: sumByType("qualified_research_expenses_prior_avg"),
@@ -3824,9 +3960,17 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // Added to this year's §41 credit before the §38(c) liability limit.
   const rdCreditCarryforwardIn = Math.max(0, sumByType("rd_credit_carryforward"));
   const rdCreditAvailable = rdCredit.credit + rdCreditCarryforwardIn;
+  // FC-08 — §38(c)(1)/(2): "net income tax" = (regular tax + AMT) − subpart
+  // A/B credits; "net regular tax liability" = regular tax − subpart A/B
+  // credits. The engine previously used GROSS incomeTaxOnly for both, which
+  // over-allowed the GBC below the statutory floor whenever personal/FTC
+  // credits were present.
+  const netIncomeTaxFor38 = Math.max(0, incomeTaxOnly - personalCreditsApplied);
+  const netRegularTaxFor38 = Math.max(0, regularFederalTax - personalCreditsApplied);
   const section38Limit = Math.max(
     0,
-    incomeTaxOnly - Math.max(amt.amtBeforeRegular, 0.25 * Math.max(0, incomeTaxOnly - 25_000)),
+    netIncomeTaxFor38 -
+      Math.max(amt.amtBeforeRegular, 0.25 * Math.max(0, netRegularTaxFor38 - 25_000)),
   );
   const rdCreditApplied = Math.min(rdCreditAvailable, availableForNonRefundable, section38Limit);
   availableForNonRefundable = Math.max(0, availableForNonRefundable - rdCreditApplied);
@@ -3853,6 +3997,74 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   );
   availableForNonRefundable = Math.max(0, availableForNonRefundable - otherGbcApplied);
   const otherGbcCarryforwardRemaining = Math.max(0, otherGbcAvailable - otherGbcApplied);
+
+  // E2/F-2 — Form 8801 Minimum-Tax Credit (IRC §53). Schedule 3 line 6b —
+  // applied LAST among the nonrefundable credits, AFTER the §38 GBC (line 6a),
+  // per the §53(c) subpart-D netting + the Form 8801 Part II "regular tax
+  // liability minus allowable credits" line (see the FC-08/F-2 citation block
+  // above). Three caps stack:
+  //   (a) the carryforward balance itself,
+  //   (b) the §53(c) limit: (regular tax − ALL other nonrefundable credits
+  //       applied this year) − TMT (Form 6251 line 9 = amt.amtBeforeRegular).
+  //       Subtracting the credits keeps the §53 credit from pushing net income
+  //       tax BELOW TMT (F-2 — the engine previously used GROSS regular tax,
+  //       over-applying by up to min(otherCredits, regular − TMT)). When AMT
+  //       binds this year, regular < TMT → limit 0 → no credit applies.
+  //   (c) the remaining `availableForNonRefundable` (can't reduce below $0).
+  const amtCreditCarryforwardIn = sumByType("amt_credit_carryforward");
+  const creditsBeforeSection53 = personalCreditsApplied + rdCreditApplied + otherGbcApplied;
+  const amtCreditApplicable = Math.max(
+    0,
+    regularFederalTax - creditsBeforeSection53 - amt.amtBeforeRegular,
+  );
+  const amtCreditApplied = Math.min(
+    amtCreditCarryforwardIn,
+    amtCreditApplicable,
+    availableForNonRefundable,
+  );
+  availableForNonRefundable = Math.max(0, availableForNonRefundable - amtCreditApplied);
+  // F-3 — §53(b)/(d) generation: ONLY the deferral-item AMT generates a
+  // minimum-tax credit. Form 8801 Part I recomputes a "net minimum tax on
+  // exclusion items" (the §56(b)(1) personal/itemized adjustments + the
+  // §57(a)(7) QSBS preference cause PERMANENT differences and generate no
+  // credit); the credit generated = AMT − that. The engine's preference
+  // components classify as:
+  //   EXCLUSION — SALT addback (2g/2a), standard-deduction addback (2a),
+  //     OBBBA senior addback (line 1b, §56(b)(1)(E)), the state-refund
+  //     removal (2b, NEGATIVE), the §57(a)(7) QSBS 7% preference, and the
+  //     legacy `amt_preferences` catch-all (unclassifiable → treated as
+  //     exclusion, the conservative direction: generates NO credit; CPAs
+  //     enter ISO/depreciation via their dedicated adjustments or override
+  //     next year's `amt_credit_carryforward`).
+  //   DEFERRAL — ISO bargain element (2i), the MACRS-vs-ADS depreciation
+  //     adjustment (2l, ±), and the ATNOLD (omitted from the exclusion run —
+  //     see computeForm8801CreditGeneration).
+  const exclusionPreferencesForAmt =
+    amtPreferencesLegacy +
+    saltAddbackForAmt -
+    taxableStateRefund +
+    qsbs1202AmtPreference +
+    stdDeductionAddbackForAmt +
+    seniorDeductionAddbackForAmt;
+  const form8801Generation =
+    amt.amtTax > 0
+      ? computeForm8801CreditGeneration({
+          taxableIncome: taxableAfterObbba,
+          exclusionPreferences: exclusionPreferencesForAmt,
+          amtTax: amt.amtTax,
+          regularTax: regularFederalTax,
+          filingStatus: client.filingStatus,
+          taxYear,
+          ltcgPlusQdiv: preferentialIncome,
+          unrecaptured1250Gain: unrecaptured1250Bounded,
+          collectibles28Gain: collectibles28Bounded,
+        })
+      : null;
+  const amtCreditGenerated = form8801Generation?.adjustedNetMinimumTax ?? 0;
+  const amtCreditCarryforwardRemaining = Math.max(
+    0,
+    amtCreditCarryforwardIn + amtCreditGenerated - amtCreditApplied,
+  );
 
   // ── Step 8: Refundable credits + PTC reconciliation ───
   // FED-06 — §32(i)(2) EITC disqualifying-investment-income cliff. Unlike the
@@ -3951,8 +4163,17 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
 
   const federalRefundOrOwed =
     totalFederalWithheld +
+    // F-6 — Form 8959 Part IV line 24: Additional-Medicare-Tax withholding
+    // (W-2 Box 6 over 1.45% × Box 5) is "include[d] with federal income tax
+    // withholding on Form 1040 line 25c" — a PAYMENT (the liability side is
+    // additionalMedicareTax above; without this credit the engine overstated
+    // the balance due by the employer's mandatory 0.9% withholding).
+    additionalMedicareWithholding +
     withholdingAdjustments +
     creditAdjustments +
+    // F-5 — Schedule 3 line 11 excess-SS withholding (2+ employers): a
+    // refundable payment-side credit (1040 line 31 via Schedule 3 Part II).
+    excessSocialSecurityCredit +
     totalCreditsAppliedForRefund -
     totalFederalLiabilityWithRepayment;
 
@@ -4146,7 +4367,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     taxableIncome: taxableAfterObbba,
     obbbaSchedule1A: obbbaDeductions,
     federalTaxLiability: totalFederalLiabilityWithRepayment,
-    federalTaxWithheld: totalFederalWithheld + withholdingAdjustments,
+    // F-6 — 1040 line 25 total withholding includes the Form 8959 Part IV
+    // Additional-Medicare withholding (line 25c per the 8959 instructions).
+    federalTaxWithheld: totalFederalWithheld + withholdingAdjustments + additionalMedicareWithholding,
     federalRefundOrOwed,
     stateTaxLiability,
     stateTaxWithheld: totalStateWithheld,
@@ -4164,6 +4387,8 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     scheduleH,
     niitTax: niit.niitTax,
     additionalMedicareTax: additionalMedicare.additionalMedicareTax,
+    additionalMedicareWithholding,
+    excessSocialSecurityCredit,
     amtTax: amt.amtTax,
     additionalChildTaxCredit: ctc.refundableActc,
     capitalGainsTax: capGains.preferentialRateTax,
@@ -4224,6 +4449,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     amtNolCarryforwardRemaining: amt.atnoldCarryforwardRemaining,
     amtCreditApplied,
     amtCreditGenerated,
+    form8801Generation,
     amtCreditCarryforwardRemaining,
     foreignTaxCreditCarryforwardRemaining,
     totalNonRefundableApplied,
