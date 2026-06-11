@@ -23,8 +23,9 @@ import {
   type TaxReturnInputs,
   type ComputedTaxReturn,
 } from "./taxReturnEngine";
-import { projectYearForward } from "./multiYearEngine";
+import { projectYearForward, captureCarryforwards, applyCarryforwards } from "./multiYearEngine";
 import { computeForm2210 } from "./form2210";
+import { rollToBusinessDay } from "./engagement";
 
 export interface QuarterlyVoucher {
   /** 1–4. */
@@ -89,15 +90,46 @@ export interface TaxProjectionResult {
     /** Approx tax benefit = deduction × projected marginal-ish effective ordinary rate. */
     note: string;
   };
+  /**
+   * TP-4 — the projection's modeling assumptions, disclosed on the deliverable
+   * (withholding growth, carryforward chaining, law-year clamping, §7503 roll).
+   */
+  assumptions: string[];
 }
 
-/** 1040-ES statutory installment due dates for `taxYear` (ISO yyyy-mm-dd). */
-function voucherDueDates(taxYear: number): string[] {
+/**
+ * TP-3 — 1040-ES installment due dates for `taxYear` with the §7503 roll
+ * (ISO yyyy-mm-dd). Statutory dates are 4/15, 6/15, 9/15, 1/15; when one
+ * lands on Saturday/Sunday it rolls to the next business day (shared
+ * `rollToBusinessDay` from engagement.ts — e.g. Sun 2025-06-15 → Mon
+ * 2025-06-16). The JANUARY voucher additionally collides with the MLK
+ * federal holiday (3rd Monday of January) in a fully deterministic way:
+ *  - Jan 15 = Sat → weekend roll lands Mon Jan 17 = the 3rd Monday (MLK) → Tue Jan 18
+ *  - Jan 15 = Sun → weekend roll lands Mon Jan 16 = the 3rd Monday (MLK) → Tue Jan 17
+ *  - Jan 15 = Mon → Jan 15 IS the 3rd Monday (MLK) → Tue Jan 16
+ * (When Jan 15 falls Mon/Sat/Sun, the Monday in question is always the 3rd —
+ * Mondays that month are the 1st/8th/15th, 3rd/10th/17th, or 2nd/9th/16th.)
+ * Other federal holidays (e.g. DC Emancipation Day for the April voucher) are
+ * NOT modeled — same documented conservatism as engagement.ts (the computed
+ * date is never LATER than the true §7503 deadline).
+ */
+export function voucherDueDates(taxYear: number): string[] {
+  const iso = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+  const roll = (y: number, monthIdx0: number, day: number) =>
+    rollToBusinessDay(Date.UTC(y, monthIdx0, day));
+  // Q4 (Jan 15 of the FOLLOWING year): weekend roll, then the deterministic
+  // MLK collision — if Jan 15 was a Sat/Sun/Mon, the rolled-to (or original)
+  // Monday is the 3rd Monday of January (Birthday of Martin Luther King, Jr.,
+  // a §7503 legal holiday) → +1 day to Tuesday.
+  const jan15 = Date.UTC(taxYear + 1, 0, 15);
+  const jan15Dow = new Date(jan15).getUTCDay();
+  let q4 = rollToBusinessDay(jan15);
+  if (jan15Dow === 6 || jan15Dow === 0 || jan15Dow === 1) q4 += 86_400_000;
   return [
-    `${taxYear}-04-15`,
-    `${taxYear}-06-15`,
-    `${taxYear}-09-15`,
-    `${taxYear + 1}-01-15`,
+    iso(roll(taxYear, 3, 15)),
+    iso(roll(taxYear, 5, 15)),
+    iso(roll(taxYear, 8, 15)),
+    iso(q4),
   ];
 }
 
@@ -131,8 +163,23 @@ export function computeTaxProjection(args: ComputeTaxProjectionArgs): TaxProject
   const baselineRet = args.baselineReturn;
 
   // Project one year forward and compute the projected return.
-  const projectedInputs = projectYearForward(args.baselineInputs, 1, { incomeGrowth: growth });
+  // TP-1 — thread the BASELINE year's REMAINING carryforwards into the
+  // projected year (captureCarryforwards/applyCarryforwards, the proven
+  // multiYearEngine pair): an NOL / capital-loss / charitable / §163(j) /
+  // AMT-credit / AMT-NOL / Sched-E-PAL balance consumed in the baseline year
+  // must not re-deduct at its opening value in the projection (repro: a fully
+  // consumed $150k NOL understated the projected tax by $52,190 and undersized
+  // every §6654 voucher).
+  const projectedInputs = applyCarryforwards(
+    projectYearForward(args.baselineInputs, 1, { incomeGrowth: growth }),
+    captureCarryforwards(baselineRet),
+  );
   const projectedRet = computeTaxReturnPure(projectedInputs);
+  // The projected CALENDAR year. For a baseline at the newest supported year
+  // the engine computes the projection under clamped latest-year LAW
+  // (resolveTaxYear) and reports that clamped year — the calendar/voucher
+  // year stays the true next year (disclosed in `assumptions`).
+  const projectedCalendarYear = projectedInputs.taxYear;
 
   // §6654 tax for each year (total tax net of refundable credits).
   const baseline2210 = computeForm2210({ ret: baselineRet });
@@ -140,8 +187,6 @@ export function computeTaxProjection(args: ComputeTaxProjectionArgs): TaxProject
 
   // The projected year's safe harbor: 90% of projected vs prior-year-pct of the
   // BASELINE year's §6654 tax. Pass the baseline as the "prior year".
-  const mfs = baselineRet.filingStatus === "married_filing_separately";
-  const priorAgiThreshold = mfs ? 75_000 : 150_000;
   const projected2210 = computeForm2210({
     ret: projectedRet,
     input: {
@@ -155,7 +200,7 @@ export function computeTaxProjection(args: ComputeTaxProjectionArgs): TaxProject
   const projectedWithholding = projectedRet.federalTaxWithheld;
   const toCover = Math.max(0, target - projectedWithholding);
   const perQuarter = Math.round(toCover / 4);
-  const dueDates = voucherDueDates(projectedRet.taxYear);
+  const dueDates = voucherDueDates(projectedCalendarYear);
   const vouchers: QuarterlyVoucher[] = dueDates.map((dueDate, i) => ({
     quarter: i + 1,
     dueDate,
@@ -183,9 +228,31 @@ export function computeTaxProjection(args: ComputeTaxProjectionArgs): TaxProject
     effectiveTaxRate: projectedRet.effectiveTaxRate - baselineRet.effectiveTaxRate,
   };
 
+  // TP-4 — disclose the projection's modeling assumptions on the deliverable.
+  const mfs = baselineRet.filingStatus === "married_filing_separately";
+  const priorAgiThreshold = mfs ? 75_000 : 150_000;
+  const assumptions: string[] = [
+    `Income, withholding, and most dollar amounts grown at ×${growth.toFixed(2)} from the TY${baselineRet.taxYear} baseline — withholding is NOT held level; if the client expects level withholding, the vouchers understate the gap by the withholding growth.`,
+    "Carryforwards are CHAINED from the baseline year's engine outputs: NOL, capital-loss (short/long), charitable cash, §163(j), AMT credit, AMT NOL, and Schedule-E passive-loss balances enter the projected year at their REMAINING (post-baseline-consumption) values, not their opening values.",
+    "Credit-type carryforwards without an engine remaining-balance output (FTC, §179, §163(d), adoption, R&D, GBC) are held at their baseline dollar amounts (never grown with income).",
+    `§6654 safe harbor = min(90% of the projected year's tax, ${Math.round(projected2210.priorYearSafeHarborPct * 100)}% of the TY${baselineRet.taxYear} tax) — the prior-year multiplier is 110% when baseline AGI exceeds $${priorAgiThreshold.toLocaleString("en-US")} (${mfs ? "MFS" : "non-MFS"} threshold).`,
+    "Voucher due dates apply the §7503 weekend roll plus the deterministic Birthday-of-MLK collision for the January installment; other federal/DC holidays (e.g. Emancipation Day) are not modeled — a computed date is never later than the true deadline.",
+  ];
+  if (projectedCalendarYear !== projectedRet.taxYear) {
+    assumptions.push(
+      `TY${projectedCalendarYear} is beyond the engine's newest supported tax year — the projected return is computed under TY${projectedRet.taxYear} law (current-law projection; brackets/limits for TY${projectedCalendarYear} are not yet enacted/published).`,
+    );
+  } else {
+    assumptions.push(
+      `Projected TY${projectedCalendarYear} computed under TY${projectedRet.taxYear} law as enacted today (current-law projection).`,
+    );
+  }
+
   return {
     baseline: summarize(baselineRet, baselineSection6654Tax),
-    projected: summarize(projectedRet, projected2210.currentYearTax),
+    // Report the projected CALENDAR year (the law-year clamp, when it differs,
+    // is disclosed in `assumptions`).
+    projected: { ...summarize(projectedRet, projected2210.currentYearTax), taxYear: projectedCalendarYear },
     yoyDelta,
     incomeGrowth: growth,
     estimatedTax: {
@@ -204,5 +271,6 @@ export function computeTaxProjection(args: ComputeTaxProjectionArgs): TaxProject
           ? "OBBBA Schedule 1-A (tips/overtime/car-loan/senior) reduces projected taxable income; benefit ≈ deduction × the ordinary marginal rate. Sunsets after TY2028."
           : "No OBBBA Schedule 1-A deductions projected for this client.",
     },
+    assumptions,
   };
 }

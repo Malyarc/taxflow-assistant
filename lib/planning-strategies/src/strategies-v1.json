@@ -1,6 +1,6 @@
 {
-  "version": "v1.21.0",
-  "reviewedAt": "2026-06-09",
+  "version": "v1.21.1",
+  "reviewedAt": "2026-06-11",
   "strategies": [
     {
       "id": "G1.1",
@@ -1150,13 +1150,14 @@
       "recurring": false,
       "validUntil": "2025-12-31",
       "prerequisiteData": [
+        "OBBBA cutoff: vehicle ACQUIRED on or before 2025-09-30 (binding contract + payment by that date; placed-in-service may be later per the IRS OBBB FAQ)",
         "Confirm vehicle is on the qualified list at fueleconomy.gov (manufacturer-specific; many EVs DO NOT qualify due to battery/critical-mineral sourcing rules)",
         "MAGI test: $150k single / $300k MFJ / $225k HoH for §30D (use prior or current year, whichever is lower)",
         "MSRP cap: $80k SUV/truck/van; $55k cars",
-        "Point-of-sale dealer transfer (TY2024+) or claim on Form 8936",
-        "Used EV: vehicle 2+ model years old; price <= $25k; sold by a dealer (not private party)"
+        "Point-of-sale dealer transfer or claim on Form 8936",
+        "Used EV §25E: vehicle 2+ model years old; price <= $25k; sold by a dealer (not private party); same 9/30/2025 acquisition cutoff"
       ],
-      "action": "Client is income-eligible for the Clean Vehicle Credit. If purchasing a qualifying EV, save ~{{estSavings}} on TY{{taxYear}} return via Form 8936. Recommend confirming vehicle eligibility BEFORE purchase + transferring credit at point-of-sale.",
+      "action": "Client is income-eligible for the Clean Vehicle Credit — but OBBBA TERMINATED §30D/§25E for vehicles acquired after 9/30/2025. For a TY2025 return: confirm the qualifying EV was ACQUIRED (binding contract + payment) on or before 2025-09-30, then claim ~{{estSavings}} on the TY{{taxYear}} return via Form 8936 (point-of-sale transfers reconcile there too). No acquisitions qualify after that date.",
       "formulaRev": 1
     },
     {
@@ -1299,7 +1300,7 @@
       "ircSection": "IRC §1400Z-2",
       "irsPub": "Notice 2018-48; Reg. §1.1400Z2(a)-1",
       "trigger": "Capital gains (LTCG + STCG) > $100,000 AND post-TCJA (TY2024+) AND no existing QOZ designation",
-      "formula": "Invest realized capital gain in a Qualified Opportunity Fund within 180 days. Deferred until earlier of sale or 2026-12-31. After 10 years held, the QOF investment's own appreciation is permanently tax-free. estSavings = deferred_gain × (LTCG rate + NIIT) × time-value-of-deferral proxy 0.3 + (long-term appreciation × LTCG × 1.0 if held 10+ years).",
+      "formula": "Invest realized capital gain in a Qualified Opportunity Fund within 180 days. Deferred until earlier of sale or 2026-12-31 for investments made on/before 2026-12-31; OBBBA OZ 2.0 gives post-2026 investments a rolling 5-year deferral + 10% basis step-up (30% rural). After 10 years held, the QOF investment's own appreciation is permanently tax-free. estSavings = deferred_gain × (LTCG rate + NIIT) × time-value-of-deferral proxy 0.3 + (long-term appreciation × LTCG × 1.0 if held 10+ years).",
       "confidence": 0.6,
       "cpaEffortHours": 5.0,
       "recurring": false,
@@ -1309,7 +1310,7 @@
         "QOF selection (publicly available registry; private QOF or self-organized)",
         "Confirm QOF invests ≥ 90% of assets in a Qualified Opportunity Zone (audited semi-annually)",
         "10-year holding plan — premature sale loses the basis step-up",
-        "Note: original deferral elimination date is 2026-12-31 (statutory); no further deferral possible past that"
+        "OBBBA made the OZ program PERMANENT (OZ 2.0): gains invested on/before 2026-12-31 are still recognized 2026-12-31 (original statutory date); investments AFTER 2026-12-31 get a ROLLING 5-year deferral + 10% basis step-up (30% rural) under the new decennial zone designations (first effective 1/1/2027)"
       ],
       "action": "Within 180 days of a capital gain, roll {{deferredGain}} into a Qualified Opportunity Fund. Defers ~{{estSavings}} of current tax + locks in 10-year tax-free appreciation. Confirm QOF compliance + plan the 10-year hold.",
       "formulaRev": 1

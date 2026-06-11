@@ -31,8 +31,9 @@ export function isEngagementStatus(v: unknown): v is EngagementStatus {
   return typeof v === "string" && (ENGAGEMENT_STATUSES as readonly string[]).includes(v);
 }
 
-/** Roll a UTC date forward past Sat/Sun per §7503 (weekend → next Monday). */
-function rollToBusinessDay(utcMs: number): number {
+/** Roll a UTC date forward past Sat/Sun per §7503 (weekend → next Monday).
+ *  Exported (T1.0h TP-3) so the 1040-ES voucher due dates share the same roll. */
+export function rollToBusinessDay(utcMs: number): number {
   const day = new Date(utcMs).getUTCDay();
   if (day === 6) return utcMs + 2 * 86_400_000; // Saturday → Monday
   if (day === 0) return utcMs + 1 * 86_400_000; // Sunday → Monday

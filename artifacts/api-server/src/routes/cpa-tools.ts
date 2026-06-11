@@ -154,9 +154,23 @@ router.get("/clients/:clientId/year-over-year", async (req, res): Promise<void> 
     res.status(404).json({ error: "Client not found" });
     return;
   }
+  // YOY-2 — did the prior year have any YEAR-SCOPED input documents? W-2s/1099s
+  // with a null taxYear are engine-included in any computed year (the `?? year`
+  // fallback) so they count; adjustments are NOT year-scoped, so an
+  // adjustment-only "prior year" is the current data re-run under prior-year
+  // law — computeYearOverYear surfaces that as a `caveats` entry.
+  const pin = prior.inputs;
+  const priorYearScopedDocsPresent =
+    pin.w2s.some((r) => (r.taxYear ?? priorYear) === priorYear) ||
+    pin.form1099s.some((r) => (r.taxYear ?? priorYear) === priorYear) ||
+    (pin.scheduleK1 ?? []).some((r) => r.taxYear === priorYear) ||
+    (pin.rentalProperties ?? []).some((r) => r.taxYear === priorYear) ||
+    (pin.capitalTransactions ?? []).some((r) => r.taxYear === priorYear) ||
+    (pin.form4797 ?? []).some((r) => r.taxYear === priorYear);
   const comparison = computeYearOverYear({
     priorReturn: prior.result,
     currentReturn: current.result,
+    priorYearScopedDocsPresent,
   });
   // When the prior year carries no income data, the client likely has no
   // per-year inputs for that year — the comparison is then "current data at
@@ -164,6 +178,7 @@ router.get("/clients/:clientId/year-over-year", async (req, res): Promise<void> 
   res.json({
     ...comparison,
     priorYearHasData: prior.result.totalIncome > 0,
+    priorYearScopedDocsPresent,
   });
 });
 

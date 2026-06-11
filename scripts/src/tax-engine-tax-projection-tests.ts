@@ -61,7 +61,8 @@ function project(inputs: TaxReturnInputs, growth: number) {
   checkTrue("S1 withholdingCoversSafeHarbor = true", p.estimatedTax.withholdingCoversSafeHarbor);
   check("S1 YoY income delta +$3,000", p.yoyDelta.totalIncome, 3000);
   checkStr("S1 Q1 voucher due 2025-04-15", p.estimatedTax.vouchers[0].dueDate, "2025-04-15");
-  checkStr("S1 Q2 voucher due 2025-06-15", p.estimatedTax.vouchers[1].dueDate, "2025-06-15");
+  // §7503: 2025-06-15 is a SUNDAY → the Q2 voucher rolls to Monday 2025-06-16 (TP-3).
+  checkStr("S1 Q2 voucher due 2025-06-16 (§7503 Sunday roll)", p.estimatedTax.vouchers[1].dueDate, "2025-06-16");
   checkStr("S1 Q3 voucher due 2025-09-15", p.estimatedTax.vouchers[2].dueDate, "2025-09-15");
   checkStr("S1 Q4 voucher due 2026-01-15", p.estimatedTax.vouchers[3].dueDate, "2026-01-15");
   checkTrue("S1 four vouchers", p.estimatedTax.vouchers.length === 4);

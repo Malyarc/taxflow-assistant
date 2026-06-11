@@ -27,6 +27,8 @@ import {
   type W2Fact,
   type Form1099Fact,
   type AdjustmentFact,
+  type ScheduleK1Fact,
+  type RentalPropertyFact,
 } from "./taxReturnEngine";
 import { applyWhatIfMutations, type WhatIfMutation } from "./whatIfEngine";
 
@@ -91,26 +93,93 @@ function scale1099(r: Form1099Fact, factor: number, newTaxYear: number): Form109
   return next as unknown as Form1099Fact;
 }
 
+/**
+ * T1.0g (TP-2) — carryforward adjustment types are FIXED prior-year dollar
+ * amounts, never income that grows: scaling them by the income-growth factor
+ * inflates projected-year deductions/credits out of thin air. The original
+ * MVP set predated the newer credit/§179/§163(d) carryforward types — all 15
+ * are now excluded from growth scaling.
+ */
+const CARRYFORWARD_NO_SCALE_TYPES: ReadonlySet<string> = new Set([
+  "capital_loss_carryforward_short",
+  "capital_loss_carryforward_long",
+  "schedule_e_passive_loss_carryforward",
+  "k1_passive_loss_carryforward",
+  "amt_credit_carryforward",
+  "charitable_carryforward_cash",
+  "nol_carryforward",
+  "section_163j_carryforward_from_prior",
+  // TP-2 additions (audit 2026-06-11): these scaled with income before.
+  "foreign_tax_credit_carryforward",
+  "amt_nol_carryforward",
+  "schedule_c_section179_carryforward",
+  "investment_interest_carryforward",
+  "adoption_credit_carryforward",
+  "rd_credit_carryforward",
+  "general_business_credit_carryforward",
+]);
+
 function scaleAdjustments(adjs: AdjustmentFact[], factor: number): AdjustmentFact[] {
-  // Only scale dollar-amount adjustments. Carry-forwards are tricky (multi-
-  // year carryforwards would compound differently), so we keep them
-  // unchanged for MVP.
-  const carryForwardTypes = new Set([
-    "capital_loss_carryforward_short",
-    "capital_loss_carryforward_long",
-    "schedule_e_passive_loss_carryforward",
-    "k1_passive_loss_carryforward",
-    "amt_credit_carryforward",
-    "charitable_carryforward_cash",
-    "nol_carryforward",
-    "section_163j_carryforward_from_prior",
-  ]);
+  // Only scale dollar-amount adjustments. Carry-forwards are FIXED dollars
+  // (a depleting prior-year balance, not recurring income) — held unchanged.
+  // Accurate year-over-year depletion is the opt-in chainCarryforwards path.
   return adjs.map((a) => {
-    if (carryForwardTypes.has(a.adjustmentType)) return { ...a };
+    if (CARRYFORWARD_NO_SCALE_TYPES.has(a.adjustmentType)) return { ...a };
     const scaled = scaleNumish(a.amount, factor);
     if (scaled == null) return { ...a };
     return { ...a, amount: scaled };
   });
+}
+
+/**
+ * T1.0g (H1) — recurring pass-through income must survive into projection
+ * years. The engine filters scheduleK1 rows STRICTLY by `taxYear`, so without
+ * advancing the year a K-1 owner's income silently VANISHED from every
+ * projection year ≥ 1 (repro: $300k S-corp K-1 → trajectory AGI [350k, 51.5k,
+ * 53k]) — every multi-year delta then priced in empty brackets.
+ *
+ * Growth semantics (documented decision, 2026-06-11):
+ *  - INCOME/EXPENSE boxes scale by the growth factor, like W-2s/1099s
+ *    (Box 1/2/3/4, interest, dividends, royalties, ST/LT gains, SE earnings,
+ *    §199A QBI + W-2 wages, distributions, separately-stated deductions).
+ *  - BALANCE-SHEET fields are HELD at baseline (basis at start/end, at-risk,
+ *    §199A UBIA — point-in-time capital amounts, not recurring flows; scaling
+ *    them would fabricate basis).
+ */
+function scaleK1(k: ScheduleK1Fact, factor: number, newTaxYear: number): ScheduleK1Fact {
+  const next: Record<string, unknown> = { ...k };
+  next.taxYear = newTaxYear;
+  const dollarFields = [
+    "box1OrdinaryIncome", "box2RentalRealEstate", "box3OtherRentalIncome",
+    "box4GuaranteedPayments", "interestIncome", "ordinaryDividends",
+    "qualifiedDividends", "royalties", "netShortTermCapitalGain",
+    "netLongTermCapitalGain", "selfEmploymentEarnings", "section199aQbi",
+    "section199aW2Wages", "distributions", "separatelyStatedDeductions",
+  ];
+  for (const f of dollarFields) {
+    const scaled = scaleNumish(next[f], factor);
+    if (scaled != null) next[f] = scaled;
+  }
+  return next as ScheduleK1Fact;
+}
+
+/**
+ * T1.0g (H1) — rental real estate recurs in projection years (same engine
+ * year-filter problem as K-1s). Operating amounts (rentalIncome,
+ * totalExpenses) scale; the DEPRECIABLE BASIS + placed-in-service facts are
+ * held (basis is fixed at acquisition — the advancing taxYear naturally walks
+ * the MACRS schedule forward); `suspendedLossCarryforward` is held (the
+ * carryforward principle above). A property fully disposed in the baseline
+ * year does NOT recur (it was sold) — filtered out of projection years.
+ */
+function scaleRental(r: RentalPropertyFact, factor: number, newTaxYear: number): RentalPropertyFact {
+  const next: Record<string, unknown> = { ...r };
+  next.taxYear = newTaxYear;
+  for (const f of ["rentalIncome", "totalExpenses"]) {
+    const scaled = scaleNumish(next[f], factor);
+    if (scaled != null) next[f] = scaled;
+  }
+  return next as RentalPropertyFact;
 }
 
 /**
@@ -140,6 +209,26 @@ export function projectYearForward(
     w2s: baseline.w2s.map((w) => scaleW2(w, factor, newTaxYear)),
     form1099s: baseline.form1099s.map((r) => scale1099(r, factor, newTaxYear)),
     adjustments: scaleAdjustments(baseline.adjustments, factor),
+    // T1.0g (H1) — RECURRING pass-through income advances + scales (the engine
+    // year-filters these arrays; pre-fix they silently dropped out of every
+    // projection year). Disposed rentals do not recur.
+    scheduleK1: baseline.scheduleK1?.map((k) => scaleK1(k, factor, newTaxYear)),
+    rentalProperties: baseline.rentalProperties
+      ?.filter((r) => r.fullyDisposedThisYear !== true)
+      .map((r) => scaleRental(r, factor, newTaxYear)),
+    // T1.0g (H1) — ONE-TIME dispositions deliberately do NOT recur:
+    //  - capitalTransactions (Form 8949 lots) are realized sales of specific
+    //    lots; repeating them every projection year would fabricate annual
+    //    gains. They stay year-0 only (the engine's year filter excludes the
+    //    baseline rows from projection years either way — the empty array
+    //    makes that EXPLICIT rather than incidental).
+    //  - form4797 business-property sales are likewise one-time §1231/§1245/
+    //    §1250 dispositions — excluded from projection years.
+    // NOTE: a client whose 1099-B summary boxes duplicate the 8949 lots will
+    // see the SCALED 1099-B gains recur (pre-existing 1099 semantics) — the
+    // per-lot detail simply no longer overrides them in projection years.
+    capitalTransactions: baseline.capitalTransactions ? [] : undefined,
+    form4797: baseline.form4797 ? [] : undefined,
     taxYear: newTaxYear,
   };
 }

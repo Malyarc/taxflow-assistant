@@ -33,6 +33,7 @@ import {
   calculateFederalTaxWithBreakdown,
   getFederalStandardDeduction,
 } from "./taxCalculator";
+import { isStrategyExpiredForYear } from "./planningEngine";
 
 // ── Inputs ─────────────────────────────────────────────────────────────────
 
@@ -447,6 +448,17 @@ export function evaluateMultiYearOpportunities(args: MultiYearPlanningInputs): O
   const pal = detectPassiveLossGrowing(args.history);
   if (pal) hits.push(pal);
 
-  hits.sort((a, b) => b.estSavings - a.estSavings);
-  return hits;
+  // PLAN-08 parity (audit 2026-06-11) — the G4 path now applies the same
+  // catalog `validUntil` gate as evaluatePlanningOpportunities (it previously
+  // skipped it; latent today because all 5 G4 entries run to 2099, but a
+  // future sunset must suppress here too). Gated on the CURRENT year
+  // (history[0] — the year the advice is for).
+  const currentTaxYear = args.history[0].taxYear;
+  const liveHits = hits.filter((h) => {
+    const strat = CATALOG_V1.strategies.find((x) => x.id === h.strategyId);
+    return !strat || !isStrategyExpiredForYear(strat.validUntil, currentTaxYear);
+  });
+
+  liveHits.sort((a, b) => b.estSavings - a.estSavings);
+  return liveHits;
 }
