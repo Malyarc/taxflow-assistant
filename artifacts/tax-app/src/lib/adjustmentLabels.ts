@@ -25,6 +25,7 @@ export const ADJUSTMENT_TYPE_LABELS: Record<string, string> = {
   clergy_housing_allowance: "Clergy housing allowance (SE-taxed, income-tax-exempt)",
   amt_credit_carryforward: "AMT credit carryforward (Form 8801)",
   charitable_carryforward_cash: "Charitable cash carryforward (prior year)",
+  residential_clean_energy_carryforward: "Residential clean energy credit carryforward (§25D(c))",
   bonus_depreciation_basis: "Bonus depreciation basis (§168(k))",
   section_179_expense_election: "§179 expense election",
   hsa_employer_contribution: "HSA employer contribution",

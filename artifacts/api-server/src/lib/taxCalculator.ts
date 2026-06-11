@@ -2869,6 +2869,19 @@ export function calculateEitc(params: {
   agi: number;
   investmentIncome: number;
   taxYear: number;
+  /** FC-12 — §32(c)(1)(C) (post-ARPA renumbering; pre-2021 §32(c)(1)(D)) +
+   *  Pub 596 Rule 6: a taxpayer claiming the §911 foreign-earned-income
+   *  exclusion (Form 2555 filed) is NOT an eligible individual — EITC = $0.
+   *  Pass true when any `foreign_earned_income` adjustment is present. */
+  claimsForeignEarnedIncomeExclusion?: boolean;
+  /** FC-12 — §32(c)(1)(A)(ii)(II): a 0-qualifying-children claimant must have
+   *  attained age 25 but not 65 by year end. Checked only when an age is
+   *  supplied (null/undefined preserves the pre-FC-12 no-gate behavior). */
+  taxpayerAge?: number | null;
+  /** FC-12 — for MFJ the age test is met if EITHER spouse is 25–64 (Pub 596
+   *  Rule 11). A null spouse age on a joint return is treated as "unknown,
+   *  could satisfy" — no bar (conservative toward current behavior). */
+  spouseAge?: number | null;
 }): EitcCalculation {
   const year = resolveTaxYear(params.taxYear);
   const { qualifyingChildren, earnedIncome, agi, investmentIncome, filingStatus } = params;
@@ -2883,6 +2896,11 @@ export function calculateEitc(params: {
     return { ...base, ineligibilityReason: "MFS generally not eligible for EITC" };
   }
 
+  // FC-12 — §32(c)(1)(C) / Pub 596 Rule 6: Form 2555 (FEIE) filers are barred.
+  if (params.claimsForeignEarnedIncomeExclusion === true) {
+    return { ...base, ineligibilityReason: "Form 2555 / §911 foreign earned income exclusion claimed (§32(c)(1)(C))" };
+  }
+
   // Investment income limit
   const investLimit = EITC_INVESTMENT_INCOME_LIMIT[year];
   if (investmentIncome > investLimit) {
@@ -2895,6 +2913,25 @@ export function calculateEitc(params: {
   }
 
   const numChildren = Math.min(3, Math.max(0, Math.floor(qualifyingChildren))) as 0 | 1 | 2 | 3;
+
+  // FC-12 — §32(c)(1)(A)(ii)(II) childless-EITC age window: at least one
+  // filer (either spouse on a joint return, Pub 596 Rule 11) must be 25–64
+  // at year end. Only enforced when an age is actually supplied; a missing
+  // age preserves the pre-gate behavior (documented — the engine cannot
+  // verify what it isn't told). MFJ with a known failing taxpayer age but an
+  // UNKNOWN spouse age is NOT barred (the spouse could satisfy the test).
+  if (numChildren === 0) {
+    const inWindow = (a: number) => a >= 25 && a <= 64;
+    const tAge = params.taxpayerAge ?? null;
+    const sAge = params.spouseAge ?? null;
+    const isJoint = filingStatus === "married_filing_jointly";
+    const knownAges = [tAge, ...(isJoint ? [sAge] : [])].filter((a): a is number => a != null);
+    const anyUnknown = tAge == null || (isJoint && sAge == null);
+    if (knownAges.length > 0 && !knownAges.some(inWindow) && !anyUnknown) {
+      return { ...base, ineligibilityReason: "No qualifying children and no filer aged 25–64 (§32(c)(1)(A)(ii)(II))" };
+    }
+  }
+
   const status = filingStatus === "married_filing_jointly" || filingStatus === "qualifying_widow"
     ? "married_filing_jointly" as const
     : "single" as const;
@@ -2911,12 +2948,20 @@ export function calculateEitc(params: {
     preliminary = entry.maxCredit;
   }
 
-  // Phase-out is based on the LARGER of earned income or AGI
+  // FC-03 — §32(a)(2) limitation: the credit is the PHASE-IN amount, but not
+  // more than (maxCredit − phaseOutRate × excess of max(AGI, earned) over the
+  // phase-out threshold). I.e. credit = min(phase-in value, maxCredit −
+  // reduction), floored at 0 — the reduction comes off the MAXIMUM credit,
+  // not off the phase-in value. (The 1040-instructions EIC Worksheet does the
+  // same thing as two table lookups: value at earned income vs value at AGI,
+  // take the SMALLER.) The old code subtracted the reduction from the
+  // phase-in amount, under-crediting filers still on the phase-in slope
+  // whose AGI (unearned income) was already past the phase-out start.
   const phaseOutBase = Math.max(earnedIncome, agi);
   let appliedCredit = preliminary;
   if (phaseOutBase > entry.phaseOutStart) {
     const reduction = (phaseOutBase - entry.phaseOutStart) * entry.phaseOutRate;
-    appliedCredit = Math.max(0, preliminary - reduction);
+    appliedCredit = Math.min(preliminary, Math.max(0, entry.maxCredit - reduction));
   }
   if (phaseOutBase >= entry.phaseOutComplete) {
     appliedCredit = 0;
@@ -4616,8 +4661,28 @@ export function calculateSaversCredit(params: {
   agi: number;
   retirementContributions: number; // IRA + 401k (employee portion) + similar
   taxYear: number;
+  /** FC-15 — §25B(c)(2)(B): an individual "with respect to whom a deduction
+   *  under section 151 is allowable to another taxpayer" (claimed as a
+   *  dependent) is NOT an eligible individual — credit = $0. (§25B(c)(2)(A)
+   *  also bars full-time students; the engine has no student field, so only
+   *  the dependent gate is enforced — Form 8880 line "You were a student"
+   *  remains CPA-verified.) */
+  claimedAsDependent?: boolean;
 }): SaversCreditCalculation {
   const year = resolveTaxYear(params.taxYear);
+
+  // FC-15 — §25B(c)(2)(B) dependent bar (Form 8880: "You cannot take this
+  // credit if ... you were claimed as a dependent on someone else's return").
+  if (params.claimedAsDependent === true) {
+    return {
+      retirementContributions: params.retirementContributions,
+      agi: params.agi,
+      rate: 0,
+      eligibleContribution: 0,
+      appliedCredit: 0,
+    };
+  }
+
   const tiers = SAVERS_CREDIT_TIERS[year][params.filingStatus] ?? SAVERS_CREDIT_TIERS[year].single;
 
   let rate = 0;
@@ -5150,14 +5215,20 @@ export function calculateForeignTaxCredit(params: {
 // ── Residential Energy Credits (Form 5695, Form 8911) ───────────────────────
 // 1. Residential Clean Energy Credit (IRC §25D): 30% of solar PV, solar water,
 //    wind, geothermal, fuel cell, battery storage (2023+). No annual cap, no
-//    income limit, indefinite carryforward. Through 2032 at 30%.
+//    income limit, indefinite carryforward (§25D(c)).
+//    TERMINATED by OBBBA §70506 for expenditures made after 12/31/2025
+//    (formerly 30% through 2032) — $0 for TY2026+ current-year spend.
 // 2. Energy Efficient Home Improvement Credit (IRC §25C): 30% with annual caps.
 //    - General cap $1,200 (windows/doors/insulation/audit, with sub-caps)
 //    - Heat pump + biomass cap $2,000 (separate from general)
 //    - Max combined $3,200/year, no carryforward
 //    Sub-caps (windows $600, doors $500, audit $150) not modeled.
+//    TERMINATED by OBBBA §70505 for property placed in service after
+//    12/31/2025 — $0 for TY2026+.
 // 3. EV Charger Property (IRC §30C, Form 8911): 30% of cost, max $1,000
 //    individual. Property must be in eligible census tract (assumed in scope).
+//    OBBBA §70504 terminates §30C for property placed in service after
+//    6/30/2026 (still claimable on a TY2026 return for H1 installs).
 const CLEAN_ENERGY_RATE = 0.30;
 const EFFICIENT_HOME_RATE = 0.30;
 const EFFICIENT_HOME_GENERAL_CAP = 1200;
@@ -5182,10 +5253,30 @@ export function calculateResidentialEnergyCredits(params: {
   efficientHomeSpend: number;
   heatPumpSpend: number;
   evChargerSpend: number;
+  /** FC-02 — the year now gates the OBBBA terminations (see below). */
+  taxYear: number;
 }): ResidentialEnergyCreditsCalculation {
-  const cleanEnergyBase = Math.max(0, params.cleanEnergySpend);
-  const efficientHomeBase = Math.max(0, params.efficientHomeSpend);
-  const heatPumpBase = Math.max(0, params.heatPumpSpend);
+  const year = resolveTaxYear(params.taxYear);
+  // FC-02 — OBBBA (P.L. 119-21, §§70505–70506) TERMINATED both residential
+  // credits: §25C(h) for property placed in service after 12/31/2025, and
+  // §25D(h) for expenditures made after 12/31/2025 (an expenditure is "made"
+  // when the ORIGINAL INSTALLATION is completed — §25D(e)(8)(A), confirmed by
+  // the IRS "FAQs for modification of sections 25C, 25D, 25E, 30C, 30D, 45L,
+  // 45W, and 179D under Public Law 119-21" — so a 2025 payment with a 2026
+  // install gets NOTHING). A TY2026+ return therefore gets $0 for current-year
+  // §25C/§25D spend. A §25D(c) CARRYFORWARD of a pre-2026 credit SURVIVES
+  // (OBBBA did not amend §25D(c); CRS IN12611) — the engine handles the
+  // carryforward at the credit-application seam, not here.
+  // §30C (EV charger) terminates LATER — property placed in service after
+  // 6/30/2026 (OBBBA §70504) — so a TY2026 §30C credit is still valid for
+  // H1-2026 installs; with no in-service-date input the engine allows it for
+  // all of TY2026 (CPA verifies the install date) and the planning catalog
+  // already flags the sunset.
+  const residentialTerminated = year >= 2026;
+
+  const cleanEnergyBase = residentialTerminated ? 0 : Math.max(0, params.cleanEnergySpend);
+  const efficientHomeBase = residentialTerminated ? 0 : Math.max(0, params.efficientHomeSpend);
+  const heatPumpBase = residentialTerminated ? 0 : Math.max(0, params.heatPumpSpend);
   const evChargerBase = Math.max(0, params.evChargerSpend);
 
   // §25D — no cap
@@ -5214,10 +5305,28 @@ export function calculateResidentialEnergyCredits(params: {
 // Expected contribution = MAGI × applicable figure (contribution percentage based on FPL%).
 // Reconciles against advance APTC: net = computed PTC − advance APTC.
 //   Net > 0 → refundable credit (added to refund)
-//   Net < 0 → excess APTC owed (capped if FPL < 400%, full repayment if ≥ 400%)
-// ARPA/IRA extension (through 2025): no 400% FPL cliff, top rate 8.5%.
+//   Net < 0 → excess APTC owed (TY2024–2025: capped per §36B(f)(2)(B) Table 5
+//             when FPL < 400%; TY2026+: ALWAYS full repayment — OBBBA
+//             (P.L. 119-21) struck the §36B(f)(2)(B) limitation for tax years
+//             beginning after 12/31/2025; IRS FS 2025-10.)
+// Applicable-percentage schedule (FC-01):
+//   TY2021–2025 — ARPA §9661 / IRA §12001 enhanced curve: no 400% cliff,
+//     0% below 150% FPL, top rate 8.5%. EXPIRED for TYs beginning after 2025.
+//   TY2026+ — reverts to the original §36B(b)(3)(A)(i) structure, indexed by
+//     Rev. Proc. 2025-25 Table 2 (2.10% under 133% FPL up to 9.96% flat in
+//     the 300–400% band), and the 400%-FPL ELIGIBILITY CLIFF returns
+//     (§36B(c)(1)(A): household income over 400% FPL → no PTC at all).
+// §36B(c)(1)(A) 100%-FPL floor (FC-22): household income below 100% FPL → no
+// PTC (all years; ARPA never removed the floor). The §1.36B-2(b)(6) exception
+// (taxpayer keeps eligibility when APTC was advanced on a good-faith ≥100%
+// estimate) is NOT modeled — the engine conservatively allows no NEW PTC below
+// 100% but still applies the repayment caps (for cap years) to any clawback.
+// The §36B(c)(1)(B) lawful-immigrant under-100% exception is also not modeled.
 // FPL guidelines used are from the PRIOR year (2024 PTC uses 2023 FPL).
-// MFS generally ineligible (some exceptions for abuse victims, not modeled).
+// MFS generally ineligible (§36B(c)(1)(C); abuse-victim exception not
+// modeled) — but the Table 5 repayment limitation still applies to an MFS
+// clawback for cap years (FC-10, 8962 instructions: "the repayment
+// limitations shown in Table 5 apply to you and your spouse separately").
 
 // 48-states + DC Federal Poverty Level guidelines (Pub 974)
 // AK and HI use higher amounts (not modeled; flagged as known limitation).
@@ -5227,10 +5336,13 @@ const FPL_GUIDELINE_BY_PTC_YEAR: Record<TaxYear, { base: number; perAdditional: 
   2026: { base: 15650, perAdditional: 5500 }, // 2025 HHS FPL guidelines (PTC uses prior-year FPL)
 };
 
-// Excess APTC repayment caps (Rev. Proc. 2023-34 for 2024; assume same struct 2025)
+// Excess APTC repayment caps — §36B(f)(2)(B) "applicable dollar amount",
+// halved for SINGLE filers only (§36B(f)(2)(B)(i) flush text / Form 8962
+// Table 5 columns "Single" vs "All other filing statuses" — FC-10).
+// TY2024 per Rev. Proc. 2023-34 §3.07; TY2025 per Rev. Proc. 2024-40.
+// Repayment is fully required when FPL% ≥ 400%; for TY2026+ the limitation
+// was REPEALED entirely by OBBBA (see aptcRepaymentCap).
 const PTC_REPAYMENT_CAPS_2024 = {
-  // [maxFplFraction, capSingleHoHMfsQw, capMfj]
-  // Repayment is fully required when FPL% ≥ 400%
   tiers: [
     { fplLessThan: 2.00, capSingle: 375, capMfj: 750 },
     { fplLessThan: 3.00, capSingle: 975, capMfj: 1950 },
@@ -5245,7 +5357,31 @@ const PTC_REPAYMENT_CAPS_2025 = {
   ],
 };
 
-function getApplicableFigure(fplFraction: number): number {
+function getApplicableFigure(fplFraction: number, taxYear: TaxYear): number {
+  // FC-01 — year-indexed. The ARPA §9661 / IRA §12001 enhanced schedule
+  // applied for TYs 2021–2025 ONLY; it expired for taxable years beginning
+  // after 12/31/2025 with no extension enacted (verified 2026-06-11).
+  if (taxYear >= 2026) {
+    // TY2026 applicable percentages per Rev. Proc. 2025-25, Table 2
+    // (§36B(b)(3)(A)(i) as indexed for 2026); linear interpolation within
+    // each band per §36B(b)(3)(A)(ii)(II)/Form 8962 Table 2 methodology:
+    //   < 133%:       2.10% flat
+    //   133% – <150%: 3.14% → 4.19%
+    //   150% – <200%: 4.19% → 6.60%
+    //   200% – <250%: 6.60% → 8.44%
+    //   250% – <300%: 8.44% → 9.96%
+    //   300% – 400%:  9.96% flat
+    //   > 400%:       INELIGIBLE — the pre-ARPA cliff is back; the caller
+    //                 (calculatePremiumTaxCredit) zeroes the PTC. The figure
+    //                 returned here is disclosure-only in that range.
+    // (< 100% is also ineligible — §36B(c)(1)(A) floor, enforced by caller.)
+    if (fplFraction < 1.33) return 0.021;
+    if (fplFraction < 1.50) return interpolateLinear(fplFraction, 1.33, 1.50, 0.0314, 0.0419);
+    if (fplFraction < 2.00) return interpolateLinear(fplFraction, 1.50, 2.00, 0.0419, 0.066);
+    if (fplFraction < 2.50) return interpolateLinear(fplFraction, 2.00, 2.50, 0.066, 0.0844);
+    if (fplFraction < 3.00) return interpolateLinear(fplFraction, 2.50, 3.00, 0.0844, 0.0996);
+    return 0.0996;
+  }
   // ARPA/IRA enhanced PTC schedule (2021-2025): no 400% cliff, top rate 8.5%.
   if (fplFraction < 1.50) return 0;
   if (fplFraction < 2.00) return interpolateLinear(fplFraction, 1.50, 2.00, 0.00, 0.02);
@@ -5253,6 +5389,37 @@ function getApplicableFigure(fplFraction: number): number {
   if (fplFraction < 3.00) return interpolateLinear(fplFraction, 2.50, 3.00, 0.04, 0.06);
   if (fplFraction < 4.00) return interpolateLinear(fplFraction, 3.00, 4.00, 0.06, 0.085);
   return 0.085;
+}
+
+/**
+ * FC-10 + OBBBA — the §36B(f)(2)(B) excess-APTC repayment limitation.
+ *
+ * Returns the Table 5 cap for the year/filing status/FPL tier, or Infinity
+ * when no limitation applies:
+ *   - TY2026+: OBBBA (P.L. 119-21) STRUCK §36B(f)(2)(B) for taxable years
+ *     beginning after 12/31/2025 — full repayment at every income level
+ *     (IRS FS 2025-10 / Form 8962 guidance: "no repayment cap for tax years
+ *     after 2025").
+ *   - FPL ≥ 400%: no cap (the Table 5 rows stop below 400%).
+ *   - Column mapping: §36B(f)(2)(B)(i) flush text halves the applicable
+ *     dollar amount ONLY "in the case of a taxpayer whose tax is determined
+ *     under section 1(c)" — i.e. SINGLE filers. Form 8962 Table 5's two
+ *     columns are "Single" vs "All other filing statuses": HoH, MFS, QSS and
+ *     MFJ ALL use the full column. (FC-10 fixed two bugs here: HoH wrongly
+ *     got the half-cap, and MFS wrongly got NO cap — the 8962 instructions
+ *     apply Table 5 to each MFS spouse separately.)
+ */
+function aptcRepaymentCap(taxYear: TaxYear, filingStatus: string, fplFraction: number): number {
+  if (taxYear >= 2026) return Infinity; // OBBBA — limitation repealed
+  if (!(fplFraction < 4.0)) return Infinity; // ≥400% FPL — no cap (NaN-safe)
+  const caps = taxYear >= 2025 ? PTC_REPAYMENT_CAPS_2025 : PTC_REPAYMENT_CAPS_2024;
+  const isSingle = filingStatus === "single";
+  for (const tier of caps.tiers) {
+    if (fplFraction < tier.fplLessThan) {
+      return isSingle ? tier.capSingle : tier.capMfj;
+    }
+  }
+  return Infinity;
 }
 
 function interpolateLinear(x: number, x1: number, x2: number, y1: number, y2: number): number {
@@ -5287,21 +5454,38 @@ export function calculatePremiumTaxCredit(params: {
   const year = resolveTaxYear(params.taxYear);
   const advanceAptc = Math.max(0, params.advanceAptc);
 
-  // MFS generally ineligible; must repay all advance APTC (uncapped).
+  // MFS generally ineligible (§36B(c)(1)(C)); must repay advance APTC. FC-10:
+  // the repayment is NOT uncapped — per the Form 8962 instructions (Part 3,
+  // "Married filing separately"), "the repayment limitations shown in Table 5
+  // apply to you and your spouse separately based on the household income
+  // reported on each tax return". MFS uses the "All other filing statuses"
+  // column (§36B(f)(2)(B)(i) halves the amount only for §1(c) singles).
+  // TY2026+: caps repealed (OBBBA) → uncapped again via aptcRepaymentCap.
   if (params.filingStatus === "married_filing_separately") {
+    const fplForMfs = FPL_GUIDELINE_BY_PTC_YEAR[year];
+    const mfsGuideline =
+      params.householdSize > 0
+        ? fplForMfs.base + Math.max(0, params.householdSize - 1) * fplForMfs.perAdditional
+        : 0;
+    // Degenerate inputs (householdSize ≤ 0) → fraction Infinity/NaN → no tier
+    // matches → cap stays Infinity (the pre-FC-10 uncapped behavior).
+    const mfsFraction = params.modifiedAgi / mfsGuideline;
+    const mfsCap = advanceAptc > 0
+      ? aptcRepaymentCap(year, params.filingStatus, mfsFraction)
+      : Infinity;
     return {
       annualPremium: params.annualPremium,
       annualSlcsp: params.annualSlcsp,
       modifiedAgi: params.modifiedAgi,
       householdSize: params.householdSize,
-      fplGuideline: 0,
-      fplFraction: 0,
+      fplGuideline: mfsGuideline,
+      fplFraction: Number.isFinite(mfsFraction) ? mfsFraction : 0,
       applicableFigure: 0,
       expectedContribution: 0,
       computedPtc: 0,
       advanceAptc,
-      repaymentCap: Infinity,
-      netPtc: -advanceAptc,
+      repaymentCap: mfsCap,
+      netPtc: Math.max(-advanceAptc, -mfsCap),
       eligible: false,
     };
   }
@@ -5318,7 +5502,9 @@ export function calculatePremiumTaxCredit(params: {
       expectedContribution: 0,
       computedPtc: 0,
       advanceAptc,
-      repaymentCap: 0,
+      // No marketplace enrollment data → no Table 5 tier is determinable;
+      // Infinity = "no limitation applied" (any advance is repaid in full).
+      repaymentCap: Infinity,
       netPtc: -advanceAptc, // Any advance must be repaid if no PTC eligibility
       eligible: false,
     };
@@ -5327,28 +5513,34 @@ export function calculatePremiumTaxCredit(params: {
   const fpl = FPL_GUIDELINE_BY_PTC_YEAR[year];
   const fplGuideline = fpl.base + Math.max(0, params.householdSize - 1) * fpl.perAdditional;
   const fplFraction = params.modifiedAgi / fplGuideline;
-  const applicableFigure = getApplicableFigure(fplFraction);
+  const applicableFigure = getApplicableFigure(fplFraction, year);
   const expectedContribution = Math.max(0, params.modifiedAgi) * applicableFigure;
   const ptcUncapped = Math.max(0, params.annualSlcsp - expectedContribution);
-  const computedPtc = Math.min(params.annualPremium, ptcUncapped);
+  let computedPtc = Math.min(params.annualPremium, ptcUncapped);
+
+  // FC-22 — §36B(c)(1)(A) 100%-FPL eligibility floor (ALL years; ARPA only
+  // removed the 400% ceiling, never the floor): household income below 100%
+  // FPL → no PTC. (The §1.36B-2(b)(6) APTC-was-advanced estimated-eligibility
+  // exception and the §36B(c)(1)(B) lawful-immigrant exception are not
+  // modeled; any APTC clawback below 100% stays subject to the <200% Table 5
+  // tier for cap years.)
+  let eligibleByIncome = true;
+  if (fplFraction < 1.0) {
+    computedPtc = 0;
+    eligibleByIncome = false;
+  }
+  // FC-01 — the 400% cliff returns for TY2026+ (post-ARPA §36B(c)(1)(A):
+  // household income must "not exceed 400 percent" of FPL — exactly 400% is
+  // still eligible). Above it: $0 PTC and (per OBBBA) uncapped repayment.
+  if (year >= 2026 && fplFraction > 4.0) {
+    computedPtc = 0;
+    eligibleByIncome = false;
+  }
 
   let netPtc = computedPtc - advanceAptc;
   let repaymentCap = Infinity;
   if (netPtc < 0) {
-    // TY2025+ uses the TY2025 caps (latest published); a TY2026 Rev. Proc. value
-    // should add PTC_REPAYMENT_CAPS_2026 + bump this. Prevents a TY2026 return
-    // from silently using the stale TY2024 caps.
-    const caps = year >= 2025 ? PTC_REPAYMENT_CAPS_2025 : PTC_REPAYMENT_CAPS_2024;
-    const isMfj =
-      params.filingStatus === "married_filing_jointly" ||
-      params.filingStatus === "qualifying_widow";
-    for (const tier of caps.tiers) {
-      if (fplFraction < tier.fplLessThan) {
-        repaymentCap = isMfj ? tier.capMfj : tier.capSingle;
-        break;
-      }
-    }
-    // FPL ≥ 400%: no cap, full repayment
+    repaymentCap = aptcRepaymentCap(year, params.filingStatus, fplFraction);
     netPtc = Math.max(netPtc, -repaymentCap);
   }
 
@@ -5365,7 +5557,7 @@ export function calculatePremiumTaxCredit(params: {
     advanceAptc,
     repaymentCap,
     netPtc,
-    eligible: true,
+    eligible: eligibleByIncome,
   };
 }
 
@@ -7284,6 +7476,8 @@ export interface CtcCalculation {
 export function calculateChildTaxCredit(params: {
   qualifyingChildren: number;
   otherDependents: number;
+  /** §24(b)(1) MAGI — AGI plus the §911/§931/§933 exclusions (FC-14: the
+   *  engine passes AGI + the FEIE exclusion; Sch 8812 lines 1–3). */
   agi: number;
   filingStatus: string;
   taxYear: number;
@@ -7291,6 +7485,16 @@ export function calculateChildTaxCredit(params: {
   taxBeforeCredit?: number;
   /** Earned income (wages + SE) for ACTC calc. Optional — defaults to AGI. */
   earnedIncome?: number;
+  /** FC-13 — Schedule 8812 Part II-B line 23 equivalent: Social Security +
+   *  Medicare + Additional Medicare taxes paid (W-2 boxes 4 + 6 — modeled as
+   *  6.2% of SS wages capped at the wage base + 1.45% of Medicare wages +
+   *  the Form 8959 0.9% liability) PLUS the Schedule 1 line 15 deductible
+   *  ½-SE-tax. Only used when there are 3+ qualifying children. Capping the
+   *  employee-SS piece at the wage base also nets out the Schedule 3 line 11
+   *  excess-SS credit that Part II-B line 24 would subtract back. */
+  socialSecurityMedicareTaxesPaid?: number;
+  /** FC-13 — Part II-B line 24's EIC component (Form 1040 line 27). */
+  eitcApplied?: number;
 }): CtcCalculation {
   const { qualifyingChildren, otherDependents, agi, filingStatus, taxYear } = params;
   const year = resolveTaxYear(taxYear);
@@ -7325,7 +7529,21 @@ export function calculateChildTaxCredit(params: {
     const unusedNonRefundable = totalCreditAvailable - nonRefundablePortion;
     // ACTC refundable cap: $1,700 per qualifying child (2024 + 2025), AND 15% of (earned − $2,500).
     const actcCap = safeChildren * ACTC_REFUNDABLE_PER_CHILD[year];
-    const earnedIncomeBased = Math.max(0, earned - ACTC_EARNED_INCOME_THRESHOLD) * ACTC_RATE;
+    // Sch 8812 line 20 — the 15% earned-income formula.
+    let earnedIncomeBased = Math.max(0, earned - ACTC_EARNED_INCOME_THRESHOLD) * ACTC_RATE;
+    // FC-13 — Schedule 8812 Part II-B (3+ qualifying children): line 26 is
+    // the LARGER of line 20 (15% formula) and line 25 (SS/Medicare taxes paid
+    // minus the EIC, floored at 0); line 27 = smaller of line 17 and line 26.
+    // Verified against the TY2024/2025 Schedule 8812 (lines 21–26). Without
+    // this, large families with low earned income but real payroll/SE taxes
+    // were under-credited.
+    if (safeChildren >= 3 && params.socialSecurityMedicareTaxesPaid != null) {
+      const line25 = Math.max(
+        0,
+        Math.max(0, params.socialSecurityMedicareTaxesPaid) - Math.max(0, params.eitcApplied ?? 0),
+      );
+      earnedIncomeBased = Math.max(earnedIncomeBased, line25); // line 26
+    }
     refundableActc = Math.min(unusedNonRefundable, actcCap, earnedIncomeBased);
   }
 

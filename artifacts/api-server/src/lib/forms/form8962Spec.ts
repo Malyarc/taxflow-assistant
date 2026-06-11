@@ -126,22 +126,28 @@ export function buildForm8962(ctx: FormBuildContext): FormInstance | null {
   ];
   if (repayment > 0 || ptc.advanceAptc > ptc.computedPtc) {
     const excess = Math.max(0, ptc.advanceAptc - ptc.computedPtc);
-    // The engine applies the tier cap ONLY on the eligible path; on the two
-    // ineligible paths (MFS / missing data) repayment is the FULL advance and
-    // ptc.repaymentCap is a placeholder (Infinity resp. 0) — treat as no cap.
-    const capIsReal = ptc.eligible && Number.isFinite(ptc.repaymentCap);
+    // FC-10 — the Table 5 limitation now applies on EVERY path it legally
+    // applies to (including MFS — the 8962 instructions apply Table 5 to each
+    // MFS spouse separately — and the <100%-FPL clawback). A finite
+    // repaymentCap IS the engine's Table 5 amount; Infinity = no limitation
+    // (≥400% FPL, TY2026+ post-OBBBA repeal, or no determinable tier).
+    const capIsReal = Number.isFinite(ptc.repaymentCap);
     const partIII: FormLine[] = [
       moneyLine("27", "Excess advance payment of PTC (line 25 − line 24)", excess),
       capIsReal
         ? moneyLine("28", "Repayment limitation (instructions Table 5, by household income tier)", ptc.repaymentCap, {
-            note: "Applies only when household income < 400% of FPL — see the cap-tier footnote.",
+            note: isMfs
+              ? "MFS — ineligible for the PTC (§36B(c)(1)(C)) but Table 5 still limits the repayment, applied to each spouse separately ('all other filing statuses' column)."
+              : "Applies only when household income < 400% of FPL — see the cap-tier footnote.",
           })
         : textLine("28", "Repayment limitation", null, {
-            note: ptc.eligible
-              ? "No limitation — household income ≥ 400% of FPL: full repayment."
-              : isMfs
-                ? "No limitation — MFS ineligible (§36B(c)(1)(C)): full repayment."
-                : "No limitation — no PTC eligibility computed: full repayment.",
+            note: ret.taxYear >= 2026
+              ? "No limitation — OBBBA (P.L. 119-21) struck §36B(f)(2)(B) for tax years beginning after 12/31/2025: full repayment at every income level (IRS FS 2025-10)."
+              : ptc.eligible
+                ? "No limitation — household income ≥ 400% of FPL: full repayment."
+                : isMfs
+                  ? "No limitation — MFS (§36B(c)(1)(C)) with no determinable Table 5 tier: full repayment."
+                  : "No limitation — no PTC eligibility computed: full repayment.",
           }),
       moneyLine("29", "Excess advance PTC repayment (smaller of line 27 or 28) → Schedule 2, line 2", repayment, {
         emphasis: true,
@@ -160,11 +166,12 @@ export function buildForm8962(ctx: FormBuildContext): FormInstance | null {
     taxYear: ret.taxYear,
     parts,
     footnotes: [
-      "Engine MAGI for §36B = AGI as computed. The §36B(d)(2)(B) add-backs (tax-exempt interest, nontaxable Social Security, foreign earned income exclusion) and dependents' MAGI are NOT modeled — CPA verifies household income.",
+      "FC-23 — engine MAGI for §36B = AGI + tax-exempt interest + nontaxable Social Security + the §911 FEIE exclusion (§36B(d)(2)(B)). Dependents'-own-income inclusion is NOT modeled — CPA verifies household income.",
       "Annual-only reconciliation (line 11). Monthly lines 12–23, shared-policy allocation (Part IV), and the alternative calculation for year of marriage (Part V) are not modeled.",
       "Federal poverty line uses the 48-contiguous-states + DC table (prior-year HHS guidelines); Alaska/Hawaii higher guidelines not modeled.",
-      "Repayment limitation tiers (line 28; single-equivalent / MFJ): TY2024 (Rev. Proc. 2023-34) <200% FPL $375/$750, <300% $975/$1,950, <400% $1,625/$3,250; TY2025 $400/$800, $1,050/$2,100, $1,750/$3,500; ≥400% FPL no limit. The engine holds the TY2025 caps for TY2026 pending the Rev. Proc.",
-      "Engine convention: excess APTC repayment (line 29) is bundled INTO federalTaxLiability (Schedule 2 line 2); net PTC (line 26) is a refundable credit added to the refund (Schedule 3 line 9).",
+      "FC-01 — applicable percentages: TY2024/2025 use the ARPA/IRA enhanced schedule (0% below 150% FPL, 8.5% top, no 400% cliff — expired after 2025); TY2026+ uses Rev. Proc. 2025-25 Table 2 (2.10% under 133% FPL up to 9.96% in the 300–400% band) and the 400%-FPL eligibility cliff returns. Household income below 100% FPL → no PTC any year (§36B(c)(1)(A); the APTC-was-advanced §1.36B-2(b)(6) exception is not modeled).",
+      "Repayment limitation tiers (line 28; Single column / all-other-statuses column per §36B(f)(2)(B)(i) — FC-10): TY2024 (Rev. Proc. 2023-34) <200% FPL $375/$750, <300% $975/$1,950, <400% $1,625/$3,250; TY2025 (Rev. Proc. 2024-40) $400/$800, $1,050/$2,100, $1,750/$3,500; ≥400% FPL no limit. TY2026+: NO limitation at any income — OBBBA struck §36B(f)(2)(B) for tax years beginning after 12/31/2025.",
+      "Engine convention: excess APTC repayment (line 29) is bundled INTO federalTaxLiability (Schedule 2 line 2) AND is part of the nonrefundable-credit base (Form 1040 line 18 — FC-09); net PTC (line 26) is a refundable credit added to the refund (Schedule 3 line 9).",
     ],
   };
 }

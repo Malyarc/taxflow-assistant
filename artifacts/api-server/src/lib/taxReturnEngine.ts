@@ -68,6 +68,7 @@ import {
   getFederalStandardDeduction,
   getDependentStandardDeductionBase,
   getSaltCap,
+  SS_WAGE_BASE,
   type TaxYear,
   type MultiStateTaxResult,
   type StateEitcCalculation,
@@ -931,6 +932,14 @@ export interface ComputedTaxReturn {
   studentLoanInterest: StudentLoanInterestCalculation;
   foreignTaxCredit: ForeignTaxCreditCalculation;
   residentialEnergyCredits: ResidentialEnergyCreditsCalculation;
+  /** FC-11 — §25D residential clean energy credit APPLIED this year (after
+   *  the CTC in credit ordering, per the Form 5695 credit-limit worksheet;
+   *  includes any prior-year §25D(c) carryforward consumed). */
+  residentialCleanEnergyApplied: number;
+  /** FC-11 — unused §25D credit carried to next year under §25D(c)
+   *  (current-year credit + carryforward-in − applied). Auto-seeded next year
+   *  as the `residential_clean_energy_carryforward` adjustment. */
+  residentialCleanEnergyCarryforward: number;
   premiumTaxCredit: PremiumTaxCreditCalculation;
   /** P2-13 — Adoption Credit (Form 8839, IRC §23): nonrefundable + OBBBA
    *  refundable split, MAGI phase-out, and the §23(c) 5-year carryforward. */
@@ -3255,46 +3264,61 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // netting gains (§121 remainder, §1031 recognized, QSBS, K-1 Box 8/9a,
   // capital-transaction detail). Closes audit findings H-2 and M-1.
   const niitRentalIsNonPassive = client.rentalRealEstateProfessional === true;
+  // FC-12 — the structured investment-income components, SHARED between the
+  // §1411 NIIT base and the §32(i) EITC disqualifying-income base (which adds
+  // tax-exempt interest and skips the two §1411-only items — see the EITC
+  // block below).
+  const investmentIncomeStructuredComponents =
+    // Portfolio income — always NII (1099 + K-1). Dividend terms mirror the
+    // AGI income assembly above (1099 non-qualified + combined qualified +
+    // K-1 Box 6a) so NII stays consistent with the dividends already in AGI.
+    form1099Summary.interestIncome +
+    form1099Summary.ordinaryDividends +
+    qualifiedDividends +
+    k1InterestIncome +
+    k1OrdinaryDividends +
+    form1099Summary.royalties +
+    k1Royalties +
+    // Rents — passive for the ordinary landlord; excluded for RE professionals.
+    // T1.2 (MEDIUM-1, independent review 2026-06-09) — a FULLY-DISPOSED passive
+    // rental's positive current-year operating net flows to AGI via
+    // section469gAgiEffect (not rentalNetAppliedToAgi), so it must be added to
+    // the §1411 NII base too (it's net investment income up to disposition).
+    // Only the positive net is NII; a §469(g)-released loss stays out (floored).
+    (niitRentalIsNonPassive ? 0 : form1099Summary.rents + Math.max(0, rentalNetAppliedToAgi) + Math.max(0, disposedRentalNet)) +
+    // Passive pass-through income (engine already segregates active vs passive):
+    Math.max(0, k1PassiveAppliedToAgi) +
+    // Net gain on disposition: post-netting positive LTCG + STCG (already
+    // folds in 1099-B, K-1 Box 8/9a, §121 remainder, §1031 recognized, QSBS):
+    ltcgPreferential +
+    stcgInOrdinary;
+  // §1411(c)(1): a §1231 gain from a NON-passive (materially-participated)
+  // trade/business is NOT net investment income. Excluded when the CPA flags
+  // the Form 4797 disposition `nonPassive` (default off → conservatively
+  // included, matching the ordinary-landlord rental treatment above).
+  // Audit 2026-06-08 C2: cap the exclusion at the net disposition gain
+  // actually in the NII base. Without the cap, a separate capital loss that
+  // eroded post-netting LTCG below the gross §1231 figure let the GROSS
+  // subtraction drive the base negative and (after the max(0,…) floor) wipe
+  // out unrelated NII (interest/dividends) → under-stated NIIT. The §1231
+  // gain can never have contributed more than the surviving net disposition
+  // gain. (Residual sub-gap: when OTHER long-term gain also survives, the
+  // exact §1231-vs-other loss split isn't tracked — this cap over-includes,
+  // the safe NIIT direction.)
+  // FC-12 note: this carve is §1411-ONLY — §32(i)(2)(D) counts capital gain
+  // net income (§1222(9)) regardless of passivity, so the EITC base uses the
+  // components total WITHOUT this subtraction.
+  const nonPassiveSection1231NiitCarve = Math.min(
+    form4797.nonPassiveSection1231Gain,
+    Math.max(0, ltcgPreferential + stcgInOrdinary),
+  );
+  // The generic `investment_income` adjustment is the §1411 CATCH-ALL (its
+  // label is "Investment Income (NIIT)") — per §1411(c)(1)(A)(i) it may carry
+  // ANNUITY income, which §32(i) does not count, so it joins the NIIT base
+  // only (FC-12).
   const totalInvestmentIncomeForNiit = Math.max(
     0,
-    investmentIncomeFromAdj +
-      // Portfolio income — always NII (1099 + K-1). Dividend terms mirror the
-      // AGI income assembly above (1099 non-qualified + combined qualified +
-      // K-1 Box 6a) so NII stays consistent with the dividends already in AGI.
-      form1099Summary.interestIncome +
-      form1099Summary.ordinaryDividends +
-      qualifiedDividends +
-      k1InterestIncome +
-      k1OrdinaryDividends +
-      form1099Summary.royalties +
-      k1Royalties +
-      // Rents — passive for the ordinary landlord; excluded for RE professionals.
-      // T1.2 (MEDIUM-1, independent review 2026-06-09) — a FULLY-DISPOSED passive
-      // rental's positive current-year operating net flows to AGI via
-      // section469gAgiEffect (not rentalNetAppliedToAgi), so it must be added to
-      // the §1411 NII base too (it's net investment income up to disposition).
-      // Only the positive net is NII; a §469(g)-released loss stays out (floored).
-      (niitRentalIsNonPassive ? 0 : form1099Summary.rents + Math.max(0, rentalNetAppliedToAgi) + Math.max(0, disposedRentalNet)) +
-      // Passive pass-through income (engine already segregates active vs passive):
-      Math.max(0, k1PassiveAppliedToAgi) +
-      // Net gain on disposition: post-netting positive LTCG + STCG (already
-      // folds in 1099-B, K-1 Box 8/9a, §121 remainder, §1031 recognized, QSBS):
-      ltcgPreferential +
-      stcgInOrdinary -
-      // §1411(c)(1): a §1231 gain from a NON-passive (materially-participated)
-      // trade/business is NOT net investment income. Excluded when the CPA flags
-      // the Form 4797 disposition `nonPassive` (default off → conservatively
-      // included, matching the ordinary-landlord rental treatment above).
-      // Audit 2026-06-08 C2: cap the exclusion at the net disposition gain
-      // actually in the NII base. Without the cap, a separate capital loss that
-      // eroded post-netting LTCG below the gross §1231 figure let the GROSS
-      // subtraction drive the base negative and (after the max(0,…) floor) wipe
-      // out unrelated NII (interest/dividends) → under-stated NIIT. The §1231
-      // gain can never have contributed more than the surviving net disposition
-      // gain. (Residual sub-gap: when OTHER long-term gain also survives, the
-      // exact §1231-vs-other loss split isn't tracked — this cap over-includes,
-      // the safe NIIT direction.)
-      Math.min(form4797.nonPassiveSection1231Gain, Math.max(0, ltcgPreferential + stcgInOrdinary)),
+    investmentIncomeFromAdj + investmentIncomeStructuredComponents - nonPassiveSection1231NiitCarve,
   );
   const niit = calculateNiit({
     investmentIncome: totalInvestmentIncomeForNiit,
@@ -3606,9 +3630,53 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     // T1.2 — Schedule H household employment tax (Sched 2 line 9).
     scheduleH.total;
 
+  const isMfj =
+    client.filingStatus === "married_filing_jointly" ||
+    client.filingStatus === "qualifying_widow";
+
+  // ── ACA Premium Tax Credit reconciliation (Form 8962) ──
+  // Computed BEFORE the nonrefundable-credit cascade because the excess-APTC
+  // repayment (Schedule 2 line 2) is part of Form 1040 line 18 — the base the
+  // personal credits offset (FC-09, see Step 7 below).
+  const acaHouseholdSizeDefault =
+    1 +
+    (isMfj ? 1 : 0) +
+    (client.dependentsUnder17 ?? 0) +
+    (client.otherDependents ?? 0);
+  const acaHouseholdSize = client.acaHouseholdSize ?? acaHouseholdSizeDefault;
+  // FC-23 — §36B(d)(2)(B) household-income MAGI = AGI + tax-exempt interest
+  // (§36B(d)(2)(B)(iii)) + the NONTAXABLE portion of Social Security
+  // (§36B(d)(2)(B)(ii), gross benefits less the Pub 915 taxable amount —
+  // the taxable portion is already inside AGI) + the §911 FEIE exclusion
+  // (§36B(d)(2)(B)(i)). Dependents'-own-income inclusion is not modeled.
+  const nontaxableSocialSecurity = Math.max(0, ssTaxability.ssBenefits - taxableSocialSecurity);
+  const ptcMagi =
+    calc.adjustedGrossIncome +
+    form1099Summary.taxExemptInterest +
+    nontaxableSocialSecurity +
+    feieExclusion;
+  const premiumTaxCredit = calculatePremiumTaxCredit({
+    annualPremium: toNum(client.acaAnnualPremium ?? null),
+    annualSlcsp: toNum(client.acaAnnualSlcsp ?? null),
+    advanceAptc: toNum(client.acaAdvanceAptc ?? null),
+    modifiedAgi: ptcMagi,
+    householdSize: acaHouseholdSize,
+    filingStatus: client.filingStatus,
+    taxYear,
+  });
+  const netPremiumTaxCreditRefundable = Math.max(0, premiumTaxCredit.netPtc);
+  const excessAdvanceAptcOwed = Math.max(0, -premiumTaxCredit.netPtc);
+
   // ── Step 7: Non-refundable credits in IRS Sched 3 order ──
   const incomeTaxOnly = regularFederalTax + amt.amtTax;
-  let availableForNonRefundable = incomeTaxOnly;
+  // FC-09 — the nonrefundable-credit base is Form 1040 line 18 = line 16
+  // (tax) + Schedule 2 line 3 (AMT + the EXCESS-APTC REPAYMENT, Sch 2 line 2).
+  // §36B(f)(2)(A) makes the repayment an increase in chapter-1 tax and it is
+  // not in the §26(b)(2) exclusion list, so every personal-credit limit
+  // worksheet (2441, 8863, 8880, 5695, 8839, Sch 8812 CLW-A, 3800) starts
+  // from line 18 — credits DO offset the clawback. (SE tax/NIIT/Additional
+  // Medicare/§72(t)/§4973(g)/Sch H stay outside the base per §26(b).)
+  let availableForNonRefundable = incomeTaxOnly + excessAdvanceAptcOwed;
 
   const earnedIncomeHousehold = totalWages + Math.max(0, netSeIncome - se.deductibleHalf);
   // C1 (audit 2026-06-08): the CTC is computed/applied AFTER the Schedule-3
@@ -3619,6 +3687,41 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // spills to the refundable ACTC. Applying the CTC first (the prior behavior)
   // let it absorb all the tax and WASTE the non-carryforward dependent-care /
   // education credits.
+
+  // ── EITC (computed early — the FC-13 ACTC Part II-B alternative needs it
+  // before the CTC; nothing in the EITC depends on the credit cascade) ──
+  // FED-06 — §32(i)(2) EITC disqualifying-investment-income cliff. Unlike the
+  // §1411 NIIT base, §32(i)(2)(B) COUNTS tax-exempt interest, so add it back.
+  // FC-12 — two deliberate divergences from the NIIT base:
+  //   (a) the generic `investment_income` (NIIT) catch-all adjustment is
+  //       EXCLUDED — §1411(c)(1)(A)(i) includes ANNUITY income in NII but
+  //       §32(i)(2) does not, and the catch-all is the engine's only annuity
+  //       path (all §32(i) components — interest, dividends, rents,
+  //       royalties, gains, passive income — flow in via their structured
+  //       buckets). 1099-R retirement distributions were never in either base.
+  //   (b) the non-passive §1231 carve does NOT apply — §32(i)(2)(D) counts
+  //       "capital gain net income" (§1222(9)) regardless of passivity, so
+  //       the gross components (before the §1411-only carve) are used.
+  const eitcDisqualifyingIncome =
+    Math.max(0, investmentIncomeStructuredComponents) + form1099Summary.taxExemptInterest;
+  const eitc = calculateEitc({
+    filingStatus: client.filingStatus,
+    // E1 — EITC qualifying children (§32(c)(3): <19, or <24 student) is a WIDER
+    // set than the CTC's <17. Default to dependentsUnder17 when not specified.
+    qualifyingChildren: client.eitcQualifyingChildren ?? client.dependentsUnder17 ?? 0,
+    earnedIncome: earnedIncomeHousehold,
+    agi: calc.adjustedGrossIncome,
+    investmentIncome: eitcDisqualifyingIncome,
+    taxYear,
+    // FC-12 — §32(c)(1)(C) Form 2555 bar: any positive foreign_earned_income
+    // adjustment means the FEIE is being claimed → no EITC.
+    claimsForeignEarnedIncomeExclusion: feieGrossForeignIncome > 0,
+    // FC-12 — §32(c)(1)(A)(ii)(II) 25–64 age window for childless claimants
+    // (either spouse satisfies it on a joint return; null ages preserve the
+    // pre-gate behavior — the engine can't verify what it isn't told).
+    taxpayerAge: client.taxpayerAge ?? null,
+    spouseAge: client.spouseAge ?? null,
+  });
 
   // P2-3 — combine current-year foreign tax with the prior-year §904(c)
   // carryover before applying the Form 1116 limit. The §904 limit is computed
@@ -3645,9 +3748,6 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // tracked (consistent with the charitable 5-year carryforward).
   const foreignTaxCreditCarryforwardRemaining = Math.max(0, foreignTaxCombinedPaid - foreignTaxCredit.credit);
 
-  const isMfj =
-    client.filingStatus === "married_filing_jointly" ||
-    client.filingStatus === "qualifying_widow";
   const spouseEarnedIncome = isMfj ? toNum(client.spouseEarnedIncome ?? null) : 0;
   const taxpayerEarnedIncomeOnly = isMfj
     ? Math.max(0, earnedIncomeHousehold - spouseEarnedIncome)
@@ -3673,7 +3773,10 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     }
   }
   const educationCredits = calculateEducationCredits({
-    agi: calc.adjustedGrossIncome,
+    // FC-14 — §25A(d)(3) MAGI = AGI + the §911/§931/§933 exclusions (Form
+    // 8863 lines 3/14). The engine's AGI excludes the FEIE (K9), so add it
+    // back here — same pattern as NIIT/IRA/SLI/adoption.
+    agi: calc.adjustedGrossIncome + feieExclusion,
     filingStatus: client.filingStatus,
     aocExpenses: aocExpensesPerStudent,
     llcExpenses: llcExpensesAdj,
@@ -3688,33 +3791,45 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     iraTraditionalAdj + iraRothAdj + saversContributionsAdj;
   const saversCredit = calculateSaversCredit({
     filingStatus: client.filingStatus,
-    agi: calc.adjustedGrossIncome,
+    // FC-14 — §25B(e) MAGI = AGI + the §911/§931/§933 exclusions.
+    agi: calc.adjustedGrossIncome + feieExclusion,
     retirementContributions: totalRetirementContribsForSavers,
     taxYear,
+    // FC-15 — §25B(c)(2)(B): a filer claimed as a dependent on another
+    // return is ineligible. (The §25B(c)(2)(A) full-time-student bar has no
+    // engine field — CPA-verified, documented in the Form 8880 workpaper.)
+    claimedAsDependent: client.claimedAsDependent ?? false,
   });
   const saversApplied = Math.min(saversCredit.appliedCredit, availableForNonRefundable);
   availableForNonRefundable = Math.max(0, availableForNonRefundable - saversApplied);
 
-  // Residential energy + EV charger
+  // Residential energy + EV charger. FC-02: the calculator zeroes §25C/§25D
+  // for TY2026+ (OBBBA §§70505–70506 terminations).
   const residentialEnergy = calculateResidentialEnergyCredits({
     cleanEnergySpend: residentialCleanEnergyAdj,
     efficientHomeSpend: energyEfficientHomeAdj,
     heatPumpSpend: energyEfficientHeatpumpAdj,
     evChargerSpend: evChargerPropertyAdj,
+    taxYear,
   });
-  const cleanEnergyApplied = Math.min(residentialEnergy.cleanEnergyCredit, availableForNonRefundable);
-  availableForNonRefundable = Math.max(0, availableForNonRefundable - cleanEnergyApplied);
+  // FC-11 — ONLY §25C (line 5b) and §30C stay ahead of the CTC: the Schedule
+  // 8812 Credit Limit Worksheet A line 2 subtracts "Schedule 3, lines 1–4,
+  // 5b, 6c, 6g, 6h" — §25C is line 5b, but the §25D residential clean energy
+  // credit (line 5a) is NOT in that list. §25D's own Form 5695 credit-limit
+  // worksheet subtracts Form 1040 line 19 (the CTC), i.e. §25D sequences
+  // AFTER the CTC, with its excess carried forward under §25D(c) — applied
+  // below the CTC. (Applying §25D first let it eat the tax, shrink the CTC's
+  // nonrefundable slice, and inflate the refundable ACTC — converting a
+  // carryforward-only credit into current refundable cash.)
   const efficientHomeApplied = Math.min(residentialEnergy.efficientHomeCredit, availableForNonRefundable);
   availableForNonRefundable = Math.max(0, availableForNonRefundable - efficientHomeApplied);
   const heatPumpApplied = Math.min(residentialEnergy.heatPumpCredit, availableForNonRefundable);
   availableForNonRefundable = Math.max(0, availableForNonRefundable - heatPumpApplied);
   const evChargerApplied = Math.min(residentialEnergy.evChargerCredit, availableForNonRefundable);
   availableForNonRefundable = Math.max(0, availableForNonRefundable - evChargerApplied);
-  const residentialEnergyApplied =
-    cleanEnergyApplied + efficientHomeApplied + heatPumpApplied + evChargerApplied;
 
   // P2-13 — Adoption Credit (Form 8839, IRC §23) — Sched 3 Line 6c. Applied
-  // after the other §25–§25D personal credits (which mostly don't carry
+  // after the other pre-CTC personal credits (which mostly don't carry
   // forward) so they absorb tax first; the §23 credit takes the remaining room
   // and carries any unused nonrefundable portion forward 5 years (§23(c)). The
   // OBBBA refundable portion (TY2025+) is added to the refundable-credit total
@@ -3731,23 +3846,63 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   });
   availableForNonRefundable = Math.max(0, availableForNonRefundable - adoptionCredit.nonRefundableApplied);
 
+  // FC-13 — Schedule 8812 Part II-B inputs (3+ qualifying children): the
+  // refundable ACTC floor is the LARGER of the 15% formula and (SS/Medicare
+  // taxes paid − EIC). Line 21+22 equivalent: employee FICA modeled from W-2
+  // boxes 3/5 (6.2% of SS wages capped at the year's wage base — per-spouse
+  // for MFJ, which also nets out the Sch 3 line 11 excess-SS subtraction of
+  // line 24 — plus 1.45% of Medicare wages) + the Form 8959 0.9% Additional
+  // Medicare liability + the Schedule 1 line 15 deductible ½ SE tax.
+  // (Sch 2 lines 5/6/13 unreported/uncollected FICA are not modeled.)
+  const ssWageBaseForActc = SS_WAGE_BASE[resolvedMapYear];
+  const employeeSsTaxForActc = isMfj
+    ? 0.062 * (Math.min(w2SsByTaxpayer, ssWageBaseForActc) + Math.min(w2SsBySpouse, ssWageBaseForActc))
+    : 0.062 * Math.min(w2SocialSecurityWages, ssWageBaseForActc);
+  const ssMedicareTaxesPaidForActc =
+    employeeSsTaxForActc +
+    0.0145 * w2MedicareWages +
+    additionalMedicare.additionalMedicareTax +
+    se.deductibleHalf;
+
   // C1 — Child Tax Credit (Schedule 8812), applied here AFTER the Schedule-3
-  // personal credits (FTC/dep-care/education/Saver's/energy/adoption) per the
-  // Credit Limit Worksheet: `taxBeforeCredit` is the tax remaining after those,
-  // so the CTC fills only the residual and the maximum amount spills to the
-  // refundable ACTC. (The §53 AMT credit + §38 GBC below are NOT subtracted in
-  // the CTC limit worksheet, so the CTC takes priority over them — they apply
-  // against what's left after the CTC.)
+  // personal credits (FTC/dep-care/education/Saver's/§25C-§30C energy/adoption)
+  // per the Credit Limit Worksheet: `taxBeforeCredit` is the tax remaining
+  // after those, so the CTC fills only the residual and the maximum amount
+  // spills to the refundable ACTC. (The §25D clean-energy credit, the §53 AMT
+  // credit + §38 GBC below are NOT subtracted in the CTC limit worksheet, so
+  // the CTC takes priority over them — they apply against what's left.)
   const ctc = calculateChildTaxCredit({
     qualifyingChildren: client.dependentsUnder17 ?? 0,
     otherDependents: client.otherDependents ?? 0,
-    agi: calc.adjustedGrossIncome,
+    // FC-14 — §24(b)(1) MAGI = AGI + the §911/§931/§933 exclusions (Sch 8812
+    // lines 2a–2d): the engine's AGI excludes the FEIE, so add it back.
+    agi: calc.adjustedGrossIncome + feieExclusion,
     filingStatus: client.filingStatus,
     taxYear,
     taxBeforeCredit: availableForNonRefundable,
     earnedIncome: earnedIncomeHousehold,
+    // FC-13 — Part II-B alternative (only consulted for 3+ children).
+    socialSecurityMedicareTaxesPaid: ssMedicareTaxesPaidForActc,
+    eitcApplied: eitc.appliedCredit,
   });
   availableForNonRefundable = Math.max(0, availableForNonRefundable - ctc.nonRefundablePortion);
+
+  // FC-11 — §25D Residential Clean Energy Credit (Sch 3 line 5a), applied
+  // AFTER the CTC (see the ordering note above). §25D(c) carryforward:
+  // prior-year unused credit (auto-seeded by the pipeline or CPA-entered as
+  // `residential_clean_energy_carryforward`) adds to this year's credit; the
+  // portion the remaining tax can't absorb carries to next year. A pre-2026
+  // carryforward SURVIVES the OBBBA §70506 termination (OBBBA did not amend
+  // §25D(c); only post-2025 EXPENDITURES lose the credit — IRS OBBB FAQ /
+  // CRS IN12611), which is why the carryforward is added OUTSIDE the
+  // calculator's TY2026 zeroing.
+  const cleanEnergyCarryforwardIn = Math.max(0, sumByType("residential_clean_energy_carryforward"));
+  const cleanEnergyAvailable = residentialEnergy.cleanEnergyCredit + cleanEnergyCarryforwardIn;
+  const cleanEnergyApplied = Math.min(cleanEnergyAvailable, availableForNonRefundable);
+  availableForNonRefundable = Math.max(0, availableForNonRefundable - cleanEnergyApplied);
+  const residentialCleanEnergyCarryforward = Math.max(0, cleanEnergyAvailable - cleanEnergyApplied);
+  const residentialEnergyApplied =
+    cleanEnergyApplied + efficientHomeApplied + heatPumpApplied + evChargerApplied;
 
   // E2 — Form 8801 Minimum-Tax Credit (IRC §53). Sched 3 Line 6b on TY2024.
   // Carryforward from prior years can offset regular tax DOWN TO the level
@@ -3823,25 +3978,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   availableForNonRefundable = Math.max(0, availableForNonRefundable - otherGbcApplied);
   const otherGbcCarryforwardRemaining = Math.max(0, otherGbcAvailable - otherGbcApplied);
 
-  // ── Step 8: Refundable credits + PTC reconciliation ───
-  // FED-06 — §32(i)(2) EITC disqualifying-investment-income cliff. Unlike the
-  // §1411 NIIT base, §32(i)(2)(B) COUNTS tax-exempt interest, so add it back.
-  // The remaining components (taxable interest + dividends, net capital gain,
-  // passive/non-business rents & royalties) are shared with the NIIT base, and
-  // ordinary-course-of-business rents that §32(i)(2)(C) excludes are already
-  // out of that base (RE-pro rents excluded) — so it matches §32(i).
-  const eitcDisqualifyingIncome =
-    totalInvestmentIncomeForNiit + form1099Summary.taxExemptInterest;
-  const eitc = calculateEitc({
-    filingStatus: client.filingStatus,
-    // E1 — EITC qualifying children (§32(c)(3): <19, or <24 student) is a WIDER
-    // set than the CTC's <17. Default to dependentsUnder17 when not specified.
-    qualifyingChildren: client.eitcQualifyingChildren ?? client.dependentsUnder17 ?? 0,
-    earnedIncome: earnedIncomeHousehold,
-    agi: calc.adjustedGrossIncome,
-    investmentIncome: eitcDisqualifyingIncome,
-    taxYear,
-  });
+  // ── Step 8: Refundable credits (EITC computed above, pre-CTC) ───
 
   // G1 — NYC EITC sliding scale (NY IT-215 Line 26). Refundable; applied
   // against NYC local tax. Excess refundable portion (when NYC EITC > NYC
@@ -3876,24 +4013,6 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const nycUbtCalc = calculateNycUbt(sumByType("nyc_ubt_business_income"));
   const nycUbt = nycUbtCalc.netUbt;
   const localTaxLiabilityWithUbt = localTaxLiabilityAfterNycEitc + nycUbt;
-
-  const acaHouseholdSizeDefault =
-    1 +
-    (isMfj ? 1 : 0) +
-    (client.dependentsUnder17 ?? 0) +
-    (client.otherDependents ?? 0);
-  const acaHouseholdSize = client.acaHouseholdSize ?? acaHouseholdSizeDefault;
-  const premiumTaxCredit = calculatePremiumTaxCredit({
-    annualPremium: toNum(client.acaAnnualPremium ?? null),
-    annualSlcsp: toNum(client.acaAnnualSlcsp ?? null),
-    advanceAptc: toNum(client.acaAdvanceAptc ?? null),
-    modifiedAgi: calc.adjustedGrossIncome,
-    householdSize: acaHouseholdSize,
-    filingStatus: client.filingStatus,
-    taxYear,
-  });
-  const netPremiumTaxCreditRefundable = Math.max(0, premiumTaxCredit.netPtc);
-  const excessAdvanceAptcOwed = Math.max(0, -premiumTaxCredit.netPtc);
 
   const totalNonRefundableApplied =
     ctc.nonRefundablePortion +
@@ -4158,6 +4277,8 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     studentLoanInterest,
     foreignTaxCredit,
     residentialEnergyCredits: residentialEnergy,
+    residentialCleanEnergyApplied: cleanEnergyApplied,
+    residentialCleanEnergyCarryforward,
     premiumTaxCredit,
     adoptionCredit,
     adoptionCreditCarryforwardRemaining: adoptionCredit.carryforwardToNext,

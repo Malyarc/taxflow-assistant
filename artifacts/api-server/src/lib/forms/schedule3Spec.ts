@@ -33,7 +33,10 @@ export function buildSchedule3(ctx: FormBuildContext): FormInstance | null {
 
   // ── Part I — Nonrefundable credits ──
   const educationNonRef = ec.aocNonRefundable + ec.llcApplied;
-  const energy5a = re.cleanEnergyCredit;
+  // FC-11 — line 5a shows the §25D amount APPLIED (post-CTC ordering, incl.
+  // any §25D(c) carryforward consumed), not the pre-limit credit — the unused
+  // balance rolls forward and is disclosed on Form 5695 line 16.
+  const energy5a = ret.residentialCleanEnergyApplied;
   const energy5b = re.efficientHomeCredit + re.heatPumpCredit;
   const gbc = ret.rdCreditApplied + ret.otherGeneralBusinessCreditApplied;
 
@@ -42,7 +45,7 @@ export function buildSchedule3(ctx: FormBuildContext): FormInstance | null {
     ["2", "Credit for child & dependent care expenses (Form 2441)", ret.dependentCareCredit.appliedCredit],
     ["3", "Education credits — nonrefundable (Form 8863): AOC nonref + LLC", educationNonRef],
     ["4", "Retirement savings contributions credit (Form 8880)", ret.saversCredit.appliedCredit],
-    ["5a", "Residential clean energy credit §25D (Form 5695 Part I)", energy5a, "Solar/wind/geothermal/battery — 30%, no annual cap, indefinite carryforward."],
+    ["5a", "Residential clean energy credit §25D (Form 5695 Part I) — applied", energy5a, "Solar/wind/geothermal/battery — 30%, no annual cap, §25D(c) carryforward; applied AFTER the CTC (FC-11)."],
     ["5b", "Energy efficient home improvement credit §25C (Form 5695 Part II)", energy5b, "$1,200 general cap + $2,000 heat-pump cap = $3,200/yr."],
     ["6m", "Alternative fuel vehicle refueling property §30C (Form 8911)", re.evChargerCredit, "Engine models the EV-charger credit here (officially Form 8911 → Schedule 3 line 6m)."],
     ["6c", "Adoption credit — nonrefundable (Form 8839)", ret.adoptionCredit.nonRefundableApplied],
@@ -114,7 +117,7 @@ export function buildSchedule3(ctx: FormBuildContext): FormInstance | null {
       { title: "Part II — Refundable Credits and Payments (Form 1040 line 31)", lines: partIILines },
     ],
     footnotes: [
-      "Credit ORDERING: the engine applies the Schedule-3 personal credits FIRST (FTC → dependent care → education → savers → energy → adoption), THEN the Child Tax Credit, per the Schedule 8812 Credit Limit Worksheet. Each credit is capped at the remaining income tax.",
+      "Credit ORDERING: the engine applies the Schedule-3 personal credits in the Sch 8812 CLW line-2 list FIRST (FTC → dependent care → education → savers → §25C energy/§30C → adoption), THEN the Child Tax Credit, THEN the §25D residential clean energy credit (NOT in the CLW list; its excess carries forward under §25D(c) — FC-11), then §53/§38. Each credit is capped at the remaining income tax (which includes the Schedule 2 line 2 excess-APTC repayment — FC-09).",
       "The Child Tax Credit nonrefundable portion is on Form 1040 line 19 (not Schedule 3); Part I therefore ties to totalNonRefundableApplied − CTC nonrefundable.",
       "The EV-charger credit (§30C) is modeled inside the engine's residentialEnergyCredits and shown on line 6m (officially Form 8911).",
     ],

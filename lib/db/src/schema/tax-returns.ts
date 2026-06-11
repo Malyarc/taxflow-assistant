@@ -127,6 +127,10 @@ export const taxReturnsTable = pgTable(
     // Phase 1.5: credits
     foreignTaxCredit: numeric("foreign_tax_credit", { precision: 12, scale: 2 }),
     residentialEnergyCredits: numeric("residential_energy_credits", { precision: 12, scale: 2 }),
+    /** FC-11 — §25D(c) unused residential-clean-energy credit carried to next
+     *  year. Auto-loaded by the pipeline as a synthetic
+     *  `residential_clean_energy_carryforward` adjustment. */
+    residentialCleanEnergyCarryforward: numeric("residential_clean_energy_carryforward", { precision: 14, scale: 2 }),
     /** Net Premium Tax Credit (Form 8962). Positive = refundable; negative = excess advance owed (capped). */
     premiumTaxCredit: numeric("premium_tax_credit", { precision: 12, scale: 2 }),
     // Phase 2b: Capital loss against ordinary income + carryforwards

@@ -441,6 +441,21 @@ export async function synthesizePriorYearCarryforwards(
     });
   }
 
+  // FC-11 — §25D(c) residential clean energy credit carryforward (unlimited
+  // life). Auto-load the prior-year unused §25D; the engine applies it AFTER
+  // the CTC (Form 5695 credit-limit-worksheet ordering) and re-derives the
+  // remaining carryforward. A pre-2026 carryforward keeps applying in TY2026+
+  // even though OBBBA §70506 terminated the credit for NEW post-2025
+  // expenditures (the carryforward rule in §25D(c) was not amended).
+  const cleanEnergyCarry = Number(priorReturn.residentialCleanEnergyCarryforward ?? 0);
+  if (cleanEnergyCarry > 0 && !hasManualOverride("residential_clean_energy_carryforward")) {
+    synthetic.push({
+      adjustmentType: "residential_clean_energy_carryforward",
+      amount: cleanEnergyCarry,
+      isApplied: true,
+    });
+  }
+
   return synthetic;
 }
 
@@ -574,6 +589,8 @@ export async function recalculateAndUpsertTaxReturn(
     // Phase 1.5: Credits
     foreignTaxCredit: String(result.foreignTaxCredit.credit),
     residentialEnergyCredits: String(result.residentialEnergyCredits.total),
+    // FC-11 — §25D(c) unused-credit carryforward (auto-loaded next year).
+    residentialCleanEnergyCarryforward: String(result.residentialCleanEnergyCarryforward),
     premiumTaxCredit: String(result.premiumTaxCredit.netPtc),
     // Phase 2b: Capital loss + state retirement exemption
     capitalLossDeducted: String(result.capitalLossDeducted),

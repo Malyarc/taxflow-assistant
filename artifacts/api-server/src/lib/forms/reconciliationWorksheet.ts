@@ -339,6 +339,7 @@ export function buildReconciliationWorksheet(ctx: FormBuildContext): FormInstanc
     ["", "§179 carryforward (§179(b)(3)(B))", ret.section179Carryforward],
     ["", "Foreign tax credit carryforward (§904(c))", ret.foreignTaxCreditCarryforwardRemaining],
     ["", "Adoption credit carryforward (§23(c))", ret.adoptionCreditCarryforwardRemaining],
+    ["", "Residential clean energy credit carryforward (§25D(c))", ret.residentialCleanEnergyCarryforward],
     ["", "R&D credit carryforward (§39)", ret.rdCreditCarryforwardRemaining],
     ["", "Other GBC carryforward (§39)", ret.otherGeneralBusinessCreditCarryforward],
     ["", "Schedule E passive loss suspended (§469)", ret.scheduleEPassiveLossSuspended],
