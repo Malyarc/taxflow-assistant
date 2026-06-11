@@ -28,15 +28,12 @@ function runProp(label: string, body: () => void) {
 // ── deep finite walk ────────────────────────────────────────────────────────
 // Every numeric leaf of a ComputedTaxReturn MUST be finite. A NaN/Infinity
 // reaching a dollar field is a fail-loud violation (silent garbage tax number).
-// `premiumTaxCredit.repaymentCap` is a DELIBERATE +Infinity sentinel meaning
-// "no §36B(f)(2)(B) repayment limitation" (income ≥ 400% FPL — the full APTC is
-// repayable, uncapped). Every consumer gates it with Number.isFinite() and JSON
-// serializes it to null, so it is correctly handled — exclude it from the
-// "no unintentional non-finite output" property.
-const FINITE_SENTINEL_KEYS = new Set(["repaymentCap"]);
+// T1.0d #14 (2026-06-11): the old `repaymentCap: Infinity` sentinel was
+// retired — NULL is now the only "no §36B(f)(2)(B) limitation" sentinel, so
+// NOTHING non-finite may appear anywhere in the output (no exemptions).
 function firstNonFinite(obj: unknown, path = "", key = ""): string | null {
+  void key;
   if (typeof obj === "number") {
-    if (FINITE_SENTINEL_KEYS.has(key)) return null;
     return Number.isFinite(obj) ? null : `${path} = ${obj}`;
   }
   if (obj === null || obj === undefined) return null;

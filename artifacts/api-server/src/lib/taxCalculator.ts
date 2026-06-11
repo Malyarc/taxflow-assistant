@@ -5835,11 +5835,13 @@ export function calculatePremiumTaxCredit(params: {
         ? fplForMfs.base + Math.max(0, params.householdSize - 1) * fplForMfs.perAdditional
         : 0;
     // Degenerate inputs (householdSize ≤ 0) → fraction Infinity/NaN → no tier
-    // matches → cap stays Infinity (the pre-FC-10 uncapped behavior).
+    // matches → cap stays null (no limitation — full repayment).
     const mfsFraction = params.modifiedAgi / mfsGuideline;
+    // Seam review 2026-06-11: with zero advance there is nothing to limit —
+    // null (the no-limitation sentinel), NEVER Infinity (engine totality).
     const mfsCap = advanceAptc > 0
       ? aptcRepaymentCap(year, params.filingStatus, mfsFraction)
-      : Infinity;
+      : null;
     return {
       annualPremium: params.annualPremium,
       annualSlcsp: params.annualSlcsp,

@@ -223,6 +223,15 @@ claim re-litigates the settled flat-25/28% adjudication).
   roll-forward/YoY — schedule a migration).
 - Oracle-harness niceties: distinguish "oracle absent" from "oracle errored" in the
   SKIP path; fix the runner docstring's stale status name.
+- **(Seam review, 2026-06-11b — conservative, documented):** (1) the FC-09
+  nonrefundable-credit base includes the excess-APTC repayment but the §38/§53
+  NET-tax limits are derived without it — when a clawback coexists with
+  GBC/§53 credits the limits under-state (never under-taxes); align the
+  netIncomeTaxFor38/amtCreditApplicable bases with the FC-09 base. (2) The
+  Form 8801 §53(d) exclusion-items rerun calls calculateAmt WITHOUT the
+  schedDWorksheet lines the real AMT run gets — the two Part-III paths can
+  position preferential zones differently on AMT+§1250/28% returns (tiny edge;
+  thread the worksheet into the exclusion rerun).
 
 ### Adjudicated REFUTED / leave-alone (do NOT "fix")
 - QSS stays MFJ for: §1 brackets, §63(c)(2) std-ded amounts, §1411 NIIT, §24 CTC, §121,
