@@ -109,6 +109,7 @@
     "src/tax-engine-sch1-surface-integration-tests.ts",
     "src/tax-engine-section280f-tests.ts",
     "src/tax-engine-t1-capability-tests.ts",
+    "src/tax-engine-t10cd-business-tests.ts",
     "src/tax-engine-t1-state-depth-tests.ts",
     "src/tax-engine-carryforward-audit-tests.ts",
     "src/tax-engine-montecarlo-tests.ts",

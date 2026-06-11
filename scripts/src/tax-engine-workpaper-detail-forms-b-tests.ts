@@ -498,7 +498,15 @@ function ctxOf(inputs: TaxReturnInputs) {
 //   line 7 net §1231 = 150,000 − 20,000 = 130,000
 //   line 8 lookback applied = min(130,000, 40,000) = 40,000 → ordinary
 //   line 9 §1231 LTCG = 90,000 → Schedule D
-//   unrecaptured §1250 = min(pool 100,000, surviving LTCG 90,000) = 90,000
+//   unrecaptured §1250 (RE-DERIVED 2026-06-11, T1.0c #6 — Notice 97-59 +
+//     Reg. §1.453-12 Ex. 3: the §1231(c)-recharacterized ordinary amount comes
+//     FIRST from 28%-rate gain [none here], THEN from the unrecaptured-§1250
+//     25% pool, and only then from 0/15/20 gain — so the $40,000 recapture
+//     ABSORBS the 25% pool before the regular gain):
+//     = min(max(0, pool 100,000 − recapture 40,000), surviving LTCG 90,000)
+//     = min(60,000, 90,000) = 60,000
+//     (surviving 90,000 = 60,000 @25% + 30,000 @0/15/20; prior expectation
+//     kept the full 90,000 in the 25% pool — over-tax by 25%−15% on $30k)
 //   Part II line 17 = 5,000 + 40,000 + 25,000 = 70,000
 //   AGI = 100,000 + 70,000 + 90,000 = 260,000
 {
@@ -517,8 +525,8 @@ function ctxOf(inputs: TaxReturnInputs) {
   check("4797-L engine lookback recapture = $40,000", ret.form4797?.section1231LookbackRecapture ?? NaN, 40000);
   check("4797-L engine §1231 LTCG = $90,000", ret.form4797?.netSection1231LtcgGain ?? NaN, 90000);
   check("4797-L engine ordinary component = $70,000", ret.form4797?.ordinaryComponent ?? NaN, 70000);
-  check("4797-L engine unrecaptured §1250 capped at surviving LTCG = $90,000", ret.form4797?.unrecaptured1250Gain ?? NaN, 90000);
-  check("4797-L return-level §1250 bucket = $90,000", ret.unrecapturedSection1250Gain, 90000);
+  check("4797-L engine unrecaptured §1250 = $60,000 (pool − §1231(c) recapture, Notice 97-59)", ret.form4797?.unrecaptured1250Gain ?? NaN, 60000);
+  check("4797-L return-level §1250 bucket = $60,000", ret.unrecapturedSection1250Gain, 60000);
   check("4797-L Part II short-term = $5,000", ret.form4797?.partIIOrdinary ?? NaN, 5000);
   check("4797-L Schedule D net = $90,000", ret.netCapitalGainLoss, 90000);
   check("4797-L AGI = $260,000", ret.adjustedGrossIncome, 260000);
@@ -538,7 +546,7 @@ function ctxOf(inputs: TaxReturnInputs) {
     check("4797-L Part III line 30 = $175,000 (25k + 150k gains)", lineVal(inst, "30"), 175000);
     check("4797-L Part III line 31 = $25,000", lineVal(inst, "31"), 25000);
     check("4797-L Part III line 32 = $150,000", lineVal(inst, "32"), 150000);
-    check("4797-L cross-ref form pool (capped) = $90,000", labelVal(inst, "Unrecaptured §1250 gain from this form"), 90000);
+    check("4797-L cross-ref form pool (post-lookback) = $60,000", labelVal(inst, "Unrecaptured §1250 gain from this form"), 60000);
     checkTrue("4797-L line 7 tie row ties", tieOk(inst, "Line 7 ties"));
     checkTrue("4797-L line 17 tie row ties", tieOk(inst, "Line 17 = line 10"));
     checkTrue("4797-L line 31 tie row ties", tieOk(inst, "Line 31 ties to engine recapture"));

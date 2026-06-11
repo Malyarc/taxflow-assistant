@@ -463,8 +463,12 @@ section("Scenario 11 — Sole prop single TX, $80k W-2 + $40k Sched C loss + $50
     ],
     taxYear: 2024,
   });
-  approx("S11", "AGI ≈ $40,000", r.adjustedGrossIncome, 40000, 50);
-  approx("S11", "NOL deduction ≈ $20,320 (80% × taxable)", r.nolDeduction, 20320, 50);
+  // RE-DERIVED 2026-06-11 (T1.0c #3): the §172 NOL is a Sch 1 line 8a AGI
+  // deduction. 80%-cap base (taxable w/o NOL) = (80,000 − 40,000) − 14,600 std
+  // = 25,400 → NOL deduction = min(50,000, 0.80 × 25,400) = 20,320 (unchanged).
+  // AGI = 40,000 − 20,320 = 19,680; taxable = 19,680 − 14,600 = 5,080 (unchanged).
+  approx("S11", "AGI ≈ $19,680 (NOL is a Sch 1 line 8a AGI deduction)", r.adjustedGrossIncome, 19680, 50);
+  approx("S11", "NOL deduction ≈ $20,320 (80% × taxable-w/o-NOL)", r.nolDeduction, 20320, 50);
   approx("S11", "NOL carryforward remaining ≈ $29,680", r.nolCarryforwardRemaining, 29680, 50);
   approx("S11", "Taxable income ≈ $5,080", r.taxableIncome, 5080, 100);
   approx("S11", "Federal liability ≈ $508", r.federalTaxLiability, 508, 50);

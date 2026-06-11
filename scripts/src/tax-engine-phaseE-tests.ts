@@ -1061,13 +1061,18 @@ header("E7+1 — $50k §179 election on $100k SE, all deductible");
   check("E7+1", "section179Carryforward = 0", computed.section179Carryforward, 0, 1);
 }
 
-// --- E7+2: §179 election exceeds net SE income → income limit binds, carries forward ---
-// Hand-calc:
-//   Gross SE = $50,000; net SE = $46,175
+// --- E7+2: §179 election exceeds business income → income limit binds, carries forward ---
+// Hand-calc (RE-DERIVED 2026-06-11, T1.0c #9 — the §179(b)(3)(A) income limit
+// base is the aggregate taxable income from the ACTIVE conduct of trades/
+// businesses computed without the §179 deduction or the ½-SE deduction, and it
+// includes W-2 wages: Reg. §1.179-2(c)(6)(iv) + Form 4562 line 11 instructions.
+// The 92.35% Sch SE multiplier belongs ONLY to SE tax — the prior expectation
+// (0.9235 × 50,000 = 46,175) wrongly shaved 7.65% off the limit base):
+//   Sch C net profit = $50,000 (no W-2 wages here)
 //   §179 elected = $100,000
-//   §179 applied = min($100k, $1.16M cap, $46,175 net SE) = $46,175
-//   Carryforward = $100k - $46,175 = $53,825
-header("E7+2 — $100k elected on $50k SE → applied $46,175, $53,825 cf");
+//   §179 applied = min($100k, $1.22M dollar cap, $50,000 income limit) = $50,000
+//   Carryforward = $100k − $50,000 = $50,000  (§179(b)(3)(B))
+header("E7+2 — $100k elected on $50k Sch C → applied $50,000, $50,000 cf");
 {
   const computed = computeTaxReturnPure({
     client: { filingStatus: "single", state: "TX", taxYear: 2024 },
@@ -1079,10 +1084,10 @@ header("E7+2 — $100k elected on $50k SE → applied $46,175, $53,825 cf");
     ],
     taxYear: 2024,
   });
-  check("E7+2", "section179Applied ≈ $46,175 (income limit)",
-    computed.section179Applied, 46175, 2);
-  check("E7+2", "section179Carryforward ≈ $53,825",
-    computed.section179Carryforward, 53825, 2);
+  check("E7+2", "section179Applied = $50,000 (income limit = Sch C net, not 92.35%)",
+    computed.section179Applied, 50000, 2);
+  check("E7+2", "section179Carryforward = $50,000",
+    computed.section179Carryforward, 50000, 2);
 }
 
 // --- E7+3: Bonus depreciation 60% × $80k basis = $48,000 ---

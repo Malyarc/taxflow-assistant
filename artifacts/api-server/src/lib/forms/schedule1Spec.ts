@@ -19,10 +19,9 @@
  * unlisted portion stays visible — never silently dropped.
  *
  * Engine-semantics notes baked into this builder:
- *  - The §172 NOL deduction (official Schedule 1 line 8a) is applied by the
- *    engine at the TAXABLE-INCOME step (post-deduction, per Form 8995 line 11
- *    ordering), NOT inside total income → the 8a row here is INFORMATIONAL
- *    (excluded from the line 9/10 sums) so the Part I tie stays engine-exact.
+ *  - The §172 NOL deduction is applied by the engine ABOVE THE LINE (T1.0c #3,
+ *    2026-06-11): negative other income on line 8a, inside total income → AGI,
+ *    exactly like the official form. The 8a row is a REAL line-9/10 component.
  *  - §179 + bonus depreciation are modeled by the engine as above-the-line
  *    deductions (officially they live inside Schedule C via Form 4562) — shown
  *    on line 24z with a disclosure note.
@@ -85,6 +84,12 @@ export function buildSchedule1(ctx: FormBuildContext): FormInstance | null {
 
   // Line-8 "other income" additive components (each is engine-exact).
   const line8Components: Array<[string, string, number, string?]> = [
+    [
+      "8a",
+      "Net operating loss deduction (§172, 80% limit)",
+      -ret.nolDeduction,
+      "Negative other income. The engine applies the NOL above the line (Schedule 1 line 8a → total income → AGI), with the 80% cap measured on taxable income computed without the NOL/QBI (§172(a)(2)(B)(ii)).",
+    ],
     [
       "8d",
       "Foreign earned income exclusion (Form 2555, §911)",
@@ -193,15 +198,6 @@ export function buildSchedule1(ctx: FormBuildContext): FormInstance | null {
       moneyLine("7", "Unemployment compensation (1099-G box 1, §85)", f99.unemploymentCompensationOnly),
     );
   }
-  // 8a NOL — informational only (see module header). NOT in the 9/10 sums.
-  if (nz(ret.nolDeduction)) {
-    partILines.push(
-      moneyLine("8a", "Net operating loss deduction (§172) — INFORMATIONAL", -ret.nolDeduction, {
-        indent: 1,
-        note: "The engine applies the NOL (80% limit) at the taxable-income step, not within total income — excluded from the line 9/10 sums so they tie to the app. Official Schedule 1 reports it here as a negative.",
-      }),
-    );
-  }
   for (const [line, label, value, note] of line8Components) {
     if (!nz(value)) continue;
     partILines.push(moneyLine(line, label, value, note ? { note } : {}));
@@ -301,7 +297,7 @@ export function buildSchedule1(ctx: FormBuildContext): FormInstance | null {
 
   const footnotes = [
     "Residual rows absorb income/adjustment paths this schedule does not itemize so each part ties to the app BY CONSTRUCTION — a nonzero residual is disclosure, not error.",
-    "Line 8a NOL is informational: the engine deducts the §172 NOL at the taxable-income step (post-deduction, Form 8995 line 11 ordering) rather than inside total income, so AGI-keyed phase-outs do not see it (engine sub-gap; the official form reduces AGI through line 8a).",
+    "Line 8a NOL is a REAL component (T1.0c #3): the engine deducts the §172 NOL above the line (negative other income → total income → AGI), matching the official form — AGI-keyed phase-outs see it. The 80% cap is measured on taxable income computed without the NOL/QBI (§172(a)(2)(B)(ii)).",
     "Line 24z §179/bonus-depreciation rows reflect the engine's above-the-line modeling; on an official return they reduce Schedule C net profit via Form 4562 (and would also reduce the SE-tax base — the engine's `schedule_c_depreciation` path covers that case).",
     "Manual SEP/SIMPLE/alimony-style entries are CPA `deduction`/`other` adjustments — they appear in the Part II residual, not on dedicated lines 16/19a.",
   ];

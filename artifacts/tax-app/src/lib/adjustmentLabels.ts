@@ -145,5 +145,13 @@ export const ADJUSTMENT_TYPE_LABELS: Record<string, string> = {
   schedule_e_macrs_depreciation: "Schedule E MACRS Depreciation",
   schedule_e_passive_loss_carryforward: "Schedule E Passive Loss Carryforward (prior year suspended)",
   k1_passive_loss_carryforward: "K-1 Passive Loss Carryforward (prior year suspended; non-rental-RE passive)",
+  // T1.0c/d (2026-06-11) — newly API-reachable engine-read types
+  qbi_loss_carryforward: "QBI Loss Carryforward (§199A(c)(2)(B) — prior-year net qualified business loss)",
+  bonus_depreciation_basis_obbba: "Bonus Depreciation Basis — OBBBA 100% (post-1/19/2025 property)",
+  qbi_w2_wages: "QBI W-2 Wages (Sch C §199A(b)(2) wage limit input)",
+  qbi_ubia: "QBI UBIA of Qualified Property (Sch C §199A(b)(2) limit input)",
+  qsbs_exclusion_pct: "QSBS Exclusion % Override (§1202 — 50/75 for pre-9/28/2010 stock)",
+  out_of_state_muni_interest: "Out-of-state Municipal Interest (state-taxable addback)",
+  us_treasury_interest: "U.S. Treasury Interest (state-exempt subtraction)",
   other: "Other",
 };

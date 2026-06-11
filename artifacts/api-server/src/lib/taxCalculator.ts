@@ -5270,7 +5270,11 @@ export interface PremiumTaxCreditCalculation {
   expectedContribution: number;
   computedPtc: number;
   advanceAptc: number;
-  repaymentCap: number;
+  /** §36B(f)(2)(B) repayment limitation. NULL = no cap (household income ≥ 400%
+   *  FPL, or the MFS-ineligible path) — the full excess advance is repaid.
+   *  T1.0d #14: was an `Infinity` sentinel, which leaked a non-finite value
+   *  into engine outputs (JSON-serializes to null anyway). */
+  repaymentCap: number | null;
   netPtc: number; // > 0 = refundable credit; < 0 = excess APTC owed
   eligible: boolean;
 }
@@ -5300,7 +5304,7 @@ export function calculatePremiumTaxCredit(params: {
       expectedContribution: 0,
       computedPtc: 0,
       advanceAptc,
-      repaymentCap: Infinity,
+      repaymentCap: null, // MFS-ineligible — uncapped full repayment (T1.0d #14)
       netPtc: -advanceAptc,
       eligible: false,
     };
@@ -5333,7 +5337,7 @@ export function calculatePremiumTaxCredit(params: {
   const computedPtc = Math.min(params.annualPremium, ptcUncapped);
 
   let netPtc = computedPtc - advanceAptc;
-  let repaymentCap = Infinity;
+  let repaymentCap: number | null = null; // null = no cap (≥400% FPL) — full repayment
   if (netPtc < 0) {
     // TY2025+ uses the TY2025 caps (latest published); a TY2026 Rev. Proc. value
     // should add PTC_REPAYMENT_CAPS_2026 + bump this. Prevents a TY2026 return
@@ -5348,8 +5352,8 @@ export function calculatePremiumTaxCredit(params: {
         break;
       }
     }
-    // FPL ≥ 400%: no cap, full repayment
-    netPtc = Math.max(netPtc, -repaymentCap);
+    // FPL ≥ 400%: repaymentCap stays null — no cap, full repayment.
+    if (repaymentCap != null) netPtc = Math.max(netPtc, -repaymentCap);
   }
 
   return {
@@ -5748,7 +5752,10 @@ export interface ScheduleCAssetDepreciationResult {
   section179Deduction: number;
   bonusDeduction: number;
   macrsDeduction: number;
-  /** §179 disallowed by the income limit (or dollar cap) → carries to next year (§179(b)(3)(B)). */
+  /** §179 disallowed by the TAXABLE-INCOME limit (incl. a re-limited carryover)
+   *  → carries to next year (§179(b)(3)(B); Reg. §1.179-3). A DOLLAR-cap-
+   *  disallowed current-year election does NOT carry — its basis is recovered
+   *  through bonus/MACRS instead (T1.0c #8). */
   section179Carryforward: number;
   /**
    * §168(d)(3) mid-quarter convention applied to the CURRENT tax year's placements
@@ -5800,6 +5807,10 @@ export function computeScheduleCAssetDepreciation(
   let currentYearSection179Elected = 0;
   let currentYearQualifiedPropertyCost = 0; // drives the §179 investment phase-out
   let section280FCapApplied = false;
+  // T1.0c #8 — current-year §179-elected assets, collected so the DOLLAR-cap-
+  // disallowed portion of each election can be re-based into bonus/MACRS after
+  // the cap is known (the loop can't know it mid-stream).
+  const section179ElectedCurrentYearAssets: ScheduleCAsset[] = [];
   for (const a of p.assets) {
     const cost = Math.max(0, a.cost);
     if (cost <= 0 || a.placedInServiceYear > p.taxYear) continue; // not in service
@@ -5856,11 +5867,15 @@ export function computeScheduleCAssetDepreciation(
     }
 
     if (a.section179) {
-      // §179-elected: full cost expensed in the acquisition year (no MACRS basis).
-      // A PRIOR-year §179 asset is already fully expensed → contributes nothing now.
+      // §179-elected: expensed in the acquisition year. T1.0c #8 — the portion
+      // of the election DISALLOWED BY THE DOLLAR CAP stays in depreciable basis
+      // (handled after the loop, where the cap is known). A PRIOR-year §179
+      // asset is treated as fully expensed in its origin year → contributes
+      // nothing now (its origin-year cap state isn't reconstructable — sub-gap).
       if (isCurrentYear) {
         currentYearSection179Elected += cost;
         currentYearQualifiedPropertyCost += cost;
+        section179ElectedCurrentYearAssets.push(a);
       }
       continue;
     }
@@ -5895,18 +5910,59 @@ export function computeScheduleCAssetDepreciation(
   }
 
   // §179 aggregate: dollar cap (with the investment phase-out) + the §179(b)(3)
-  // business-income limit. The carryforward-in is added AFTER the dollar cap (it
-  // was already capped in its origin year) but is subject to the income limit.
+  // business-income limit.
   const phaseOut = Math.max(0, currentYearQualifiedPropertyCost - p.section179PhaseStart);
   const dollarCap = Math.max(0, p.section179Cap - phaseOut);
   const electedAfterDollarCap = Math.min(currentYearSection179Elected, dollarCap);
+
+  // T1.0c #8 (audit 2026-06-11 M4) — a current-year election DISALLOWED BY THE
+  // DOLLAR CAP is NOT a §179 carryover: Reg. §1.179-3(c)(1) carries forward only
+  // the TAXABLE-INCOME-limit disallowance. The dollar-capped excess simply isn't
+  // expensable — that cost stays in depreciable basis and recovers through
+  // bonus/MACRS in the normal way (previously it became a phantom §179
+  // carryforward AND earned $0 depreciation). The cap room is allocated across
+  // the elected assets IN INPUT ORDER (Form 4562 line 6 — the taxpayer chooses
+  // the allocation; first-listed-first is the engine's deterministic rule); each
+  // asset's unexpensed excess gets year-1 bonus (per its own flag) + MACRS under
+  // its own class/convention. (The mid-quarter 40% test in PASS 1 still excludes
+  // the whole §179-flagged cost — a convention-selection nuance, documented.)
+  {
+    let s179CapRoom = electedAfterDollarCap;
+    for (const a of section179ElectedCurrentYearAssets) {
+      const cost = Math.max(0, a.cost);
+      const expensed = Math.min(cost, s179CapRoom);
+      s179CapRoom -= expensed;
+      const excessBasis = cost - expensed;
+      if (excessBasis <= 0) continue;
+      const bonusRate = !a.bonus
+        ? 0
+        : a.bonusFullObbba
+          ? 1.0
+          : Math.max(0, Math.min(1, p.bonusRateByYear[a.placedInServiceYear] ?? 0));
+      const bonusBasis = bonusRate * excessBasis;
+      const macrsBasis = excessBasis - bonusBasis;
+      const q = a.placedInServiceQuarter;
+      const schedule =
+        midQuarterYears.has(a.placedInServiceYear) && q != null
+          ? midQuarterSchedule(a.recoveryYears, q)
+          : MACRS_HALF_YEAR_TABLE[a.recoveryYears] ?? [];
+      // These are isCurrentYear assets → recovery year 1.
+      bonusTotal += bonusBasis;
+      macrsTotal += (schedule[0] ?? 0) * macrsBasis;
+    }
+  }
+
+  // T1.0c #7 (audit 2026-06-11 M3) — Reg. §1.179-3(a)-(b): the TOTAL §179
+  // deduction for the deduction year (current elections + carryover) is limited
+  // by THAT year's dollar limitation as well as the income limit. The carryover
+  // was previously added after the dollar cap unbounded ($1.22M elected + $100k
+  // carry-in deducted $1.32M in a $1.22M-limit year). What isn't deductible
+  // remains a §179 carryover (it keeps §179 character, unlike the dollar-capped
+  // current-year excess above).
   const available = electedAfterDollarCap + carryIn;
   const incomeLimit = Math.max(0, p.businessIncomeForSection179 - bonusTotal - macrsTotal);
-  const section179Deduction = Math.min(available, incomeLimit);
-  // Carryforward = income-disallowed + the (rare) dollar-cap-disallowed excess.
-  const section179Carryforward =
-    Math.max(0, available - section179Deduction) +
-    Math.max(0, currentYearSection179Elected - electedAfterDollarCap);
+  const section179Deduction = Math.min(available, dollarCap, incomeLimit);
+  const section179Carryforward = Math.max(0, available - section179Deduction);
 
   return {
     totalDepreciation: r2(section179Deduction + bonusTotal + macrsTotal),
@@ -7055,19 +7111,32 @@ export function calculateObbbaSchedule1ADeductions(params: {
   // TY2025–2028 only (OBBBA temporary window).
   if (params.taxYear < 2025 || params.taxYear > 2028) return zero;
   const isJoint = params.filingStatus === "married_filing_jointly" || params.filingStatus === "qualifying_widow";
+  // T1.0c #5 (audit 2026-06-11 M1) — MARRIED-FILING-SEPARATELY bar:
+  //  • §224(f) tips + §225(e) overtime (per Notice 2025-69): "In the case of a
+  //    married individual (within the meaning of §7703), this section shall
+  //    apply only if the taxpayer and the taxpayer's spouse file a JOINT
+  //    return" → MFS gets $0.
+  //  • §151(d)(5) senior $6,000: same joint-return requirement for married
+  //    individuals (IRS OBBBA guidance: married must file jointly) → MFS $0.
+  //  • §163(h)(4) car-loan interest: NO joint-return requirement — the proposed
+  //    regs (REG-113515-25, Dec 2025) expressly apply the $10,000 limit "per
+  //    return" with MFS filers each getting their own → MFS KEEPS it, on the
+  //    non-joint $100k phase-out threshold.
+  const isMfs = params.filingStatus === "married_filing_separately";
   const magi = Math.max(0, params.magi);
 
   // §224 tips: cap $25,000 (single + MFJ); phase-out $150k/$300k, −$100 per $1,000.
-  const tips = obbbaPhaseOut(Math.min(Math.max(0, params.qualifiedTips ?? 0), 25_000),
+  const tips = isMfs ? 0 : obbbaPhaseOut(Math.min(Math.max(0, params.qualifiedTips ?? 0), 25_000),
     magi, isJoint ? 300_000 : 150_000, 0.10);
   // §225 overtime (FLSA premium): cap $12,500 single / $25,000 MFJ; phase-out $150k/$300k, −$100/$1k.
-  const overtime = obbbaPhaseOut(Math.min(Math.max(0, params.qualifiedOvertime ?? 0), isJoint ? 25_000 : 12_500),
+  const overtime = isMfs ? 0 : obbbaPhaseOut(Math.min(Math.max(0, params.qualifiedOvertime ?? 0), isJoint ? 25_000 : 12_500),
     magi, isJoint ? 300_000 : 150_000, 0.10);
   // §163(h)(4) car-loan interest: cap $10,000; phase-out $100k/$200k, −$200/$1k (double rate).
+  // (No MFS bar — see above.)
   const carLoanInterest = obbbaPhaseOut(Math.min(Math.max(0, params.qualifiedCarLoanInterest ?? 0), 10_000),
     magi, isJoint ? 200_000 : 100_000, 0.20);
   // §151(d) senior bonus: $6,000 per individual age 65+; phase-out $75k/$150k, −6% of excess.
-  const numSeniors = ((params.taxpayerAge ?? 0) >= 65 ? 1 : 0) + (isJoint && (params.spouseAge ?? 0) >= 65 ? 1 : 0);
+  const numSeniors = isMfs ? 0 : ((params.taxpayerAge ?? 0) >= 65 ? 1 : 0) + (isJoint && (params.spouseAge ?? 0) >= 65 ? 1 : 0);
   const senior = obbbaPhaseOut(6_000 * numSeniors, magi, isJoint ? 150_000 : 75_000, 0.06);
 
   return { tips, overtime, carLoanInterest, senior, total: tips + overtime + carLoanInterest + senior };

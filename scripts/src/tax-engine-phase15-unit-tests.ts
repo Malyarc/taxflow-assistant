@@ -316,7 +316,7 @@ header("ACA Premium Tax Credit");
     modifiedAgi: 50000, householdSize: 2, filingStatus: "married_filing_jointly", taxYear: 2024,
   });
   check("Repayment capped at $1,950 (MFJ, FPL%<300)", r.netPtc, -1950, 1);
-  check("Repayment cap value = $1,950", r.repaymentCap, 1950);
+  check("Repayment cap value = $1,950", r.repaymentCap ?? -1, 1950); // null = no-cap sentinel (T1.0d #14)
 }
 {
   // Single, MAGI $60k, household 1. FPL%= 60000/14580 = 411% → ≥ 400%.
@@ -333,7 +333,10 @@ header("ACA Premium Tax Credit");
   });
   check("Applicable figure at 8.5% top", r.applicableFigure, 0.085);
   check("Full repayment $6,600 (FPL>400%)", r.netPtc, -6600, 1);
-  checkExact("Repayment cap = Infinity (no cap above 400%)", r.repaymentCap, Infinity);
+  // T1.0d #14 (2026-06-11): the >=400%-FPL "no cap" sentinel is now NULL, not
+  // Infinity — the engine-totality rule (SEC1) forbids non-finite outputs
+  // (Infinity JSON-serializes to null anyway). Semantics unchanged: full repayment.
+  checkExact("Repayment cap = null (no cap above 400% — full repayment)", r.repaymentCap, null);
 }
 {
   // MFS — ineligible, must repay all advance APTC uncapped

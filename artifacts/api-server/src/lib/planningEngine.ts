@@ -4243,7 +4243,7 @@ function detectAcaPtc(args: {
     const verified = Math.round(Math.abs(ptc.netPtc));
     const isClawback = ptc.netPtc < 0;
     const capNote =
-      isClawback && Number.isFinite(ptc.repaymentCap)
+      isClawback && ptc.repaymentCap != null // T1.0d #14 — null = uncapped (was Infinity)
         ? ` Repayment is capped at ${fmt(ptc.repaymentCap)} under §36B(f)(2)(B) at ${pct(ptc.fplFraction)} FPL.`
         : isClawback
           ? ` At ${pct(ptc.fplFraction)} FPL (≥400%) the repayment is UNCAPPED — full ${fmt(verified)} is owed.`
@@ -4297,7 +4297,7 @@ function detectAcaPtc(args: {
         computedPtc: Math.round(ptc.computedPtc),
         advanceAptc: Math.round(ptc.advanceAptc),
         netPtc: Math.round(ptc.netPtc),
-        repaymentCap: Number.isFinite(ptc.repaymentCap) ? Math.round(ptc.repaymentCap) : -1,
+        repaymentCap: ptc.repaymentCap != null ? Math.round(ptc.repaymentCap) : -1, // T1.0d #14 — null = uncapped
         optimizerIraContribution: optimizerBeneficial ? 7000 : 0,
         optimizerNetBenefit: optimizerBeneficial ? Math.round(Math.abs(optimizerWhatIf!.delta.combinedRefundDelta)) : 0,
       },

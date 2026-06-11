@@ -82,7 +82,7 @@ header("PTC-A: engine-verified clawback (capped at $975)");
   check("PTC-A engine expectedContribution", ptc.expectedContribution, 1458);
   check("PTC-A engine computedPtc", ptc.computedPtc, 6542);
   check("PTC-A engine netPtc (capped)", ptc.netPtc, -975);
-  check("PTC-A engine repaymentCap", ptc.repaymentCap, 975);
+  check("PTC-A engine repaymentCap", ptc.repaymentCap ?? -1, 975); // null = no-cap sentinel (T1.0d #14)
   checkBool("PTC-A G1.30 fires", hit != null, true);
   if (hit) {
     checkEq("PTC-A savingsSource", hit.savingsSource, "engine-verified");

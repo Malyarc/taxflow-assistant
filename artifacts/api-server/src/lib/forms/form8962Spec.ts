@@ -128,12 +128,13 @@ export function buildForm8962(ctx: FormBuildContext): FormInstance | null {
     const excess = Math.max(0, ptc.advanceAptc - ptc.computedPtc);
     // The engine applies the tier cap ONLY on the eligible path; on the two
     // ineligible paths (MFS / missing data) repayment is the FULL advance and
-    // ptc.repaymentCap is a placeholder (Infinity resp. 0) — treat as no cap.
-    const capIsReal = ptc.eligible && Number.isFinite(ptc.repaymentCap);
+    // ptc.repaymentCap is a placeholder (null resp. 0) — treat as no cap.
+    // (T1.0d #14 — the ≥400%-FPL "no cap" sentinel is now null, not Infinity.)
+    const realCap = ptc.eligible && ptc.repaymentCap != null ? ptc.repaymentCap : null;
     const partIII: FormLine[] = [
       moneyLine("27", "Excess advance payment of PTC (line 25 − line 24)", excess),
-      capIsReal
-        ? moneyLine("28", "Repayment limitation (instructions Table 5, by household income tier)", ptc.repaymentCap, {
+      realCap != null
+        ? moneyLine("28", "Repayment limitation (instructions Table 5, by household income tier)", realCap, {
             note: "Applies only when household income < 400% of FPL — see the cap-tier footnote.",
           })
         : textLine("28", "Repayment limitation", null, {
@@ -147,7 +148,7 @@ export function buildForm8962(ctx: FormBuildContext): FormInstance | null {
         emphasis: true,
         note: "Bundled into the engine's total federal tax liability.",
       }),
-      checkLine("Repayment ties: min(excess, limitation)", Math.min(excess, capIsReal ? ptc.repaymentCap : Infinity), repayment),
+      checkLine("Repayment ties: min(excess, limitation)", realCap != null ? Math.min(excess, realCap) : excess, repayment),
     ];
     parts.push({ title: "Part III — Repayment of Excess Advance Payment of the Premium Tax Credit", lines: partIII });
   }

@@ -60,6 +60,11 @@ export const taxReturnsTable = pgTable(
     nolDeduction: numeric("nol_deduction", { precision: 14, scale: 2 }),
     /** K4 — Unused NOL carryforward for next tax year. */
     nolCarryforwardRemaining: numeric("nol_carryforward_remaining", { precision: 14, scale: 2 }),
+    /** T1.0c #4(ii) — §199A(c)(2)(B) net qualified-business-LOSS carryforward
+     *  to next year (combined QBI netted negative → deduction $0 + this carry;
+     *  auto-loaded by the pipeline as a synthetic `qbi_loss_carryforward`
+     *  adjustment, reducing next year's combined QBI). */
+    qbiLossCarryforwardRemaining: numeric("qbi_loss_carryforward_remaining", { precision: 14, scale: 2 }),
     /**
      * E2 — Form 8801 AMT credit carryforward (IRC §53). Unused minimum-tax
      * credit at end of this year, carried to next year. Auto-loaded in the
