@@ -155,6 +155,13 @@
       "when": 1781170921849,
       "tag": "0021_thankful_silvermane",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1781180859119,
+      "tag": "0022_third_lethal_legion",
+      "breakpoints": true
     }
   ]
 }
