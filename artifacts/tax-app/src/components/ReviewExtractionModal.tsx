@@ -42,7 +42,7 @@ import {
   getGetTaxReturnQueryKey,
   getGetDashboardSummaryQueryKey,
 } from "@workspace/api-client-react";
-import { validateW2, type W2Flag } from "@workspace/validation";
+import { validateW2, validateInfoReturn, type W2Flag } from "@workspace/validation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -93,6 +93,9 @@ interface FieldDef {
   options?: Array<{ value: string; label: string }>;
   /** True if this field is shown only when "Show all" is toggled on. */
   optional?: boolean;
+  /** T1.0j — display-only: shown for verification (feeds the live validation
+   *  flags) but NOT sent in the approve body and not editable. */
+  readOnly?: boolean;
 }
 
 const W2_FIELDS: FieldDef[] = [
@@ -105,10 +108,50 @@ const W2_FIELDS: FieldDef[] = [
   { key: "socialSecurityTaxBox4", label: "Box 4 — Social security tax withheld", type: "money" },
   { key: "medicareWagesBox5", label: "Box 5 — Medicare wages and tips", type: "money" },
   { key: "medicareTaxBox6", label: "Box 6 — Medicare tax withheld", type: "money" },
+  // T1.0j (M-5) — W-2 extraction depth: Box 10 / 12 / 13 / 18-20.
+  { key: "dependentCareBenefitsBox10", label: "Box 10 — Dependent care benefits", type: "money" },
+  { key: "box12Codes", label: "Box 12 — Codes (format: D=23000; W=4150)", type: "string" },
+  {
+    key: "retirementPlanBox13",
+    label: "Box 13 — Retirement plan",
+    type: "select",
+    options: [
+      { value: "true", label: "Checked (suggests IRA workplace-plan flag)" },
+      { value: "false", label: "Not checked" },
+    ],
+  },
   { key: "stateWagesBox16", label: "Box 16 — State wages", type: "money" },
   { key: "stateTaxWithheldBox17", label: "Box 17 — State income tax", type: "money" },
   { key: "stateCode", label: "State", type: "stateCode" },
+  { key: "localWagesBox18", label: "Box 18 — Local wages", type: "money" },
+  { key: "localTaxBox19", label: "Box 19 — Local income tax", type: "money" },
+  { key: "localityNameBox20", label: "Box 20 — Locality name", type: "string" },
 ];
+
+/** T1.0j — "D=23000; W=4150" ⇄ [{code:"D",amount:23000},{code:"W",amount:4150}].
+ *  Tolerates comma separators, spaces, ":" instead of "=", and $/commas in amounts.
+ *  Invalid segments are dropped (the CPA sees exactly what will be stored via the
+ *  diff indicator). */
+export function parseBox12String(s: string): Array<{ code: string; amount: number }> {
+  const out: Array<{ code: string; amount: number }> = [];
+  for (const seg of s.split(/[;,]/)) {
+    const m = seg.trim().match(/^([A-Za-z]{1,2})\s*[=:]?\s*\$?([\d,]+(?:\.\d+)?)$/);
+    if (!m) continue;
+    const amount = Number(m[2].replace(/,/g, ""));
+    if (!Number.isFinite(amount) || amount <= 0) continue;
+    out.push({ code: m[1].toUpperCase(), amount });
+  }
+  return out;
+}
+function box12ToString(v: unknown): string {
+  if (!Array.isArray(v)) return "";
+  return v
+    .filter((e): e is { code: string; amount: number } =>
+      !!e && typeof e === "object" && typeof (e as { code?: unknown }).code === "string" &&
+      Number.isFinite(Number((e as { amount?: unknown }).amount)))
+    .map((e) => `${e.code}=${Number(e.amount)}`)
+    .join("; ");
+}
 
 const FORM_1099_COMMON: FieldDef[] = [
   { key: "payerName", label: "Payer name", type: "string" },
@@ -146,8 +189,11 @@ const FORM_1099_BY_TYPE: Record<string, FieldDef[]> = {
   B: [
     { key: "proceeds", label: "Box 1d — Proceeds", type: "money" },
     { key: "costBasis", label: "Box 1e — Cost or other basis", type: "money" },
-    { key: "shortTermGainLoss", label: "Short-term gain/loss", type: "money" },
-    { key: "longTermGainLoss", label: "Long-term gain/loss", type: "money" },
+    { key: "shortTermGainLoss", label: "Short-term gain/loss (pre-wash-sale)", type: "money" },
+    { key: "longTermGainLoss", label: "Long-term gain/loss (pre-wash-sale)", type: "money" },
+    // T1.0j (M-3) — added back into the stored ST gain/loss on approve (Form
+    // 8949 code "W"); zero it if the ST/LT totals already include the adjustment.
+    { key: "washSaleLossDisallowed", label: "Box 1g — Wash sale loss disallowed", type: "money" },
   ],
   R: [
     { key: "grossDistribution", label: "Box 1 — Gross distribution", type: "money" },
@@ -187,11 +233,18 @@ const INFO_RETURN_COMMON: FieldDef[] = [
 const INFO_RETURN_BY_TYPE: Record<string, { label: string; fields: FieldDef[] }> = {
   "1098": { label: "Form 1098 — Mortgage Interest", fields: [
     { key: "mortgageInterestReceived", label: "Box 1 — Mortgage interest received", type: "money" },
+    // T1.0j (H-2) — the server has netted Box 1 − Box 4 since audit fix A1, but
+    // the modal never carried Box 4 → the netting was unreachable. Editable now.
+    { key: "refundOfOverpaidInterest", label: "Box 4 — Refund of overpaid interest (nets against Box 1)", type: "money" },
     { key: "realEstateTaxes", label: "Box 10 — Real estate taxes", type: "money" },
   ] },
   "1098t": { label: "Form 1098-T — Tuition", fields: [
     { key: "qualifiedTuition", label: "Box 1 — Payments for qualified tuition", type: "money" },
+    { key: "priorYearTuitionAdjustments", label: "Box 4 — Prior-year tuition adjustments", type: "money", readOnly: true },
     { key: "scholarshipsGrants", label: "Box 5 — Scholarships or grants", type: "money" },
+    { key: "priorYearScholarshipAdjustments", label: "Box 6 — Prior-year scholarship adjustments", type: "money", readOnly: true },
+    { key: "atLeastHalfTime", label: "Box 8 — At least half-time student", type: "string", readOnly: true },
+    { key: "graduateStudent", label: "Box 9 — Graduate student", type: "string", readOnly: true },
   ] },
   "1098e": { label: "Form 1098-E — Student Loan Interest", fields: [
     { key: "studentLoanInterest", label: "Box 1 — Student loan interest received", type: "money" },
@@ -202,21 +255,72 @@ const INFO_RETURN_BY_TYPE: Record<string, { label: string; fields: FieldDef[] }>
     { key: "annualAdvancePtc", label: "Part III-C — Annual advance PTC", type: "money" },
   ] },
   "ssa1099": { label: "SSA-1099 — Social Security", fields: [
+    // Box 3/4 shown read-only so the CPA can verify the Box 5 = Box 3 − Box 4
+    // identity (the live flag below checks it).
+    { key: "socialSecurityBenefitsPaid", label: "Box 3 — Benefits paid (gross)", type: "money", readOnly: true },
+    { key: "benefitsRepaid", label: "Box 4 — Benefits repaid to SSA", type: "money", readOnly: true },
     { key: "netSocialSecurityBenefits", label: "Box 5 — Net benefits", type: "money" },
+    // T1.0j (H-1) — Box 6 → withholding_adjustment on approve (was dropped).
+    { key: "voluntaryFederalWithholding", label: "Box 6 — Voluntary federal income tax withheld", type: "money" },
   ] },
   "w2g": { label: "W-2G — Gambling Winnings", fields: [
     { key: "gamblingWinnings", label: "Box 1 — Reportable winnings", type: "money" },
     { key: "gamblingFederalWithheld", label: "Box 4 — Federal income tax withheld", type: "money" },
+    { key: "gamblingStateWinnings", label: "Box 14 — State winnings", type: "money", readOnly: true },
+    { key: "gamblingStateWithheld", label: "Box 15 — State income tax withheld", type: "money", readOnly: true },
   ] },
 };
 const DOC_TYPE_TO_INFO: Record<string, string> = {
   form_1098: "1098", form_1098t: "1098t", form_1098e: "1098e",
   form_1095a: "1095a", form_ssa1099: "ssa1099", form_w2g: "w2g",
 };
+// Keys sent in the approve body — read-only display fields are EXCLUDED (they
+// exist for verification/validation only; the server doesn't map them).
 const INFO_RETURN_VALUE_KEYS = Array.from(
-  new Set(Object.values(INFO_RETURN_BY_TYPE).flatMap((g) => g.fields).map((f) => f.key)
+  new Set(Object.values(INFO_RETURN_BY_TYPE).flatMap((g) => g.fields).filter((f) => !f.readOnly).map((f) => f.key)
     .concat(INFO_RETURN_COMMON.map((f) => f.key))),
 );
+
+/** Compute the visible field list for a record type + subtype + showAll toggle.
+ *  Module-level + pure so both the render path and the unanchored-flags memo
+ *  share one definition. */
+function getVisibleFieldsFor(
+  recordType: "w2" | "form1099" | "info_return" | null,
+  infoType: string,
+  formType: string,
+  showAll: boolean,
+  extracted: Record<string, unknown>,
+): FieldDef[] {
+  if (recordType == null) return [];
+  if (recordType === "w2") return W2_FIELDS;
+  if (recordType === "info_return") {
+    const group = INFO_RETURN_BY_TYPE[infoType];
+    return group ? [...INFO_RETURN_COMMON, ...group.fields] : INFO_RETURN_COMMON;
+  }
+  if (!formType) {
+    // No formType yet — show only the common fields and the formType picker.
+    return FORM_1099_COMMON;
+  }
+  const subtypeFields = FORM_1099_BY_TYPE[formType] ?? [];
+  if (showAll) {
+    // Merge subtype + common, then add any fields from OTHER subtypes the AI populated.
+    const visible = [...FORM_1099_COMMON, ...subtypeFields];
+    const visibleKeys = new Set(visible.map((f) => f.key));
+    const otherSubtypeFields = Object.entries(FORM_1099_BY_TYPE)
+      .filter(([k]) => k !== formType)
+      .flatMap(([, fs]) => fs)
+      .filter((f) => !visibleKeys.has(f.key));
+    return [...visible, ...otherSubtypeFields];
+  }
+  // Default: common + this subtype's fields + any AI-extracted values from other subtypes.
+  const visible = [...FORM_1099_COMMON, ...subtypeFields];
+  const visibleKeys = new Set(visible.map((f) => f.key));
+  const extraExtracted = Object.entries(FORM_1099_BY_TYPE)
+    .filter(([k]) => k !== formType)
+    .flatMap(([, fs]) => fs)
+    .filter((f) => !visibleKeys.has(f.key) && extracted[f.key] != null);
+  return [...visible, ...extraExtracted];
+}
 
 // ─── Modal component ─────────────────────────────────────────────────────────
 
@@ -255,7 +359,12 @@ export function ReviewExtractionModal({ open, onClose, clientId, clientTaxYear, 
     if (!open || !doc) return;
     const initial: Record<string, string> = {};
     for (const [k, v] of Object.entries(extracted)) {
-      if (v != null) initial[k] = String(v);
+      if (v == null) continue;
+      // T1.0j — non-scalar/boolean extracted fields need explicit serialization
+      // (String([{…}]) === "[object Object]").
+      if (k === "box12Codes") initial[k] = box12ToString(v);
+      else if (typeof v === "boolean") initial[k] = v ? "true" : "false";
+      else initial[k] = String(v);
     }
     setValues(initial);
     setTaxYear(clientTaxYear);
@@ -267,34 +376,82 @@ export function ReviewExtractionModal({ open, onClose, clientId, clientTaxYear, 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, doc?.id]);
 
-  // ── Live W-2 sanity flags ──
+  // ── Live W-2 / info-return sanity flags ──
   // Recompute every render — fast, no async state. For 1099 docs returns [].
+  // T1.0j (M-1) — validateInfoReturn was DEAD CODE (its only caller was its own
+  // test file); mirroring the W-2 live-flag pattern here makes the SSA
+  // Box5=Box3−Box4 identity, W-2G withholding≤winnings, 1095-A APTC≤premium /
+  // SLCSP=0, 1098-E §221 note, and negative-box checks reachable at the only
+  // seam where the boxes exist (info-returns persist as adjustments, so
+  // post-approve diagnostics can never reconstruct them).
   const liveFlags: W2Flag[] = React.useMemo(() => {
-    if (recordType !== "w2") return [];
     const toNum = (v: string | undefined): number | null => {
       if (v == null || v === "") return null;
       const n = Number(v);
       return Number.isFinite(n) ? n : null;
     };
-    return validateW2(
-      {
-        taxYear,
-        employerName: values.employerName,
-        employerEin: values.employerEin,
-        employeeSSN: values.employeeSSN,
-        wagesBox1: toNum(values.wagesBox1),
-        federalTaxWithheldBox2: toNum(values.federalTaxWithheldBox2),
-        socialSecurityWagesBox3: toNum(values.socialSecurityWagesBox3),
-        socialSecurityTaxBox4: toNum(values.socialSecurityTaxBox4),
-        medicareWagesBox5: toNum(values.medicareWagesBox5),
-        medicareTaxBox6: toNum(values.medicareTaxBox6),
-        stateTaxWithheldBox17: toNum(values.stateTaxWithheldBox17),
-        stateWagesBox16: toNum(values.stateWagesBox16),
-        stateCode: values.stateCode,
-      },
-      { clientTaxYear, clientState },
-    );
-  }, [recordType, taxYear, values, clientTaxYear, clientState]);
+    if (recordType === "w2") {
+      return validateW2(
+        {
+          taxYear,
+          employerName: values.employerName,
+          employerEin: values.employerEin,
+          employeeSSN: values.employeeSSN,
+          wagesBox1: toNum(values.wagesBox1),
+          federalTaxWithheldBox2: toNum(values.federalTaxWithheldBox2),
+          socialSecurityWagesBox3: toNum(values.socialSecurityWagesBox3),
+          socialSecurityTaxBox4: toNum(values.socialSecurityTaxBox4),
+          medicareWagesBox5: toNum(values.medicareWagesBox5),
+          medicareTaxBox6: toNum(values.medicareTaxBox6),
+          stateTaxWithheldBox17: toNum(values.stateTaxWithheldBox17),
+          stateWagesBox16: toNum(values.stateWagesBox16),
+          stateCode: values.stateCode,
+        },
+        { clientTaxYear, clientState },
+      );
+    }
+    if (recordType === "info_return" && infoType) {
+      // Editable fields read from `values`; read-only display fields were also
+      // seeded into `values` from the extraction, so one source feeds both the
+      // UI and the validator.
+      return validateInfoReturn(
+        {
+          taxYear,
+          infoType,
+          payerName: values.payerName,
+          payerTin: values.payerTin,
+          stateCode: values.stateCode,
+          mortgageInterestReceived: toNum(values.mortgageInterestReceived),
+          refundOfOverpaidInterest: toNum(values.refundOfOverpaidInterest),
+          realEstateTaxes: toNum(values.realEstateTaxes),
+          qualifiedTuition: toNum(values.qualifiedTuition),
+          scholarshipsGrants: toNum(values.scholarshipsGrants),
+          studentLoanInterest: toNum(values.studentLoanInterest),
+          annualPremium: toNum(values.annualPremium),
+          annualSlcsp: toNum(values.annualSlcsp),
+          annualAdvancePtc: toNum(values.annualAdvancePtc),
+          socialSecurityBenefitsPaid: toNum(values.socialSecurityBenefitsPaid),
+          benefitsRepaid: toNum(values.benefitsRepaid),
+          netSocialSecurityBenefits: toNum(values.netSocialSecurityBenefits),
+          voluntaryFederalWithholding: toNum(values.voluntaryFederalWithholding),
+          gamblingWinnings: toNum(values.gamblingWinnings),
+          gamblingFederalWithheld: toNum(values.gamblingFederalWithheld),
+          gamblingStateWinnings: toNum(values.gamblingStateWinnings),
+          gamblingStateWithheld: toNum(values.gamblingStateWithheld),
+        },
+        { clientTaxYear, clientState },
+      );
+    }
+    return [];
+  }, [recordType, infoType, taxYear, values, clientTaxYear, clientState]);
+
+  // Flags that don't belong to a rendered field (record-level, or a field the
+  // current form group doesn't show) — surfaced in a banner above the fields.
+  const visibleFieldKeys = React.useMemo(
+    () => new Set(getVisibleFieldsFor(recordType, infoType, formType, showAll, extracted).map((f) => f.key)),
+    [recordType, infoType, formType, showAll, extracted],
+  );
+  const unanchoredFlags = liveFlags.filter((f) => f.field == null || !visibleFieldKeys.has(f.field));
 
   if (!doc || !recordType) return null;
 

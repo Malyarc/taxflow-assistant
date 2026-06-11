@@ -1,5 +1,11 @@
 import { openai, aiEnabled, aiModel } from "@workspace/integrations-openai-ai-server";
 
+/** T1.0j (M-5) — one W-2 Box 12 entry: a letter code + its dollar amount. */
+export interface W2Box12Code {
+  code: string;
+  amount: number;
+}
+
 export interface ExtractedW2Data {
   employerName?: string;
   employerEin?: string;
@@ -13,6 +19,17 @@ export interface ExtractedW2Data {
   stateTaxWithheldBox17?: number;
   stateWagesBox16?: number;
   stateCode?: string;
+  // T1.0j (M-5) — W-2 extraction depth
+  /** Box 10 — dependent care benefits (persisted only; engine wiring is a follow-up). */
+  dependentCareBenefitsBox10?: number;
+  /** Box 12 codes a–d as { code, amount } pairs (e.g. D = 401(k), W = HSA). */
+  box12Codes?: W2Box12Code[];
+  /** Box 13 "Retirement plan" checkbox — drives the IRA-deduction phase-out suggestion. */
+  retirementPlanBox13?: boolean;
+  /** Boxes 18–20 — local wages / local income tax / locality name. */
+  localWagesBox18?: number;
+  localTaxBox19?: number;
+  localityNameBox20?: string;
 }
 
 /**
@@ -86,9 +103,15 @@ Return ONLY a valid JSON object with these fields (use null for missing values):
   "socialSecurityTaxBox4": number or null,
   "medicareWagesBox5": number or null,
   "medicareTaxBox6": number or null,
+  "dependentCareBenefitsBox10": number or null,
+  "box12Codes": array of { "code": string, "amount": number } for each populated Box 12 row a-d (e.g. [{"code":"D","amount":23000},{"code":"W","amount":4150}]) or null,
+  "retirementPlanBox13": boolean or null (Box 13 "Retirement plan" checkbox; true only if checked),
   "stateTaxWithheldBox17": number or null,
   "stateWagesBox16": number or null,
-  "stateCode": string or null (2-letter state code)
+  "stateCode": string or null (2-letter state code),
+  "localWagesBox18": number or null,
+  "localTaxBox19": number or null,
+  "localityNameBox20": string or null
 }`;
 
 const W2_VISION_PROMPT = `You are a tax document extraction specialist. Extract W-2 form data from the image.
@@ -105,9 +128,15 @@ Return ONLY a valid JSON object with two top-level keys: "data" and "boxes".
   "socialSecurityTaxBox4": number or null,
   "medicareWagesBox5": number or null,
   "medicareTaxBox6": number or null,
+  "dependentCareBenefitsBox10": number or null,
+  "box12Codes": array of { "code": string, "amount": number } for each populated Box 12 row a-d (e.g. [{"code":"D","amount":23000},{"code":"W","amount":4150}]) or null,
+  "retirementPlanBox13": boolean or null (Box 13 "Retirement plan" checkbox; true ONLY if the checkbox is marked),
   "stateTaxWithheldBox17": number or null,
   "stateWagesBox16": number or null,
-  "stateCode": string or null
+  "stateCode": string or null,
+  "localWagesBox18": number or null,
+  "localTaxBox19": number or null,
+  "localityNameBox20": string or null
 }
 
 "boxes" contains a bounding box for each field that was found, in normalized image coordinates (0-1000):
@@ -145,6 +174,30 @@ function extractJsonObject(text: string): unknown {
   }
 }
 
+/**
+ * T1.0j (M-5) — normalize the model's Box 12 output to a clean
+ * { code, amount }[] (whitelist: 1–2 letter codes, finite positive amounts;
+ * everything else dropped). Exported for unit tests.
+ */
+export function normalizeBox12Codes(raw: unknown): W2Box12Code[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const out: W2Box12Code[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const e = entry as Record<string, unknown>;
+    const codeRaw = typeof e.code === "string" ? e.code.trim().toUpperCase() : "";
+    // Box 12 codes are 1–2 letters (A…HH). Reject anything else.
+    if (!/^[A-Z]{1,2}$/.test(codeRaw)) continue;
+    const amtRaw = e.amount;
+    const amount =
+      typeof amtRaw === "number" ? amtRaw :
+      typeof amtRaw === "string" ? Number(amtRaw.replace(/[$,]/g, "")) : NaN;
+    if (!Number.isFinite(amount) || amount <= 0) continue;
+    out.push({ code: codeRaw, amount });
+  }
+  return out.length > 0 ? out : undefined;
+}
+
 function normalizeData(parsed: unknown): ExtractedW2Data {
   if (!parsed || typeof parsed !== "object") return {};
   // Filter to known fields and reasonable types
@@ -152,8 +205,11 @@ function normalizeData(parsed: unknown): ExtractedW2Data {
   const numericFields: (keyof ExtractedW2Data)[] = [
     "wagesBox1", "federalTaxWithheldBox2", "socialSecurityWagesBox3", "socialSecurityTaxBox4",
     "medicareWagesBox5", "medicareTaxBox6", "stateTaxWithheldBox17", "stateWagesBox16",
+    "dependentCareBenefitsBox10", "localWagesBox18", "localTaxBox19",
   ];
-  const stringFields: (keyof ExtractedW2Data)[] = ["employerName", "employerEin", "employeeSSN", "stateCode"];
+  const stringFields: (keyof ExtractedW2Data)[] = [
+    "employerName", "employerEin", "employeeSSN", "stateCode", "localityNameBox20",
+  ];
   const obj = parsed as Record<string, unknown>;
   for (const f of stringFields) {
     if (typeof obj[f] === "string" && (obj[f] as string).trim()) {
@@ -167,6 +223,16 @@ function normalizeData(parsed: unknown): ExtractedW2Data {
       const n = Number(v.replace(/[$,]/g, ""));
       if (Number.isFinite(n)) (out as Record<string, number>)[f] = n;
     }
+  }
+  // T1.0j (M-5) — Box 12 codes (array of { code, amount }) + Box 13 checkbox.
+  const box12 = normalizeBox12Codes(obj.box12Codes);
+  if (box12) out.box12Codes = box12;
+  const b13 = obj.retirementPlanBox13;
+  if (typeof b13 === "boolean") out.retirementPlanBox13 = b13;
+  else if (typeof b13 === "string") {
+    const s = b13.trim().toLowerCase();
+    if (["true", "x", "yes", "checked", "1"].includes(s)) out.retirementPlanBox13 = true;
+    else if (["false", "no", "unchecked", "0"].includes(s)) out.retirementPlanBox13 = false;
   }
   return out;
 }
@@ -304,6 +370,10 @@ export interface Extracted1099Data {
   costBasis?: number;
   shortTermGainLoss?: number;
   longTermGainLoss?: number;
+  /** T1.0j (M-3) — Box 1g wash sale loss disallowed (IRC §1091). Added BACK to
+   *  the short-term gain/loss at approve so the aggregate quick path can't
+   *  overstate losses when the broker reported disallowed wash losses. */
+  washSaleLossDisallowed?: number;
   // 1099-R
   grossDistribution?: number;
   taxableAmount?: number;
@@ -343,7 +413,7 @@ Per-form fields (only include the relevant ones based on formType):
   misc: { "rents", "royalties", "otherIncome", "fishingBoatProceeds", "medicalAndHealthcare" }
   int: { "interestIncome", "earlyWithdrawalPenalty", "usTreasuryInterest", "taxExemptInterest" }
   div: { "ordinaryDividends", "qualifiedDividends", "totalCapitalGainDistribution", "nondividendDistributions" }
-  b: { "proceeds", "costBasis", "shortTermGainLoss", "longTermGainLoss" } — sum if there are multiple lots
+  b: { "proceeds", "costBasis", "shortTermGainLoss", "longTermGainLoss", "washSaleLossDisallowed" } — sum if there are multiple lots. shortTermGainLoss / longTermGainLoss are the RAW realized totals (proceeds − basis) BEFORE any wash-sale adjustment; report Box 1g "Wash sale loss disallowed" separately in "washSaleLossDisallowed" (do NOT add it into the gain/loss figures yourself)
   r: { "grossDistribution", "taxableAmount", "distributionCode", "iraSepSimple" }
   g: { "unemploymentCompensation", "stateLocalRefund" }
   k: { "grossPaymentAmount" }
@@ -431,7 +501,7 @@ function normalize1099Data(parsed: unknown): Extracted1099Data {
     "rents", "royalties", "otherIncome", "fishingBoatProceeds", "medicalAndHealthcare",
     "interestIncome", "earlyWithdrawalPenalty", "usTreasuryInterest", "taxExemptInterest",
     "ordinaryDividends", "qualifiedDividends", "totalCapitalGainDistribution", "nondividendDistributions",
-    "proceeds", "costBasis", "shortTermGainLoss", "longTermGainLoss",
+    "proceeds", "costBasis", "shortTermGainLoss", "longTermGainLoss", "washSaleLossDisallowed",
     "grossDistribution", "taxableAmount",
     "unemploymentCompensation", "stateLocalRefund",
     "grossPaymentAmount",
@@ -602,6 +672,8 @@ export function normalizeInfoReturnData(parsed: unknown): ExtractedInfoReturnDat
  *   1098-E  → student_loan_interest (Box 1; engine caps at $2,500)
  *   1095-A  → client aca{AnnualPremium,AnnualSlcsp,AdvanceAptc} (Form 8962)
  *   SSA-1099→ client socialSecurityBenefits (Box 5 net; Pub 915 taxability)
+ *             [+ withholding_adjustment (Box 6 voluntary federal withholding —
+ *              T1.0j H-1, the W-2G Box 4 pattern)]
  *   W-2G    → additional_income (Box 1 winnings) [+ withholding_adjustment (Box 4)]
  */
 export interface InfoReturnMapping {
@@ -653,6 +725,12 @@ export function mapInfoReturnToInputs(
     }
     case "ssa1099": {
       if (pos(data.netSocialSecurityBenefits) > 0) clientPatch.socialSecurityBenefits = pos(data.netSocialSecurityBenefits);
+      // T1.0j (H-1) — Box 6 voluntary federal withholding (a W-4V election,
+      // commonly 7/10/12/22% of benefits). Mapped exactly like W-2G Box 4:
+      // a withholding_adjustment that adds to total federal tax payments.
+      // Previously extracted but silently dropped → refund understated by Box 6.
+      const ssaWh = pos(data.voluntaryFederalWithholding);
+      if (ssaWh > 0) adjustments.push({ adjustmentType: "withholding_adjustment", amount: ssaWh, description: `Federal tax withheld — SSA-1099 Box 6 ${src}` });
       break;
     }
     case "w2g": {
@@ -666,6 +744,54 @@ export function mapInfoReturnToInputs(
       break;
   }
   return { adjustments, clientPatch };
+}
+
+// ── T1.0j — pure approve-seam helpers (unit-tested in
+// scripts/src/tax-engine-t10jk-extraction-tests.ts) ──────────────────────────
+
+/**
+ * T1.0j (M-3) — 1099-B Box 1g wash-sale add-back for the AGGREGATE quick path.
+ *
+ * Per the Form 8949 instructions (code "W"), a broker-reported disallowed wash
+ * loss is a POSITIVE adjustment: taxable gain/loss = proceeds − basis + 1g.
+ * The extraction prompt asks for the RAW realized ST/LT totals (pre-adjustment)
+ * plus Box 1g separately; this helper folds 1g back in at approve so the stored
+ * aggregate can never overstate losses. The full 1g is added to the SHORT-TERM
+ * bucket: wash sales are overwhelmingly short-term, Schedule D cross-nets the
+ * buckets anyway (identical net result whenever a bucket is negative), and when
+ * both buckets are positive routing the add-back to ST (ordinary rates) is the
+ * conservative, never-under-tax choice. CPAs needing exact per-lot character
+ * use the per-transaction capital_transactions path (which OVERRIDES these
+ * aggregates entirely — no double count).
+ *
+ * Returns the values to store. Non-positive/absent 1g → inputs unchanged.
+ */
+export function applyWashSaleAddBack(
+  shortTermGainLoss: number | null | undefined,
+  longTermGainLoss: number | null | undefined,
+  washSaleLossDisallowed: number | null | undefined,
+): { shortTermGainLoss: number | null; longTermGainLoss: number | null } {
+  const st = typeof shortTermGainLoss === "number" && Number.isFinite(shortTermGainLoss) ? shortTermGainLoss : null;
+  const lt = typeof longTermGainLoss === "number" && Number.isFinite(longTermGainLoss) ? longTermGainLoss : null;
+  const ws = typeof washSaleLossDisallowed === "number" && Number.isFinite(washSaleLossDisallowed) && washSaleLossDisallowed > 0
+    ? washSaleLossDisallowed
+    : 0;
+  if (ws === 0) return { shortTermGainLoss: st, longTermGainLoss: lt };
+  return { shortTermGainLoss: (st ?? 0) + ws, longTermGainLoss: lt };
+}
+
+/**
+ * T1.0j (M-5) — W-2 Box 13 "Retirement plan" → client `iraCoveredByWorkplacePlan`
+ * SUGGESTION gate. Only suggests setting the flag when the box is affirmatively
+ * checked AND the client flag is currently false/null — an approve must never
+ * silently overwrite a CPA's explicit true (no-op) and must never UNSET the flag
+ * on an unchecked/unknown box (other W-2s/plans may justify it).
+ */
+export function shouldSuggestIraCoverage(
+  retirementPlanBox13: boolean | null | undefined,
+  clientCurrentlyCovered: boolean | null | undefined,
+): boolean {
+  return retirementPlanBox13 === true && clientCurrentlyCovered !== true;
 }
 
 export async function extractInfoReturnFromFile(

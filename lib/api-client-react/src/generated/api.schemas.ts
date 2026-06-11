@@ -456,6 +456,7 @@ export type TaxDocumentLinkedRecordType =
 export const TaxDocumentLinkedRecordType = {
   w2: "w2",
   form1099: "form1099",
+  info_return: "info_return",
 } as const;
 
 export interface TaxDocument {
@@ -481,6 +482,12 @@ UI should treat it as a synonym of "approved".
   linkedRecordType?: TaxDocumentLinkedRecordType;
   /** @nullable */
   rejectionReason?: string | null;
+  /** T1.0j — optional, RESPONSE-ONLY (never persisted): side-effect notes
+from the approve handler the CPA should see (e.g. "W-2 Box 13
+'Retirement plan' is checked — the client's IRA-coverage flag was
+turned on").
+ */
+  notes?: string[];
   createdAt: string;
 }
 
@@ -515,6 +522,11 @@ export const ApproveExtractionBodyRecordType = {
   form1099: "form1099",
   info_return: "info_return",
 } as const;
+
+export type ApproveExtractionBodyBox12CodesItem = {
+  code: string;
+  amount: number;
+};
 
 /**
  * @nullable
@@ -582,6 +594,17 @@ export interface ApproveExtractionBody {
   /** @nullable */
   stateTaxWithheldBox17?: number | null;
   /** @nullable */
+  dependentCareBenefitsBox10?: number | null;
+  box12Codes?: ApproveExtractionBodyBox12CodesItem[];
+  /** @nullable */
+  retirementPlanBox13?: boolean | null;
+  /** @nullable */
+  localWagesBox18?: number | null;
+  /** @nullable */
+  localTaxBox19?: number | null;
+  /** @nullable */
+  localityNameBox20?: string | null;
+  /** @nullable */
   formType?: ApproveExtractionBodyFormType;
   /** @nullable */
   payerName?: string | null;
@@ -629,6 +652,16 @@ export interface ApproveExtractionBody {
   shortTermGainLoss?: number | null;
   /** @nullable */
   longTermGainLoss?: number | null;
+  /**
+   * T1.0j (M-3) — 1099-B Box 1g wash sale loss disallowed (IRC §1091).
+Added BACK into the stored short-term gain/loss at approve (Form 8949
+code "W" positive adjustment) so the aggregate path can't overstate
+losses. Enter $0 if the broker's ST/LT totals already include the
+wash-sale adjustment.
+
+   * @nullable
+   */
+  washSaleLossDisallowed?: number | null;
   /** @nullable */
   grossDistribution?: number | null;
   /** @nullable */
@@ -670,6 +703,14 @@ export interface ApproveExtractionBody {
   annualAdvancePtc?: number | null;
   /** @nullable */
   netSocialSecurityBenefits?: number | null;
+  /**
+   * T1.0j (H-1) — SSA-1099 Box 6 voluntary federal income tax withheld
+(W-4V election). Mapped to a withholding_adjustment on approve (the
+W-2G Box 4 pattern) — previously extracted but silently dropped.
+
+   * @nullable
+   */
+  voluntaryFederalWithholding?: number | null;
   /** @nullable */
   gamblingWinnings?: number | null;
   /** @nullable */
@@ -680,6 +721,11 @@ export interface RejectExtractionBody {
   /** @nullable */
   reason?: string | null;
 }
+
+export type W2DataBox12CodesItem = {
+  code: string;
+  amount: number;
+};
 
 /**
  * K1 MFJ — which spouse this W-2 belongs to (drives per-spouse Sch SE Line 9 SS wage base). Default "taxpayer".
@@ -721,6 +767,18 @@ export interface W2Data {
   stateWagesBox16?: number | null;
   /** @nullable */
   stateCode?: string | null;
+  /** @nullable */
+  dependentCareBenefitsBox10?: number | null;
+  /** @nullable */
+  box12Codes?: W2DataBox12CodesItem[] | null;
+  /** @nullable */
+  retirementPlanBox13?: boolean | null;
+  /** @nullable */
+  localWagesBox18?: number | null;
+  /** @nullable */
+  localTaxBox19?: number | null;
+  /** @nullable */
+  localityNameBox20?: string | null;
   /** K1 MFJ — which spouse this W-2 belongs to (drives per-spouse Sch SE Line 9 SS wage base). Default "taxpayer". */
   spouse?: W2DataSpouse;
   createdAt: string;
@@ -1423,6 +1481,11 @@ export interface Adjustment {
    * @nullable
    */
   spouse?: string | null;
+  /**
+   * T1.0j (M-4) — optional tax-year scoping. NULL (default) = applies to EVERY tax year (the historical behavior); a year restricts the adjustment to that year only. The AI document-approve path writes the approved document's tax year.
+   * @nullable
+   */
+  taxYear?: number | null;
   isApplied?: boolean;
   createdAt: string;
   updatedAt: string;
@@ -1581,6 +1644,11 @@ export interface CreateAdjustmentBody {
    * @nullable
    */
   spouse?: string | null;
+  /**
+   * T1.0j (M-4) — optional tax-year scoping. Omit/NULL = applies to every tax year; a year restricts the adjustment to that year only.
+   * @nullable
+   */
+  taxYear?: number | null;
   isApplied?: boolean;
 }
 
@@ -1737,6 +1805,11 @@ export interface UpdateAdjustmentBody {
    * @nullable
    */
   spouse?: string | null;
+  /**
+   * T1.0j (M-4) — optional tax-year scoping. NULL = applies to every tax year; a year restricts the adjustment to that year only.
+   * @nullable
+   */
+  taxYear?: number | null;
   isApplied?: boolean;
 }
 

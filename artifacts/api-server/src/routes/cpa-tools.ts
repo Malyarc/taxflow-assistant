@@ -39,6 +39,7 @@ import {
   computeTaxReturn,
   recalculateAfterMutation,
   synthesizePriorYearCarryforwards,
+  filterAdjustmentsForYear,
   type AdjustmentFact,
 } from "../lib/taxReturnPipeline";
 import { SUPPORTED_TAX_YEARS } from "../lib/taxCalculator";
@@ -294,10 +295,16 @@ router.post("/clients/:clientId/roll-forward", async (req, res): Promise<void> =
   // manual-override suppression ("an applied carryforward adjustment beats the
   // auto-seed") is reflected in the report exactly as the engine applies it.
   await recalculateAfterMutation(clientId, toYear);
-  const clientAdjustments = await db
-    .select()
-    .from(adjustmentsTable)
-    .where(eq(adjustmentsTable.clientId, clientId));
+  // T1.0j (M-4) — the manual-override suppression must only consider rows that
+  // APPLY to the rolled-to year (a year-tagged carryforward for an old year
+  // must not suppress the new year's auto-seed).
+  const clientAdjustments = filterAdjustmentsForYear(
+    await db
+      .select()
+      .from(adjustmentsTable)
+      .where(eq(adjustmentsTable.clientId, clientId)),
+    toYear,
+  );
   const carryforwardsSeeded = (
     await synthesizePriorYearCarryforwards(clientId, toYear, clientAdjustments as AdjustmentFact[])
   ).map((a) => ({ type: a.adjustmentType, amount: Number(a.amount) }));

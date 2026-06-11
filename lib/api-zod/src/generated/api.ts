@@ -734,9 +734,20 @@ export const ListDocumentsResponseItem = zod.object({
       "PK of the w2_data \/ form_1099_data row this doc was approved into.",
     ),
   linkedRecordType: zod
-    .union([zod.literal("w2"), zod.literal("form1099"), zod.literal(null)])
+    .union([
+      zod.literal("w2"),
+      zod.literal("form1099"),
+      zod.literal("info_return"),
+      zod.literal(null),
+    ])
     .nullish(),
   rejectionReason: zod.string().nullish(),
+  notes: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      "T1.0j — optional, RESPONSE-ONLY (never persisted): side-effect notes\nfrom the approve handler the CPA should see (e.g. \"W-2 Box 13\n'Retirement plan' is checked — the client's IRA-coverage flag was\nturned on\").\n",
+    ),
   createdAt: zod.coerce.date(),
 });
 export const ListDocumentsResponse = zod.array(ListDocumentsResponseItem);
@@ -802,6 +813,19 @@ export const ApproveExtractionBody = zod
     medicareTaxBox6: zod.number().nullish(),
     stateWagesBox16: zod.number().nullish(),
     stateTaxWithheldBox17: zod.number().nullish(),
+    dependentCareBenefitsBox10: zod.number().nullish(),
+    box12Codes: zod
+      .array(
+        zod.object({
+          code: zod.string(),
+          amount: zod.number(),
+        }),
+      )
+      .optional(),
+    retirementPlanBox13: zod.boolean().nullish(),
+    localWagesBox18: zod.number().nullish(),
+    localTaxBox19: zod.number().nullish(),
+    localityNameBox20: zod.string().nullish(),
     formType: zod
       .union([
         zod.literal("NEC"),
@@ -838,6 +862,12 @@ export const ApproveExtractionBody = zod
     costBasis: zod.number().nullish(),
     shortTermGainLoss: zod.number().nullish(),
     longTermGainLoss: zod.number().nullish(),
+    washSaleLossDisallowed: zod
+      .number()
+      .nullish()
+      .describe(
+        "T1.0j (M-3) — 1099-B Box 1g wash sale loss disallowed (IRC §1091).\nAdded BACK into the stored short-term gain\/loss at approve (Form 8949\ncode \"W\" positive adjustment) so the aggregate path can't overstate\nlosses. Enter $0 if the broker's ST\/LT totals already include the\nwash-sale adjustment.\n",
+      ),
     grossDistribution: zod.number().nullish(),
     taxableAmount: zod.number().nullish(),
     distributionCode: zod.string().nullish(),
@@ -872,6 +902,12 @@ export const ApproveExtractionBody = zod
     annualSlcsp: zod.number().nullish(),
     annualAdvancePtc: zod.number().nullish(),
     netSocialSecurityBenefits: zod.number().nullish(),
+    voluntaryFederalWithholding: zod
+      .number()
+      .nullish()
+      .describe(
+        "T1.0j (H-1) — SSA-1099 Box 6 voluntary federal income tax withheld\n(W-4V election). Mapped to a withholding_adjustment on approve (the\nW-2G Box 4 pattern) — previously extracted but silently dropped.\n",
+      ),
     gamblingWinnings: zod.number().nullish(),
     gamblingFederalWithheld: zod.number().nullish(),
   })
@@ -917,9 +953,20 @@ export const ApproveExtractionResponse = zod.object({
       "PK of the w2_data \/ form_1099_data row this doc was approved into.",
     ),
   linkedRecordType: zod
-    .union([zod.literal("w2"), zod.literal("form1099"), zod.literal(null)])
+    .union([
+      zod.literal("w2"),
+      zod.literal("form1099"),
+      zod.literal("info_return"),
+      zod.literal(null),
+    ])
     .nullish(),
   rejectionReason: zod.string().nullish(),
+  notes: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      "T1.0j — optional, RESPONSE-ONLY (never persisted): side-effect notes\nfrom the approve handler the CPA should see (e.g. \"W-2 Box 13\n'Retirement plan' is checked — the client's IRA-coverage flag was\nturned on\").\n",
+    ),
   createdAt: zod.coerce.date(),
 });
 
@@ -973,9 +1020,20 @@ export const RejectExtractionResponse = zod.object({
       "PK of the w2_data \/ form_1099_data row this doc was approved into.",
     ),
   linkedRecordType: zod
-    .union([zod.literal("w2"), zod.literal("form1099"), zod.literal(null)])
+    .union([
+      zod.literal("w2"),
+      zod.literal("form1099"),
+      zod.literal("info_return"),
+      zod.literal(null),
+    ])
     .nullish(),
   rejectionReason: zod.string().nullish(),
+  notes: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      "T1.0j — optional, RESPONSE-ONLY (never persisted): side-effect notes\nfrom the approve handler the CPA should see (e.g. \"W-2 Box 13\n'Retirement plan' is checked — the client's IRA-coverage flag was\nturned on\").\n",
+    ),
   createdAt: zod.coerce.date(),
 });
 
@@ -1003,6 +1061,19 @@ export const ListW2DataResponseItem = zod.object({
   stateTaxWithheldBox17: zod.number().nullish(),
   stateWagesBox16: zod.number().nullish(),
   stateCode: zod.string().nullish(),
+  dependentCareBenefitsBox10: zod.number().nullish(),
+  box12Codes: zod
+    .array(
+      zod.object({
+        code: zod.string(),
+        amount: zod.number(),
+      }),
+    )
+    .nullish(),
+  retirementPlanBox13: zod.boolean().nullish(),
+  localWagesBox18: zod.number().nullish(),
+  localTaxBox19: zod.number().nullish(),
+  localityNameBox20: zod.string().nullish(),
   spouse: zod
     .enum(["taxpayer", "spouse"])
     .optional()
@@ -1090,6 +1161,19 @@ export const UpdateW2DataResponse = zod.object({
   stateTaxWithheldBox17: zod.number().nullish(),
   stateWagesBox16: zod.number().nullish(),
   stateCode: zod.string().nullish(),
+  dependentCareBenefitsBox10: zod.number().nullish(),
+  box12Codes: zod
+    .array(
+      zod.object({
+        code: zod.string(),
+        amount: zod.number(),
+      }),
+    )
+    .nullish(),
+  retirementPlanBox13: zod.boolean().nullish(),
+  localWagesBox18: zod.number().nullish(),
+  localTaxBox19: zod.number().nullish(),
+  localityNameBox20: zod.string().nullish(),
   spouse: zod
     .enum(["taxpayer", "spouse"])
     .optional()
@@ -3087,6 +3171,12 @@ export const ListAdjustmentsResponseItem = zod.object({
     .describe(
       'E2 — optional MFJ spouse attribution (\"taxpayer\" | \"spouse\") for a self_employment_income adjustment\'s Sch SE Line-9 SS-wage-base credit.',
     ),
+  taxYear: zod
+    .number()
+    .nullish()
+    .describe(
+      "T1.0j (M-4) — optional tax-year scoping. NULL (default) = applies to EVERY tax year (the historical behavior); a year restricts the adjustment to that year only. The AI document-approve path writes the approved document's tax year.",
+    ),
   isApplied: zod.boolean().optional(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
@@ -3238,6 +3328,12 @@ export const CreateAdjustmentBody = zod.object({
     .nullish()
     .describe(
       'E2 — optional MFJ spouse attribution (\"taxpayer\" | \"spouse\") for a self_employment_income adjustment\'s Sch SE Line-9 SS-wage-base credit.',
+    ),
+  taxYear: zod
+    .number()
+    .nullish()
+    .describe(
+      "T1.0j (M-4) — optional tax-year scoping. Omit\/NULL = applies to every tax year; a year restricts the adjustment to that year only.",
     ),
   isApplied: zod.boolean().optional(),
 });
@@ -3391,6 +3487,12 @@ export const UpdateAdjustmentBody = zod.object({
     .describe(
       'E2 — optional MFJ spouse attribution (\"taxpayer\" | \"spouse\") for a self_employment_income adjustment\'s Sch SE Line-9 SS-wage-base credit.',
     ),
+  taxYear: zod
+    .number()
+    .nullish()
+    .describe(
+      "T1.0j (M-4) — optional tax-year scoping. NULL = applies to every tax year; a year restricts the adjustment to that year only.",
+    ),
   isApplied: zod.boolean().optional(),
 });
 
@@ -3534,6 +3636,12 @@ export const UpdateAdjustmentResponse = zod.object({
     .nullish()
     .describe(
       'E2 — optional MFJ spouse attribution (\"taxpayer\" | \"spouse\") for a self_employment_income adjustment\'s Sch SE Line-9 SS-wage-base credit.',
+    ),
+  taxYear: zod
+    .number()
+    .nullish()
+    .describe(
+      "T1.0j (M-4) — optional tax-year scoping. NULL (default) = applies to EVERY tax year (the historical behavior); a year restricts the adjustment to that year only. The AI document-approve path writes the approved document's tax year.",
     ),
   isApplied: zod.boolean().optional(),
   createdAt: zod.coerce.date(),

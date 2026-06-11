@@ -61,6 +61,28 @@ export type {
 };
 
 /**
+ * T1.0j (M-4) — year-scoped adjustments. An adjustment row applies to the
+ * computed year when its `tax_year` is NULL (legacy/manual rows: every year —
+ * preserves ALL pre-existing behavior) OR equals the year being computed.
+ * PURE — shared by the pipeline and every route that loads adjustments for a
+ * year-scoped computation (planning, Form 8606/8990, roll-forward report).
+ */
+export function adjustmentAppliesToYear(
+  adj: { taxYear?: number | null },
+  taxYear: number,
+): boolean {
+  return adj.taxYear == null || adj.taxYear === taxYear;
+}
+
+/** T1.0j (M-4) — convenience array filter over `adjustmentAppliesToYear`. */
+export function filterAdjustmentsForYear<T extends { taxYear?: number | null }>(
+  rows: T[],
+  taxYear: number,
+): T[] {
+  return rows.filter((a) => adjustmentAppliesToYear(a, taxYear));
+}
+
+/**
  * DB-backed compute. Loads client / W-2s / 1099s / adjustments, calls the pure
  * engine, returns the result + raw client row (some callers need it for routing).
  *
@@ -98,7 +120,7 @@ export async function computeTaxReturn(
   const [
     w2Records,
     form1099Records,
-    adjustments,
+    allAdjustmentRows,
     rentalProperties,
     capitalTransactions,
     scheduleK1,
@@ -111,8 +133,11 @@ export async function computeTaxReturn(
     db.select().from(form1099DataTable).where(
       and(eq(form1099DataTable.clientId, clientId), eq(form1099DataTable.taxYear, taxYear)),
     ),
-    // Adjustments: load all-years; engine filters by isApplied. Auto-loaded
-    // synthetic carryforwards added downstream via synthesizePriorYearCarryforwards.
+    // Adjustments: load all rows, then filter to the computed year below
+    // (T1.0j M-4: tax_year IS NULL = every year [all legacy rows]; a non-null
+    // tax_year applies only to that year). Engine additionally filters by
+    // isApplied. Auto-loaded synthetic carryforwards added downstream via
+    // synthesizePriorYearCarryforwards.
     db.select().from(adjustmentsTable).where(eq(adjustmentsTable.clientId, clientId)),
     db.select().from(rentalPropertiesTable).where(
       and(
@@ -145,6 +170,12 @@ export async function computeTaxReturn(
     // placed in a FUTURE year (placedInServiceYear > taxYear).
     db.select().from(scheduleCAssetsTable).where(eq(scheduleCAssetsTable.clientId, clientId)),
   ]);
+
+  // T1.0j (M-4) — keep only the adjustments that apply to THIS tax year
+  // (NULL tax_year = all years; non-null = that year only). Done BEFORE the
+  // carryforward synthesis so a year-tagged manual carryforward for a
+  // DIFFERENT year can't suppress this year's auto-load.
+  const adjustments = filterAdjustmentsForYear(allAdjustmentRows, taxYear);
 
   // Auto-load capital-loss + §469 PAL carryforwards from the prior tax year.
   // We synthesize "virtual" adjustment rows IFF the user has NOT manually
