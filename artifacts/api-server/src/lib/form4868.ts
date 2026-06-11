@@ -20,6 +20,7 @@
  * / UltraTax / ProConnect / Drake.
  */
 import PDFDocument from "pdfkit";
+import { winAnsiSafePdf } from "./pdfBrand";
 import type { ComputedTaxReturn } from "./taxReturnEngine";
 import type { clientsTable } from "@workspace/db";
 
@@ -75,14 +76,22 @@ export interface Form4868Result {
 /**
  * Compute Form 4868 line values from a computed tax return.
  *
- * Derivation (consistent with engine math):
- *   Line 4 = ret.federalTaxLiability  (i.e., Form 1040 Line 24, total tax)
- *   Engine: federalRefundOrOwed = totalPayments − federalTaxLiability
- *     → totalPayments = federalTaxLiability + federalRefundOrOwed
- *   Line 5 = computedPayments + estimatedTaxAlreadyPaid (CPA-supplied additional
- *            estimated payments not already in the engine via withholding /
- *            credit adjustments).
- *   Line 6 = max(0, Line 4 − Line 5).
+ * Derivation (consistent with engine math; H4 audit 2026-06-11):
+ *   Official Line 4 = "estimate of total tax liability" = Form 1040 Line 24,
+ *   which is NET of nonrefundable credits. The engine's federalTaxLiability is
+ *   PRE-nonrefundable-credit, so back the applied credits out (the same
+ *   FORM-02 correction the 1040-X module carries):
+ *     Line 4 = ret.federalTaxLiability − ret.totalNonRefundableApplied
+ *   Official Line 5 = total payments = Form 1040 Line 33 (excluding Schedule 3
+ *   line 10, the amount paid WITH this extension). Engine identity:
+ *     federalRefundOrOwed = withheld + nonref + refundables − federalTaxLiability
+ *     → Line-33 payments = federalTaxLiability + federalRefundOrOwed
+ *                          − totalNonRefundableApplied
+ *   Line 5 = that + estimatedTaxAlreadyPaid (CPA-supplied additional estimated
+ *            payments not already in the engine via withholding / credit
+ *            adjustments).
+ *   Line 6 = max(0, Line 4 − Line 5) — unchanged by the credit netting (both
+ *            lines drop by the same amount, modulo $1 rounding).
  *   Line 7 = amountBeingPaid override, else Line 6.
  */
 export function calculateForm4868(args: {
@@ -91,9 +100,17 @@ export function calculateForm4868(args: {
 }): Form4868Result {
   const { ret, input = {} } = args;
   const round = (n: number): number => Math.max(0, Math.round(n));
+  const num = (v: unknown): number => {
+    const n = typeof v === "number" ? v : Number(v ?? 0);
+    return Number.isFinite(n) ? n : 0;
+  };
 
-  const line4 = round(ret.federalTaxLiability);
-  const computedPayments = round(ret.federalTaxLiability + ret.federalRefundOrOwed);
+  // H4 — official Line 4 is 1040 line 24 (NET of nonrefundable credits).
+  const nonRefApplied = Math.max(0, num(ret.totalNonRefundableApplied));
+  const line4 = round(ret.federalTaxLiability - nonRefApplied);
+  const computedPayments = round(
+    ret.federalTaxLiability + ret.federalRefundOrOwed - nonRefApplied,
+  );
   const line5 = computedPayments + round(input.estimatedTaxAlreadyPaid ?? 0);
   const line6 = Math.max(0, line4 - line5);
   const line7 =
@@ -137,7 +154,7 @@ export interface BuildForm4868PdfOptions {
 export function buildForm4868Pdf(options: BuildForm4868PdfOptions): Promise<Buffer> {
   const { client, ret, form } = options;
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: "letter", margin: 54 });
+    const doc = winAnsiSafePdf(new PDFDocument({ size: "letter", margin: 54 })); // M5 WinAnsi glyph seam
     const chunks: Buffer[] = [];
     doc.on("data", (c: Buffer) => chunks.push(c));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
@@ -233,8 +250,8 @@ export function buildForm4868Pdf(options: BuildForm4868PdfOptions): Promise<Buff
     doc.moveDown(0.3);
     doc.fontSize(10).font("Helvetica").fillColor("#222");
 
-    moneyLine(doc, "4. Estimate of total tax liability for the year", form.estimatedTotalTax);
-    moneyLine(doc, "5. Total payments (Form 1040 Line 33)", form.totalPayments);
+    moneyLine(doc, "4. Estimate of total tax liability for the year (Form 1040 Line 24)", form.estimatedTotalTax);
+    moneyLine(doc, "5. Total payments (Form 1040 Line 33, excl. Schedule 3 line 10)", form.totalPayments);
     moneyLine(doc, "6. Balance due (Line 4 − Line 5)", form.balanceDue);
     moneyLine(doc, "7. Amount being paid with this extension", form.amountBeingPaid, true);
     checkLine(
@@ -275,10 +292,10 @@ export function buildForm4868Pdf(options: BuildForm4868PdfOptions): Promise<Buff
     doc.moveDown(0.2);
     doc.fontSize(8).font("Helvetica").fillColor("#555");
     doc.text(
-      `Line 4 (estimated total tax) is sourced from the TaxFlow computed Form 1040 Line 24 (federal tax liability, including SE / AMT / NIIT / Additional Medicare / §72(t) / HSA §4973(g) excise / advance APTC repayment).`,
+      `Line 4 (estimated total tax) is sourced from the TaxFlow computed Form 1040 Line 24: federal tax liability (including SE / AMT / NIIT / Additional Medicare / §72(t) / HSA §4973(g) excise / Schedule H / advance APTC repayment) NET of the nonrefundable credits the engine applied (CTC, FTC, dependent care, education, Saver's, energy, adoption, §53, §38).`,
     );
     doc.text(
-      `Line 5 (total payments) is sourced from federal withholding (W-2 + 1099) plus engine-applied refundable credits (EITC, ACTC, AOC refundable, net premium tax credit) plus any CPA-supplied estimated payments. Engine net refund/owed = ${fmtCurrency(ret.federalRefundOrOwed)}.`,
+      `Line 5 (total payments) mirrors Form 1040 Line 33 (excluding Schedule 3 line 10 — the amount paid with this extension): federal withholding (W-2 + 1099) plus engine-applied refundable credits (EITC, ACTC, AOC refundable, net premium tax credit) plus any CPA-supplied estimated payments. Engine net refund/owed = ${fmtCurrency(ret.federalRefundOrOwed)}.`,
     );
     doc.text(
       `Line 6 is zero when payments equal or exceed estimated total tax. Line 7 defaults to Line 6 but can be reduced if the taxpayer wants a partial payment (interest accrues on the unpaid portion).`,

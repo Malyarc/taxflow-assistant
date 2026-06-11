@@ -51,28 +51,44 @@ export function buildReconciliationWorksheet(ctx: FormBuildContext): FormInstanc
   const k1 = ret.scheduleK1;
   const capitalLine7 =
     ret.netCapitalGainLoss >= 0 ? ret.netCapitalGainLoss : -ret.capitalLossDeducted;
+  // K-1 non-capital buckets INCLUDING qualified dividends — K-1 QDIV is part of
+  // total income (AGI invariant #1) just like the 1099 qualified portion.
   const k1NonCapital =
     k1.totalActiveOrdinaryIncome +
     k1.totalGuaranteedPayments +
     k1.totalPassiveBucketNetApplied +
     k1.totalInterestIncome +
     k1.totalOrdinaryDividends +
+    k1.totalQualifiedDividends +
     k1.totalRoyalties;
   const scheduleCNet = f99.seIncome - ret.scheduleCExpenses - ret.scheduleCDepreciation;
+  // M2 — official Form 1040 line 3b / Schedule B line 6 is 1099-DIV box-1a
+  // TOTAL ordinary dividends (INCLUDING the qualified portion). The engine
+  // buckets box 1a − 1b as `ordinaryDividends` and box 1b as
+  // `qualifiedDividends`; recombine so the itemized row matches the official
+  // line (and the 1040 workpaper in the same packet) instead of leaving the
+  // QDIV in the residual.
+  const div3b = f99.ordinaryDividends + f99.qualifiedDividends;
+  // M1 — `rents`/`royalties` are SUBSETS of `miscIncome` (engine 696–700);
+  // summing all three double-counted them. Itemize the three disjoint pieces.
+  const miscOther = f99.miscIncome - f99.rents - f99.royalties;
 
   const incomeComponents: Array<[string, string, number, string?]> = [
     ["1a", "Wages (W-2 box 1)", wages],
     ["2b", "Taxable interest (Schedule B)", f99.interestIncome],
-    ["3b", "Ordinary dividends (Schedule B)", f99.ordinaryDividends],
+    ["3b", "Ordinary dividends (Schedule B, 1099-DIV box 1a incl. qualified)", div3b],
     ["4b/5b", "IRA / pension / annuity taxable distributions", f99.retirementIncome],
     ["6b", "Taxable Social Security (Pub 915 worksheet)", ret.socialSecurityTaxable],
     ["7", "Capital gain or (loss) (Schedule D line 16 / $3k limit)", capitalLine7],
     ["8", "Schedule C net profit or (loss)", scheduleCNet, "Sch 1 line 3 — 1099-NEC receipts − expenses − depreciation"],
     ["8", "Rental real estate applied (Schedule E, after §469)", ret.scheduleERentalAppliedToAgi, "Sch 1 line 5"],
-    ["8", "K-1 pass-through (non-capital buckets)", k1NonCapital, "Sch E p.2 + Sch B portions"],
+    ["8", "K-1 pass-through (non-capital buckets)", k1NonCapital, "Sch E p.2 + Sch B portions (incl. K-1 qualified dividends)"],
     ["8", "Unemployment compensation (1099-G)", f99.unemploymentCompensationOnly, "Sch 1 line 7"],
-    ["8", "1099-MISC (rents / royalties / other)", f99.miscIncome + f99.rents + f99.royalties],
+    ["8", "1099-MISC rents (box 1)", f99.rents, "Sch 1 line 5"],
+    ["8", "1099-MISC royalties (box 2)", f99.royalties, "Sch 1 line 5"],
+    ["8", "1099-MISC other income (box 3 + fishing + medical)", miscOther, "Sch 1 line 8z"],
     ["8", "1099-K payment-card income", f99.paymentCardIncome],
+    ["8d", "Foreign earned income exclusion (Form 2555)", -ret.feie.totalExclusion, "Sch 1 line 8d — negative; the engine nets the FEIE INSIDE total income (the gross foreign earned income is in the residual row)"],
     ["8", "ISO disqualifying-disposition ordinary income", ret.isoDisqualifyingDispositionOrdinary],
     ["8", "ESPP disqualifying-disposition ordinary income", ret.esppDisqualifyingDispositionOrdinary],
     ["8", "Form 4797 ordinary component (recapture + §1231 loss)", ret.form4797?.ordinaryComponent ?? 0],
@@ -85,6 +101,13 @@ export function buildReconciliationWorksheet(ctx: FormBuildContext): FormInstanc
     if (!nz(value)) continue;
     incomeListed += value;
     incomeLines.push(moneyLine(line, label, value, note ? { note } : {}));
+  }
+  if (nz(f99.qualifiedDividends)) {
+    incomeLines.push(
+      moneyLine("3a", "Qualified dividends (info — subset of the 3b row above; preferential rates)", f99.qualifiedDividends, {
+        indent: 1,
+      }),
+    );
   }
   if (nz(ret.socialSecurityBenefits)) {
     incomeLines.push(
@@ -109,6 +132,11 @@ export function buildReconciliationWorksheet(ctx: FormBuildContext): FormInstanc
   incomeLines.push(moneyLine("9", "Total income (reported by engine)", ret.totalIncome, { emphasis: true }));
 
   // ── Part 2 — AGI (Form 1040 line 11) ──
+  // H1/M3 (audit 2026-06-11): the NOL and the FEIE are NOT in the engine's
+  // AGI bridge — the FEIE is netted INSIDE total income (Part 1's 8d row) and
+  // the NOL is applied between the deduction and QBI steps (Part 3's chain).
+  // Listing them here inflated the adjustments and forced an equal, spurious
+  // negative residual mislabeled "Manual above-the-line adjustments".
   const rd = ret.retirementDeductions;
   const atlComponents: Array<[string, string, number, string?]> = [
     ["11", "Educator expenses", ret.educatorExpenses.deductible],
@@ -118,8 +146,6 @@ export function buildReconciliationWorksheet(ctx: FormBuildContext): FormInstanc
     ["18", "Early-withdrawal penalty on savings (1099-INT box 2)", f99.interestEarlyWithdrawalPenalty],
     ["20", "Traditional IRA deduction", rd.iraDeductible],
     ["21", "Student loan interest", ret.studentLoanInterest.deductible],
-    ["8d", "Foreign earned income exclusion (Form 2555)", ret.feie.totalExclusion, "Sch 1 line 8d (negative income; stacking rule applied)"],
-    ["8a", "NOL carryforward deducted (80% limit)", ret.nolDeduction],
   ];
   const atlLines: FormLine[] = [];
   let atlListed = 0;
@@ -140,12 +166,24 @@ export function buildReconciliationWorksheet(ctx: FormBuildContext): FormInstanc
   atlLines.push(moneyLine("11", "Adjusted gross income (reported by engine)", ret.adjustedGrossIncome, { emphasis: true }));
 
   // ── Part 3 — Taxable income chain (EXACT identity) ──
+  // Mirrors the ENGINE's actual chain incl. the §172 NOL step between the
+  // deduction and QBI (taxableAfterNol — engine ~2977). The NOL amount comes
+  // from the ENGINE OUTPUT (ret.nolDeduction); if a future engine moves the
+  // NOL above-the-line (inside AGI), the no-NOL chain ties instead and the
+  // NOL row is dropped from this chain (it is then already inside line 11) —
+  // correct under either engine architecture (audit 2026-06-11 H1).
   const deductionUsed = ret.itemizedDeductions ?? ret.standardDeduction;
   const obbbaTotal = ret.obbbaSchedule1A.total;
-  const taxableComputed = Math.max(
-    0,
-    Math.max(0, Math.max(0, ret.adjustedGrossIncome - deductionUsed) - ret.qbiDeduction) - obbbaTotal,
-  );
+  const nolApplied = Math.max(0, ret.nolDeduction);
+  const taxableChain = (nol: number) =>
+    Math.max(
+      0,
+      Math.max(0, Math.max(0, Math.max(0, ret.adjustedGrossIncome - deductionUsed) - nol) - ret.qbiDeduction) -
+        obbbaTotal,
+    );
+  const nolInTaxableChain =
+    nolApplied > 0 && Math.abs(taxableChain(0) - ret.taxableIncome) < 0.01 ? 0 : nolApplied;
+  const taxableComputed = taxableChain(nolInTaxableChain);
   const taxableLines: FormLine[] = [
     moneyLine("11", "Adjusted gross income", ret.adjustedGrossIncome),
     moneyLine(
@@ -153,15 +191,30 @@ export function buildReconciliationWorksheet(ctx: FormBuildContext): FormInstanc
       ret.itemizedDeductions != null ? "Itemized deductions (Schedule A)" : "Standard deduction",
       deductionUsed,
     ),
-    moneyLine("13a", "QBI deduction (Form 8995/8995-A, §199A)", ret.qbiDeduction),
   ];
+  if (nz(nolInTaxableChain)) {
+    taxableLines.push(
+      moneyLine("", "NOL carryforward deduction (§172, 80% limit) — engine deducts here", nolInTaxableChain, {
+        note: "Officially Schedule 1 line 8a (inside AGI); the engine nets the NOL between the deduction and QBI steps — same disclosed deviation as the Schedule 1 workpaper.",
+      }),
+    );
+  }
+  taxableLines.push(moneyLine("13a", "QBI deduction (Form 8995/8995-A, §199A)", ret.qbiDeduction));
   if (nz(obbbaTotal)) {
     taxableLines.push(
       moneyLine("13b", "OBBBA Schedule 1-A deductions (tips/overtime/car-loan/senior)", obbbaTotal),
     );
   }
   taxableLines.push(moneyLine("15", "Taxable income (reported by engine)", ret.taxableIncome, { emphasis: true }));
-  taxableLines.push(checkLine("Taxable income ties: max(0, AGI − deduction − QBI − 1-A)", taxableComputed, ret.taxableIncome));
+  taxableLines.push(
+    checkLine(
+      nz(nolInTaxableChain)
+        ? "Taxable income ties: max(0, AGI − deduction − NOL − QBI − 1-A)"
+        : "Taxable income ties: max(0, AGI − deduction − QBI − 1-A)",
+      taxableComputed,
+      ret.taxableIncome,
+    ),
+  );
 
   // ── Part 4 — Federal tax composition (EXACT by engine assembly) ──
   const excessAptcRepayment = Math.max(0, -ret.premiumTaxCredit.netPtc);
@@ -204,31 +257,76 @@ export function buildReconciliationWorksheet(ctx: FormBuildContext): FormInstanc
   );
 
   // ── Part 5 — Credits ──
+  // M4 (audit 2026-06-11): list the APPLIED (income-tax-capped) amounts, not
+  // the calc-level computed amounts. The engine applies each nonrefundable
+  // credit as min(computed, remaining income tax) in the Schedule 8812
+  // Credit-Limit-Worksheet order (FTC → dependent care → education → Saver's
+  // → energy → adoption → CTC → §53 → §38 GBC); when the cap binds (common on
+  // low-income returns with credits), the calc-level amounts overstate the
+  // rows and false-⚠ the tie-out. Reconstruct the same sequential mins from
+  // engine outputs (the per-form 2441/8863/8880 builders do the identical
+  // reconstruction); adoption / CTC / §53 / §38 amounts are already exposed
+  // post-cap by the engine and are used directly.
+  const excessAptcForCredits = Math.max(0, -ret.premiumTaxCredit.netPtc);
+  const incomeTaxOnlyForCredits =
+    ret.federalTaxLiability -
+    ret.selfEmploymentTax -
+    ret.niitTax -
+    ret.additionalMedicareTax -
+    ret.earlyWithdrawalPenalty -
+    ret.hsaExcessExcise -
+    ret.scheduleH.total -
+    excessAptcForCredits; // = regular income tax + AMT, the §26 credit base
+  let creditRoom = Math.max(0, incomeTaxOnlyForCredits);
+  const applyCap = (computed: number): number => {
+    const applied = Math.min(Math.max(0, computed), creditRoom);
+    creditRoom = Math.max(0, creditRoom - applied);
+    return applied;
+  };
+  const takeApplied = (applied: number): number => {
+    creditRoom = Math.max(0, creditRoom - Math.max(0, applied));
+    return Math.max(0, applied);
+  };
   const creditLines: FormLine[] = [];
-  const nonRefComponents: Array<[string, string, number]> = [
-    ["S3-1", "Foreign tax credit (Form 1116)", ret.foreignTaxCredit.credit],
-    ["S3-2", "Dependent care credit (Form 2441)", ret.dependentCareCredit.appliedCredit],
-    ["S3-3", "Education credits — nonrefundable AOC + LLC (Form 8863)", ret.educationCredits.aocNonRefundable + ret.educationCredits.llcApplied],
-    ["S3-4", "Retirement savings credit (Form 8880)", ret.saversCredit.appliedCredit],
-    ["S3-5", "Residential energy credits (Form 5695)", ret.residentialEnergyCredits.total],
-    ["S3-6c", "Adoption credit — nonrefundable (Form 8839)", ret.adoptionCredit.nonRefundableApplied],
-    ["19", "Child tax credit + ODC — nonrefundable (Form 8812)", ret.childTaxCredit.nonRefundablePortion],
-    ["S3-6b", "Prior-year minimum tax credit (Form 8801)", ret.amtCreditApplied],
-    ["S3-6a", "R&D credit applied under §38 limit (Form 6765)", ret.rdCreditApplied],
-    ["S3-6a", "Other general business credits (WOTC §51 / FMLA §45S)", ret.otherGeneralBusinessCreditApplied],
-  ];
+  // Sequential order MUST match the engine pipeline (taxReturnEngine ~3633).
+  const nonRefComponents: Array<[string, string, number, number]> = [];
+  const pushCapped = (line: string, label: string, computed: number) => {
+    nonRefComponents.push([line, label, applyCap(computed), computed]);
+  };
+  const pushApplied = (line: string, label: string, applied: number) => {
+    nonRefComponents.push([line, label, takeApplied(applied), applied]);
+  };
+  pushCapped("S3-1", "Foreign tax credit (Form 1116)", ret.foreignTaxCredit.credit);
+  pushCapped("S3-2", "Dependent care credit (Form 2441)", ret.dependentCareCredit.appliedCredit);
+  pushCapped("S3-3", "Education credits — nonrefundable AOC + LLC (Form 8863)", ret.educationCredits.aocNonRefundable + ret.educationCredits.llcApplied);
+  pushCapped("S3-4", "Retirement savings credit (Form 8880)", ret.saversCredit.appliedCredit);
+  pushCapped("S3-5", "Residential energy credits (Form 5695)", ret.residentialEnergyCredits.total);
+  pushApplied("S3-6c", "Adoption credit — nonrefundable (Form 8839)", ret.adoptionCredit.nonRefundableApplied);
+  pushApplied("19", "Child tax credit + ODC — nonrefundable (Form 8812)", ret.childTaxCredit.nonRefundablePortion);
+  pushApplied("S3-6b", "Prior-year minimum tax credit (Form 8801)", ret.amtCreditApplied);
+  pushApplied("S3-6a", "R&D credit applied under §38 limit (Form 6765)", ret.rdCreditApplied);
+  pushApplied("S3-6a", "Other general business credits (WOTC §51 / FMLA §45S)", ret.otherGeneralBusinessCreditApplied);
   let nonRefListed = 0;
-  for (const [line, label, value] of nonRefComponents) {
-    if (!nz(value)) continue;
-    nonRefListed += value;
-    creditLines.push(moneyLine(line, label, value));
+  for (const [line, label, applied, computed] of nonRefComponents) {
+    if (!nz(applied) && !nz(computed)) continue;
+    nonRefListed += applied;
+    creditLines.push(
+      moneyLine(
+        line,
+        label,
+        applied,
+        computed - applied > 0.005
+          ? { note: `Income-tax limit binds — computed ${computed.toLocaleString("en-US", { style: "currency", currency: "USD" })}, applied as shown.` }
+          : {},
+      ),
+    );
   }
   creditLines.push(
     moneyLine("", "Total nonrefundable credits applied (reported by engine)", ret.totalNonRefundableApplied, {
       emphasis: true,
     }),
   );
-  creditLines.push(checkLine("Nonrefundable components tie", nonRefListed, ret.totalNonRefundableApplied));
+  creditLines.push(checkLine("Nonrefundable components tie (applied amounts)", nonRefListed, ret.totalNonRefundableApplied));
 
   const refundables: Array<[string, string, number]> = [
     ["28", "Additional child tax credit (refundable ACTC)", ret.additionalChildTaxCredit],

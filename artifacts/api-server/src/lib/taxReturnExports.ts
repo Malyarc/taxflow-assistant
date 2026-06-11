@@ -61,7 +61,9 @@ const IRS_LINE_REFERENCE_CODES: Record<string, string> = {
   qbiDeduction: "1040-L13",
   taxableIncome: "1040-L15",
   federalTaxLiability: "1040-L24",
-  federalTaxWithheld: "1040-L25a",
+  // M10 — the engine total includes 1099 + manual withholding, i.e. official
+  // line 25d (the prior "1040-L25a" claimed W-2-only semantics).
+  federalTaxWithheld: "1040-L25d",
   federalRefundOrOwed: "1040-L34",
   stateTaxLiability: "STATE-RETURN",
   stateTaxWithheld: "STATE-WH",
@@ -90,8 +92,12 @@ const IRS_LINE_REFERENCE_CODES: Record<string, string> = {
   qsbsTaxableGain: "QSBS-TAXABLE",
   iraDeduction: "1040-S1-L20",
   eitc_appliedCredit: "1040-L27",
-  aocCredit: "8863-L8",
-  llcCredit: "8863-L19",
+  // M10 — official 8863: line 7 = TOTAL allowable AOC after phase-out (the
+  // engine's aocApplied); line 8 is only the refundable 40%. The LLC after
+  // phase-out is line 17 (line 19 is the COMBINED nonrefundable education
+  // credits from the Credit Limit Worksheet, not the LLC alone).
+  aocCredit: "8863-L7",
+  llcCredit: "8863-L17",
   saversCredit: "8880-L12",
   dependentCareCredit: "2441-L11",
   medicalDeductible: "SCH-A-L4",
@@ -110,6 +116,16 @@ const IRS_LINE_REFERENCE_CODES: Record<string, string> = {
   capitalLossDeducted: "SCH-D-L21",
   netCapitalGainLoss: "SCH-D-L16",
   scheduleERentalAppliedToAgi: "SCH-E-L26",
+  // T1.0 M10 (audit 2026-06-11) — the other-taxes + special-rate components
+  // bundled into 1040-L24, so the export rows reconcile to the totals they
+  // print alongside.
+  scheduleHTax: "1040-S2-L9",
+  earlyWithdrawalPenalty: "1040-S2-L8",
+  hsaExcessExcise: "5329-L49",
+  excessAptcRepayment: "1040-S2-L2",
+  stateIndividualMandatePenalty: "STATE-MANDATE",
+  unrecapturedSection1250Gain: "SCH-D-L19",
+  collectibles28RateGain: "SCH-D-L18",
 };
 
 interface ExportRow {
@@ -151,7 +167,8 @@ function buildExportRows(ret: ComputedTaxReturn): ExportRow[] {
   add("qbiDeduction", "1040 Line 13", "QBI Deduction (§199A)", ret.qbiDeduction);
   add("taxableIncome", "1040 Line 15", "Taxable Income", ret.taxableIncome);
   add("federalTaxLiability", "1040 Line 24", "Total Federal Tax Liability", ret.federalTaxLiability);
-  add("federalTaxWithheld", "1040 Line 25a", "Federal Income Tax Withheld (W-2)", ret.federalTaxWithheld);
+  // M10 — total withholding (W-2 + 1099 + manual) = official line 25d.
+  add("federalTaxWithheld", "1040 Line 25d", "Federal Income Tax Withheld (total: W-2 + 1099 + manual)", ret.federalTaxWithheld);
   add("federalRefundOrOwed", "1040 Line 34 (refund) / 37 (owed)", "Federal Refund (+) or Balance Due (−)", ret.federalRefundOrOwed);
 
   // State
@@ -165,6 +182,16 @@ function buildExportRows(ret: ComputedTaxReturn): ExportRow[] {
   if (ret.additionalMedicareTax > 0) add("additionalMedicareTax", "Form 8959 Line 18 → Sched 2 Line 11", "Additional Medicare Tax (0.9%)", ret.additionalMedicareTax);
   if (ret.amtTax > 0) add("amtTax", "Form 6251 Line 11", "Alternative Minimum Tax (AMT)", ret.amtTax);
   if (ret.capitalGainsTax > 0) add("capitalGainsTax", "QDCG Worksheet", "Capital Gains Tax (LTCG/QDIV)", ret.capitalGainsTax);
+  // T1.0 M10 — the remaining components bundled into the 1040-L24 row above,
+  // so the curated rows reconcile to the totals they print.
+  if (ret.scheduleH.total > 0) add("scheduleHTax", "Sched H → Sched 2 Line 9", "Household Employment Taxes (Schedule H)", ret.scheduleH.total);
+  if (ret.earlyWithdrawalPenalty > 0) add("earlyWithdrawalPenalty", "Form 5329 → Sched 2 Line 8", "Early-Distribution Additional Tax (§72(t))", ret.earlyWithdrawalPenalty);
+  if (ret.hsaExcessExcise > 0) add("hsaExcessExcise", "Form 5329 Part VII Line 49", "HSA Excess-Contribution Excise (§4973, 6%)", ret.hsaExcessExcise);
+  const excessAptcRepayment = Math.max(0, -ret.premiumTaxCredit.netPtc);
+  if (excessAptcRepayment > 0) add("excessAptcRepayment", "Form 8962 Line 29 → Sched 2 Line 2", "Excess Advance Premium Tax Credit Repayment", excessAptcRepayment);
+  if (ret.stateIndividualMandatePenalty > 0) add("stateIndividualMandatePenalty", "State Return (CA/NJ/RI/DC/MA)", "State Individual Mandate Penalty", ret.stateIndividualMandatePenalty);
+  if (ret.unrecapturedSection1250Gain > 0) add("unrecapturedSection1250Gain", "Sched D Line 19", "Unrecaptured §1250 Gain (25% rate bucket)", ret.unrecapturedSection1250Gain);
+  if (ret.collectibles28RateGain > 0) add("collectibles28RateGain", "Sched D Line 18", "28%-Rate Gain (collectibles/§1202)", ret.collectibles28RateGain);
 
   // Credits
   if (ret.childTaxCredit.appliedCredit > 0) add("childTaxCredit_appliedCredit", "1040 Line 19", "Child Tax Credit (Form 8812)", ret.childTaxCredit.appliedCredit);
@@ -209,8 +236,8 @@ function buildExportRows(ret: ComputedTaxReturn): ExportRow[] {
   if (ret.scheduleA.charitableDeductible > 0) add("charitableDeductible", "Sched A Line 14", "Charitable Deduction (Schedule A)", ret.scheduleA.charitableDeductible);
 
   // Phase 1 credits
-  if (ret.educationCredits.aocApplied > 0) add("aocCredit", "Form 8863 Line 8", "American Opportunity Credit", ret.educationCredits.aocApplied);
-  if (ret.educationCredits.llcApplied > 0) add("llcCredit", "Form 8863 Line 19", "Lifetime Learning Credit", ret.educationCredits.llcApplied);
+  if (ret.educationCredits.aocApplied > 0) add("aocCredit", "Form 8863 Line 7", "American Opportunity Credit (total; 40% refundable is Line 8)", ret.educationCredits.aocApplied);
+  if (ret.educationCredits.llcApplied > 0) add("llcCredit", "Form 8863 Line 17", "Lifetime Learning Credit (post-phase-out)", ret.educationCredits.llcApplied);
   if (ret.saversCredit.appliedCredit > 0) add("saversCredit", "Form 8880 Line 12", "Saver's Credit", ret.saversCredit.appliedCredit);
   if (ret.dependentCareCredit.appliedCredit > 0) add("dependentCareCredit", "Form 2441 Line 11", "Dependent Care Credit", ret.dependentCareCredit.appliedCredit);
 

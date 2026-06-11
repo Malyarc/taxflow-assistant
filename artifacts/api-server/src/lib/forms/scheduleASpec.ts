@@ -51,7 +51,14 @@ function usd(n: number): string {
 export function buildScheduleA(ctx: FormBuildContext): FormInstance | null {
   const { ret, inputs } = ctx;
   const a = ret.scheduleA;
-  if (!nz(a.totalItemized)) return null;
+  // M9 (audit 2026-06-11): also render when the engine USED an itemized
+  // deduction even though scheduleA.totalItemized is 0 — the legacy
+  // single-number override and the §163(d)-investment-interest-only itemizer
+  // both have Form 1040 line 12 reading "Itemized deductions (Schedule A)",
+  // so the packet must contain a Schedule A (the election section below
+  // discloses the override delta). Standard-deduction returns with nothing
+  // itemizable still return null.
+  if (!nz(a.totalItemized) && ret.itemizedDeductions == null) return null;
 
   // Gross (pre-limit) adjustment inputs — null when the input facts were not
   // supplied to the builder (aggregate-only rendering). Mirrors the engine's

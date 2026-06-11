@@ -7,7 +7,7 @@
  */
 import PDFDocument from "pdfkit";
 import type { OrganizerResult, OrganizerItem, OrganizerCategory } from "./clientOrganizer";
-import { TRUSTED_BLUE, BRAND_BLUE, SUCCESS, INK, MUTED, applyBrandFooters } from "./pdfBrand";
+import { TRUSTED_BLUE, BRAND_BLUE, SUCCESS, INK, MUTED, applyBrandFooters, winAnsiSafePdf } from "./pdfBrand";
 
 const PAGE_BOTTOM = 730;
 
@@ -34,7 +34,7 @@ export function buildOrganizerPdf(args: BuildOrganizerPdfArgs): Promise<Buffer> 
   const firmName = args.firmName ?? "Your CPA team";
 
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: "letter", margin: 54, bufferPages: true });
+    const doc = winAnsiSafePdf(new PDFDocument({ size: "letter", margin: 54, bufferPages: true })); // M5 WinAnsi glyph seam
     const chunks: Buffer[] = [];
     doc.on("data", (c: Buffer) => chunks.push(c));
     doc.on("end", () => resolve(Buffer.concat(chunks)));

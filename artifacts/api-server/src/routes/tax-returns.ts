@@ -227,7 +227,9 @@ router.get("/clients/:clientId/tax-return/form-1040", async (req, res): Promise<
     return;
   }
   try {
-    const pdf = await buildIrsForm1040Pdf({ client: computed.client, ret: computed.result });
+    // H5 — pass the input facts so lines 1a/8/25a/25c attribute W-2 wages and
+    // withholding correctly (the engine output alone can't split them).
+    const pdf = await buildIrsForm1040Pdf({ client: computed.client, ret: computed.result, inputs: computed.inputs });
     const fileName = `irs-form-1040-${computed.client.firstName}-${computed.client.lastName}-${computed.result.taxYear}.pdf`;
     setSecureDownloadHeaders(res, {
       fileName, contentType: "application/pdf", disposition: "attachment",

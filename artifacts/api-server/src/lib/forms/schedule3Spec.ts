@@ -47,7 +47,7 @@ export function buildSchedule3(ctx: FormBuildContext): FormInstance | null {
     ["4", "Retirement savings contributions credit (Form 8880)", ret.saversCredit.appliedCredit],
     ["5a", "Residential clean energy credit §25D (Form 5695 Part I) — applied", energy5a, "Solar/wind/geothermal/battery — 30%, no annual cap, §25D(c) carryforward; applied AFTER the CTC (FC-11)."],
     ["5b", "Energy efficient home improvement credit §25C (Form 5695 Part II)", energy5b, "$1,200 general cap + $2,000 heat-pump cap = $3,200/yr."],
-    ["6m", "Alternative fuel vehicle refueling property §30C (Form 8911)", re.evChargerCredit, "Engine models the EV-charger credit here (officially Form 8911 → Schedule 3 line 6m)."],
+    ["6j", "Alternative fuel vehicle refueling property §30C (Form 8911)", re.evChargerCredit, "Engine models the EV-charger credit here (officially Form 8911 → Schedule 3 line 6j)."],
     ["6c", "Adoption credit — nonrefundable (Form 8839)", ret.adoptionCredit.nonRefundableApplied],
     ["6b", "Prior-year minimum tax credit (Form 8801)", ret.amtCreditApplied],
     ["6a", "General business credit (Form 3800): R&D §41 + WOTC §51 + FMLA §45S", gbc],
@@ -119,7 +119,7 @@ export function buildSchedule3(ctx: FormBuildContext): FormInstance | null {
     footnotes: [
       "Credit ORDERING: the engine applies the Schedule-3 personal credits in the Sch 8812 CLW line-2 list FIRST (FTC → dependent care → education → savers → §25C energy/§30C → adoption), THEN the Child Tax Credit, THEN the §25D residential clean energy credit (NOT in the CLW list; its excess carries forward under §25D(c) — FC-11), then §53/§38. Each credit is capped at the remaining income tax (which includes the Schedule 2 line 2 excess-APTC repayment — FC-09).",
       "The Child Tax Credit nonrefundable portion is on Form 1040 line 19 (not Schedule 3); Part I therefore ties to totalNonRefundableApplied − CTC nonrefundable.",
-      "The EV-charger credit (§30C) is modeled inside the engine's residentialEnergyCredits and shown on line 6m (officially Form 8911).",
+      "The EV-charger credit (§30C) is modeled inside the engine's residentialEnergyCredits and shown on line 6j (officially Form 8911; 6m is the previously-owned clean vehicle credit).",
     ],
   };
 }

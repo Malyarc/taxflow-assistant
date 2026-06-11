@@ -23,6 +23,7 @@ import { PDFDocument, type PDFForm } from "pdf-lib";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import type { ComputedTaxReturn } from "./taxReturnPipeline";
+import type { TaxReturnInputs } from "./taxReturnEngine";
 import type { clientsTable } from "@workspace/db";
 
 type Client = typeof clientsTable.$inferSelect;
@@ -152,6 +153,14 @@ function safeCheck(form: PDFForm, name: string): void {
 export interface BuildIrsForm1040Options {
   client: Client;
   ret: ComputedTaxReturn;
+  /**
+   * Input-side facts (W-2 records) for the lines the engine OUTPUT alone
+   * cannot attribute: 1a (W-2 box-1 wages), 25a (W-2 withholding) and their
+   * residual counterparts 8 / 25c. When absent those lines are left BLANK
+   * (per Pub 1167 a blank beats a wrong value); the totals (9/11/25d/…)
+   * always render from engine output.
+   */
+  inputs?: TaxReturnInputs;
   /** True (default) = flatten the form so values render in all viewers. False = keep fillable. */
   flatten?: boolean;
 }
@@ -167,8 +176,12 @@ export interface BuildIrsForm1040Options {
  * - Spouse data is filled only if filing status is MFJ.
  */
 export async function buildIrsForm1040Pdf(options: BuildIrsForm1040Options): Promise<Buffer> {
-  const { client, ret } = options;
+  const { client, ret, inputs } = options;
   const flatten = options.flatten !== false;
+  const toNum = (v: unknown): number => {
+    const n = typeof v === "string" ? Number(v) : typeof v === "number" ? v : 0;
+    return Number.isFinite(n) ? n : 0;
+  };
 
   const templateBytes = readFileSync(templatePath("1040", ret.taxYear));
   const pdf = await PDFDocument.load(templateBytes);
@@ -200,27 +213,53 @@ export async function buildIrsForm1040Pdf(options: BuildIrsForm1040Options): Pro
       break;
   }
 
-  // ── Page 1 income lines ──
-  // We don't separate W-2 wages from total income at the line-1a granularity
-  // perfectly because the engine sums everything into adjustments; the most
-  // honest mapping uses what we DO know.
-  const wages = (ret.totalIncome ?? 0) - (
-    (Number(ret.form1099Summary?.interestIncome ?? 0)) +
-    (Number(ret.form1099Summary?.ordinaryDividends ?? 0)) +
-    (Number(ret.form1099Summary?.retirementIncome ?? 0)) +
-    (Number(ret.netCapitalGainLoss ?? 0))
+  // ── Page 1 income lines (H5 rewrite, audit 2026-06-11) ──
+  // Source every line from engine outputs exactly the way the (correct)
+  // substitute workpaper builder (forms/form1040Spec.ts) does:
+  //   1a    = W-2 box-1 sum from INPUTS (year-filtered); blank when inputs
+  //           are unavailable — never a residual that swallows SS/QDIV/SE.
+  //   3a    = qualified dividends ONLY (was preferentialIncome = QDIV + LTCG).
+  //   3b    = 1099-DIV box-1a TOTAL incl. the qualified portion (the engine's
+  //           `ordinaryDividends` is the non-qualified remainder).
+  //   7     = Schedule D line 16 when a net gain; when a net loss, the
+  //           ordinary-offset portion only (line 21, −$3,000/−$1,500 cap) —
+  //           was the full uncapped loss.
+  //   8     = derived residual so line 9 ties (Schedule 1 income: SE, K-1,
+  //           rentals, unemployment, MISC/K, …); blank without inputs (its
+  //           value depends on the 1a attribution).
+  const f99 = ret.form1099Summary;
+  const w2sForYear = (inputs?.w2s ?? []).filter(
+    (w) => (w.taxYear ?? ret.taxYear) === ret.taxYear,
   );
-  safeSet(form, F1040_2024_FIELDS.line1a, fmt(wages));
-  safeSet(form, F1040_2024_FIELDS.line1z, fmt(wages));
+  const wages = inputs ? w2sForYear.reduce((s, w) => s + toNum(w.wagesBox1), 0) : null;
+  if (wages != null) {
+    safeSet(form, F1040_2024_FIELDS.line1a, fmt(wages));
+    safeSet(form, F1040_2024_FIELDS.line1z, fmt(wages));
+  }
 
-  safeSet(form, F1040_2024_FIELDS.line2b, fmt(ret.form1099Summary?.interestIncome ?? 0));
-  safeSet(form, F1040_2024_FIELDS.line3b, fmt(ret.form1099Summary?.ordinaryDividends ?? 0));
-  safeSet(form, F1040_2024_FIELDS.line3a, fmt(ret.preferentialIncome ?? 0)); // qualified dividends (preferential portion)
-  safeSet(form, F1040_2024_FIELDS.line5b, fmt(ret.form1099Summary?.retirementIncome ?? 0));
+  const line2b = toNum(f99?.interestIncome);
+  const line3a = toNum(f99?.qualifiedDividends);
+  const line3b = toNum(f99?.ordinaryDividends) + line3a; // box-1a TOTAL
+  const line4b5b = toNum(f99?.retirementIncome);
+  const line6b = toNum(ret.socialSecurityTaxable);
+  const line7 =
+    (ret.netCapitalGainLoss ?? 0) >= 0
+      ? toNum(ret.netCapitalGainLoss)
+      : -toNum(ret.capitalLossDeducted);
+  safeSet(form, F1040_2024_FIELDS.line2a, fmt(f99?.taxExemptInterest ?? 0));
+  safeSet(form, F1040_2024_FIELDS.line2b, fmt(line2b));
+  safeSet(form, F1040_2024_FIELDS.line3a, fmt(line3a));
+  safeSet(form, F1040_2024_FIELDS.line3b, fmt(line3b));
+  safeSet(form, F1040_2024_FIELDS.line5b, fmt(line4b5b));
   // K10 — Social Security: Line 6a (gross) and 6b (taxable, per Pub 915).
   safeSet(form, F1040_2024_FIELDS.line6a, fmt(ret.socialSecurityBenefits ?? 0));
-  safeSet(form, F1040_2024_FIELDS.line6b, fmt(ret.socialSecurityTaxable ?? 0));
-  safeSet(form, F1040_2024_FIELDS.line7, fmt(ret.netCapitalGainLoss ?? 0));
+  safeSet(form, F1040_2024_FIELDS.line6b, fmt(line6b));
+  safeSet(form, F1040_2024_FIELDS.line7, fmt(line7));
+  if (wages != null) {
+    const line8 =
+      (ret.totalIncome ?? 0) - (wages + line2b + line3b + line4b5b + line6b + line7);
+    safeSet(form, F1040_2024_FIELDS.line8, fmt(line8));
+  }
 
   safeSet(form, F1040_2024_FIELDS.line9, fmt(ret.totalIncome));
   // Above-the-line adjustments: AGI = total income - line 10. So line 10 = total income - AGI.
@@ -231,23 +270,39 @@ export async function buildIrsForm1040Pdf(options: BuildIrsForm1040Options): Pro
   // Line 12: std vs itemized; the engine picks one
   const deduction = ret.itemizedDeductions ?? ret.standardDeduction;
   safeSet(form, F1040_2024_FIELDS.line12, fmt(deduction));
-  safeSet(form, F1040_2024_FIELDS.line13, fmt(ret.qbiDeduction));
-  safeSet(form, F1040_2024_FIELDS.line14, fmt((deduction ?? 0) + (ret.qbiDeduction ?? 0)));
+  // Line 13: §199A QBI (+ the OBBBA Schedule 1-A deductions when a TY2025+
+  // return falls back to this TY2024 template — merged so line 15 foots; the
+  // route already surfaces a year-mismatch warning for those returns).
+  // NOTE: the engine additionally deducts any §172 NOL between lines 12 and
+  // 13 (disclosed deviation — see the substitute workpaper), so line 15 is
+  // the engine value, not necessarily 11 − 14, for NOL filers.
+  const line13Val = (ret.qbiDeduction ?? 0) + (ret.obbbaSchedule1A?.total ?? 0);
+  safeSet(form, F1040_2024_FIELDS.line13, fmt(line13Val));
+  safeSet(form, F1040_2024_FIELDS.line14, fmt((deduction ?? 0) + line13Val));
   safeSet(form, F1040_2024_FIELDS.line15, fmt(ret.taxableIncome));
 
-  // ── Page 2 — tax + credits + payments ──
-  // Line 16 is gross federal tax (income tax only, before credits).
-  // engine breaks out: regularFederalTax + amtTax + niit + se + addlMedicare
-  // For 1040 Line 16 we want regularFederalTax (the bracket-based income tax).
-  const regularFederalTax = (ret.federalTaxLiability ?? 0)
-    - (ret.amtTax ?? 0)
-    - (ret.niitTax ?? 0)
-    - (ret.selfEmploymentTax ?? 0)
-    - (ret.additionalMedicareTax ?? 0);
+  // ── Page 2 — tax + credits + payments (H5 rewrite, audit 2026-06-11) ──
+  // Mirror the workpaper's residual decomposition of the engine's PRE-credit
+  // federalTaxLiability:
+  //   line 23 (Sch 2 line 21, other taxes) = SE + NIIT + Add'l Medicare +
+  //          §72(t) + HSA excise + Schedule H  (the last three previously
+  //          stayed inside line 16);
+  //   line 17 (Sch 2 line 3) = AMT + excess-APTC repayment (was AMT only);
+  //   line 16 = the residual regular income tax.
+  const excessAptcRepayment = Math.max(0, -(ret.premiumTaxCredit?.netPtc ?? 0));
+  const line23Val =
+    (ret.selfEmploymentTax ?? 0) +
+    (ret.niitTax ?? 0) +
+    (ret.additionalMedicareTax ?? 0) +
+    (ret.earlyWithdrawalPenalty ?? 0) +
+    (ret.hsaExcessExcise ?? 0) +
+    (ret.scheduleH?.total ?? 0);
+  const regularFederalTax =
+    (ret.federalTaxLiability ?? 0) - (ret.amtTax ?? 0) - excessAptcRepayment - line23Val;
   safeSet(form, F1040_2024_FIELDS.line16, fmt(Math.max(0, regularFederalTax)));
-  // Line 17 (Schedule 2 line 3) = AMT + excess APTC. We approximate to AMT only.
-  safeSet(form, F1040_2024_FIELDS.line17, fmt(ret.amtTax ?? 0));
-  safeSet(form, F1040_2024_FIELDS.line18, fmt(Math.max(0, regularFederalTax + (ret.amtTax ?? 0))));
+  safeSet(form, F1040_2024_FIELDS.line17, fmt((ret.amtTax ?? 0) + excessAptcRepayment));
+  const line18Val = Math.max(0, regularFederalTax + (ret.amtTax ?? 0) + excessAptcRepayment);
+  safeSet(form, F1040_2024_FIELDS.line18, fmt(line18Val));
 
   // Line 19: CTC (non-refundable portion). CtcCalculation exposes
   // `nonRefundablePortion`; refundable ACTC lands separately on Line 28.
@@ -257,35 +312,54 @@ export async function buildIrsForm1040Pdf(options: BuildIrsForm1040Options): Pro
   // the PRE-nonrefundable-credit federalTaxLiability (overstating it by the
   // credits). Line 20 = Schedule 3 non-refundable credits (everything EXCEPT the
   // CTC, which is Line 19); Line 21 = 19+20; Line 22 = 18−21.
-  const line18Val = Math.max(0, regularFederalTax + (ret.amtTax ?? 0));
   const ctcNonRef = ret.childTaxCredit?.nonRefundablePortion ?? 0;
   const sch3NonRef = Math.max(0, (ret.totalNonRefundableApplied ?? 0) - ctcNonRef);
   safeSet(form, F1040_2024_FIELDS.line20, fmt(sch3NonRef));
   safeSet(form, F1040_2024_FIELDS.line21, fmt(ctcNonRef + sch3NonRef));
-  safeSet(form, F1040_2024_FIELDS.line22, fmt(Math.max(0, line18Val - (ctcNonRef + sch3NonRef))));
+  const line22Val = Math.max(0, line18Val - (ctcNonRef + sch3NonRef));
+  safeSet(form, F1040_2024_FIELDS.line22, fmt(line22Val));
 
-  // Line 23: other taxes (SE + NIIT + Add'l Medicare) — Schedule 2 line 21.
-  // Add'l Medicare flows from Form 8959 Line 18 → Sch 2 Line 11 → Line 21.
-  safeSet(form, F1040_2024_FIELDS.line23, fmt(
-    (ret.selfEmploymentTax ?? 0) + (ret.niitTax ?? 0) + (ret.additionalMedicareTax ?? 0)));
-  // Line 24 (total tax) = Line 22 (income tax AFTER non-refundable credits) +
-  // Line 23 (other taxes). federalTaxLiability bundles the other taxes and is
-  // PRE-credit, so total tax = federalTaxLiability − totalNonRefundableApplied.
-  safeSet(form, F1040_2024_FIELDS.line24, fmt(Math.max(0, (ret.federalTaxLiability ?? 0) - (ret.totalNonRefundableApplied ?? 0))));
+  // Line 23: Schedule 2 line 21 other taxes (see decomposition above).
+  safeSet(form, F1040_2024_FIELDS.line23, fmt(line23Val));
+  // Line 24 (total tax) = Line 22 + Line 23 (== federalTaxLiability −
+  // totalNonRefundableApplied, since the engine caps credits at the
+  // income-tax portion).
+  safeSet(form, F1040_2024_FIELDS.line24, fmt(Math.max(0, line22Val + line23Val)));
 
-  // Payments
-  safeSet(form, F1040_2024_FIELDS.line25a, fmt(ret.federalTaxWithheld ?? 0));
-  safeSet(form, F1040_2024_FIELDS.line25d, fmt(ret.federalTaxWithheld ?? 0));
+  // Payments (H5): official 25a is W-2 withholding ONLY; 25b is 1099
+  // withholding; 25c the rest (manual CPA withholding adjustments); 25d the
+  // total. The engine total previously landed on BOTH 25a and 25d.
+  const line25d = ret.federalTaxWithheld ?? 0;
+  const w2Withheld = inputs
+    ? w2sForYear.reduce((s, w) => s + toNum(w.federalTaxWithheldBox2), 0)
+    : null;
+  const f99Withheld = toNum(f99?.federalWithheld);
+  safeSet(form, F1040_2024_FIELDS.line25b, fmt(f99Withheld));
+  if (w2Withheld != null) {
+    safeSet(form, F1040_2024_FIELDS.line25a, fmt(w2Withheld));
+    safeSet(form, F1040_2024_FIELDS.line25c, fmt(line25d - w2Withheld - f99Withheld));
+  }
+  safeSet(form, F1040_2024_FIELDS.line25d, fmt(line25d));
   safeSet(form, F1040_2024_FIELDS.line27, fmt(ret.eitc?.appliedCredit ?? 0));
   safeSet(form, F1040_2024_FIELDS.line28, fmt(ret.additionalChildTaxCredit ?? 0));
-  // Line 33 (total payments) = withholding + the refundable credits (EITC, ACTC,
-  // AOC refundable 40%, net PTC) — was withholding ONLY, so the PDF didn't foot.
-  const refundableCredits =
+  safeSet(form, F1040_2024_FIELDS.line29, fmt(ret.educationCredits?.aocRefundable ?? 0));
+  // Line 31 (Schedule 3 line 13): net PTC + refundable adoption (OBBBA) +
+  // manual CPA credit adjustments — mirrors the workpaper.
+  const line31Val =
+    Math.max(0, ret.premiumTaxCredit?.netPtc ?? 0) +
+    (ret.adoptionCredit?.refundablePortion ?? 0) +
+    (ret.manualCreditsApplied ?? 0);
+  safeSet(form, F1040_2024_FIELDS.line31, fmt(line31Val));
+  // Line 32 = 27 + 28 + 29 + 31; Line 33 (total payments) = 25d + 32 (H5 —
+  // previously omitted refundable AOC, adoption-refundable and manual credits,
+  // so 33 − 24 ≠ 34/37 for those filers).
+  const line32Val =
     (ret.eitc?.appliedCredit ?? 0) +
     (ret.additionalChildTaxCredit ?? 0) +
     (ret.educationCredits?.aocRefundable ?? 0) +
-    Math.max(0, ret.premiumTaxCredit?.netPtc ?? 0);
-  safeSet(form, F1040_2024_FIELDS.line33, fmt((ret.federalTaxWithheld ?? 0) + refundableCredits));
+    line31Val;
+  safeSet(form, F1040_2024_FIELDS.line32, fmt(line32Val));
+  safeSet(form, F1040_2024_FIELDS.line33, fmt(line25d + line32Val));
 
   // Refund vs. owed
   const refundOrOwed = ret.federalRefundOrOwed ?? 0;

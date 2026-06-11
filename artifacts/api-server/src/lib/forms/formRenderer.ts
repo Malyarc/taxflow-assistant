@@ -11,6 +11,7 @@
  */
 
 import PDFDocument from "pdfkit";
+import { winAnsiSafePdf } from "../pdfBrand";
 import {
   filingStatusLabel,
   type FormInstance,
@@ -231,7 +232,12 @@ export function buildWorkpaperPacketPdf(
   const { taxpayer, instances, taxYear } = options;
   const generatedAt = options.generatedAt ?? new Date();
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: "letter", margin: PAGE.margin, bufferPages: true });
+    // M5 (audit 2026-06-11) — pdfkit Helvetica is WinAnsi; the spec builders'
+    // ✓/⚠ tie-out markers, U+2212 minus signs, →/≤/≥ notes and └ rows are not
+    // encodable and rendered as garbage byte pairs (the minus sign DISAPPEARED
+    // — a negative could read as positive). winAnsiSafePdf sanitizes every
+    // text() + string measurement on this document, builders stay untouched.
+    const doc = winAnsiSafePdf(new PDFDocument({ size: "letter", margin: PAGE.margin, bufferPages: true }));
     const chunks: Buffer[] = [];
     doc.on("data", (c: Buffer) => chunks.push(c));
     doc.on("end", () => resolve(Buffer.concat(chunks)));

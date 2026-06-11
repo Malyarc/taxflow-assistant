@@ -20,6 +20,7 @@
  *   6. After IRS accepts, CPA clicks "Clear amendment baseline" → snapshot reset
  */
 import PDFDocument from "pdfkit";
+import { winAnsiSafePdf } from "./pdfBrand";
 import type { ComputedTaxReturn } from "./taxReturnEngine";
 import type { clientsTable, taxReturnsTable } from "@workspace/db";
 
@@ -86,6 +87,19 @@ export interface FiledSnapshot {
     aocCredit: number;
     /** Lifetime Learning Credit (Form 8863) — nonrefundable. */
     llcCredit: number;
+    // ── T1.0 H3 (audit 2026-06-11) — the remaining Schedule 2 Part II taxes,
+    //    so the line 6 "Tax" vs line 10 "Other taxes" split attributes deltas
+    //    correctly. ADDITIVE (schemaVersion stays 1); pre-H3 snapshots coerce
+    //    to 0 via num(). NOTE: §72(t) + HSA excise are not persisted as
+    //    tax_returns columns, so a snapshot captured from a DB row reads them
+    //    as 0 (degrades to the pre-H3 split); a snapshot captured from a
+    //    ComputedTaxReturn captures all three. ──────────────────────────────
+    /** §72(t) early-distribution additional tax (Form 5329 → Sch 2 line 8). */
+    earlyWithdrawalPenalty: number;
+    /** §4973 HSA excess-contribution excise (Form 5329 Pt VII → Sch 2 line 8). */
+    hsaExcessExcise: number;
+    /** Schedule H household employment taxes (Sch 2 line 9). */
+    householdEmploymentTax: number;
   };
 }
 
@@ -136,6 +150,16 @@ export function captureFiledSnapshot(row: TaxReturnRow | ComputedTaxReturn): Fil
       residentialEnergyCredits: num((row as TaxReturnRow).residentialEnergyCredits),
       aocCredit: num((row as TaxReturnRow).aocCredit),
       llcCredit: num((row as TaxReturnRow).llcCredit),
+      // H3 — Schedule 2 Part II components. §72(t)/HSA exist only on the
+      // ComputedTaxReturn shape (no tax_returns columns — read 0 from a row);
+      // Schedule H exists on BOTH (row column householdEmploymentTax /
+      // computed scheduleH.total).
+      earlyWithdrawalPenalty: num((row as Partial<ComputedTaxReturn>).earlyWithdrawalPenalty),
+      hsaExcessExcise: num((row as Partial<ComputedTaxReturn>).hsaExcessExcise),
+      householdEmploymentTax: num(
+        (row as Partial<TaxReturnRow>).householdEmploymentTax ??
+          (row as Partial<ComputedTaxReturn>).scheduleH?.total,
+      ),
     },
   };
 }
@@ -223,6 +247,13 @@ export function computeAmendmentDiff(args: {
     residentialEnergyCredits: num((current as TaxReturnRow).residentialEnergyCredits),
     aocCredit: num((current as TaxReturnRow).aocCredit),
     llcCredit: num((current as TaxReturnRow).llcCredit),
+    // H3 — Schedule 2 Part II components (see captureFiledSnapshot note).
+    earlyWithdrawalPenalty: num((current as Partial<ComputedTaxReturn>).earlyWithdrawalPenalty),
+    hsaExcessExcise: num((current as Partial<ComputedTaxReturn>).hsaExcessExcise),
+    householdEmploymentTax: num(
+      (current as Partial<TaxReturnRow>).householdEmploymentTax ??
+        (current as Partial<ComputedTaxReturn>).scheduleH?.total,
+    ),
   };
 
   // ── Helper: chosen deduction (the one actually taken; per CLAUDE.md
@@ -233,10 +264,19 @@ export function computeAmendmentDiff(args: {
   const oDed = deduction(o);
   const cDed = deduction(cur);
 
-  // ── Derive "Line 9 other taxes" — SE + NIIT + AddlMed, etc. ──────────
-  // We treat any tax in the Sched 2 Line 21 bucket as "other tax".
+  // ── Derive "Line 10 other taxes" — the Schedule 2 Part II (line 21) bucket:
+  // SE + NIIT + Additional Medicare + §72(t) + HSA excise + Schedule H (H3 —
+  // the last three previously sat inside the line-6 "Tax" figure, so the
+  // 6 / 10 split a CPA copies was wrong for any filer with them). The
+  // excess-APTC repayment is Schedule 2 PART I (line 1a → 1040 line 17), so
+  // it correctly stays INSIDE line 6 (official 1040-X line 6 = 1040 line 18).
   const otherTaxes = (s: typeof o): number =>
-    s.selfEmploymentTax + s.niitTax + s.additionalMedicareTax;
+    s.selfEmploymentTax +
+    s.niitTax +
+    s.additionalMedicareTax +
+    num(s.earlyWithdrawalPenalty) +
+    num(s.hsaExcessExcise) +
+    num(s.householdEmploymentTax);
   const oOther = otherTaxes(o);
   const cOther = otherTaxes(cur);
 
@@ -270,25 +310,29 @@ export function computeAmendmentDiff(args: {
   const oTotalPayments = o.federalTaxLiability + o.federalRefundOrOwed - o.totalNonRefundableApplied;
   const cTotalPayments = cur.federalTaxLiability + cur.federalRefundOrOwed - cur.totalNonRefundableApplied;
 
-  // ── FORM-03: settlement reconciliation (IRS Form 1040-X Lines 17-20) ────
-  // The amended total tax (Line 10, col c) compared against the payments the
+  // ── FORM-03: settlement reconciliation (IRS Form 1040-X Lines 16-21) ────
+  // The amended total tax (Line 11, col c) compared against the payments the
   // taxpayer has ALREADY made (and not had refunded) determines the
   // additional amount owed or refunded BY FILING THE AMENDMENT — which is the
   // whole point of Form 1040-X. The prior implementation showed each return's
-  // own standalone owe/refund on Lines 19/20, so on a refund↔owed swap the
-  // breakdown failed to foot to the headline.
+  // own standalone owe/refund, so on a refund↔owed swap the breakdown failed
+  // to foot to the headline.
   //
-  // Official-form mapping (we keep our Line 16 as this return's standalone
-  // total payments to preserve the per-column footing Line16 − Line10 =
-  // refund/owed that the FORM-02 tests lock in):
-  //   Line 17  Overpayment shown on original return (already refunded/applied)
-  //   Line 18  Tax paid with original return  (official Form 1040-X Line 15)
-  //   Line 19  Amount you owe with this amendment            (official Line 19)
-  //   Line 20  Refund with this amendment                    (official Line 20)
-  // Net payments available against amended tax (official Line 18) =
-  //   Line 16(c) + Line 18 − Line 17  =  cTotalPayments − o.federalRefundOrOwed.
-  // INVARIANT: Line 20 − Line 19 === netFederalRefundChange (proven by tests).
-  const cTotalTax = cur.federalTaxLiability - cur.totalNonRefundableApplied; // = Line 10 (c)
+  // Official 2024 Form 1040-X mapping (H2 — the payments/settlement half was
+  // previously one line LOW across the board):
+  //   Line 16  Amount paid with extension / original return  (single-column)
+  //   Line 17  Total payments (12c–15c + 16) — we render the per-column
+  //            withholding+credits total here and keep line 16 as its own
+  //            recon row, preserving the FORM-02 per-column footing
+  //            Line17 − Line11 = refund/owed
+  //   Line 18  Overpayment shown on original return (already refunded/applied)
+  //   Line 19  Line 17 + Line 16 − Line 18 (payments net of original outcome)
+  //   Line 20  Amount you owe with this amendment
+  //   Line 21  Overpaid — refund with this amendment
+  // Net payments available against amended tax (official Line 19) =
+  //   Line 17(c) + Line 16 − Line 18  =  cTotalPayments − o.federalRefundOrOwed.
+  // INVARIANT: Line 21 − Line 20 === netFederalRefundChange (proven by tests).
+  const cTotalTax = cur.federalTaxLiability - cur.totalNonRefundableApplied; // = Line 11 (c)
   const origOverpayment = Math.max(0, o.federalRefundOrOwed); // refund already received on original
   const origBalancePaid = Math.max(0, -o.federalRefundOrOwed); // tax already paid with original
   const availablePayments = cTotalPayments + origBalancePaid - origOverpayment; // ≡ cTotalPayments − o.refund
@@ -306,11 +350,11 @@ export function computeAmendmentDiff(args: {
     return { lineRef, label, original: a, amended: c, netChange: c - a };
   };
 
-  // Settlement lines (17-20) are single-column figures on the official form —
-  // there is no col-a/col-b comparison for them. We render the operative
-  // value in col (c) and pin netChange to 0 (they are derived totals, not
-  // line-by-line "changes"). Keeps the "every line nets 0 on an identical
-  // amendment" guarantee intact.
+  // Settlement lines (16, 18-21) are single-column figures on the official
+  // form — there is no col-a/col-b comparison for them. We render the
+  // operative value in col (c) and pin netChange to 0 (they are derived
+  // totals, not line-by-line "changes"). Keeps the "every line nets 0 on an
+  // identical amendment" guarantee intact.
   const reconLine = (lineRef: string, label: string, colA: number, colC: number): Form1040xLine => ({
     lineRef,
     label,
@@ -319,6 +363,14 @@ export function computeAmendmentDiff(args: {
     netChange: 0,
   });
 
+  // H2 (audit 2026-06-11): the payments/settlement half follows the OFFICIAL
+  // 2024 Form 1040-X numbering — 10 other taxes / 11 total tax / 12 withholding
+  // / 13 estimated payments (not modeled) / 14 EIC / 15 refundable credits /
+  // 16 amount paid with extension or original return / 17 total payments / 18
+  // overpayment on original / 19 = 17 + 16 − 18 / 20 amount you owe / 21
+  // overpaid (refund). The prior numbering was one line LOW throughout (and
+  // landed the EIC on the official estimated-payments line), so a CPA
+  // transcribing lineRefs onto the real form mis-filed every entry.
   const lines: Form1040xLine[] = [
     // Income & Deductions
     line("1", "Adjusted gross income", o.adjustedGrossIncome, cur.adjustedGrossIncome),
@@ -328,27 +380,29 @@ export function computeAmendmentDiff(args: {
     line("5", "Taxable income", o.taxableIncome, cur.taxableIncome),
     // Tax Liability — P2-7: break out the real Form 1040-X Line 6 → 7 → 8 chain
     // (the form previously jumped straight to the net Line 8). Line 6 is the
-    // income tax including AMT, BEFORE nonrefundable credits; Line 7 is the
-    // nonrefundable credits; Line 8 = Line 6 − Line 7 (the value the FORM-02
-    // tests already lock — unchanged).
+    // income tax including AMT (and the excess-APTC repayment, per 1040 line
+    // 18), BEFORE nonrefundable credits; Line 7 is the nonrefundable credits;
+    // Line 8 = Line 6 − Line 7 (the value the FORM-02 tests already lock).
     line("6", "Tax (regular + AMT), before nonrefundable credits", o.federalTaxLiability - oOther, cur.federalTaxLiability - cOther),
     line("7", "Nonrefundable credits", o.totalNonRefundableApplied, cur.totalNonRefundableApplied),
     line("8", "Subtract nonrefundable credits from tax (incl. AMT)", oLine8, cLine8),
-    line("9", "Other taxes (Sch 2 Line 21: SE + NIIT + AddlMed)", oOther, cOther),
+    line("10", "Other taxes (Sch 2 Pt II: SE + NIIT + AddlMed + §72(t) + HSA excise + Sch H)", oOther, cOther),
     // FORM-02: Total tax = tax + AMT − non-refundable credits + other taxes
     // = federalTaxLiability − totalNonRefundableApplied (engine total is pre-credit).
-    line("10", "Total tax", o.federalTaxLiability - o.totalNonRefundableApplied, cur.federalTaxLiability - cur.totalNonRefundableApplied),
+    line("11", "Total tax", o.federalTaxLiability - o.totalNonRefundableApplied, cur.federalTaxLiability - cur.totalNonRefundableApplied),
     // Payments
-    line("11", "Federal income tax withheld", o.federalTaxWithheld, cur.federalTaxWithheld),
-    line("13", "EITC", o.eitc, cur.eitc),
-    line("14", "Refundable credits (ACTC, AOC refundable, PTC)", oRef, cRef),
-    line("16", "Total payments", oTotalPayments, cTotalPayments),
-    // ── Settlement (FORM-03 — IRS Line 16→20 chain). Single-column figures;
-    //    Line 20 − Line 19 foots to the headline netFederalRefundChange. ────
-    reconLine("17", "Overpayment per original return (already refunded/applied)", origOverpayment, origOverpayment),
-    reconLine("18", "Tax paid with original return", origBalancePaid, origBalancePaid),
-    reconLine("19", "Amount you owe with this amended return", 0, additionalOwe),
-    reconLine("20", "Refund with this amended return", 0, additionalRefund),
+    line("12", "Federal income tax withheld", o.federalTaxWithheld, cur.federalTaxWithheld),
+    line("14", "EITC", o.eitc, cur.eitc),
+    line("15", "Refundable credits (ACTC, AOC refundable, PTC)", oRef, cRef),
+    // ── Settlement (FORM-03 — official Line 16→21 chain). Lines 16/18-21 are
+    //    single-column figures; Line 21 − Line 20 foots to the headline
+    //    netFederalRefundChange. ─────────────────────────────────────────────
+    reconLine("16", "Tax paid with original return (and with Form 4868)", origBalancePaid, origBalancePaid),
+    line("17", "Total payments (withholding + EIC + refundable credits; line 16 shown separately)", oTotalPayments, cTotalPayments),
+    reconLine("18", "Overpayment per original return (already refunded/applied)", origOverpayment, origOverpayment),
+    reconLine("19", "Payments net of original outcome (line 17 + line 16 − line 18)", oTotalPayments + origBalancePaid - origOverpayment, availablePayments),
+    reconLine("20", "Amount you owe with this amended return", 0, additionalOwe),
+    reconLine("21", "Overpaid — refund with this amended return", 0, additionalRefund),
   ];
 
   // ── P2-7 — nonrefundable-credit component breakdown (supplementary) ──────
@@ -418,7 +472,7 @@ export interface BuildForm1040xPdfOptions {
 export function buildForm1040xPdf(options: BuildForm1040xPdfOptions): Promise<Buffer> {
   const { client, form } = options;
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: "letter", margin: 50 });
+    const doc = winAnsiSafePdf(new PDFDocument({ size: "letter", margin: 50 })); // M5 WinAnsi glyph seam
     const chunks: Buffer[] = [];
     doc.on("data", (c: Buffer) => chunks.push(c));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
@@ -492,7 +546,8 @@ export function buildForm1040xPdf(options: BuildForm1040xPdfOptions): Promise<Bu
       doc.moveDown(0.2);
     };
     for (const l of form.lines) {
-      renderRow(l, l.lineRef === "10" || l.lineRef === "16" || l.lineRef === "20");
+      // Headline rows: total tax (11), total payments (17), refund (21).
+      renderRow(l, l.lineRef === "11" || l.lineRef === "17" || l.lineRef === "21");
     }
 
     // P2-7 — nonrefundable-credit component breakdown (only when present).

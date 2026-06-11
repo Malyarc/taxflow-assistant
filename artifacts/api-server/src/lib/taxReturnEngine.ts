@@ -2129,6 +2129,22 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const k1OrdinaryDividends = sumK1Where(() => true, (k) => k.ordinaryDividends);
   const k1QualifiedDividends = sumK1Where(() => true, (k) => k.qualifiedDividends);
   const k1Royalties = sumK1Where(() => true, (k) => k.royalties);
+
+  // M9b (audit 2026-06-11) — the official Schedule B $1,500 filing trigger
+  // counts K-1 portfolio interest (Box 5) and box-1a dividends (Boxes 6a+6b)
+  // alongside the 1099-INT/DIV amounts (Schedule B instructions: list
+  // interest/dividends received as a nominee or through a partnership/S corp).
+  // summarize1099s only sees 1099 records, so widen the flag here once the
+  // K-1 portfolio sums exist. (The engine's ordinary/qualified K-1 dividend
+  // buckets mirror the 1099 split: ordinary = the non-qualified remainder.)
+  form1099Summary.scheduleBRequired =
+    form1099Summary.scheduleBRequired ||
+    form1099Summary.interestIncome + k1InterestIncome > 1500 ||
+    form1099Summary.ordinaryDividends +
+      form1099Summary.qualifiedDividends +
+      k1OrdinaryDividends +
+      k1QualifiedDividends >
+      1500;
   const k1Stcg = sumK1Where(() => true, (k) => k.netShortTermCapitalGain);
   const k1Ltcg = sumK1Where(() => true, (k) => k.netLongTermCapitalGain);
   // 1065 Box 4 guaranteed payments (§707(c)) — ordinary income to the partner

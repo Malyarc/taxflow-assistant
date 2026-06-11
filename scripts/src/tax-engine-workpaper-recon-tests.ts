@@ -266,16 +266,18 @@ let s1Taxpayer: WorkpaperTaxpayer | null = null;
 
   assertAllTiesAndShape("S2", ws, ret);
 
-  // Part 1 — components + the QDIV residual. The worksheet's 3b row is the
-  // NON-qualified dividend portion only (here $0), so the $5,000 of qualified
-  // dividends lands in the explicit residual row — disclosure by construction.
+  // Part 1 — components. T1.0i: the 3b row now carries TOTAL ordinary
+  // dividends (incl. the qualified portion — matching official 1040 line 3b)
+  // with a 3a informational subset row, so the $5,000 of qualified dividends
+  // is ITEMIZED (no unexplained residual remains).
   const p1 = partLines(ws, 0);
   check("S2 Part 1: line 1a wages $40,000", Number(findLine(p1, "1a")?.value ?? NaN), 40000);
+  check("S2 Part 1: line 3b total ordinary dividends $5,000 (incl. qualified)", Number(findLine(p1, "3b")?.value ?? NaN), 5000, 0.05);
+  check("S2 Part 1: line 3a qualified-dividends info row $5,000", Number(findLine(p1, "3a")?.value ?? NaN), 5000, 0.05);
   check("S2 Part 1: line 7 capital gain $20,000", Number(findLine(p1, "7")?.value ?? NaN), 20000);
   check("S2 Part 1: line 8 Schedule C net $30,000", Number(findLine(p1, "8", "Schedule C")?.value ?? NaN), 30000);
   const resid = findByLabel(p1, "residual");
-  checkTrue("S2 Part 1: residual row PRESENT (qualified dividends)", resid !== undefined);
-  check("S2 Part 1: residual = $5,000 (QDIV not itemized by the worksheet)", Number(resid?.value ?? NaN), 5000, 0.05);
+  checkTrue("S2 Part 1: residual row ABSENT (QDIV itemized in 3b)", resid === undefined || Number(resid?.value ?? 0) === 0);
   check("S2 Part 1: line 9 total income $95,000", Number(findLine(p1, "9")?.value ?? NaN), 95000, 0.05);
 
   // Part 2 — above-the-line rows.

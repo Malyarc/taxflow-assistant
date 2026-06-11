@@ -7,6 +7,7 @@
 import PDFDocument from "pdfkit";
 import type { ComputedTaxReturn } from "./taxReturnPipeline";
 import type { clientsTable } from "@workspace/db";
+import { winAnsiSafePdf } from "./pdfBrand";
 
 type Client = typeof clientsTable.$inferSelect;
 
@@ -30,7 +31,9 @@ function pct(n: number | null | undefined): string {
 
 export function buildTaxReturnPdf(client: Client, ret: ComputedTaxReturn): Promise<Buffer> {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: "letter", margin: 54 });
+    // M5 — sanitize every text() call for WinAnsi (✓/⚠/−/└ glyphs would
+    // otherwise render as garbage byte pairs; U+2212 lost the minus sign).
+    const doc = winAnsiSafePdf(new PDFDocument({ size: "letter", margin: 54 }));
     const chunks: Buffer[] = [];
     doc.on("data", (c: Buffer) => chunks.push(c));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
@@ -89,8 +92,13 @@ export function buildTaxReturnPdf(client: Client, ret: ComputedTaxReturn): Promi
     }
     section("Income", incomeRows);
 
+    // H6 (audit 2026-06-11) — show the deduction the engine ACTUALLY used and
+    // label which: an itemizer previously saw the unused STANDARD amount here,
+    // so the AGI → taxable chain visibly didn't reconcile.
     section("Deductions", [
-      ["Standard / itemized deduction", fmt(ret.standardDeduction)],
+      ret.itemizedDeductions != null
+        ? ["Itemized deductions (Sched A L17 → 1040 L12)", fmt(ret.itemizedDeductions)]
+        : ["Standard deduction (1040 L12)", fmt(ret.standardDeduction)],
       ...(ret.qbiDeduction > 0 ? [["QBI deduction (§199A)", fmt(ret.qbiDeduction)] as [string, string]] : []),
       ["Taxable income", fmt(ret.taxableIncome)],
     ]);
@@ -158,14 +166,19 @@ export function buildTaxReturnPdf(client: Client, ret: ComputedTaxReturn): Promi
     }
 
     // PDF2 — the "other taxes" bundled into federalTaxLiability (Sched 2):
-    // §72(t) early-withdrawal additional tax, §4973 HSA excise, and Schedule H
-    // household-employment tax. Net them OUT of the displayed regular-tax line
-    // (they were silently inflating it) and disclose each as its own row below.
+    // §72(t) early-withdrawal additional tax, §4973 HSA excise, Schedule H
+    // household-employment tax, AND (H7, audit 2026-06-11) the excess-advance-
+    // APTC repayment (engine bundles max(0, −netPtc) into federalTaxLiability).
+    // Net them OUT of the displayed regular-tax line (they were silently
+    // inflating it) and disclose each as its own row below — without the APTC
+    // netting, an ACA filer repaying APTC saw it BOTH inside "regular tax" and
+    // as its own row, so the rows no longer summed to the L24 total.
     const earlyWithdrawalPenalty = (ret as { earlyWithdrawalPenalty?: number }).earlyWithdrawalPenalty ?? 0;
     const hsaExcessExcise = (ret as { hsaExcessExcise?: number }).hsaExcessExcise ?? 0;
     const scheduleHTax = (ret as { scheduleH?: { total?: number } }).scheduleH?.total ?? 0;
+    const excessAptcRepayment = Math.max(0, -(ret.premiumTaxCredit?.netPtc ?? 0));
     const fedRows: Array<[string, string]> = [
-      ["Federal income tax (regular, 1040 L16)", fmt(ret.federalTaxLiability - (ret.amtTax ?? 0) - (ret.niitTax ?? 0) - (ret.selfEmploymentTax ?? 0) - (ret.additionalMedicareTax ?? 0) - earlyWithdrawalPenalty - hsaExcessExcise - scheduleHTax)],
+      ["Federal income tax (regular, 1040 L16)", fmt(ret.federalTaxLiability - (ret.amtTax ?? 0) - (ret.niitTax ?? 0) - (ret.selfEmploymentTax ?? 0) - (ret.additionalMedicareTax ?? 0) - earlyWithdrawalPenalty - hsaExcessExcise - scheduleHTax - excessAptcRepayment)],
     ];
     if (ret.selfEmploymentTax > 0) fedRows.push(["Self-employment tax (Sched SE)", fmt(ret.selfEmploymentTax)]);
     if (ret.niitTax > 0) fedRows.push(["Net investment income tax (Form 8960)", fmt(ret.niitTax)]);
@@ -189,7 +202,7 @@ export function buildTaxReturnPdf(client: Client, ret: ComputedTaxReturn): Promi
     if (ret.saversCredit.appliedCredit > 0) fedRows.push(["Saver's Credit (Sched 3 L4)", `(${fmt(ret.saversCredit.appliedCredit)})`]);
     if (ret.residentialEnergyCredits.total > 0) fedRows.push(["Residential Energy Credits (Sched 3 L5a/5b)", `(${fmt(ret.residentialEnergyCredits.total)})`]);
     if (ret.eitc.appliedCredit > 0) fedRows.push(["EITC (1040 L27, refundable)", `(${fmt(ret.eitc.appliedCredit)})`]);
-    if (ret.premiumTaxCredit.netPtc > 0) fedRows.push(["Net Premium Tax Credit (Sched 3 L8)", `(${fmt(ret.premiumTaxCredit.netPtc)})`]);
+    if (ret.premiumTaxCredit.netPtc > 0) fedRows.push(["Net Premium Tax Credit (Sched 3 L9)", `(${fmt(ret.premiumTaxCredit.netPtc)})`]);
     if (ret.premiumTaxCredit.netPtc < 0) fedRows.push(["Excess Advance APTC (Sched 2 L2)", fmt(Math.abs(ret.premiumTaxCredit.netPtc))]);
     if (ret.manualCreditsApplied > 0) fedRows.push(["Other credits applied (manual)", `(${fmt(ret.manualCreditsApplied)})`]);
     fedRows.push(["Federal tax withheld (1040 L25a)", fmt(ret.federalTaxWithheld)]);
