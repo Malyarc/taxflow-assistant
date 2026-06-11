@@ -1,3 +1,63 @@
+# Handoff Note — 2026-06-11 (FULL-APP MAXIMUM AUDIT #2 — 13-agent fleet + NEW differential-oracle harness; 9 fixes on PR #2, NOT yet deployed)
+
+Ran the full-app maximum audit from a **cloud sandbox** (branch
+`claude/serene-hamilton-rqzitr`, **draft PR #2** — could NOT merge to main or
+deploy from here: no EC2 key in the sandbox, and the remote-session rules pin
+work to the designated branch). **Deploy checklist at the bottom.**
+
+**What ran:** green bar (4 typechecks + build + no-API 111/6,720 baseline) →
+13-agent fresh-fleet fan-out (one per subsystem, primary-source verification +
+live `computeTaxReturnPure` repros) → property harness (5,636) → **NEW
+differential-oracle harness vs tenforty/OpenTaxSolver (T0.3 A0/A2 — CLOSED;
+758 scenarios, every divergence triaged, 0 unexplained)** → /code-review max
+(7 angles) → live /verify (QSS + Box-3 values verified through the running API).
+
+**SHIPPED (commit `bf43c43`, 9 fixes, all hand-calc'd + regression-pinned in the
+new `tax-engine-audit-2026-06-11-tests.ts`, 33 assertions):**
+- **The QSS ≠ "joint return" cluster** — `qualifying_widow` was treated as MFJ at
+  8 sites whose statute excludes a §2(a) surviving spouse: Additional Medicare
+  $200k (ORACLE-found), §86(c) SS taxability $25k/$34k, §21 dependent care,
+  §25A education band, §32 EITC column, §221 SLI band, §904(j) FTC $300,
+  OBBBA Sch 1-A caps/senior. QSS correctly STAYS MFJ for brackets/std-ded/NIIT/
+  CTC/§121/IRA-band (Pub 590-A) — verified untouched.
+- **1099-INT semantics** — Box 8 was netted out of Box 1 (disjoint boxes!);
+  Box 3 Treasury interest was dropped entirely ($0 income) AND missing from the
+  Create/Update openapi bodies (zod-stripped on write — the classic gotcha);
+  now Box 1 + Box 3 taxable, Box 8 separate, Box 3 wired to the state
+  US-Treasury subtraction. 5 wrong-expectation tests corrected.
+
+**Green bar at ship:** no-API **112 suites / 6,754 / 0 failed** + property
+harness + oracle 0-divergence + yes-API green (ai-overlay + return-qa need a
+real AI key — environmental; NOTE `returnQa.ts:193` 500s on a THROWN LLM error
+instead of using its own deterministic fallback — small Tier-3 fix).
+
+**THE BIG OUTPUT — a ranked deferred backlog from the 13 agents** (each item
+file:line + repro): **`docs/accuracy-audit/full-app-audit-2026-06-11.md`** +
+the 13 verbatim reports in `docs/accuracy-audit/agent-reports-2026-06-11/`.
+Tier-1 highlights (wrong filed numbers, broad): KS SB1 never applied; PA Sched
+SP double-applied + wrong steps; CO 2025 TABOR 4.25%; WV 2024 rates; HI Act 46;
+NM HB252; MD HB352; TY2026 PTC still on expired ARPA schedule; §25C/§25D not
+terminated for 2026; §25D-before-CTC ordering inflates ACTC; EITC §32(a)(2)
+phase-out formula; §53/§38 gross-vs-net credit limits + MTC=100%-of-AMT
+auto-seeded; OBBBA senior missing from AMTI; excess-SS credit unmodeled;
+§461(l) no cross-entity netting + stale 2026 thresholds; NOL below-the-line;
+QBI SEHI/negative netting; K-1 SE missing from EITC earned income; K-1 Box 2
+QBI double-dip; PTC MAGI = raw AGI; MCTMT taxes only the excess over $50k
+(statute taxes ALL once over); locality bases never subtract taxable SS.
+**Planning HIGH:** multi-year projection drops K-1/rental/capital income from
+out-years (G1.47 showed $75k vs true $22k, labeled engine-verified).
+**CONTESTED (needs its own session):** the §1(h) 25%/28% interleaving claim —
+do NOT change without a Schedule-D-Tax-Worksheet line-by-line adjudication.
+
+**Deploy checklist (run from the local machine per CLAUDE.md):** review/merge
+PR #2 → fast-forward main → EC2 deploy cycle (pull, install, migrate = no-op
+[no schema change], build, pm2 restart) → frontend rsync (api.schemas.ts
+regenerated → rebuild) → healthz + smoke: QSS client w/ $307,274 Medicare wages
+→ additionalMedicareTax $965.47; 1099-INT Box1 5k/Box3 4k/Box8 3k → AGI $9,000
+(and CA state tax unchanged by Box 3).
+
+---
+
 # Handoff Note — 2026-06-10c (T2 COMPLETE — the T2.2 completion batch: entity-choice, roll-forward, organizer, engagement, branded planning report, return-Q&A, campaigns)
 
 **T2 is ENGINEERING-COMPLETE.** This session (branch `claude/dreamy-bardeen-kspyig`,
