@@ -45,6 +45,7 @@ import {
   resolveTaxYear,
   SS_WAGE_BASE,
   calculateStudentLoanInterest,
+  sliPhaseOutBand,
   saversCreditRateFor,
   type TaxYear,
 } from "./taxCalculator";
@@ -123,10 +124,18 @@ function runDetectorWhatIf(args: {
   // combinedTaxDelta (pre-credit), so credit-based strategies (FTC) report
   // accurately. For deduction strategies (SEP / NIIT), the two are equal in
   // magnitude (opposite sign).
+  // SIGN (audit 2026-06-11): values are SIGNED BY SEMANTICS, not |abs|'d —
+  // "savings" reports +refundDelta (a refund-increasing scenario is positive);
+  // "cost" reports −refundDelta (a refund-reducing scenario is a positive
+  // cost). A scenario that CONTRADICTS its semantics (e.g. a "savings"
+  // mutation that nets a cost) now surfaces as a NEGATIVE value instead of
+  // being silently flipped positive by Math.abs().
+  const signed = (refundDelta: number): number =>
+    Math.round(semantics === "cost" ? -refundDelta : refundDelta);
   const sensitivity: WhatIfSensitivity = {
-    low: Math.round(Math.abs(results[0].delta.combinedRefundDelta)),
-    mid: Math.round(Math.abs(results[1].delta.combinedRefundDelta)),
-    high: Math.round(Math.abs(results[2].delta.combinedRefundDelta)),
+    low: signed(results[0].delta.combinedRefundDelta),
+    mid: signed(results[1].delta.combinedRefundDelta),
+    high: signed(results[2].delta.combinedRefundDelta),
   };
   return {
     mutations,
@@ -260,6 +269,57 @@ export function federalMarginalRate(computed: ComputedTaxReturn): number {
     computed.taxYear,
   );
   return marginalRate;
+}
+
+/**
+ * T1.0g (M3, audit 2026-06-11) — actual-W-2-wage signal for the
+ * employee-benefit detectors (G1.96 §132(f) transit, G1.72 RSU, G1.87
+ * §401(a)(17), G1.57 NQDC). These strategies REQUIRE an employer/W-2
+ * relationship; the old `totalIncome − netSE` proxy counted K-1 / rental /
+ * investment income as "wages", so a K-1-only owner with zero W-2s got
+ * engine-verified transit-fringe and RSU-withholding hits.
+ *
+ *  - `hasW2` — the return actually includes ≥ 1 W-2 (engine's year-filtered
+ *    `w2Count`; available on BOTH the baselineInputs and hit-list paths).
+ *  - `wages` — Box-1 wage total: the REAL sum from baselineInputs.w2s when
+ *    available (year-filtered like the engine), else a refined proxy that
+ *    subtracts every identifiable non-wage bucket (SE, K-1 active/passive/
+ *    portfolio, rental, capital gains, interest, dividends, retirement,
+ *    unemployment, SS) from totalIncome. Floored at 0.
+ */
+function w2WagesSignal(
+  computed: ComputedTaxReturn,
+  baselineInputs?: TaxReturnInputs,
+): { hasW2: boolean; wages: number } {
+  const hasW2 = (computed.w2Count ?? 0) > 0;
+  if (!hasW2) return { hasW2, wages: 0 };
+  if (baselineInputs) {
+    const wages = (baselineInputs.w2s ?? [])
+      .filter((w) => (w.taxYear ?? computed.taxYear) === computed.taxYear)
+      .reduce((s, w) => s + toNum(w.wagesBox1), 0);
+    return { hasW2, wages: Math.max(0, wages) };
+  }
+  const s1099 = computed.form1099Summary;
+  const k1 = computed.scheduleK1;
+  const nonWage =
+    (computed.detail.se.netSeEarnings ?? 0) +
+    (s1099?.retirementIncome ?? 0) +
+    (s1099?.unemploymentCompensationOnly ?? 0) +
+    (s1099?.interestIncome ?? 0) +
+    (s1099?.ordinaryDividends ?? 0) +
+    (s1099?.longTermCapitalGains ?? 0) +
+    (s1099?.shortTermCapitalGains ?? 0) +
+    (k1?.totalActiveOrdinaryIncome ?? 0) +
+    (k1?.totalGuaranteedPayments ?? 0) +
+    (k1?.totalPassiveBucketNetApplied ?? 0) +
+    (k1?.totalInterestIncome ?? 0) +
+    (k1?.totalOrdinaryDividends ?? 0) +
+    (k1?.totalRoyalties ?? 0) +
+    (k1?.totalShortTermCapitalGain ?? 0) +
+    (k1?.totalLongTermCapitalGain ?? 0) +
+    (computed.scheduleERentalAppliedToAgi ?? 0) +
+    (computed.socialSecurityTaxable ?? 0);
+  return { hasW2, wages: Math.max(0, computed.totalIncome - nonWage) };
 }
 
 /**
@@ -2612,7 +2672,8 @@ function detectOpportunityZone(args: {
       `Heuristic deferral value = (LTCG 0.20 + NIIT 0.038) × 0.3 time-value factor.`,
       `Long-term appreciation upside (step-up after 10 years) NOT modeled — varies wildly by QOF performance.`,
       `STRICT 180-day window from realization date to QOF investment.`,
-      `Original deferral elimination date is 2026-12-31 (statutory). Investments made now defer until that date; new deferrals beyond are not currently available without legislation.`,
+      `OBBBA (P.L. 119-21) made the OZ program PERMANENT ("OZ 2.0"): gains invested on/before 2026-12-31 keep the ORIGINAL statutory recognition date of 2026-12-31 (near-zero deferral value for late-2026 investments); investments AFTER 2026-12-31 get a ROLLING 5-YEAR deferral (recognized at the earlier of sale or the 5th anniversary) + a 10% basis step-up (30% for rural QOFs) at year 5.`,
+      `OZ 2.0 zone designations are DECENNIAL (every 10 years starting 7/1/2026, effective 1/1/2027; tightened low-income criteria — current zones remain usable through 2028-12-31). For a gain realized NOW, weigh deferring the investment into the post-2026 regime against the 180-day clock.`,
       `QOF must invest ≥ 90% of assets in a Qualified Opportunity Zone (audited semi-annually).`,
       `H2 verification deferred — engine doesn't model QOF deferral or 10-year basis step-up.`,
     ],
@@ -2901,6 +2962,11 @@ function detectEvCredit(args: {
   baselineInputs?: TaxReturnInputs;
 }): OpportunityHit | null {
   const { client, computed, adjustments, baselineInputs } = args;
+  // OBBBA (P.L. 119-21): §30D/§25E TERMINATED for vehicles ACQUIRED after
+  // 2025-09-30 (IRS OBBB FAQ) — a TY2025 return may still claim a Jan–Sep
+  // 2025 acquisition; TY2026+ is dead law. Belt-and-braces on top of the
+  // catalog validUntil (2025-12-31) gate.
+  if (computed.taxYear > 2025) return null;
   const cap = G1_33_AGI_LIMITS[client.filingStatus] ?? G1_33_AGI_LIMITS.single;
   if (computed.adjustedGrossIncome > cap) return null;
   // Suppress when an existing credit-type adjustment >= $4,000 is present
@@ -2939,8 +3005,9 @@ function detectEvCredit(args: {
     recurring: strategy.recurring,
     rationale:
       `AGI ${fmt(Math.round(computed.adjustedGrossIncome))} is within the EV credit MAGI cap of ` +
-      `${fmt(cap)} for ${client.filingStatus}. If client buys a qualifying new EV this year, ` +
-      `claim up to ${fmt(estSavings)} via Form 8936.`,
+      `${fmt(cap)} for ${client.filingStatus}. A qualifying new EV ACQUIRED ON OR BEFORE 9/30/2025 ` +
+      `(OBBBA terminated §30D/§25E for later acquisitions) claims up to ${fmt(estSavings)} via Form 8936 ` +
+      `— for TY2025, confirm the acquisition (binding contract + payment) happened by that date.`,
     action: interpolate(strategy.action, vars),
     prerequisiteData: strategy.prerequisiteData,
     citation: `${strategy.ircSection}; ${strategy.irsPub}`,
@@ -2951,6 +3018,7 @@ function detectEvCredit(args: {
       federalTaxLiability: Math.round(computed.federalTaxLiability),
     },
     assumptions: [
+      `⚠ TERMINATED 9/30/2025 — OBBBA (P.L. 119-21) ended §30D (new EV) and §25E (used EV) for vehicles ACQUIRED after 2025-09-30 (IRS OBBB FAQ). A vehicle acquired by binding contract + payment on/before 9/30/2025 still claims the credit when placed in service. NO acquisitions qualify after that date; TY2026+ is dead law.`,
       `Max §30D new EV credit: $7,500 ($3,750 critical-minerals + $3,750 battery-components). Used EV §25E: $4,000 or 30% of price.`,
       `MAGI cap (TY2024): $150k single / $300k MFJ / $225k HoH / $150k MFS per IRA 2022. Use prior-year OR current-year MAGI, whichever is lower.`,
       `MSRP cap: $80k SUV/truck/van; $55k cars.`,
@@ -2982,7 +3050,12 @@ function detectResidentialCleanEnergy(args: {
   assetBalances?: AssetBalanceFact[];
   baselineInputs?: TaxReturnInputs;
 }): OpportunityHit | null {
-  const { computed, adjustments, assetBalances, baselineInputs } = args;
+  const { computed, adjustments, assetBalances } = args;
+  // OBBBA (P.L. 119-21): §25D TERMINATED for expenditures after 2025-12-31 —
+  // dead law from TY2026 (IRS OBBB FAQ). The catalog validUntil (2025-12-31)
+  // already suppresses this post-detection; this guard is belt-and-braces so
+  // the detector can never fire for a TY2026+ return through any path.
+  if (computed.taxYear > 2025) return null;
   if (computed.adjustedGrossIncome < G1_34_MIN_AGI) return null;
   // Suppress if existing residential_clean_energy adjustment already present.
   if (sumAdjustment(adjustments, "residential_clean_energy") > 0) return null;
@@ -2999,16 +3072,15 @@ function detectResidentialCleanEnergy(args: {
   // low federal tax filers to avoid noise.
   if (computed.federalTaxLiability < 1_000) return null;
 
-  const whatIf = runDetectorWhatIf({
-    baselineInputs,
-    scenarioId: "G1.34-clean-energy",
-    label: `§25D credit $${credit.toLocaleString("en-US")}`,
-    mutations: [
-      { kind: "add_adjustment", adjustmentType: "residential_clean_energy", amount: credit },
-    ],
-    semantics: "savings",
-    varyAmount: true,
-  });
+  // Q2 pattern (audit 2026-06-11, mirroring the 2026-06-08 G1.33 fix) — this
+  // is a CONDITIONAL purchase estimate ("IF the client installs $20k of
+  // solar"), NOT an engine-verified saving. The prior code injected the
+  // ASSUMED credit via a what-if and the engine dutifully "confirmed" the
+  // arithmetic → every homeowner client got an "engine-verified $6,000*"
+  // ranked above genuinely-applicable strategies. Drop the what-if so the hit
+  // stays a clearly-flagged estimate (gate on a real install marker when the
+  // data model gains one).
+  const whatIf = undefined;
 
   const strategy = strategyById("G1.34");
   const fmt = (n: number) =>
@@ -3025,7 +3097,9 @@ function detectResidentialCleanEnergy(args: {
     rationale:
       `Client owns a home (per H5 primary_residence or mortgage interest signal). TY${computed.taxYear} ` +
       `§25D credit rate is ${(rate * 100).toFixed(0)}%. A typical $20k solar/battery install delivers ` +
-      `~${fmt(credit)} of federal credit + indefinite carryforward of any unused portion.`,
+      `~${fmt(credit)} of federal credit + indefinite carryforward of any unused portion. ` +
+      `URGENT: OBBBA terminated §25D — the expenditure must be made by 12/31/2025 (the credit EXPIRES ` +
+      `after that date; no TY2026 window).`,
     action: interpolate(strategy.action, vars),
     prerequisiteData: strategy.prerequisiteData,
     citation: `${strategy.ircSection}; ${strategy.irsPub}`,
@@ -3039,13 +3113,13 @@ function detectResidentialCleanEnergy(args: {
       federalTaxLiability: Math.round(computed.federalTaxLiability),
     },
     assumptions: [
-      `Credit rate by tax year (IRA 2022 §13302): 30% through 2032; 26% in 2033; 22% in 2034; expires after 2034.`,
+      `⚠ EXPIRES 12/31/2025 — OBBBA (P.L. 119-21) TERMINATED §25D for expenditures made after 2025-12-31 (the IRA 2022 through-2034 schedule is repealed). The install must be PAID FOR by year-end 2025; no TY2026+ credit exists.`,
+      `CONDITIONAL ESTIMATE — fires on a homeowner signal only; the client has not necessarily planned an install. estSavings assumes a $20,000 install × 30%. NOT engine-verified (no what-if attached — injecting an assumed credit would mislabel the hit engine-verified).`,
       `Assumed install cost $20,000 (heuristic). Real installs range $15k-$40k depending on system size + battery storage.`,
-      `NO income cap — anyone with sufficient federal tax can use the credit (indefinite carryforward for unused portion).`,
+      `NO income cap — anyone with sufficient federal tax can use the credit (indefinite carryforward for unused portion; a post-2025 carryforward of a pre-2026 credit survives).`,
       `Qualifying equipment: solar PV, solar water heating, geothermal heat pump, small wind, fuel cell, battery storage ≥ 3 kWh.`,
       `Heat pumps for primary residence go under §25C Energy Efficient Home Improvement Credit (separate $1,200/yr cap) — NOT §25D.`,
       `Rental properties DO NOT qualify — primary or secondary residence only.`,
-      `H2 mutation adds the credit as a residential_clean_energy adjustment which the engine routes through the credit-ordering pipeline.`,
     ],
     whatIf,
   };
@@ -3568,7 +3642,11 @@ function detectEnergyEfficientHome(args: {
   assetBalances?: AssetBalanceFact[];
   baselineInputs?: TaxReturnInputs;
 }): OpportunityHit | null {
-  const { computed, adjustments, assetBalances, baselineInputs } = args;
+  const { computed, adjustments, assetBalances } = args;
+  // OBBBA (P.L. 119-21): §25C TERMINATED for property placed in service after
+  // 2025-12-31 — dead law from TY2026 (IRS OBBB FAQ). Belt-and-braces on top
+  // of the catalog validUntil gate.
+  if (computed.taxYear > 2025) return null;
   if (sumAdjustment(adjustments, "energy_efficient_home") > 0) return null;
   if (sumAdjustment(adjustments, "energy_efficient_heatpump") > 0) return null;
   const hasResidence = (assetBalances ?? []).some((a) => a.assetType === "primary_residence");
@@ -3582,16 +3660,11 @@ function detectEnergyEfficientHome(args: {
     G1_37_HEATPUMP_CAP,
   );
 
-  const whatIf = runDetectorWhatIf({
-    baselineInputs,
-    scenarioId: "G1.37-25c",
-    label: `§25C heat pump credit $${credit.toLocaleString("en-US")}`,
-    mutations: [
-      { kind: "add_adjustment", adjustmentType: "energy_efficient_heatpump", amount: G1_37_ASSUMED_HEATPUMP_COST },
-    ],
-    semantics: "savings",
-    varyAmount: true,
-  });
+  // Q2 pattern (audit 2026-06-11, mirroring the 2026-06-08 G1.33 fix) — a
+  // CONDITIONAL purchase ("IF the client installs a heat pump") must not be
+  // engine-"verified" by injecting the assumed install: every mortgage-paying
+  // client was getting an "engine-verified $1,500*" with no heat-pump signal.
+  const whatIf = undefined;
 
   const strategy = strategyById("G1.37");
   const fmt = (n: number) =>
@@ -3611,7 +3684,8 @@ function detectEnergyEfficientHome(args: {
     rationale:
       `Homeowner (per H5 primary_residence or mortgage signal). Installing a qualifying ENERGY STAR ` +
       `heat pump (~${fmt(G1_37_ASSUMED_HEATPUMP_COST)} typical) delivers ${fmt(credit)} of §25C credit ` +
-      `(30% × cost, capped at $2,000 for heat pumps).`,
+      `(30% × cost, capped at $2,000 for heat pumps). URGENT: OBBBA terminated §25C — the property must ` +
+      `be PLACED IN SERVICE by 12/31/2025 (the credit EXPIRES after that date; no TY2026 window).`,
     action: interpolate(strategy.action, vars),
     prerequisiteData: strategy.prerequisiteData,
     citation: `${strategy.ircSection}; ${strategy.irsPub}`,
@@ -3623,13 +3697,13 @@ function detectEnergyEfficientHome(args: {
       federalTaxLiability: Math.round(computed.federalTaxLiability),
     },
     assumptions: [
-      `IRA 2022 §13301 raised credit to 30% with annual caps; expires 2032-12-31.`,
+      `⚠ EXPIRES 12/31/2025 — OBBBA (P.L. 119-21) TERMINATED §25C for property placed in service after 2025-12-31 (the IRA 2022 through-2032 schedule is repealed). No TY2026+ credit exists.`,
+      `CONDITIONAL ESTIMATE — fires on a homeowner signal only; the client has not necessarily planned an improvement. NOT engine-verified (no what-if attached — injecting the assumed install would mislabel the hit engine-verified).`,
       `Annual cap STRUCTURE: $1,200 general (windows $600, doors $250/$500 max, audit $150, AC/furnace/boiler $600); $2,000 separately for heat pumps + heat-pump water heaters + biomass stoves. Combined max ~$3,200.`,
-      `NO carryforward — use-it-or-lose-it each year (vs §25D residential clean energy which IS carryforward-able).`,
+      `NO carryforward — use-it-or-lose-it (vs §25D residential clean energy which IS carryforward-able).`,
       `Heuristic uses heat-pump example ($5k install). Other items (windows, doors) have lower caps + different rates.`,
       `ENERGY STAR certification required (Notice 2024-09).`,
       `Rental property does NOT qualify — primary or secondary residence only.`,
-      `H2 mutation adds energy_efficient_heatpump = $5,000 install cost — engine computes 30% × cost capped at $2,000.`,
     ],
     whatIf,
   };
@@ -4990,13 +5064,17 @@ const G1_57_BRACKET_SPREAD = 0.37 - 0.22;
 function detectNqdc409a(args: {
   client: ClientFacts;
   computed: ComputedTaxReturn;
+  baselineInputs?: TaxReturnInputs;
 }): OpportunityHit | null {
-  const { client, computed } = args;
+  const { client, computed, baselineInputs } = args;
   const age = client.taxpayerAge;
   if (age == null || age < G1_57_MIN_AGE || age > G1_57_MAX_AGE) return null;
-  // Use total wages box 1 sum as W-2 proxy.
-  const totalIncome = computed.totalIncome;
-  // Executive-comp proxy: high total income that's likely W-2 dominant.
+  // M3 (audit 2026-06-11) — NQDC is EMPLOYER deferred comp: require ACTUAL
+  // W-2s and gate on the wage signal, not raw totalIncome (a $500k-K-1 owner
+  // with no W-2 is not an NQDC candidate).
+  const { hasW2, wages } = w2WagesSignal(computed, baselineInputs);
+  if (!hasW2) return null;
+  const totalIncome = wages;
   if (totalIncome < G1_57_MIN_W2) return null;
 
   const estSavings = Math.round(G1_57_ASSUMED_DEFERRAL * G1_57_BRACKET_SPREAD);
@@ -5017,7 +5095,7 @@ function detectNqdc409a(args: {
     cpaEffortHours: strategy.cpaEffortHours,
     recurring: strategy.recurring,
     rationale:
-      `Client age ${age} with ${fmt(Math.round(totalIncome))} total income (executive-comp range). ` +
+      `Client age ${age} with ${fmt(Math.round(totalIncome))} of W-2 wages (executive-comp range). ` +
       `If employer offers NQDC plan, defer ${fmt(G1_57_ASSUMED_DEFERRAL)} of current compensation to ` +
       `retirement. Bracket arbitrage: current ~37% vs retirement ~22% = ${fmt(estSavings)}/yr saved.`,
     action: interpolate(strategy.action, vars),
@@ -5248,13 +5326,6 @@ function detectRdPayrollElection(args: {
 // ── G1.61 — §221 Student Loan Interest (H2-wired) ────────────────────────
 
 const G1_61_DEDUCTION_CAP = 2_500;
-const G1_61_AGI_PHASE_OUT_TOP: Record<string, number> = {
-  single: 95_000,
-  head_of_household: 95_000,
-  married_filing_jointly: 195_000,
-  qualifying_widow: 195_000,
-  married_filing_separately: 0, // MFS disallowed
-};
 
 function detectStudentLoanInterest(args: {
   client: ClientFacts;
@@ -5264,8 +5335,15 @@ function detectStudentLoanInterest(args: {
 }): OpportunityHit | null {
   const { client, computed, adjustments, baselineInputs } = args;
   if (client.filingStatus === "married_filing_separately") return null;
-  const cap = G1_61_AGI_PHASE_OUT_TOP[client.filingStatus] ?? G1_61_AGI_PHASE_OUT_TOP.single;
-  if (computed.adjustedGrossIncome > cap) return null;
+  // M2 (audit 2026-06-11) — the gate reads the ENGINE's year-indexed §221
+  // phase-out band (sliPhaseOutBand — the same map calculateStudentLoanInterest
+  // uses for the amount). The prior hardcoded TY2024 tops ($95k/$195k)
+  // false-suppressed TY2025 single filers between $95k–$100k (Rev. Proc.
+  // 2024-40 band $85k–$100k) and MFJ between $195k–$200k; wider for TY2026.
+  const band = sliPhaseOutBand(client.filingStatus, computed.taxYear);
+  if (!band) return null; // ineligible status
+  const cap = band.end;
+  if (computed.adjustedGrossIncome >= cap) return null;
   // Suppress if already claimed.
   if (sumAdjustment(adjustments, "student_loan_interest") > 0) return null;
 
@@ -5325,8 +5403,8 @@ function detectStudentLoanInterest(args: {
     },
     assumptions: [
       `§221 cap: $2,500/yr of qualified student loan interest paid.`,
-      `AGI phase-out TY2024 (Rev. Proc. 2023-34 §3.21): $80k-$95k single / $165k-$195k MFJ.`,
-      `Phase-out reduction: (AGI − floor) / $15k single or $30k MFJ ratio.`,
+      `TY${computed.taxYear} MAGI phase-out band for ${client.filingStatus}: $${band.start.toLocaleString("en-US")}–$${band.end.toLocaleString("en-US")} (engine's year-indexed §221 map — Rev. Proc. 2023-34 / 2024-40 / 2025-32).`,
+      `Phase-out reduction: ratable, (band end − MAGI) / band width.`,
       `MFS — DISQUALIFIED per §221(f)(2).`,
       `Dependent of another taxpayer — DISQUALIFIED.`,
       `Related-party loans (family member) — DISQUALIFIED per §221(d)(1)(B).`,
@@ -6190,19 +6268,16 @@ const G1_72_WITHHOLDING_RATE = 0.22;
 
 function detectRsuSellToCover(args: {
   computed: ComputedTaxReturn;
+  baselineInputs?: TaxReturnInputs;
 }): OpportunityHit | null {
-  const { computed } = args;
-  // Use W-2 wages proxy. Engine doesn't decompose RSU from W-2; CPA confirms.
-  // Proxy: totalIncome minus identifiable non-wage components (SE, retirement, unemployment).
-  const seIncome = computed.detail.se.netSeEarnings ?? 0;
-  const retirementIncome = computed.form1099Summary?.retirementIncome ?? 0;
-  const unemployment = computed.form1099Summary?.unemploymentCompensationOnly ?? 0;
-  const interest = computed.form1099Summary?.interestIncome ?? 0;
-  const dividends = (computed.form1099Summary?.ordinaryDividends ?? 0)
-                  + (computed.form1099Summary?.qualifiedDividends ?? 0);
-  const wagesProxy = Math.max(0,
-    computed.totalIncome - seIncome - retirementIncome - unemployment - interest - dividends,
-  );
+  const { computed, baselineInputs } = args;
+  // M3 (audit 2026-06-11) — RSUs are W-2 compensation: require ACTUAL W-2s and
+  // measure wages from the real Box-1 totals (or the refined proxy that nets
+  // out K-1/rental/capital-gain income, which the old proxy counted as wages —
+  // a $500k-K-1 client with no W-2 was told they had a $26k RSU withholding
+  // gap). Engine doesn't decompose RSU from W-2; CPA confirms via Box 12 V.
+  const { hasW2, wages: wagesProxy } = w2WagesSignal(computed, baselineInputs);
+  if (!hasW2) return null;
   if (wagesProxy < G1_72_MIN_WAGES) return null;
   const fedRate = federalMarginalRate(computed);
   if (fedRate < G1_72_MIN_MARGINAL) return null;
@@ -7195,11 +7270,18 @@ const G1_87_LOST_MATCH_RATE = 0.05;
 function detectSection401a17Cap(args: {
   computed: ComputedTaxReturn;
   adjustments: AdjustmentFact[];
+  baselineInputs?: TaxReturnInputs;
 }): OpportunityHit | null {
-  const { computed, adjustments } = args;
+  const { computed, adjustments, baselineInputs } = args;
   if (computed.totalIncome < G1_87_MIN_INCOME) return null;
   const seIncome = computed.detail.se.netSeEarnings ?? 0;
-  const wagesProxy = Math.max(0, computed.totalIncome - seIncome);
+  // M3 (audit 2026-06-11) — §401(a)(17) caps PLAN COMPENSATION (W-2 wages or
+  // SE earned income), not investment income. The wage leg requires ACTUAL
+  // W-2s; the SE leg stands on the engine's net-SE figure. The old
+  // `totalIncome − netSE` proxy told a K-1-only owner with an IRA adjustment
+  // their "compensation" exceeded the qualified-plan cap.
+  const { hasW2, wages } = w2WagesSignal(computed, baselineInputs);
+  const wagesProxy = hasW2 ? wages : 0;
   const cap = G1_87_COMP_CAP[resolveTaxYear(computed.taxYear)];
   if (wagesProxy < cap && seIncome < cap) return null;
   // Skip if no qualified plan adjustment.
@@ -7588,15 +7670,24 @@ function detectSolo401kDeferral(args: {
 
   // SEP contribution = 20% × (netSE − halfSE)
   const halfSe = computed.detail.se.deductibleHalf ?? 0;
+  // §401(c)(2)/§404(a)(8) plan compensation for the self-employed = net SE
+  // earnings − the ½-SE-tax deduction (the engine's own figures).
   const baseForContrib = Math.max(0, netSe - halfSe);
   const sepContrib = baseForContrib * 0.20;
 
-  const employeeDeferral = G1_92_EMPLOYEE_DEFERRAL[resolveTaxYear(computed.taxYear)];
+  // M1 (audit 2026-06-11) — the employee elective deferral is capped at BOTH
+  // the §402(g) dollar limit AND 100% of compensation (you cannot defer more
+  // than you earned), and the total annual addition is capped at min(§415(c)
+  // dollar limit, 100% of compensation) per §415(c)(1)(B). Pre-fix, a
+  // $22k-net-SE client (comp ≈ $20.3k) was told to defer "$23,500 extra" —
+  // an illegal recommendation.
+  const deferralDollarLimit = G1_92_EMPLOYEE_DEFERRAL[resolveTaxYear(computed.taxYear)];
+  const employeeDeferral = Math.min(deferralDollarLimit, baseForContrib);
   // Solo 401(k) total = employee deferral + employer match (= SEP-equivalent),
-  // capped at the §415(c) annual-additions limit for the year.
+  // capped at the §415(c) annual-additions limit AND at compensation.
   const employerMatch = sepContrib;
   const section415cCap = SEP_ANNUAL_LIMIT[resolveTaxYear(computed.taxYear)];
-  const totalContribution = Math.min(employeeDeferral + employerMatch, section415cCap);
+  const totalContribution = Math.min(employeeDeferral + employerMatch, section415cCap, baseForContrib);
 
   // Extra shelter vs SEP
   const extraVsSep = Math.max(0, totalContribution - sepContrib);
@@ -7660,10 +7751,10 @@ function detectSolo401kDeferral(args: {
       estSavings,
     },
     assumptions: [
-      `Solo 401(k) = employee deferral + employer match. Employee deferral TY2024 $23,000 (§402(g)).`,
+      `Solo 401(k) = employee deferral + employer match. Employee deferral capped at min(the year's §402(g) dollar limit — $23,000/$23,500/$24,500 TY2024/25/26 — AND 100% of plan compensation = net SE − ½SE per §401(c)(2)); the total annual addition is further capped at min(§415(c) dollar limit, 100% of compensation) per §415(c)(1)(B).`,
       `Age 50+ catch-up $7,500 (§414(v)). Not included in this heuristic (CPA adds if age ≥ 50).`,
       `Employer match = 20% × (netSE − halfSE) — same as SEP formula.`,
-      `Total §415(c) cap TY2024 $69,000 / TY2025 $70,000.`,
+      `Total §415(c) cap TY2024 $69,000 / TY2025 $70,000 / TY2026 $72,000.`,
       `Plan establishment deadline: 12-31 of plan year (vs SEP-IRA extended return deadline = SEP more flexible).`,
       `Solo 401(k) allows Roth designation (Solo Roth 401(k) - tax-free growth); SEP doesn't.`,
       `Loan provision per §72(p) — Solo 401(k) can offer; SEP cannot.`,
@@ -7905,9 +7996,12 @@ function detectQualifiedTransportFringe(args: {
 }): OpportunityHit | null {
   const { computed, baselineInputs } = args;
   if (computed.totalIncome < G1_96_MIN_INCOME) return null;
-  // Must have W-2 wages (employee eligibility).
-  const seIncome = computed.detail.se.netSeEarnings ?? 0;
-  const wagesProxy = Math.max(0, computed.totalIncome - seIncome);
+  // M3 (audit 2026-06-11) — §132(f) requires an EMPLOYER offering the benefit:
+  // the client must have ACTUAL W-2 wages. The old `totalIncome − netSE` proxy
+  // counted K-1/rental/investment income as wages, so a zero-W-2 K-1 owner got
+  // an ENGINE-VERIFIED transit hit.
+  const { hasW2, wages: wagesProxy } = w2WagesSignal(computed, baselineInputs);
+  if (!hasW2) return null;
   if (wagesProxy < G1_96_MIN_INCOME) return null;
 
   const monthlyCap = G1_96_MONTHLY_CAP[resolveTaxYear(computed.taxYear)];
@@ -8274,7 +8368,12 @@ export function headlineSavings(hit: OpportunityHit): number {
 export function annotateVerifiedSavings(hits: OpportunityHit[]): void {
   for (const h of hits) {
     if (h.whatIf && h.whatIf.semantics === "savings") {
-      h.verifiedSavings = Math.round(Math.abs(h.whatIf.delta.combinedRefundDelta));
+      // SIGN PRESERVED (audit 2026-06-11): combinedRefundDelta > 0 = the
+      // scenario grows the refund = a saving. A NEGATIVE delta on a
+      // "savings"-semantics hit is an engine-verified COST — it must stay
+      // negative (the old Math.abs() displayed it as a positive saving and
+      // ranked it accordingly).
+      h.verifiedSavings = Math.round(h.whatIf.delta.combinedRefundDelta);
       h.savingsSource = "engine-verified";
     } else if (h.savingsSource === "engine-verified" && h.verifiedSavings != null) {
       // A detector that reads a value the engine already computed in the
@@ -8746,7 +8845,7 @@ export function evaluatePlanningOpportunities(args: PlanningInputs): Opportunity
   if (specificShare) hits.push(specificShare);
   // Phase H — H1 catalog v1.10: G1.57 NQDC §409A / G1.58 state residency /
   // G1.59 Coverdell ESA / G1.60 §41(h) R&D payroll / G1.61 §221 student loan.
-  const nqdc = detectNqdc409a({ client, computed });
+  const nqdc = detectNqdc409a({ client, computed, baselineInputs });
   if (nqdc) hits.push(nqdc);
   const stateMove = detectStateResidencyChange({ client, computed });
   if (stateMove) hits.push(stateMove);
@@ -8782,7 +8881,7 @@ export function evaluatePlanningOpportunities(args: PlanningInputs): Opportunity
   if (isoLot) hits.push(isoLot);
   // Phase H — H1 catalog v1.13: G1.72 RSU sell-to-cover / G1.73 NUA in-service /
   // G1.74 §45S FMLA / G1.75 WOTC §51 / G1.76 §170(h) non-syndicated easement.
-  const rsuCover = detectRsuSellToCover({ computed });
+  const rsuCover = detectRsuSellToCover({ computed, baselineInputs });
   if (rsuCover) hits.push(rsuCover);
   const nuaInService = detectNuaInService({ client, assetBalances });
   if (nuaInService) hits.push(nuaInService);
@@ -8821,7 +8920,7 @@ export function evaluatePlanningOpportunities(args: PlanningInputs): Opportunity
   if (clt) hits.push(clt);
   // Phase H — H1 catalog v1.16: G1.87 §401(a)(17) / G1.88 §199A SSTB /
   // G1.89 §199A aggregation / G1.90 PIF / G1.91 §139 disaster.
-  const section401a17 = detectSection401a17Cap({ computed, adjustments });
+  const section401a17 = detectSection401a17Cap({ computed, adjustments, baselineInputs });
   if (section401a17) hits.push(section401a17);
   const sstbNav = detectSstbNavigation({ computed, adjustments });
   if (sstbNav) hits.push(sstbNav);
@@ -8878,8 +8977,29 @@ export function evaluatePlanningOpportunities(args: PlanningInputs): Opportunity
   annotateVerifiedSavings(liveHits);
   // T1.3 — attach a deadline-aware action date to each hit.
   annotateDeadlines(liveHits, computed.taxYear);
-  liveHits.sort((a, b) => headlineSavings(b) - headlineSavings(a));
+  liveHits.sort(compareHitsForRanking);
   return liveHits;
+}
+
+/**
+ * T1.0g (M7, audit 2026-06-11) — hit-list ranking: ENGINE-VERIFIED hits with a
+ * positive verified saving rank ABOVE every heuristic estimate; within each
+ * tier, by headline savings descending. Rationale: heuristic mega-anchors
+ * (G1.39 QSBS flat $238k "assumed $1M gain", G1.20 easement AGI×30%×37%, …)
+ * were honest-but-hypothetical illustrations that outranked real
+ * engine-computed dollars on every HNW pass-through client, making the top
+ * Planning-tab recommendation a hypothetical. This is deliberately the
+ * MINIMAL change: estSavings/verifiedSavings values are untouched (both still
+ * travel on the hit), and the firm-wide `planningScore` already discounts
+ * heuristics through its per-hit `confidence` weighting — only the
+ * within-client presentation order changes.
+ */
+export function compareHitsForRanking(a: OpportunityHit, b: OpportunityHit): number {
+  const tier = (h: OpportunityHit): number =>
+    h.savingsSource === "engine-verified" && (h.verifiedSavings ?? 0) > 0 ? 1 : 0;
+  const dt = tier(b) - tier(a);
+  if (dt !== 0) return dt;
+  return headlineSavings(b) - headlineSavings(a);
 }
 
 // ── Phase H — H7 cross-strategy interaction modeling ──────────────────────
@@ -8945,11 +9065,14 @@ export function evaluateCrossStrategyScenario(args: {
     },
   ])[0];
 
+  // SIGN PRESERVED (audit 2026-06-11): savings = +combinedRefundDelta. A
+  // stack (or member) that nets a COST stays negative instead of |abs|
+  // flipping it into a phantom positive saving.
   const sumOfIndividualSavings = stackable.reduce(
-    (s, h) => s + Math.abs(h.whatIf!.delta.combinedRefundDelta),
+    (s, h) => s + h.whatIf!.delta.combinedRefundDelta,
     0,
   );
-  const combinedSavings = Math.abs(combinedScenario.delta.combinedRefundDelta);
+  const combinedSavings = combinedScenario.delta.combinedRefundDelta;
   const interactionEffect = combinedSavings - sumOfIndividualSavings;
 
   return {

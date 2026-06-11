@@ -18,6 +18,7 @@
  */
 
 import type { ComputedTaxReturn } from "./taxReturnEngine";
+import { resolveTaxYear, type TaxYear } from "./taxCalculator";
 
 export interface LineDelta {
   label: string;
@@ -51,6 +52,12 @@ export interface YearOverYearResult {
     newBenefit: number;
     note: string;
   };
+  /**
+   * YOY-2 — data-quality caveats on the comparison (e.g. the "prior year" was
+   * computed from the client's CURRENT non-year-scoped adjustment set re-run
+   * under prior-year law because no year-scoped documents exist for that year).
+   */
+  caveats: string[];
 }
 
 function delta(label: string, prior: number, current: number): LineDelta {
@@ -59,21 +66,67 @@ function delta(label: string, prior: number, current: number): LineDelta {
   return { label, prior, current, change, pctChange };
 }
 
-/** 2024 IRMAA Part-B tier thresholds (MAGI; single / MFJ). Approximation: real
- *  IRMAA uses a 2-year MAGI lookback. We flag the FIRST-tier crossing as a
- *  Medicare-premium heads-up. */
-function irmaaTier(agi: number, mfj: boolean): number {
-  const single = [103_000, 129_000, 161_000, 193_000, 500_000];
-  const joint = [206_000, 258_000, 322_000, 386_000, 750_000];
-  const tiers = mfj ? joint : single;
+/**
+ * YOY-1 — IRMAA Part-B MAGI tier thresholds, YEAR-INDEXED per the repo
+ * freshness convention (`Record<TaxYear>` — a missing supported year is a
+ * compile error). Each return's AGI is compared against ITS OWN year's table
+ * (pre-fix, the 2024 table flagged a phantom 2025→2026 tier-1 entry at
+ * $107k). Sources: CMS premium announcements / SSA POMS HI 01101.020 —
+ *   2024: single 103k/129k/161k/193k/500k; MFJ 206k/258k/322k/386k/750k; MFS >103k → tier 4, ≥397k → tier 5.
+ *   2025: single 106k/133k/167k/200k/500k; MFJ 212k/266k/334k/400k/750k; MFS 106k / 394k.
+ *   2026 (CMS 2026 Parts A&B fact sheet): single 109k/137k/171k/205k/500k; MFJ 218k/274k/342k/410k/750k; MFS 109k / 391k.
+ * MFS (lived with spouse) has only TWO surcharge levels, mapped to tiers 4/5
+ * (the SSA premium-table rows they correspond to); MFS-lived-apart-all-year is
+ * treated as single by SSA — not distinguishable from the return, so the MFS
+ * table is the conservative default. Approximation (documented): real IRMAA
+ * premiums for year Y+2 use year-Y MAGI vs the year-(Y+2) thresholds; this
+ * advisory flags the crossing as a Medicare-premium heads-up.
+ */
+const IRMAA_TIERS: Record<TaxYear, { single: number[]; joint: number[]; mfs: number[] }> = {
+  2024: {
+    single: [103_000, 129_000, 161_000, 193_000, 500_000],
+    joint: [206_000, 258_000, 322_000, 386_000, 750_000],
+    mfs: [103_000, 103_000, 103_000, 103_000, 397_000],
+  },
+  2025: {
+    single: [106_000, 133_000, 167_000, 200_000, 500_000],
+    joint: [212_000, 266_000, 334_000, 400_000, 750_000],
+    mfs: [106_000, 106_000, 106_000, 106_000, 394_000],
+  },
+  2026: {
+    single: [109_000, 137_000, 171_000, 205_000, 500_000],
+    joint: [218_000, 274_000, 342_000, 410_000, 750_000],
+    mfs: [109_000, 109_000, 109_000, 109_000, 391_000],
+  },
+};
+
+type IrmaaColumn = "single" | "joint" | "mfs";
+
+export function irmaaTier(agi: number, column: IrmaaColumn, taxYear: number): number {
+  const tiers = IRMAA_TIERS[resolveTaxYear(taxYear)][column];
   let tier = 0;
   for (const t of tiers) if (agi > t) tier++;
   return tier; // 0 = no surcharge, 1..5 = IRMAA tier
 }
 
+function irmaaColumnFor(filingStatus: string): IrmaaColumn {
+  if (filingStatus === "married_filing_jointly" || filingStatus === "qualifying_widow") return "joint";
+  if (filingStatus === "married_filing_separately") return "mfs";
+  return "single";
+}
+
 export function computeYearOverYear(args: {
   priorReturn: ComputedTaxReturn;
   currentReturn: ComputedTaxReturn;
+  /**
+   * YOY-2 — whether the prior year had any YEAR-SCOPED input documents
+   * (W-2 / 1099 / K-1 / rental / capital-transaction rows tagged with that
+   * tax year). When FALSE while the prior year still shows income, the
+   * "prior year" is really the client's current non-year-scoped adjustment
+   * set re-run under prior-year law — flagged in `caveats`. Omitted = no
+   * caveat (caller didn't inspect the rows).
+   */
+  priorYearScopedDocsPresent?: boolean;
 }): YearOverYearResult {
   const p = args.priorReturn;
   const c = args.currentReturn;
@@ -137,10 +190,11 @@ export function computeYearOverYear(args: {
     });
   }
 
-  // IRMAA Medicare-premium tier increase (AGI proxy for MAGI).
-  const mfj = c.filingStatus === "married_filing_jointly" || c.filingStatus === "qualifying_widow";
-  const pIrmaa = irmaaTier(p.adjustedGrossIncome, mfj);
-  const cIrmaa = irmaaTier(c.adjustedGrossIncome, mfj);
+  // IRMAA Medicare-premium tier increase (AGI proxy for MAGI). Each year's AGI
+  // is measured against ITS OWN year's threshold table (YOY-1); MFS uses the
+  // compressed MFS column.
+  const pIrmaa = irmaaTier(p.adjustedGrossIncome, irmaaColumnFor(p.filingStatus), p.taxYear);
+  const cIrmaa = irmaaTier(c.adjustedGrossIncome, irmaaColumnFor(c.filingStatus), c.taxYear);
   if (cIrmaa > pIrmaa) {
     crossings.push({
       id: "irmaa-tier",
@@ -159,12 +213,23 @@ export function computeYearOverYear(args: {
 
   const obbbaNew = c.obbbaSchedule1A.total - p.obbbaSchedule1A.total;
 
+  // YOY-2 — adjustments (and client-level facts like SS benefits / ACA) are
+  // not year-scoped in this schema; without year-scoped documents the prior
+  // year is the CURRENT data re-run under prior-year law.
+  const caveats: string[] = [];
+  if (args.priorYearScopedDocsPresent === false && p.totalIncome > 0.005) {
+    caveats.push(
+      `No TY${p.taxYear} year-scoped documents (W-2/1099/K-1/rental/capital-transaction rows) were found — the prior year reflects the client's current adjustment set re-computed under TY${p.taxYear} law. Deltas and crossings then measure LAW changes, not actual income changes.`,
+    );
+  }
+
   return {
     priorYear: p.taxYear,
     currentYear: c.taxYear,
     deltas,
     notableSwings,
     thresholdCrossings: crossings,
+    caveats,
     obbbaImpact: {
       priorTotal: p.obbbaSchedule1A.total,
       currentTotal: c.obbbaSchedule1A.total,

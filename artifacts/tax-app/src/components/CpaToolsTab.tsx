@@ -80,6 +80,8 @@ interface ProjectionResp {
     withholdingCoversSafeHarbor: boolean;
   };
   obbbaImpact: { deductionTotal: number; note: string };
+  /** TP-4 — the projection's modeling assumptions (withholding growth, carryforward chaining, law-year clamp, §7503 roll). */
+  assumptions?: string[];
 }
 interface FsSummary {
   filingStatus: string;
@@ -186,6 +188,19 @@ function ProjectionCard({ clientId }: { clientId: number }) {
           <p className="text-xs text-muted-foreground">
             <span className="font-medium text-brand-ink">OBBBA:</span> {p.obbbaImpact.note}
           </p>
+        )}
+
+        {(p.assumptions?.length ?? 0) > 0 && (
+          <details className="text-xs text-muted-foreground">
+            <summary className="cursor-pointer font-medium text-brand-ink">
+              Assumptions ({p.assumptions!.length})
+            </summary>
+            <ul className="mt-1 list-disc space-y-1 pl-4">
+              {p.assumptions!.map((a, i) => (
+                <li key={i}>{a}</li>
+              ))}
+            </ul>
+          </details>
         )}
       </CardContent>
     </Card>

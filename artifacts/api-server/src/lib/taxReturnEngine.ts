@@ -312,6 +312,23 @@ export interface RecalcOverrides {
   additionalIncome?: number;
   additionalDeductions?: number;
   useItemizedDeductions?: boolean;
+  /**
+   * FS-1 (T1.0h) — TRUE forced itemizing: claim the itemized total EVEN WHEN it
+   * is below the standard deduction. The plain `useItemizedDeductions: true`
+   * override still takes max(itemized, std) downstream, which cannot express
+   * the §63(c)(6)(A) MFS coupling (when one spouse itemizes, the other's std
+   * deduction is $0 — they must claim their actual Schedule A total, often ~$0).
+   * Implies `useItemizedDeductions`. Used by the filing-status optimizer.
+   */
+  forceItemized?: boolean;
+  /**
+   * FS-4 (T1.0h) — force the STANDARD deduction even when the Schedule A total
+   * is larger (the other legal §63(c)(6) MFS pair: both spouses take std).
+   * Ignored when `forceItemized` is set. The legacy `useItemizedDeductions:
+   * false` override is deliberately NOT this (it only holds when there is
+   * nothing to itemize — historical contract, don't change it).
+   */
+  forceStandardDeduction?: boolean;
 }
 
 /**
@@ -2962,12 +2979,20 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const stdDed = claimedAsDependent
     ? getDependentStandardDeductionBase(client.filingStatus, taxYear, earnedIncomeForStdDed)
     : getFederalStandardDeduction(client.filingStatus, taxYear);
+  // FS-1/FS-4 — the filing-status optimizer's forced deduction modes (see
+  // RecalcOverrides). forceItemized wins over forceStandardDeduction.
+  const forceItemized = overrides.forceItemized === true;
+  const forceStandard = !forceItemized && overrides.forceStandardDeduction === true;
   const useItemizedDeductions =
-    useItemizedDeductionsOverride === true
+    forceItemized
       ? true
-      : useItemizedDeductionsOverride === false && additionalDeductions === 0 && scheduleAItemizedWithInvInt === 0
+      : forceStandard
         ? false
-        : itemizedTotal > stdDed;
+        : useItemizedDeductionsOverride === true
+          ? true
+          : useItemizedDeductionsOverride === false && additionalDeductions === 0 && scheduleAItemizedWithInvInt === 0
+            ? false
+            : itemizedTotal > stdDed;
 
   // ── Step 5: Run base tax calc (federal AGI + taxable + state) ──────
   // additionalIncome now includes the taxable portion of Social Security
@@ -2989,6 +3014,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     // E3b — §63(c)(5) dependent std-deduction limit.
     claimedAsDependent,
     earnedIncome: earnedIncomeForStdDed,
+    // FS-1 — skip the max-with-std protection (forced MFS itemizer gets
+    // exactly their itemized total, even when below std / $0).
+    forceItemized,
   });
 
   // K-1 §199A QBI (Box 20 Z on 1065 / Box 17 V on 1120-S) joins the QBI base.

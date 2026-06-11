@@ -2564,6 +2564,15 @@ export function runTaxCalculation(params: {
   claimedAsDependent?: boolean | null;
   /** Earned income (wages + net SE earnings) — drives the §63(c)(5) limit. */
   earnedIncome?: number | null;
+  /**
+   * FS-1 (T1.0h) — TRUE forced itemizing: take the itemized total EVEN WHEN it
+   * is below the standard deduction, skipping the max() protection. Required to
+   * price the §63(c)(6)(A) MFS coupling (when one spouse itemizes, the other's
+   * standard deduction is $0 — they claim their actual Schedule A total, often
+   * ~$0). Only meaningful when `useItemizedDeductions` is true. Default false
+   * preserves the historical max() behavior for every existing caller.
+   */
+  forceItemized?: boolean | null;
 }): TaxCalculationResult {
   const {
     totalWages,
@@ -2594,8 +2603,10 @@ export function runTaxCalculation(params: {
     filingStatus, taxYear: year,
   });
   const fedStdDeduction = baseFedStdDeduction + stdDedAddOn;
+  // FS-1: `forceItemized` skips the max-with-std protection — a forced MFS
+  // itemizer (§63(c)(6)(A) coupling) gets exactly their itemized total, even $0.
   const fedDeduction = useItemizedDeductions
-    ? Math.max(itemizedDeductions, fedStdDeduction)
+    ? (params.forceItemized ? Math.max(0, itemizedDeductions) : Math.max(itemizedDeductions, fedStdDeduction))
     : fedStdDeduction;
   const taxableIncome = Math.max(0, adjustedGrossIncome - fedDeduction);
 
@@ -5017,6 +5028,21 @@ const SLI_PHASE_OUT: Record<TaxYear, Record<string, { start: number; end: number
     married_filing_separately: null,
   },
 };
+
+/**
+ * T1.0g (M2) — the §221 MAGI phase-out band for a filing status + year, or
+ * null when the status is ineligible (MFS). ONE source of truth shared with
+ * `calculateStudentLoanInterest` so detector gates can never go stale against
+ * the engine's own phase-out math (the G1.61 detector previously hardcoded the
+ * TY2024 tops and false-suppressed TY2025 single filers between $95k–$100k).
+ */
+export function sliPhaseOutBand(
+  filingStatus: string,
+  taxYear: number,
+): { start: number; end: number } | null {
+  const band = SLI_PHASE_OUT[resolveTaxYear(taxYear)][filingStatus];
+  return band ? { ...band } : null;
+}
 
 export interface StudentLoanInterestCalculation {
   interestPaid: number;

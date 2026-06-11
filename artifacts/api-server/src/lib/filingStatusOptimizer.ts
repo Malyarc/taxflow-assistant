@@ -21,9 +21,24 @@
  *    the primary taxpayer's (the comparison is then only as good as that).
  *  - Dependents + household items (SS benefits, ACA) are assigned to the
  *    primary taxpayer (a dependent can be claimed by only ONE spouse on MFS).
- *  - §63(c)(6)(A): if one spouse itemizes, BOTH must — the optimizer detects
- *    this and forces itemized on both (the other gets their Schedule A total,
- *    possibly near $0). Reported via `itemizedCouplingApplied`.
+ *  - FS-2: the HOUSEHOLD-LEVEL `existingItemizedFallback` (the legacy
+ *    single-number itemized total off the persisted tax_returns row) and the
+ *    `overrides.additionalIncome`/`additionalDeductions` lump sums are
+ *    EXCLUDED from both MFS halves — they are joint totals that cannot be
+ *    attributed per spouse, and inheriting them deducted/added the full
+ *    household amount TWICE across the pair (phantom MFS savings). Each MFS
+ *    half itemizes only from its own per-line (tag-split) Schedule A
+ *    adjustments. LIMITATION: a client whose itemized total lives ONLY in the
+ *    legacy single-number column (no per-line adjustments) is compared as a
+ *    standard-deduction MFS pair — disclosed in `assumptions.notes`.
+ *  - §63(c)(6)(A): if one spouse itemizes, BOTH legal pairs are priced —
+ *    both-itemize (TRUE forced itemizing via `overrides.forceItemized`; the
+ *    no-deduction spouse claims their actual Schedule A total, possibly ~$0)
+ *    AND both-standard — and the CHEAPER legal pair represents MFS. Reported
+ *    via `itemizedCouplingApplied` + `itemizedCouplingChoice`.
+ *  - FS-3: in the 9 community-property states the tag-based split is NOT how
+ *    MFS works (community income is generally allocated 50/50 regardless of
+ *    whose W-2 it is) — a caveat is added for those states.
  *  - The engine already disallows the MFS-barred credits (EITC, dependent care
  *    unless lived apart, the $25k PAL allowance when lived together, etc.).
  */
@@ -62,6 +77,18 @@ interface MfsSplit {
   spouseTagsPresent: boolean;
 }
 
+/**
+ * FS-2 — overrides safe to inherit into an MFS half. `taxYear` is a year
+ * selector (not a dollar amount) and stays; the household-level lump-sum
+ * dollar overrides (`additionalIncome` / `additionalDeductions`) and any
+ * deduction-mode force flags are dropped — splitting an unattributable joint
+ * total is the CPA's call, and inheriting it doubled it across the pair.
+ */
+function splitSafeOverrides(joint: TaxReturnInputs): TaxReturnInputs["overrides"] {
+  const taxYear = joint.overrides?.taxYear;
+  return taxYear != null ? { taxYear } : undefined;
+}
+
 function splitJointToMfs(joint: TaxReturnInputs): MfsSplit {
   const c = joint.client;
   const w2s = joint.w2s ?? [];
@@ -92,6 +119,12 @@ function splitJointToMfs(joint: TaxReturnInputs): MfsSplit {
     w2s: pick(w2s as (W2Fact & { spouse?: string | null })[], "taxpayer"),
     form1099s: pick(f99s as (Form1099Fact & { spouse?: string | null })[], "taxpayer"),
     adjustments: pick(adj as (AdjustmentFact & { spouse?: string | null })[], "taxpayer"),
+    // FS-2 — the household-level legacy itemized total + lump-sum overrides
+    // must not replicate into BOTH halves (each half would deduct/add the full
+    // joint amount). Per-line Schedule A adjustments (tag-split above) drive
+    // each spouse's itemized total instead.
+    existingItemizedFallback: undefined,
+    overrides: splitSafeOverrides(joint),
   };
 
   // Spouse MFS return: spouse-tagged income only, NO dependents/SS/ACA, the
@@ -129,6 +162,9 @@ function splitJointToMfs(joint: TaxReturnInputs): MfsSplit {
     capitalTransactions: [],
     scheduleCAssets: [],
     form4797: [],
+    // FS-2 — same household-total exclusions as the taxpayer half.
+    existingItemizedFallback: undefined,
+    overrides: splitSafeOverrides(joint),
   };
 
   return { taxpayer, spouse, spouseTagsPresent };
@@ -160,10 +196,20 @@ export interface FilingStatusOptimizerResult {
   assumptions: {
     spouseTagsPresent: boolean;
     itemizedCouplingApplied: boolean;
+    /**
+     * FS-4 — which legal §63(c)(6) deduction pair won when the coupling fired:
+     * "both_itemized" (forced) or "both_standard". Null when no coupling.
+     */
+    itemizedCouplingChoice: "both_itemized" | "both_standard" | null;
     dependentsAllocatedToPrimaryTaxpayer: boolean;
     notes: string[];
   };
 }
+
+/** FS-3 — the 9 community-property states (the tag split is wrong there). */
+const COMMUNITY_PROPERTY_STATES: ReadonlySet<string> = new Set([
+  "CA", "TX", "WA", "AZ", "ID", "LA", "NV", "NM", "WI",
+]);
 
 function summarize(ret: ComputedTaxReturn): FilingStatusReturnSummary {
   return {
@@ -197,18 +243,40 @@ export function optimizeFilingStatus(
   let tpRet = computeTaxReturnPure(split.taxpayer);
   let spRet = computeTaxReturnPure(split.spouse);
 
-  // §63(c)(6)(A) — if exactly one spouse itemizes, BOTH must itemize.
+  // §63(c)(6)(A) — if exactly one spouse itemizes, the natural mixed pair
+  // (one itemized + one standard) is ILLEGAL: an MFS filer whose spouse
+  // itemizes has a $0 standard deduction. Price BOTH legal pairs and let the
+  // cheaper one represent MFS (FS-1 + FS-4):
+  //  - both-itemized: TRUE forced itemizing (`forceItemized` skips the
+  //    engine's max-with-std protection — the no-deduction spouse claims
+  //    their actual Schedule A total, possibly $0);
+  //  - both-standard: both spouses take the standard deduction (the
+  //    natural itemizer gives up Schedule A).
   const tpItemizes = tpRet.itemizedDeductions != null;
   const spItemizes = spRet.itemizedDeductions != null;
   let itemizedCouplingApplied = false;
+  let itemizedCouplingChoice: "both_itemized" | "both_standard" | null = null;
   if (tpItemizes !== spItemizes) {
     itemizedCouplingApplied = true;
-    const forceItemized = (inp: TaxReturnInputs): TaxReturnInputs => ({
+    const withOverride = (inp: TaxReturnInputs, o: Partial<NonNullable<TaxReturnInputs["overrides"]>>): TaxReturnInputs => ({
       ...inp,
-      overrides: { ...(inp.overrides ?? {}), useItemizedDeductions: true },
+      overrides: { ...(inp.overrides ?? {}), ...o },
     });
-    tpRet = computeTaxReturnPure(forceItemized(split.taxpayer));
-    spRet = computeTaxReturnPure(forceItemized(split.spouse));
+    const tpItem = computeTaxReturnPure(withOverride(split.taxpayer, { forceItemized: true }));
+    const spItem = computeTaxReturnPure(withOverride(split.spouse, { forceItemized: true }));
+    const tpStd = computeTaxReturnPure(withOverride(split.taxpayer, { forceStandardDeduction: true }));
+    const spStd = computeTaxReturnPure(withOverride(split.spouse, { forceStandardDeduction: true }));
+    const itemizedPairNet = netTaxAfterCredits(tpItem) + netTaxAfterCredits(spItem);
+    const standardPairNet = netTaxAfterCredits(tpStd) + netTaxAfterCredits(spStd);
+    if (itemizedPairNet <= standardPairNet) {
+      tpRet = tpItem;
+      spRet = spItem;
+      itemizedCouplingChoice = "both_itemized";
+    } else {
+      tpRet = tpStd;
+      spRet = spStd;
+      itemizedCouplingChoice = "both_standard";
+    }
   }
 
   const mfjNet = netTaxAfterCredits(jointReturn);
@@ -226,7 +294,31 @@ export function optimizeFilingStatus(
   }
   if (itemizedCouplingApplied) {
     notes.push(
-      "§63(c)(6)(A) applied: one spouse itemized, so BOTH were forced to itemize (the other gets their Schedule A total, possibly near $0).",
+      itemizedCouplingChoice === "both_itemized"
+        ? "§63(c)(6)(A) applied: one spouse itemized naturally, so the two LEGAL pairs (both-itemized vs both-standard) were priced — BOTH-ITEMIZED was cheaper (the other spouse claims their actual Schedule A total, possibly near $0; a mixed itemized/standard pair is not allowed)."
+        : "§63(c)(6)(A) applied: one spouse itemized naturally, so the two LEGAL pairs (both-itemized vs both-standard) were priced — BOTH-STANDARD was cheaper (the itemizing spouse gives up Schedule A; a mixed itemized/standard pair is not allowed).",
+    );
+  }
+  // FS-2 — household-total exclusion disclosure (only relevant when the joint
+  // inputs actually carried one of the excluded amounts).
+  if (jointInputs.existingItemizedFallback != null && Number(jointInputs.existingItemizedFallback) > 0) {
+    notes.push(
+      "The legacy single-number itemized total on the joint return was EXCLUDED from both MFS halves (a household total cannot be attributed per spouse — pre-fix it deducted twice). Each MFS half itemizes only from its per-line Schedule A adjustments; if this client's deductions live only in the legacy column, enter them as per-line adjustments (with spouse tags) for an accurate MFS comparison.",
+    );
+  }
+  if (
+    (jointInputs.overrides?.additionalIncome ?? 0) !== 0 ||
+    (jointInputs.overrides?.additionalDeductions ?? 0) !== 0
+  ) {
+    notes.push(
+      "The joint return's lump-sum additionalIncome/additionalDeductions overrides were EXCLUDED from both MFS halves (unattributable household totals would double across the pair). Re-enter them as tagged per-spouse adjustments to include them in the split.",
+    );
+  }
+  // FS-3 — community-property caveat.
+  const state = (jointInputs.client.state ?? "").toUpperCase();
+  if (COMMUNITY_PROPERTY_STATES.has(state)) {
+    notes.push(
+      `${state} is a COMMUNITY-PROPERTY state: on real MFS returns, community income (most wages/SE earned during the marriage) is generally allocated 50/50 between the spouses regardless of whose name is on the W-2 (IRS Pub 555; Form 8958). The tag-based split here does NOT model that allocation — treat the MFS side as indicative only and re-run with a 50/50 community split before recommending MFS.`,
     );
   }
   notes.push(
@@ -245,6 +337,7 @@ export function optimizeFilingStatus(
     assumptions: {
       spouseTagsPresent: split.spouseTagsPresent,
       itemizedCouplingApplied,
+      itemizedCouplingChoice,
       dependentsAllocatedToPrimaryTaxpayer: true,
       notes,
     },
