@@ -1,3 +1,46 @@
+# Handoff Note — 2026-06-11b (T1.0 CLOSED — 8-worktree ultracode fleet; ~45 fixes incl. the §1(h) worksheet interleave; PR #2)
+
+**ALL of MASTER-TODO T1.0 (a)–(l) is DONE** on `claude/serene-hamilton-rqzitr`
+(PR #2; built in the cloud sandbox — NOT deployed; the EC2 key lives on the
+local machine). 8 parallel worktree agents (the session-limit cutoff mid-run
+was recovered by 2 finisher agents + orchestrator salvage), merged one-by-one
+with hand-adjudicated conflicts.
+
+**Final green bar:** 117 no-API suites / **7,117 assertions / 0 failed** ·
+property harness 5,636 · differential oracle 758 scenarios **0 divergences** ·
+**ALL 17 yes-API integration suites green WITH a dummy AI key** (returnQa +
+campaign email-draft now degrade to the deterministic path on a THROWN LLM
+call) · api-server + tax-app builds clean · migrations **0021–0024** applied
+locally (additive: §25D CF, W-2 Box 10/12/13/18-20 + adjustments.tax_year +
+excess-SS/8959-IV, qbi_loss_carryforward_remaining, children_under_6).
+
+**Adjudications of record (don't re-litigate without reading these):**
+1. **§1(h) INTERLEAVE** — the Schedule D Tax Worksheet was implemented
+   line-by-line (`computeScheduleDTaxWorksheet`); the special 25/28 layers fill
+   ordinary brackets up to the below-25% top (L21) and the 25% bucket is
+   reduced by (L10+L21)−L1 (L38). The three prior "flat" rulings are
+   OVERTURNED; §1231(c) recharacterization is tax-neutral below the 24% top
+   (t10cd E2 pins both legs at $30,038.50 with the full worksheet derivation).
+2. **CO TY2025 = 4.40%** — the audit's TABOR-4.25% claim was REFUTED against
+   the actual DR 0104 booklet (trigger missed); pinned.
+3. **EITC §32(a)(2) is a ceiling** (EIC-table method) — engine matches Pub 596.
+4. WV TY2026 = SB 392 retroactive rates; CA AMT 2024 = the real FTB
+   exemptions; RI SS limits TY2024; §30C survives to 6/30/2026 (NOT 12/31/25).
+
+**Deploy checklist (local machine):** review/merge PR #2 → main → EC2 cycle
+(`migrate` applies 0021–0024 — review additive SQL again on the box) → frontend
+rsync (codegen regenerated api.schemas) → re-score sweep (planning columns:
+detector gating changed) → healthz + smokes: QSS $307,274 → addlMedicare
+$965.47 · 1099-INT Box1 5k/Box3 4k/Box8 3k → AGI $9,000 + CA unchanged ·
+KS $60k single → $2,548.31 · MCTMT $150k SE → $900 · NOL client AGI now
+NET of NOL · TY2026 PTC 450% FPL → $0.
+
+**Still open after T1.0:** T0.1/T0.2 (the security gate — UNCHANGED, still the
+launch blocker), T0.3 A3/A6 (corner matrix + CPA sign-off), T1.5 accuracy-
+deepening (incl. the filingStatusTraits refactor), T2.3 UX/UI 2.0, T5 growth.
+
+---
+
 # Handoff Note — 2026-06-11 (FULL-APP MAXIMUM AUDIT #2 — 13-agent fleet + NEW differential-oracle harness; 9 fixes on PR #2, NOT yet deployed)
 
 Ran the full-app maximum audit from a **cloud sandbox** (branch

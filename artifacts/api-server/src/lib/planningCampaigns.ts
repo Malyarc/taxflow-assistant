@@ -183,15 +183,23 @@ export async function draftCampaignEmail(args: {
     },
     cohort: args.stats,
   };
-  const response = await openai.chat.completions.create({
-    model: CAMPAIGN_MODEL,
-    max_completion_tokens: 500,
-    messages: [
-      { role: "system", content: TEMPLATE_SYSTEM_PROMPT },
-      { role: "user", content: JSON.stringify(payload) },
-    ],
-  });
-  const template = (response.choices[0]?.message?.content ?? "").trim();
+  // T1.0l sibling of the returnQa fix: a THROWN LLM call (invalid key,
+  // provider outage, 429) must degrade to the deterministic template, not a
+  // 500 — the empty-answer path below already does.
+  let template = "";
+  try {
+    const response = await openai.chat.completions.create({
+      model: CAMPAIGN_MODEL,
+      max_completion_tokens: 500,
+      messages: [
+        { role: "system", content: TEMPLATE_SYSTEM_PROMPT },
+        { role: "user", content: JSON.stringify(payload) },
+      ],
+    });
+    template = (response.choices[0]?.message?.content ?? "").trim();
+  } catch {
+    return { template: stubCampaignTemplate(args.strategy), mergeFields, aiUsed: false, model: "error" };
+  }
   // The merge fields are the contract — a draft that lost them is unusable
   // for the local mail-merge, so fall back to the deterministic template.
   if (!template || !mergeFields.every((f) => template.includes(f))) {
