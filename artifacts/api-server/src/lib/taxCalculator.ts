@@ -381,30 +381,29 @@ export function calculateFederalTaxWithBreakdown(
   return { total, breakdown, marginalRate };
 }
 
+/**
+ * T1.0e #17 (2026-06-11) — now DELEGATES to the same computeStateTaxCore that
+ * calculateStateTax uses, so the breakdown/planning-marginal-rate surface can
+ * no longer contradict the actual computed liability (it previously skipped
+ * the WI sliding std ded, personal exemptions, retirement/SS exclusions, OR
+ * subtraction, and the CT branches). The bracket rows decorate the core's
+ * stateTaxable; `total` is the core's total (may exceed the row sum when a
+ * surtax/UT-credit applies — same as before for surtaxes).
+ */
 export function calculateStateTaxWithBreakdown(
   federalAgi: number,
   stateCode: string,
   filingStatus: string,
   taxYear: number,
+  options?: StateTaxOptions,
 ): { total: number; breakdown: BracketBreakdown[]; marginalRate: number; stateName: string; hasIncomeTax: boolean } {
-  const year = resolveTaxYear(taxYear);
-  const yearData = STATE_TAX_DATA_BY_YEAR[year];
-  const info = yearData[stateCode.toUpperCase()];
-  if (!info || !info.hasIncomeTax || !info.brackets || !info.standardDeduction) {
-    return { total: 0, breakdown: [], marginalRate: 0, stateName: info?.name ?? stateCode, hasIncomeTax: false };
+  const core = computeStateTaxCore(federalAgi, stateCode, filingStatus, taxYear, options);
+  if (!core.hasIncomeTax || !core.brackets) {
+    return { total: 0, breakdown: [], marginalRate: 0, stateName: core.stateName, hasIncomeTax: false };
   }
-  const status = filingStatus as StateFilingStatus;
-  const stdDed = pickStateStdDeduction(info.standardDeduction, status);
-  const stateTaxable = Math.max(0, federalAgi - stdDed);
-  const brackets = pickStateBrackets(info.brackets, status);
-  const breakdown = applyBracketsWithBreakdown(stateTaxable, brackets);
-  let total = breakdown.reduce((s, b) => s + b.taxFromBracket, 0);
-  // STL-03: surtax on state taxable income, not AGI (see calculateStateTax).
-  if (info.surtax && stateTaxable > info.surtax.threshold) {
-    total += (stateTaxable - info.surtax.threshold) * info.surtax.rate;
-  }
+  const breakdown = applyBracketsWithBreakdown(core.stateTaxable, core.brackets);
   const marginalRate = breakdown.length > 0 ? breakdown[breakdown.length - 1].rate : 0;
-  return { total: Math.max(0, total), breakdown, marginalRate, stateName: info.name, hasIncomeTax: true };
+  return { total: core.total, breakdown, marginalRate, stateName: core.stateName, hasIncomeTax: true };
 }
 
 export function getFederalStandardDeduction(filingStatus: string, taxYear: number): number {
@@ -861,12 +860,22 @@ export interface LocalityInfo {
    * top marginal rate (kept for the informational `flatRate` field only).
    */
   localBrackets?: { single: StateBracket[]; joint: StateBracket[] };
+  /**
+   * T1.0f #25 — year-indexed rate overrides for localities with verified
+   * mid-cycle rate changes (`rate` stays the TY2024 baseline). Resolved via
+   * `resolveTaxYear`; a missing year falls back to `rate`. Keep this SPARSE —
+   * only DOR-verified changes (MD Dorchester/Kent/Allegany, IN Monroe,
+   * Philadelphia), not speculative indexing.
+   */
+  rateByYear?: Partial<Record<number, number>>;
 }
 
 export const LOCAL_TAX_DATA: Record<string, LocalityInfo> = {
   // ── Maryland counties — Comptroller of Maryland 2024 rates ───────────────
   // Source: Maryland Tax Tables for County Income Tax (Comptroller 2024).
-  "MD-ALLEGANY":      { jurisdictionLabel: "Allegany County, MD",       state: "MD", rate: 0.0303, base: "state_taxable" },
+  // T1.0f #25 — Allegany raised 3.03% → 3.20% effective TY2026 (MD
+  // Comptroller 2026 local-rate withholding memo).
+  "MD-ALLEGANY":      { jurisdictionLabel: "Allegany County, MD",       state: "MD", rate: 0.0303, base: "state_taxable", rateByYear: { 2026: 0.0320 } },
   // MD-08 — Anne Arundel CY2024 GRADUATED local income tax (Bill 47-24; MD
   // Comptroller 2024 local-rate table). Single/MFS/dependent vs joint/HoH/QSS
   // thresholds differ. `rate` retained as the informational middle-band rate.
@@ -882,7 +891,10 @@ export const LOCAL_TAX_DATA: Record<string, LocalityInfo> = {
   "MD-CARROLL":       { jurisdictionLabel: "Carroll County, MD",        state: "MD", rate: 0.0303, base: "state_taxable" },
   "MD-CECIL":         { jurisdictionLabel: "Cecil County, MD",          state: "MD", rate: 0.0275, base: "state_taxable" },
   "MD-CHARLES":       { jurisdictionLabel: "Charles County, MD",        state: "MD", rate: 0.0303, base: "state_taxable" },
-  "MD-DORCHESTER":    { jurisdictionLabel: "Dorchester County, MD",     state: "MD", rate: 0.0320, base: "state_taxable" },
+  // T1.0f #25 — Dorchester raised 3.20% → 3.30% for TY2025 (retroactive; the
+  // 2025 session's HB 352 raised the county cap 3.2% → 3.3% and Dorchester
+  // adopted it; MD Comptroller local-rate table).
+  "MD-DORCHESTER":    { jurisdictionLabel: "Dorchester County, MD",     state: "MD", rate: 0.0320, base: "state_taxable", rateByYear: { 2025: 0.0330, 2026: 0.0330 } },
   // MD-08 — Frederick CY2024 GRADUATED local income tax (MD Comptroller 2024
   // local-rate table). 4 bands; single vs joint thresholds differ above $25k.
   "MD-FREDERICK":     { jurisdictionLabel: "Frederick County, MD",      state: "MD", rate: 0.0296, base: "state_taxable",
@@ -893,7 +905,9 @@ export const LOCAL_TAX_DATA: Record<string, LocalityInfo> = {
   "MD-GARRETT":       { jurisdictionLabel: "Garrett County, MD",        state: "MD", rate: 0.0265, base: "state_taxable" },
   "MD-HARFORD":       { jurisdictionLabel: "Harford County, MD",        state: "MD", rate: 0.0306, base: "state_taxable" },
   "MD-HOWARD":        { jurisdictionLabel: "Howard County, MD",         state: "MD", rate: 0.0320, base: "state_taxable" },
-  "MD-KENT":          { jurisdictionLabel: "Kent County, MD",           state: "MD", rate: 0.0320, base: "state_taxable" },
+  // T1.0f #25 — Kent raised 3.20% → 3.30% effective TY2026 (MD Comptroller
+  // 2026 local-rate withholding memo).
+  "MD-KENT":          { jurisdictionLabel: "Kent County, MD",           state: "MD", rate: 0.0320, base: "state_taxable", rateByYear: { 2026: 0.0330 } },
   "MD-MONTGOMERY":    { jurisdictionLabel: "Montgomery County, MD",     state: "MD", rate: 0.0320, base: "state_taxable" },
   "MD-PRINCE_GEORGES":{ jurisdictionLabel: "Prince George's County, MD",state: "MD", rate: 0.0320, base: "state_taxable" },
   "MD-QUEEN_ANNES":   { jurisdictionLabel: "Queen Anne's County, MD",   state: "MD", rate: 0.0320, base: "state_taxable" },
@@ -930,7 +944,9 @@ export const LOCAL_TAX_DATA: Record<string, LocalityInfo> = {
   "IN-HAMILTON":      { jurisdictionLabel: "Hamilton County, IN",       state: "IN", rate: 0.0110, base: "state_taxable" },
   "IN-LAKE":          { jurisdictionLabel: "Lake County, IN",           state: "IN", rate: 0.0150, base: "state_taxable" },
   "IN-MARION":        { jurisdictionLabel: "Marion County, IN",         state: "IN", rate: 0.0202, base: "state_taxable" },
-  "IN-MONROE":        { jurisdictionLabel: "Monroe County, IN",         state: "IN", rate: 0.02035, base: "state_taxable" },
+  // T1.0f #25 — Monroe raised 2.035% → 2.14% effective 1/1/2025 (IN DOR
+  // Departmental Notice #1, Jan 2025).
+  "IN-MONROE":        { jurisdictionLabel: "Monroe County, IN",         state: "IN", rate: 0.02035, base: "state_taxable", rateByYear: { 2025: 0.0214, 2026: 0.0214 } },
   "IN-PORTER":        { jurisdictionLabel: "Porter County, IN",         state: "IN", rate: 0.0050, base: "state_taxable" },
   "IN-ST_JOSEPH":     { jurisdictionLabel: "St. Joseph County, IN",     state: "IN", rate: 0.0175, base: "state_taxable" },
   "IN-TIPPECANOE":    { jurisdictionLabel: "Tippecanoe County, IN",     state: "IN", rate: 0.0128, base: "state_taxable" },
@@ -957,11 +973,21 @@ export const LOCAL_TAX_DATA: Record<string, LocalityInfo> = {
   //
   // Source: dced.pa.gov/local-government/local-income-tax-information/psd-codes-and-eit-rates/
   //         (May 2026 snapshot). Philadelphia uses its own Wage Tax (not Act 511).
-  "PA-PHILADELPHIA":  { jurisdictionLabel: "Philadelphia, PA (Wage Tax)", state: "PA", rate: 0.0375, base: "wages_only" }, // resident rate; nonres 3.44%
+  // T1.0f #25 — Philadelphia cut the Wage Tax effective July 1, 2025:
+  // resident 3.75% → 3.74%, non-resident 3.44% → 3.43% (phila.gov Department
+  // of Revenue, June 2025 announcement; further cuts to 3.70%/3.39% by 2030).
+  // The engine applies 3.74% as the TY2025+ rate — a documented simplification
+  // of the calendar-year blend (CY2025 exact: 6 months at 3.75% + 6 at 3.74%
+  // ≈ 3.745%; CY2026 blends with the NEXT July cut when announced).
+  "PA-PHILADELPHIA":  { jurisdictionLabel: "Philadelphia, PA (Wage Tax)", state: "PA", rate: 0.0375, base: "wages_only", rateByYear: { 2025: 0.0374, 2026: 0.0374 } }, // resident rate; nonres 3.43% from 7/2025
   "PA-PITTSBURGH":    { jurisdictionLabel: "Pittsburgh, PA",              state: "PA", rate: 0.0300, base: "wages_only" }, // 2% city + 1% SD
   "PA-SCRANTON":      { jurisdictionLabel: "Scranton, PA",                state: "PA", rate: 0.0340, base: "wages_only" }, // 3.4% (Act 511 + commuter)
   "PA-WILKES_BARRE":  { jurisdictionLabel: "Wilkes-Barre, PA",            state: "PA", rate: 0.0300, base: "wages_only" }, // 3% combined
-  "PA-READING":       { jurisdictionLabel: "Reading, PA",                 state: "PA", rate: 0.0270, base: "wages_only" }, // 2.7% combined
+  // T1.0f #20 — Reading RESIDENT EIT = 3.6% (readingpa.gov "2025 City of
+  // Reading Taxes & Tax Rates" + Berks EIT Bureau 2024 instructions: Reading
+  // City/Reading SD 3.6%). The old 2.70% under-taxed by 0.9pp; the 0.3%
+  // distressed commuter tax ended July 2022 but the RESIDENT rate stayed 3.6%.
+  "PA-READING":       { jurisdictionLabel: "Reading, PA",                 state: "PA", rate: 0.0360, base: "wages_only" }, // 3.6% resident (city + SD)
   "PA-HARRISBURG":    { jurisdictionLabel: "Harrisburg, PA",              state: "PA", rate: 0.0200, base: "wages_only" }, // 2% combined
   "PA-LANCASTER":     { jurisdictionLabel: "Lancaster, PA",               state: "PA", rate: 0.0205, base: "wages_only" }, // 1.1% + 0.95% SD
   "PA-ALLENTOWN":     { jurisdictionLabel: "Allentown, PA",               state: "PA", rate: 0.01975, base: "wages_only" }, // 1.975% combined
@@ -1056,15 +1082,26 @@ export function calculateFlatRateLocalTax(params: {
   netSeProfit?: number;
   /** #7 — OH cross-city resident credit: municipal tax paid to the WORK city. */
   ohWorkCityTaxPaid?: number;
+  /** T1.0f #19 — federally-taxable Social Security. Subtracted from the
+   *  `state_taxable`/`oh_traditional` locality bases when the parent state
+   *  exempts SS (MD/IN/OH all do — their county/SDIT bases piggyback state
+   *  taxable income, which excludes SS). */
+  taxableSocialSecurity?: number;
+  /** T1.0f #24 — total W-2 Medicare wages (Box 5, Box-1 fallback). Preferred
+   *  `wages_only` base (OH qualifying wages / PA compensation / KY gross). */
+  totalMedicareWages?: number;
 }): NycLocalTaxCalculation | null {
   const info = LOCAL_TAX_DATA[params.localityCode];
   if (info) {
     // Enforce state match — a stale localityCode after a state change
     // silently skips rather than producing a phantom local tax.
     if (info.state !== params.residentState.toUpperCase()) return null;
+    // T1.0f #25 — year-indexed rate override (MD Dorchester/Kent/Allegany,
+    // IN Monroe, Philadelphia); missing year falls back to the TY2024 rate.
+    const effectiveRate = info.rateByYear?.[resolveTaxYear(params.taxYear)] ?? info.rate;
     return computeFlatRateLocalTaxFromInfo(
       params.localityCode,
-      info.rate,
+      effectiveRate,
       info.base,
       params.federalAgi,
       params.totalWages,
@@ -1080,6 +1117,8 @@ export function calculateFlatRateLocalTax(params: {
         creditLimitRate: info.creditLimitRate,
         workCityTaxPaid: params.ohWorkCityTaxPaid,
         localBrackets: info.localBrackets,
+        taxableSocialSecurity: params.taxableSocialSecurity,
+        medicareWages: params.totalMedicareWages,
       },
     );
   }
@@ -1099,6 +1138,7 @@ export function calculateFlatRateLocalTax(params: {
         params.taxYear,
         params.ohTraditionalBase,
         params.netSeProfit ?? 0,
+        { taxableSocialSecurity: params.taxableSocialSecurity, medicareWages: params.totalMedicareWages },
       );
     }
   }
@@ -1121,6 +1161,7 @@ export function calculateFlatRateLocalTax(params: {
         params.taxYear,
         params.ohTraditionalBase,
         params.netSeProfit ?? 0,
+        { taxableSocialSecurity: params.taxableSocialSecurity, medicareWages: params.totalMedicareWages },
       );
     }
   }
@@ -1152,8 +1193,28 @@ function computeFlatRateLocalTaxFromInfo(
     workCityTaxPaid?: number;
     /** L2 — graduated local brackets (MD Anne Arundel / Frederick). */
     localBrackets?: { single: StateBracket[]; joint: StateBracket[] };
+    /** T1.0f #19 — federally-taxable Social Security, subtracted from the
+     *  `state_taxable` / `oh_traditional` (approximated) bases when the parent
+     *  state exempts SS. MD/IN/OH (the only states using those bases) all
+     *  exempt SS, and their county/SDIT bases piggyback STATE taxable income
+     *  (MD Form 502 line 11 subtraction; IN Sch 2 line 5; OH Sch of
+     *  Adjustments line 14) — the old base over-taxed retirees by rate × SS. */
+    taxableSocialSecurity?: number;
+    /** T1.0f #24 — total W-2 MEDICARE wages (Box 5, Box-1 fallback upstream).
+     *  When > 0, replaces Box 1 in the `wages_only` base: OH municipal
+     *  "qualifying wages" = Box 5 (ORC 718.01(R)); PA-taxable compensation
+     *  (Act 32 EIT / Philadelphia wage tax) includes elective 401(k) deferrals
+     *  (61 Pa. Code §101.6); KY occupational license taxes hit gross wages.
+     *  Box 1 understates each by the elective-deferral amount. */
+    medicareWages?: number;
   },
 ): NycLocalTaxCalculation {
+  // T1.0f #19 — the SS subtraction applies only when the parent state exempts
+  // SS from its own income-tax base (all current locality parents — MD/IN/OH —
+  // do; guard keeps any future SS-taxing parent correct).
+  const ssSubtraction = !STATES_TAXING_SS.has(parentState.toUpperCase())
+    ? Math.max(0, extra?.taxableSocialSecurity ?? 0)
+    : 0;
   let base = 0;
   if (baseType === "federal_agi") {
     base = Math.max(0, federalAgi);
@@ -1164,7 +1225,9 @@ function computeFlatRateLocalTaxFromInfo(
     // EIT, so the SE term is floored at 0 independently. (Sub-gap: Philadelphia
     // self-employed file the NPT, computed here at the same resident rate,
     // gross of the income-based Schedule SP / SE-tax-equivalent reductions.)
-    base = Math.max(0, totalWages) + Math.max(0, netSeProfit);
+    // T1.0f #24 — prefer the Box-5 qualifying-wage base when supplied.
+    const wageBase = (extra?.medicareWages ?? 0) > 0 ? (extra?.medicareWages ?? 0) : totalWages;
+    base = Math.max(0, wageBase) + Math.max(0, netSeProfit);
     // KY occupational tax: cap the wages_only base. Kenton tracks the year's
     // OASDI/SS wage base (year-indexed); other jurisdictions use a fixed cap.
     const effectiveWageCap = extra?.wageCapTracksSsBase
@@ -1178,6 +1241,8 @@ function computeFlatRateLocalTaxFromInfo(
     // OH uses personal exemption instead). When CPA supplies the exact
     // traditional base, prefer that.
     if (ohTraditionalBase != null && ohTraditionalBase >= 0) {
+      // CPA-supplied exact OH IT-1040 Line 3 already excludes SS (Sched of
+      // Adjustments line 14) — no further subtraction.
       base = ohTraditionalBase;
     } else {
       const year = resolveTaxYear(taxYear);
@@ -1185,16 +1250,19 @@ function computeFlatRateLocalTaxFromInfo(
       const stdDed = stInfo?.standardDeduction
         ? pickStateStdDeduction(stInfo.standardDeduction, filingStatus as StateFilingStatus)
         : 0;
-      base = Math.max(0, federalAgi - stdDed);
+      // T1.0f #19 — the approximated OH AGI excludes taxable SS.
+      base = Math.max(0, federalAgi - stdDed - ssSubtraction);
     }
   } else {
-    // state_taxable: federalAgi − resident-state std ded.
+    // state_taxable: federalAgi − resident-state std ded − taxable SS
+    // (T1.0f #19 — MD/IN exempt SS; their county bases piggyback state
+    // taxable income, which already excludes it).
     const year = resolveTaxYear(taxYear);
     const stInfo = STATE_TAX_DATA_BY_YEAR[year]?.[parentState];
     const stdDed = stInfo?.standardDeduction
       ? pickStateStdDeduction(stInfo.standardDeduction, filingStatus as StateFilingStatus)
       : 0;
-    base = Math.max(0, federalAgi - stdDed);
+    base = Math.max(0, federalAgi - stdDed - ssSubtraction);
   }
   // L2 — graduated local brackets (MD Anne Arundel / Frederick CY2024+): when
   // the locality supplies a bracket schedule, the tax is progressive on `base`
@@ -1316,10 +1384,19 @@ export interface PartYearResidencyResult {
 //         decimal), ME (Sch NR nonresident credit = tax × Maine ratio), MO (MO-NRI,
 //         tax × MO income %), MT (Form 2 Sch II, ordinary tax × MT-source ratio),
 //         NE (1040N Sch III L85 = tax × ratio), NM (PIT-B "multiply line 12 % by the
-//         tax on line 13"), OK (511-NR base tax × OK %), OR (OR-40-N, tax-on-all ×
-//         Oregon %), RI (RI-1040NR L11 = RI tax × allocation %), VT (IN-111 L16 =
-//         L14 tax × L15 adjustment %), WI (1NPR L39 "Prorated tax: Multiply line 38
-//         by line 32").
+//         tax on line 13"), RI (RI-1040NR L11 = RI tax × allocation %), VT (IN-111
+//         L16 = L14 tax × L15 adjustment %), WI (1NPR L39 "Prorated tax: Multiply
+//         line 38 by line 32").
+//       OR REMOVED (T1.0f #21, 2026-06-11): Form OR-40-N is method (b) — the
+//         OR-40-N instructions multiply DEDUCTIONS/modifications by the Oregon
+//         percentage to produce Oregon TAXABLE income, then apply the rate
+//         chart DIRECTLY to that Oregon taxable income ("To compute tax on
+//         Form OR-40-N, line 45, use the tax rate charts"). The original
+//         comment conflated it with the PART-YEAR OR-40-P (which does prorate
+//         the tax). Method (a) over-taxed OR non-residents with a small OR
+//         share of a large AGI (OR's 9.9% bracket starts at $125k). OR now
+//         takes the conservative direct-brackets-on-source fallback; the
+//         tax-engine-nr-sourcing-tests exclusion list pins this.
 //       FLAT (method a == b numerically, BUT adding still corrects the std-ded
 //         over-deduction the fallback causes — the deduction is prorated by the
 //         source ratio): CO (DR 0104PN), IA (IA 126), KS (K-40 L10), LA (IT-540B),
@@ -1343,8 +1420,8 @@ export interface PartYearResidencyResult {
 // (conservative — confirm the NR form's line flow is method a before adding).
 const NR_AS_IF_RESIDENT_STATES = new Set<string>([
   "CA", "NY", "CT", "NJ", "MN", "GA", "NC", "OH",
-  // 2026-06-08 graduated method-(a) batch:
-  "AR", "DE", "ME", "MO", "MT", "NE", "NM", "OK", "OR", "RI", "VT", "WI",
+  // 2026-06-08 graduated method-(a) batch (OR removed 2026-06-11 — method (b)):
+  "AR", "DE", "ME", "MO", "MT", "NE", "NM", "OK", "RI", "VT", "WI",
   // 2026-06-08 flat method-(a) batch (corrects std-ded over-deduction):
   "CO", "IA", "KS", "LA", "ND",
 ]);
@@ -1365,6 +1442,15 @@ export function calculateMultiStateTax(params: {
   /** E14 — Total W-2 wages (Box 1). Used for OH municipal income tax base
    *  (`wages_only` localities). Default 0 → OH local tax is 0. */
   totalWages?: number;
+  /** T1.0f #24 — Total W-2 MEDICARE wages (Box 5, with per-W-2 Box-1 fallback
+   *  when Box 5 is absent). When > 0, `wages_only` localities use THIS as the
+   *  wage base instead of Box 1: OH municipal "qualifying wages" = Box 5
+   *  (ORC 718.01/718.011 — includes 401(k)/403(b)/457 deferrals); PA-taxable
+   *  compensation (Act 32 EIT + Philadelphia wage tax) includes elective
+   *  401(k) deferrals (61 Pa. Code §101.6 — PA DOR "Gross Compensation");
+   *  KY occupational license taxes apply to gross wages. Box 1 understates
+   *  all of these by the elective-deferral amount. */
+  totalMedicareWages?: number;
   /** E12 — Part-year residency. When set, AGI is pro-rated by days and
    *  resident-state tax is computed independently for each period. Locality
    *  tax (NYC etc.) is not applied for part-year filers (sub-gap). */
@@ -1415,6 +1501,10 @@ export function calculateMultiStateTax(params: {
     /** G4 — long-term capital gains for WA 7% LTCG excise tax (RCW 82.87).
      *  Only applied when resident state is WA. */
     longTermCapitalGains?: number;
+    /** T1.0e #7 — post-netting POSITIVE net capital gains (LTCG + STCG after
+     *  Schedule D netting) for the MD 2% capital-gains surtax (HB 352,
+     *  TY2025+, federal AGI > $350k). Only applied when resident is MD. */
+    netCapitalGains?: number;
     /** G5 — federal AMT preferences total (ISO bargain + SALT addback +
      *  legacy catch-all) for CA / MN / CO / CT state AMT. */
     amtPreferences?: number;
@@ -1618,16 +1708,21 @@ export function calculateMultiStateTax(params: {
       params.options,
     );
 
-    // Resident credit-for-tax-paid: limited to resident's tax on the same wages
-    // (approximation: resident's marginal rate × NR wages, capped at actual NR tax)
-    // To compute the credit cap, find resident's tax on NR wages only:
-    let residentCreditCap = 0;
-    if (totalNrWages > 0 && params.federalAgi > 0) {
-      // Approximation: ratio of NR wages to AGI × resident tax
-      const proRataResidentTax = (totalNrWages / params.federalAgi) * residentTaxFull;
-      residentCreditCap = proRataResidentTax;
+    // Resident credit-for-tax-paid — T1.0f #23 (2026-06-11): the limitation
+    // is computed PER STATE, not on the pooled aggregate. Virtually every
+    // resident-credit schedule (CA Sch S, CO DR 0104CR, NY IT-112-R, …) limits
+    // each state's credit to the LESSER of (a) the tax actually paid to that
+    // state and (b) the resident tax attributable to that state's income
+    // (resident tax × that state's source ÷ AGI). Pooling let one state's
+    // excess tax absorb another state's unused cap headroom (repro: CO
+    // resident with CA+AZ wages was over-credited $1,804.75).
+    if (params.federalAgi > 0) {
+      for (const nr of nonresidentStateTaxes) {
+        if (nr.reciprocityApplied) continue; // reciprocal wages: no NR tax, no credit
+        const perStateCap = (nr.wages / params.federalAgi) * residentTaxFull;
+        residentCreditApplied += Math.min(nr.tax, Math.max(0, perStateCap));
+      }
     }
-    residentCreditApplied = Math.min(totalNrTax, residentCreditCap);
     residentStateTax = Math.max(0, residentTaxFull - residentCreditApplied);
   }
 
@@ -1658,19 +1753,62 @@ export function calculateMultiStateTax(params: {
   // tentative AMT − regular CA tax). Only applied when resident state is CA
   // and there are AMT preferences (otherwise AMTI ≈ regular taxable and
   // 7% AMT < regular CA rate at high income — no AMT delta).
+  //
+  // T1.0e #11 (2026-06-11): the old constants (244,857/326,478/163,238) were
+  // NOT the Schedule P exemptions at all (they matched the CA personal-
+  // exemption-credit AGI thresholds) and no phase-out was modeled — under-
+  // taxing exactly the ISO-exercise clients the planning engine targets.
+  // Real values, verified vs FTB Schedule P (540) instructions (re-verified
+  // 2026-06-11 against the FTB 2024 + 2025 instruction pages — the 2024 row
+  // originally carried the 2023 exemptions; corrected):
+  //   TY2024: exemption $90,048 single/HoH, $120,065 MFJ/QSS, $60,029 MFS;
+  //           phases out 25¢/$1 of AMTI over $337,678 / $450,238 / $225,115
+  //           (zero at $697,870 / $930,498 / $465,231 — matches the FTB 2024
+  //           instructions' published zero-points: start + 4×exemption ✓).
+  //   TY2025: $92,749 / $123,667 / $61,830; phase-out from $347,808 /
+  //           $463,745 / $231,868 (zero at $718,804 / $958,413 / $479,188 —
+  //           matches the FTB 2025 instructions ✓).
+  //   TY2026: holds TY2025 pending the FTB 2026 indexing announcement.
+  // (NOTE: the 2023 values were exemption $87,171/$116,229/$58,111 with
+  // phase-out starts $326,891/$435,855/$217,924 — do not regress to those.)
+  const CA_AMT_PARAMS: Record<TaxYear, { exemption: [number, number, number]; phaseOutStart: [number, number, number] }> = {
+    //          [single/HoH,  MFJ/QSS,  MFS]
+    2024: { exemption: [90048, 120065, 60029], phaseOutStart: [337678, 450238, 225115] },
+    2025: { exemption: [92749, 123667, 61830], phaseOutStart: [347808, 463745, 231868] },
+    2026: { exemption: [92749, 123667, 61830], phaseOutStart: [347808, 463745, 231868] },
+  };
   const caAmtPrefs = params.options?.amtPreferences ?? 0;
   if (resident === "CA" && caAmtPrefs > 0 && !params.partYearResidency) {
     const fs = params.filingStatus as StateFilingStatus;
-    // CA AMT exemption (Schedule P 540, 2024 indexed):
-    const caAmtExemption =
-      fs === "married_filing_jointly" || fs === "qualifying_widow" ? 326478 :
-      fs === "married_filing_separately" ? 163238 :
-      244857; // single, head_of_household
+    const cfg = CA_AMT_PARAMS[resolveTaxYear(params.taxYear)];
+    const col = fs === "married_filing_jointly" || fs === "qualifying_widow" ? 1
+      : fs === "married_filing_separately" ? 2
+      : 0; // single, head_of_household
     const caAmti = Math.max(0, params.federalAgi) + Math.max(0, caAmtPrefs);
+    // Exemption reduced 25 cents per $1 of AMTI over the phase-out start.
+    const caAmtExemption = Math.max(0, cfg.exemption[col] - 0.25 * Math.max(0, caAmti - cfg.phaseOutStart[col]));
     const caAmtBase = Math.max(0, caAmti - caAmtExemption);
     const caAmtTentative = 0.07 * caAmtBase;
     const caAmtDelta = Math.max(0, caAmtTentative - residentStateTax);
     residentStateTax += caAmtDelta;
+  }
+
+  // T1.0e #7 — Maryland 2% capital-gains surtax (HB 352 — Budget
+  // Reconciliation and Financing Act of 2025, TY2025+; MD Comptroller / RSM
+  // alert): individuals with FEDERAL AGI > $350,000 pay a 2% surcharge on
+  // net capital gains taxed by Maryland. Keyed off the engine's post-netting
+  // capital-gain components (positive net LTCG + STCG via
+  // options.netCapitalGains) — analogous to the MA/CA surtax pattern but on
+  // the GAINS base, not taxable income, so it lives here rather than in
+  // StateTaxInfo.surtax. Statutory exclusions (primary-residence §121 gains,
+  // retirement-account gains, certain agricultural/business property) are the
+  // CPA's responsibility to net out of the components upstream (documented).
+  // Part-year filers skip (consistent with the WA/CA-AMT blocks).
+  if (resident === "MD" && resolveTaxYear(params.taxYear) >= 2025 && !params.partYearResidency) {
+    const mdGains = Math.max(0, params.options?.netCapitalGains ?? 0);
+    if (mdGains > 0 && params.federalAgi > 350000) {
+      residentStateTax += 0.02 * mdGains;
+    }
   }
 
   // P2-2 — MN AMT (Schedule M1MT, Minn. Stat. §290.091). 6.75% flat on Minnesota
@@ -1763,7 +1901,15 @@ export function calculateMultiStateTax(params: {
       njGrossIncomeApprox: params.federalAgi,
       nyGovernmentPension: params.options?.nyGovernmentPension,
     }).exemption;
-    const nysTaxable = Math.max(0, params.federalAgi - nyStdDed - nyRetirementExempt);
+    // T1.0f #19 (2026-06-11): the NYC PIT base = NYS taxable income (IT-201
+    // line 47 ≈ line 38), which EXCLUDES Social Security — NY fully exempts
+    // SS (IT-201 line 27 subtraction; NY is not in STATES_TAXING_SS). The
+    // engine's NY state-side calc already subtracted taxable SS but this
+    // inline NYC base did not → a NYC retiree's city tax was computed on a
+    // base inflated by the full federally-taxable SS (~$1,163 over-tax on
+    // $30k of taxable SS).
+    const nycTaxableSs = Math.max(0, params.options?.taxableSocialSecurity ?? 0);
+    const nysTaxable = Math.max(0, params.federalAgi - nyStdDed - nyRetirementExempt - nycTaxableSs);
     localTax = calculateNycLocalTax({
       nysTaxableIncome: nysTaxable,
       federalAgi: params.federalAgi,
@@ -1807,6 +1953,11 @@ export function calculateMultiStateTax(params: {
       ohTraditionalBase: params.options?.ohTraditionalBase,
       netSeProfit: params.options?.netSeProfit ?? 0,
       ohWorkCityTaxPaid: params.options?.ohWorkCityTaxPaid,
+      // T1.0f #19 — taxable SS subtracted from the state_taxable/oh_traditional
+      // locality bases (MD/IN/OH all exempt SS at the state level).
+      taxableSocialSecurity: params.options?.taxableSocialSecurity,
+      // T1.0f #24 — Box-5 qualifying-wage base for wages_only localities.
+      totalMedicareWages: params.totalMedicareWages,
     });
   }
 
@@ -1942,18 +2093,44 @@ function computePartYearAllocation(
   }
 
   // For each period: call calculateStateTax with that period's pro-rated AGI.
-  // We use the same options for both (e.g., taxableSocialSecurity is pro-rated
-  // implicitly by the AGI ratio — slightly conservative; documented sub-gap).
   // Pro-rate the flat allowances (std ded + personal exemption) by residency
   // DAYS so each state grants only its residency-period share. daysFormer/Current
   // sum to daysInYear, so the two factors sum to 1 → one full std-ded/exemption
   // split across the two states (was previously full in BOTH → ~2× over-deduct).
   const formerProration = daysInYear > 0 ? daysFormer / daysInYear : 0;
   const currentProration = daysInYear > 0 ? daysCurrent / daysInYear : 1;
+  // T1.0f #26 (2026-06-11) — the DOLLAR-amount option exclusions are now
+  // pro-rated by the same residency-period factor. Previously the FULL
+  // taxableSocialSecurity / retirement exclusion was subtracted from BOTH
+  // periods' (already day-prorated) AGI — i.e. the exclusion was granted
+  // ~twice across the two states (repro: MO→NC mover with $40k taxable SS
+  // saw ~2× the one-time exclusion value), and muniBondAddBack was
+  // conversely ADDED twice. The two periods' factors sum to 1, so each
+  // dollar amount is now split exactly once across the move. (The prior
+  // inline comment claimed the AGI ratio pro-rated these "implicitly" —
+  // it did not; the amounts were absolute.)
+  const prorateOptionAmounts = (
+    base: typeof options,
+    proration: number,
+  ): typeof options => {
+    const scale = (v: number | undefined): number | undefined =>
+      v == null ? undefined : v * proration;
+    return {
+      ...base,
+      taxableSocialSecurity: scale(base.taxableSocialSecurity),
+      retirementIncomeForExemption: scale(base.retirementIncomeForExemption),
+      ctIraDistribution: scale(base.ctIraDistribution),
+      muniBondAddBack: scale(base.muniBondAddBack),
+      usTreasurySubtraction: scale(base.usTreasurySubtraction),
+      // njGrossIncomeApprox / federalIncomeTaxPaid stay full-year: they are
+      // measuring thresholds (phase-out tests), not base subtractions.
+    };
+  };
   // PREP-B1 (lane C) — per-period state tax. With incomePctMethod ON and a method-(a)
-  // state, use IT-203/540NR: tax-as-if-full-year-resident(TOTAL income, FULL std ded)
-  // × (period income / total). Otherwise the direct-bracket-on-period-AGI path (std
-  // ded prorated by days). federalAgiSafe > 0 is guaranteed when periodAgi > 0.
+  // state, use IT-203/540NR: tax-as-if-full-year-resident(TOTAL income, FULL std ded,
+  // FULL-year option amounts) × (period income / total). Otherwise the direct-bracket-
+  // on-period-AGI path (std ded + option amounts prorated by days). federalAgiSafe > 0
+  // is guaranteed when periodAgi > 0.
   const periodStateTax = (state: string, periodAgi: number, proration: number): number => {
     if (incomePctMethod && NR_AS_IF_RESIDENT_STATES.has(state) && federalAgiSafe > 0) {
       const asIfResident = calculateStateTax(federalAgiSafe, state, filingStatus, taxYear, {
@@ -1964,7 +2141,7 @@ function computePartYearAllocation(
       return asIfResident * Math.min(1, Math.max(0, periodAgi / federalAgiSafe));
     }
     return calculateStateTax(periodAgi, state, filingStatus, taxYear, {
-      ...options,
+      ...prorateOptionAmounts(options, proration),
       fullYearFederalAgiForCliff: federalAgiSafe,
       partYearDeductionProration: proration,
     });
@@ -2176,26 +2353,44 @@ export function calculateNycLocalTax(params: {
   const nycEitcRate = federalEitc > 0 ? nycEitcRateForAgi(fagi) : 0;
   const nycEitc = federalEitc * nycEitcRate;
 
-  // E8 — NYC School Tax Credit (IT-201 Line 69b). Refundable, flat amount
-  // by filing status when NYAGI < $250k. Engine uses federal AGI as a
-  // proxy for NYAGI (NY-specific subtractions not modeled).
+  // E8 — NYC School Tax Credit (IT-201 Line 69). Refundable, flat amount
+  // by filing status when NYAGI is $250,000 OR LESS. Engine uses federal AGI
+  // as a proxy for NYAGI (NY-specific subtractions not modeled).
+  // T1.0f #22 (2026-06-11): per IT-201-I Line 69 / Form NYC-210, the $125
+  // amount is ONLY for ② married filing joint and ⑤ qualifying surviving
+  // spouse — single, MFS, AND HEAD OF HOUSEHOLD all get $63 (the old code
+  // reused the household-credit isMfj flag, which lumps HoH with MFJ, and
+  // used a `<` test where the form says "$250,000 or less" — inclusive).
   let nycSchoolTaxCredit = 0;
-  if (fagi < 250000) {
-    nycSchoolTaxCredit = isMfj ? 125 : 63; // includes QSS and HoH via isMfj truthy path
+  const isMfjOrQss = fs === "married_filing_jointly" || fs === "qualifying_widow";
+  if (fagi <= 250000) {
+    nycSchoolTaxCredit = isMfjOrQss ? 125 : 63; // HoH/single/MFS → $63
   }
 
   // E8 — MCTMT (Metropolitan Commuter Transportation Mobility Tax, NY Tax Law
-  // Art. 23). STL-01: for TY2024+ a SELF-EMPLOYED individual doing business in
-  // MCTD Zone 1 (the five NYC boroughs = localityCode "NYC") pays a FLAT 0.60%
-  // on net SE earnings over the $50,000 annual exclusion. The graduated
-  // 0.11/0.23/0.60% schedule is the EMPLOYER payroll-expense rate, NOT the
-  // self-employed rate (TY2023 self-employed was 0.47%). Zone 2 (flat 0.34%)
-  // is out of scope on this NYC-gated path.
+  // Art. 23 §801(b)). STL-01: for TY2024+ a SELF-EMPLOYED individual doing
+  // business in MCTD Zone 1 (the five NYC boroughs = localityCode "NYC") pays
+  // a FLAT 0.60% on net SE earnings. The graduated 0.11/0.23/0.60% schedule
+  // is the EMPLOYER payroll-expense rate, NOT the self-employed rate. Zone 2
+  // (flat 0.34%) is out of scope on this NYC-gated path.
+  //
+  // T1.0f #18 (2026-06-11) — TWO corrections, verified vs tax.ny.gov "MCTMT
+  // individual definitions" + the 2025 PIT-changes summary:
+  //  (1) CLIFF, not excess: §801(b) imposes 0.60% "of the net earnings from
+  //      self-employment … IF such earnings exceed [the threshold]" — once
+  //      over the threshold the rate applies to the ENTIRE net earnings, not
+  //      the excess (the old code under-taxed every >-threshold filer by a
+  //      flat 0.60% × threshold ≈ $300).
+  //  (2) Year-indexed threshold: $50,000 for TY2024/2025; the FY2025-26 NY
+  //      budget (A3009, signed 5/9/2025) raises it to $150,000 for tax years
+  //      beginning on/after 1/1/2026 (rate unchanged at 0.60% Zone 1).
   const MCTMT_SE_ZONE1_RATE = 0.0060; // TY2024+
+  const MCTMT_SE_THRESHOLD: Record<TaxYear, number> = { 2024: 50000, 2025: 50000, 2026: 150000 };
+  const mctmtThreshold = MCTMT_SE_THRESHOLD[resolveTaxYear(params.taxYear)];
   const netSe = Math.max(0, params.netSeEarnings ?? 0);
   let nycMctmt = 0;
-  if (netSe > 50000) {
-    nycMctmt = (netSe - 50000) * MCTMT_SE_ZONE1_RATE;
+  if (netSe > mctmtThreshold) {
+    nycMctmt = netSe * MCTMT_SE_ZONE1_RATE;
   }
 
   // E8 — School Tax Credit per IT-201 Line 69 is REFUNDABLE at the state
@@ -2254,67 +2449,86 @@ export function calculateNycUbt(netBusinessIncome: number): NycUbtCalculation {
   return { netBusinessIncome: net, servicesAllowance, exemption, taxableIncome, taxBeforeCredit, businessTaxCredit, netUbt };
 }
 
+/** Options accepted by calculateStateTax / computeStateTaxCore / the breakdown. */
+export interface StateTaxOptions {
+  federalIncomeTaxPaid?: number;
+  /** Qualified retirement-income distributions (1099-R taxable amount) for state exemption */
+  retirementIncomeForExemption?: number;
+  /** Taxpayer age — gates state retirement exemption (PA, MS, NJ, NY require 59½+ / 62+) */
+  taxpayerAge?: number;
+  /**
+   * NJ gross income approximation, used to phase out the NJ pension exclusion.
+   * Caller should pass federalAgi − (federally-taxable Social Security).
+   * If absent for NJ filers, falls back to federalAgi (conservative).
+   */
+  njGrossIncomeApprox?: number;
+  /** K10 state-SS exclusion — taxable Social Security amount from Pub 915.
+   *  Subtracted from the state-tax base for states NOT in STATES_TAXING_SS
+   *  (i.e., the 42 jurisdictions that exempt SS from state income tax).
+   *  Member states get the T1.0e #13 income-tested branches. Default 0. */
+  taxableSocialSecurity?: number;
+  /** E11 — Number of dependents for PA Schedule SP Tax Forgiveness
+   *  ($9,500 added to eligibility thresholds per dependent). Pass
+   *  `client.dependentsUnder17 + client.otherDependents`. */
+  dependentCount?: number;
+  /** STL-04 — Part-year: full-year federal AGI used ONLY for the IL
+   *  personal-exemption AGI cliff test (IL Sched NR computes Line 10 as a
+   *  full-year resident). Defaults to federalAgi for full-year filers. */
+  fullYearFederalAgiForCliff?: number;
+  /** Part-year: 0-1 multiplier applied to the standard deduction + personal
+   *  exemption so a part-year resident gets only the residency-period share
+   *  of these flat allowances (the two periods' factors sum to 1 → one full
+   *  std-ded/exemption split across states, not double-counted). Default 1
+   *  (full-year filer). Does NOT scale the retirement/SS exclusions, which
+   *  the part-year caller now pro-rates directly (T1.0f #26). */
+  partYearDeductionProration?: number;
+  /** HI — employer-funded pension portion (caps the HI retirement exclusion). */
+  hiEmployerFundedPension?: number;
+  /** NY — government-pension portion (IT-201 Line 26, fully excluded). */
+  nyGovernmentPension?: number;
+  /** PREP-B1 — state-base modifications (CPA-supplied; default 0).
+   *  `muniBondAddBack`: out-of-state municipal-bond interest (federally
+   *  tax-exempt but TAXABLE to the resident state) ADDED to the state base.
+   *  `usTreasurySubtraction`: interest on US Treasury / federal obligations
+   *  (federally taxable but state-EXEMPT by federal preemption) SUBTRACTED. */
+  muniBondAddBack?: number;
+  usTreasurySubtraction?: number;
+  /** CT only — the non-Roth IRA portion of `retirementIncomeForExemption`
+   *  (CT-1040 Pension & Annuity Worksheet Line 4b). The remainder of the
+   *  retirement bucket is treated as pension/annuity (100% base). Absent →
+   *  the whole bucket is pension/annuity. See CT_IRA_EXCLUSION_PCT. */
+  ctIraDistribution?: number;
+}
+
 export function calculateStateTax(
   federalAgi: number,
   stateCode: string,
   filingStatus: string,
   taxYear: number,
-  options?: {
-    federalIncomeTaxPaid?: number;
-    /** Qualified retirement-income distributions (1099-R taxable amount) for state exemption */
-    retirementIncomeForExemption?: number;
-    /** Taxpayer age — gates state retirement exemption (PA, MS, NJ, NY require 59½+ / 62+) */
-    taxpayerAge?: number;
-    /**
-     * NJ gross income approximation, used to phase out the NJ pension exclusion.
-     * Caller should pass federalAgi − (federally-taxable Social Security).
-     * If absent for NJ filers, falls back to federalAgi (conservative).
-     */
-    njGrossIncomeApprox?: number;
-    /** K10 state-SS exclusion — taxable Social Security amount from Pub 915.
-     *  Subtracted from the state-tax base for states NOT in STATES_TAXING_SS
-     *  (i.e., the 41 jurisdictions that exempt SS from state income tax).
-     *  Default 0. */
-    taxableSocialSecurity?: number;
-    /** E11 — Number of dependents for PA Schedule SP Tax Forgiveness
-     *  ($9,500 added to eligibility thresholds per dependent). Pass
-     *  `client.dependentsUnder17 + client.otherDependents`. */
-    dependentCount?: number;
-    /** STL-04 — Part-year: full-year federal AGI used ONLY for the IL
-     *  personal-exemption AGI cliff test (IL Sched NR computes Line 10 as a
-     *  full-year resident). Defaults to federalAgi for full-year filers. */
-    fullYearFederalAgiForCliff?: number;
-    /** Part-year: 0-1 multiplier applied to the standard deduction + personal
-     *  exemption so a part-year resident gets only the residency-period share
-     *  of these flat allowances (the two periods' factors sum to 1 → one full
-     *  std-ded/exemption split across states, not double-counted). Default 1
-     *  (full-year filer). Does NOT scale the retirement/SS exclusions, which
-     *  already track the pro-rated AGI. */
-    partYearDeductionProration?: number;
-    /** HI — employer-funded pension portion (caps the HI retirement exclusion). */
-    hiEmployerFundedPension?: number;
-    /** NY — government-pension portion (IT-201 Line 26, fully excluded). */
-    nyGovernmentPension?: number;
-    /** PREP-B1 — state-base modifications (CPA-supplied; default 0).
-     *  `muniBondAddBack`: out-of-state municipal-bond interest (federally
-     *  tax-exempt but TAXABLE to the resident state) ADDED to the state base.
-     *  `usTreasurySubtraction`: interest on US Treasury / federal obligations
-     *  (federally taxable but state-EXEMPT by federal preemption) SUBTRACTED. */
-    muniBondAddBack?: number;
-    usTreasurySubtraction?: number;
-    /** CT only — the non-Roth IRA portion of `retirementIncomeForExemption`
-     *  (CT-1040 Pension & Annuity Worksheet Line 4b). The remainder of the
-     *  retirement bucket is treated as pension/annuity (100% base). Absent →
-     *  the whole bucket is pension/annuity. See CT_IRA_EXCLUSION_PCT. */
-    ctIraDistribution?: number;
-  },
+  options?: StateTaxOptions,
 ): number {
+  return computeStateTaxCore(federalAgi, stateCode, filingStatus, taxYear, options).total;
+}
+
+/**
+ * Shared single implementation behind calculateStateTax AND
+ * calculateStateTaxWithBreakdown (T1.0e #17): both surfaces now agree on the
+ * WI sliding std ded, personal exemptions, retirement/SS exclusions, OR
+ * subtraction, CT branches, and the UT taxpayer-side SS credit.
+ */
+function computeStateTaxCore(
+  federalAgi: number,
+  stateCode: string,
+  filingStatus: string,
+  taxYear: number,
+  options?: StateTaxOptions,
+): { total: number; stateTaxable: number; brackets: StateBracket[] | null; stateName: string; hasIncomeTax: boolean } {
   const year = resolveTaxYear(taxYear);
   const yearData = STATE_TAX_DATA_BY_YEAR[year];
   const code = stateCode.toUpperCase();
   const info = yearData[code];
   if (!info || !info.hasIncomeTax || !info.brackets || !info.standardDeduction) {
-    return 0;
+    return { total: 0, stateTaxable: 0, brackets: null, stateName: info?.name ?? stateCode, hasIncomeTax: false };
   }
   const status = filingStatus as StateFilingStatus;
   let stdDed = pickStateStdDeduction(info.standardDeduction, status);
@@ -2383,6 +2597,89 @@ export function calculateStateTax(
     // ($100k joint), so AGI exactly AT the floor stays 100% exempt (≤, not <).
     const subtractionPct = federalAgi <= wvFloor ? 1 : (wvSubtractionByYear[year] ?? 1);
     ssExclusion = taxableSS * subtractionPct;
+  }
+  // ── T1.0e #13 (2026-06-11) — income-tested SS exemptions for the remaining
+  // STATES_TAXING_SS members (previously taxed 100% of federally-taxable SS).
+  // Each branch overrides the default-0 ssExclusion. UT is credit-based and
+  // handled after the bracket tax below. MT taxes SS per federal (no branch).
+  if (code === "NM") {
+    // NMSA §7-2-5.14 (TY2022+; verified vs the 2025 NM statutes + NM Tax & Rev
+    // "Social Security Income Tax Exemption" page): SS is FULLY exempt when
+    // AGI ≤ $100,000 single / $150,000 MFJ-HoH-QSS / $75,000 MFS. This is a
+    // CLIFF — $1 over the threshold and all federally-taxable SS is NM-taxable.
+    const taxableSS = Math.max(0, options?.taxableSocialSecurity ?? 0);
+    const nmThreshold =
+      status === "married_filing_separately" ? 75000 :
+      status === "single" ? 100000 : 150000;
+    ssExclusion = federalAgi <= nmThreshold ? taxableSS : 0;
+  }
+  if (code === "CO") {
+    // C.R.S. §39-22-104(4)(g)/(g.7) (tax.colorado.gov "Income Tax Topics:
+    // Social Security, Pensions, and Annuities"): age 65+ may subtract ALL
+    // federally-taxed SS (TY2022+). Age 55-64: TY2025+ may subtract ALL if
+    // AGI ≤ $75,000 single / $95,000 joint; otherwise SS counts toward the
+    // $20,000 pension/annuity subtraction cap (approximated here against SS
+    // alone — the cap is legally shared with other pension income, so this
+    // can only over-exclude when other pension income also claims it;
+    // documented). Under 55 (or age unknown): no SS subtraction.
+    const taxableSS = Math.max(0, options?.taxableSocialSecurity ?? 0);
+    const age = options?.taxpayerAge ?? 0;
+    const isJoint = status === "married_filing_jointly" || status === "qualifying_widow";
+    if (age >= 65) {
+      ssExclusion = taxableSS;
+    } else if (age >= 55) {
+      const fullAllowed = year >= 2025 && federalAgi <= (isJoint ? 95000 : 75000);
+      ssExclusion = fullAllowed ? taxableSS : Math.min(taxableSS, 20000);
+    } else {
+      ssExclusion = 0;
+    }
+  }
+  if (code === "VT") {
+    // 32 V.S.A. §5830e (tax.vermont.gov "Social Security Exemption"): FULL
+    // exemption of federally-taxable SS when AGI ≤ $50,000 (single/HoH/MFS)
+    // or $65,000 (MFJ/QSS); PARTIAL over the next $10,000 (the IN-112 Part II
+    // worksheet reduces linearly); ZERO at ≥ $60,000 / $75,000.
+    const taxableSS = Math.max(0, options?.taxableSocialSecurity ?? 0);
+    const isJoint = status === "married_filing_jointly" || status === "qualifying_widow";
+    const vtThreshold = isJoint ? 65000 : 50000;
+    if (federalAgi <= vtThreshold) ssExclusion = taxableSS;
+    else if (federalAgi >= vtThreshold + 10000) ssExclusion = 0;
+    else ssExclusion = taxableSS * ((vtThreshold + 10000 - federalAgi) / 10000);
+  }
+  if (code === "MN") {
+    // Minn. Stat. §290.0132 subd. 26 — the M1M "Simplified Method" (2024
+    // Schedule M1M instructions, revenue.state.mn.us): SUBTRACT ALL taxable
+    // SS when AGI is below $108,320 MFJ-QSS / $84,490 single-HoH / $54,160
+    // MFS; the subtraction phases out 10% for each $4,000 ($2,000 MFS) — or
+    // fraction thereof — of AGI over the threshold (gone at +$40k/+$20k).
+    // 2024 thresholds applied to 2025/2026 (MN indexes annually — the same
+    // documented year-pinning as the MN brackets). The older "Alternative
+    // Method" (greater-of) is NOT modeled — simplified-only, conservative.
+    const taxableSS = Math.max(0, options?.taxableSocialSecurity ?? 0);
+    const isJoint = status === "married_filing_jointly" || status === "qualifying_widow";
+    const isMfs = status === "married_filing_separately";
+    const mnThreshold = isMfs ? 54160 : isJoint ? 108320 : 84490;
+    const mnStep = isMfs ? 2000 : 4000;
+    const excess = Math.max(0, federalAgi - mnThreshold);
+    const phaseOutPct = Math.min(1, 0.10 * Math.ceil(excess / mnStep));
+    ssExclusion = taxableSS * (1 - phaseOutPct);
+  }
+  if (code === "RI") {
+    // R.I. Gen. Laws §44-30-12(c)(8) (RI Division of Taxation retirement-
+    // income guide + ADV 2024-26 inflation adjustments): taxpayers who have
+    // reached FULL RETIREMENT AGE with federal AGI below the indexed limit
+    // subtract ALL federally-taxable SS. TY2024 limits $104,200 single /
+    // $130,250 MFJ (RI PUB 2025-01 Retirement Income Tax Guide, "specific to
+    // Tax Year 2024" — corrected 2026-06-11; $101,000/$126,250 were the
+    // TY2023 amounts); TY2025 $107,000 / $133,750 (ADV 2024-26); 2026 holds
+    // 2025 pending the next advisory. Full retirement age ≈ 67 for current
+    // cohorts — the engine gates on age ≥ 67 (conservative: a 66½-year-old
+    // FRA filer is excluded). Cliff above.
+    const taxableSS = Math.max(0, options?.taxableSocialSecurity ?? 0);
+    const age = options?.taxpayerAge ?? 0;
+    const isJoint = status === "married_filing_jointly" || status === "qualifying_widow";
+    const riThreshold = year >= 2025 ? (isJoint ? 133750 : 107000) : (isJoint ? 130250 : 104200);
+    ssExclusion = age >= 67 && federalAgi < riThreshold ? taxableSS : 0;
   }
   // CT — pension/annuity + IRA income exclusion (Conn. Gen. Stat. §12-701(a)(20)(B);
   // CT-1040 / CT-1040NR/PY "Pension and Annuity Worksheet", Page 28):
@@ -2474,36 +2771,54 @@ export function calculateStateTax(
     tax += (stateTaxable - info.surtax.threshold) * info.surtax.rate;
   }
 
-  // E11 — PA Schedule SP Tax Forgiveness (61 Pa. Code §111). Applied as a
-  // post-bracket credit against PA tax. Forgiveness % is keyed off
-  // "Eligibility Income" (we approximate via federalAgi — close but not
-  // exact; PA Sched SP uses a custom definition including some excluded
-  // PA items). For most low-income filers federalAgi is within ~10% of
-  // Eligibility Income so the bracket assignment usually matches.
-  if (code === "PA" && tax > 0) {
-    const forgivenessPct = calculatePaScheduleSpForgivenessPct({
-      eligibilityIncome: federalAgi,
-      filingStatus: status,
-      dependentCount: options?.dependentCount ?? 0,
-    });
-    tax = tax * (1 - forgivenessPct);
+  // T1.0e #13 — UT Social Security benefits CREDIT (Utah Code §59-10-1042;
+  // TC-40 instructions, incometax.utah.gov/credits/ss-benefits): UT taxes SS
+  // in the base but grants a nonrefundable credit = UT flat rate × taxable
+  // SS, REDUCED by 2.5 cents per dollar of MAGI over the threshold. TY2024
+  // thresholds $45,000 single / $37,500 MFS / $75,000 MFJ-HoH-QSS; SB 71
+  // (2025) raises each 20% → $54,000 / $45,000 / $90,000 for TY2025+. MAGI
+  // ≈ federal AGI (the UT addback for non-UT muni interest isn't modeled —
+  // documented).
+  if (code === "UT" && tax > 0) {
+    const taxableSS = Math.max(0, options?.taxableSocialSecurity ?? 0);
+    if (taxableSS > 0) {
+      const isMfs = status === "married_filing_separately";
+      const isSingle = status === "single";
+      const utThreshold = year >= 2025
+        ? (isMfs ? 45000 : isSingle ? 54000 : 90000)
+        : (isMfs ? 37500 : isSingle ? 45000 : 75000);
+      const utRate = brackets[brackets.length - 1]?.rate ?? 0.0455; // UT is flat
+      const utGrossCredit = taxableSS * utRate;
+      const utCredit = Math.max(0, utGrossCredit - 0.025 * Math.max(0, federalAgi - utThreshold));
+      tax = Math.max(0, tax - utCredit);
+    }
   }
 
-  return Math.max(0, tax);
+  // T1.0e #2 — the inline PA Schedule SP forgiveness that used to live here
+  // was REMOVED (2026-06-11): it double-applied with the (correct $250-step)
+  // Schedule SP credit in calculateStateAdditionalCredits, AND it leaked onto
+  // the NON-RESIDENT fallback path using PA-SOURCE wages as "eligibility
+  // income" (PA-40 SP eligibility income is TOTAL income from everywhere).
+  // Schedule SP now applies exactly once, in calculateStateAdditionalCredits,
+  // against the resident PA filer's full-income eligibility.
+
+  return { total: Math.max(0, tax), stateTaxable, brackets, stateName: info.name, hasIncomeTax: true };
 }
 
 /**
- * E11 — PA Schedule SP Tax Forgiveness brackets (61 Pa. Code §111).
+ * E11 / T1.0e #2 — PA Schedule SP Tax Forgiveness table (72 P.S. §7304;
+ * PA-40 Schedule SP Eligibility Income Tables, pa.gov "Tax Forgiveness").
  * Returns the forgiveness fraction (0 to 1) given:
- *   - eligibilityIncome (we approximate as federalAgi)
- *   - filingStatus (single/MFS vs MFJ/QSS gets different bands)
- *   - dependentCount (each dependent adds $9,500 to the brackets)
+ *   - eligibilityIncome (PA SP "eligibility income" = TOTAL income from
+ *     everywhere; the engine approximates with full federal AGI)
+ *   - filingStatus (single/MFS/HoH use Table 1; MFJ/QSS use Table 2)
+ *   - dependentCount (each dependent adds $9,500 to every threshold)
  *
- * Brackets per PA-40 SP 2024 (approximated):
- *   Single base: 100% at $6,500, then 10-percentage-point drops in
- *   $1,000 income steps to 0% at $14,500.
- *   MFJ/QSS base: 2× single thresholds (start at $13,000, end at $22,500).
- *   Each dependent: +$9,500 to all bracket boundaries.
+ * REAL table (corrected 2026-06-11 — the old implementation used $1,000
+ * steps, granting partial forgiveness up to ~$16.5k single): the steps are
+ * **$250**. Unmarried, 0 dependents: ≤$6,500 → 100%; ≤$6,750 → 90%;
+ * ≤$7,000 → 80%; … ≤$8,750 → 10%; ABOVE $8,750 → 0%.
+ * Married base: ≤$13,000 → 100% … ≤$15,250 → 10%; above → 0%.
  */
 export function calculatePaScheduleSpForgivenessPct(params: {
   eligibilityIncome: number;
@@ -2516,21 +2831,20 @@ export function calculatePaScheduleSpForgivenessPct(params: {
   const isJointFiler =
     filingStatus === "married_filing_jointly" ||
     filingStatus === "qualifying_widow";
-  // PA-40 SP base thresholds (2024). Single/MFS/HoH uses single column;
-  // MFJ/QSS uses joint column (~2× single).
+  // PA-40 SP base 100%-forgiveness ceiling (statutory, not indexed).
   const baseHundredCeiling = isJointFiler ? 13000 : 6500;
-  // Each successive 10% drop happens in ~$1,000 step (rounded). Zero
-  // forgiveness above baseHundredCeiling + $8,000 (~$10k range for the
-  // single column; $9k for joint per the published table).
-  const stepSize = 1000;
+  // The published Eligibility Income Table drops 10 percentage points per
+  // $250 of income above the 100% ceiling; 0% past ceiling + $2,250
+  // ($8,750 unmarried / $15,250 married, 0 dependents).
+  const stepSize = 250;
   // Per-dependent allowance: +$9,500 added to ALL thresholds.
   const dependentAllowance = Math.max(0, dependentCount) * 9500;
   const adjustedHundredCeiling = baseHundredCeiling + dependentAllowance;
 
   if (eligibilityIncome <= adjustedHundredCeiling) return 1.0;
   const excess = eligibilityIncome - adjustedHundredCeiling;
-  const stepsAbove = Math.floor(excess / stepSize) + 1;
-  // 100% → 90% → 80% ... → 10% in 9 steps; 0% at step 10+
+  const stepsAbove = Math.ceil(excess / stepSize);
+  // 100% → 90% → 80% ... → 10% across nine $250 steps; 0% at step 10+.
   const pct = Math.max(0, 1.0 - stepsAbove * 0.10);
   return pct;
 }
@@ -3241,8 +3555,16 @@ export function calculateStateEitc(params: {
     OR: 0.09, // OR-EIC (12% if dependent under age 3; simplified to 9%)
     RI: 0.16, // RI Sched EIC
     VT: 0.38, // VT EIC (raised from 36% to 38% in TY2024)
-    VA: 0.15, // VA Sched ADJ Line 19 — choice of 20% non-ref vs 15% refundable; use 15%
-    DC: 0.70, // DC EITC — simplified to 70% (actual is 70% w/ kids, complex childless)
+    VA: 0.15, // VA Sched ADJ Line 19 — TY2024: choice of 20% non-ref vs 15% refundable
+              // (we use refundable). T1.0e #14: the 2025 budget (HB 1600) raised the
+              // REFUNDABLE option to 20% for TY2025-2026 (tax.virginia.gov "New
+              // Virginia Tax Laws for July 1, 2025") — year-indexed below.
+    DC: 0.70, // DC EITC TY2024 = 70% of federal for filers w/ children (D.C. Code
+              // §47-1806.04(f); childless uses a separate 100%-of-special-calc rule —
+              // simplified). T1.0e #14: TY2025+ = 100% — the statutory 85%-for-2025
+              // schedule was ACCELERATED to a full 100% match by D.C. Law 26-89
+              // emergency/temporary legislation (OTR "DC EITC" page: "For Tax Year
+              // 2025, the DC EITC equals 100% of your federal EITC") — year-indexed below.
     ME: 0.25, // ME Earned Income Credit — 25% w/ kids, 50% childless; simplified to 25%
     // MD handled above as a dedicated two-component credit (STL-05).
     MI: 0.30, // MI Sched 1 — Public Act 4 of 2023 raised from 6% to 30% retroactive
@@ -3252,7 +3574,14 @@ export function calculateStateEitc(params: {
       return { state, credit: 0, approximate: true,
         ineligibilityReason: "Federal EITC ineligible (state piggyback requires it)" };
     }
-    const rate = STATE_EITC_PCT_OF_FEDERAL[state];
+    let rate = STATE_EITC_PCT_OF_FEDERAL[state];
+    // T1.0e #14 (2026-06-11) — year-indexed rate changes:
+    //   DC: 100% of federal for TY2025+ (Law 26-89 accelerated the statutory
+    //       85%-for-2025 schedule straight to the full match; OTR DC-EITC page).
+    //   VA: refundable option 15% → 20% for TY2025+ (2025 budget / HB 1600;
+    //       tax.virginia.gov July-2025 law-change summary).
+    if (state === "DC" && year >= 2025) rate = 1.00;
+    if (state === "VA" && year >= 2025) rate = 0.20;
     return { state, credit: federalEitcApplied * rate, approximate: true };
   }
 
@@ -3299,6 +3628,10 @@ export function calculateStateCtc(params: {
   federalCtcApplied: number;
   /** CalEITC eligibility — required for the CA Young Child Tax Credit. */
   caEitcEligible?: boolean;
+  /** T1.0f — the computed STATE EITC amount (calculateStateEitc().credit).
+   *  IL's CTC is defined as a percentage OF THE IL EITC (PA 103-0592), not of
+   *  the federal CTC. Default 0 → IL CTC 0 (it requires IL EITC eligibility). */
+  stateEitcCredit?: number;
   taxYear: number;
 }): StateCtcCalculation {
   const { state, agi, filingStatus, childrenUnder6, childrenUnder17, federalCtcApplied } = params;
@@ -3355,20 +3688,25 @@ export function calculateStateCtc(params: {
       notes: "NJ-1040 CTC TY2024 $1,000/child under 6" };
   }
 
-  // IL — Child Tax Credit (new TY2024 per HB 4951 / PA 103-0592).
-  // 20% of federal CTC per child. Phase-out: AGI ≤ $50k single / $75k MFJ
-  // → full credit; phases to $0 at $75k / $100k.
+  // IL — Child Tax Credit (HB 4951 / PA 103-0592) — REBUILT T1.0f (2026-06-11).
+  // The statute defines the credit as a percentage of the taxpayer's ILLINOIS
+  // EITC (itself 20% of federal): 20% of IL EITC for TY2024, 40% for TY2025+,
+  // with at least one qualifying child UNDER AGE 12. There is NO separate AGI
+  // phase-out — the credit inherits the EITC's own phase-out (IL DOR
+  // "Child Tax Credit" page; tax.illinois.gov). The old model (20% × federal
+  // CTC with an invented $50k/$75k AGI phase-out) over-credited ~2-3×.
+  // Under-12 proxy: childrenUnder17 > 0 (engine doesn't track under-12;
+  // CPA verifies — documented approximation).
   if (code === "IL") {
-    if (federalCtcApplied <= 0) return { state: code, credit: 0, approximate: true };
-    const fullThreshold = isMfj ? 75000 : 50000;
-    const zeroThreshold = isMfj ? 100000 : 75000;
-    let pct = 1;
-    if (agi >= zeroThreshold) pct = 0;
-    else if (agi > fullThreshold) {
-      pct = (zeroThreshold - agi) / (zeroThreshold - fullThreshold);
+    const ilEitc = Math.max(0, params.stateEitcCredit ?? 0);
+    if (ilEitc <= 0 || childrenUnder17 <= 0) {
+      return { state: code, credit: 0, approximate: true,
+        notes: "IL CTC requires IL EITC eligibility + qualifying child under 12" };
     }
-    return { state: code, credit: federalCtcApplied * 0.20 * pct, approximate: true,
-      notes: "IL CTC TY2024+ 20% of federal CTC" };
+    const year = resolveTaxYear(params.taxYear);
+    const pct = year >= 2025 ? 0.40 : 0.20;
+    return { state: code, credit: ilEitc * pct, approximate: true,
+      notes: `IL CTC = ${pct * 100}% of IL EITC (PA 103-0592; under-12 child proxied by under-17)` };
   }
 
   // NM — Child Income Tax Credit (NM PIT-RC). Tiered: max $600/child low
@@ -3387,16 +3725,23 @@ export function calculateStateCtc(params: {
       notes: "NM CITC simplified to $600/child phase-out" };
   }
 
-  // VT — Child Tax Credit. $1,000/child under 6 (refundable). Phase-out:
-  // $5 per $1,000 AGI above $125k, $0 at $325k.
+  // VT — Child Tax Credit (32 V.S.A. §5830f) — CORRECTED T1.0f (2026-06-11).
+  // $1,000 per qualifying child (under 6; the 2025 session widened to under 7
+  // — under-6 is the engine's conservative subset). The credit is reduced
+  // $20 per $1,000 — OR PART THEREOF — of AGI over $125,000, applied to the
+  // PER-CHILD amount, so the credit is fully phased out at $175,000 AGI for
+  // any number of children (tax.vermont.gov "Tax Credits"; VT LJFO CTC issue
+  // brief: "phases out completely at $175,000"). The old model used $5/$1,000
+  // (wrongly stretching the phase-out to $325k for 1 child).
   if (code === "VT") {
     if (childrenUnder6 <= 0) return { state: code, credit: 0, approximate: true };
-    const credit = childrenUnder6 * 1000;
-    if (agi <= 125000) return { state: code, credit, approximate: true,
-      notes: "VT CTC TY2024 $1,000/child under 6" };
-    const reduction = Math.floor((agi - 125000) / 1000) * 5 * childrenUnder6;
-    return { state: code, credit: Math.max(0, credit - reduction), approximate: true,
-      notes: "VT CTC phased above $125k AGI" };
+    const excess = Math.max(0, agi - 125000);
+    const perChildReduction = excess > 0 ? Math.ceil(excess / 1000) * 20 : 0;
+    const perChild = Math.max(0, 1000 - perChildReduction);
+    return { state: code, credit: perChild * childrenUnder6, approximate: true,
+      notes: perChild < 1000
+        ? "VT CTC §5830f — $20/$1,000 (or fraction) phase-out above $125k AGI (zero at $175k)"
+        : "VT CTC §5830f $1,000/child under 6" };
   }
 
   return { state: code, credit: 0, approximate: false };
@@ -4052,47 +4397,28 @@ export function calculateStateAdditionalCredits(
     const preCreditTax = Math.max(0, params.preCreditStateTaxLiability ?? 0);
 
     // ── PA Special Tax Forgiveness (Schedule SP) ──
-    // 72 P.S. §7304. Nonrefundable. Eligibility income brackets phase from
-    // 100% forgiveness at low income to 0% at top of band ($6,500 per
-    // filer + $9,500 per dependent for single; MFJ doubled).
-    //
-    // Engine simplification (TY2024 published bracket): forgiveness % by
-    // eligibility income above floor:
-    //   Floor: $6,500 (single) / $13,000 (MFJ); + $9,500 per dependent
-    //   100% at floor, 90% +$250, 80% +$500, ..., 10% +$2,250
-    //   Above floor + $2,250: 0% (no Sched SP relief)
-    //
-    // Engine ships the discrete 10-step table; CPA can override the
-    // computed eligibility income via paEligibilityIncome.
-    const baseFloor =
-      isMfj || filingStatus === "qualifying_widow" ? 13_000 : 6_500;
-    const eligibilityFloor = baseFloor + 9_500 * totalDependents;
+    // 72 P.S. §7304. Nonrefundable. T1.0e #2 (2026-06-11): this is now THE
+    // ONLY Schedule SP application — the duplicate inline forgiveness in
+    // calculateStateTax was removed (it both double-applied SP and leaked
+    // onto the non-resident fallback path with PA-source-only "eligibility
+    // income"). The % comes from the shared $250-step table helper
+    // (calculatePaScheduleSpForgivenessPct — single source of truth):
+    //   Floor: $6,500 single / $13,000 married; + $9,500 per dependent;
+    //   −10 pts per $250 above the floor; 0% above floor + $2,250
+    //   ($8,750 single 0-dep / $15,250 married 0-dep).
+    // CPA can override the computed eligibility income via paEligibilityIncome
+    // (PA SP eligibility income = TOTAL income; engine defaults to full AGI).
     const eligibilityIncome = Math.max(0, params.paEligibilityIncome ?? agi);
-    let spForgivenessPct = 0;
-    let spReason: string | undefined;
-    if (eligibilityIncome <= eligibilityFloor) {
-      spForgivenessPct = 1.00;
-    } else if (eligibilityIncome <= eligibilityFloor + 250) {
-      spForgivenessPct = 0.90;
-    } else if (eligibilityIncome <= eligibilityFloor + 500) {
-      spForgivenessPct = 0.80;
-    } else if (eligibilityIncome <= eligibilityFloor + 750) {
-      spForgivenessPct = 0.70;
-    } else if (eligibilityIncome <= eligibilityFloor + 1_000) {
-      spForgivenessPct = 0.60;
-    } else if (eligibilityIncome <= eligibilityFloor + 1_250) {
-      spForgivenessPct = 0.50;
-    } else if (eligibilityIncome <= eligibilityFloor + 1_500) {
-      spForgivenessPct = 0.40;
-    } else if (eligibilityIncome <= eligibilityFloor + 1_750) {
-      spForgivenessPct = 0.30;
-    } else if (eligibilityIncome <= eligibilityFloor + 2_000) {
-      spForgivenessPct = 0.20;
-    } else if (eligibilityIncome <= eligibilityFloor + 2_250) {
-      spForgivenessPct = 0.10;
-    } else {
-      spReason = `Eligibility income > $${(eligibilityFloor + 2_250).toLocaleString("en-US")} (Sched SP ceiling)`;
-    }
+    const spForgivenessPct = calculatePaScheduleSpForgivenessPct({
+      eligibilityIncome,
+      filingStatus,
+      dependentCount: totalDependents,
+    });
+    const eligibilityFloor =
+      (isMfj || filingStatus === "qualifying_widow" ? 13_000 : 6_500) + 9_500 * totalDependents;
+    const spReason: string | undefined = spForgivenessPct === 0
+      ? `Eligibility income > $${(eligibilityFloor + 2_250).toLocaleString("en-US")} (Sched SP ceiling)`
+      : undefined;
     const spCredit = preCreditTax * spForgivenessPct;
     entries.push({
       id: "pa-special-tax-forgiveness",

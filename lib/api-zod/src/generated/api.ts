@@ -107,6 +107,12 @@ export const CreateClientBody = zod.object({
     .describe(
       "E1 — count of EITC qualifying children (§32(c)(3); null → dependentsUnder17).",
     ),
+  childrenUnder6: zod
+    .number()
+    .nullish()
+    .describe(
+      "T1.0f\/M4 — children under age 6 at year end (under-6 state CTCs; null → 0).",
+    ),
   otherDependents: zod.number().optional(),
   dependentsForCareCredit: zod.number().optional(),
   taxpayerAge: zod.number().nullish(),
@@ -229,6 +235,12 @@ export const GetClientResponse = zod.object({
     .nullish()
     .describe(
       "E1 — count of EITC qualifying children (§32(c)(3) <19 \/ <24 student — wider than CTC <17). When null, defaults to dependentsUnder17.",
+    ),
+  childrenUnder6: zod
+    .number()
+    .nullish()
+    .describe(
+      "T1.0f\/M4 — children under age 6 at year end (subset of dependentsUnder17). Drives under-6 state CTCs (CA YCTC, NJ CTC, VT CTC, CO under-6 tier). Null → 0.",
     ),
   otherDependents: zod
     .number()
@@ -413,6 +425,12 @@ export const UpdateClientBody = zod.object({
     .describe(
       "E1 — count of EITC qualifying children (§32(c)(3); null → dependentsUnder17).",
     ),
+  childrenUnder6: zod
+    .number()
+    .nullish()
+    .describe(
+      "T1.0f\/M4 — children under age 6 at year end (under-6 state CTCs; null → 0).",
+    ),
   otherDependents: zod.number().optional(),
   dependentsForCareCredit: zod.number().optional(),
   taxpayerAge: zod.number().nullish(),
@@ -528,6 +546,12 @@ export const UpdateClientResponse = zod.object({
     .nullish()
     .describe(
       "E1 — count of EITC qualifying children (§32(c)(3) <19 \/ <24 student — wider than CTC <17). When null, defaults to dependentsUnder17.",
+    ),
+  childrenUnder6: zod
+    .number()
+    .nullish()
+    .describe(
+      "T1.0f\/M4 — children under age 6 at year end (subset of dependentsUnder17). Drives under-6 state CTCs (CA YCTC, NJ CTC, VT CTC, CO under-6 tier). Null → 0.",
     ),
   otherDependents: zod
     .number()
@@ -4828,6 +4852,12 @@ export const GetRecentClientsResponseItem = zod.object({
     .nullish()
     .describe(
       "E1 — count of EITC qualifying children (§32(c)(3) <19 \/ <24 student — wider than CTC <17). When null, defaults to dependentsUnder17.",
+    ),
+  childrenUnder6: zod
+    .number()
+    .nullish()
+    .describe(
+      "T1.0f\/M4 — children under age 6 at year end (subset of dependentsUnder17). Drives under-6 state CTCs (CA YCTC, NJ CTC, VT CTC, CO under-6 tier). Null → 0.",
     ),
   otherDependents: zod
     .number()

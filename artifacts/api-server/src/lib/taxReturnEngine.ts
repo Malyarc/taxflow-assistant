@@ -157,6 +157,10 @@ export interface ClientFacts {
    *  the CTC's under-17). When null, defaults to dependentsUnder17 (backward
    *  compatible); the CPA sets it when there are qualifying children aged 17-23. */
   eitcQualifyingChildren?: number | null;
+  /** T1.0f/M4 — children under age 6 at year end (subset of dependentsUnder17).
+   *  Drives the under-6 state CTCs (CA YCTC, NJ CTC, VT CTC, CO under-6 tier).
+   *  Null/absent → 0 (those credits don't fire — prior behavior). */
+  childrenUnder6?: number | null;
   taxpayerAge?: number | null;
   spouseAge?: number | null;
   /** FED-05 — legally blind at year end → extra std-ded box per IRC §63(f)(2). */
@@ -3971,6 +3975,10 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     localDependentCount,
     // E14 — Total W-2 wages for OH municipal income tax base.
     totalWages,
+    // T1.0f #24 — Box-5 Medicare wages (Box-1 fallback per W-2): the legal
+    // `wages_only` locality base (OH qualifying wages ORC 718.01(R); PA
+    // compensation incl. 401(k) deferrals; KY gross wages).
+    totalMedicareWages: w2MedicareWages,
     // E12 — Part-year residency split (when set).
     partYearResidency: partYearResidencyArg,
     options: {
@@ -4004,6 +4012,11 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
       // G4 — WA 7% LTCG excise (RCW 82.87). Only applied when resident
       // state is WA. Threshold = $262k TY2024.
       longTermCapitalGains: ltcgPreferential,
+      // T1.0e #7 — MD 2% capital-gains surtax base (HB 352, TY2025+, federal
+      // AGI > $350k): post-netting POSITIVE net gains (LTCG preferential +
+      // STCG-in-ordinary). Statutory exclusions (§121 residence, retirement-
+      // account gains) are the CPA's responsibility to net out upstream.
+      netCapitalGains: Math.max(0, ltcgPreferential) + Math.max(0, stcgInOrdinary),
       // G5 — federal AMT preferences total for CA AMT (Schedule P 540).
       // Only applied when resident state is CA. SALT addback + ISO bargain
       // + legacy catch-all.
@@ -4640,10 +4653,18 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     state: stateUpper,
     agi: calc.adjustedGrossIncome,
     filingStatus: client.filingStatus,
-    childrenUnder6: 0, // simplified — we don't track per-child age in current schema
+    // T1.0f/M4 (2026-06-11) — now a real client field (migration 0021).
+    // Capped at dependentsUnder17 defensively (under-6 is a subset of under-17).
+    childrenUnder6: Math.min(
+      Math.max(0, client.childrenUnder6 ?? 0),
+      Math.max(0, client.dependentsUnder17 ?? 0),
+    ),
     childrenUnder17: client.dependentsUnder17 ?? 0,
     federalCtcApplied: ctc.nonRefundablePortion + ctc.refundableActc,
     caEitcEligible: caEitcEligibleForYctc,
+    // T1.0f — IL CTC = 20% (TY2024) / 40% (TY2025+) of the IL EITC (PA
+    // 103-0592), so the computed state EITC is threaded through.
+    stateEitcCredit: stateEitc.credit,
     taxYear: calc.taxYear,
   });
   const stateCtcRefundable = stateCtc.credit;

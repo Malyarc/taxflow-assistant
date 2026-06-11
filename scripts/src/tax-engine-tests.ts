@@ -162,7 +162,6 @@ const FLAT_STATES_2024: Array<[string, number, number]> = [
   ["IN", 0.0305, 1000], // IN $1,000 personal exemption (single, 0 deps) modeled as deduction (#7)
   ["KY", 0.04, 3160],
   ["MI", 0.0425, 0],
-  ["MS", 0.047, 12300],
   ["NC", 0.045, 12750],
   ["PA", 0.0307, 0],
   ["UT", 0.0455, 0],
@@ -171,6 +170,16 @@ for (const [st, rate, stdDed] of FLAT_STATES_2024) {
   const expected = Math.max(0, (80000 - stdDed)) * rate;
   check(`${st} 2024 $80k → ${(rate * 100).toFixed(2)}%`, calculateStateTax(80000, st, "single", 2024), expected);
 }
+
+// MS — decomposed components (T1.0e #16, 2026-06-11; MS DOR dor.ms.gov
+// "Tax Rates" + Form 80-105): 0% on the FIRST $10,000 of TAXABLE income (a
+// real bracket — does NOT double for MFJ), 4.7% above (TY2024 per the 2022
+// HB 531 phase-down); std deduction $2,300 single + personal exemption
+// $6,000 single. The old folded "$12,300 std ded" omitted the $6,000
+// exemption (over-taxed every MS single filer $282).
+// Hand-calc: taxable = 80,000 − 2,300 − 6,000 = 71,700;
+//            tax = (71,700 − 10,000) × 4.7% = 61,700 × 0.047 = $2,899.90.
+check("MS 2024 $80k → 4.70%", calculateStateTax(80000, "MS", "single", 2024), 2899.90);
 
 // MA flat 5% but no std deduction
 check("MA 2024 $80k single", calculateStateTax(80000, "MA", "single", 2024), 4000);
@@ -246,8 +255,11 @@ check("IN 2025 $80k single (3.0%, $1k exemption)", calculateStateTax(80000, "IN"
 // KY dropped 4.0% → 3.5%, std $3,270
 // KY 2025 = 4.0% (UNCHANGED from 2024; HB1's 3.5% cut starts 2026). std ded $3,270. (Audit S11.)
 check("KY 2025 $80k single (4.0% over std $3,270)", calculateStateTax(80000, "KY", "single", 2025), (80000 - 3270) * 0.04);
-// MS dropped to 4.4%
-check("MS 2025 $80k single (4.4%)", calculateStateTax(80000, "MS", "single", 2025), (80000 - 12300) * 0.044);
+// MS dropped to 4.4% for TY2025 (2022 HB 531 phase-down; 4.0% in 2026).
+// T1.0e #16 re-derived 2026-06-11 with the decomposed MS components (std ded
+// $2,300 + exemption $6,000 + the $10k 0% band — MS DOR):
+//   taxable = 80,000 − 2,300 − 6,000 = 71,700 → (71,700 − 10,000) × 4.4% = $2,714.80
+check("MS 2025 $80k single (4.4%)", calculateStateTax(80000, "MS", "single", 2025), 2714.80);
 // NC dropped to 4.25%
 check("NC 2025 $80k single (4.25%)", calculateStateTax(80000, "NC", "single", 2025), (80000 - 12750) * 0.0425);
 // LA flat 3% with std $12,500

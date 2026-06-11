@@ -1,0 +1,1 @@
+ALTER TABLE "clients" ADD COLUMN "children_under_6" integer;

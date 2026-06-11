@@ -60,6 +60,11 @@ export interface Client {
    * @nullable
    */
   eitcQualifyingChildren?: number | null;
+  /**
+   * T1.0f/M4 — children under age 6 at year end (subset of dependentsUnder17). Drives under-6 state CTCs (CA YCTC, NJ CTC, VT CTC, CO under-6 tier). Null → 0.
+   * @nullable
+   */
+  childrenUnder6?: number | null;
   /** Other qualifying dependents (drives the $500 Credit for Other Dependents). */
   otherDependents: number;
   /** Children age 12 and under (drives Dependent Care Credit eligibility). */
@@ -233,6 +238,11 @@ export interface CreateClientBody {
    * @nullable
    */
   eitcQualifyingChildren?: number | null;
+  /**
+   * T1.0f/M4 — children under age 6 at year end (under-6 state CTCs; null → 0).
+   * @nullable
+   */
+  childrenUnder6?: number | null;
   otherDependents?: number;
   dependentsForCareCredit?: number;
   /** @nullable */
@@ -335,6 +345,11 @@ export interface UpdateClientBody {
    * @nullable
    */
   eitcQualifyingChildren?: number | null;
+  /**
+   * T1.0f/M4 — children under age 6 at year end (under-6 state CTCs; null → 0).
+   * @nullable
+   */
+  childrenUnder6?: number | null;
   otherDependents?: number;
   dependentsForCareCredit?: number;
   /** @nullable */

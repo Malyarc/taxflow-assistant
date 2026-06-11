@@ -20,10 +20,10 @@ import {
   calculateStateEitc,
   calculatePaScheduleSpForgivenessPct,
   calculateStateCtc,
+  calculateStateAdditionalCredits,
   calculateNycLocalTax,
   calculateMultiStateTax,
   calculateFlatRateLocalTax,
-  calculateStateTax,
   calculateNycUbt,
   LOCAL_TAX_DATA,
 } from "../../artifacts/api-server/src/lib/taxCalculator";
@@ -717,38 +717,41 @@ header("E11+1 — Single $6,500 = 100% forgiveness (at base)");
   check("E11+1", "pct = 1.0", pct, 1.0, 0.01, "Single base ≤ $6,500");
 }
 
-// --- E11+2: Single, $7,500 income, 0 dependents → 90% forgiveness ---
-// Hand-calc: $7,500 - $6,500 = $1,000 excess; steps = floor(1000/1000) + 1 = 2;
-// pct = 1.0 - 0.10 × 2 = 0.80. Hmm wait - that gives 80% not 90%. Let me recheck.
-// Actually re-checking the formula:
-//   excess = $1,000
-//   stepsAbove = floor($1,000 / $1,000) + 1 = 1 + 1 = 2
-//   pct = 1.0 - 0.10 × 2 = 0.80
-// So $7,500 → 80%. The official PA table at $7,500 is actually 80% (after 90% bracket
-// at $6,501-$7,500). My formula gives 80% which matches.
-header("E11+2 — Single $7,500 = 80% forgiveness (1st step)");
+// --- E11+2: Single, $7,500 income, 0 dependents → 60% forgiveness ---
+// T1.0e #2 (2026-06-11) — re-derived against the REAL PA-40 SP Eligibility
+// Income Table 1 (72 P.S. §7304; pa.gov "Tax Forgiveness"): the steps are
+// $250, not $1,000. Unmarried 0-dep: ≤$6,500 → 100%; ≤$6,750 → 90%;
+// ≤$7,000 → 80%; ≤$7,250 → 70%; ≤$7,500 → 60% ... ≤$8,750 → 10%; above 0%.
+// Hand-calc: excess = $1,000 → ceil(1,000/250) = 4 steps → 1.0 − 0.40 = 0.60.
+header("E11+2 — Single $7,500 = 60% forgiveness ($250-step table)");
 {
   const pct = calculatePaScheduleSpForgivenessPct({
     eligibilityIncome: 7500,
     filingStatus: "single",
     dependentCount: 0,
   });
-  check("E11+2", "pct = 0.80", pct, 0.80, 0.01);
+  check("E11+2", "pct = 0.60", pct, 0.60, 0.01);
 }
 
-// --- E11+3: Single, $14,500 income → 0% forgiveness (just above) ---
-// Hand-calc: $14,500 - $6,500 = $8,000; floor(8000/1000) + 1 = 9
-//   pct = 1.0 - 0.10 × 9 = 0.10 (still 10% — borderline)
-// $14,501: floor(8001/1000) + 1 = 9, also 10%
-// $15,500: floor(9000/1000) + 1 = 10, pct = 0 (fully phased out)
-header("E11+3 — Single $14,500 → 10% (final step); $16k → 0%");
+// --- E11+3: Single, $14,500 income → 0% (way past the $8,750 table top) ---
+// T1.0e #2 (2026-06-11) — PA-40 SP Table 1 (0 deps) grants the last 10%
+// bracket at $8,750 and NOTHING above it. The old $1,000-step model wrongly
+// stretched partial forgiveness to ~$15.5k. $14,500 → 0%. The 10% boundary
+// itself is pinned at $8,750 below.
+header("E11+3 — Single $14,500 → 0% (past $8,750); $8,750 → 10%; $16k → 0%");
 {
   const pctMid = calculatePaScheduleSpForgivenessPct({
     eligibilityIncome: 14500,
     filingStatus: "single",
     dependentCount: 0,
   });
-  check("E11+3", "$14,500 = 10%", pctMid, 0.10, 0.01);
+  check("E11+3", "$14,500 = 0%", pctMid, 0.0, 0.01);
+  const pctLastStep = calculatePaScheduleSpForgivenessPct({
+    eligibilityIncome: 8750,
+    filingStatus: "single",
+    dependentCount: 0,
+  });
+  check("E11+3", "$8,750 = 10% (last table row)", pctLastStep, 0.10, 0.01);
   const pctOut = calculatePaScheduleSpForgivenessPct({
     eligibilityIncome: 16000,
     filingStatus: "single",
@@ -769,8 +772,9 @@ header("E11+4 — MFJ $13,000 → 100% (MFJ base)");
 }
 
 // --- E11+5: Dependents shift thresholds — single + 2 dependents → base $25,500 ---
-// Hand-calc: base = $6,500 + 2 × $9,500 = $25,500
-//   At $25,500 → 100%; at $26,500 → 80%
+// Hand-calc (PA-40 SP Table 1, 2-dependents column; $250 steps — T1.0e #2):
+//   base = $6,500 + 2 × $9,500 = $25,500 → 100%
+//   $25,750 → 90%; $26,000 → 80%; $26,250 → 70%; $26,500 → 60%
 header("E11+5 — Single + 2 dependents shifts base by 2 × $9,500 to $25,500");
 {
   const pctAtBase = calculatePaScheduleSpForgivenessPct({
@@ -784,7 +788,7 @@ header("E11+5 — Single + 2 dependents shifts base by 2 × $9,500 to $25,500");
     filingStatus: "single",
     dependentCount: 2,
   });
-  check("E11+5", "$26,500 + 2 dep = 80%", pctAbove, 0.80, 0.01);
+  check("E11+5", "$26,500 + 2 dep = 60%", pctAbove, 0.60, 0.01);
 }
 
 // --- E11-1: High-income PA filer → 0% forgiveness ---
@@ -798,17 +802,29 @@ header("E11-1 — High-income PA filer (no forgiveness)");
   check("E11-1", "$100k → 0%", pct, 0.0, 0.01);
 }
 
-// --- E11 integration: PA tax actually reduced by SP forgiveness ---
+// --- E11 integration: SP forgiveness applied ONCE, as the Schedule SP credit ---
+// T1.0e #2 (2026-06-11): the duplicate inline forgiveness in calculateStateTax
+// was REMOVED — it double-applied with the Schedule SP credit in
+// calculateStateAdditionalCredits AND leaked onto the non-resident fallback
+// path (PA-source-only "eligibility income"). calculateStateTax now returns
+// the GROSS PA-40 line-12 tax; the SP credit (PA-40 line 21) comes from
+// calculateStateAdditionalCredits, exactly once.
 // Hand-calc: PA single $7,500 AGI, 0 dependents
-//   PA tax base = $7,500 (no std ded, no exemption per PA flat tax)
-//   Pre-SP PA tax = $7,500 × 3.07% = $230.25
-//   SP forgiveness = 80% (per E11+2)
-//   Post-SP tax = $230.25 × (1 - 0.80) = $46.05
-header("E11 integration — PA $7,500 single 80% SP forgiveness → tax $46.05");
+//   Gross PA tax = $7,500 × 3.07% = $230.25
+//   SP forgiveness = 60% (PA-40 SP Table 1: $7,500 → 60%)
+//   SP credit = $230.25 × 0.60 = $138.15; net = $92.10
+header("E11 integration — PA $7,500 single: gross $230.25, SP credit $138.15");
 {
   const tax = calculateStateTax(7500, "PA", "single", 2024, { dependentCount: 0 });
-  check("E11-int", "PA tax after 80% SP forgiveness = $46.05", tax, 46.05, 1,
-    "$7,500 × 3.07% × (1 - 0.80)");
+  check("E11-int", "PA gross tax = $230.25 (no inline forgiveness)", tax, 230.25, 1,
+    "$7,500 × 3.07%");
+  const sp = calculateStateAdditionalCredits({
+    state: "PA", taxYear: 2024, agi: 7500, filingStatus: "single",
+    dependentsUnder17: 0, otherDependents: 0,
+    preCreditStateTaxLiability: tax,
+  }).entries.find((e) => e.id === "pa-special-tax-forgiveness");
+  check("E11-int", "SP credit = $138.15 (60% × $230.25)", sp?.amount ?? 0, 138.15, 1,
+    "PA-40 line 21 via calculateStateAdditionalCredits");
 }
 
 // --- E11 integration 2: High-income PA filer unchanged ---
@@ -948,6 +964,8 @@ function stateCtc(state: string, params: {
   childrenUnder17?: number;
   federalCtcApplied?: number;
   caEitcEligible?: boolean;
+  stateEitcCredit?: number;
+  taxYear?: number;
 }): number {
   return calculateStateCtc({
     state,
@@ -957,7 +975,8 @@ function stateCtc(state: string, params: {
     childrenUnder17: params.childrenUnder17 ?? (params.childrenUnder6 ?? 0),
     federalCtcApplied: params.federalCtcApplied ?? 0,
     caEitcEligible: params.caEitcEligible ?? false,
-    taxYear: 2024,
+    stateEitcCredit: params.stateEitcCredit ?? 0,
+    taxYear: params.taxYear ?? 2024,
   }).credit;
 }
 
@@ -1000,28 +1019,50 @@ check("E9+NJ-phase", "NJ CTC $65k 1 under 6 = $500", stateCtc("NJ", {
   agi: 65000, childrenUnder6: 1, childrenUnder17: 1,
 }), 500, 1);
 
-// IL CTC (new TY2024) — 20% × federal CTC.
-// Hand-calc: federal CTC = $2,000 (1 child), AGI $40k single (full) → $400.
-check("E9+IL-full", "IL CTC 20% × $2,000 = $400", stateCtc("IL", {
-  agi: 40000, childrenUnder17: 1, federalCtcApplied: 2000,
-}), 400, 1, "IL PA 103-0592");
-// Phased: AGI $60k single (past $50k threshold). pct = (75-60)/(75-50) = 0.6.
-// credit = $400 × 0.6 = $240.
-check("E9+IL-phase", "IL CTC phased $60k single = $240", stateCtc("IL", {
-  agi: 60000, childrenUnder17: 1, federalCtcApplied: 2000,
-}), 240, 1);
+// IL CTC — REBUILT T1.0f (2026-06-11) per the actual PA 103-0592 / IL DOR
+// "Child Tax Credit" page: the credit = 20% of the taxpayer's ILLINOIS EITC
+// for TY2024 (40% for TY2025+), qualifying child under 12, NO separate AGI
+// phase-out (it inherits the EITC's own phase-out). The old model (20% ×
+// federal CTC + an invented $50k/$75k AGI band) over-credited IL families
+// ~2-3×.
+// Hand-calc TY2024: IL EITC $720 (= 20% × $3,600 federal EITC) → CTC = 20%
+// × $720 = $144.
+check("E9+IL-full", "IL CTC TY2024 = 20% × $720 IL EITC = $144", stateCtc("IL", {
+  agi: 30000, childrenUnder17: 1, stateEitcCredit: 720,
+}), 144, 1, "IL PA 103-0592 — 20% of IL EITC");
+// TY2025: rate doubles to 40% of the IL EITC → $288 on the same IL EITC.
+check("E9+IL-2025", "IL CTC TY2025 = 40% × $720 IL EITC = $288", stateCtc("IL", {
+  agi: 30000, childrenUnder17: 1, stateEitcCredit: 720, taxYear: 2025,
+}), 288, 1);
+// No IL EITC (e.g. income past the federal EITC phase-out) → no IL CTC.
+check("E9+IL-noeitc", "IL CTC = $0 without IL EITC", stateCtc("IL", {
+  agi: 60000, childrenUnder17: 1, stateEitcCredit: 0,
+}), 0, 1);
 
 // NM CITC — $600/child low-income, phased down. AGI $20k single, 2 kids = $1,200.
 check("E9+NM-full", "NM CITC $20k 2 kids = $1,200", stateCtc("NM", {
   agi: 20000, childrenUnder17: 2,
 }), 1200, 1, "NM CITC PIT-RC (simplified)");
 
-// VT CTC — $1,000/child under 6 below $125k, phase $5 per $1k AGI above.
-// Hand-calc: AGI $200k, 1 child: reduction = floor(75) × 5 × 1 = $375;
-// credit = $1,000 - $375 = $625.
-check("E9+VT-phase", "VT CTC $200k 1 child = $625", stateCtc("VT", {
+// VT CTC — CORRECTED T1.0f (2026-06-11) per 32 V.S.A. §5830f /
+// tax.vermont.gov: $1,000/child under 6, REDUCED $20 per $1,000 (or part
+// thereof) of AGI over $125,000 — fully phased out at $175,000 for any
+// number of children (VT LJFO CTC brief). The old $5/$1k rate wrongly
+// stretched the phase-out to $325k.
+// Hand-calc: AGI $200k → excess $75k → per-child reduction 75 × $20 =
+// $1,500 → per-child credit max(0, 1,000 − 1,500) = $0.
+check("E9+VT-phase", "VT CTC $200k 1 child = $0 (fully phased at $175k)", stateCtc("VT", {
   agi: 200000, childrenUnder6: 1,
-}), 625, 1, "VT CTC phased above $125k");
+}), 0, 1, "VT CTC §5830f — $20/$1k phase-out");
+// Mid-band: AGI $150,000 → excess $25,000 → reduction 25 × $20 = $500 →
+// $500/child. Two children → $1,000 total.
+check("E9+VT-mid", "VT CTC $150k 2 children = $1,000 ($500/child)", stateCtc("VT", {
+  agi: 150000, childrenUnder6: 2,
+}), 1000, 1);
+// Fraction-thereof rounding: $125,300 → ceil(300/1000) = 1 step → $980/child.
+check("E9+VT-frac", "VT CTC $125,300 1 child = $980 (part-thereof step)", stateCtc("VT", {
+  agi: 125300, childrenUnder6: 1,
+}), 980, 1);
 
 // E9 negatives
 check("E9-noState", "FL no state CTC", stateCtc("FL", {
@@ -1190,11 +1231,12 @@ header("E8-1 — Single $300k > $250k NYAGI, no school credit");
   check("E8-1", "schoolTaxCredit = $0", out.nycSchoolTaxCredit, 0, 1);
 }
 
-// --- E8+3: NYC SE filer $200k → MCTMT $900 (STL-01 flat 0.60%) ---
-// Hand-calc:
-//   Net SE = $200,000; exclusion $50k; base = $200k - $50k = $150k
-//   MCTMT = $150,000 × 0.60% = $900
-header("E8+3 — NYC SE $200k → MCTMT 0.60% × ($200k - $50k) = $900");
+// --- E8+3: NYC SE filer $200k → MCTMT $1,200 (entire-earnings base) ---
+// T1.0f #18 (2026-06-11) — NY Tax Law §801(b): once net SE earnings exceed
+// the $50,000 threshold, the 0.60% applies to the ENTIRE Zone-1 net earnings
+// (cliff, not exclusion — tax.ny.gov MCTMT individual definitions).
+// Hand-calc: MCTMT = $200,000 × 0.60% = $1,200
+header("E8+3 — NYC SE $200k → MCTMT 0.60% × entire $200k = $1,200");
 {
   const out = calculateNycLocalTax({
     nysTaxableIncome: 180000,
@@ -1204,13 +1246,12 @@ header("E8+3 — NYC SE $200k → MCTMT 0.60% × ($200k - $50k) = $900");
     taxYear: 2024,
     netSeEarnings: 200000,
   });
-  check("E8+3", "MCTMT = $900", out.nycMctmt, 900, 1, "flat 0.60% × $150k (STL-01)");
+  check("E8+3", "MCTMT = $1,200", out.nycMctmt, 1200, 1, "flat 0.60% × entire $200k (§801(b) cliff)");
 }
 
-// --- E8+4: NYC SE filer $500k → MCTMT $2,700 (STL-01 flat 0.60%) ---
-// Hand-calc:
-//   base = $500,000 - $50,000 = $450,000 × 0.60% = $2,700
-header("E8+4 — NYC SE $500k → MCTMT 0.60% × ($500k - $50k) = $2,700");
+// --- E8+4: NYC SE filer $500k → MCTMT $3,000 (entire-earnings base) ---
+// Hand-calc (§801(b) cliff): $500,000 × 0.60% = $3,000
+header("E8+4 — NYC SE $500k → MCTMT 0.60% × entire $500k = $3,000");
 {
   const out = calculateNycLocalTax({
     nysTaxableIncome: 470000,
@@ -1220,7 +1261,7 @@ header("E8+4 — NYC SE $500k → MCTMT 0.60% × ($500k - $50k) = $2,700");
     taxYear: 2024,
     netSeEarnings: 500000,
   });
-  check("E8+4", "MCTMT = $2,700", out.nycMctmt, 2700, 1);
+  check("E8+4", "MCTMT = $3,000", out.nycMctmt, 3000, 1);
 }
 
 // --- E8-2: NYC SE filer below $50k → no MCTMT ---

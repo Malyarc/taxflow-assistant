@@ -602,7 +602,19 @@ section("Scenario 15 — PA Sched SP Tax Forgiveness, single PA $20k + 2 deps");
   });
   exact("S15", "AGI = $25,000", r.adjustedGrossIncome, 25000);
   approx("S15", "Federal liability ≈ $1,040", r.federalTaxLiability, 1040, 50);
-  exact("S15", "PA tax = 0 (100% forgiveness under $28,500 threshold)", r.stateTaxLiability, 0);
+  // T1.0e #2 (2026-06-11) — PA Schedule SP is now applied EXACTLY ONCE, as a
+  // nonrefundable credit (calculateStateAdditionalCredits), matching the
+  // PA-40 form flow (line 12 tax → line 21 Tax Forgiveness credit). The
+  // engine's stateTaxLiability output is the GROSS line-12 tax; the SP
+  // credit nets into stateRefundOrOwed / totalTaxBurden (same semantics as
+  // every other state additional credit). Hand-calc (PA-40 SP Table 1,
+  // 2 dependents): 100%-forgiveness ceiling = $6,500 + 2 × $9,500 = $25,500;
+  // eligibility income $25,000 ≤ $25,500 → 100% forgiveness.
+  //   Gross PA tax = 25,000 × 3.07% = $767.50; SP credit = $767.50; net $0.
+  exact("S15", "PA gross tax = $767.50 (25,000 × 3.07%)", r.stateTaxLiability, 767.50);
+  exact("S15", "PA SP credit = $767.50 (100% forgiveness ≤ $25,500 2-dep ceiling)",
+    r.stateAdditionalCreditsNonRefundable, 767.50);
+  exact("S15", "PA net owed = $0 (fully forgiven)", r.stateRefundOrOwed, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -633,9 +645,13 @@ section("Scenario 16 — NYC SE filer single $250k Sched C, MCTMT applies");
   approx("S16", "Taxable income ≈ $177,279", r.taxableIncome, 177279, 100);
   approx("S16", "Federal liability ≈ $63,469", r.federalTaxLiability, 63469, 200);
   approx("S16", "NY state ≈ $13,233", r.stateTaxLiability, 13233, 100);
-  // STL-01: NYC MCTMT is now a flat 0.60% — (230,875 net SE − 50,000) × 0.60%
-  // = $1,085.25 (was $615 graduated). + unchanged NYC PIT ≈ $8,720 → ≈ $9,805.
-  approx("S16", "Local tax (NYC PIT + MCTMT) ≈ $9,805", r.localTaxLiability, 9805, 60);
+  // STL-01 + T1.0f #18 (2026-06-11): NY Tax Law §801(b) — once net SE
+  // earnings exceed the $50,000 threshold, the flat 0.60% applies to the
+  // ENTIRE Zone-1 net earnings (cliff, not exclusion; tax.ny.gov MCTMT
+  // individual definitions). MCTMT = 230,875 × 0.60% = $1,385.25 (was
+  // wrongly (230,875 − 50,000) × 0.60% = $1,085.25). + unchanged NYC PIT
+  // ≈ $8,720 → ≈ $10,105.
+  approx("S16", "Local tax (NYC PIT + MCTMT) ≈ $10,105", r.localTaxLiability, 10105, 60);
   exact("S16", "Locality = NYC", r.localTaxJurisdiction, "NYC");
 }
 

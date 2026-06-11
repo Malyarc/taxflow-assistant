@@ -78,6 +78,7 @@
     "src/tax-engine-state-wins-2026-tests.ts",
     "src/tax-engine-multiyear-hardening-tests.ts",
     "src/tax-engine-nr-sourcing-tests.ts",
+    "src/tax-engine-t10ef-state-local-tests.ts",
     "src/tax-engine-ct-retirement-tests.ts",
     "src/tax-engine-nr-source-plumbing-tests.ts",
     "src/tax-engine-info-return-extraction-tests.ts",

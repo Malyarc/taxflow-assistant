@@ -169,6 +169,13 @@
       "when": 1781182772180,
       "tag": "0023_soft_valeria_richards",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1781183909182,
+      "tag": "0024_chilly_phil_sheldon",
+      "breakpoints": true
     }
   ]
 }

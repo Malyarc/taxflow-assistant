@@ -41,7 +41,10 @@ export const PA_EIT_REGISTRY: PaEitMunicipality[] = [
   { psdCode: "700102", municipality: "Pittsburgh", county: "Allegheny", combinedRate: 0.0300, residentRate: 0.0300, nonResidentRate: 0.0100, notes: "2% city + 1% PSD" },
   { psdCode: "350201", municipality: "Allentown", county: "Lehigh", combinedRate: 0.01975, residentRate: 0.01975, nonResidentRate: 0.0100, notes: "Combined 1.975%" },
   { psdCode: "250301", municipality: "Erie", county: "Erie", combinedRate: 0.0195, residentRate: 0.0195, nonResidentRate: 0.0100, notes: "1.95% combined" },
-  { psdCode: "060401", municipality: "Reading", county: "Berks", combinedRate: 0.0270, residentRate: 0.0270, nonResidentRate: 0.0100, notes: "2.70% combined" },
+  // T1.0f #20 (2026-06-11): Reading resident EIT = 3.6% (readingpa.gov "2025
+  // City of Reading Taxes & Tax Rates"; Berks EIT Bureau 2024 instructions).
+  // The prior 2.70% under-taxed Reading residents 0.9pp.
+  { psdCode: "060401", municipality: "Reading", county: "Berks", combinedRate: 0.0360, residentRate: 0.0360, nonResidentRate: 0.0100, notes: "3.6% resident (city + SD)" },
   { psdCode: "350202", municipality: "Bethlehem", county: "Northampton", combinedRate: 0.0100, residentRate: 0.0100, nonResidentRate: 0.0100, notes: "1.0% combined" },
   { psdCode: "670501", municipality: "Scranton", county: "Lackawanna", combinedRate: 0.0340, residentRate: 0.0340, nonResidentRate: 0.0100, notes: "Act 511 + commuter" },
   { psdCode: "220601", municipality: "Lancaster", county: "Lancaster", combinedRate: 0.0205, residentRate: 0.0205, nonResidentRate: 0.0100, notes: "1.1% muni + 0.95% SD" },
