@@ -530,25 +530,34 @@ header("M3 — MA mandate FPL-tier penalty TY2024/2025 (TIR 24-1 / 25-1)");
 // S10 — WV Social Security phase-out (HB 4880, 2024). 100% exempt ≤$50k single /
 // ≤$100k joint federal AGI (all years). ABOVE the floor, WV subtracts 35% (2024)
 // / 65% (2025) / 100% (2026) of the federally-taxable SS. The engine exempted
-// 100% in every year (under-taxing high-income WV retirees). WV std ded $0;
-// single brackets 2.22/2.96/3.33/4.44/4.82% (identical across 2024-2026).
+// 100% in every year (under-taxing high-income WV retirees). WV std ded $0.
+// RATE-TABLE LAW CHANGES (T1.0e #4, expectations re-derived 2026-06-11 — the
+// original "identical across 2024-2026" premise was stale):
+//   TY2024 = HB 2526 (2023) rates 2.36/3.15/3.54/4.72/5.12% — the 4% trigger
+//     cut + SB 2033's extra 2% BOTH took effect 1/1/2025 (EY Tax Alert
+//     2024-2154; tax.wv.gov 2024 IT-140 rate schedules).
+//   TY2025 = 2.22/2.96/3.33/4.44/4.82%.
+//   TY2026 = SB 392 (signed 3/31/2026, eff. 6/12/2026 RETROACTIVE to 1/1/2026,
+//     W. Va. Code §11-21-4j): 5% cut → 2.11/2.81/3.16/4.22/4.58%.
 // ════════════════════════════════════════════════════════════════════════════
 header("S10 — WV SS phase-out (HB 4880: 35/65/100% above the floor)");
 {
   // Above floor (AGI $80k), SS $20k. 2024: exclude 35% = $7,000 → base $73,000.
-  //   222 + 444 + 499.50 + 888 + 13,000×4.82%(626.60) = $2,680.10
-  check("WV 2024 single $80k AGI, $20k SS (35% excl) → $2,680.10",
-    calculateStateTax(80000, "WV", "single", 2024, { taxableSocialSecurity: 20000 }), 2680.10, 0.05);
-  // 2025: exclude 65% = $13,000 → base $67,000. + 7,000×4.82%(337.40) = $2,390.90
+  //   HB 2526 rates: 236 + 472.50 + 531 + 944 + 13,000×5.12%(665.60) = $2,849.10
+  check("WV 2024 single $80k AGI, $20k SS (35% excl) → $2,849.10",
+    calculateStateTax(80000, "WV", "single", 2024, { taxableSocialSecurity: 20000 }), 2849.10, 0.05);
+  // 2025: exclude 65% = $13,000 → base $67,000. 222+444+499.50+888 + 7,000×4.82%(337.40) = $2,390.90
   check("WV 2025 single $80k AGI, $20k SS (65% excl) → $2,390.90",
     calculateStateTax(80000, "WV", "single", 2025, { taxableSocialSecurity: 20000 }), 2390.90, 0.05);
-  // 2026: exclude 100% = $20,000 → base $60,000 → $2,053.50.
-  check("WV 2026 single $80k AGI, $20k SS (100% excl) → $2,053.50",
-    calculateStateTax(80000, "WV", "single", 2026, { taxableSocialSecurity: 20000 }), 2053.50, 0.05);
+  // 2026: exclude 100% = $20,000 → base $60,000. SB 392 rates:
+  //   211 + 421.50 + 474 + 844 = $1,950.50 (matches the SB 392 enrolled rate
+  //   table's "$1,950.50 plus 4.58% of excess over $60,000" anchor exactly).
+  check("WV 2026 single $80k AGI, $20k SS (100% excl) → $1,950.50",
+    calculateStateTax(80000, "WV", "single", 2026, { taxableSocialSecurity: 20000 }), 1950.50, 0.05);
   // Below floor (AGI $40k ≤ $50k), SS $15k → 100% exempt every year → base $25,000.
-  //   222 + 444 = $666.00
-  check("WV 2024 single $40k AGI (≤floor), $15k SS (100% excl) → $666.00",
-    calculateStateTax(40000, "WV", "single", 2024, { taxableSocialSecurity: 15000 }), 666.0, 0.05);
+  //   2024 HB 2526 rates: 236 + 472.50 = $708.50
+  check("WV 2024 single $40k AGI (≤floor), $15k SS (100% excl) → $708.50",
+    calculateStateTax(40000, "WV", "single", 2024, { taxableSocialSecurity: 15000 }), 708.50, 0.05);
   ok("WV above-floor 2024 tax > 2026 tax (less SS excluded earlier)",
     calculateStateTax(80000, "WV", "single", 2024, { taxableSocialSecurity: 20000 }) >
     calculateStateTax(80000, "WV", "single", 2026, { taxableSocialSecurity: 20000 }));

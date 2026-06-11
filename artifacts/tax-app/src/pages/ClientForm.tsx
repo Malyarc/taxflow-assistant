@@ -42,6 +42,8 @@ interface FormState {
   state: string;
   taxYear: number;
   dependentsUnder17: number;
+  /** T1.0f/M4 — children under 6 at year end (under-6 state CTCs). */
+  childrenUnder6: number;
   otherDependents: number;
   // Phase 1 — drive saver's, dep care, IRA/HSA limits, education credits
   dependentsForCareCredit: number;
@@ -92,6 +94,7 @@ const defaultForm: FormState = {
   state: "CA",
   taxYear: new Date().getFullYear() - 1,
   dependentsUnder17: 0,
+  childrenUnder6: 0,
   otherDependents: 0,
   dependentsForCareCredit: 0,
   taxpayerAge: "",
@@ -166,6 +169,7 @@ export default function ClientForm({ editId }: Props) {
         state: existing.state || "CA",
         taxYear: existing.taxYear || new Date().getFullYear() - 1,
         dependentsUnder17: existing.dependentsUnder17 ?? 0,
+        childrenUnder6: existing.childrenUnder6 ?? 0,
         otherDependents: existing.otherDependents ?? 0,
         dependentsForCareCredit: e.dependentsForCareCredit ?? 0,
         taxpayerAge: e.taxpayerAge ?? "",
@@ -232,6 +236,7 @@ export default function ClientForm({ editId }: Props) {
       ...form,
       taxYear: Number(form.taxYear),
       dependentsUnder17: Number(form.dependentsUnder17) || 0,
+      childrenUnder6: Number(form.childrenUnder6) || 0,
       otherDependents: Number(form.otherDependents) || 0,
       dependentsForCareCredit: Number(form.dependentsForCareCredit) || 0,
       taxpayerAge: form.taxpayerAge === "" ? null : Number(form.taxpayerAge),
@@ -470,6 +475,17 @@ export default function ClientForm({ editId }: Props) {
                   onChange={(e) => set("dependentsUnder17", Number(e.target.value))}
                 />
                 <p className="text-xs text-muted-foreground">Drives Child Tax Credit ($2,000/child).</p>
+              </div>
+              <div className="space-y-2">
+                <Label>Children &lt; 6</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={form.childrenUnder6}
+                  onChange={(e) => set("childrenUnder6", Number(e.target.value))}
+                />
+                <p className="text-xs text-muted-foreground">Subset of &lt;17 — drives under-6 state CTCs (CA/NJ/VT/CO).</p>
               </div>
               <div className="space-y-2">
                 <Label>Other Dependents</Label>

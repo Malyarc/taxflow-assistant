@@ -73,15 +73,23 @@ section("FED-02 — kiddie-tax year-indexed threshold");
 }
 
 // ── STL-01 — NYC self-employed MCTMT flat 0.60% (Zone 1, TY2024+) ──────────
-// NY Tax Law Art. 23: flat 0.60% on net SE earnings over the $50,000 exclusion.
+// NY Tax Law §801(b): 0.60% "of the net earnings from self-employment ... if
+// such earnings exceed" the threshold ($50,000 TY2024/2025). The $50,000 is a
+// CLIFF THRESHOLD, not an exclusion — once exceeded, the 0.60% applies to the
+// ENTIRE MCTD-allocated net earnings (tax.ny.gov "MCTMT individual
+// definitions" / "Summary of 2025 PIT changes": tax = 0.60% OF the net
+// earnings attributable to Zone 1 when those earnings exceed the threshold).
+// LAW-READ CORRECTION (T1.0f #18, 2026-06-11): the original expectations used
+// (netSe − 50,000) × 0.6% — an excess-over-threshold base that under-taxed
+// every >$50k filer by a flat $300. Re-derived on the full-earnings base.
 section("STL-01 — NYC MCTMT flat 0.60%");
 {
   const mc = (netSe: number) => calculateNycLocalTax({ nysTaxableIncome: Math.max(0, netSe - 20000), federalAgi: netSe, filingStatus: "single", dependentCount: 1, taxYear: 2024, netSeEarnings: netSe }).nycMctmt;
-  check("MCTMT $80k → $180 (DTF example)", mc(80000), 180);     // (80,000−50,000)×0.6%
-  check("MCTMT $200k → $900", mc(200000), 900);                  // (150,000)×0.6%
-  check("MCTMT $500k → $2,700", mc(500000), 2700);               // (450,000)×0.6%
-  check("MCTMT $50k → $0 (at exclusion)", mc(50000), 0);
-  check("MCTMT $100k → $300", mc(100000), 300);                  // (50,000)×0.6%
+  check("MCTMT $80k → $480 (0.6% × entire $80,000)", mc(80000), 480);   // 80,000×0.6%
+  check("MCTMT $200k → $1,200", mc(200000), 1200);                       // 200,000×0.6%
+  check("MCTMT $500k → $3,000", mc(500000), 3000);                       // 500,000×0.6%
+  check("MCTMT $50k → $0 (at threshold — must EXCEED $50k)", mc(50000), 0);
+  check("MCTMT $100k → $600", mc(100000), 600);                          // 100,000×0.6%
 }
 
 // ── STL-02 — PA EIT / OH SDIT / Philly NPT include SE net profit ──────────

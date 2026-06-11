@@ -3,14 +3,18 @@
  *
  * Verifies the proportional ("as-if-resident × source-fraction") TAX-RATIO method
  * for the method-(a)-verified states — NY, CA, CT (2026-06-06j), NJ + MN (2026-06-06k),
- * GA + NC + OH (2026-06-08), and the 2026-06-08 batch of 17 more (graduated AR/DE/ME/MO/
- * MT/NE/NM/OK/OR/RI/VT/WI + flat CO/IA/KS/LA/ND) — the per-income-type NR source base
+ * GA + NC + OH (2026-06-08), and the 2026-06-08 batch (graduated AR/DE/ME/MO/
+ * MT/NE/NM/OK/RI/VT/WI + flat CO/IA/KS/LA/ND) — the per-income-type NR source base
  * (wages + NR business/rental/real-property gains via perStateNonResidentOtherSourced),
  * and the federal sourcing exclusions: intangibles (interest/dividends — 4 U.S.C.
  * §114(a)) and retirement (pension/IRA/401(k)/SS — 4 U.S.C. §114(b)) are NEVER NR-source.
  * Also guards the deliberate EXCLUSIONS stay on the direct-bracket fallback: MD (method b
  * + a 2.25% special NR tax the engine can't model), SC (genuine method b), UT (method-a
- * form but a no-op — engine std ded 0).
+ * form but a no-op — engine std ded 0), and OR (REMOVED from the set 2026-06-11,
+ * T1.0f #21 — Form OR-40-N is method (b): deductions/modifications are multiplied by
+ * the Oregon percentage to produce Oregon TAXABLE income and the rate chart is applied
+ * DIRECTLY to it; the old comment conflated it with the part-year OR-40-P, which does
+ * prorate the tax).
  *
  * Run: pnpm --filter @workspace/scripts exec tsx src/tax-engine-nr-sourcing-tests.ts
  */
@@ -299,7 +303,9 @@ header("MD excluded — non-resident uses the conservative fallback, NOT method 
 // ════════════════════════════════════════════════════════════════════════════
 header("2026-06-08 batch — 17 method-(a) states (relational + >fallback)");
 {
-  const GRADUATED = ["AR", "DE", "ME", "MO", "MT", "NE", "NM", "OK", "OR", "RI", "VT", "WI"];
+  // OR removed 2026-06-11 (T1.0f #21): OR-40-N is method (b) — see the
+  // exclusion guard below.
+  const GRADUATED = ["AR", "DE", "ME", "MO", "MT", "NE", "NM", "OK", "RI", "VT", "WI"];
   const FLAT = ["CO", "IA", "KS", "LA", "ND"];
   for (const s of [...GRADUATED, ...FLAT]) {
     const r = calculateMultiStateTax({
@@ -335,7 +341,7 @@ header("2026-06-08 batch — 17 method-(a) states (relational + >fallback)");
 //     credit replaces the std ded, not modeled) → method a == fallback (a NO-OP);
 //     left out to keep the set honest.
 // ════════════════════════════════════════════════════════════════════════════
-header("Guards — SC (method b) + UT (no-op) stay on the fallback");
+header("Guards — SC (method b) + UT (no-op) + OR (method b) stay on the fallback");
 {
   for (const s of ["SC", "UT"]) {
     const r = calculateMultiStateTax({
@@ -349,6 +355,35 @@ header("Guards — SC (method b) + UT (no-op) stay on the fallback");
   // SC: confirm method a would have been STRICTLY higher (proves the exclusion matters).
   checkTruthy("SC fallback < the method-a value it would wrongly compute",
     calculateStateTax(80000, "SC", "single", 2024) < calculateStateTax(120000, "SC", "single", 2024) * (80000 / 120000) - 0.5);
+
+  // OR — REMOVED from NR_AS_IF_RESIDENT_STATES (T1.0f #21, 2026-06-11). The
+  // OR-40-N instructions multiply DEDUCTIONS/modifications by the Oregon
+  // percentage to produce Oregon taxable income, then apply the rate chart
+  // DIRECTLY to that taxable income ("To compute tax on Form OR-40-N, line 45,
+  // use the tax rate charts") — method (b), not the tax-ratio method (a).
+  // Method (a) OVER-taxed OR non-residents whose OR share is small relative to
+  // a large AGI (OR is steeply graduated, 4.75% → 9.9% at $125k).
+  // Hand-calc of the engine's conservative fallback (OR 2024 single, std ded
+  // $2,745; brackets 4.75% ≤ $4,300 / 6.75% ≤ $10,750 / 8.75% ≤ $125,000):
+  //   taxable = 80,000 − 2,745 = 77,255
+  //   tax = 4,300×4.75% (204.25) + 6,450×6.75% (435.375)
+  //       + (77,255 − 10,750)×8.75% (5,819.19) = $6,458.81
+  // (No federal-tax subtraction on the NR fallback — engine passes no
+  // federalIncomeTaxPaid; documented conservative approximation.)
+  const orResult = calculateMultiStateTax({
+    residentState: "TX", federalAgi: 120000, filingStatus: "single", taxYear: 2024,
+    perStateWages: [{ stateCode: "OR", wages: 80000 }, { stateCode: "TX", wages: 40000 }],
+  });
+  const orEntry = nyEntry(orResult, "OR");
+  check("OR NR == direct-bracket fallback on $80k (method b — NOT method a)",
+    orEntry?.tax ?? -1, calculateStateTax(80000, "OR", "single", 2024), 0.5);
+  check("OR NR absolute = $6,458.81 (hand-calc, brackets on the $80k source)",
+    orEntry?.tax ?? -1, 6458.81, 0.5);
+  // Method a would have been strictly higher: as-resident(120k) = $9,958.81
+  // ((204.25 + 435.375 + 8.75%×(117,255−10,750)) — under the $125k 9.9% break)
+  // × ⅔ = $6,639.21 — proving the removal lowers OR NR tax (the over-tax fix).
+  checkTruthy("OR fallback < the method-a value it would wrongly compute ($6,639.21)",
+    (orEntry?.tax ?? Infinity) < calculateStateTax(120000, "OR", "single", 2024) * (80000 / 120000) - 0.5);
 }
 
 // ════════════════════════════════════════════════════════════════════════════

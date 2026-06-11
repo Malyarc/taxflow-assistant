@@ -148,6 +148,13 @@
       "when": 1781135355435,
       "tag": "0020_lumpy_deathbird",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1781181760772,
+      "tag": "0021_narrow_tombstone",
+      "breakpoints": true
     }
   ]
 }

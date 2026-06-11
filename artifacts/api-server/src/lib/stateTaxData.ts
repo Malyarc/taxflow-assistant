@@ -124,14 +124,24 @@ const FED_CONFORMING_STD_DED_STATES = new Set([
 // federally-taxable portion). Federal AGI includes the federally-taxable
 // portion of SS; states NOT in this set exempt SS from their state-tax base.
 // Source: Tax Foundation state-by-state SS taxation table (TY2024 current).
-// CT: SS exclusion now MODELED in calculateStateTax — 100% exempt below $75k
-//   single/MFS / $100k MFJ-QW-HoH, 75% exempt (≤25% taxed) above. (Exact rule
-//   caps at 25% of GROSS benefits; we use 25% of the federally-taxable amount —
-//   slight under-tax for 85%-taxable filers, documented. CT pension/IRA exclusion
-//   still not modeled — needs the bracketed table + pension/IRA split.)
-// All other 41 jurisdictions (40 states + DC) exempt SS at the state level.
+// KS REMOVED (T1.0e #1, 2026-06-11): SB 1 (2024 Special Session) makes Social
+//   Security 100% exempt from Kansas income tax beginning TY2024 for ALL
+//   taxpayers regardless of income (KLRD SB 1 summary; K.S.A. 79-32,117(c)(xx)
+//   as amended) — the old $75k-AGI cliff is repealed.
+// Member states all carry income-tested partial exemptions, now MODELED as
+// dedicated branches in calculateStateTax (T1.0e #13, each cited inline):
+//   CT — 100% exempt below $75k single/MFS / $100k MFJ-QW-HoH; ≤25% taxed above.
+//   WV — HB 4880 35/65/100% decreasing modification (2024/2025/2026).
+//   NM — §7-2-5.14 full exemption at/below $100k/$150k/$75k AGI (cliff).
+//   CO — 65+ full subtraction; 55-64 $20k pension cap (TY2025+ full ≤$75k/$95k).
+//   VT — full below $50k/$65k AGI; linear phase-out over the next $10k.
+//   MN — M1M simplified method: full below $84,490/$108,320/$54,160 (2024),
+//        −10% per $4,000 ($2,000 MFS) of excess.
+//   RI — full modification at full retirement age below the indexed AGI limit.
+//   UT — credit-based offset (modeled as a credit in calculateStateTax).
+//   MT — SS flows per federal (no broad threshold exemption) — taxed as-is.
 export const STATES_TAXING_SS = new Set([
-  "CO", "CT", "KS", "MN", "MT", "NM", "RI", "UT", "VT",
+  "CO", "CT", "MN", "MT", "NM", "RI", "UT", "VT",
 ]);
 
 // ── Multi-state reciprocity agreements ─────────────────────────────────────
@@ -142,9 +152,18 @@ export const STATES_TAXING_SS = new Set([
 // with their employer (e.g., NJ-165, PA Form REV-419, IL IL-W-5-NR). We
 // assume that paperwork is filed correctly.
 export const STATE_RECIPROCITY: Record<string, readonly string[]> = {
+  // T1.0f #27 (2026-06-11) — AZ Form WEC: nonresident employees who are
+  // residents of CALIFORNIA, INDIANA, OREGON, or VIRGINIA are exempt from AZ
+  // withholding on AZ wages (azdor.gov "Withholding Exceptions" + Form WEC
+  // instructions). Strictly these are credit-coordination regimes (the AZ
+  // 140NR allows a credit for resident-state tax — the "reverse credit" rule
+  // for CA), but the net wage result matches reciprocity: AZ collects ~$0 and
+  // the resident state taxes the wages in full with no resident credit. The
+  // reverse direction (e.g. AZ resident working in CA) is NOT reciprocal.
+  CA: ["AZ"],
   DC: ["MD", "VA"],
   IL: ["IA", "KY", "MI", "WI"],
-  IN: ["KY", "MI", "OH", "PA", "WI"],
+  IN: ["AZ", "KY", "MI", "OH", "PA", "WI"],
   IA: ["IL"],
   KY: ["IL", "IN", "MI", "OH", "VA", "WV", "WI"],
   MD: ["DC", "PA", "VA", "WV"],
@@ -154,8 +173,9 @@ export const STATE_RECIPROCITY: Record<string, readonly string[]> = {
   NJ: ["PA"],
   ND: ["MN", "MT"],
   OH: ["IN", "KY", "MI", "PA", "WV"],
+  OR: ["AZ"],
   PA: ["IN", "MD", "NJ", "OH", "VA", "WV"],
-  VA: ["DC", "KY", "MD", "PA", "WV"],
+  VA: ["AZ", "DC", "KY", "MD", "PA", "WV"],
   WV: ["KY", "MD", "OH", "PA", "VA"],
   WI: ["IL", "IN", "KY", "MI"],
 };
@@ -261,13 +281,23 @@ const STATE_TAX_DATA_2024: Record<string, StateTaxInfo> = {
   },
   MS: {
     name: "Mississippi", hasIncomeTax: true,
-    // 2024: 4.7% on income over $10,000 (first $10k exempt for everyone — modeled as deduction)
+    // T1.0e #16 (2026-06-11) — decomposed the old folded "std deduction"
+    // ($12,300/$24,600/$18,300) into its REAL components per MS DOR
+    // (dor.ms.gov/individual/tax-rates):
+    //   * 0% on the first $10,000 of TAXABLE income — a real bracket now, and
+    //     it does NOT double for MFJ (same $10k band for every status; the old
+    //     fold-in wrongly doubled it to $20k for MFJ).
+    //   * Std deduction $2,300 single/MFS, $4,600 MFJ, $3,400 HoH.
+    //   * Personal exemption $6,000 single/MFS, $12,000 MFJ/QSS, $8,000 HoH,
+    //     + $1,500 per dependent (MS Form 80-100 exemption table).
     brackets: {
-      single: [{ upTo: Infinity, rate: 0.047 }],
-      married_filing_jointly: [{ upTo: Infinity, rate: 0.047 }],
+      single: [{ upTo: 10000, rate: 0 }, { upTo: Infinity, rate: 0.047 }],
+      married_filing_jointly: [{ upTo: 10000, rate: 0 }, { upTo: Infinity, rate: 0.047 }],
     },
-    standardDeduction: { single: 12300, married_filing_jointly: 24600, head_of_household: 18300 },
-    notes: "First $10k of taxable income is exempt; we fold this into a higher std deduction approximation.",
+    standardDeduction: { single: 2300, married_filing_jointly: 4600, head_of_household: 3400, married_filing_separately: 2300 },
+    personalExemption: { single: 6000, married_filing_jointly: 12000, head_of_household: 8000, married_filing_separately: 6000, qualifying_widow: 12000 },
+    personalExemptionPerDependent: 1500,
+    notes: "MS: 0% on first $10,000 of taxable income (single band, all statuses), 4.7% above (TY2024); std ded $2,300/$4,600/$3,400 + exemptions $6,000/$12,000/$8,000 + $1,500/dep (MS DOR).",
   },
   NC: {
     name: "North Carolina", hasIncomeTax: true,
@@ -467,11 +497,24 @@ const STATE_TAX_DATA_2024: Record<string, StateTaxInfo> = {
   },
   KS: {
     name: "Kansas", hasIncomeTax: true,
+    // T1.0e #1 (2026-06-11) — SB 1 (2024 Special Session, signed 6/21/2024;
+    // KLRD bill summary + kslegislature.gov enrolled text) RETROACTIVE to
+    // TY2024: two brackets — 5.2% on the first $23,000 single ($46,000 MFJ),
+    // 5.58% above. (The old 3.1/5.25/5.7% three-bracket schedule is repealed.)
+    // MFS/HoH use the single column per K.S.A. 79-32,110 ("all other
+    // individuals" = the married-filing-jointly column doubles only for joint).
     brackets: {
-      single: [{ upTo: 15000, rate: 0.031 }, { upTo: 30000, rate: 0.0525 }, { upTo: Infinity, rate: 0.057 }],
-      married_filing_jointly: [{ upTo: 30000, rate: 0.031 }, { upTo: 60000, rate: 0.0525 }, { upTo: Infinity, rate: 0.057 }],
+      single: [{ upTo: 23000, rate: 0.052 }, { upTo: Infinity, rate: 0.0558 }],
+      married_filing_jointly: [{ upTo: 46000, rate: 0.052 }, { upTo: Infinity, rate: 0.0558 }],
     },
-    standardDeduction: { single: 3500, married_filing_jointly: 8000, head_of_household: 6000 },
+    // SB 1 std ded (TY2024+): $3,605 single / $8,240 MFJ / $6,180 HoH (MFS =
+    // half the joint amount, $4,120, per K.S.A. 79-32,119).
+    standardDeduction: { single: 3605, married_filing_jointly: 8240, head_of_household: 6180, married_filing_separately: 4120 },
+    // SB 1 personal exemption (TY2024+): $9,160 per TAXPAYER ($18,320 MFJ —
+    // both spouses) + $2,320 for EACH dependent (K.S.A. 79-32,121 as amended).
+    personalExemption: { single: 9160, married_filing_jointly: 18320, head_of_household: 9160, married_filing_separately: 9160, qualifying_widow: 18320 },
+    personalExemptionPerDependent: 2320,
+    notes: "KS SB 1 (2024): 5.2%/5.58% two-bracket, std ded $3,605/$8,240/$6,180, personal exemption $9,160/filer + $2,320/dependent; Social Security 100% exempt TY2024+ (KS removed from STATES_TAXING_SS).",
   },
   LA: {
     name: "Louisiana", hasIncomeTax: true,
@@ -622,18 +665,26 @@ const STATE_TAX_DATA_2024: Record<string, StateTaxInfo> = {
   },
   NM: {
     name: "New Mexico", hasIncomeTax: true,
+    // T1.0e #6 (2026-06-11) — TY2024 uses the PRE-HB-252 five-bracket law
+    // (§7-2-7 before L.2024 ch.67): single 1.7% ≤$5.5k / 3.2% ≤$11k / 4.7%
+    // ≤$16k / 4.9% ≤$210k / 5.9% above; MFJ 1.7% ≤$8k / 3.2% ≤$16k / 4.7%
+    // ≤$24k / 4.9% ≤$315k / 5.9%. The engine previously mixed the 2025 law's
+    // $16.5k/$33.5k middle thresholds into 2024 (under-tax ~$117 @ $50k).
+    // HB 252's NEW six-bracket structure (1.5%/3.2%/4.3%/4.7%/4.9%/5.9%,
+    // effective 1/1/2025) is applied in build2025Data — verified vs LegiScan
+    // HB 252 enrolled text + NM governor's signing release (tax.newmexico.gov).
     brackets: {
       single: [
         { upTo: 5500, rate: 0.017 },
-        { upTo: 16500, rate: 0.032 },
-        { upTo: 33500, rate: 0.047 },
+        { upTo: 11000, rate: 0.032 },
+        { upTo: 16000, rate: 0.047 },
         { upTo: 210000, rate: 0.049 },
         { upTo: Infinity, rate: 0.059 },
       ],
       married_filing_jointly: [
         { upTo: 8000, rate: 0.017 },
-        { upTo: 25000, rate: 0.032 },
-        { upTo: 50000, rate: 0.047 },
+        { upTo: 16000, rate: 0.032 },
+        { upTo: 24000, rate: 0.047 },
         { upTo: 315000, rate: 0.049 },
         { upTo: Infinity, rate: 0.059 },
       ],
@@ -787,7 +838,7 @@ const STATE_TAX_DATA_2024: Record<string, StateTaxInfo> = {
     // same amount as the personal exemption, applied via personalExemptionPerDependent).
     personalExemption: { single: 4850, married_filing_jointly: 9700, head_of_household: 4850, married_filing_separately: 4850 },
     personalExemptionPerDependent: 4850,
-    notes: "VT std ded matches official 2024 values + per-filer personal exemption $4,850/$9,700 AND per-dependent exemption $4,850 (Form IN-111 Line 5b). NOT MODELED: taxable Social Security exclusion (Schedule IN-112 Part II Line 9 — VT-specific).",
+    notes: "VT std ded matches official 2024 values + per-filer personal exemption $4,850/$9,700 AND per-dependent exemption $4,850 (Form IN-111 Line 5b). SS exclusion (32 V.S.A. §5830e — full ≤$50k/$65k AGI, linear phase over the next $10k) MODELED in calculateStateTax (T1.0e #13, 2026-06-11).",
   },
   VA: {
     name: "Virginia", hasIncomeTax: true,
@@ -799,24 +850,30 @@ const STATE_TAX_DATA_2024: Record<string, StateTaxInfo> = {
   },
   WV: {
     name: "West Virginia", hasIncomeTax: true,
+    // T1.0e #4 (2026-06-11) — TY2024 = the HB 2526 (2023) rates, top 5.12%:
+    // 2.36/3.15/3.54/4.72/5.12%. The 4% trigger cut + SB 2033's extra 2%
+    // BOTH took effect 1/1/2025 (top 4.82%) — EY Tax Alert 2024-2154 + WV Tax
+    // Division "About the Income Tax Rate Cut". The engine wrongly held the
+    // 2025 rates in the 2024 slot (≈6% under-tax); 2025 rates are applied in
+    // build2025Data. Next trigger window: January 2027.
     brackets: {
       single: [
-        { upTo: 10000, rate: 0.0222 },
-        { upTo: 25000, rate: 0.0296 },
-        { upTo: 40000, rate: 0.0333 },
-        { upTo: 60000, rate: 0.0444 },
-        { upTo: Infinity, rate: 0.0482 },
+        { upTo: 10000, rate: 0.0236 },
+        { upTo: 25000, rate: 0.0315 },
+        { upTo: 40000, rate: 0.0354 },
+        { upTo: 60000, rate: 0.0472 },
+        { upTo: Infinity, rate: 0.0512 },
       ],
       married_filing_jointly: [
-        { upTo: 10000, rate: 0.0222 },
-        { upTo: 25000, rate: 0.0296 },
-        { upTo: 40000, rate: 0.0333 },
-        { upTo: 60000, rate: 0.0444 },
-        { upTo: Infinity, rate: 0.0482 },
+        { upTo: 10000, rate: 0.0236 },
+        { upTo: 25000, rate: 0.0315 },
+        { upTo: 40000, rate: 0.0354 },
+        { upTo: 60000, rate: 0.0472 },
+        { upTo: Infinity, rate: 0.0512 },
       ],
     },
     standardDeduction: { single: 0, married_filing_jointly: 0 },
-    notes: "WV: $2,000 personal exemption per filer (not modeled).",
+    notes: "WV TY2024: HB 2526 rates (top 5.12%); TY2025+ 2.22/2.96/3.33/4.44/4.82 via build2025Data. $2,000 personal exemption per filer (not modeled).",
   },
   WI: {
     name: "Wisconsin", hasIncomeTax: true,
@@ -868,17 +925,26 @@ function build2025Data(): Record<string, StateTaxInfo> {
     brackets: { single: flat(0.04), married_filing_jointly: flat(0.04) },
     standardDeduction: { single: 3270, married_filing_jointly: 3270 },
   };
-  // Mississippi reduced flat rate to 4.4% for 2025
+  // Mississippi reduced the rate to 4.4% for 2025 (2022 phase-down schedule).
+  // The $10,000 0% band is preserved (it is statutory, not part of the cut).
   data.MS = {
     ...data.MS,
-    brackets: { single: flat(0.044), married_filing_jointly: flat(0.044) },
+    brackets: {
+      single: [{ upTo: 10000, rate: 0 }, { upTo: Infinity, rate: 0.044 }],
+      married_filing_jointly: [{ upTo: 10000, rate: 0 }, { upTo: Infinity, rate: 0.044 }],
+    },
   };
-  // Louisiana switched to flat 3% for 2025
+  // Louisiana switched to flat 3% for 2025. T1.0e #8 (2026-06-11): the LDR
+  // income-tax-reform FAQ sets the new combined personal-exemption/standard
+  // deduction at $12,500 single/MFS and **$25,000 for JOINT, HEAD OF
+  // HOUSEHOLD, and SURVIVING SPOUSE** (revenue.louisiana.gov FAQ; RIB 25-012).
+  // The prior override wrongly gave HoH only $12,500. CPI-indexed from 2026
+  // (2026 holds the 2025 values pending LDR publication — documented).
   data.LA = {
     ...data.LA,
     brackets: { single: flat(0.03), married_filing_jointly: flat(0.03) },
-    standardDeduction: { single: 12500, married_filing_jointly: 25000, head_of_household: 12500, married_filing_separately: 12500 },
-    notes: "LA TY2025: switched to flat 3% with $12,500/$25,000 std deduction.",
+    standardDeduction: { single: 12500, married_filing_jointly: 25000, head_of_household: 25000, married_filing_separately: 12500, qualifying_widow: 25000 },
+    notes: "LA TY2025: flat 3% with $12,500 single/MFS, $25,000 MFJ/HoH/QSS combined exemption-deduction (LDR FAQ).",
   };
   // Iowa moved to flat 3.8% for 2025
   data.IA = {
@@ -905,12 +971,173 @@ function build2025Data(): Record<string, StateTaxInfo> {
     ...data.ID,
     brackets: { single: flat(0.053), married_filing_jointly: flat(0.053) },
   };
-  // Colorado: restore the 4.40% statutory base for 2025. The 2024 4.25% was a
-  // TABOR-surplus temporary reduction; the 2025+ reduction is surplus-conditional
-  // each year, so default to the base (over-estimates slightly if a surplus hits).
+  // Colorado: 4.40% for TY2025 — VERIFIED 2026-06-11 (T1.0e #3) against the
+  // official 2025 DR 0104 booklet (tax.colorado.gov Book104_2025.pdf,
+  // 10/29/25): "the income tax rate is 4.4%" for TY2025 filers. The SB24-228
+  // TABOR temporary reduction did NOT trigger for 2025 — the certified net
+  // excess revenue (~$293.3M) fell below the $300M trigger (CO Fiscal
+  // Institute / LCS forecasts). (An earlier audit claim of 4.25% for 2025 was
+  // REFUTED by the DOR form.) 2026 also defaults to 4.40% — no 2026 trigger
+  // certification published; re-check when the FY2025-26 surplus certifies.
   data.CO = {
     ...data.CO,
     brackets: { single: flat(0.044), married_filing_jointly: flat(0.044) },
+  };
+  // West Virginia TY2025: the certified 4% trigger cut + SB 2033's extra 2%
+  // both effective 1/1/2025 → 2.22/2.96/3.33/4.44/4.82 (EY Tax Alert
+  // 2024-2154; WV Tax Division). TY2024 keeps the HB 2526 rates (top 5.12%).
+  data.WV = {
+    ...data.WV,
+    brackets: {
+      single: [
+        { upTo: 10000, rate: 0.0222 }, { upTo: 25000, rate: 0.0296 },
+        { upTo: 40000, rate: 0.0333 }, { upTo: 60000, rate: 0.0444 },
+        { upTo: Infinity, rate: 0.0482 },
+      ],
+      married_filing_jointly: [
+        { upTo: 10000, rate: 0.0222 }, { upTo: 25000, rate: 0.0296 },
+        { upTo: 40000, rate: 0.0333 }, { upTo: 60000, rate: 0.0444 },
+        { upTo: Infinity, rate: 0.0482 },
+      ],
+    },
+    notes: "WV TY2025: trigger 4% + SB 2033 2% cuts (top 4.82%). TY2026: SB 392 5% cut to top 4.58% — see build2026Data. $2,000/filer exemption not modeled.",
+  };
+  // New Mexico TY2025+ (HB 252, L.2024 ch.67, eff. 1/1/2025): SIX brackets —
+  // 1.5%/3.2%/4.3%/4.7%/4.9%/5.9%. Single ≤$5.5k/$16.5k/$33.5k/$66.5k/$210k;
+  // MFJ/HoH/QSS ≤$8k/$25k/$50k/$100k/$315k. Verified vs the HB 252 enrolled
+  // text (LegiScan) + NM governor's signing release (tax.newmexico.gov).
+  data.NM = {
+    ...data.NM,
+    brackets: {
+      single: [
+        { upTo: 5500, rate: 0.015 },
+        { upTo: 16500, rate: 0.032 },
+        { upTo: 33500, rate: 0.043 },
+        { upTo: 66500, rate: 0.047 },
+        { upTo: 210000, rate: 0.049 },
+        { upTo: Infinity, rate: 0.059 },
+      ],
+      married_filing_jointly: [
+        { upTo: 8000, rate: 0.015 },
+        { upTo: 25000, rate: 0.032 },
+        { upTo: 50000, rate: 0.043 },
+        { upTo: 100000, rate: 0.047 },
+        { upTo: 315000, rate: 0.049 },
+        { upTo: Infinity, rate: 0.059 },
+      ],
+    },
+    notes: "NM TY2025+: HB 252 six-bracket structure (1.5%-5.9%).",
+  };
+  // Hawaii TY2025 (Act 46 SLH 2024 — "Green Affordability Plan II"): massive
+  // bracket widening. Single: 1.4% ≤$9,600 / 3.2% ≤$14,400 / 5.5% ≤$19,200 /
+  // 6.4% ≤$24,000 / 6.8% ≤$36,000 / 7.2% ≤$48,000 / 7.6% ≤$125,000 / 7.9%
+  // ≤$175,000 / 8.25% ≤$225,000 / 9% ≤$275,000 / 10% ≤$325,000 / 11% above.
+  // MFJ = 2× single. Verified vs HI DOTAX "Tax Rate Schedules For Taxable
+  // Years Beginning After December 31, 2024" + DOTAX Ann. 2024-03. Further
+  // widening lands TY2027/2029; std-ded steps TY2026/2028/2030 (build2026Data).
+  data.HI = {
+    ...data.HI,
+    brackets: {
+      single: [
+        { upTo: 9600, rate: 0.014 },
+        { upTo: 14400, rate: 0.032 },
+        { upTo: 19200, rate: 0.055 },
+        { upTo: 24000, rate: 0.064 },
+        { upTo: 36000, rate: 0.068 },
+        { upTo: 48000, rate: 0.072 },
+        { upTo: 125000, rate: 0.076 },
+        { upTo: 175000, rate: 0.079 },
+        { upTo: 225000, rate: 0.0825 },
+        { upTo: 275000, rate: 0.09 },
+        { upTo: 325000, rate: 0.10 },
+        { upTo: Infinity, rate: 0.11 },
+      ],
+      married_filing_jointly: [
+        { upTo: 19200, rate: 0.014 },
+        { upTo: 28800, rate: 0.032 },
+        { upTo: 38400, rate: 0.055 },
+        { upTo: 48000, rate: 0.064 },
+        { upTo: 72000, rate: 0.068 },
+        { upTo: 96000, rate: 0.072 },
+        { upTo: 250000, rate: 0.076 },
+        { upTo: 350000, rate: 0.079 },
+        { upTo: 450000, rate: 0.0825 },
+        { upTo: 550000, rate: 0.09 },
+        { upTo: 650000, rate: 0.10 },
+        { upTo: Infinity, rate: 0.11 },
+      ],
+    },
+    notes: "HI TY2025: Act 46 widened brackets (1.4% band to $9,600 single; 11% starts $325,000). Std ded doubles TY2026.",
+  };
+  // Maryland TY2025 (HB 352 — Budget Reconciliation and Financing Act of
+  // 2025; MD Comptroller tax alert / RSM state tax alert): two NEW top
+  // brackets — 6.25% above $500k single ($600k MFJ) and 6.5% above $1M
+  // ($1.2M MFJ) — and the std deduction becomes a flat $3,350 single/MFS /
+  // $6,700 MFJ/HoH/QSS (the old 15%-of-AGI phase-in is repealed; COLA-indexed
+  // after 2025). The 2% capital-gains surtax on federal AGI > $350k is wired
+  // in calculateMultiStateTax (it taxes GAINS, not taxable income).
+  data.MD = {
+    ...data.MD,
+    brackets: {
+      single: [
+        { upTo: 1000, rate: 0.02 },
+        { upTo: 2000, rate: 0.03 },
+        { upTo: 3000, rate: 0.04 },
+        { upTo: 100000, rate: 0.0475 },
+        { upTo: 125000, rate: 0.05 },
+        { upTo: 150000, rate: 0.0525 },
+        { upTo: 250000, rate: 0.055 },
+        { upTo: 500000, rate: 0.0575 },
+        { upTo: 1000000, rate: 0.0625 },
+        { upTo: Infinity, rate: 0.065 },
+      ],
+      married_filing_jointly: [
+        { upTo: 1000, rate: 0.02 },
+        { upTo: 2000, rate: 0.03 },
+        { upTo: 3000, rate: 0.04 },
+        { upTo: 150000, rate: 0.0475 },
+        { upTo: 175000, rate: 0.05 },
+        { upTo: 225000, rate: 0.0525 },
+        { upTo: 300000, rate: 0.055 },
+        { upTo: 600000, rate: 0.0575 },
+        { upTo: 1200000, rate: 0.0625 },
+        { upTo: Infinity, rate: 0.065 },
+      ],
+    },
+    standardDeduction: { single: 3350, married_filing_jointly: 6700, head_of_household: 6700, married_filing_separately: 3350, qualifying_widow: 6700 },
+    notes: "MD TY2025 (HB 352): 6.25%/$500k + 6.5%/$1M new brackets ($600k/$1.2M MFJ); flat std ded $3,350/$6,700; 2% cap-gains surtax >$350k AGI in calculateMultiStateTax. County local taxes separate.",
+  };
+  // Maine TY2025 std deduction — T1.0e #8 REFUTED-as-instructed (2026-06-11):
+  // Maine did NOT conform to OBBBA's higher federal std ded for 2025 (fixed-
+  // date conformity; MRS Oct-2025 Tax Alert + the 2025 Form 1040ME general
+  // instructions publish **$15,000 single/MFS / $30,000 MFJ / $22,500 HoH**
+  // — the PRE-OBBBA federal values). ME is therefore NOT added to
+  // FED_CONFORMING_STD_DED_STATES (that would auto-apply the OBBBA $15,750);
+  // explicit MRS-published values are pinned per year instead.
+  data.ME = {
+    ...data.ME,
+    standardDeduction: { single: 15000, married_filing_jointly: 30000, head_of_household: 22500, married_filing_separately: 15000, qualifying_widow: 30000 },
+    notes: "ME TY2025 std ded $15,000/$30,000/$22,500 (MRS 1040ME instructions — Maine did NOT conform to OBBBA's $15,750). TY2026 decoupled + ME-indexed (build2026Data).",
+  };
+  // DC TY2025 (D.C. Law 26-89 — Income and Franchise Tax Conformity and
+  // Revision Temporary Amendment Act of 2025): DC DECOUPLED from the OBBBA
+  // federal std ded and set its own basic standard deduction — $15,000
+  // single/MFS, $30,000 MFJ, $22,500 HoH (COLA-indexed after 2025). Do NOT
+  // add DC to the federal-conforming set. (Congressional-disapproval fight
+  // (H.J.Res.142) pending; OTR's 2025 D-40 booklet applies these values.)
+  data.DC = {
+    ...data.DC,
+    standardDeduction: { single: 15000, married_filing_jointly: 30000, head_of_household: 22500, married_filing_separately: 15000, qualifying_widow: 30000 },
+    notes: "DC TY2025: Law 26-89 std ded $15,000/$30,000/$22,500 (decoupled from OBBBA).",
+  };
+  // Virginia TY2025+ (HB 1600 budget, signed 5/2/2025; tax.virginia.gov "New
+  // Virginia Tax Laws for July 1, 2025"): std ded raised to $8,750 single /
+  // $17,500 MFJ (extended through 2026+). The same act raised the VA EITC
+  // refundable option 15% → 20% (year-indexed in calculateStateEitc).
+  data.VA = {
+    ...data.VA,
+    standardDeduction: { single: 8750, married_filing_jointly: 17500, head_of_household: 8750, married_filing_separately: 8750 },
+    notes: "VA TY2025+: std ded $8,750/$17,500 (HB 1600).",
   };
   // South Carolina reduced the top rate to 6.0% effective 7/1/2025 (SC DOR).
   data.SC = {
@@ -1017,6 +1244,149 @@ function build2026Data(): Record<string, StateTaxInfo> {
     ...data.KY,
     brackets: { single: flat(0.035), married_filing_jointly: flat(0.035) },
     standardDeduction: { single: 3360, married_filing_jointly: 3360 },
+  };
+  // ── T1.0e #12 — TY2026 statutory cuts batch (2026-06-11), each verified
+  // against Tax Foundation "State Tax Changes Taking Effect January 1, 2026"
+  // + the cited state statute/DOR source. ─────────────────────────────────
+  // Indiana: 3.0% → 2.95% (HB 1001-2023 phase-down; 2.9% scheduled 2027).
+  data.IN = {
+    ...data.IN,
+    brackets: { single: flat(0.0295), married_filing_jointly: flat(0.0295) },
+  };
+  // Mississippi: 4.4% → 4.0% (the 2022 phase-down's final scheduled step;
+  // HB 1 of 2025 continues cuts after 2026). $10k 0% band preserved.
+  data.MS = {
+    ...data.MS,
+    brackets: {
+      single: [{ upTo: 10000, rate: 0 }, { upTo: Infinity, rate: 0.04 }],
+      married_filing_jointly: [{ upTo: 10000, rate: 0 }, { upTo: Infinity, rate: 0.04 }],
+    },
+  };
+  // North Carolina: 4.25% → 3.99% (final step of S.L. 2023-134 phasedown).
+  data.NC = {
+    ...data.NC,
+    brackets: { single: flat(0.0399), married_filing_jointly: flat(0.0399) },
+  };
+  // Nebraska: top 5.20% → 4.55% (LB 754 path; 3.99% by 2027). Lower brackets
+  // unchanged.
+  data.NE = {
+    ...data.NE,
+    brackets: {
+      single: [
+        { upTo: 3700, rate: 0.0246 }, { upTo: 22170, rate: 0.0351 },
+        { upTo: 35730, rate: 0.0501 }, { upTo: Infinity, rate: 0.0455 },
+      ],
+      married_filing_jointly: [
+        { upTo: 7390, rate: 0.0246 }, { upTo: 44360, rate: 0.0351 },
+        { upTo: 71460, rate: 0.0501 }, { upTo: Infinity, rate: 0.0455 },
+      ],
+    },
+  };
+  // Georgia: 5.19% → 5.09% (HB 1015/HB 111 trigger schedule, certified for
+  // 1/1/2026 per Tax Foundation's 2026 changes roundup).
+  data.GA = {
+    ...data.GA,
+    brackets: { single: flat(0.0509), married_filing_jointly: flat(0.0509) },
+  };
+  // Montana (HB 337, L.2025 ch.227 — NOT SB 323, which died): for tax years
+  // beginning after 12/31/2025 the lower 4.7% bracket WIDENS to $47,500
+  // single / $95,000 MFJ (from $20,500/$41,000) and the top rate drops
+  // 5.9% → 5.65% (5.4% in 2027). Verified vs the HB 337 enrolled text
+  // (MCA 15-30-2103 as amended) + revenue.mt.gov HB-337 notice.
+  data.MT = {
+    ...data.MT,
+    brackets: {
+      single: [{ upTo: 47500, rate: 0.047 }, { upTo: Infinity, rate: 0.0565 }],
+      married_filing_jointly: [{ upTo: 95000, rate: 0.047 }, { upTo: Infinity, rate: 0.0565 }],
+    },
+    notes: "MT TY2026 (HB 337): 4.7% ≤ $47,500/$95,000; 5.65% above (5.4% in 2027). Federal std deduction.",
+  };
+  // Oklahoma (HB 2764, signed 5/28/2025, eff. TY2026): six brackets
+  // consolidated to three + the 0% band, top 4.75% → 4.5%. Single/MFS:
+  // 0% ≤$3,750 / 2.5% ≤$4,900 / 3.5% ≤$7,200 / 4.5% above. MFJ/HoH/QSS:
+  // 0% ≤$7,500 / 2.5% ≤$9,800 / 3.5% ≤$14,400 / 4.5% above. Verified vs the
+  // OTC "Summary of 2025 Tax Legislation" + the 2026 OW-2 withholding tables
+  // (2.5/3.5/4.5 rate set). Future 0.25% trigger cuts possible.
+  data.OK = {
+    ...data.OK,
+    brackets: {
+      single: [
+        { upTo: 3750, rate: 0 },
+        { upTo: 4900, rate: 0.025 },
+        { upTo: 7200, rate: 0.035 },
+        { upTo: Infinity, rate: 0.045 },
+      ],
+      married_filing_jointly: [
+        { upTo: 7500, rate: 0 },
+        { upTo: 9800, rate: 0.025 },
+        { upTo: 14400, rate: 0.035 },
+        { upTo: Infinity, rate: 0.045 },
+      ],
+      head_of_household: [
+        { upTo: 7500, rate: 0 },
+        { upTo: 9800, rate: 0.025 },
+        { upTo: 14400, rate: 0.035 },
+        { upTo: Infinity, rate: 0.045 },
+      ],
+      qualifying_widow: [
+        { upTo: 7500, rate: 0 },
+        { upTo: 9800, rate: 0.025 },
+        { upTo: 14400, rate: 0.035 },
+        { upTo: Infinity, rate: 0.045 },
+      ],
+    },
+    notes: "OK TY2026 (HB 2764): 0%/2.5%/3.5%/4.5% consolidated brackets; HoH/QSS use the joint column per 68 O.S. §2355.",
+  };
+  // Hawaii TY2026 (Act 46 SLH 2024 step 2): std deduction doubles to $8,000
+  // single/MFS / $16,000 MFJ-QSS / $12,000 HoH (HI DOTAX FAQ "2026 tax year
+  // standard deduction amounts"; further steps 2028/2030). Brackets hold the
+  // TY2025 Act 46 schedule (next widening is TY2027).
+  data.HI = {
+    ...data.HI,
+    standardDeduction: { single: 8000, married_filing_jointly: 16000, head_of_household: 12000, married_filing_separately: 8000, qualifying_widow: 16000 },
+    notes: "HI TY2026: Act 46 std ded $8,000/$16,000/$12,000; brackets hold TY2025 (next widening TY2027).",
+  };
+  // Maine TY2026 (MRS "2026 individual income tax rate schedules" release —
+  // tax years beginning in 2026): ME-indexed (decoupled) std ded $15,300 /
+  // $30,600 / $22,950 / $15,300 MFS; brackets single <$27,400 / <$64,850
+  // (MFJ exactly 2×: <$54,800 / <$129,700), HoH <$41,100 / <$97,300.
+  data.ME = {
+    ...data.ME,
+    brackets: {
+      single: [{ upTo: 27400, rate: 0.058 }, { upTo: 64850, rate: 0.0675 }, { upTo: Infinity, rate: 0.0715 }],
+      married_filing_jointly: [{ upTo: 54800, rate: 0.058 }, { upTo: 129700, rate: 0.0675 }, { upTo: Infinity, rate: 0.0715 }],
+      head_of_household: [{ upTo: 41100, rate: 0.058 }, { upTo: 97300, rate: 0.0675 }, { upTo: Infinity, rate: 0.0715 }],
+    },
+    standardDeduction: { single: 15300, married_filing_jointly: 30600, head_of_household: 22950, married_filing_separately: 15300, qualifying_widow: 30600 },
+    notes: "ME TY2026: MRS-published indexed brackets + std ded $15,300/$30,600/$22,950 (decoupled from federal).",
+  };
+  // DC TY2026: Law 26-89 indexes the new $15,000/$30,000/$22,500 basic std
+  // ded by COLA for tax years after 2025 — official 2026 amounts not yet
+  // published; HOLD the 2025 values (documented; slight over-tax once the
+  // COLA lands). 2025 values flow through from build2025Data automatically.
+  //
+  // West Virginia TY2026 (SB 392, signed 3/31/2026, eff. 6/12/2026 RETROACTIVE
+  // to 1/1/2026 — W. Va. Code §11-21-4j): a 5% across-the-board cut from the
+  // 2025 rates → 2.11/2.81/3.16/4.22/4.58% at the same $10k/$25k/$40k/$60k
+  // thresholds (Bloomberg Tax + Paylocity alerts quoting the enrolled rate
+  // table: $211 + 2.81% > $10k; $632.50 + 3.16% > $25k; $1,106.50 + 4.22%
+  // > $40k; $1,950.50 + 4.58% > $60k — bracket math hand-verified). Added
+  // 2026-06-11; the prior "next trigger window Jan 2027" note was stale.
+  data.WV = {
+    ...data.WV,
+    brackets: {
+      single: [
+        { upTo: 10000, rate: 0.0211 }, { upTo: 25000, rate: 0.0281 },
+        { upTo: 40000, rate: 0.0316 }, { upTo: 60000, rate: 0.0422 },
+        { upTo: Infinity, rate: 0.0458 },
+      ],
+      married_filing_jointly: [
+        { upTo: 10000, rate: 0.0211 }, { upTo: 25000, rate: 0.0281 },
+        { upTo: 40000, rate: 0.0316 }, { upTo: 60000, rate: 0.0422 },
+        { upTo: Infinity, rate: 0.0458 },
+      ],
+    },
+    notes: "WV TY2026 (SB 392): 2.11/2.81/3.16/4.22/4.58% retroactive to 1/1/2026. $2,000/filer exemption not modeled.",
   };
   return data;
 }

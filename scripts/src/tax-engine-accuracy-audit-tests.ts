@@ -1401,42 +1401,46 @@ header("G4. WA 7% LTCG excise above $262k — CLOSED");
     r3.stateTaxLiability, 0, 0.01, "Excise is WA-resident-only");
 }
 
-// G5. CA AMT (Schedule P 540).  CLOSED 2026-05-26.
-// 7% flat AMT after exemption on CA AMTI ≈ federal AGI + federal AMT prefs.
-// CA AMT delta added to state tax when tentative AMT exceeds regular CA tax.
-header("G5. CA AMT (Schedule P 540) — CLOSED");
+// G5. CA AMT (Schedule P 540).  CLOSED 2026-05-26; CORRECTED 2026-06-11
+// (T1.0e #11). 7% flat AMT after the REAL Schedule P exemption on CA AMTI
+// ≈ federal AGI + federal AMT prefs. The original constants (244,857 /
+// 326,478 / 163,238) were NOT Schedule P exemptions at all (they matched the
+// CA personal-exemption-credit AGI thresholds) and no phase-out was modeled.
+// FTB 2024 Schedule P (540) instructions: exemption $90,048 single/HoH /
+// $120,065 MFJ/QSS / $60,029 MFS, phased out 25¢ per $1 of AMTI over
+// $337,678 / $450,238 / $225,115 (zero at $697,870 / $930,498 / $465,231 —
+// the FTB-published zero-points, = start + 4 × exemption ✓).
+header("G5. CA AMT (Schedule P 540) — CLOSED (real 2024 exemption + phase-out)");
 {
-  // Single CA $200k W-2 + $200k ISO bargain pref. AMTI ≈ $400k.
-  // Exemption single 2024 = $244,857. AMT base = $155,143.
-  // Tentative AMT = 7% × $155,143 = $10,860.01.
-  // Compare against regular CA tax on $200k AGI (CA brackets, high band).
-  // CA AMT delta = max(0, tentative − regular CA tax).
-  // We assert CA AMT delta is non-zero and roughly matches the audit expectation.
+  // CA regular tax on $200k single 2024: std ded $5,540 → taxable $194,460.
+  //   1%×10,756 (107.56) + 2%×14,743 (294.86) + 4%×14,746 (589.84)
+  //   + 6%×15,621 (937.26) + 8%×14,740 (1,179.20)
+  //   + 9.3%×(194,460−70,606) (11,518.42) = $14,627.14.
+  //
+  // Case r — single CA $200k W-2 + $200k ISO bargain pref. AMTI = $400,000.
+  //   Exemption = 90,048 − 0.25 × (400,000 − 337,678) = 90,048 − 15,580.50
+  //             = $74,467.50.
+  //   Tentative = 7% × (400,000 − 74,467.50) = 7% × 325,532.50 = $22,787.28.
+  //   Tentative > regular $14,627.14 → CA AMT BINDS (delta $8,160.14) —
+  //   the real-world CA ISO-AMT bite the old oversized "exemption" hid.
   const r = run({
     client: { filingStatus: "single", state: "CA", taxYear: 2024 },
     w2s: [{ taxYear: 2024, wagesBox1: 200000, stateCode: "CA" }],
     adjustments: [{ adjustmentType: "amt_iso_bargain_element", amount: 200000, isApplied: true }],
   });
-  // CA regular tax on $200k single, std ded ≈ $5.5k → taxable $194.5k.
-  //   CA brackets to $194.5k single 2024 ≈ $14,627 (per prior audit).
-  // CA AMT tentative = $10,860. Since $10,860 < $14,627 regular, no AMT delta.
-  // The engine returns regular CA tax = $14,627 (no AMT added).
-  // To trigger AMT, increase AMTI prefs. Let's try a case where AMT > regular.
-  // Use $200k W-2 + $500k ISO pref → AMTI = $700k. Tentative = 7% × (700k - 244,857) = $31,860.
-  // Regular CA tax on $200k ≈ $14,627. CA AMT delta = $31,860 - $14,627 = $17,233.
-  // State tax = $14,627 + $17,233 = $31,860 (= tentative AMT since AMT binds).
+  // Case r2 — $200k W-2 + $500k ISO pref → AMTI = $700,000 > $697,870 →
+  //   exemption fully phased to $0. Tentative = 7% × 700,000 = $49,000.
+  //   Regular $14,627.14 → AMT binds; state tax = $49,000.
   const r2 = run({
     client: { filingStatus: "single", state: "CA", taxYear: 2024 },
     w2s: [{ taxYear: 2024, wagesBox1: 200000, stateCode: "CA" }],
     adjustments: [{ adjustmentType: "amt_iso_bargain_element", amount: 500000, isApplied: true }],
   });
-  // r2.stateTaxLiability ≈ $31,860 (tentative AMT binds since regular < tentative)
-  check("G5", "CA $200k W-2 + $500k ISO → state tax ≈ $31,860 (CA AMT binds)",
-    r2.stateTaxLiability, 31860, 200, "CA Schedule P 540 — 7% × ($700k - $244,857)");
-  // r1.stateTaxLiability ≈ $14,627 (regular tax wins; AMT delta = 0).
-  check("G5", "CA $200k W-2 + $200k ISO → regular CA tax wins (AMT < reg)",
-    r.stateTaxLiability > 14000 && r.stateTaxLiability < 16000 ? 1 : 0, 1, 0,
-    "Regular CA tax exceeds CA AMT tentative");
+  check("G5", "CA $200k W-2 + $500k ISO → state tax $49,000 (exemption fully phased, AMT binds)",
+    r2.stateTaxLiability, 49000, 200, "CA Schedule P 540 — 7% × $700k AMTI, $0 exemption above $697,870");
+  check("G5", "CA $200k W-2 + $200k ISO → $22,787.28 (AMT binds with the REAL $90,048 exemption)",
+    r.stateTaxLiability, 22787.28, 200,
+    "7% × (400,000 − 74,467.50 phased exemption) — was wrongly 'regular wins' under the bogus $244,857 exemption");
 }
 
 // ════════════════════════════════════════════════════════════════════════════

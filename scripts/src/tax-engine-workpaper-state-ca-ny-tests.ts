@@ -279,11 +279,18 @@ const inputs = (
   check("S6 line 39 NYS tax = $10,163.87 (hand-calc)", money(findLine(ny, "39", "resident tax")), 10163.87);
   check("S6 line 47 NYC taxable = $178,868.65", money(findLine(ny, "47")), 178868.65);
   check("S6 line 47a NYC tax = $6,808.12 (hand-calc)", money(findLine(ny, "47a")), 6808.12);
-  check("S6 line 54b MCTMT = $808.20 (hand-calc, 0.60% over $50k)", money(findLine(ny, "54b")), 808.20);
-  check("S6 net NYC tax incl. MCTMT = $7,616.32", money(findLine(ny, "49/54")), 7616.32);
+  // MCTMT — NY Tax Law §801(b) LAW-READ CORRECTION (T1.0f #18, 2026-06-11):
+  // the 0.60% applies to the ENTIRE Zone-1 net SE earnings once they exceed
+  // the $50,000 threshold (a cliff, not an exclusion — tax.ny.gov "MCTMT
+  // individual definitions"). Hand-calc: net SE = 200,000 × 0.9235 = 184,700
+  // → MCTMT = 184,700 × 0.006 = $1,108.20 (was (184,700 − 50,000) × 0.006).
+  check("S6 line 54b MCTMT = $1,108.20 (hand-calc, 0.60% × entire net SE)", money(findLine(ny, "54b")), 1108.20);
+  // 6,808.12 NYC tax + 1,108.20 MCTMT = $7,916.32
+  check("S6 net NYC tax incl. MCTMT = $7,916.32", money(findLine(ny, "49/54")), 7916.32);
   check("S6 NYC UBT row = $7,400 (hand-calc, NYC-202)", money(findByLabel(ny, "Unincorporated Business Tax")), 7400);
   const totalLocal = findByLabel(ny, "Total local tax");
-  check("S6 total local tax = $15,016.32", money(totalLocal), 15016.32);
+  // 7,916.32 + 7,400 UBT = $15,316.32
+  check("S6 total local tax = $15,316.32", money(totalLocal), 15316.32);
   check("S6 total local ties engine localTaxLiability", money(totalLocal), ret.localTaxLiability);
   checkStr("S6 local components tie-out reads 'ties'", String(findByLabel(ny, "Local components tie")?.value), "ties");
   check("S6 line 69 school tax credit = $63", money(findLine(ny, "69")), 63);

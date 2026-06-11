@@ -16,6 +16,11 @@ export const clientsTable = pgTable("clients", {
   /** E1 — count of EITC qualifying children (§32(c)(3): <19, or <24 student —
    *  wider than the CTC's <17). NULL → engine defaults to dependentsUnder17. */
   eitcQualifyingChildren: integer("eitc_qualifying_children"),
+  /** T1.0f/M4 — count of children UNDER AGE 6 at year end (subset of
+   *  dependentsUnder17). Drives the under-6 state CTCs (CA YCTC, NJ CTC,
+   *  VT CTC, the CO under-6 tier). NULL → engine treats as 0 (prior
+   *  behavior — those credits simply don't fire). */
+  childrenUnder6: integer("children_under_6"),
   /** Other qualifying dependents (drives the $500 Credit for Other Dependents). */
   otherDependents: integer("other_dependents").notNull().default(0),
   /** Children eligible for dependent care credit (age 12 and under at year end) */
