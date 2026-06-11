@@ -3232,6 +3232,13 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     // regular-tax Schedule D worksheet used, so AMT doesn't under-state TMT.
     unrecaptured1250Gain: unrecaptured1250Bounded,
     collectibles28Gain: collectibles28Bounded,
+    // T1.0(l) — Form 6251 Part III reads the regular Schedule D Tax Worksheet's
+    // line 13/10/14/21 amounts (its lines 13/15/20/27) to position the AMT
+    // 0%/15% zones on the REGULAR stack and to carve out ANCG + §1250 (not
+    // collectibles). Only produced when the special buckets ran the worksheet.
+    // NOT passed when FEIE > 0: the worksheet lines are FEIE-inflated and AMT
+    // doesn't model FEIE — the simplified Part III path is closer there.
+    schedDWorksheet: feieExclusion > 0 ? undefined : capGains.schedDWorksheet,
     // ATNOLD (§56(d)) — AMT-basis NOL carryforward, capped at 90% of AMTI.
     amtNolCarryforward,
     filingStatus: client.filingStatus,

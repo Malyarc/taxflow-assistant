@@ -6194,6 +6194,21 @@ const LTCG_BRACKETS: Record<TaxYear, Record<string, Array<{ upTo: number; rate: 
   },
 };
 
+/** T1.0(l) — the regular-tax Schedule D Tax Worksheet amounts that Form 6251
+ *  Part III cross-references (its lines 13/15/20/27 read the worksheet's
+ *  lines 13/10/14/21). Produced by `calculateFederalTaxWithCapitalGains` when
+ *  a §1250/28% special bucket routed the computation through the worksheet. */
+export interface SchedDWorksheetLines {
+  /** Worksheet line 10 — total preferential amount (LT gain + QDIV). */
+  line10: number;
+  /** Worksheet line 13 — adjusted net capital gain (0/15/20% portion + QDIV). */
+  line13: number;
+  /** Worksheet line 14 — taxable income − ANCG (positions the 0% zone). */
+  line14: number;
+  /** Worksheet line 21 — the §1(h)(1)(A) ordinary-rate base. */
+  line21: number;
+}
+
 export interface CapitalGainsCalculation {
   ordinaryTaxableIncome: number;
   longTermGains: number;
@@ -6203,6 +6218,10 @@ export interface CapitalGainsCalculation {
   preferentialRateTax: number;
   /** Total combined fed tax = ordinary tax (incl. STCG) + preferential rate tax */
   totalFederalTax: number;
+  /** T1.0(l) — Schedule D Tax Worksheet line amounts (only when the §1250/28%
+   *  special path ran; consumed by Form 6251 Part III). NOTE: when FEIE > 0
+   *  these are from the FEIE-inflated worksheet (line 1 = taxable + FEIE). */
+  schedDWorksheet?: SchedDWorksheetLines;
 }
 
 /**
@@ -6253,6 +6272,141 @@ function calculateLtcgQdivStackedTax(
     prevCap = bracket.upTo;
   }
   return tax;
+}
+
+/** §1(h)(1)(A)(ii)(I) — "the maximum amount of taxable income taxed at a rate
+ *  below 25 percent" = the top of the highest sub-25% ordinary bracket (the
+ *  24% bracket post-TCJA). This is the Schedule D Tax Worksheet's line-19
+ *  amount ($191,950 single / $383,900 MFJ for 2024; $197,300/$394,600 for
+ *  2025). Derived from FEDERAL_BRACKETS so a new tax year stays consistent
+ *  automatically (freshness invariant). */
+function maxIncomeTaxedBelow25Pct(status: string, year: TaxYear): number {
+  const brackets = FEDERAL_BRACKETS[year][status] ?? FEDERAL_BRACKETS[year].single;
+  let top = 0;
+  for (const b of brackets) {
+    if (b.rate < 0.25 && Number.isFinite(b.upTo) && b.upTo > top) top = b.upTo;
+  }
+  return top;
+}
+
+interface SchedDTaxWorksheetResult {
+  /** Worksheet line 47 — tax on all taxable income (min of lines 45/46). */
+  tax: number;
+  line10: number;
+  line13: number;
+  line14: number;
+  line21: number;
+}
+
+/**
+ * T1.0(l) — IRS Schedule D Tax Worksheet (2024 Schedule D instructions,
+ * lines 1–47), the §1(h) computation when Schedule D line 18 (28%-rate gain)
+ * or line 19 (unrecaptured §1250 gain) is populated. ADJUDICATED LINE-BY-LINE
+ * 2026-06-11 (FC-1 confirmed): the special-rate layers INTERLEAVE with the
+ * ordinary brackets — they are NOT a flat 25%/28% stacked above the 0/15/20
+ * layers:
+ *
+ *   • Line 14 = taxable − ANCG positions the 0% zone (lines 15–17/22): the
+ *     §1250/28% layers sit BELOW the adjusted net capital gain in the stack
+ *     and CONSUME the 0% bracket space (§1(h)(1)(B)(ii)).
+ *   • Lines 18–21 (§1(h)(1)(A)): the ordinary-rate base (line 44 figures
+ *     ordinary tax on line 21) = max(line 18 ordinary income,
+ *     min(line 14, line-19 top-of-24%-bracket)) — the special layers are
+ *     taxed at the ORDINARY 10/12/22/24% rates up to the 24%-bracket top
+ *     (the statutory "maximum 25%" is a maximum, not a flat rate).
+ *   • Line 28 = line 21 + line 22 positions the 15% zone (§1(h)(1)(C)).
+ *   • Lines 35–40 (§1(h)(1)(E)): the 25% bucket is the §1250 gain REDUCED by
+ *     line 38 = (line 10 + line 21) − line 1 — exactly the portion the
+ *     line-21 ordinary base already absorbed; only the remainder × 25%.
+ *   • Lines 41–43 (§1(h)(1)(F)): 28% × the line-42 residual.
+ *   • Lines 44–47: ordinary-rate tax on line 21 + the four rate lines,
+ *     min'd against ordinary-rate tax on line 1 (the global cap).
+ *
+ * No Form 4952 §163(d)(4)(B) interplay here (worksheet lines 3–5/8 = 0): the
+ * engine's investment-interest election re-buckets QDIV/LTCG to ordinary
+ * UPSTREAM, before this function is called.
+ *
+ * The line-15/26 breakpoints come from LTCG_BRACKETS; the line-19 amount from
+ * maxIncomeTaxedBelow25Pct — all year-indexed (no hardcoded thresholds).
+ *
+ * @param p.taxableIncome  Worksheet line 1. The caller applies the Foreign
+ *   Earned Income Tax Worksheet modification (line 1 = taxable + FEIE, then
+ *   subtract tax-on-FEIE from the line-47 result) when FEIE > 0.
+ * @param p.netLtGain      Worksheet line 9 (Sch D min(line 15, 16) — the net
+ *   LT preferential gain, already netted upstream).
+ * @param p.unrecaptured1250  Sch D line 19 (≤ netLtGain; caller-bounded).
+ * @param p.collectibles28    Sch D line 18 (≤ netLtGain − §1250; caller-bounded).
+ */
+function computeScheduleDTaxWorksheet(p: {
+  taxableIncome: number;
+  qualifiedDividends: number;
+  netLtGain: number;
+  unrecaptured1250: number;
+  collectibles28: number;
+  status: string;
+  year: TaxYear;
+}): SchedDTaxWorksheetResult {
+  const { status, year } = p;
+  const ltBrackets = LTCG_BRACKETS[year][status] ?? LTCG_BRACKETS[year].single;
+  const l1 = Math.max(0, p.taxableIncome);
+  // Lines 2–6 (no Form 4952 amounts: l3 = l4 = l5 = 0 → l6 = l2 = QDIV).
+  const l6 = Math.max(0, p.qualifiedDividends);
+  // Lines 7–9 (l8 = 0 → l9 = l7 = net LT gain).
+  const l9 = Math.max(0, p.netLtGain);
+  const schD19 = Math.max(0, p.unrecaptured1250); // unrecaptured §1250 gain
+  const schD18 = Math.max(0, p.collectibles28); // 28%-rate gain
+  const l10 = l6 + l9;
+  const l11 = schD18 + schD19;
+  const l12 = Math.min(l9, l11);
+  const l13 = l10 - l12; // adjusted net capital gain (§1(h)(3), incl. QDIV)
+  const l14 = Math.max(0, l1 - l13);
+  const l15 = ltBrackets[0].upTo; // 0% breakpoint ($47,025 single 2024)
+  const l16 = Math.min(l1, l15);
+  const l17 = Math.min(l14, l16);
+  const l18 = Math.max(0, l1 - l10);
+  const l19 = Math.min(l1, maxIncomeTaxedBelow25Pct(status, year));
+  const l20 = Math.min(l14, l19);
+  const l21 = Math.max(l18, l20); // §1(h)(1)(A) ordinary-rate base
+  const l22 = l16 - l17; // taxed at 0%
+  let l30 = 0; // taxed at 15%
+  let l33 = 0; // taxed at 20%
+  let l39 = 0; // taxed at 25% (§1250 remainder)
+  let l42 = 0; // taxed at 28% (residual)
+  // "If lines 1 and 16 are the same, skip lines 23 through 43 and go to line 44."
+  if (l1 !== l16) {
+    const l23 = Math.min(l1, l13);
+    const l24 = l22;
+    const l25 = Math.max(0, l23 - l24);
+    const l26 = ltBrackets[1].upTo; // 15% breakpoint ($518,900 single 2024)
+    const l27 = Math.min(l1, l26);
+    const l28 = l21 + l22;
+    const l29 = Math.max(0, l27 - l28);
+    l30 = Math.min(l25, l29);
+    const l32 = l24 + l30;
+    // "If lines 1 and 32 are the same, skip lines 33 through 43 and go to line 44."
+    if (l1 !== l32) {
+      l33 = l23 - l32; // ≥ 0: l32 = l24 + l30 ≤ l24 + l25 = l23
+      // "If Schedule D, line 19, is zero or blank, skip lines 35 through 40."
+      if (schD19 > 0) {
+        const l35 = Math.min(l9, schD19);
+        const l36 = l10 + l21;
+        const l38 = Math.max(0, l36 - l1); // l37 = l1; the §1250 absorbed into line 21
+        l39 = Math.max(0, l35 - l38);
+      }
+      // "If Schedule D, line 18, is zero or blank, skip lines 41 through 43."
+      if (schD18 > 0) {
+        const l41 = l21 + l22 + l30 + l33 + l39;
+        // The IRS sheet computes l42 = l1 − l41 with no floor (non-negative for
+        // consistent inputs); floored defensively for engine totality.
+        l42 = Math.max(0, l1 - l41);
+      }
+    }
+  }
+  const l44 = calculateFederalTax(l21, status, year);
+  // Line 45 = lines 31 + 34 + 40 + 43 + 44.
+  const l45 = 0.15 * l30 + 0.20 * l33 + 0.25 * l39 + 0.28 * l42 + l44;
+  const l46 = calculateFederalTax(l1, status, year);
+  return { tax: Math.min(l45, l46), line10: l10, line13: l13, line14: l14, line21: l21 };
 }
 
 export function calculateFederalTaxWithCapitalGains(params: {
@@ -6330,59 +6484,67 @@ export function calculateFederalTaxWithCapitalGains(params: {
   // then no second subtraction is applied (FEIE is ordinary, not LTCG).
   const ltcgStackBase = feie > 0 ? ordinaryWithStcg + feie : ordinaryWithStcg;
 
-  // T1.1a — Schedule D Tax Worksheet (IRC §1(h)). The net preferential amount
-  // (`prefTaxable`) is split into three rate buckets stacked bottom→top above
-  // ordinary income:
-  //   1. 0/15/20% "adjusted net capital gain" (gNormal) — stacked first,
-  //      directly above ordinary income (gets the favorable lower brackets).
-  //   2. Unrecaptured §1250 gain (g25) — stacked above gNormal, taxed at a FLAT
-  //      25% (IRC §1(h)(1)(E) "25 percent of …"). NOT a per-layer marginal cap —
-  //      the "maximum rate" is enforced ONLY by the global final-min below.
-  //   3. 28%-rate gain (g28: collectibles + §1202) — stacked at the top, taxed
-  //      at a FLAT 28% (§1(h)(1)(F)), capped only by the same global final-min.
-  // The buckets are SUBSETS of `prefTaxable`; the 0/15/20 residual absorbs any
-  // deduction-driven reduction (when prefTaxable < total LTCG+QDIV). When both
-  // special buckets are 0 this collapses to exactly the prior single-bucket
-  // (Qualified Dividends & Cap Gain Tax Worksheet) path — zero regression.
-  // §1250 (25%) gets first claim on the preferential amount; collectibles (28%)
-  // get the remainder — so any deduction-driven erosion of the preferential base
-  // clips the 28% bucket before the §1250 bucket (matches the IRS 28%-Rate-Gain
-  // worksheet, which offsets reductions against the 28% gain first; taxpayer-
-  // favorable since 28% > 25%). The 0/15/20 residual still absorbs erosion first.
+  // T1.0(l) — Schedule D Tax Worksheet (IRC §1(h); 2024 Schedule D instructions
+  // lines 1–47), ADJUDICATED LINE-BY-LINE 2026-06-11 (audit finding FC-1
+  // CONFIRMED, superseding the 2026-06-08 flat-25/28 reading). When a §1250 or
+  // 28%-rate bucket is populated, the worksheet INTERLEAVES the special layers
+  // with the ordinary brackets — see computeScheduleDTaxWorksheet. The prior
+  // "flat 25%/28% + global final-min only" model was wrong in BOTH directions:
+  // it let the ANCG keep 0%-bracket space the special layers consume (under-tax)
+  // and taxed at flat 25/28% layers the worksheet's line-21 base absorbs at
+  // 10/12/22/24% ordinary rates (over-tax). High-income returns (ordinary
+  // income ≥ the 24%-bracket top) are identical under both models.
+  // When both special buckets are 0 this branch is skipped → byte-for-byte the
+  // prior single-bucket (Qualified Dividends & Cap Gain Tax Worksheet) path.
   const g25 = Math.max(0, Math.min(params.unrecaptured1250Gain ?? 0, prefTaxable));
   const g28 = Math.max(0, Math.min(params.collectibles28Gain ?? 0, prefTaxable - g25));
-  const gNormal = Math.max(0, prefTaxable - g25 - g28);
-
-  // Ordinary tax on an arbitrary stacking height (FEIE-aware): `base` is stacked
-  // above the FEIE-excluded income so the displaced marginal rate is preserved.
-  const ordTaxAtHeight = (base: number): number =>
-    feie > 0
-      ? Math.max(0, calculateFederalTax(Math.max(0, base) + feie, status, year) - calculateFederalTax(feie, status, year))
-      : calculateFederalTax(Math.max(0, base), status, year);
-
-  const tax015 = calculateLtcgQdivStackedTax(ltcgStackBase, gNormal, status, year);
-  // The IRS Schedule D Tax Worksheet taxes these two layers at a FLAT 25% / 28%
-  // (the worksheet's "multiply by 0.25 / 0.28" lines; IRC §1(h)(1)(E)/(F) read
-  // "25 percent of …" / "28 percent of …"). The statutory "maximum rate" is NOT
-  // a per-bracket cap — it is enforced SOLELY by the final-line global floor
-  // below (total preferential tax ≤ ordinary tax on all taxable income). An
-  // earlier per-layer min(rate, marginal-ordinary) under-taxed a §1250/28% layer
-  // that a 0/15/20% gain pushed into a sub-25%/28% ordinary bracket while the
-  // global floor was slack — caught in independent review 2026-06-08.
-  const tax25 = 0.25 * g25;
-  const tax28 = 0.28 * g28;
   const hasSpecialBuckets = g25 > 0 || g28 > 0;
-  // Final safety floor (Schedule D Tax Worksheet last line): the preferential
-  // computation may never exceed ordinary-rate tax on the full taxable income.
-  // Only applied when special buckets are present (for the 0/15/20-only path it
-  // is never binding — preferential rates ≤ ordinary rates — so we skip it to
-  // keep byte-for-byte backward compatibility with the prior implementation).
-  const prefTax = hasSpecialBuckets
-    ? Math.min(
-        tax015 + tax25 + tax28,
-        Math.max(0, ordTaxAtHeight(ordinaryWithStcg + prefTaxable) - ordinaryTax),
-      )
-    : tax015;
+
+  let prefTax: number;
+  let schedDWorksheet: SchedDWorksheetLines | undefined;
+  if (hasSpecialBuckets) {
+    // Worksheet inputs are the FULL Schedule D line amounts — line 9 = net LT
+    // gain, lines 18/19 = the caller-bounded special buckets — NOT the
+    // prefTaxable-clipped values: when a deduction overhang erodes taxable
+    // income below the gains, the worksheet's own lines 12–14 / 35–39 absorb
+    // the erosion through the §1250 layer (at ordinary rates) while preserving
+    // the ANCG 0/15/20 geometry, exactly as the IRS sheet does.
+    const wsNetLt = Math.max(0, params.longTermGains);
+    const ws1250 = Math.min(Math.max(0, params.unrecaptured1250Gain ?? 0), wsNetLt);
+    const ws28 = Math.min(
+      Math.max(0, params.collectibles28Gain ?? 0),
+      Math.max(0, wsNetLt - ws1250),
+    );
+    // K9 — Foreign Earned Income Tax Worksheet modification: complete the
+    // Schedule D Tax Worksheet with line 1 = taxable income + FEIE, then
+    // subtract the ordinary tax on the FEIE alone from the line-47 result
+    // (1040 line-16 instructions, FEIE worksheet lines 3–5).
+    const ws = computeScheduleDTaxWorksheet({
+      taxableIncome: ordinaryWithStcg + prefTaxable + feie,
+      qualifiedDividends: Math.max(0, params.qualifiedDividends),
+      netLtGain: wsNetLt,
+      unrecaptured1250: ws1250,
+      collectibles28: ws28,
+      status,
+      year,
+    });
+    const specialTotal = Math.max(
+      0,
+      ws.tax - (feie > 0 ? calculateFederalTax(feie, status, year) : 0),
+    );
+    // Decompose back into the function's ordinary + preferential return shape.
+    // specialTotal ≥ ordinaryTax (worksheet line 45 ≥ line 44 = tax(line 21) ≥
+    // tax(ordinary); line 46 = tax(line 1) ≥ tax(ordinary)); floored defensively.
+    prefTax = Math.max(0, specialTotal - ordinaryTax);
+    schedDWorksheet = {
+      line10: ws.line10,
+      line13: ws.line13,
+      line14: ws.line14,
+      line21: ws.line21,
+    };
+  } else {
+    prefTax = calculateLtcgQdivStackedTax(ltcgStackBase, prefTaxable, status, year);
+  }
 
   // K8 — Kiddie tax (Form 8615 Line 18).
   // When the child has net unearned income > $2,600, that excess is taxed
@@ -6420,6 +6582,7 @@ export function calculateFederalTaxWithCapitalGains(params: {
     qualifiedDividends: params.qualifiedDividends,
     preferentialRateTax: prefTax,
     totalFederalTax: kiddieTotal,
+    schedDWorksheet,
   };
 }
 
@@ -7152,6 +7315,15 @@ export function calculateAmt(params: {
   /** AMT NOL carryforward (ATNOLD, §56(d)) — the AMT-basis NOL the CPA carries
    *  in. Applied against AMTI, limited to 90% of AMTI before the ATNOLD. */
   amtNolCarryforward?: number;
+  /** T1.0(l) — the regular-tax Schedule D Tax Worksheet line 10/13/14/21
+   *  amounts. When supplied alongside a populated §1250/28% bucket, Form 6251
+   *  Part III (lines 12–40) is computed faithfully: the preferential carve-out
+   *  (line 15) is ANCG + §1250 ONLY (collectibles stay at the 26/28% AMT
+   *  rates), the 0%/15% zones are positioned by the REGULAR worksheet's stack
+   *  (Part III lines 20/27 read worksheet lines 14/21), and the §1250 residual
+   *  (line 36) is taxed at 25%. Absent → the prior simplified stacking
+   *  (backward compatible for direct callers). */
+  schedDWorksheet?: SchedDWorksheetLines;
 }): AmtCalculation {
   const year = resolveTaxYear(params.taxYear);
   const data = AMT_DATA[year];
@@ -7208,23 +7380,73 @@ export function calculateAmt(params: {
   const ltcgQdivInAmtBase = Math.min(ltcgPlusQdiv, amtBase);
   let amtWithPreferentialRates = amtAtFullRateOnAmtBase;
   if (ltcgQdivInAmtBase > 0) {
-    const ordinaryPortion = Math.max(0, amtBase - ltcgQdivInAmtBase);
-    const amtOnOrdinary =
-      ordinaryPortion <= rateBreakpoint
-        ? ordinaryPortion * 0.26
-        : rateBreakpoint * 0.26 + (ordinaryPortion - rateBreakpoint) * 0.28;
-    // Form 6251 Part III mirrors the Schedule D Tax Worksheet: the §1250 (25%)
-    // and 28%-rate buckets within the AMT base are taxed at their flat special
-    // rates; the rest of the preferential income gets 0/15/20%. (§1250 first
-    // claim / 28% the remainder, matching the regular-tax loss-absorption order.)
     const g25amt = Math.max(0, Math.min(params.unrecaptured1250Gain ?? 0, ltcgQdivInAmtBase));
     const g28amt = Math.max(0, Math.min(params.collectibles28Gain ?? 0, ltcgQdivInAmtBase - g25amt));
-    const gNormalAmt = Math.max(0, ltcgQdivInAmtBase - g25amt - g28amt);
-    const ltcgTax =
-      calculateLtcgQdivStackedTax(ordinaryPortion, gNormalAmt, fs, year) +
-      0.25 * g25amt +
-      0.28 * g28amt;
-    amtWithPreferentialRates = amtOnOrdinary + ltcgTax;
+    // The two-step 26%/28% AMT rate (≡ the form's "28% minus $4,652/$2,326"
+    // shortcut), shared by Part III lines 18 and 39.
+    const amt2628 = (x: number): number =>
+      x <= rateBreakpoint ? x * 0.26 : rateBreakpoint * 0.26 + (x - rateBreakpoint) * 0.28;
+    if ((g25amt > 0 || g28amt > 0) && params.schedDWorksheet) {
+      // T1.0(l) — faithful Form 6251 Part III (2024 form, lines 12–40),
+      // adjudicated 2026-06-11 alongside the regular-tax Schedule D Tax
+      // Worksheet. Mirrors the worksheet's interleaving inside AMT:
+      //   • Line 15 carve-out = min(ANCG + §1250, worksheet line 10) — the
+      //     28%-rate (collectibles) gain is NOT carved out; it stays in the
+      //     line-17 ordinary-AMT portion at the 26/28% rates (the global
+      //     line-40 min is the only 28%-cap mechanism).
+      //   • Lines 19–23: the 0% zone = max(0, breakpoint − worksheet line 14)
+      //     — positioned by the REGULAR stack, so the §1250 layer consumes
+      //     the 0% space inside AMT exactly as it does outside.
+      //   • Lines 25–30: the 15% zone starts above (line 21-zone + worksheet
+      //     line 21) — the regular §1(h)(1)(A) ordinary base.
+      //   • Lines 33–37: 20% on the ANCG remainder; 25% on line 36 =
+      //     AMT base − (line 17 + the 0/15/20 amounts) — the §1250 residual.
+      const sdw = params.schedDWorksheet;
+      const ltb = LTCG_BRACKETS[year][fs] ?? LTCG_BRACKETS[year].single;
+      const l12 = amtBase;
+      const l13 = Math.max(0, sdw.line13); // ANCG (incl. QDIV), per the worksheet
+      const l14 = g25amt; // Sch D line 19 (§1250) within the AMT base
+      const l15 = Math.min(l13 + l14, Math.max(0, sdw.line10));
+      const l16 = Math.min(l12, l15);
+      const l17 = l12 - l16; // ordinary-AMT portion (incl. collectibles)
+      const l18 = amt2628(l17);
+      const l21 = Math.max(0, ltb[0].upTo - Math.max(0, sdw.line14)); // l19 − l20
+      const l22 = Math.min(l12, l13);
+      const l23 = Math.min(l21, l22); // taxed at 0%
+      const l24 = l22 - l23;
+      // l25 = 15% breakpoint; l26 = l21; l27 = worksheet line 21; l28 = l26+l27.
+      const l29 = Math.max(0, ltb[1].upTo - (l21 + Math.max(0, sdw.line21)));
+      const l30 = Math.min(l24, l29); // taxed at 15%
+      const l31 = 0.15 * l30;
+      const l32 = l23 + l30;
+      let l34 = 0;
+      let l37 = 0;
+      // "If line 12 equals line 32, skip lines 33–37" (nothing above 0/15%).
+      if (l12 !== l32) {
+        const l33 = l22 - l32; // taxed at 20% (≥ 0: l32 ≤ l22)
+        l34 = 0.20 * l33;
+        // "If line 14 is zero or blank, skip lines 35 through 37."
+        if (l14 > 0) {
+          const l36 = Math.max(0, l12 - (l17 + l32 + l33)); // l35 = l17+l32+l33
+          l37 = 0.25 * l36; // §1250 residual at 25%
+        }
+      }
+      const l38 = l18 + l31 + l34 + l37;
+      amtWithPreferentialRates = Math.min(l38, amt2628(l12)); // lines 39–40
+    } else {
+      // Simplified Part III (pre-T1.0(l) shape, preserved byte-for-byte for
+      // the no-special-bucket path and for direct callers that don't supply
+      // the worksheet lines): ordinary portion at 26/28%; the 0/15/20 gain
+      // stacked directly above it; flat 25%/28% on the buckets.
+      const ordinaryPortion = Math.max(0, amtBase - ltcgQdivInAmtBase);
+      const amtOnOrdinary = amt2628(ordinaryPortion);
+      const gNormalAmt = Math.max(0, ltcgQdivInAmtBase - g25amt - g28amt);
+      const ltcgTax =
+        calculateLtcgQdivStackedTax(ordinaryPortion, gNormalAmt, fs, year) +
+        0.25 * g25amt +
+        0.28 * g28amt;
+      amtWithPreferentialRates = amtOnOrdinary + ltcgTax;
+    }
   }
 
   const amtBeforeRegular = Math.min(amtAtFullRateOnAmtBase, amtWithPreferentialRates);
