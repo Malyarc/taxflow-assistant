@@ -1,3 +1,63 @@
+# Handoff Note — 2026-06-12 (T2.3 UX/UI 2.0 SHIPPED — D1–D8; design system + dark mode + ⌘K + 3-pane return workspace + provenance; on main; frontend DEPLOYED to prod)
+
+**ALL of MASTER-TODO T2.3 (D1–D8) is DONE, committed to `main` (`2e2c676`,
+pushed origin/main), and the FRONTEND is deployed to the EC2 demo** (rsync +
+health-checked: healthz 200, new `index-DNaJQo2L.js` served, theme pre-paint
+script live; prod /api/engagements + organizer + tax-return all 200). No
+api-server or DB change was needed — the new UI consumes the already-deployed
+T2.2 endpoints; prod DB already has the columns.
+
+**What shipped (full reference: `docs/design/ux2.md`):** the portable
+design-system layer (transfers to Haven's portals) + demo pages.
+- **D1 Tokens v2** — type scale (`.t-eyebrow/.t-display/.t-metric/.t-num`),
+  semantic elevation, motion, runtime dark mode; `lib/format.ts` single-source
+  money/pct/num; **`pnpm --filter @workspace/scripts run lint:tokens`** fails the
+  build on raw numbered-palette classes (drove tax-app to **0**; also fixed
+  latent dark-mode bugs — `text-violet-900` was invisible on dark cards).
+- **D2 nav** — Today/Clients/Planning/Firm + ⌘K command palette (server
+  client-search; cmdk filter OFF so server results win; global shortcut +
+  sidebar trigger).
+- **D3 return workspace** — `/clients/:id/review` 3-pane (form tree + tie-outs ·
+  keyboard-first line grid, ref-tracked roving ↑/↓ + Enter-explains ·
+  diagnostics + doc-request rail). Pure `lib/returnModel.ts` (residual-line
+  tie-outs). ClientDetail source-entry tabs UNCHANGED — this is additive.
+- **D4 provenance** — `Provenance`/`Money`: any figure → form line ← engine
+  identity ← signed components with ✓/⚠ tie-out. Wired into the workspace + the
+  Tax Calculator (AGI, Taxable). (Source-doc bounding-box link = future hook.)
+- **D5 diff grammar** — `lib/delta.ts` + `Delta`; ClientDetail's
+  `amendDeltaClass`/`yoyDeltaClass` are now behavior-preserving shims over it.
+- **D6 workflow** — Firm engagement board (`/firm`): deadline-sorted, inline
+  status edit (persists), urgency pills, status tiles, rows expand to
+  `DocRequestTracker`; Today refresh (KPIs + deadlines + planning peek; firm
+  planning widgets moved to `/planning`).
+- **D7 a11y** — `design/theme.tsx` (light/dark/system + persistence + no-flash),
+  global `:focus-visible`, skip link, reduced-motion, labelled command dialog.
+- **D8** — concept round (hybrid picked) documented.
+
+**Patterns to reuse (`src/components/patterns/`):** PageHeader, StatTile,
+SectionCard, Money, Delta/DeltaBadge, Provenance/ProvenanceList, StatusPill,
+DocRequestTracker, CommandPalette. See CLAUDE.md "Frontend conventions".
+
+**Green bar:** tax-app typecheck + scripts typecheck + `lint:tokens` (0) +
+production build, all clean. Browser-verified light+dark, desktop+mobile,
+inline-status-update persistence, ⌘K server search, keyboard nav + provenance
+tie-outs. **Console clean** (the command-palette `DialogTitle` a11y warning was
+found + fixed mid-session and differential-verified gone).
+
+**Local-env note:** the LOCAL dev DB was many migrations behind (missing
+`engagement_status`/`children_under_6`/…); fixed for this session with
+`pnpm --filter @workspace/db run push-force` against the local Postgres (synthetic
+data; prod untouched). The 2 `docs/accuracy-audit/*.json` files modified at
+session start are unrelated pre-existing churn — left uncommitted.
+
+**Remaining T2.3-adjacent polish (optional, not blocking):** full WCAG-AA
+contrast audit of every interactive state; D4 source-document bounding-box deep
+link (the BoundedDocumentViewer exists — wire it to a contributing input);
+migrate ClientDetail's local `fmt`/`pct` call sites to `lib/format.ts` (left
+as-is to avoid churn in the 6.2k-line file).
+
+---
+
 # Handoff Note — 2026-06-11b (T1.0 CLOSED — 8-worktree ultracode fleet; ~45 fixes incl. the §1(h) worksheet interleave; PR #2)
 
 **ALL of MASTER-TODO T1.0 (a)–(l) is DONE** on `claude/serene-hamilton-rqzitr`
