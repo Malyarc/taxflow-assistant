@@ -355,11 +355,56 @@ export function federalBracketCeiling(targetRate: number, filingStatus: string, 
   return ceiling;
 }
 
+/**
+ * T1.5 — tax-computation method. "formula" (default) uses the exact rate
+ * schedule; "table" emulates the IRS Tax Table so line 16 matches a FILED
+ * return to the dollar for taxable income < $100,000. See
+ * docs/accuracy/tax-table-mode.md.
+ */
+export type TaxComputationMethod = "formula" | "table";
+
+/** The midpoint of the IRS Tax Table income row containing `ti` (0 < ti < 100,000). */
+function taxTableRowMidpoint(ti: number): number {
+  if (ti < 5) return 0;     // $0–$5 row → tax 0
+  if (ti < 15) return 10;   // $5–$15 row
+  if (ti < 25) return 20;   // $15–$25 row
+  if (ti < 3000) {          // $25-wide rows
+    return Math.floor(ti / 25) * 25 + 12.5;
+  }
+  return Math.floor(ti / 50) * 50 + 25; // $50-wide rows ($3,000–$100,000)
+}
+
+/**
+ * T1.5 — IRS Tax Table emulation (Form 1040 Tax Table, taxable income <
+ * $100,000). The IRS BUILDS the table by computing the rate-schedule tax at the
+ * MIDPOINT of each income row, rounded to the nearest dollar (round half up).
+ * Row widths: $50 for income ≥ $3,000; $25 for $25–$3,000; the small $5/$10 rows
+ * below $25. For income ≥ $100,000 the IRS uses the Tax Computation Worksheet
+ * (the exact formula), so this returns the whole-dollar-rounded formula tax.
+ *
+ * VERIFIED against the real 2024 IRS Tax Table (i1040tt): single $50,000–50,050
+ * = $6,059; MFJ $5,539; HoH $5,672; MFS $6,059; and MFJ $12,000–12,050 = $1,203
+ * (the round-half-up .50 midpoint case). Math.round is round-half-up, matching
+ * the IRS construction.
+ */
+export function irsTaxTableTax(taxableIncome: number, filingStatus: string, taxYear: number): number {
+  if (!Number.isFinite(taxableIncome) || taxableIncome <= 0) return 0;
+  // ≥ $100,000: Tax Computation Worksheet = exact formula, whole-dollar.
+  if (taxableIncome >= 100_000) {
+    return Math.round(calculateFederalTax(taxableIncome, filingStatus, taxYear));
+  }
+  return Math.round(calculateFederalTax(taxTableRowMidpoint(taxableIncome), filingStatus, taxYear));
+}
+
 export function calculateFederalTax(
   taxableIncome: number,
   filingStatus: string,
   taxYear: number,
+  taxMethod: TaxComputationMethod = "formula",
 ): number {
+  // "table" mode → IRS Tax Table value (which itself calls back with the default
+  // "formula" method at the row midpoint, so there is no infinite recursion).
+  if (taxMethod === "table") return irsTaxTableTax(taxableIncome, filingStatus, taxYear);
   const year = resolveTaxYear(taxYear);
   const yearBrackets = FEDERAL_BRACKETS[year];
   const brackets = yearBrackets[filingStatus] ?? yearBrackets.single;
@@ -6964,8 +7009,11 @@ function computeScheduleDTaxWorksheet(p: {
   collectibles28: number;
   status: string;
   year: TaxYear;
+  /** T1.5 — "table" routes the worksheet's ordinary-tax lines (44/46) through the IRS Tax Table. */
+  taxMethod?: TaxComputationMethod;
 }): SchedDTaxWorksheetResult {
   const { status, year } = p;
+  const taxMethod = p.taxMethod ?? "formula";
   const ltBrackets = LTCG_BRACKETS[year][status] ?? LTCG_BRACKETS[year].single;
   const l1 = Math.max(0, p.taxableIncome);
   // Lines 2–6 (no Form 4952 amounts: l3 = l4 = l5 = 0 → l6 = l2 = QDIV).
@@ -7021,10 +7069,10 @@ function computeScheduleDTaxWorksheet(p: {
       }
     }
   }
-  const l44 = calculateFederalTax(l21, status, year);
+  const l44 = calculateFederalTax(l21, status, year, taxMethod);
   // Line 45 = lines 31 + 34 + 40 + 43 + 44.
   const l45 = 0.15 * l30 + 0.20 * l33 + 0.25 * l39 + 0.28 * l42 + l44;
-  const l46 = calculateFederalTax(l1, status, year);
+  const l46 = calculateFederalTax(l1, status, year, taxMethod);
   return { tax: Math.min(l45, l46), line10: l10, line13: l13, line14: l14, line21: l21 };
 }
 
@@ -7062,9 +7110,14 @@ export function calculateFederalTaxWithCapitalGains(params: {
    *  the taxable §1202 §1(h)(7) amount. A SUBSET of `longTermGains` taxed at a
    *  MAXIMUM of 28%. Bounded to (net LTCG − §1250) by the caller. Default 0. */
   collectibles28Gain?: number;
+  /** T1.5 — tax-computation method for the ORDINARY-income lines (the
+   *  preferential 0/15/20/25/28% rates are exact percentages either way).
+   *  "table" matches a filed return's line 16 to the dollar. Default "formula". */
+  taxMethod?: TaxComputationMethod;
 }): CapitalGainsCalculation {
   const year = resolveTaxYear(params.taxYear);
   const status = params.filingStatus in FEDERAL_BRACKETS[year] ? params.filingStatus : "single";
+  const taxMethod = params.taxMethod ?? "formula";
   const ltcgIncluded = Math.max(0, params.longTermGains) + Math.max(0, params.qualifiedDividends);
   const ordinaryWithStcg = Math.max(0, params.ordinaryTaxableIncome) + Math.max(0, params.shortTermGains);
   const feie = Math.max(0, params.feieExclusion ?? 0);
@@ -7089,11 +7142,11 @@ export function calculateFederalTaxWithCapitalGains(params: {
   // simple ordinary tax computation.
   let ordinaryTax: number;
   if (feie > 0) {
-    const taxOnOrdinaryPlusFeie = calculateFederalTax(ordinaryWithStcg + feie, status, year);
-    const taxOnFeieAlone = calculateFederalTax(feie, status, year);
+    const taxOnOrdinaryPlusFeie = calculateFederalTax(ordinaryWithStcg + feie, status, year, taxMethod);
+    const taxOnFeieAlone = calculateFederalTax(feie, status, year, taxMethod);
     ordinaryTax = Math.max(0, taxOnOrdinaryPlusFeie - taxOnFeieAlone);
   } else {
-    ordinaryTax = calculateFederalTax(ordinaryWithStcg, status, year);
+    ordinaryTax = calculateFederalTax(ordinaryWithStcg, status, year, taxMethod);
   }
 
   // Preferential tax: LTCG/QDIV stack on top of ordinary income at 0/15/20%.
@@ -7146,10 +7199,11 @@ export function calculateFederalTaxWithCapitalGains(params: {
       collectibles28: ws28,
       status,
       year,
+      taxMethod,
     });
     const specialTotal = Math.max(
       0,
-      ws.tax - (feie > 0 ? calculateFederalTax(feie, status, year) : 0),
+      ws.tax - (feie > 0 ? calculateFederalTax(feie, status, year, taxMethod) : 0),
     );
     // Decompose back into the function's ordinary + preferential return shape.
     // specialTotal ≥ ordinaryTax (worksheet line 45 ≥ line 44 = tax(line 21) ≥
@@ -7183,8 +7237,8 @@ export function calculateFederalTaxWithCapitalGains(params: {
       const ordinaryRemaining = Math.max(0, ordinaryWithStcg - amountAtParentRate);
       const ltcgRemaining = Math.max(0, prefTaxable - Math.max(0, amountAtParentRate - ordinaryWithStcg));
       const childOrdinaryTax = feie > 0
-        ? Math.max(0, calculateFederalTax(ordinaryRemaining + feie, status, year) - calculateFederalTax(feie, status, year))
-        : calculateFederalTax(ordinaryRemaining, status, year);
+        ? Math.max(0, calculateFederalTax(ordinaryRemaining + feie, status, year, taxMethod) - calculateFederalTax(feie, status, year, taxMethod))
+        : calculateFederalTax(ordinaryRemaining, status, year, taxMethod);
       const childPrefStackBase = feie > 0 ? ordinaryRemaining + feie : ordinaryRemaining;
       const childPrefTax = calculateLtcgQdivStackedTax(childPrefStackBase, ltcgRemaining, status, year);
       const parentAdditionalTax = amountAtParentRate * Math.max(0, params.kiddieTax.parentsTopMarginalRate);

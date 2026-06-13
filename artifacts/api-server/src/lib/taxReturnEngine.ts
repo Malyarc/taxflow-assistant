@@ -40,6 +40,7 @@ import {
   type Form8801GenerationResult,
   SS_WAGE_BASE,
   calculateFederalTaxWithCapitalGains,
+  type TaxComputationMethod,
   calculateScheduleA,
   calculateEitc,
   nycEitcRateForAgi,
@@ -562,6 +563,15 @@ export interface TaxReturnInputs {
   overrides?: RecalcOverrides;
   /** Legacy single-number itemized deductions fallback (existing tax_return row) */
   existingItemizedFallback?: Numish;
+  /**
+   * T1.5 — line-16 tax-computation method. "formula" (default) uses the exact
+   * rate schedule; "table" emulates the IRS Tax Table so line 16 matches a FILED
+   * return to the dollar for taxable income < $100,000. Affects only the
+   * ordinary-income tax lines (preferential 0/15/20/25/28% rates are exact
+   * either way). Default keeps the engine byte-for-byte unchanged.
+   * See docs/accuracy/tax-table-mode.md.
+   */
+  taxComputationMethod?: TaxComputationMethod;
 }
 
 // ── 1099 summary ────────────────────────────────────────────────────────────
@@ -1581,6 +1591,8 @@ const SECTION_448C_THRESHOLD: Record<TaxYear, number> = {
  */
 export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn {
   const { client: clientRaw, w2s, form1099s, adjustments, taxYear, overrides = {} } = inputs;
+  // T1.5 — line-16 tax method (IRS Tax Table emulation when "table"); default "formula".
+  const taxComputationMethod: TaxComputationMethod = inputs.taxComputationMethod ?? "formula";
   // ── Engine-seam totality for NON-money client fields (T1.0d #14) ──────────
   // The money fields all flow through the ±1e13-clamped `toNum`, but the plain
   // `number` COUNT fields (dependents, educators, ACA household) and AGES were
@@ -3600,6 +3612,8 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
           parentsTopMarginalRate: toNum(client.parentsTopMarginalRate),
         }
       : undefined,
+    // T1.5 — IRS Tax Table emulation for the ordinary-income lines when enabled.
+    taxMethod: taxComputationMethod,
   });
   const regularFederalTax = capGains.totalFederalTax;
 
