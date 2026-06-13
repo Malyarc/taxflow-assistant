@@ -45,7 +45,8 @@ export type DiagnosticCategory =
   | "State & local"
   | "Payments & balance"
   | "Health coverage (ACA)"
-  | "Audit risk (DIF)";
+  | "Audit risk (DIF)"
+  | "MeF e-file rules";
 
 export interface ReturnDiagnostic {
   /** Stable check id (e.g. "state-code-invalid") — lets the UI dedupe / suppress. */
@@ -58,6 +59,13 @@ export interface ReturnDiagnostic {
   detail: string;
   /** Optional field hint for deep-linking the UI. */
   field?: string | null;
+  /**
+   * T1.5 #4 — the IRS Modernized e-File (MeF) business-rule number this check
+   * mirrors (e.g. "F8962-070", "F1040-034-06", "SEIC-F1040-535-04"), so a CPA
+   * knows which reject their filing software would issue. Present only on the
+   * "MeF e-file rules" diagnostics.
+   */
+  mefRule?: string;
 }
 
 export interface ReturnDiagnosticsResult {
@@ -493,6 +501,111 @@ export function computeReturnDiagnostics(args: {
         materialCfs.map(([name, v]) => `${name} $${Math.round(v).toLocaleString()}`).join("; ") +
         ". Roll them forward when preparing the next year so the deductions aren't lost.",
       field: null,
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────────────
+  // Category: MeF e-file rules (T1.5 #4) — the public IRS Modernized e-File
+  // business rules that a CPA's filing software would REJECT on, surfaced before
+  // filing and tagged with the reject-rule number. The engine already PREVENTS
+  // the hard data-rejects by construction (it refuses to credit excess SS from a
+  // single employer per F1040-021, floors impossible negatives, bars MFS EITC,
+  // requires SLCSP for APTC — the critical `aca-aptc-no-slcsp` above is the
+  // reachable F8962 reject). What remains are the e-file gates the engine CANNOT
+  // self-check (per-child SSN/age, the spouse's itemize election, a prior EITC
+  // disallowance) + confirmations that a required form is attached.
+  // ─────────────────────────────────────────────────────────────────────
+
+  // M2 — F1040-034-06 / F1040-035-06: MFS itemize consistency. If a taxpayer's
+  // spouse itemizes, the taxpayer MUST itemize (cannot take the standard
+  // deduction), and vice versa. The engine can't see the spouse's return, so
+  // surface it as a confirm-before-file reminder whenever filing MFS.
+  if (isMfs) {
+    const usingStandard = toNum(computed.itemizedDeductions) <= toNum(computed.standardDeduction)
+      || computed.itemizedDeductions == null;
+    push({
+      id: "mef-mfs-itemize-consistency",
+      severity: "info",
+      category: "MeF e-file rules",
+      title: "MFS: confirm the spouse's itemize election matches",
+      detail: usingStandard
+        ? "This MFS return uses the standard deduction. If the spouse itemizes, this return must itemize too (and the standard deduction becomes $0) — e-file rejects an inconsistent pair. Confirm the spouse's election."
+        : "This MFS return itemizes. The spouse's return must also itemize (cannot take the standard deduction) — confirm the pair is consistent before filing.",
+      field: null,
+      mefRule: "F1040-034-06 / F1040-035-06",
+    });
+  }
+
+  // M3 — F8959: Additional Medicare Tax present → Form 8959 must accompany the
+  // return. The engine includes it; this confirms the attachment for e-file.
+  if (toNum(computed.additionalMedicareTax) > 0) {
+    push({
+      id: "mef-form-8959-required",
+      severity: "info",
+      category: "MeF e-file rules",
+      title: "Form 8959 (Additional Medicare Tax) is required",
+      detail: "Additional Medicare Tax applies, so Form 8959 must be filed with the return (the engine includes it). Ensure the filing software attaches Form 8959 and reconciles the 0.9% withholding (Form 8959 Part IV).",
+      field: null,
+      mefRule: "F8959-001",
+    });
+  }
+
+  // M4 — F8962-070: when APTC was paid (Form 1095-A), Form 8962 MUST be filed to
+  // reconcile it — the single most common ACA e-file reject. The incomplete-data
+  // case (no SLCSP) is already CRITICAL above; this is the always-on requirement.
+  const aptcPaid = toNum(client.acaAdvanceAptc) > 0 || toNum(computed.premiumTaxCredit?.advanceAptc) > 0;
+  if (aptcPaid && slcsp > 0) {
+    push({
+      id: "mef-form-8962-required",
+      severity: "info",
+      category: "MeF e-file rules",
+      title: "Form 8962 (Premium Tax Credit) is required",
+      detail: "Advance Premium Tax Credit was paid, so Form 8962 must reconcile it on the return (the engine computes it). A return that omits Form 8962 when a 1095-A shows APTC e-files as a reject (F8962-070).",
+      field: null,
+      mefRule: "F8962-070",
+    });
+  }
+
+  // M5 — SEIC-F1040-535-04 / -501-02: EITC qualifying-child age + SSN rules. The
+  // engine models counts, not per-child age/SSN; surface the e-file gates so the
+  // CPA confirms each child qualifies (the SSN reminder is separate, RF2).
+  if (eitc?.eligible && toNum(eitc.qualifyingChildren) > 0) {
+    push({
+      id: "mef-eitc-qualifying-child-rules",
+      severity: "info",
+      category: "MeF e-file rules",
+      title: "EITC: confirm each qualifying child's age and SSN",
+      detail: "EITC is claimed with qualifying children. e-file enforces that each child is under 19 (under 24 if a full-time student, or any age if permanently disabled), younger than the taxpayer, and has a valid SSN — a violation rejects (SEIC-F1040-535 / -501). The engine tracks counts only; confirm each child meets the §32(c)(3) tests.",
+      field: null,
+      mefRule: "SEIC-F1040-535-04 / SEIC-F1040-501-02",
+    });
+  }
+
+  // M6 — Schedule H present → it must be attached (and SE/employment-tax e-file
+  // rules apply). Confirms the attachment.
+  if (toNum(computed.scheduleH?.total) > 0) {
+    push({
+      id: "mef-schedule-h-required",
+      severity: "info",
+      category: "MeF e-file rules",
+      title: "Schedule H (household employment tax) is required",
+      detail: "Household-employee FICA/FUTA applies, so Schedule H must be filed with the return (the engine includes it on Schedule 2 line 9). Ensure the filing software attaches Schedule H and that the household employer has an EIN.",
+      field: null,
+      mefRule: "F1040-Sch-H",
+    });
+  }
+
+  // M7 — F1040-164-01: claiming EITC after a prior IRS disallowance requires
+  // Form 8862. Not detectable from a single return; reminder when EITC is claimed.
+  if (eitc?.eligible && toNum(eitc.appliedCredit) > 0) {
+    push({
+      id: "mef-eitc-form-8862",
+      severity: "info",
+      category: "MeF e-file rules",
+      title: "If EITC was previously disallowed, Form 8862 is required",
+      detail: "EITC is claimed. If the IRS disallowed or reduced the taxpayer's EITC in a prior year, Form 8862 must be attached to claim it again — omitting it rejects (F1040-164-01). Confirm there is no open disallowance.",
+      field: null,
+      mefRule: "F1040-164-01",
     });
   }
 
