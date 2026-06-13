@@ -52,6 +52,8 @@ import {
   type AdjustmentFact,
   type ClientFacts,
 } from "./taxReturnEngine";
+// T1.5 #6 — FS-3: community-property states split MFS income 50/50 (Form 8958).
+import { isCommunityPropertyState, splitCommunityIncome } from "./communityProperty";
 
 const MFS = "married_filing_separately";
 
@@ -75,6 +77,8 @@ interface MfsSplit {
   taxpayer: TaxReturnInputs;
   spouse: TaxReturnInputs;
   spouseTagsPresent: boolean;
+  /** FS-3 (T1.5 #6) — true when the 50/50 community-property split was applied. */
+  communityPropertySplit: boolean;
 }
 
 /**
@@ -100,8 +104,21 @@ function splitJointToMfs(joint: TaxReturnInputs): MfsSplit {
     f99s.some((f) => f.spouse === "spouse") ||
     adj.some((a) => a.spouse === "spouse");
 
-  const pick = <T extends { spouse?: string | null }>(arr: T[], who: "taxpayer" | "spouse"): T[] =>
-    arr.filter((x) => tagOf(x.spouse) === who);
+  // FS-3 (T1.5 #6) — in the 9 community-property states, MFS income is split
+  // 50/50 (Form 8958), NOT by the spouse tag. Each half gets HALF of all W-2 /
+  // 1099 / adjustment income regardless of who earned it. (Per-property facts
+  // remain on the primary half — the CPA's Form 8958 allocation, same documented
+  // sub-gap as the common-law per-property note below.)
+  const communityPropertySplit = isCommunityPropertyState(c.state);
+  const community = communityPropertySplit ? splitCommunityIncome(joint) : null;
+
+  // In a community-property state each spouse reports the same halved income;
+  // otherwise income is attributed by the spouse tag.
+  const pick = <T extends { spouse?: string | null }>(
+    arr: T[],
+    who: "taxpayer" | "spouse",
+    halved: T[] | null,
+  ): T[] => (halved ? halved : arr.filter((x) => tagOf(x.spouse) === who));
 
   // Primary-taxpayer MFS return: keeps untagged + taxpayer-tagged income, all
   // dependents and household items, the taxpayer's own age/blind/IRA coverage.
@@ -116,9 +133,9 @@ function splitJointToMfs(joint: TaxReturnInputs): MfsSplit {
   const taxpayer: TaxReturnInputs = {
     ...joint,
     client: taxpayerClient,
-    w2s: pick(w2s as (W2Fact & { spouse?: string | null })[], "taxpayer"),
-    form1099s: pick(f99s as (Form1099Fact & { spouse?: string | null })[], "taxpayer"),
-    adjustments: pick(adj as (AdjustmentFact & { spouse?: string | null })[], "taxpayer"),
+    w2s: pick(w2s as (W2Fact & { spouse?: string | null })[], "taxpayer", (community?.w2s as (W2Fact & { spouse?: string | null })[] | undefined) ?? null),
+    form1099s: pick(f99s as (Form1099Fact & { spouse?: string | null })[], "taxpayer", (community?.form1099s as (Form1099Fact & { spouse?: string | null })[] | undefined) ?? null),
+    adjustments: pick(adj as (AdjustmentFact & { spouse?: string | null })[], "taxpayer", (community?.adjustments as (AdjustmentFact & { spouse?: string | null })[] | undefined) ?? null),
     // FS-2 — the household-level legacy itemized total + lump-sum overrides
     // must not replicate into BOTH halves (each half would deduct/add the full
     // joint amount). Per-line Schedule A adjustments (tag-split above) drive
@@ -152,9 +169,9 @@ function splitJointToMfs(joint: TaxReturnInputs): MfsSplit {
   const spouse: TaxReturnInputs = {
     ...joint,
     client: spouseClient,
-    w2s: pick(w2s as (W2Fact & { spouse?: string | null })[], "spouse"),
-    form1099s: pick(f99s as (Form1099Fact & { spouse?: string | null })[], "spouse"),
-    adjustments: pick(adj as (AdjustmentFact & { spouse?: string | null })[], "spouse"),
+    w2s: pick(w2s as (W2Fact & { spouse?: string | null })[], "spouse", (community?.w2s as (W2Fact & { spouse?: string | null })[] | undefined) ?? null),
+    form1099s: pick(f99s as (Form1099Fact & { spouse?: string | null })[], "spouse", (community?.form1099s as (Form1099Fact & { spouse?: string | null })[] | undefined) ?? null),
+    adjustments: pick(adj as (AdjustmentFact & { spouse?: string | null })[], "spouse", (community?.adjustments as (AdjustmentFact & { spouse?: string | null })[] | undefined) ?? null),
     // The spouse keeps none of the household-level per-property facts; income
     // attribution for those is the CPA's call (documented sub-gap).
     rentalProperties: [],
@@ -167,7 +184,7 @@ function splitJointToMfs(joint: TaxReturnInputs): MfsSplit {
     overrides: splitSafeOverrides(joint),
   };
 
-  return { taxpayer, spouse, spouseTagsPresent };
+  return { taxpayer, spouse, spouseTagsPresent, communityPropertySplit };
 }
 
 export interface FilingStatusReturnSummary {
@@ -202,6 +219,8 @@ export interface FilingStatusOptimizerResult {
      */
     itemizedCouplingChoice: "both_itemized" | "both_standard" | null;
     dependentsAllocatedToPrimaryTaxpayer: boolean;
+    /** FS-3 (T1.5 #6) — true when the 50/50 community-property MFS split applied. */
+    communityPropertySplit: boolean;
     notes: string[];
   };
 }
@@ -287,7 +306,11 @@ export function optimizeFilingStatus(
   const notes: string[] = [
     "Comparison metric = total household tax after all credits (withholding-independent); refunds are NOT compared directly.",
   ];
-  if (!split.spouseTagsPresent) {
+  if (split.communityPropertySplit) {
+    notes.push(
+      "FS-3: this is a community-property state — MFS income was split 50/50 (Form 8958) regardless of who earned it; the spouse tags do NOT apply. Separate-property income and per-property facts (rentals/K-1/capital transactions) stay on the primary half — refine via Form 8958.",
+    );
+  } else if (!split.spouseTagsPresent) {
     notes.push(
       "No per-spouse income tags found — the MFS split assumed ALL income belongs to the primary taxpayer. Tag W-2/1099/SE income with `spouse: \"spouse\"` for an accurate split.",
     );
@@ -336,6 +359,7 @@ export function optimizeFilingStatus(
     savings,
     assumptions: {
       spouseTagsPresent: split.spouseTagsPresent,
+      communityPropertySplit: split.communityPropertySplit,
       itemizedCouplingApplied,
       itemizedCouplingChoice,
       dependentsAllocatedToPrimaryTaxpayer: true,
