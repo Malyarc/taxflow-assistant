@@ -148,6 +148,7 @@
     "src/tax-engine-return-qa-tests.ts",
     "src/tax-engine-planning-campaigns-tests.ts",
     "src/tax-engine-cpa-deliverables-pdf-tests.ts",
-    "src/tax-engine-tax-table-mode-tests.ts"
+    "src/tax-engine-tax-table-mode-tests.ts",
+    "src/tax-engine-golden-irs-examples-tests.ts"
   ]
 }
