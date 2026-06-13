@@ -34,6 +34,34 @@ The engine's accuracy decays silently as tax law changes. Three defenses:
   phase-in/out regions). The income Tax Table analogue was closed in T1.5 #1
   (`taxComputationMethod: "table"`); an EIC-table-emulation extension would close
   this. See `docs/accuracy/golden-test-pack.md`.
+- **AMT Form 6251 line 2c (§163(d) investment-interest difference) + line 2d
+  (percentage depletion §57(a)(1)) are not modeled.** Both are rare AMT
+  preference items (line 2c is nonzero only when regular vs AMT investment
+  interest differ — e.g. private-activity-bond income). The Form 8801 MTC model
+  treats whatever AMT preferences ARE modeled with the correct exclusion-vs-
+  deferral split; these two prefs simply aren't entered. Low-frequency; tracked.
+
+### T1.5 accuracy-program status (the "most accurate engine" tier)
+
+- **#1 Tax-Table mode** — done (`docs/accuracy/tax-table-mode.md`).
+- **#2 Golden-test pack** — done (`docs/accuracy/golden-test-pack.md`).
+- **#3 Oracles** — the differential-oracle harness (T0.3 A2) already runs 758
+  scenarios vs tenforty/OTS with 0 unexplained divergences. The cross-year +
+  filing-status **metamorphic** layer (`tax-engine-cross-year-metamorphic-tests.ts`,
+  139 assertions, no external oracle) is added and CI-runnable. The harness
+  COLUMN extension (dependents/CTC, itemized, SE-with-QBI, NY/NJ/MA state batches)
+  is CI-gated on the oracle install — **`tenforty` does not build on the dev
+  Python 3.9 / Xcode toolchain** (pip build failure), so that extension runs in
+  CI/where the oracle is available, not locally. A `ustaxes`/IRS-ATS second
+  oracle remains optional.
+- **#4 MeF diagnostics** — done (`returnDiagnostics.ts` "MeF e-file rules").
+- **#7 Form 8801 full MTC + §1(h)** — delivered in T1.0b (Part I exclusion-vs-
+  deferral, §53(c)/(d) limits, carryforward — `tax-engine-t10b-othertax-tests.ts`
+  + the AMT-credit round-trip in `tax-engine-carryforward-audit-tests.ts`) and
+  T1.0l (§1(h) Schedule D Tax Worksheet). Remaining: the rare line 2c/2d prefs above.
+- **#8 Law-watch** — this file + `tax-engine-law-currency-fixture-tests.ts`.
+- **#9 Filing-status trait table** — `filingStatusTraits.ts` + property test;
+  cluster threshold functions adopt it; remaining sites migrate incrementally.
 
 ---
 
