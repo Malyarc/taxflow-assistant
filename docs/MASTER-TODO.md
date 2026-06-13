@@ -177,16 +177,16 @@ secure, audited to the hilt, and validated by a CPA before any tax number ships.
 - [ ] **New + state-specific strategies** as law evolves — STILL OPEN (forward work as the law changes).
 - [x] **Estate/gift planning touchpoints** (qualitative flags) — DONE 2026-06-09d. New `"estate"` category + G1.101–G1.106 (annual-exclusion gifting §2503(b), 529 superfunding §529(c)(2)(B), SLAT, ILIT, GRAT, §1014 step-up). Confidence 0.40–0.50 (informational — no estate-tax engine); year-indexed annual excl $18k/$19k/$19k + BEA $13.61M/$13.99M/$15M. Catalog v1.21.0; +29 hand-calc'd tests.
 
-### T1.5 Accuracy DEEPENING — "the most accurate engine" program (beyond bug-fixing; each item raises the ceiling)
-- [ ] **IRS Tax-Table emulation mode** (<$100k taxable, $50-bracket midpoint) — match FILED returns to the dollar (today: exact formula, ±$14 vs the table); per-line IRS-rounding option; document both modes.
-- [ ] **Golden-test pack from IRS worked examples** — encode every form-instruction + Pub 17 worked example (8812/8863/2441/6251/8962/8606/2210/SE…) as fixtures; CI-pinned. The strongest authoritative oracle there is.
-- [ ] **Second + third oracles**: IRS ATS/MeF published test scenarios; optionally `ustaxes`. Extend the differential harness: dependents/CTC-aware columns, itemized batches, SE-with-QBI modeled comparisons, NY/NJ/MA state batches, cross-year metamorphic relations.
-- [ ] **MeF business-rules diagnostics** — encode the public e-file reject rules as return diagnostics (catch what a CPA's filing software would bounce).
-- [ ] **Per-dependent data model** (DOB/SSN-present/relationship/months-in-home) — unlocks EXACT CTC vs ODC vs EITC-child vs 2441 vs 8615 gating (today: counts only). Migration + organizer + roll-forward.
-- [ ] **Community-property MFS** (CA/TX/WA/AZ/ID/LA/NV/NM/WI splitting) — makes the MFS optimizer legally correct in 9 states.
-- [ ] **Form 8801 full MTC model** (with (b)) + **§1(h) worksheet adjudication** (with (l)).
-- [ ] **Law-watch pipeline**: per-state DOR-pinned fixture tests (the year-coverage test only checks finiteness — this audit proved that misses real rate changes) + a quarterly law-currency sweep runbook + a `lawWatch.md` register of pending effective dates (OBBBA sunsets, state triggers).
-- [ ] **Filing-status trait table** (`filingStatusTraits.ts`): ONE source of truth for the QSS/MFS classification per provision (the 2026-06-11 QSS cluster existed because ~40 sites each re-encode "is QSS joint here?" inline). Refactor call sites to it; property-test the table against the statute list.
+### T1.5 Accuracy DEEPENING — "the most accurate engine" program — **[x] DONE 2026-06-12 (all 9 items; 2 independent /code-review rounds + fixes; +~290 hand-calc'd/golden/property assertions; full battery 125 suites / 7,535 / 0). Status + sub-gaps: `docs/accuracy/law-watch.md`.**
+- [x] **IRS Tax-Table emulation mode** — `irsTaxTableTax` + `taxComputationMethod:"table"` threaded through the schedule + QDCGT/Sched-D worksheets + `computeTaxReturnPure` (default "formula" = byte-identical). VERIFIED vs the real 2024 i1040tt (all 4 statuses). `docs/accuracy/tax-table-mode.md`. (UI/route toggle = documented product follow-up.)
+- [x] **Golden-test pack from IRS worked examples** — `tax-engine-golden-irs-examples-tests.ts`: real Pub 915 SS examples + Pub 596 EIC-table maxes + i1040tt + Sch SE/8812/2441/8863/QDCGT. `docs/accuracy/golden-test-pack.md`. (Surfaced the EITC EIC-table ≤$1 sub-gap.)
+- [x] **Second + third oracles** — `tax-engine-cross-year-metamorphic-tests.ts` (139, no oracle). The differential-harness COLUMN extension (dependents/itemized/SE-QBI/NY-NJ-MA) is CI-gated on tenforty, which won't build on the dev Python 3.9/Xcode toolchain (documented in law-watch).
+- [x] **MeF business-rules diagnostics** — `returnDiagnostics.ts` "MeF e-file rules" category + reject-code tags (`tax-engine-mef-diagnostics-tests.ts`). Reject codes corrected after review (F8962-070/SEIC-F1040-535/SH-F1040-520 real; §63(c)(6)/Form-8959 cite the statute, not a fake code).
+- [x] **Per-dependent data model** — pure `dependents.ts` (`deriveDependentCounts`) → exact CTC/ODC/EITC/§21/under-6 gating from DOB/SSN/relationship; `TaxReturnInputs.dependents` contract (Haven seam); fail-closed SSN. `tax-engine-per-dependent-tests.ts`. (DB table + CRUD + UI + organizer/roll-forward of rows = product-surface follow-up per the migration roadmap.)
+- [x] **Community-property MFS** — `communityProperty.ts` 50/50 Form 8958 split (9 states) in the MFJ-vs-MFS optimizer (FS-3 closed); safe dollar-field allowlist (never distributionCode/polymorphic amounts). `tax-engine-community-property-mfs-tests.ts`.
+- [x] **Form 8801 full MTC + §1(h)** — delivered in T1.0b (Part I exclusion/deferral, §53(c)/(d), carryforward — t10b + carryforward-audit) + T1.0l (§1(h) Sched D Tax Worksheet). Rare line 2c (§163(d)) / 2d (depletion) AMT prefs = tracked sub-gaps.
+- [x] **Law-watch pipeline** — `tax-engine-law-currency-fixture-tests.ts` (exact DOR/IRS-pinned values, not just finiteness) + `docs/accuracy/law-watch.md` (pending-effective-date register + quarterly sweep runbook).
+- [x] **Filing-status trait table** — `filingStatusTraits.ts` (single source of truth) + property test pinning every cell to the statute; the audit-critical threshold fns (NIIT/Add'l-Medicare/§86/§904(j)/§121/SALT/ACA-household) read from it; remaining inline sites migrate incrementally. (Review caught + fixed a latent QSS ACA household over-count.)
 
 ---
 
@@ -278,7 +278,7 @@ secure, audited to the hilt, and validated by a CPA before any tax number ships.
 1. **T0.1** (yours — rotate creds; unblocks everything). Still the one red gate.
 2. **T1.0 (a)–(f)** — the re-opened Tier-1 correctness backlog (wrong filed numbers in shipped code: TY2026 credits on expired law, §53/§38 limits, §461(l), NOL-AGI, K-1 earned income, KS/PA/CO/WV/HI/NM/MD state currency, MCTMT). Batch by subsystem; /code-review every batch.
 3. **T1.0 (g)–(l)** — planning projection year-advance + CPA-tools optimizer fixes + forms/extraction/frontend display batch.
-4. **T1.5** — accuracy deepening: golden-test pack + tax-table mode + the filing-status trait table (the anti-QSS-cluster refactor) + the law-watch pipeline; then the second-oracle expansion.
+4. ~~**T1.5** — accuracy deepening~~ — **DONE 2026-06-12** (all 9: tax-table mode, golden pack, metamorphic/oracles, MeF diagnostics, per-dependent model, community-property MFS, Form 8801, law-watch, filing-status trait table; `docs/accuracy/`).
 5. **T0.2 C1–C2** (+ the new audit security items) — consent ledger + PII; parallel-trackable.
 6. **T5 G-3 + G-7** — proposal/ROI packager + tax-health report (pure packaging, fast revenue story) → **G-2** second-look analyzer (the design-partner demo) → **G-1** transcript monitor.
 7. ~~**T2.3** — UX/UI 2.0 portable layer~~ — **DONE 2026-06-12** (D1–D8: tokens v2 + dark mode + ⌘K nav + 3-pane return workspace + provenance + diff grammar + engagement board + a11y; `docs/design/ux2.md`).

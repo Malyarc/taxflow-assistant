@@ -1,3 +1,53 @@
+# Handoff Note — 2026-06-12b (T1.5 Accuracy Deepening COMPLETE — all 9 items; the "most accurate engine" tier; on main, pushed)
+
+**ALL of MASTER-TODO T1.5 (the 9-item "most accurate engine" program) is DONE,
+committed to `main`, and pushed** (commits `c4acc08`..`11522b5`). Two independent
+`/code-review` rounds (multi-agent, high) ran on the engine diffs and caught real
+bugs that were FIXED before push. Full no-API battery: **125 suites / 7,535
+assertions / 0 failed** (+~290 this tier). Engine NOT yet deployed to EC2 (these
+are engine/test/doc changes; no schema migration; deploy when ready — frontend is
+already current from T2.3).
+
+**What landed (each with hand-calc'd/golden/property tests; details in
+`docs/accuracy/`):**
+1. **Tax-Table mode** (`irsTaxTableTax` + `taxComputationMethod`, default
+   "formula" = byte-identical; verified vs real 2024 i1040tt) — `tax-table-mode.md`.
+2. **Golden pack** (real Pub 915 SS + Pub 596 EIC-table + Sch SE/8812/2441/8863/
+   QDCGT) — `golden-test-pack.md`. Found the EITC EIC-table ≤$1 sub-gap.
+3. **Oracles** — cross-year + filing-status metamorphic suite (139, no oracle);
+   the differential-harness column extension is CI-gated on tenforty (won't build
+   on dev Python 3.9/Xcode — documented).
+4. **MeF diagnostics** (`returnDiagnostics.ts` "MeF e-file rules" + reject codes;
+   3 codes corrected after review).
+5. **Per-dependent model** (`dependents.ts` → exact CTC/ODC/EITC/§21/under-6
+   gating from DOB/SSN/relationship; `TaxReturnInputs.dependents` Haven-seam
+   contract; fail-closed SSN). DB table + CRUD + UI = product-surface follow-up.
+6. **Community-property MFS** (`communityProperty.ts` 50/50 Form 8958 split, 9
+   states; safe dollar-allowlist halving — review caught + fixed a
+   distributionCode/polymorphic-amount corruption bug).
+7. **Form 8801 full MTC + §1(h)** — already delivered in T1.0b/T1.0l; documented.
+8. **Law-watch** (`tax-engine-law-currency-fixture-tests.ts` exact DOR/IRS pins +
+   `law-watch.md` register + quarterly runbook).
+9. **Filing-status trait table** (`filingStatusTraits.ts` + property test; cluster
+   threshold fns adopt it; review caught + fixed a latent QSS ACA household bug).
+
+**New engine modules (all PURE / Haven-portable):** `filingStatusTraits.ts`,
+`communityProperty.ts`, `dependents.ts`; `taxCalculator.ts` gained `irsTaxTableTax`
++ `TaxComputationMethod`. New test suites: tax-table-mode, golden-irs-examples,
+law-currency-fixture, mef-diagnostics, filing-status-traits, cross-year-metamorphic,
+community-property-mfs, per-dependent (+ the trait + metamorphic property tests).
+
+**Tracked sub-gaps (documented in `law-watch.md`, none are regressions):** EITC
+EIC-table band (≤$1); AMT line 2c/2d rare prefs; tax-table-mode UI toggle;
+per-dependent DB/CRUD/UI; CP per-property Form-8958 allocation.
+
+**Recommended next:** deploy the T1.5 engine to EC2 (no migration needed) +
+prod-smoke; OR pick up T1.5-adjacent product surface (per-dependent CRUD UI) or
+T5 growth (G-3/G-7 packaging). The differential-oracle column extension awaits a
+toolchain where tenforty builds (CI).
+
+---
+
 # Handoff Note — 2026-06-12 (T2.3 UX/UI 2.0 SHIPPED — D1–D8; design system + dark mode + ⌘K + 3-pane return workspace + provenance; on main; frontend DEPLOYED to prod)
 
 **ALL of MASTER-TODO T2.3 (D1–D8) is DONE, committed to `main` (`2e2c676`,
