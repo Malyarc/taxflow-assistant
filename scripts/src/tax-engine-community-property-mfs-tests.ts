@@ -17,7 +17,8 @@ import { optimizeFilingStatus } from "../../artifacts/api-server/src/lib/filingS
 import {
   isCommunityPropertyState,
   COMMUNITY_PROPERTY_STATES,
-  halveCommunityDollars,
+  halveW2Community,
+  halve1099Community,
 } from "../../artifacts/api-server/src/lib/communityProperty";
 
 const PASS: string[] = [];
@@ -48,15 +49,26 @@ ok("isCommunityPropertyState case-insensitive", isCommunityPropertyState("ca") &
 ok("isCommunityPropertyState null-safe", !isCommunityPropertyState(null) && !isCommunityPropertyState(undefined));
 
 // ════════════════════════════════════════════════════════════════════════════
-// halveCommunityDollars — halves dollar fields, never taxYear; leaves strings.
+// SAFE-HALVING — only allow-listed dollar fields are halved; codes/strings/
+// taxYear are NEVER touched (/code-review: a blanket halve corrupted 1099-R
+// distributionCode "1"→"0.5" and polymorphic adjustment amounts).
 // ════════════════════════════════════════════════════════════════════════════
 {
-  const w = halveCommunityDollars({ taxYear: 2024, wagesBox1: 120000, federalTaxWithheldBox2: 10000, employerName: "Acme", stateCode: "TX", spouse: "taxpayer" } as Record<string, unknown>);
-  check("halve wages 120k → 60k", w.wagesBox1 as number, 60000);
-  check("halve withholding 10k → 5k", w.federalTaxWithheldBox2 as number, 5000);
-  ok("taxYear NOT halved (2024)", w.taxYear === 2024);
-  ok("employerName string untouched", w.employerName === "Acme");
-  ok("stateCode string untouched", w.stateCode === "TX");
+  const w = halveW2Community({ taxYear: 2024, wagesBox1: 120000, federalTaxWithheldBox2: 10000, employerName: "Acme", stateCode: "TX", spouse: "taxpayer" } as Record<string, unknown>);
+  check("W-2 halve wages 120k → 60k", w.wagesBox1 as number, 60000);
+  check("W-2 halve withholding 10k → 5k", w.federalTaxWithheldBox2 as number, 5000);
+  ok("W-2 taxYear NOT halved (2024)", w.taxYear === 2024);
+  ok("W-2 employerName string untouched", w.employerName === "Acme");
+  ok("W-2 stateCode string untouched", w.stateCode === "TX");
+}
+{
+  // 1099-R: distributionCode "1" must survive (was corrupted to "0.5" pre-fix,
+  // dropping the §72(t) penalty); grossDistribution/taxableAmount halve.
+  const f = halve1099Community({ taxYear: 2024, formType: "r", distributionCode: "1", grossDistribution: 40000, taxableAmount: 40000, payerName: "Fund" } as Record<string, unknown>);
+  ok("1099-R distributionCode '1' UNTOUCHED (preserves §72(t))", f.distributionCode === "1");
+  check("1099-R grossDistribution 40k → 20k", Number(f.grossDistribution), 20000);
+  check("1099-R taxableAmount 40k → 20k", Number(f.taxableAmount), 20000);
+  ok("1099-R formType untouched", f.formType === "r");
 }
 
 // ════════════════════════════════════════════════════════════════════════════

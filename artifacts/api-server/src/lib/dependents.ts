@@ -15,6 +15,13 @@
  * Date-free). When `TaxReturnInputs.dependents` is absent the engine uses the
  * legacy scalar counts unchanged (full back-compat).
  *
+ * CONTRACT: `dependents[]` is the taxpayer's CONFIRMED dependents (the CPA's
+ * §152 determination — gross-income/support/joint-return tests are NOT
+ * re-adjudicated here). This module derives only the per-credit GATING. So ODC =
+ * every confirmed dependent who is NOT a CTC qualifying child. The SSN gate is
+ * FAIL-CLOSED: a dependent without an explicit hasSsn === true gets no CTC/EITC
+ * (those credits require an SSN), but still ODC + dependent care (which don't).
+ *
  * Rules encoded:
  *  - §152(c) qualifying CHILD relationship: son/daughter/stepchild/foster/
  *    sibling (+half/step) or a DESCENDANT of any (grandchild/niece/nephew).
@@ -99,7 +106,11 @@ export function deriveDependentCounts(
     const age = ageAtYearEnd(dep, taxYear);
     const qualChildRel = isQualifyingChildRelationship(dep.relationship);
     const resident = residencyMet(dep);
-    const hasSsn = dep.hasSsn !== false; // default true unless explicitly an ITIN
+    // /code-review fix: FAIL-CLOSED on the SSN gate. §24(h)(7)/§32(m) require an
+    // SSN-issued-by-the-due-date for CTC + EITC; since the derived counts REPLACE
+    // the CPA's explicit scalar counts, an unspecified SSN must NOT silently grant
+    // these (which would over-credit). Only an EXPLICIT hasSsn === true qualifies.
+    const hasSsn = dep.hasSsn === true;
     const disabled = dep.isPermanentlyDisabled === true;
     const student = dep.isStudent === true;
 
@@ -109,15 +120,18 @@ export function deriveDependentCounts(
     if (qualChildRel && resident && age != null && age < 6) under6++;
 
     // §32 EITC qualifying child: < 19, or < 24 student, or any age if disabled;
-    // valid SSN + residency + (if known) younger than the taxpayer.
+    // valid SSN + residency + (if known) younger than the taxpayer. (Year-only
+    // ages mean a dependent born the SAME year as a young taxpayer is treated as
+    // NOT younger — conservative; the rare sub-year case is the CPA's call.)
     const eitcAgeOk =
       disabled || (age != null && (age < 19 || (age < 24 && student)));
     const youngerThanTaxpayer =
       taxpayerBirthYear == null || age == null || age < (taxYear - taxpayerBirthYear);
     if (qualChildRel && resident && hasSsn && eitcAgeOk && youngerThanTaxpayer) eitc++;
 
-    // §21 dependent care: under 13 (or disabled) + residency.
-    if (resident && (disabled || (age != null && age < 13))) care++;
+    // §21 dependent care: a QUALIFYING CHILD under 13 (§21(b)(1)(A) → §152(c)),
+    // OR any dependent/spouse who is disabled (§21(b)(1)(B)); both need residency.
+    if (resident && (disabled || (qualChildRel && age != null && age < 13))) care++;
   }
   // §24(h)(4) ODC: every dependent who is NOT a CTC qualifying child.
   const otherDependents = Math.max(0, dependents.length - ctc);
