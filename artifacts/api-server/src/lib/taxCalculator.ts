@@ -46,6 +46,8 @@ import {
   type TaxYear,
 } from "./taxYears";
 export { SUPPORTED_TAX_YEARS, LATEST_YEAR, resolveTaxYear };
+// T1.5 #9 — single source of truth for filing-status classification (anti-QSS-cluster).
+import { filingStatusTraits } from "./filingStatusTraits";
 export type { TaxYear };
 
 // ── Federal brackets per year ─────────────────────────────────────────────────
@@ -5563,9 +5565,10 @@ export function calculateForeignTaxCredit(params: {
   totalTaxableIncome?: number;
   preCreditUsTax?: number;
 }): ForeignTaxCreditCalculation {
-  // §904(j)(2)(C): the $600 simplified (no-Form-1116) limit is for "a joint
-  // return" only; a §2(a) qualifying surviving spouse files singly → $300.
-  const isMfj = params.filingStatus === "married_filing_jointly";
+  // T1.5 #9 — §904(j)(2)(C): the $600 simplified (no-Form-1116) limit is for "a
+  // joint return" only; a §2(a) QSS files singly → $300. jointForFtcSimplified
+  // is true ONLY for MFJ.
+  const isMfj = filingStatusTraits(params.filingStatus).jointForFtcSimplified;
   const simplifiedLimit = isMfj ? FTC_SIMPLIFIED_LIMIT_MFJ : FTC_SIMPLIFIED_LIMIT_SINGLE;
   const amount = Math.max(0, params.foreignTaxPaid);
   const exceededSimplifiedLimit = amount > simplifiedLimit;
@@ -7479,10 +7482,11 @@ export function calculateSocialSecurityTaxability(params: {
   const provisional = Math.max(0, params.agiExcludingSs) + Math.max(0, params.taxExemptInterest) + halfSs;
 
   // §86(c): the $32,000/$44,000 base amounts are for "a joint return" only.
-  // A §2(a) qualifying surviving spouse is NOT married and NOT filing a joint
-  // return → §86(c)(1)(A) "any other case" = $25,000/$34,000 (Pub 915 groups
-  // QSS with single/HoH). (Contrast §1411 NIIT, which DOES group QSS with joint.)
-  const isMfj = params.filingStatus === "married_filing_jointly";
+  // T1.5 #9 — §86(c)(1)(A): a §2(a) QSS is NOT filing a "joint return" → "any
+  // other case" $25,000/$34,000 (Pub 915 groups QSS with single/HoH).
+  // jointForSsBase is true ONLY for MFJ. (Contrast §1411 NIIT, which groups QSS
+  // with joint — see jointForNiit.)
+  const isMfj = filingStatusTraits(params.filingStatus).jointForSsBase;
   const isMfsWithSpouse = params.filingStatus === "married_filing_separately" &&
                           !params.mfsLivedApartAllYear;
 
@@ -7539,15 +7543,9 @@ export function calculateSocialSecurityTaxability(params: {
 // Thresholds (not inflation-adjusted): $200k single, $250k MFJ, $125k MFS.
 const NIIT_RATE = 0.038;
 function niitThreshold(filingStatus: string): number {
-  switch (filingStatus) {
-    case "married_filing_jointly":
-    case "qualifying_widow":
-      return 250000;
-    case "married_filing_separately":
-      return 125000;
-    default:
-      return 200000; // single, head_of_household
-  }
+  // T1.5 #9 — §1411(b)(1) groups "surviving spouse" with joint at $250k.
+  const t = filingStatusTraits(filingStatus);
+  return t.jointForNiit ? 250000 : t.isMfs ? 125000 : 200000;
 }
 
 export interface NiitCalculation {
@@ -7586,20 +7584,12 @@ export function calculateNiit(params: {
 const ADDITIONAL_MEDICARE_RATE = 0.009;
 
 function additionalMedicareThreshold(filingStatus: string): number {
-  switch (filingStatus) {
-    case "married_filing_jointly":
-      return 250000;
-    case "married_filing_separately":
-      return 125000;
-    // NOTE: qualifying surviving spouse falls in the §3101(b)(2)(C)/§1401(b)(2)(C)
-    // "any other case" bucket = $200,000 (Form 8959 lists QSS with single/HoH).
-    // A §2(a) surviving spouse files singly, NOT a "joint return", so the
-    // $250,000 joint threshold does NOT apply — UNLIKE NIIT (§1411(b)(1), which
-    // explicitly groups "surviving spouse" with joint at $250,000) and unlike
-    // the income-tax brackets/standard deduction. Falls through to default.
-    default:
-      return 200000; // single, head_of_household, qualifying_widow
-  }
+  // T1.5 #9 — §3101(b)(2)(C)/§1401(b)(2)(C): a QSS files singly, NOT a "joint
+  // return", so it falls in the "any other case" $200k bucket (Form 8959 lists
+  // QSS with single/HoH) — UNLIKE NIIT (§1411(b)(1) groups surviving spouse with
+  // joint). jointForAddlMedicare is true ONLY for MFJ.
+  const t = filingStatusTraits(filingStatus);
+  return t.jointForAddlMedicare ? 250000 : t.isMfs ? 125000 : 200000;
 }
 
 export interface AdditionalMedicareTaxCalculation {

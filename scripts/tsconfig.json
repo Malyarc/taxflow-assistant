@@ -151,6 +151,7 @@
     "src/tax-engine-tax-table-mode-tests.ts",
     "src/tax-engine-golden-irs-examples-tests.ts",
     "src/tax-engine-law-currency-fixture-tests.ts",
-    "src/tax-engine-mef-diagnostics-tests.ts"
+    "src/tax-engine-mef-diagnostics-tests.ts",
+    "src/tax-engine-filing-status-traits-tests.ts"
   ]
 }

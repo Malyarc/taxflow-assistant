@@ -100,6 +100,8 @@ import {
   type AdoptionCreditCalculation,
   type RdCreditCalculation,
 } from "./taxCalculator";
+// T1.5 #9 — single source of truth for filing-status classification (anti-QSS-cluster).
+import { filingStatusTraits } from "./filingStatusTraits";
 import {
   computeForm4797,
   type BusinessPropertySaleFact,
@@ -2551,8 +2553,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // adjustment; engine applies the $250k / $500k cap by filing status; remainder
   // flows to LTCG. CPA confirms the 2-of-5 ownership-and-use test (Pub 523).
   const homeSaleGrossGain = Math.max(0, homeSaleGrossGainAdj);
-  const section121Cap = (client.filingStatus === "married_filing_jointly" ||
-                         client.filingStatus === "qualifying_widow") ? 500000 : 250000;
+  // T1.5 #9 — §121(b)(2): the $500k exclusion is for joint filers; the statute
+  // groups a surviving spouse with joint, so QSS gets $500k too (jointForSection121).
+  const section121Cap = filingStatusTraits(client.filingStatus).jointForSection121 ? 500000 : 250000;
   const homeSaleSection121Exclusion = Math.min(homeSaleGrossGain, section121Cap);
   const homeSaleTaxableGain = Math.max(0, homeSaleGrossGain - section121Cap);
 
