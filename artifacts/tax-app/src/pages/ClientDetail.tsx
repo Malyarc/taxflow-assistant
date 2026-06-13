@@ -74,6 +74,10 @@ import { ReviewExtractionModal } from "@/components/ReviewExtractionModal";
 import { localityLabel } from "@/lib/localityLabels";
 import { downloadFile } from "@/lib/download";
 import { ADJUSTMENT_TYPE_LABELS } from "@/lib/adjustmentLabels";
+// UX 2.0 (T2.3 D5) — shared diff grammar; (D4) shared provenance figure.
+import { amendDeltaClass, yoyDeltaClass } from "@/lib/delta";
+import { Money } from "@/components/patterns/Money";
+import type { ProvenanceChain } from "@/components/patterns/Provenance";
 import {
   FileText, FileSpreadsheet, Files, CandlestickChart, Building2, Network,
   Wallet, Calculator, GitCompareArrows, SlidersHorizontal, Target,
@@ -978,37 +982,9 @@ function fmtAmendCol(n: number): string {
   return n < 0 ? `(${abs})` : abs;
 }
 
-// FE3 — Form 1040-X delta coloring. For most lines a HIGHER value is worse for
-// the taxpayer (more income/tax/amount-owed → red on an increase). But on
-// "money-back" lines — deductions, credits, withholding, payments, refundable
-// credits, and the refund line — a HIGHER value is BETTER, so a positive
-// netChange there is favorable (green), not red. Keyed by the stable Form 1040-X
-// line refs built in form1040x.ts. Credit-detail refs 7a–7f are credits (better);
-// 6a is the cap-gains tax component (worse).
-const AMEND_BETTER_WHEN_HIGHER = new Set([
-  "2", "4b", "7", "7a", "7b", "7c", "7d", "7e", "7f",
-  "11", "13", "14", "16", "20", "S2", "S3",
-]);
-function amendDeltaClass(lineRef: string, netChange: number): string {
-  if (!Number.isFinite(netChange) || netChange === 0) return "";
-  const higherIsBetter = AMEND_BETTER_WHEN_HIGHER.has(lineRef);
-  const favorable = higherIsBetter ? netChange > 0 : netChange < 0;
-  return favorable ? "text-success" : "text-destructive";
-}
-
-// FE3 — Year-over-year delta coloring (keyed by metric label). Income/tax lines
-// are "higher is worse" (an increase is unfavorable → red); deductions, credits,
-// and refunds are "higher is better" (an increase is favorable → green). The old
-// code colored EVERY positive delta green, which mis-signaled rising tax/income.
-const YOY_HIGHER_IS_WORSE = new Set([
-  "Total Income", "AGI", "Taxable Income", "Federal Tax", "State Tax",
-  "AMT", "SE Tax", "NIIT", "Net Capital Gain/Loss (Sch D)", "Rental Net (Sch E)",
-]);
-function yoyDeltaClass(label: string, delta: number): string {
-  if (!Number.isFinite(delta) || delta === 0) return "";
-  const favorable = YOY_HIGHER_IS_WORSE.has(label) ? delta < 0 : delta > 0;
-  return favorable ? "text-success" : "text-destructive";
-}
+// FE3 delta coloring (Form 1040-X amend + year-over-year) now lives in the
+// shared diff grammar at @/lib/delta (T2.3 D5) — amendDeltaClass / yoyDeltaClass
+// are imported above. The line/label classification sets moved there verbatim.
 
 function Form1040xCard({ clientId, taxYear }: { clientId: number; taxYear: number }) {
   const qc = useQueryClient();
@@ -1745,24 +1721,58 @@ function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: nu
             <Card>
               <CardHeader><CardTitle className="text-sm">Income Summary</CardTitle></CardHeader>
               <CardContent className="space-y-3 text-sm">
-                {[
-                  ["Total Income", taxReturn.totalIncome],
-                  ["Adjusted Gross Income", taxReturn.adjustedGrossIncome],
-                  ["Standard/Itemized Deduction", taxReturn.standardDeduction],
-                  ["Taxable Income", taxReturn.taxableIncome],
-                  ["Effective Tax Rate", null],
-                ].map(([label]) => (
-                  <div key={String(label)} className="flex justify-between">
-                    <span className="text-muted-foreground">{String(label)}</span>
-                    <span className="font-mono font-semibold">
-                      {label === "Effective Tax Rate" ? pct(Number(taxReturn.effectiveTaxRate)) :
-                        label === "Total Income" ? fmt(Number(taxReturn.totalIncome)) :
-                        label === "Adjusted Gross Income" ? fmt(Number(taxReturn.adjustedGrossIncome)) :
-                        label === "Standard/Itemized Deduction" ? fmt(Number(taxReturn.standardDeduction)) :
-                        fmt(Number(taxReturn.taxableIncome))}
-                    </span>
-                  </div>
-                ))}
+                {/* T2.3 D4 — AGI and Taxable Income are click-to-explain: each
+                    shows the engine identity + components that tie out to it. */}
+                {(() => {
+                  const totalIncome = Number(taxReturn.totalIncome ?? 0);
+                  const agi = Number(taxReturn.adjustedGrossIncome ?? 0);
+                  const qbi = Number(taxReturn.qbiDeduction ?? 0);
+                  const taxable = Number(taxReturn.taxableIncome ?? 0);
+                  const stdDed = Number(taxReturn.standardDeduction ?? 0);
+                  const deductionUsed = agi - qbi - taxable; // ties to the engine taxable identity
+                  const adjTotal = totalIncome - agi;
+                  const known = [
+                    ["HSA deduction (§223)", Number(taxReturn.hsaDeduction ?? 0)],
+                    ["IRA deduction (§219)", Number(taxReturn.iraDeduction ?? 0)],
+                    ["SE health insurance (§162(l))", Number(taxReturn.sehiDeduction ?? 0)],
+                    ["NOL carryforward (§172)", Number(taxReturn.nolDeduction ?? 0)],
+                  ].filter(([, v]) => Math.abs(Number(v)) > 0.005) as Array<[string, number]>;
+                  const knownSum = known.reduce((a, [, v]) => a + v, 0);
+                  const residualAdj = adjTotal - knownSum;
+                  const agiChain: ProvenanceChain = {
+                    lineRef: "Form 1040, line 11",
+                    identity: "AGI = Total income − Adjustments to income",
+                    result: agi,
+                    components: [
+                      { label: "Total income", value: totalIncome, lineRef: "line 9" },
+                      ...known.map(([label, v]) => ({ label, value: -v })),
+                      ...(Math.abs(residualAdj) > 0.005 ? [{ label: "Other adjustments (Sch 1 Pt II)", value: -residualAdj }] : []),
+                    ],
+                  };
+                  const taxableChain: ProvenanceChain = {
+                    lineRef: "Form 1040, line 15",
+                    identity: "Taxable income = AGI − Deduction − QBI deduction",
+                    result: taxable,
+                    components: [
+                      { label: "Adjusted gross income", value: agi, lineRef: "line 11" },
+                      { label: "Deduction (standard or itemized)", value: -deductionUsed, lineRef: "line 12" },
+                      ...(Math.abs(qbi) > 0.005 ? [{ label: "QBI deduction (§199A)", value: -qbi, lineRef: "line 13" }] : []),
+                    ],
+                    note: "Floored at $0; QBI cap reduced by net capital gain (§199A(e)(3)).",
+                  };
+                  const Row = ({ label, children }: { label: string; children: React.ReactNode }) => (
+                    <div className="flex justify-between"><span className="text-muted-foreground">{label}</span>{children}</div>
+                  );
+                  return (
+                    <>
+                      <Row label="Total Income"><span className="font-mono font-semibold">{fmt(totalIncome)}</span></Row>
+                      <Row label="Adjusted Gross Income"><Money value={agi} chain={agiChain} className="font-mono font-semibold" /></Row>
+                      <Row label="Standard/Itemized Deduction"><span className="font-mono font-semibold">{fmt(stdDed)}</span></Row>
+                      <Row label="Taxable Income"><Money value={taxable} chain={taxableChain} className="font-mono font-semibold" /></Row>
+                      <Row label="Effective Tax Rate"><span className="font-mono font-semibold">{pct(Number(taxReturn.effectiveTaxRate))}</span></Row>
+                    </>
+                  );
+                })()}
               </CardContent>
             </Card>
             <Card>
@@ -3071,6 +3081,10 @@ export default function ClientDetail() {
           </div>
         </div>
         <div className="flex shrink-0 gap-2">
+          {/* T2.3 D3 — open the 3-pane review workspace for this return. */}
+          <Link href={`/clients/${clientId}/review`}>
+            <Button><FileSpreadsheet className="mr-1.5 h-4 w-4" />Review workspace</Button>
+          </Link>
           <Link href={`/clients/${clientId}/edit`}>
             <Button variant="outline"><Pencil className="mr-1.5 h-4 w-4" />Edit Client</Button>
           </Link>
@@ -4649,7 +4663,7 @@ const PLANNING_CATEGORY_BADGE: Record<string, string> = {
   business: "bg-brand/10 text-primary",
   investment: "bg-brand/10 text-primary",
   credits: "bg-brand/10 text-primary",
-  estate: "bg-purple-100 text-purple-900",
+  estate: "bg-brand/10 text-foreground",
 };
 
 function confidenceBadgeColor(confidence: number): string {
@@ -5269,14 +5283,14 @@ function AiDiscoveryCard({ clientId }: { clientId: number }) {
     },
   });
   return (
-    <Card className="border-fuchsia-200 bg-fuchsia-50/30">
+    <Card className="border-brand/20 bg-brand/5">
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <CardTitle className="text-base text-fuchsia-900">
+            <CardTitle className="text-base text-foreground">
               AI strategy discovery (Phase H — H8)
             </CardTitle>
-            <div className="text-xs text-fuchsia-700 mt-1">
+            <div className="text-xs text-brand-ink mt-1">
               Ask the LLM to scan the client's full picture + the entire 20-rule
               catalog and surface candidate strategies the deterministic rule
               engine may have missed. Math stays deterministic; LLM only
@@ -5294,13 +5308,13 @@ function AiDiscoveryCard({ clientId }: { clientId: number }) {
         </div>
       </CardHeader>
       {!enabled ? null : isLoading ? (
-        <CardContent className="text-sm text-fuchsia-700">Scanning catalog...</CardContent>
+        <CardContent className="text-sm text-brand-ink">Scanning catalog...</CardContent>
       ) : error ? (
         <CardContent className="text-sm text-destructive">
           Discovery failed. Check server logs.
         </CardContent>
       ) : !data ? null : (data.candidates ?? []).length === 0 ? (
-        <CardContent className="text-sm text-fuchsia-700">
+        <CardContent className="text-sm text-brand-ink">
           {data.aiUsed
             ? "AI scanned the catalog and didn't find any additional strategies for this client. The deterministic rule engine has covered the obvious opportunities."
             : "AI is disabled on this server (no AI_API_KEY). Enable AI to use Discovery."}
@@ -5310,11 +5324,11 @@ function AiDiscoveryCard({ clientId }: { clientId: number }) {
           {(data.candidates ?? []).map((c, i) => {
             const conf = Number(c.confidence ?? 0);
             return (
-              <div key={i} className="rounded border border-fuchsia-200 bg-white/40 p-3">
+              <div key={i} className="rounded border border-brand/20 bg-white/40 p-3">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="font-medium text-fuchsia-900">{c.name}</div>
-                    <div className="text-xs text-fuchsia-700">{c.ircSection}</div>
+                    <div className="font-medium text-foreground">{c.name}</div>
+                    <div className="text-xs text-brand-ink">{c.ircSection}</div>
                   </div>
                   <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium ${
                     conf >= 0.7 ? "bg-success/10 text-success" :
@@ -5340,7 +5354,7 @@ function AiDiscoveryCard({ clientId }: { clientId: number }) {
                     </span>
                   </div>
                 ) : null}
-                <p className="mt-2 text-fuchsia-900">{c.rationale}</p>
+                <p className="mt-2 text-foreground">{c.rationale}</p>
                 {Array.isArray(c.prerequisiteData) && c.prerequisiteData.length > 0 ? (
                   <div className="mt-2 rounded border border-amber-200 bg-amber-50 p-2 text-xs">
                     <div className="font-medium text-amber-900 mb-1">Data to gather to confirm:</div>
@@ -5352,7 +5366,7 @@ function AiDiscoveryCard({ clientId }: { clientId: number }) {
               </div>
             );
           })}
-          <div className="text-[10px] text-fuchsia-700 pt-2 border-t border-fuchsia-200">
+          <div className="text-[10px] text-brand-ink pt-2 border-t border-brand/20">
             AI: {data.aiUsed ? `${data.model} (engine math is sacred — LLM produces qualitative candidates only)` : "disabled (stub)"}
           </div>
         </CardContent>
@@ -5374,14 +5388,14 @@ function StateResidencyComparisonCard({ clientId }: { clientId: number }) {
   };
 
   return (
-    <Card className="border-cyan-200 bg-cyan-50/30">
+    <Card className="border-brand/20 bg-brand/5">
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <CardTitle className="text-base text-cyan-900">
+            <CardTitle className="text-base text-foreground">
               State residency comparison (Phase H — H4)
             </CardTitle>
-            <div className="text-xs text-cyan-700 mt-1">
+            <div className="text-xs text-brand-ink mt-1">
               Run an H2 scenario for each target state to see the federal +
               state tax impact of moving. Defaults to zero-income-tax
               states (TX, FL, NV, WA, TN).
@@ -5399,16 +5413,16 @@ function StateResidencyComparisonCard({ clientId }: { clientId: number }) {
       </CardHeader>
       {data ? (
         <CardContent className="text-sm space-y-3">
-          <div className="text-xs text-cyan-800">
+          <div className="text-xs text-brand-ink">
             Current resident state:{" "}
             <span className="font-medium">{data.baselineState || "—"}</span>{" "}
             (federal tax {fmt(Number(data.baselineFederal ?? 0))}, state tax{" "}
             {fmt(Number(data.baselineState_tax ?? 0))})
           </div>
           {Array.isArray(data.results) && data.results.length > 0 ? (
-            <div className="rounded border border-cyan-200 bg-white/40 overflow-hidden">
+            <div className="rounded border border-brand/20 bg-white/40 overflow-hidden">
               <table className="w-full text-xs">
-                <thead className="bg-cyan-100/50 text-cyan-900">
+                <thead className="bg-brand/10 text-foreground">
                   <tr>
                     <th className="text-left px-3 py-2">Target state</th>
                     <th className="text-right px-3 py-2">Fed tax</th>
@@ -5418,11 +5432,11 @@ function StateResidencyComparisonCard({ clientId }: { clientId: number }) {
                     <th className="text-right px-3 py-2 font-medium">Δ Combined</th>
                   </tr>
                 </thead>
-                <tbody className="text-cyan-900">
+                <tbody className="text-foreground">
                   {data.results.map((r, i) => {
                     const dc = Number(r.deltaCombined ?? 0);
                     return (
-                      <tr key={i} className="border-t border-cyan-100">
+                      <tr key={i} className="border-t border-brand/15">
                         <td className="px-3 py-2 font-medium">{r.state}</td>
                         <td className="text-right tabular-nums px-3 py-2">{fmt(Number(r.scenarioFederal ?? 0))}</td>
                         <td className="text-right tabular-nums px-3 py-2">{fmt(Number(r.scenarioState ?? 0))}</td>
@@ -5438,11 +5452,11 @@ function StateResidencyComparisonCard({ clientId }: { clientId: number }) {
               </table>
             </div>
           ) : (
-            <div className="text-xs text-cyan-700">
+            <div className="text-xs text-brand-ink">
               No target states (client is already in all default states, or all were excluded).
             </div>
           )}
-          <details className="text-xs text-cyan-800">
+          <details className="text-xs text-brand-ink">
             <summary className="cursor-pointer font-medium">Caveats CPAs must communicate to clients</summary>
             <ul className="mt-2 list-disc pl-5 space-y-1">
               <li>Engine mutates resident state but does NOT model income sourcing — W-2 wages remain tied to original work state in this scenario. Real moves require multi-state allocation per state rules.</li>
@@ -5457,7 +5471,7 @@ function StateResidencyComparisonCard({ clientId }: { clientId: number }) {
           Error running state comparison. Check the server logs.
         </CardContent>
       ) : !hasRun ? (
-        <CardContent className="text-xs text-cyan-700">
+        <CardContent className="text-xs text-brand-ink">
           Click "Compare states" to run the analysis.
         </CardContent>
       ) : null}
@@ -5912,25 +5926,25 @@ function RothOptimizerCard({ clientId }: { clientId: number }) {
   const pct = (r: number) => `${(r * 100).toFixed(1)}%`;
 
   return (
-    <Card className="border-violet-200 bg-violet-50/30">
+    <Card className="border-brand/20 bg-brand/5">
       <CardHeader className="pb-3">
-        <CardTitle className="text-base text-violet-900">
+        <CardTitle className="text-base text-foreground">
           Roth-conversion ladder optimizer
         </CardTitle>
-        <div className="text-xs text-violet-700 mt-1">
+        <div className="text-xs text-brand-ink mt-1">
           Fills the top of the client's current federal bracket with traditional-IRA
           conversions each year — locking in today's low rate before RMDs force higher-taxed
           withdrawals later. The current-year tax cost is engine-computed (not estimated).
         </div>
         <div className="flex flex-wrap items-end gap-3 mt-3">
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-violet-800">Traditional IRA balance</label>
+            <label className="text-xs font-medium text-brand-ink">Traditional IRA balance</label>
             <div className="w-44">
               <CurrencyInput value={iraBalance} onChange={setIraBalance} placeholder="$0" />
             </div>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-violet-800">Horizon (years)</label>
+            <label className="text-xs font-medium text-brand-ink">Horizon (years)</label>
             <Input
               type="number"
               min={1}
@@ -5948,21 +5962,21 @@ function RothOptimizerCard({ clientId }: { clientId: number }) {
       {plan ? (
         <CardContent className="text-sm space-y-3">
           <div className="grid grid-cols-3 gap-3">
-            <div className="rounded border border-violet-200 bg-white/50 p-3">
-              <div className="text-[10px] uppercase tracking-wide text-violet-600">Total converted</div>
-              <div className="text-lg font-semibold text-violet-900 tabular-nums">{fmt(Number(plan.totalConverted ?? 0))}</div>
+            <div className="rounded border border-brand/20 bg-white/50 p-3">
+              <div className="text-[10px] uppercase tracking-wide text-brand-ink">Total converted</div>
+              <div className="text-lg font-semibold text-foreground tabular-nums">{fmt(Number(plan.totalConverted ?? 0))}</div>
             </div>
-            <div className="rounded border border-violet-200 bg-white/50 p-3">
-              <div className="text-[10px] uppercase tracking-wide text-violet-600">Total tax cost</div>
-              <div className="text-lg font-semibold text-violet-900 tabular-nums">{fmt(Number(plan.totalConversionTaxCost ?? 0))}</div>
+            <div className="rounded border border-brand/20 bg-white/50 p-3">
+              <div className="text-[10px] uppercase tracking-wide text-brand-ink">Total tax cost</div>
+              <div className="text-lg font-semibold text-foreground tabular-nums">{fmt(Number(plan.totalConversionTaxCost ?? 0))}</div>
             </div>
-            <div className="rounded border border-violet-200 bg-white/50 p-3">
-              <div className="text-[10px] uppercase tracking-wide text-violet-600">Blended rate</div>
-              <div className="text-lg font-semibold text-violet-900 tabular-nums">{pct(Number(plan.blendedConversionRate ?? 0))}</div>
+            <div className="rounded border border-brand/20 bg-white/50 p-3">
+              <div className="text-[10px] uppercase tracking-wide text-brand-ink">Blended rate</div>
+              <div className="text-lg font-semibold text-foreground tabular-nums">{pct(Number(plan.blendedConversionRate ?? 0))}</div>
             </div>
           </div>
           {plan.rmdAvoidance ? (
-            <div className="rounded border border-violet-300 bg-violet-100/40 p-3 text-xs text-violet-900 space-y-1">
+            <div className="rounded border border-brand/30 bg-brand/10 p-3 text-xs text-foreground space-y-1">
               <div className="font-semibold">
                 Lifetime RMD-avoidance ({plan.rmdAvoidance.valueHorizonYears}-yr horizon to ~age 92)
               </div>
@@ -5976,16 +5990,16 @@ function RothOptimizerCard({ clientId }: { clientId: number }) {
                   </span>
                 </span>
               </div>
-              <div className="text-[11px] text-violet-700">
+              <div className="text-[11px] text-brand-ink">
                 Lifetime RMDs: {fmt(Number(plan.rmdAvoidance.baselineRmdTotal))} → {fmt(Number(plan.rmdAvoidance.scenarioRmdTotal))} ·{" "}
                 Medicare IRMAA: {fmt(Number(plan.rmdAvoidance.baselineLifetimeIrmaa))} → {fmt(Number(plan.rmdAvoidance.scenarioLifetimeIrmaa))} ·{" "}
                 tax-free Roth at horizon: <span className="font-medium">{fmt(Number(plan.rmdAvoidance.scenarioRothBalanceFinal))}</span> (omitted from net — upside).
               </div>
             </div>
           ) : null}
-          <div className="rounded border border-violet-200 bg-white/40 overflow-hidden">
+          <div className="rounded border border-brand/20 bg-white/40 overflow-hidden">
             <table className="w-full text-xs">
-              <thead className="bg-violet-100/50 text-violet-900">
+              <thead className="bg-brand/10 text-foreground">
                 <tr>
                   <th className="text-left px-3 py-2">Year</th>
                   <th className="text-right px-3 py-2">Taxable before</th>
@@ -5996,9 +6010,9 @@ function RothOptimizerCard({ clientId }: { clientId: number }) {
                   <th className="text-right px-3 py-2">IRA left</th>
                 </tr>
               </thead>
-              <tbody className="text-violet-900">
+              <tbody className="text-foreground">
                 {(plan.years ?? []).map((y, i) => (
-                  <tr key={i} className="border-t border-violet-100">
+                  <tr key={i} className="border-t border-brand/15">
                     <td className="px-3 py-2 font-medium">{y.taxYear}</td>
                     <td className="text-right tabular-nums px-3 py-2">{fmt(Number(y.taxableIncomeBeforeConversion ?? 0))}</td>
                     <td className="text-right tabular-nums px-3 py-2">{Number.isFinite(Number(y.bracketCeiling)) ? fmt(Number(y.bracketCeiling)) : "—"}</td>
@@ -6011,7 +6025,7 @@ function RothOptimizerCard({ clientId }: { clientId: number }) {
               </tbody>
             </table>
           </div>
-          <details className="text-xs text-violet-800">
+          <details className="text-xs text-brand-ink">
             <summary className="cursor-pointer font-medium">Assumptions &amp; v1 limitations</summary>
             <ul className="mt-2 list-disc pl-5 space-y-1">
               {(plan.assumptions ?? []).map((a, i) => (
@@ -6025,7 +6039,7 @@ function RothOptimizerCard({ clientId }: { clientId: number }) {
           Error building the conversion ladder. Check the server logs.
         </CardContent>
       ) : (
-        <CardContent className="text-xs text-violet-700">
+        <CardContent className="text-xs text-brand-ink">
           Enter the client's traditional-IRA balance and a horizon, then click "Build ladder".
         </CardContent>
       )}

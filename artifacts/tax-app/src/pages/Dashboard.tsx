@@ -1,72 +1,56 @@
-import { useState } from "react";
+/**
+ * UX 2.0 (T2.3 D2/D6) — "Today", the daily landing.
+ *
+ * Firm KPIs, the soonest engagement deadlines (busy-season triage), and a peek
+ * at the top planning opportunities (full list lives on /planning). Rebuilt on
+ * the design-system patterns (PageHeader / StatTile / SectionCard / StatusPill).
+ */
+import { Link } from "wouter";
 import {
   useGetDashboardSummary,
   useGetPlanningHitList,
   useGetSettings,
-  useListPlanningCampaigns,
-  getListPlanningCampaignsQueryKey,
-  useDraftCampaignEmail,
+  useListEngagements,
   getGetPlanningHitListQueryKey,
   getGetSettingsQueryKey,
+  getListEngagementsQueryKey,
 } from "@workspace/api-client-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Link } from "wouter";
-import { UpgradeProCard } from "@/components/UpgradeProCard";
-import { Users, FileClock, Banknote, Receipt, Target, Megaphone, ChevronRight, type LucideIcon } from "lucide-react";
+import { PageHeader } from "@/components/patterns/PageHeader";
+import { StatTile } from "@/components/patterns/StatTile";
+import { SectionCard } from "@/components/patterns/SectionCard";
+import { StatusPill, engagementStatusMeta } from "@/components/patterns/StatusPill";
+import { Money } from "@/components/patterns/Money";
+import { money } from "@/lib/format";
+import { Users, FileClock, Banknote, Receipt, Target, CalendarClock, ChevronRight, ArrowRight } from "lucide-react";
 
-function fmt(n: number | null | undefined): string {
-  if (n == null) return "—";
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
+interface EngagementEntry {
+  clientId: number; firstName: string; lastName: string; taxYear: number;
+  engagementStatus: string; effectiveDeadline: string; daysUntilDeadline: number;
 }
+interface EngagementsResponse { entries: EngagementEntry[]; statusCounts: Record<string, number> }
 
-type Tone = "brand" | "success" | "muted";
-const toneChip: Record<Tone, string> = {
-  brand: "bg-brand/10 text-brand-ink",
-  success: "bg-success/10 text-success",
-  muted: "bg-muted text-muted-foreground",
-};
-const toneValue: Record<Tone, string> = {
-  brand: "text-foreground",
-  success: "text-success",
-  muted: "text-foreground",
-};
-
-function StatCard({ icon: Icon, label, value, tone = "brand" }: { icon: LucideIcon; label: string; value: string | number; tone?: Tone }) {
-  return (
-    <Card>
-      <CardContent className="flex items-center gap-4 p-5">
-        <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${toneChip[tone]}`}>
-          <Icon className="h-5 w-5" strokeWidth={2} />
-        </span>
-        <div className="min-w-0">
-          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
-          <div className={`text-2xl font-bold tabular-nums ${toneValue[tone]}`}>{value}</div>
-        </div>
-      </CardContent>
-    </Card>
-  );
+function urgency(days: number): { tone: "danger" | "warn" | "info" | "neutral"; label: string } {
+  if (days < 0) return { tone: "danger", label: `${Math.abs(days)}d overdue` };
+  if (days <= 14) return { tone: "warn", label: `${days}d left` };
+  if (days <= 45) return { tone: "info", label: `${days}d left` };
+  return { tone: "neutral", label: `${days}d left` };
 }
 
 export default function Dashboard() {
   const { data: summary, isLoading } = useGetDashboardSummary();
-  const { data: settings } = useGetSettings({
-    query: { queryKey: getGetSettingsQueryKey() },
-  });
-  // Hide the planning widget only when settings explicitly says off.
-  // While loading we render the widget — falling back to the prior behavior
-  // and avoiding a flash of "Upgrade to Pro" for an existing Pro firm.
+  const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
   const planningGated = settings?.proTierEnabled === false;
 
   return (
-    <div className="p-8 max-w-6xl mx-auto space-y-8">
-      <div>
-        <div className="text-xs font-semibold uppercase tracking-[0.18em] text-brand-ink">Firm overview</div>
-        <h2 className="mt-1.5 text-3xl font-bold tracking-tight text-foreground">Terminal Overview</h2>
-        <p className="mt-1.5 text-muted-foreground">System status and firm performance metrics.</p>
-      </div>
+    <div className="mx-auto max-w-6xl space-y-8 p-8">
+      <PageHeader
+        eyebrow="Firm overview"
+        title="Today"
+        subtitle="Where the firm stands and what needs attention next."
+        actions={<Link href="/clients/new"><Button>New client</Button></Link>}
+      />
 
       {isLoading ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -74,204 +58,97 @@ export default function Dashboard() {
         </div>
       ) : summary ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <StatCard icon={Users} label="Total Clients" value={summary.totalClients} tone="brand" />
-          <StatCard icon={FileClock} label="Pending Returns" value={summary.pendingReturns} tone="muted" />
-          <StatCard icon={Banknote} label="Total Refunds" value={fmt(summary.totalRefunds)} tone="success" />
-          <StatCard icon={Receipt} label="Avg Refund" value={summary.averageRefund != null ? fmt(summary.averageRefund) : "—"} tone="brand" />
+          <StatTile icon={Users} label="Total clients" value={summary.totalClients} tone="brand" />
+          <StatTile icon={FileClock} label="Pending returns" value={summary.pendingReturns} tone="muted" />
+          <StatTile icon={Banknote} label="Total refunds" value={money(summary.totalRefunds)} tone="success" />
+          <StatTile icon={Receipt} label="Avg refund" value={summary.averageRefund != null ? money(summary.averageRefund) : "—"} tone="brand" />
         </div>
       ) : (
-        <div>No data available</div>
+        <div className="text-sm text-muted-foreground">No data available.</div>
       )}
 
-      {planningGated ? <UpgradeProCard variant="widget" /> : <PlanningHitListWidget />}
-      {planningGated ? null : <PlanningCampaignsWidget />}
+      <div className="grid gap-6 lg:grid-cols-2">
+        <UpcomingDeadlines />
+        {planningGated ? null : <PlanningPeek />}
+      </div>
     </div>
   );
 }
 
-// ── T2.2 D3 — firm-wide planning campaigns (cohorts by strategy) ─────────────
-interface CampaignMember { clientId: number; firstName: string; lastName: string; estSavings: number }
-interface CampaignStats { clientCount: number; minSavings: number; medianSavings: number; maxSavings: number }
-interface Campaign {
-  strategyId: string;
-  name: string;
-  clientCount: number;
-  totalEstSavings: number;
-  medianEstSavings: number;
-  clients: CampaignMember[];
-  stats: CampaignStats;
-}
-function PlanningCampaignsWidget() {
-  // Bounded fan-out (25 clients) + 5-min freshness: this is the dashboard's
-  // second firm-wide aggregation — don't re-pay it on every visit/refocus.
-  const { data, isLoading, isError } = useListPlanningCampaigns(
-    { limit: 25 },
-    { query: { queryKey: getListPlanningCampaignsQueryKey({ limit: 25 }), staleTime: 5 * 60 * 1000 } },
-  );
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [pendingId, setPendingId] = useState<string | null>(null);
-  const [draft, setDraft] = useState<{ strategyId: string; template: string; aiUsed: boolean } | null>(null);
-  const draftEmail = useDraftCampaignEmail();
-  if (isLoading) return <Skeleton className="h-32 w-full" />;
-  if (isError || !data) return null;
-  const campaigns = ((data as unknown as { campaigns: Campaign[] }).campaigns ?? []).slice(0, 6);
-  if (campaigns.length === 0) return null;
-
-  const onDraft = async (campaign: Campaign) => {
-    setDraft(null);
-    setPendingId(campaign.strategyId);
-    try {
-      // The anonymous stats ride along from THIS response — the server runs
-      // no engine passes for a draft.
-      const r = (await draftEmail.mutateAsync({
-        data: { strategyId: campaign.strategyId, cohortStats: campaign.stats },
-      })) as unknown as { template: string; aiUsed: boolean };
-      setDraft({ strategyId: campaign.strategyId, template: r.template, aiUsed: r.aiUsed });
-    } catch {
-      setDraft({ strategyId: campaign.strategyId, template: "Draft failed — try again.", aiUsed: false });
-    } finally {
-      setPendingId(null);
-    }
-  };
+function UpcomingDeadlines() {
+  const { data, isLoading } = useListEngagements(undefined, { query: { queryKey: getListEngagementsQueryKey() } });
+  const resp = data as unknown as EngagementsResponse | undefined;
+  const entries = (resp?.entries ?? []).slice(0, 6);
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center gap-2.5">
-          <span className="grid h-8 w-8 place-items-center rounded-lg bg-brand/10 text-brand-ink">
-            <Megaphone className="h-4 w-4" strokeWidth={2} />
-          </span>
-          <CardTitle className="text-lg">Planning campaigns</CardTitle>
-        </div>
-        <p className="text-xs text-muted-foreground mt-1.5">
-          Clients grouped by strategy across the firm's top planning targets — the batch-outreach view.
-          "Draft email" writes a {"{{firstName}}"}/{"{{estSavings}}"} mail-merge template (no client data
-          is sent to the AI; the merge happens locally).
-        </p>
-      </CardHeader>
-      <CardContent className="space-y-2">
-        {campaigns.map((c) => (
-          <div key={c.strategyId} className="rounded-lg border border-border p-3">
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="font-medium truncate">{c.name}</div>
-                <div className="text-xs text-muted-foreground">
-                  {c.strategyId} · {c.clientCount} client{c.clientCount === 1 ? "" : "s"} · median {fmt(c.medianEstSavings)}
+    <SectionCard
+      icon={CalendarClock}
+      title="Upcoming deadlines"
+      description="The next returns due across the firm, soonest first."
+      actions={<Link href="/firm" className="text-xs text-brand-ink underline-offset-2 hover:underline">Board →</Link>}
+      contentClassName="space-y-2"
+    >
+      {isLoading ? (
+        <Skeleton className="h-40 w-full" />
+      ) : entries.length === 0 ? (
+        <p className="py-3 text-sm text-muted-foreground">No engagements yet.</p>
+      ) : (
+        entries.map((e) => {
+          const u = urgency(e.daysUntilDeadline);
+          const meta = engagementStatusMeta[e.engagementStatus] ?? { tone: "neutral" as const, label: e.engagementStatus };
+          return (
+            <Link key={e.clientId} href={`/clients/${e.clientId}/review`}>
+              <div className="group flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-border p-3 transition-colors hover:border-brand/40 hover:bg-accent">
+                <div className="min-w-0">
+                  <div className="truncate font-medium">{e.firstName} {e.lastName}</div>
+                  <div className="mt-1 flex items-center gap-2">
+                    <StatusPill tone={meta.tone} label={meta.label} dot={false} />
+                    <span className="text-xs text-muted-foreground">{e.effectiveDeadline}</span>
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <StatusPill tone={u.tone} label={u.label} />
+                  <ChevronRight className="h-4 w-4 text-muted-foreground/50 transition-colors group-hover:text-brand" />
                 </div>
               </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <div className="text-base font-semibold tabular-nums text-success">{fmt(c.totalEstSavings)}</div>
-                <Button size="sm" variant="outline" onClick={() => setOpenId(openId === c.strategyId ? null : c.strategyId)}>
-                  {openId === c.strategyId ? "Hide" : "Cohort"}
-                </Button>
-                <Button size="sm" onClick={() => void onDraft(c)} disabled={draftEmail.isPending}>
-                  {pendingId === c.strategyId ? "Drafting…" : "Draft email"}
-                </Button>
+            </Link>
+          );
+        })
+      )}
+    </SectionCard>
+  );
+}
+
+function PlanningPeek() {
+  const { data, isLoading } = useGetPlanningHitList({ limit: 5 }, { query: { queryKey: getGetPlanningHitListQueryKey({ limit: 5 }) } });
+  return (
+    <SectionCard
+      icon={Target}
+      title="Top planning opportunities"
+      description="Highest-value tax-saving opportunities across the roster."
+      actions={<Link href="/planning" className="inline-flex items-center gap-1 text-xs text-brand-ink underline-offset-2 hover:underline">All <ArrowRight className="h-3 w-3" /></Link>}
+      contentClassName="space-y-2"
+    >
+      {isLoading ? (
+        <Skeleton className="h-40 w-full" />
+      ) : !data || data.entries.length === 0 ? (
+        <p className="py-3 text-sm text-muted-foreground">No planning opportunities detected yet.</p>
+      ) : (
+        data.entries.slice(0, 5).map((entry, idx) => (
+          <Link key={entry.clientId} href={`/clients/${entry.clientId}`}>
+            <div className="group flex cursor-pointer items-center justify-between gap-3 rounded-lg border border-border p-3 transition-colors hover:border-brand/40 hover:bg-accent">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-secondary text-xs font-bold tabular-nums text-secondary-foreground">{idx + 1}</div>
+                <div className="min-w-0">
+                  <div className="truncate font-medium">{entry.firstName} {entry.lastName}</div>
+                  <div className="truncate text-xs text-muted-foreground">{entry.state} · TY{entry.taxYear} · {entry.numHits} opportunit{entry.numHits === 1 ? "y" : "ies"}</div>
+                </div>
               </div>
+              <Money value={entry.totalEstSavings} tone="success" className="shrink-0 font-semibold" />
             </div>
-            {openId === c.strategyId && (
-              <div className="mt-2 space-y-1 border-t pt-2">
-                {c.clients.slice(0, 10).map((m) => (
-                  <Link key={m.clientId} href={`/clients/${m.clientId}`}>
-                    <div className="flex cursor-pointer items-center justify-between rounded px-2 py-1 text-sm hover:bg-accent">
-                      <span>{m.firstName} {m.lastName}</span>
-                      <span className="tabular-nums text-success">{fmt(m.estSavings)}</span>
-                    </div>
-                  </Link>
-                ))}
-                {c.clients.length > 10 && (
-                  <div className="px-2 text-xs text-muted-foreground">+{c.clients.length - 10} more</div>
-                )}
-              </div>
-            )}
-            {draft?.strategyId === c.strategyId && (
-              <div className="mt-2 rounded border bg-muted/30 p-3">
-                <pre className="whitespace-pre-wrap font-sans text-xs">{draft.template}</pre>
-                <p className="mt-2 text-[10px] uppercase tracking-wide text-muted-foreground">
-                  {draft.aiUsed ? "AI-drafted template — review before sending." : "Deterministic template (AI off)."}
-                </p>
-              </div>
-            )}
-          </div>
-        ))}
-      </CardContent>
-    </Card>
-  );
-}
-
-function PlanningHitListWidget() {
-  const { data, isLoading, isError, refetch } = useGetPlanningHitList(
-    { limit: 10 },
-    { query: { queryKey: getGetPlanningHitListQueryKey({ limit: 10 }) } },
-  );
-
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-center gap-2.5">
-          <span className="grid h-8 w-8 place-items-center rounded-lg bg-brand/10 text-brand-ink">
-            <Target className="h-4 w-4" strokeWidth={2} />
-          </span>
-          <CardTitle className="text-lg">Top 10 planning targets</CardTitle>
-        </div>
-        <p className="text-xs text-muted-foreground mt-1.5">
-          Ranked by PlanningScore (estSavings × confidence × marginal-rate weight ×
-          engagement complexity × stickiness). Click a client to open their Planning tab.
-        </p>
-      </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <Skeleton className="h-32 w-full" />
-        ) : isError ? (
-          <div className="text-sm text-destructive py-4">
-            Couldn't load planning targets — the server returned an error. This is a
-            system problem, not an empty roster, so the data below may be missing.{" "}
-            <button
-              type="button"
-              onClick={() => refetch()}
-              className="underline underline-offset-2 hover:text-destructive/80"
-            >
-              Retry
-            </button>
-          </div>
-        ) : !data || data.entries.length === 0 ? (
-          <div className="text-sm text-muted-foreground py-4">
-            No planning opportunities detected across the client roster yet.
-            Seed clients with `pnpm --filter @workspace/scripts exec tsx src/seed-dummy-clients.ts`
-            for demo data, or wait for real client returns to be ingested.
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {data.entries.map((entry, idx) => (
-              <Link key={entry.clientId} href={`/clients/${entry.clientId}`}>
-                <div className="group flex items-center justify-between gap-3 rounded-lg border border-border p-3 cursor-pointer transition-colors hover:border-brand/40 hover:bg-accent">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-secondary text-xs font-bold tabular-nums text-secondary-foreground">{idx + 1}</div>
-                    <div className="min-w-0">
-                      <div className="font-medium truncate">{entry.firstName} {entry.lastName}</div>
-                      <div className="text-xs text-muted-foreground truncate">
-                        {entry.state} · TY{entry.taxYear} · AGI {fmt(entry.agi)} · {(entry.federalMarginalRate * 100).toFixed(0)}% marginal
-                      </div>
-                      <div className="text-xs text-muted-foreground mt-0.5 truncate">
-                        {entry.numHits} opportunit{entry.numHits === 1 ? "y" : "ies"}: {entry.topHits.slice(0, 3).map((h) => h.strategyId).join(", ")}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <div className="text-right">
-                      <div className="text-base font-semibold tabular-nums text-success">{fmt(entry.totalEstSavings)}</div>
-                      <Badge variant="outline" className="text-xs mt-0.5">
-                        score {entry.planningScore.toLocaleString()}
-                      </Badge>
-                    </div>
-                    <ChevronRight className="h-4 w-4 text-muted-foreground/50 transition-colors group-hover:text-brand" />
-                  </div>
-                </div>
-              </Link>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+          </Link>
+        ))
+      )}
+    </SectionCard>
   );
 }

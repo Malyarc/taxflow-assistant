@@ -77,6 +77,38 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+
+  /* ── UX 2.0 (T2.3 D1) — type scale ──────────────────────────────────────
+   * A 1.20 (minor-third) modular scale anchored at 14px (0.875rem) body.
+   * Exposed as named text utilities (text-metric, text-eyebrow, …) with
+   * paired line-heights so vertical rhythm is consistent everywhere.
+   * The portable layer: these names transfer 1:1 to Haven's portals. */
+  --text-eyebrow: 0.6875rem;            /* 11px — uppercase section kickers */
+  --text-eyebrow--line-height: 1rem;
+  --text-eyebrow--letter-spacing: 0.14em;
+  --text-eyebrow--font-weight: 600;
+  --text-caption: 0.75rem;              /* 12px — muted helper text */
+  --text-caption--line-height: 1.1rem;
+  --text-data: 0.8125rem;               /* 13px — dense data grids / line items */
+  --text-data--line-height: 1.15rem;
+  --text-metric: 2rem;                  /* 32px — headline figures (refund, KPI) */
+  --text-metric--line-height: 2.25rem;
+  --text-metric--letter-spacing: -0.02em;
+  --text-metric--font-weight: 700;
+  --text-display: 1.875rem;             /* 30px — page titles */
+  --text-display--line-height: 2.25rem;
+  --text-display--letter-spacing: -0.02em;
+  --text-display--font-weight: 700;
+
+  /* ── UX 2.0 (T2.3 D1) — motion ──────────────────────────────────────────
+   * Tokenized easing + duration. Honored app-wide; killed under
+   * prefers-reduced-motion (see the base layer below). */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-emphasized: cubic-bezier(0.3, 0, 0, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-slow: 280ms;
 }
 
   /* LIGHT MODE */
@@ -150,6 +182,15 @@
   --shadow-2xl: 0px 25px 50px -12px rgba(0,0,0,0.25);
   --tracking-normal: 0em;
   --spacing: 0.25rem;
+
+  /* UX 2.0 (T2.3 D1) — semantic elevation. Named by intent (resting card →
+   * floating overlay) so surfaces compose predictably instead of each picking
+   * a raw shadow-* class. Mapped onto the existing shadow ramp. */
+  --elevation-flat: none;
+  --elevation-card: var(--shadow-xs);
+  --elevation-raised: var(--shadow-md);
+  --elevation-overlay: var(--shadow-lg);
+  --elevation-popover: var(--shadow-xl);
 
   --sidebar-primary-border: hsl(var(--sidebar-primary));
   --sidebar-primary-border: hsl(from hsl(var(--sidebar-primary)) h s calc(l + var(--opaque-button-border-intensity)) / alpha);
@@ -240,6 +281,62 @@
   body {
     @apply font-sans antialiased bg-background text-foreground;
   }
+
+  /* UX 2.0 (T2.3 D7) — accessible focus. One keyboard-only ring across the
+   * whole app (mouse clicks don't show it). Components may opt out by setting
+   * their own focus-visible styles; this is the floor. */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+    border-radius: var(--radius-sm);
+  }
+
+  /* Respect the OS "reduce motion" setting — animations collapse to instant. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+@layer components {
+  /* ── UX 2.0 (T2.3 D1) — typography patterns ───────────────────────────────
+   * Size/weight/rhythm only — color is applied by the caller (text-muted-
+   * foreground, text-brand-ink, …) so one type role works on any surface. */
+  .t-eyebrow {
+    font-size: var(--text-eyebrow);
+    line-height: var(--text-eyebrow--line-height);
+    letter-spacing: var(--text-eyebrow--letter-spacing);
+    font-weight: var(--text-eyebrow--font-weight);
+    text-transform: uppercase;
+  }
+  .t-display {
+    font-size: var(--text-display);
+    line-height: var(--text-display--line-height);
+    letter-spacing: var(--text-display--letter-spacing);
+    font-weight: var(--text-display--font-weight);
+  }
+  .t-metric {
+    font-size: var(--text-metric);
+    line-height: var(--text-metric--line-height);
+    letter-spacing: var(--text-metric--letter-spacing);
+    font-weight: var(--text-metric--font-weight);
+    font-variant-numeric: tabular-nums;
+  }
+  /* Every dollar/percent figure: aligned, monospaced digits via the proportional
+   * sans (no font swap). Use on any numeric cell for column alignment. */
+  .t-num { font-variant-numeric: tabular-nums; }
+
+  /* ── UX 2.0 (T2.3 D1) — semantic elevation utilities ──────────────────── */
+  .elevation-card { box-shadow: var(--elevation-card); }
+  .elevation-raised { box-shadow: var(--elevation-raised); }
+  .elevation-overlay { box-shadow: var(--elevation-overlay); }
+  .elevation-popover { box-shadow: var(--elevation-popover); }
 }
 
 /**
@@ -369,6 +466,18 @@
   .scrollbar-thin::-webkit-scrollbar { height: 6px; width: 6px; }
   .scrollbar-thin::-webkit-scrollbar-thumb { background-color: hsl(var(--border)); border-radius: 9999px; }
   .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+
+  /* UX 2.0 (T2.3 D7) — skip-to-content link. Visually hidden until focused,
+   * then pinned top-left so keyboard users jump past the chrome. */
+  .skip-link {
+    position: fixed;
+    top: 0.5rem;
+    left: 0.5rem;
+    z-index: 100;
+    transform: translateY(-200%);
+    transition: transform var(--duration-base) var(--ease-standard);
+  }
+  .skip-link:focus { transform: translateY(0); }
 }
 
 /* ── Print styles: hide chrome and tabs, show only the calculator content ── */

@@ -10,6 +10,18 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   </head>
   <body>
+    <!-- UX 2.0 (T2.3 D7) — set the theme class before first paint to avoid a
+         flash of the wrong mode. Mirrors design/theme.tsx; runs synchronously. -->
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem("taxflow-theme") || "system";
+          var dark = t === "dark" || (t === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+          document.documentElement.classList.toggle("dark", dark);
+          document.documentElement.style.colorScheme = dark ? "dark" : "light";
+        } catch (e) { /* no-op */ }
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
