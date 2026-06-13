@@ -102,6 +102,8 @@ import {
 } from "./taxCalculator";
 // T1.5 #9 — single source of truth for filing-status classification (anti-QSS-cluster).
 import { filingStatusTraits } from "./filingStatusTraits";
+// T1.5 #5 — per-dependent facts → exact credit-gating count derivation.
+import { deriveDependentCounts, type DependentFact } from "./dependents";
 import {
   computeForm4797,
   type BusinessPropertySaleFact,
@@ -574,6 +576,15 @@ export interface TaxReturnInputs {
    * See docs/accuracy/tax-table-mode.md.
    */
   taxComputationMethod?: TaxComputationMethod;
+  /**
+   * T1.5 #5 — optional per-dependent facts (DOB / SSN-present / relationship /
+   * residency / student / disabled). When present + non-empty, the engine
+   * DERIVES every credit's dependent count (CTC / ODC / EITC-child / §21 care /
+   * under-6) from these and OVERRIDES the scalar client counts — exact gating.
+   * Absent → the legacy scalar counts are used unchanged. (Haven-seam contract
+   * addition — keep PURE.)
+   */
+  dependents?: DependentFact[];
 }
 
 // ── 1099 summary ────────────────────────────────────────────────────────────
@@ -1625,6 +1636,19 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     spouseAge: toCount(clientRaw.spouseAge, 130),
     targetRetirementAge: toCount(clientRaw.targetRetirementAge, 130),
   };
+  // T1.5 #5 — when per-dependent facts are supplied, DERIVE the credit-gating
+  // counts (CTC / ODC / EITC-child / §21 care / under-6) from each dependent's
+  // DOB/SSN/relationship and override the scalar counts. The taxpayer's birth
+  // year (from taxpayerAge) enables the EITC "younger than the taxpayer" test.
+  if (inputs.dependents && inputs.dependents.length > 0) {
+    const tpBirthYear = client.taxpayerAge != null ? taxYear - Number(client.taxpayerAge) : null;
+    const d = deriveDependentCounts(inputs.dependents, taxYear, tpBirthYear);
+    client.dependentsUnder17 = d.dependentsUnder17;
+    client.otherDependents = d.otherDependents;
+    client.eitcQualifyingChildren = d.eitcQualifyingChildren;
+    client.dependentsForCareCredit = d.dependentsForCareCredit;
+    client.childrenUnder6 = d.childrenUnder6;
+  }
   // Year used to index §179/bonus/§461(l)/§448(c) maps below. Clamp to the
   // supported range (resolveTaxYear: <2024→2024, >LATEST→latest) so these maps
   // resolve IDENTICALLY to every other year-indexed value in the engine. Multi-

@@ -154,6 +154,7 @@
     "src/tax-engine-mef-diagnostics-tests.ts",
     "src/tax-engine-filing-status-traits-tests.ts",
     "src/tax-engine-cross-year-metamorphic-tests.ts",
-    "src/tax-engine-community-property-mfs-tests.ts"
+    "src/tax-engine-community-property-mfs-tests.ts",
+    "src/tax-engine-per-dependent-tests.ts"
   ]
 }

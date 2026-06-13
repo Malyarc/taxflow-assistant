@@ -59,6 +59,21 @@ The engine's accuracy decays silently as tax law changes. Three defenses:
   deferral, §53(c)/(d) limits, carryforward — `tax-engine-t10b-othertax-tests.ts`
   + the AMT-credit round-trip in `tax-engine-carryforward-audit-tests.ts`) and
   T1.0l (§1(h) Schedule D Tax Worksheet). Remaining: the rare line 2c/2d prefs above.
+- **#5 Per-dependent data model** — the PURE engine core is delivered: each
+  dependent's DOB/SSN/relationship/residency/student/disabled drives the EXACT
+  credit gating (CTC / ODC / EITC-child / §21 care / under-6) via
+  `dependents.ts` (`deriveDependentCounts`), threaded as the
+  `TaxReturnInputs.dependents` contract (the Haven seam) — present → derives +
+  overrides the scalar counts; absent → legacy counts unchanged.
+  `tax-engine-per-dependent-tests.ts` (16 hand-calc'd). **Product-surface
+  follow-up (per the migration roadmap — engine ports, frontend/DB do NOT):** the
+  `dependents` DB table + CRUD endpoints + a per-dependent entry UI + organizer/
+  roll-forward of dependent rows. Until that lands, the derivation is reachable
+  by any `computeTaxReturnPure` caller (Haven, workpapers) but not yet by the
+  TaxFlow app's CRUD — same engine-capability/UI-follow-up split as #1.
+- **#6 Community-property MFS** — `communityProperty.ts` (9-state set + 50/50
+  Form 8958 split) wired into the MFJ-vs-MFS optimizer (FS-3 closed);
+  `tax-engine-community-property-mfs-tests.ts` (35).
 - **#8 Law-watch** — this file + `tax-engine-law-currency-fixture-tests.ts`.
 - **#9 Filing-status trait table** — `filingStatusTraits.ts` + property test;
   cluster threshold functions adopt it; remaining sites migrate incrementally.
