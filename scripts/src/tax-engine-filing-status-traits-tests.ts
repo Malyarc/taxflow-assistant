@@ -14,6 +14,7 @@ import {
   usesJointBrackets,
   type FilingStatusName,
 } from "../../artifacts/api-server/src/lib/filingStatusTraits";
+import { computeTaxReturnPure } from "../../artifacts/api-server/src/lib/taxReturnEngine";
 
 const PASS: string[] = [];
 const FAIL: string[] = [];
@@ -85,6 +86,24 @@ for (const st of ["single", "head_of_household"] as const) {
   const t = filingStatusTraits(st);
   ok(`${st}: joint for nothing`, !t.jointForNiit && !t.jointForSection121 && !t.jointForSection199a && !t.jointForAddlMedicare && !t.jointForEitcColumn);
   ok(`${st}: not SALT-halved, fully credit-eligible`, !t.saltCapHalved && t.eitcEligibleBase && t.educationCreditEligible && t.sliEligible);
+}
+
+// ── ENGINE REGRESSION (code-review fix): QSS ACA household head-count ──────
+// A §2(a) QSS has NO living spouse → the §36B family unit is taxpayer + deps,
+// NOT taxpayer + spouse + deps. Was over-counted by 1 (the isMfj-groups-QSS bug).
+{
+  const r = computeTaxReturnPure({
+    client: { filingStatus: "qualifying_widow", state: "FL", taxYear: 2024,
+      dependentsUnder17: 1, acaAnnualPremium: 8000, acaAnnualSlcsp: 9000, acaAdvanceAptc: 4000 } as never,
+    w2s: [{ taxYear: 2024, wagesBox1: 40000 } as never], form1099s: [], adjustments: [], taxYear: 2024,
+  } as never) as { premiumTaxCredit: { householdSize: number } };
+  ok("QSS ACA household = taxpayer + 1 dep = 2 (no phantom spouse)", r.premiumTaxCredit.householdSize === 2);
+  const mfj = computeTaxReturnPure({
+    client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024,
+      dependentsUnder17: 1, acaAnnualPremium: 8000, acaAnnualSlcsp: 9000, acaAdvanceAptc: 4000 } as never,
+    w2s: [{ taxYear: 2024, wagesBox1: 40000 } as never], form1099s: [], adjustments: [], taxYear: 2024,
+  } as never) as { premiumTaxCredit: { householdSize: number } };
+  ok("MFJ ACA household = taxpayer + spouse + 1 dep = 3 (control — spouse still counts)", mfj.premiumTaxCredit.householdSize === 3);
 }
 
 console.log(`\nT1.5 #9 — Filing-status trait table (single source of truth; anti-QSS-cluster):`);

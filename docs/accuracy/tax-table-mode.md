@@ -63,6 +63,17 @@ TY2024/2025, the ≥$100k worksheet path, the bottom rows, and end-to-end throug
 `computeTaxReturnPure` (the table line 16 is exactly $3 above the formula line 16
 on a single $50k W-2 return; the rest of the return is identical).
 
+## Reachability (where the mode can be selected)
+
+`taxComputationMethod` is an **engine-level input on `TaxReturnInputs`** — the
+pure `computeTaxReturnPure` migration seam. Any programmatic caller (the
+workpaper packet builder, the Haven NestJS service post-migration, a future
+recalc-route flag) can request `"table"`. It is intentionally NOT yet surfaced
+in the OpenAPI spec / recalc route / UI — the deployed app always computes in the
+default `"formula"` mode. Wiring a per-return UI toggle (spec → Zod → recalc
+route → a persisted setting) is a product follow-up; the engine + Haven seam
+capability is complete and tested here.
+
 ## Known boundary
 
 State-side references to "federal tax" (e.g. Oregon's federal-tax subtraction)

@@ -532,7 +532,11 @@ export function computeReturnDiagnostics(args: {
         ? "This MFS return uses the standard deduction. If the spouse itemizes, this return must itemize too (and the standard deduction becomes $0) — e-file rejects an inconsistent pair. Confirm the spouse's election."
         : "This MFS return itemizes. The spouse's return must also itemize (cannot take the standard deduction) — confirm the pair is consistent before filing.",
       field: null,
-      mefRule: "F1040-034-06 / F1040-035-06",
+      // NOT a single MeF reject code — it's a §63(c)(6)(A) computation rule the
+      // software enforces (the standard deduction is forced to $0 when the spouse
+      // itemizes). Cite the statute, not a reject number (F1040-034 is the
+      // unrelated federal-withholding-match rule — do not mis-cite it).
+      mefRule: "§63(c)(6)(A) · Pub 501",
     });
   }
 
@@ -546,7 +550,9 @@ export function computeReturnDiagnostics(args: {
       title: "Form 8959 (Additional Medicare Tax) is required",
       detail: "Additional Medicare Tax applies, so Form 8959 must be filed with the return (the engine includes it). Ensure the filing software attaches Form 8959 and reconciles the 0.9% withholding (Form 8959 Part IV).",
       field: null,
-      mefRule: "F8959-001",
+      // Required-attachment rule, not a single published reject number; cite the
+      // form + statute rather than an unverifiable code.
+      mefRule: "Form 8959 required (§3101(b)(2))",
     });
   }
 
@@ -591,7 +597,7 @@ export function computeReturnDiagnostics(args: {
       title: "Schedule H (household employment tax) is required",
       detail: "Household-employee FICA/FUTA applies, so Schedule H must be filed with the return (the engine includes it on Schedule 2 line 9). Ensure the filing software attaches Schedule H and that the household employer has an EIN.",
       field: null,
-      mefRule: "F1040-Sch-H",
+      mefRule: "SH-F1040-520-01",
     });
   }
 

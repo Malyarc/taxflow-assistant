@@ -18,9 +18,18 @@
  *     §32 EITC column, §221 SLI band, §904(j) FTC simplified limit, OBBBA senior.
  *   - MFS gets the HALVED / barred treatment per provision.
  *
- * This module encodes that table once; call sites read a trait instead of
- * re-deciding. The property test (tax-engine-filing-status-traits-tests.ts) pins
- * every cell against the statute list so a future edit can't silently drift.
+ * This module is the CANONICAL REFERENCE for that table; the property test
+ * (tax-engine-filing-status-traits-tests.ts) pins every cell against the statute
+ * so a future edit can't silently drift.
+ *
+ * ADOPTION (honest status): the audit-critical federal threshold functions read
+ * from it today — niitThreshold, additionalMedicareThreshold (the oracle-found
+ * bug), §86 SS base, §904(j) FTC, §121 cap, §164 SALT cap (saltCapHalved), and
+ * the ACA household head-count (isMarriedJoint). The remaining provisions still
+ * decide inline at their (already audit-correct) call sites; new code and future
+ * refactors should READ the trait here rather than re-encode the rule, and
+ * migrate the inline sites incrementally. The table documents the right answer
+ * for ALL provisions even where a call site hasn't adopted it yet.
  *
  * PURE + framework-free (Haven-portable). Encodes the engine's CURRENT
  * audit-corrected behavior exactly — refactoring call sites to it is provably

@@ -4121,9 +4121,16 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // Computed BEFORE the nonrefundable-credit cascade because the excess-APTC
   // repayment (Schedule 2 line 2) is part of Form 1040 line 18 — the base the
   // personal credits offset (FC-09, see Step 7 below).
+  // T1.5 #9 / code-review fix — a §2(a) qualifying surviving spouse has NO living
+  // spouse on the return, so the §36B family unit must NOT include a spouse.
+  // `isMfj` groups QSS with joint (correct for the per-spouse earned-income /
+  // ACTC logic below, which is null-safe for a spouse-less QSS), but for the ACA
+  // household HEAD-COUNT only an actual joint return adds a spouse. Using isMfj
+  // here over-counted the QSS household by 1 → inflated the FPL denominator →
+  // mis-stated the Premium Tax Credit.
   const acaHouseholdSizeDefault =
     1 +
-    (isMfj ? 1 : 0) +
+    (filingStatusTraits(client.filingStatus).isMarriedJoint ? 1 : 0) +
     (client.dependentsUnder17 ?? 0) +
     (client.otherDependents ?? 0);
   const acaHouseholdSize = client.acaHouseholdSize ?? acaHouseholdSizeDefault;

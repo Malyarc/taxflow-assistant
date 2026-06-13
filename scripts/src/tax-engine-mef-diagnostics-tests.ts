@@ -47,7 +47,7 @@ const ruleOf = (ds: ReturnDiagnostic[], id: string) => ds.find((d) => d.id === i
   const mfs = diagnose({ client: { filingStatus: "married_filing_separately", state: "FL", taxYear: 2024 },
     w2s: [{ taxYear: 2024, wagesBox1: 80000 }] });
   ok("M2 fires for MFS", has(mfs, "mef-mfs-itemize-consistency"));
-  ok("M2 tagged F1040-034/035", (ruleOf(mfs, "mef-mfs-itemize-consistency") ?? "").includes("F1040-034-06"));
+  ok("M2 cites §63(c)(6)(A) (NOT the unrelated F1040-034 withholding rule)", (ruleOf(mfs, "mef-mfs-itemize-consistency") ?? "").includes("§63(c)(6)(A)"));
   const single = diagnose({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
     w2s: [{ taxYear: 2024, wagesBox1: 80000 }] });
   ok("M2 absent for single (no false positive)", !has(single, "mef-mfs-itemize-consistency"));
@@ -61,7 +61,7 @@ const ruleOf = (ds: ReturnDiagnostic[], id: string) => ds.find((d) => d.id === i
   const hi = diagnose({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
     w2s: [{ taxYear: 2024, wagesBox1: 250000, medicareWagesBox5: 250000 }] });
   ok("M3 fires: Add'l Medicare → Form 8959 required", has(hi, "mef-form-8959-required"));
-  ok("M3 tagged F8959-001", ruleOf(hi, "mef-form-8959-required") === "F8959-001");
+  ok("M3 cites Form 8959 (§3101(b)(2))", (ruleOf(hi, "mef-form-8959-required") ?? "").includes("Form 8959"));
   const lo = diagnose({ client: { filingStatus: "single", state: "FL", taxYear: 2024 },
     w2s: [{ taxYear: 2024, wagesBox1: 80000, medicareWagesBox5: 80000 }] });
   ok("M3 absent below the $200k threshold", !has(lo, "mef-form-8959-required"));

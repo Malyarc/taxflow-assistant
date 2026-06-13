@@ -3018,7 +3018,8 @@ const SALT_CAP_MFS = 5000;
  * back elsewhere only for NIIT; for SALT we use AGI, a close + conservative proxy).
  */
 export function getSaltCap(taxYear: number, filingStatus: string, magi: number): number {
-  const isMfs = filingStatus === "married_filing_separately";
+  // T1.5 #9 — §164(b)(6)/(7): the SALT cap is halved for MFS (saltCapHalved).
+  const isMfs = filingStatusTraits(filingStatus).saltCapHalved;
   if (taxYear < 2025) return isMfs ? SALT_CAP_MFS : SALT_CAP;
   const fullBase = taxYear >= 2026 ? 40_400 : 40_000;
   const baseCap = isMfs ? fullBase / 2 : fullBase;
