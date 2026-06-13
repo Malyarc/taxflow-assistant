@@ -155,6 +155,14 @@
     "src/tax-engine-filing-status-traits-tests.ts",
     "src/tax-engine-cross-year-metamorphic-tests.ts",
     "src/tax-engine-community-property-mfs-tests.ts",
-    "src/tax-engine-per-dependent-tests.ts"
+    "src/tax-engine-per-dependent-tests.ts",
+    "src/tax-engine-advisory-proposal-tests.ts",
+    "src/tax-engine-tax-health-report-tests.ts",
+    "src/tax-engine-specialty-credit-referral-tests.ts",
+    "src/tax-engine-entity-scenario-lab-tests.ts",
+    "src/tax-engine-prospect-analyzer-tests.ts",
+    "src/tax-engine-quarterly-autopilot-tests.ts",
+    "src/tax-engine-k1-package-ingestion-tests.ts",
+    "src/tax-engine-irs-account-monitor-tests.ts"
   ]
 }

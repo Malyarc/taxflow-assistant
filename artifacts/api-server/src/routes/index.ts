@@ -15,6 +15,7 @@ import assetBalancesRouter from "./asset-balances";
 import scheduleCAssetsRouter from "./schedule-c-assets";
 import planningRouter from "./planning";
 import cpaToolsRouter from "./cpa-tools";
+import growthRouter from "./growth";
 import settingsRouter from "./settings";
 import disclosureConsentsRouter from "./disclosure-consents";
 import { requireApiAuth } from "../middlewares/auth";
@@ -46,6 +47,10 @@ router.use(scheduleCAssetsRouter);
 // prep-workflow features (projection, entity-choice, organizer, roll-forward,
 // engagements) are NOT Pro-gated by the G5 contract.
 router.use(cpaToolsRouter);
+// T5 GROWTH (G-1…G-8). Mounts BEFORE planning for the same reason as cpa-tools:
+// the planning router opens with a pathless Pro-tier gate that would otherwise
+// swallow these requests when PRO_TIER_ENABLED=false.
+router.use(growthRouter);
 router.use(planningRouter);
 
 export default router;
