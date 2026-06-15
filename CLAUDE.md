@@ -234,6 +234,7 @@ Future-you will be tempted to "simplify" these. Don't.
 
 ## Local dev
 
+- **Setting up a NEW workstation? Follow `docs/WORKSTATION-MIGRATION.md`** — a self-contained runbook (toolchain, Docker Postgres, env/secrets, run local, Claude config, EC2 deploy) designed to be executed by Claude on the fresh machine.
 - Postgres in Docker: container `haven-postgres` (shared with another local project), db `taxflow_pro`, user/pass `brookhaven`. URL `postgres://brookhaven:brookhaven@localhost:5432/taxflow_pro`.
 - API server needs `DATABASE_URL` and `AI_API_KEY` (dummy is fine if you're not exercising AI extraction). No `dotenv` is loaded — pass env vars on the command line or `source ~/.env`.
 - Frontend dev server: `pnpm --filter @workspace/tax-app run dev` on port 3010 (configured in `.claude/launch.json`).
