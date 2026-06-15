@@ -1,3 +1,36 @@
+# Handoff Note — 2026-06-15 (PROD DEPLOY of T1.5 + T5 G-1…G-8; prod now at `e340667`)
+
+**Deployed the pending engine + growth work to prod EC2.** Prod was 2 commits behind
+`main` (running build predated T5); it's now in sync at `e340667`.
+
+- **Synced:** local `main` was behind `origin/main` — fast-forwarded (PR #3: T5 G-1…G-8)
+  and set `main` to track `origin/main` (the "no upstream" warning is gone).
+- **GOTCHA for future PR pulls:** PR #3 added `zod` via the pnpm `catalog:` protocol.
+  After a fast-forward you MUST `pnpm install` before typecheck/build — a stale
+  `node_modules` fails with `Cannot find module 'zod'` (+ cascade implicit-`any` on the
+  zod `.transform`/`.refine` callbacks in `routes/growth.ts`). Not a code bug.
+- **Green bar (local, pre-deploy):** typecheck (api-server/tax-app/scripts) + typecheck:tests
+  clean; `test:no-api` = **133 suites / 8,108 assertions / 0 failed**; api-server esbuild +
+  tax-app Vite builds clean.
+- **api-server deploy:** pull → `pnpm install` → `drizzle-kit migrate` (applied successfully;
+  T5 is additive, **no new schema migration** — effectively a no-op) → esbuild → `pm2 restart`.
+  Health `{"status":"ok"}` 200.
+- **Frontend:** built locally, rsynced (`--delete`); prod serves the new hash
+  `index-DNaJQo2L.js` / `index-Cq2PyiWI.css`.
+- **Prod smoke (public URL):** core `/api/clients` OK; **T5 endpoints LIVE** —
+  `GET /api/clients/:id/tax-health-report` returns real engine output (eff. rate 15.63%,
+  tax $28,141, AGI $180k, YoY deltas), `entity-scenario-lab` 200; `/api/settings`
+  `proTierEnabled:true`.
+- **Uncommitted (left as-is):** the two `docs/accuracy-audit/*.json` are timestamp-only
+  churn from a local test run (pass counts unchanged 210/112) — not real work.
+
+**Remaining T5:** G-9 (firm benchmarking analytics — pure packaging) + G-10 (client
+notifications event spine; UI deferred to Haven). The T0 security/legal gate (T0.1 creds +
+S3/KMS + TLS/auth; T0.2 consent ledger + PII) is still the launch blocker. See
+`docs/MASTER-TODO.md` (the source of truth).
+
+---
+
 # Handoff Note — 2026-06-12b (T1.5 Accuracy Deepening COMPLETE — all 9 items; the "most accurate engine" tier; on main, pushed)
 
 **ALL of MASTER-TODO T1.5 (the 9-item "most accurate engine" program) is DONE,
