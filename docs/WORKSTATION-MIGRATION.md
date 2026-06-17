@@ -70,7 +70,7 @@ echo 'export NODE_OPTIONS="--max-old-space-size=8192"' >> ~/.zshenv
 - **Differential-oracle harness** (`scripts/src/tax-engine-differential-oracle-harness.ts`): needs `python3` (3.11+) + `pip install tenforty`. It is **not** part of the standard green bar and historically won't build on the stock macOS Python 3.9 — skip unless you specifically need it.
 - **PDF reading** of the Brand Bible etc.: `brew install poppler` and/or `pip install pymupdf`.
 
-> **Node note:** the old machine happens to run Node 24.15.0 and works fine, but **22 LTS matches CI and the EC2 prod box** — use 22 to avoid surprises.
+> **Node note (IMPORTANT):** the repo pins **Node 22** via `.nvmrc`. The Vite 7 **dev server hard-requires Node ≥20.19 or ≥22.12** — on Node 20.11 the build still works but `pnpm --filter @workspace/tax-app run dev` throws `TypeError: crypto.hash is not a function`. If `nvm` already exists with an older default (e.g. 20.x), you MUST run `nvm alias default 22` (just installing 22 isn't enough — nvm only activates the *default* alias in a NEW shell). Verify a fresh terminal: `node -v` → v22.x.
 
 ✅ **Checkpoint:** `node -v` → v22.x · `pnpm -v` → 10.33.0 · `docker info` succeeds (Docker Desktop running) · `git --version` works.
 
@@ -354,6 +354,8 @@ curl -s -o /dev/null -w "clients %{http_code}\n" "$BASE/api/clients?limit=1"
 - **G7 — `pnpm-workspace.yaml` sets `minimumReleaseAge: 1440`** (supply-chain defense): installing a package published <24h ago will wait/skip. Leave it on.
 - **G8 — Docker must be running** (Docker Desktop launched) before §5/§6, or `docker`/DB commands hang.
 - **G9 — keep the repo at `~/Documents/taxflow-assistant` with the same username** so `.claude/launch.json`'s absolute `--dir` and the Claude memory-dir path line up. If you must change it, update `launch.json` and copy memory into the correspondingly-renamed dir.
+- **G10 — frontend dev server needs Node ≥20.19/≥22.12.** If `preview_start`/`pnpm … dev` fails with `crypto.hash is not a function`, your active Node is too old. Fix: `nvm alias default 22` (the repo's `.nvmrc` pins 22), then open a NEW shell. `.claude/launch.json` is wired to `source nvm + nvm use 22` at spawn so the in-tool preview always gets 22 regardless of the parent shell's Node. The api-server + the test battery run fine on Node 20, so only the Vite dev server is affected.
+- **G11 — Postgres may be the shared `haven-postgres` container** (if you also run the haven project). `taxflow_pro` + the `brookhaven` role live inside it; the DB volume is separate from the repo, so a folder-copy migration does NOT bring the data — bring the Docker volume (or re-migrate + re-seed). `migrate` will error with a column-collision on a local DB because local dev is baselined to migrations 0000+0001 and kept current via `drizzle-kit push`; run **`push`** locally (it reports "No changes detected" when current), not `migrate` (that's prod's path).
 
 ---
 

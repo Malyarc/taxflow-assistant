@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "tax-app-dev",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--dir", "/Users/johntang/Documents/taxflow-assistant", "--filter", "@workspace/tax-app", "run", "dev"],
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "export NVM_DIR=\"$HOME/.nvm\"; . \"$NVM_DIR/nvm.sh\"; nvm use 22 >/dev/null 2>&1; exec pnpm --dir /Users/johntang/Documents/taxflow-assistant --filter @workspace/tax-app run dev"],
       "port": 3000,
       "autoPort": true
     }
