@@ -12,6 +12,7 @@ import {
 import { recalculateAfterMutation } from "../lib/taxReturnPipeline";
 import { writeAudit } from "../lib/auditLog";
 import { encryptField, decryptField } from "../lib/fieldCrypto";
+import { setNoStorePii } from "../lib/httpSecurity";
 
 const router: IRouter = Router();
 
@@ -57,6 +58,7 @@ router.get("/clients/:clientId/form1099data", async (req, res): Promise<void> =>
     .select()
     .from(form1099DataTable)
     .where(eq(form1099DataTable.clientId, params.data.clientId));
+  setNoStorePii(res); // response carries decrypted payer/recipient TINs
   res.json(records.map(mapRecord));
 });
 
@@ -80,6 +82,7 @@ router.post("/clients/:clientId/form1099data", async (req, res): Promise<void> =
     .returning();
   await writeAudit({ clientId: params.data.clientId, action: "create", entityType: "form1099", entityId: record.id, after: record });
   await recalculateAfterMutation(params.data.clientId);
+  setNoStorePii(res); // response carries decrypted payer/recipient TINs
   res.status(201).json(mapRecord(record));
 });
 
@@ -119,6 +122,7 @@ router.patch("/clients/:clientId/form1099data/:form1099Id", async (req, res): Pr
   }
   await writeAudit({ clientId: params.data.clientId, action: "update", entityType: "form1099", entityId: record.id, before, after: record });
   await recalculateAfterMutation(params.data.clientId);
+  setNoStorePii(res); // response carries decrypted payer/recipient TINs
   res.json(mapRecord(record));
 });
 

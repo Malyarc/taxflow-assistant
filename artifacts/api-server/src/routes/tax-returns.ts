@@ -35,7 +35,7 @@ import {
   buildTaxReturnJsonExport,
   buildTaxReturnSummaryText,
 } from "../lib/taxReturnExports";
-import { setSecureDownloadHeaders } from "../lib/httpSecurity";
+import { setSecureDownloadHeaders, setNoStorePii } from "../lib/httpSecurity";
 import { buildAllFormInstances } from "../lib/forms/registry";
 import { buildWorkpaperPacketPdf } from "../lib/forms/formRenderer";
 import type { WorkpaperTaxpayer } from "../lib/forms/formSpec";
@@ -441,6 +441,10 @@ router.get("/clients/:clientId/tax-return/diagnostics", async (req, res): Promis
     form1099s: computed.inputs.form1099s,
     computed: computed.result,
   });
+  // The handler decrypts SSNs to build the diagnostics (duplicate-SSN cross-
+  // check); forbid caching the SSN-derived body, consistent with the other
+  // decrypted-PII responses (T0.2 C2).
+  setNoStorePii(res);
   res.json(diagnostics);
 });
 

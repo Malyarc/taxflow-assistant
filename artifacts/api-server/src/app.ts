@@ -7,14 +7,23 @@ import path from "node:path";
 import fs from "node:fs";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { resolveTrustProxy } from "./lib/trustProxy";
 
 const app: Express = express();
 
-// Trust the first proxy in front of us (load balancer / nginx / Vercel /
-// CloudFront). Required for express-rate-limit to use the real client IP
-// from X-Forwarded-For rather than the proxy's IP. Adjust `1` if there
-// are more hops (e.g., set to 2 if behind two proxies).
-app.set("trust proxy", 1);
+// `trust proxy` controls whether Express derives req.ip (used by the rate
+// limiter) from the client-supplied X-Forwarded-For header. SECURE DEFAULT is
+// `false` — the current box is directly exposed (no nginx/ALB), so trusting XFF
+// would let any client spoof their IP and bypass per-IP rate limiting. Opt in by
+// setting TRUST_PROXY to the real hop count once a terminator (Cloudflare Access
+// / ALB) is deployed (T0.1). See lib/trustProxy.ts for the full rationale.
+const trustProxy = resolveTrustProxy(process.env.TRUST_PROXY);
+app.set("trust proxy", trustProxy);
+if (trustProxy === true) {
+  logger.warn(
+    "SECURITY: TRUST_PROXY=true trusts ALL X-Forwarded-For hops — only safe behind a network that strips inbound XFF. Prefer an explicit hop count.",
+  );
+}
 
 // Don't leak framework version.
 app.disable("x-powered-by");

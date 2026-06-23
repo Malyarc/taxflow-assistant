@@ -45,6 +45,7 @@ import {
   draftCampaignEmail,
   type CampaignClientHit,
 } from "../lib/planningCampaigns";
+import { buildFirmBenchmark, type FirmBenchmarkClient } from "../lib/firmBenchmarking";
 import { setSecureDownloadHeaders } from "../lib/httpSecurity";
 import { optimizeRothConversionLadder } from "../lib/rothOptimizer";
 import { runMonteCarlo } from "../lib/monteCarloEngine";
@@ -52,6 +53,7 @@ import { optimizeBracketFilling } from "../lib/multiYearOptimizer";
 import {
   runWhatIfScenario,
   runWhatIfScenarios,
+  assertWhatIfInputBounds,
   type WhatIfMutation,
   type WhatIfScenario,
 } from "../lib/whatIfEngine";
@@ -703,9 +705,15 @@ router.post("/clients/:clientId/state-comparison", async (req, res): Promise<voi
     }
 
     const baselineState = (loaded.inputs.client.state ?? "").toUpperCase();
-    const requested = (body.data.targetStates ?? DEFAULT_STATE_COMPARISON_TARGETS).map((s) =>
-      s.toUpperCase(),
-    );
+    // Cap the fan-out (T0.2 C4): each target re-runs the full engine, so an
+    // arbitrarily long targetStates array is a CPU-DoS vector (55 ≈ states + DC
+    // + territories). Slice the RAW array FIRST so the map/Set/filter work is
+    // O(cap), not O(n), even for a multi-million-element body (only bounded
+    // otherwise by the 20 MB JSON limit). Each entry is a 2-letter state code.
+    const MAX_STATE_COMPARISON_TARGETS = 55;
+    const requested = (body.data.targetStates ?? DEFAULT_STATE_COMPARISON_TARGETS)
+      .slice(0, MAX_STATE_COMPARISON_TARGETS)
+      .map((s) => String(s).slice(0, 2).toUpperCase());
     // Filter out the client's current state — comparing to self is noise.
     const targets = Array.from(new Set(requested)).filter((s) => s !== baselineState);
 
@@ -885,6 +893,9 @@ function coerceWhatIfMutations(
     value?: unknown;
   }>,
 ): WhatIfMutation[] {
+  // Bound array size + per-mutation numeric/string magnitude before the engine
+  // runs (T0.2 C4 — CPU-DoS guard). Throws → caught by the route as a 400.
+  assertWhatIfInputBounds(raw);
   return raw.map((m, i) => {
     switch (m.kind) {
       case "set_adjustment":
@@ -1110,6 +1121,60 @@ function campaignLimit(raw: unknown): number {
   if (!Number.isFinite(n) || n <= 0) return 50;
   return Math.min(Math.floor(n), 200);
 }
+
+// ── G-9 — Firm benchmarking analytics ──────────────────────────────────────
+// Anonymized "your book vs. opportunity" report over the firm's top planning-
+// score clients (bounded ≤200 — same universe + fan-out as the hit-list and
+// campaigns). Reuses the §7216 anonymization ethos (counts + $100-rounded
+// dollars only; no client identity leaves). Pure aggregation in
+// lib/firmBenchmarking.ts; this loader maps each client's computed return +
+// planning hits into the benchmark input.
+async function evaluateFirmBenchmarkClients(limit: number): Promise<FirmBenchmarkClient[]> {
+  const ranked = await rankedClientIdsByPlanningScore(limit);
+  const out: FirmBenchmarkClient[] = [];
+  for (const clientId of ranked) {
+    try {
+      const computed = await computeTaxReturn(clientId);
+      if (!computed) continue;
+      const hits = evaluatePlanningOpportunities({
+        client: computed.client,
+        computed: computed.result,
+        adjustments: computed.inputs.adjustments,
+      });
+      out.push({
+        agi: computed.result.adjustedGrossIncome,
+        effectiveTaxRate: computed.result.effectiveTaxRate,
+        opportunities: hits.map((h) => ({
+          strategyId: h.strategyId,
+          name: h.name,
+          category: h.category,
+          // Headline savings: the engine-verified delta when present, else the
+          // heuristic estimate (matches the campaigns/advisory convention).
+          estSavings: h.verifiedSavings ?? h.estSavings,
+        })),
+      });
+    } catch (err) {
+      logger.warn({ err, clientId }, "Firm benchmarking: skipping client (per-client compute failed)");
+    }
+  }
+  return out;
+}
+
+router.get("/firm-benchmarking", async (req, res): Promise<void> => {
+  try {
+    const limit = campaignLimit(req.query.limit);
+    const clients = await evaluateFirmBenchmarkClients(limit);
+    const report = buildFirmBenchmark(clients);
+    res.json({
+      catalogVersion: CATALOG_V1.version,
+      clientsEvaluated: clients.length,
+      ...report,
+    });
+  } catch (err) {
+    logger.error({ err }, "Firm benchmarking failed");
+    res.status(500).json({ error: "Firm benchmarking failed" });
+  }
+});
 
 router.get("/planning-campaigns", async (req, res): Promise<void> => {
   try {

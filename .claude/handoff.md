@@ -1,3 +1,35 @@
+# Handoff Note — 2026-06-22 (PURE-CODE BATCH: T0.2 security hardening + T5 G-9 + G-10)
+
+**Shipped a self-contained "pure-code only" batch — no new schema, no frontend changes, no external deps.** Three workstreams, all hand-calc-tested + adversarially reviewed (a 4-lens fan-out: security / G-9-correctness / G-10-correctness / regression → "safe to ship, no blockers"; its 3 small findings were fixed).
+
+**Green bar:** api-server + scripts + scripts:tests typechecks clean; `test:no-api` = **137 suites / 8,259 assertions / 0 failed** (+151 new hand-calc'd assertions across 4 new suites).
+
+### 1. T0.2 C4 — engine input hardening (the 2026-06-11-audit C4 line — ALL done)
+- **`trust proxy` is now env-driven** (`lib/trustProxy.ts` `resolveTrustProxy(TRUST_PROXY)`), **secure default `false`** for the directly-exposed box (no nginx/ALB → req.ip = unspoofable socket IP; XFF can no longer be forged to rotate past the rate limiter). Set `TRUST_PROXY=1` (hop count) once Cloudflare/ALB lands (T0.1). `app.ts` wired + warns on `TRUST_PROXY=true`.
+- **What-if `mutations` bounded** (`whatIfEngine.ts` `assertWhatIfInputBounds`: ≤100 mutations, |amount|≤1e12 finite, ≤256-char strings), enforced in `coerceWhatIfMutations` BEFORE the engine → 400. State-comparison `targetStates` capped at 55, **sliced-first** (O(cap) not O(n)).
+- **§7216 consent POST bounded** (`consentGate.ts` `normalizeConsentDurationDays`→[1,366], `clampConsentField` length caps; `disclosure-consents.ts` wired). NOTE: consent text fields are now trimmed + empty→null (intended hardening).
+- **`CORS_ALLOW_ALL`** was ALREADY secure-by-default (explicit-flag opt-in) — verified, no change needed.
+- **Export formula-injection** (`taxReturnExports.ts`): extracted a shared `neutralizeFormula` (OWASP `= + - @ TAB CR` guard) now applied to TXT (.gen) + JSON (CSV already had it); negative/decimal numbers preserved.
+
+### 2. T0.2 C2 — PII at rest (partial)
+- **`tax_documents.extracted_text` now ENCRYPTED at rest** (`documents.ts`: `encryptField` at the extraction write seam; decrypt at the list + approve read seams; sentinel-guarded; **demo/no-PII-key path byte-identical**).
+- **`Cache-Control: no-store`** (`httpSecurity.ts` `setNoStorePii`) on the documents LIST + every W-2/1099 GET/POST/PATCH returning decrypted TINs + the `/tax-return/diagnostics` endpoint.
+- NOT done: "drop extracted_text from list projections" — the review-extraction modal reads it FROM the list, so it's decrypted-on-read instead (encrypt-at-rest closes the at-rest plaintext exposure; a dedicated single-doc GET is the follow-up).
+
+### 3. T5 — G-9 + G-10 (the whole G-series is now engineering-complete)
+- **G-9 Firm benchmarking** (`firmBenchmarking.ts` `buildFirmBenchmark`, 38 tests): `GET /firm-benchmarking` (pro-gated, bounded ≤200 fan-out via `rankedClientIdsByPlanningScore`) → anonymized $100-rounded effective-rate distribution (nearest-rank percentiles) + AGI-band histogram + strategy-adoption "opportunity gap" table + firm opportunity total.
+- **G-10 Notifications event spine** (`notificationEvents.ts` `deriveNotificationEvents`, 34 tests): `GET /clients/:id/notification-events` composing engagement deadline + §6654 projection vouchers + organizer doc-requests → events with **stable dedupe keys (send-once)** + urgency tiers + windowing. Delivery (push/SMS/email + portal UI) is Haven's last mile.
+
+### Deploy
+**Additive, no schema migration, no frontend change** → deploy = api-server build + `pm2 restart` + health check (NO drizzle migrate needed beyond the no-op; NO frontend rsync). Prod posture is unaffected: `PII_ENCRYPTION_KEY` unset (encrypt = passthrough), `REQUIRE_7216_CONSENT=false`, no proxy (trust-proxy `false` is correct + safer for the box).
+
+### Follow-ups (documented, NOT done)
+- OpenAPI/codegen entries + frontend surfaces for `/firm-benchmarking` + `/notification-events` (like G-1…G-8's documented follow-ups).
+- T0.2 C1 **hash-chained disclosure ledger** — deliberately NOT built this session: its correct form needs a persisted, serialized-append, tamper-evident chain whose concurrency can't be verified headless; its real home is Haven. The §7216 consent *validation* (C4) shipped; the *lifecycle*/ledger remains.
+- C2 masked-rendering (frontend), key rotation/KMS (infra), document-blob S3 (infra) — not pure-code.
+
+---
+
 # Handoff Note — 2026-06-15 (PROD DEPLOY of T1.5 + T5 G-1…G-8; prod now at `e340667`)
 
 **Deployed the pending engine + growth work to prod EC2.** Prod was 2 commits behind

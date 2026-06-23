@@ -269,9 +269,12 @@ export function buildTaxReturnJsonExport(client: Client, ret: ComputedTaxReturn)
       formatVersion: "1.0",
     },
     client: {
-      firstName: client.firstName,
-      lastName: client.lastName,
-      email: client.email,
+      // Neutralize formula injection on client-controlled free text — a JSON
+      // export pulled into a spreadsheet (Power Query) is still a CSV-injection
+      // vector if a name/email begins with =,+,-,@ (CWE-1236).
+      firstName: neutralizeFormula(client.firstName),
+      lastName: neutralizeFormula(client.lastName),
+      email: neutralizeFormula(client.email),
       dependentsUnder17: client.dependentsUnder17 ?? 0,
       otherDependents: client.otherDependents ?? 0,
     },
@@ -289,16 +292,30 @@ export function buildTaxReturnJsonExport(client: Client, ret: ComputedTaxReturn)
 // Lacerte, ProConnect, Drake — none of which import a generic text file)
 // and the Reference Code lets them resolve which IRS line each row points at.
 
-function csvEscape(s: string | number): string {
-  let str = String(s);
-  // OWASP CSV-injection defense: a cell beginning with = + - @ (or a leading tab
-  // / carriage return) is executed as a FORMULA by Excel / Google Sheets when a
-  // CPA opens the export. Client-controlled text (client name, email, labels)
-  // must not be able to smuggle a formula. Neutralize with a leading single
-  // quote — but leave plain (including negative) numbers untouched so the
-  // numeric value column stays numeric.
+/**
+ * OWASP CSV/formula-injection defense (CWE-1236). A value beginning with
+ * `= + - @` (or a leading tab / carriage return) is executed as a FORMULA by
+ * Excel / Google Sheets / LibreOffice when a CPA opens or imports the export.
+ * Client-controlled free text (client name, email, labels) must not be able to
+ * smuggle a formula into ANY export format a spreadsheet might ingest — CSV,
+ * the key=value TXT (.gen), or JSON pulled in via Power Query. Neutralize with a
+ * leading single quote, but leave plain (including negative) numbers untouched
+ * so genuine numeric values stay numeric.
+ *
+ * This is format-agnostic (no CSV quoting) so it can be applied uniformly across
+ * all three export builders; csvEscape() layers CSV quoting on top.
+ */
+export function neutralizeFormula(s: string | number): string {
+  const str = String(s);
   const looksNumeric = /^-?\d+(\.\d+)?$/.test(str);
-  if (!looksNumeric && /^[=+\-@\t\r]/.test(str)) str = "'" + str;
+  if (!looksNumeric && /^[=+\-@\t\r]/.test(str)) return "'" + str;
+  return str;
+}
+
+function csvEscape(s: string | number): string {
+  // Neutralize formula injection first, then apply RFC-4180 CSV quoting so a
+  // value containing a comma / quote / newline can't break the column layout.
+  let str = neutralizeFormula(s);
   if (/[",\n]/.test(str)) return `"${str.replace(/"/g, '""')}"`;
   return str;
 }
@@ -349,10 +366,13 @@ export function buildTaxReturnSummaryText(client: Client, ret: ComputedTaxReturn
   const rows = buildExportRows(ret);
   const lines: string[] = [];
 
+  // Neutralize formula injection on client-controlled free text — the key=value
+  // .gen/TXT is routinely opened in / imported to a spreadsheet for review, so a
+  // name/email beginning with =,+,-,@ is the same CWE-1236 vector as in CSV.
   lines.push(`[META]`);
-  lines.push(`CLIENT_FIRST_NAME=${client.firstName}`);
-  lines.push(`CLIENT_LAST_NAME=${client.lastName}`);
-  lines.push(`CLIENT_EMAIL=${client.email}`);
+  lines.push(`CLIENT_FIRST_NAME=${neutralizeFormula(client.firstName)}`);
+  lines.push(`CLIENT_LAST_NAME=${neutralizeFormula(client.lastName)}`);
+  lines.push(`CLIENT_EMAIL=${neutralizeFormula(client.email)}`);
   lines.push(`FILING_STATUS=${FILING_STATUS_LABELS[client.filingStatus] ?? client.filingStatus}`);
   lines.push(`STATE=${client.state}`);
   lines.push(`TAX_YEAR=${ret.taxYear}`);

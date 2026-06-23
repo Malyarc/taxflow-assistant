@@ -13,6 +13,7 @@ import { recalculateAfterMutation } from "../lib/taxReturnPipeline";
 import { writeAudit } from "../lib/auditLog";
 import { validateW2 } from "../lib/w2Validation";
 import { encryptField, decryptField, isDecryptErrorSentinel } from "../lib/fieldCrypto";
+import { setNoStorePii } from "../lib/httpSecurity";
 
 const router: IRouter = Router();
 
@@ -66,6 +67,7 @@ router.get("/clients/:clientId/w2data/flags", async (req, res): Promise<void> =>
       },
     ),
   }));
+  setNoStorePii(res); // response carries decrypted SSN
   res.json(out);
 });
 
@@ -93,6 +95,7 @@ router.get("/clients/:clientId/w2data", async (req, res): Promise<void> => {
     stateTaxWithheldBox17: r.stateTaxWithheldBox17 != null ? Number(r.stateTaxWithheldBox17) : null,
     stateWagesBox16: r.stateWagesBox16 != null ? Number(r.stateWagesBox16) : null,
   }));
+  setNoStorePii(res); // response carries decrypted SSN
   res.json(mapped);
 });
 
@@ -117,6 +120,7 @@ router.post("/clients/:clientId/w2data", async (req, res): Promise<void> => {
   await writeAudit({ clientId: params.data.clientId, action: "create", entityType: "w2", entityId: record.id, after: record });
   await recalculateAfterMutation(params.data.clientId);
   const r = record;
+  setNoStorePii(res); // response carries decrypted SSN
   res.status(201).json({
     ...r,
     employeeSSN: decryptField(r.employeeSSN),
@@ -166,6 +170,7 @@ router.patch("/clients/:clientId/w2data/:w2Id", async (req, res): Promise<void> 
   await writeAudit({ clientId: params.data.clientId, action: "update", entityType: "w2", entityId: record.id, before, after: record });
   await recalculateAfterMutation(params.data.clientId);
   const r = record;
+  setNoStorePii(res); // response carries decrypted SSN
   res.json({
     ...r,
     employeeSSN: decryptField(r.employeeSSN),

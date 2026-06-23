@@ -67,3 +67,14 @@ export function setSecureDownloadHeaders(
     res.setHeader("Content-Length", String(opts.length));
   }
 }
+
+/**
+ * Forbid storing a response in any browser or shared (proxy) cache. Apply to
+ * JSON endpoints that return decrypted PII — SSN/TIN, or the AI-extraction
+ * payload — so the sensitive body is never written to a cache on disk
+ * (2026-06-22 audit, T0.2 C2). Complements the existing `no-store` on the
+ * file-content stream.
+ */
+export function setNoStorePii(res: Response): void {
+  res.setHeader("Cache-Control", "no-store");
+}

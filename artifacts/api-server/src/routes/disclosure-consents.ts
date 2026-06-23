@@ -2,7 +2,15 @@ import { Router, type IRouter } from "express";
 import { and, desc, eq } from "drizzle-orm";
 import { db, disclosureConsentsTable, clientsTable } from "@workspace/db";
 import { writeAudit } from "../lib/auditLog";
-import { AI_EXTRACTION_SCOPE } from "../lib/consentGate";
+import {
+  AI_EXTRACTION_SCOPE,
+  clampConsentField,
+  normalizeConsentDurationDays,
+  MAX_CONSENT_SCOPE_LEN,
+  MAX_CONSENT_DOC_VERSION_LEN,
+  MAX_CONSENT_SIGNER_NAME_LEN,
+  MAX_CONSENT_SIGNATURE_REF_LEN,
+} from "../lib/consentGate";
 
 // P0-2 — record / list / revoke a taxpayer's §7216 disclosure consent. These
 // endpoints sit behind the API auth gate (mounted after requireApiAuth). The
@@ -36,17 +44,18 @@ router.post("/clients/:clientId/disclosure-consents", async (req, res): Promise<
     return;
   }
   const body = (req.body ?? {}) as Record<string, unknown>;
-  const scope = typeof body.scope === "string" && body.scope.trim() ? body.scope.trim() : AI_EXTRACTION_SCOPE;
-  const documentVersion =
-    typeof body.documentVersion === "string" && body.documentVersion.trim()
-      ? body.documentVersion.trim()
-      : "ai_extraction_v1";
-  const signerName = typeof body.signerName === "string" ? body.signerName : null;
-  const signatureRef = typeof body.signatureRef === "string" ? body.signatureRef : null;
-  const durationDays =
-    typeof body.durationDays === "number" && Number.isFinite(body.durationDays) && body.durationDays > 0
-      ? body.durationDays
-      : 365;
+  // Bound every client-supplied field (T0.2 C4): scope/version/name/signature
+  // are length-capped; durationDays is clamped to a whole number of days in
+  // [1, MAX] so it can't mint a perpetual / overflowed-expiresAt consent.
+  const scope = clampConsentField(body.scope, MAX_CONSENT_SCOPE_LEN, AI_EXTRACTION_SCOPE) as string;
+  const documentVersion = clampConsentField(
+    body.documentVersion,
+    MAX_CONSENT_DOC_VERSION_LEN,
+    "ai_extraction_v1",
+  ) as string;
+  const signerName = clampConsentField(body.signerName, MAX_CONSENT_SIGNER_NAME_LEN, null);
+  const signatureRef = clampConsentField(body.signatureRef, MAX_CONSENT_SIGNATURE_REF_LEN, null);
+  const durationDays = normalizeConsentDurationDays(body.durationDays);
   const signedAt = new Date();
   const expiresAt = new Date(signedAt.getTime() + durationDays * DAY_MS);
 

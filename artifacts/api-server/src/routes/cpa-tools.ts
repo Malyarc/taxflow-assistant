@@ -57,6 +57,7 @@ import {
 } from "../lib/rollForward";
 import { buildClientOrganizer, type YearDataRows } from "../lib/clientOrganizer";
 import { buildOrganizerPdf } from "../lib/organizerPdf";
+import { deriveNotificationEvents } from "../lib/notificationEvents";
 import {
   ENGAGEMENT_STATUSES,
   isEngagementStatus,
@@ -413,6 +414,80 @@ router.get("/clients/:clientId/organizer", async (req, res): Promise<void> => {
     return;
   }
   res.json({ clientId: params.data.clientId, ...loaded.organizer });
+});
+
+// ── G-10 — Client notifications event spine ─────────────────────────────────
+// Derives the currently-due notification events (filing/extension deadline,
+// estimated-tax vouchers, outstanding document requests) for a client. The pure
+// spine (lib/notificationEvents.ts) owns dedupe keys + urgency + windowing; the
+// actual push/SMS/email delivery + portal UI is Haven's last mile (it consumes
+// this read endpoint). `asOfDate` (today) is the only impure input — supplied
+// here, never inside the pure module.
+router.get("/clients/:clientId/notification-events", async (req, res): Promise<void> => {
+  const params = GetTaxReturnParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+  const clientId = params.data.clientId;
+  const computed = await computeTaxReturn(clientId);
+  if (!computed) {
+    res.status(404).json({ error: "Client not found" });
+    return;
+  }
+  const taxYear = computed.result.taxYear;
+
+  // Extension flag for this return year (drives filing vs. extended deadline).
+  const [retRow] = await db
+    .select({ extensionFiled: taxReturnsTable.extensionFiled })
+    .from(taxReturnsTable)
+    .where(and(eq(taxReturnsTable.clientId, clientId), eq(taxReturnsTable.taxYear, taxYear)));
+  const extensionFiled = retRow?.extensionFiled ?? false;
+
+  // Quarterly 1040-ES vouchers from the §6654 safe-harbor projection (>$0 only).
+  let vouchers: Array<{ quarter: number; dueDate: string; amount: number }> = [];
+  try {
+    const projection = computeTaxProjection({
+      baselineInputs: computed.inputs,
+      baselineReturn: computed.result,
+      incomeGrowth: 1.03,
+    });
+    vouchers = projection.estimatedTax.vouchers
+      .filter((v) => v.amount > 0)
+      .map((v) => ({ quarter: v.quarter, dueDate: v.dueDate, amount: v.amount }));
+  } catch (err) {
+    logger.warn({ err, clientId }, "Notification events: projection vouchers unavailable");
+  }
+
+  // Outstanding document requests = the organizer's "missing" items.
+  let docRequests: Array<{ id: string; title: string }> = [];
+  try {
+    // Use the SAME year the deadline/vouchers use (computed.result.taxYear) so
+    // the three event sources never drift to different years.
+    const org = await loadOrganizer(clientId, String(taxYear));
+    if (org && !("badYear" in org)) {
+      docRequests = org.organizer.items
+        .filter((it) => it.status === "missing")
+        .map((it) => ({ id: it.id, title: it.title }));
+    }
+  } catch (err) {
+    logger.warn({ err, clientId }, "Notification events: organizer unavailable");
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  const events = deriveNotificationEvents({
+    asOfDate: today,
+    clientId,
+    taxYear,
+    deadline: {
+      date: effectiveDeadline(taxYear, extensionFiled),
+      kind: extensionFiled ? "extension_deadline" : "filing_deadline",
+    },
+    vouchers,
+    docRequests,
+  });
+
+  res.json({ clientId, taxYear, asOfDate: today, events });
 });
 
 router.get("/clients/:clientId/organizer/pdf", async (req, res): Promise<void> => {

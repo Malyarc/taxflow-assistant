@@ -50,6 +50,45 @@ export function isConsentValid(c: ConsentRow, scope: string, now: Date): boolean
   return signed <= t && t < expires;
 }
 
+// ── §7216 consent-record input validation (T0.2 C4, 2026-06-22 audit) ───────
+// The disclosure-consents POST used manual, UNBOUNDED parsing: `durationDays`
+// accepted any positive finite number, so a caller could mint a consent that
+// never meaningfully expires (durationDays = 1e15 → an expiresAt ~27 billion
+// years out, or an overflowed/Invalid Date), and the free-text fields had no
+// length cap (storage-DoS + audit-log bloat). These pure helpers bound the
+// inputs; exported for no-DB unit testing.
+
+/** A §7216 consent is a one-year authorization (instrument "ai_extraction_v1").
+ *  Cap the duration so it can't be used to mint a perpetual consent; bump this
+ *  only alongside a new, longer-duration consent instrument. */
+export const MAX_CONSENT_DURATION_DAYS = 366;
+export const DEFAULT_CONSENT_DURATION_DAYS = 365;
+export const MAX_CONSENT_SCOPE_LEN = 64;
+export const MAX_CONSENT_DOC_VERSION_LEN = 64;
+export const MAX_CONSENT_SIGNER_NAME_LEN = 200;
+export const MAX_CONSENT_SIGNATURE_REF_LEN = 1024;
+
+/** Clamp a requested consent duration to a whole number of days in
+ *  [1, MAX_CONSENT_DURATION_DAYS]; non-numeric / non-finite / ≤0 → the 1-year
+ *  default. Guarantees a sane, finite expiresAt. */
+export function normalizeConsentDurationDays(raw: unknown): number {
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return DEFAULT_CONSENT_DURATION_DAYS;
+  const floored = Math.floor(raw);
+  if (floored < 1) return DEFAULT_CONSENT_DURATION_DAYS;
+  return Math.min(floored, MAX_CONSENT_DURATION_DAYS);
+}
+
+/** Trim a client-supplied consent text field and cap its length. Non-strings →
+ *  `fallback`; an empty/whitespace string → `fallback`; over-long input is
+ *  truncated (defense against storage-DoS; the caps are far above any real
+ *  scope/version/name/signature value). */
+export function clampConsentField(raw: unknown, maxLen: number, fallback: string | null): string | null {
+  if (typeof raw !== "string") return fallback;
+  const trimmed = raw.trim();
+  if (trimmed === "") return fallback;
+  return trimmed.length > maxLen ? trimmed.slice(0, maxLen) : trimmed;
+}
+
 /** DB-backed: does the client currently hold a valid consent for `scope`? */
 export async function hasValidConsent(
   clientId: number,

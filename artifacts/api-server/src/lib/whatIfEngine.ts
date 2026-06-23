@@ -101,6 +101,49 @@ function cloneAdjustments(rows: AdjustmentFact[]): AdjustmentFact[] {
   return rows.map((a) => ({ ...a }));
 }
 
+// ── Input DoS bounds (T0.2 C4, 2026-06-22 audit) ────────────────────────────
+// The what-if endpoint accepted an UNBOUNDED `mutations` array with no per-
+// mutation numeric/string caps. Each scenario re-runs the full pure engine, so
+// a multi-thousand-element array (or pathological huge amounts/strings) is a CPU
+// DoS vector. Bound it at the route seam (mirrors the SEC2 horizonYears cap).
+export const WHATIF_LIMITS = {
+  /** A hand-built scenario is a handful of levers; 100 is far above any real use. */
+  maxMutations: 100,
+  /** The engine clamps toNum at ±1e13; reject inputs an order of magnitude below that. */
+  maxAbsAmount: 1e12,
+  /** adjustmentType is a short enum-like key; field/value are short identifiers. */
+  maxStringLen: 256,
+} as const;
+
+/**
+ * Validate the size + per-element bounds of a client-supplied mutations array
+ * BEFORE it reaches the engine. Throws a descriptive Error (→ HTTP 400) on any
+ * violation. Pure; exported for unit testing.
+ */
+export function assertWhatIfInputBounds(
+  raw: ReadonlyArray<{ kind?: string; adjustmentType?: string; amount?: number; field?: string; value?: unknown }>,
+): void {
+  if (raw.length > WHATIF_LIMITS.maxMutations) {
+    throw new Error(`too many mutations: ${raw.length} (max ${WHATIF_LIMITS.maxMutations})`);
+  }
+  raw.forEach((m, i) => {
+    if (m.amount != null && (!Number.isFinite(m.amount) || Math.abs(m.amount) > WHATIF_LIMITS.maxAbsAmount)) {
+      throw new Error(
+        `mutation[${i}] amount out of range (must be finite, |amount| ≤ ${WHATIF_LIMITS.maxAbsAmount})`,
+      );
+    }
+    if (typeof m.adjustmentType === "string" && m.adjustmentType.length > WHATIF_LIMITS.maxStringLen) {
+      throw new Error(`mutation[${i}] adjustmentType too long (max ${WHATIF_LIMITS.maxStringLen} chars)`);
+    }
+    if (typeof m.field === "string" && m.field.length > WHATIF_LIMITS.maxStringLen) {
+      throw new Error(`mutation[${i}] field too long (max ${WHATIF_LIMITS.maxStringLen} chars)`);
+    }
+    if (typeof m.value === "string" && m.value.length > WHATIF_LIMITS.maxStringLen) {
+      throw new Error(`mutation[${i}] value too long (max ${WHATIF_LIMITS.maxStringLen} chars)`);
+    }
+  });
+}
+
 /**
  * Apply a list of mutations to baseline inputs. Returns a new TaxReturnInputs;
  * the baseline argument is not mutated (tests rely on this).

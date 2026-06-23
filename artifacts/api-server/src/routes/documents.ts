@@ -45,7 +45,7 @@ class DocumentStatusConflictError extends Error {
 const INFO_RETURN_DOC_TYPES = new Set<string>([
   "form_1098", "form_1098t", "form_1098e", "form_1095a", "form_ssa1099", "form_w2g",
 ]);
-import { encryptField } from "../lib/fieldCrypto";
+import { encryptField, decryptField, isDecryptErrorSentinel } from "../lib/fieldCrypto";
 import { consentRequired, hasValidConsent, AI_EXTRACTION_SCOPE } from "../lib/consentGate";
 import { logger } from "../lib/logger";
 import { setSecureDownloadHeaders } from "../lib/httpSecurity";
@@ -94,7 +94,12 @@ router.get("/clients/:clientId/documents", async (req, res): Promise<void> => {
     })
     .from(taxDocumentsTable)
     .where(eq(taxDocumentsTable.clientId, params.data.clientId));
-  res.json(documents);
+  // The extraction payload (`extractedText`) carries the AI-extracted SSN/TIN +
+  // a raw OCR snippet — encrypted at rest (P0-5). Decrypt for the review UI on
+  // the way out, and forbid caching since the response now carries decrypted PII.
+  const out = documents.map((d) => ({ ...d, extractedText: decryptField(d.extractedText) }));
+  res.setHeader("Cache-Control", "no-store");
+  res.json(out);
 });
 
 router.post("/clients/:clientId/documents", async (req, res): Promise<void> => {
@@ -241,7 +246,10 @@ router.post("/clients/:clientId/documents", async (req, res): Promise<void> => {
         .update(taxDocumentsTable)
         .set({
           status: "pending_review",
-          extractedText: JSON.stringify(payload),
+          // Encrypt at rest (P0-5): the payload embeds the extracted SSN/TIN +
+          // a raw OCR text snippet. Idempotent + plaintext-passthrough when no
+          // PII_ENCRYPTION_KEY is set (demo), so this is a no-op in dev/test.
+          extractedText: encryptField(JSON.stringify(payload)),
         })
         .where(eq(taxDocumentsTable.id, doc.id));
     } catch (err) {
@@ -376,11 +384,16 @@ router.post("/clients/:clientId/documents/:documentId/approve", async (req, res)
   // record carries them too (for any future "view source position" UI).
   let fieldBoxes: Record<string, unknown> | null = null;
   if (doc.extractedText) {
-    try {
-      const payload = JSON.parse(doc.extractedText) as { boxes?: Record<string, unknown> };
-      if (payload.boxes && Object.keys(payload.boxes).length > 0) fieldBoxes = payload.boxes;
-    } catch {
-      // ignore malformed payload — no boxes
+    // Decrypt the at-rest payload (P0-5) before parsing; skip the decrypt-failure
+    // sentinel (wrong/missing key) rather than feeding it to JSON.parse.
+    const decoded = decryptField(doc.extractedText);
+    if (decoded && !isDecryptErrorSentinel(decoded)) {
+      try {
+        const payload = JSON.parse(decoded) as { boxes?: Record<string, unknown> };
+        if (payload.boxes && Object.keys(payload.boxes).length > 0) fieldBoxes = payload.boxes;
+      } catch {
+        // ignore malformed payload — no boxes
+      }
     }
   }
 
