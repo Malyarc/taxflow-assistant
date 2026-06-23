@@ -144,6 +144,10 @@ export default function ClientForm({ editId }: Props) {
   const updateClient = useUpdateClient();
 
   const [form, setForm] = useState<FormState>(defaultForm);
+  // Latches true once `existing` has hydrated `form` (edit mode). Gating the
+  // Radix-Select mount on this — rather than on a live field comparison — keeps
+  // the form mounted while the user edits (e.g. typing in Email).
+  const [hasHydrated, setHasHydrated] = useState(false);
 
   useEffect(() => {
     if (existing) {
@@ -206,6 +210,7 @@ export default function ClientForm({ editId }: Props) {
         planningGoals: (existing as { planningGoals?: string | null }).planningGoals ?? "",
         notes: existing.notes || "",
       });
+      setHasHydrated(true);
     }
   }, [existing]);
 
@@ -307,7 +312,9 @@ export default function ClientForm({ editId }: Props) {
   // Radix Select for state/filingStatus mounts with the correct controlled value.
   // Without this gate, Radix can fire onValueChange("") on initial render when
   // the value prop is set before SelectItem children are registered.
-  const formReady = !isEdit || (existing != null && form.email === (existing.email ?? ""));
+  // Gate on the one-time hydration latch (NOT a live field comparison, which
+  // would collapse the form back to a skeleton mid-edit — e.g. editing Email).
+  const formReady = !isEdit || hasHydrated;
   if (isEdit && (isLoading || !formReady)) {
     return (
       <div className="p-8 max-w-2xl mx-auto space-y-4">
@@ -459,9 +466,9 @@ export default function ClientForm({ editId }: Props) {
                 value={form.taxYear}
                 onChange={(e) => set("taxYear", Number(e.target.value))}
                 min={2024}
-                max={2025}
+                max={2026}
               />
-              <p className="text-xs text-muted-foreground">Supported: 2024 and 2025.</p>
+              <p className="text-xs text-muted-foreground">Supported: 2024, 2025, and 2026.</p>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -474,7 +481,7 @@ export default function ClientForm({ editId }: Props) {
                   value={form.dependentsUnder17}
                   onChange={(e) => set("dependentsUnder17", Number(e.target.value))}
                 />
-                <p className="text-xs text-muted-foreground">Drives Child Tax Credit ($2,000/child).</p>
+                <p className="text-xs text-muted-foreground">Drives Child Tax Credit ($2,000/child TY2024; $2,200/child TY2025+).</p>
               </div>
               <div className="space-y-2">
                 <Label>Children &lt; 6</Label>

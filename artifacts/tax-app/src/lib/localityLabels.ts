@@ -13,7 +13,11 @@ export interface LocalityOption {
 }
 
 export const LOCALITY_OPTIONS: Record<string, LocalityOption[]> = {
-  NY: [{ code: "NYC", label: "New York City (NYC PIT)" }],
+  NY: [
+    { code: "NYC",     label: "New York City (NYC PIT)" },
+    { code: "YONKERS", label: "Yonkers (resident surcharge)" },
+  ],
+  PA: [{ code: "PA-PHILADELPHIA", label: "Philadelphia (Wage Tax)" }],
   MD: [
     { code: "MD-ALLEGANY",       label: "Allegany County" },
     { code: "MD-ANNE_ARUNDEL",   label: "Anne Arundel County" },

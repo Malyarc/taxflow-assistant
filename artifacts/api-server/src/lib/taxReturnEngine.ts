@@ -2989,17 +2989,25 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const section163jSmallBusinessExempt =
     section163jGrossReceipts > 0 && section163jGrossReceipts <= section163jGrossReceiptsThreshold;
 
-  // §163(j)(1): allowance = (biz interest income) + (floor plan financing
-  // interest) + (30% × ATI). Items NOT subject to the 30% cap are added
-  // directly. Items subject (gross interest + carryforward) cap at 30% ATI.
+  // §163(j)(1): deductible business interest ≤ (biz interest income) +
+  // (30% × ATI) + (floor plan financing interest). Business interest income
+  // and floor-plan interest raise the CEILING — they are NOT themselves an
+  // extra deduction, and the deduction can never exceed the interest actually
+  // incurred (current gross + prior carryforward). So the cap-subject portion
+  // (gross + CF) is allowed up to (biz interest income + 30% × ATI), then
+  // floor-plan interest (its own always-deductible expense) is added on top.
   // When the small-business exemption applies, the 30% cap is lifted — the
-  // cap-subject portion (current gross + prior carryforward) is fully allowed
-  // and nothing carries forward.
+  // cap-subject portion is fully allowed and nothing carries forward.
+  // (Previously biz interest income was added to the deduction rather than the
+  // ceiling, creating a phantom deduction equal to the income whenever the 30%
+  // cap wasn't binding, and over-stating the disallowed carryforward when it
+  // was — see tax-engine-audit-2026-06-23-tests.ts.)
   const cappedPortion = section163jGross + section163jCarryforwardFromPrior;
-  const cappedAllowance = section163jSmallBusinessExempt ? cappedPortion : 0.30 * ati163jProxy;
+  const cappedAllowance = section163jSmallBusinessExempt
+    ? cappedPortion
+    : section163jBusinessInterestIncome + 0.30 * ati163jProxy;
   const cappedAllowed = Math.min(cappedPortion, cappedAllowance);
-  const section163jAllowedDeduction =
-    cappedAllowed + section163jBusinessInterestIncome + section163jFloorPlanInterest;
+  const section163jAllowedDeduction = cappedAllowed + section163jFloorPlanInterest;
   const section163jDisallowedCarryforward = Math.max(0, cappedPortion - cappedAllowed);
   // Track gross for transparency (the CPA-entered input).
   const section163jBusinessInterestExpense = section163jGross;
@@ -3186,7 +3194,13 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // Pub 590-A MAGI includes taxable SS. Our engine takes a single pass
   // (SLI/IRA at pre-SS AGI), which slightly over-deducts SLI/IRA for
   // filers whose taxable SS would push them into a phase-out band.
-  const agiExcludingSs = Math.max(0, totalIncomeProvisional - aboveTheLineAdjustments);
+  // Pub 915 Worksheet 1 line 3: the §911 foreign-earned-income / housing
+  // exclusion is added BACK into the SS provisional base (it nets to ~0 in
+  // totalIncomeProvisional via gross − exclusion). Same add-back already applied
+  // to the IRA (line ~3148) and SLI (line ~3171) MAGI and to NIIT MAGI.
+  // (audit 2026-06-23 — was missing here; an expat with excluded FEIE + SS
+  // understated taxable SS and therefore AGI.)
+  const agiExcludingSs = Math.max(0, totalIncomeProvisional - aboveTheLineAdjustments) + feieExclusion;
   const ssTaxability = calculateSocialSecurityTaxability({
     ssBenefits: toNum(client.socialSecurityBenefits),
     agiExcludingSs,

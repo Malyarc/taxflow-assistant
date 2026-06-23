@@ -313,7 +313,7 @@ function groundingForNotice(
       { label: "Total income reported (Form 1040 line 9)", ourValue: toNum(c.totalIncome), irsValue: null },
       { label: "Taxable interest reported (line 2b)", ourValue: toNum(c.form1099Summary?.interestIncome), irsValue: null },
       { label: "Ordinary dividends reported (line 3b)", ourValue: toNum(c.form1099Summary?.ordinaryDividends), irsValue: null },
-      { label: "Total tax reported", ourValue: toNum(c.federalTaxLiability), irsValue: null },
+      { label: "Total tax (Form 1040 line 24, net of nonrefundable credits)", ourValue: toNum(c.federalTaxLiability) - toNum(c.totalNonRefundableApplied), irsValue: null },
       { label: "Additional tax the IRS proposes", ourValue: 0, irsValue: proposed },
     ];
     const argument =
@@ -325,7 +325,7 @@ function groundingForNotice(
     // Balance-due notice: ground in the computed balance owed so the CPA can
     // confirm whether the assessed balance matches the return.
     const facts: ResponseDraft["groundingFacts"] = [
-      { label: "Total tax reported", ourValue: toNum(c.federalTaxLiability), irsValue: null },
+      { label: "Total tax (Form 1040 line 24, net of nonrefundable credits)", ourValue: toNum(c.federalTaxLiability) - toNum(c.totalNonRefundableApplied), irsValue: null },
       { label: "Federal tax withheld / paid", ourValue: toNum(c.federalTaxWithheld), irsValue: null },
       { label: "Balance owed per our computation", ourValue: Math.max(0, -toNum(c.federalRefundOrOwed)), irsValue: null },
       { label: "Balance the notice demands", ourValue: 0, irsValue: proposed },
@@ -337,7 +337,7 @@ function groundingForNotice(
 
   if (upper === "CP504" || upper === "CP504B" || upper === "LT11") {
     const facts: ResponseDraft["groundingFacts"] = [
-      { label: "Total tax reported", ourValue: toNum(c.federalTaxLiability), irsValue: null },
+      { label: "Total tax (Form 1040 line 24, net of nonrefundable credits)", ourValue: toNum(c.federalTaxLiability) - toNum(c.totalNonRefundableApplied), irsValue: null },
       { label: "Federal tax withheld / paid", ourValue: toNum(c.federalTaxWithheld), irsValue: null },
       { label: "Balance the levy notice demands", ourValue: 0, irsValue: proposed },
     ];
@@ -349,7 +349,7 @@ function groundingForNotice(
   // Generic posted notice.
   const facts: ResponseDraft["groundingFacts"] = [
     { label: "Total income reported (line 9)", ourValue: toNum(c.totalIncome), irsValue: null },
-    { label: "Total tax reported", ourValue: toNum(c.federalTaxLiability), irsValue: null },
+    { label: "Total tax (Form 1040 line 24, net of nonrefundable credits)", ourValue: toNum(c.federalTaxLiability) - toNum(c.totalNonRefundableApplied), irsValue: null },
     { label: "Amount referenced by the notice", ourValue: 0, irsValue: proposed },
   ];
   const argument =

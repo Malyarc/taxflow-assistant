@@ -45,6 +45,7 @@ import {
 import { validateW2, validateInfoReturn, type W2Flag } from "@workspace/validation";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "@/hooks/use-toast";
+import { buildApproveBody, parseBox12String } from "@/lib/approveExtractionBody";
 import { cn } from "@/lib/utils";
 import { AlertCircle, AlertTriangle, ArrowRight, Check, CircleSlash, Info, Pencil, Plus } from "lucide-react";
 
@@ -128,21 +129,9 @@ const W2_FIELDS: FieldDef[] = [
   { key: "localityNameBox20", label: "Box 20 — Locality name", type: "string" },
 ];
 
-/** T1.0j — "D=23000; W=4150" ⇄ [{code:"D",amount:23000},{code:"W",amount:4150}].
- *  Tolerates comma separators, spaces, ":" instead of "=", and $/commas in amounts.
- *  Invalid segments are dropped (the CPA sees exactly what will be stored via the
- *  diff indicator). */
-export function parseBox12String(s: string): Array<{ code: string; amount: number }> {
-  const out: Array<{ code: string; amount: number }> = [];
-  for (const seg of s.split(/[;,]/)) {
-    const m = seg.trim().match(/^([A-Za-z]{1,2})\s*[=:]?\s*\$?([\d,]+(?:\.\d+)?)$/);
-    if (!m) continue;
-    const amount = Number(m[2].replace(/,/g, ""));
-    if (!Number.isFinite(amount) || amount <= 0) continue;
-    out.push({ code: m[1].toUpperCase(), amount });
-  }
-  return out;
-}
+// parseBox12String moved to lib/approveExtractionBody.ts (pure, unit-testable);
+// re-exported so existing importers still resolve it from this module.
+export { parseBox12String };
 function box12ToString(v: unknown): string {
   if (!Array.isArray(v)) return "";
   return v
@@ -488,25 +477,15 @@ export function ReviewExtractionModal({ open, onClose, clientId, clientTaxYear, 
   }
 
   function handleApprove() {
-    if (!doc) return;
-    const numericKeys = new Set([
-      "wagesBox1","federalTaxWithheldBox2","socialSecurityWagesBox3","socialSecurityTaxBox4",
-      "medicareWagesBox5","medicareTaxBox6","stateTaxWithheldBox17","stateWagesBox16",
-      "federalTaxWithheld","stateTaxWithheld","nonemployeeCompensation","rents","royalties",
-      "otherIncome","fishingBoatProceeds","medicalAndHealthcare","interestIncome",
-      "earlyWithdrawalPenalty","usTreasuryInterest","taxExemptInterest","ordinaryDividends",
-      "qualifiedDividends","totalCapitalGainDistribution","nondividendDistributions",
-      "proceeds","costBasis","shortTermGainLoss","longTermGainLoss","grossDistribution",
-      "taxableAmount","unemploymentCompensation","stateLocalRefund","grossPaymentAmount",
-      // info-return numeric boxes
-      "mortgageInterestReceived","realEstateTaxes","qualifiedTuition","scholarshipsGrants",
-      "studentLoanInterest","annualPremium","annualSlcsp","annualAdvancePtc",
-      "netSocialSecurityBenefits","gamblingWinnings","gamblingFederalWithheld",
-    ]);
-    const body: Record<string, unknown> = {
-      recordType,
-      taxYear,
-    };
+    if (!doc || !recordType) return;
+    if (recordType === "form1099" && !formType) {
+      toast({ title: "Form type required", description: "Pick the 1099 subtype before approving.", variant: "destructive" });
+      return;
+    }
+    if (recordType === "info_return" && !infoType) {
+      toast({ title: "Form type required", description: "Could not determine the information-return type.", variant: "destructive" });
+      return;
+    }
     // W-2 carries all W-2 keys; 1099 carries all 1099 keys; info-return carries its
     // value keys (the unrelated ones are NULL on the server).
     const allKeys = recordType === "w2"
@@ -514,33 +493,14 @@ export function ReviewExtractionModal({ open, onClose, clientId, clientTaxYear, 
       : recordType === "info_return"
         ? INFO_RETURN_VALUE_KEYS
         : ALL_1099_VALUE_KEYS;
-    for (const key of allKeys) {
-      const raw = values[key];
-      if (raw == null || raw === "") {
-        body[key] = null;
-        continue;
-      }
-      if (numericKeys.has(key)) {
-        const n = Number(raw);
-        body[key] = Number.isFinite(n) ? n : null;
-      } else {
-        body[key] = raw;
-      }
-    }
-    if (recordType === "form1099") {
-      if (!formType) {
-        toast({ title: "Form type required", description: "Pick the 1099 subtype before approving.", variant: "destructive" });
-        return;
-      }
-      body.formType = formType;
-    }
-    if (recordType === "info_return") {
-      if (!infoType) {
-        toast({ title: "Form type required", description: "Could not determine the information-return type.", variant: "destructive" });
-        return;
-      }
-      body.infoType = infoType;
-    }
+    const body = buildApproveBody({
+      recordType,
+      taxYear,
+      allKeys,
+      values,
+      formType: recordType === "form1099" ? formType : undefined,
+      infoType: recordType === "info_return" ? infoType : undefined,
+    });
     approve.mutate(
       { clientId, documentId: doc.id, data: body as never },
       {

@@ -167,10 +167,13 @@ function adj(type: string, amount: number, id = Math.floor(Math.random() * 1e9))
   check("Case 4 AGI = $100k − $15k", r.adjustedGrossIncome, 85000);
 }
 
-// ── Case 5: Biz interest income adds to allowance (uncapped) ─────────────
-// Gross $20k + biz interest income $5k. Cap = $30k. min($20k, $30k) = $20k
-// for cap-subject portion. Plus $5k biz int income added uncapped.
-//   Total allowed = $20k + $5k = $25k. Disallowed = $0.
+// ── Case 5: Biz interest income raises the CEILING, not the deduction ─────
+// Gross $20k + biz interest income $5k. §163(j)(1): deductible ≤ BII + 30%×ATI
+// (+ floor plan). Allowance = $5k + $30k = $35k. cappedAllowed = min($20k paid,
+// $35k) = $20k. You can NEVER deduct more business interest than you incurred
+// ($20k), so the $5k income only enlarges the (here non-binding) ceiling.
+//   Total allowed = $20k. Disallowed = $0. (audit 2026-06-23 F5 — was wrongly
+//   adding BII to the deduction → a $5k phantom deduction.)
 {
   const r = computeTaxReturnPure(baseInputs({
     adjustments: [
@@ -178,7 +181,7 @@ function adj(type: string, amount: number, id = Math.floor(Math.random() * 1e9))
       adj("section_163j_business_interest_income", 5000, 3006),
     ],
   }));
-  check("Case 5 allowed = $25k (gross + biz int income)", r.section163jAllowedDeduction, 25000);
+  check("Case 5 allowed = $20k (capped at interest incurred)", r.section163jAllowedDeduction, 20000);
   check("Case 5 disallowed cf = $0", r.section163jDisallowedCarryforward, 0);
 }
 
@@ -281,9 +284,11 @@ function adj(type: string, amount: number, id = Math.floor(Math.random() * 1e9))
 
 // ── Case 12: §163(j) full disallowance — biz interest income only allowance ─
 // Gross $50k, ATI $0 (no W-2 income), biz int income $5k.
-//   Capped portion: gross $50k, cap = $0 → allowed (capped) = $0. Disallowed = $50k.
-//   Plus biz int income $5k.
-//   Total allowed = $5k.
+//   Allowance = BII $5k + 30%×ATI $0 = $5k. cappedAllowed = min($50k, $5k) = $5k.
+//   Total allowed = $5k. Disallowed carryforward = $50k − $5k = $45k (the $5k the
+//   BII ceiling let through is deducted, so only $45k carries — allowed + CF must
+//   equal the $50k incurred. audit 2026-06-23 F5: was $50k, double-counting the
+//   $5k as both allowed AND disallowed.)
 {
   const r = computeTaxReturnPure(baseInputs({
     w2s: [{
@@ -299,7 +304,7 @@ function adj(type: string, amount: number, id = Math.floor(Math.random() * 1e9))
     ],
   }));
   check("Case 12 allowed = $5k (only biz int income)", r.section163jAllowedDeduction, 5000);
-  check("Case 12 disallowed cf = $50k", r.section163jDisallowedCarryforward, 50000);
+  check("Case 12 disallowed cf = $45k (gross − allowed)", r.section163jDisallowedCarryforward, 45000);
 }
 
 // ════════════════════════════════════════════════════════════════════════════

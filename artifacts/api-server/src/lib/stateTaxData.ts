@@ -1282,11 +1282,17 @@ function build2026Data(): Record<string, StateTaxInfo> {
       ],
     },
   };
-  // Georgia: 5.19% → 5.09% (HB 1015/HB 111 trigger schedule, certified for
-  // 1/1/2026 per Tax Foundation's 2026 changes roundup).
+  // Georgia: 4.99% flat for TY2026. HB 463 (signed by Gov. Kemp 2026-05-11,
+  // effective 7/1/2026 retroactive to 1/1/2026) accelerated the rate to 4.99%,
+  // superseding the HB 1015/HB 111 trigger schedule's 5.09% for 2026 (further
+  // 0.125%/yr cuts to a 3.99% floor pending revenue triggers). Verified vs the
+  // Governor's office press release + BDO/Paylocity 2026 tax alerts.
+  // (audit 2026-06-23 — was 5.09%, the pre-HB-463 figure.) NOTE: HB 463 also
+  // raises the GA std deduction for 2026 — verify the exact amount vs the DOR
+  // 2026 booklet before changing the conforming std-ded handling.
   data.GA = {
     ...data.GA,
-    brackets: { single: flat(0.0509), married_filing_jointly: flat(0.0509) },
+    brackets: { single: flat(0.0499), married_filing_jointly: flat(0.0499) },
   };
   // Montana (HB 337, L.2025 ch.227 — NOT SB 323, which died): for tax years
   // beginning after 12/31/2025 the lower 4.7% bracket WIDENS to $47,500

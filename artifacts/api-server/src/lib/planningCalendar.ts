@@ -82,6 +82,31 @@ function iso(year: number, month1: number, day: number): string {
   return `${year}-${String(month1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
+// §7503: a filing/payment deadline that lands on a Sat/Sun (or legal holiday)
+// rolls to the next business day. Deterministic Date.UTC math only (no wall-clock
+// read) so the module stays migration-portable. Mirrors engagement.ts
+// `rollToBusinessDay` + the taxProjection.ts Jan-15/MLK rule (replicated inline to
+// avoid coupling this pure module to a CPA-tools module). Federal holidays other
+// than MLK (e.g. DC Emancipation Day) are NOT modeled — same documented
+// conservatism (the computed date is never LATER than the true §7503 deadline).
+// (audit 2026-06-23 F2 — year_end Dec-31 deadlines stay UNrolled: "within the tax
+// year" actions, not a §7503 filing/payment date.)
+function rollWeekend(utcMs: number): number {
+  const dow = new Date(utcMs).getUTCDay();
+  if (dow === 6) return utcMs + 2 * 86_400_000; // Saturday → Monday
+  if (dow === 0) return utcMs + 1 * 86_400_000; // Sunday → Monday
+  return utcMs;
+}
+function rolledDeadline(type: DeadlineType, taxYear: number, utcMs: number, suffix: string): StrategyDeadline {
+  const d = new Date(utcMs);
+  return {
+    type,
+    isoDate: d.toISOString().slice(0, 10),
+    label: `${fmt(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate())}${suffix}`,
+    daysFromYearEnd: Math.round((utcMs - Date.UTC(taxYear, 11, 31)) / 86_400_000),
+  };
+}
+
 /** Classify a strategy's actionable deadline for a tax year. */
 export function strategyDeadline(
   strategyId: string,
@@ -92,27 +117,20 @@ export function strategyDeadline(
   switch (type) {
     case "year_end":
       return { type, isoDate: iso(taxYear, 12, 31), label: fmt(taxYear, 12, 31), daysFromYearEnd: 0 };
-    case "quarterly":
-      return {
-        type,
-        isoDate: iso(taxYear + 1, 1, 15),
-        label: `${fmt(taxYear + 1, 1, 15)} (final estimated payment)`,
-        daysFromYearEnd: 15,
-      };
+    case "quarterly": {
+      // Final estimated voucher: Jan 15 of the following year + the §7503 weekend
+      // roll, then the deterministic MLK collision (the rolled/landed Monday is the
+      // 3rd Monday of January = MLK day → +1). See taxProjection.voucherDueDates.
+      const jan15 = Date.UTC(taxYear + 1, 0, 15);
+      const dow = new Date(jan15).getUTCDay();
+      let ms = rollWeekend(jan15);
+      if (dow === 6 || dow === 0 || dow === 1) ms += 86_400_000;
+      return rolledDeadline(type, taxYear, ms, " (final estimated payment)");
+    }
     case "filing_deadline":
-      return {
-        type,
-        isoDate: iso(taxYear + 1, 4, 15),
-        label: `${fmt(taxYear + 1, 4, 15)} (filing deadline)`,
-        daysFromYearEnd: 105,
-      };
+      return rolledDeadline(type, taxYear, rollWeekend(Date.UTC(taxYear + 1, 3, 15)), " (filing deadline)");
     case "extended_due_date":
-      return {
-        type,
-        isoDate: iso(taxYear + 1, 10, 15),
-        label: `${fmt(taxYear + 1, 10, 15)} (extended due date)`,
-        daysFromYearEnd: 288,
-      };
+      return rolledDeadline(type, taxYear, rollWeekend(Date.UTC(taxYear + 1, 9, 15)), " (extended due date)");
     default:
       return { type: "ongoing", isoDate: null, label: "No fixed deadline (structural)", daysFromYearEnd: 9999 };
   }

@@ -589,18 +589,20 @@ function W2DataTab({ clientId }: { clientId: number }) {
   const reviewingRec = w2Records?.find((r) => r.id === reviewingId);
 
   function toPayload(f: W2FormData) {
+    // Cleared numeric boxes must send null (not undefined) — undefined is dropped
+    // by JSON.stringify, so the server would keep the old DB value.
     return {
       taxYear: Number(f.taxYear),
       employerName: f.employerName || undefined,
       employerEin: f.employerEin || undefined,
-      wagesBox1: f.wagesBox1 ? Number(f.wagesBox1) : undefined,
-      federalTaxWithheldBox2: f.federalTaxWithheldBox2 ? Number(f.federalTaxWithheldBox2) : undefined,
-      socialSecurityWagesBox3: f.socialSecurityWagesBox3 ? Number(f.socialSecurityWagesBox3) : undefined,
-      socialSecurityTaxBox4: f.socialSecurityTaxBox4 ? Number(f.socialSecurityTaxBox4) : undefined,
-      medicareWagesBox5: f.medicareWagesBox5 ? Number(f.medicareWagesBox5) : undefined,
-      medicareTaxBox6: f.medicareTaxBox6 ? Number(f.medicareTaxBox6) : undefined,
-      stateWagesBox16: f.stateWagesBox16 ? Number(f.stateWagesBox16) : undefined,
-      stateTaxWithheldBox17: f.stateTaxWithheldBox17 ? Number(f.stateTaxWithheldBox17) : undefined,
+      wagesBox1: f.wagesBox1 ? Number(f.wagesBox1) : null,
+      federalTaxWithheldBox2: f.federalTaxWithheldBox2 ? Number(f.federalTaxWithheldBox2) : null,
+      socialSecurityWagesBox3: f.socialSecurityWagesBox3 ? Number(f.socialSecurityWagesBox3) : null,
+      socialSecurityTaxBox4: f.socialSecurityTaxBox4 ? Number(f.socialSecurityTaxBox4) : null,
+      medicareWagesBox5: f.medicareWagesBox5 ? Number(f.medicareWagesBox5) : null,
+      medicareTaxBox6: f.medicareTaxBox6 ? Number(f.medicareTaxBox6) : null,
+      stateWagesBox16: f.stateWagesBox16 ? Number(f.stateWagesBox16) : null,
+      stateTaxWithheldBox17: f.stateTaxWithheldBox17 ? Number(f.stateTaxWithheldBox17) : null,
       stateCode: f.stateCode || undefined,
     };
   }
@@ -1836,7 +1838,7 @@ function TaxCalculatorTab({ clientId, taxYear }: { clientId: number; taxYear: nu
                   <CardContent className="text-sm space-y-2">
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">
-                        {breakdown.data.childTaxCredit.qualifyingChildren} qualifying {breakdown.data.childTaxCredit.qualifyingChildren === 1 ? "child" : "children"} × $2,000
+                        {breakdown.data.childTaxCredit.qualifyingChildren} qualifying {breakdown.data.childTaxCredit.qualifyingChildren === 1 ? "child" : "children"} × {breakdown.data.taxYear >= 2025 ? "$2,200" : "$2,000"}
                         {breakdown.data.childTaxCredit.otherDependents > 0 && ` + ${breakdown.data.childTaxCredit.otherDependents} other × $500`}
                       </span>
                       <span className="font-mono font-semibold">{fmt(breakdown.data.childTaxCredit.preliminaryCredit)}</span>
@@ -2499,7 +2501,10 @@ function Form1099Tab({ clientId, taxYear }: { clientId: number; taxYear: number 
   }
 
   function toPayload(f: Form1099FormState) {
-    const numField = (s: string) => (s ? Number(s) : undefined);
+    // Cleared numeric boxes must send null (not undefined) — undefined is dropped
+    // by JSON.stringify, so the server would keep the old DB value. String fields
+    // (payer/recipient TIN, stateCode, etc.) accept undefined (string|null|undefined).
+    const numField = (s: string) => (s ? Number(s) : null);
     const strField = (s: string) => (s ? s : undefined);
     return {
       taxYear,
@@ -3195,6 +3200,7 @@ function CapitalTransactionsTab({ clientId, taxYear }: { clientId: number; taxYe
     queryKey: ["capital-transactions", clientId],
     queryFn: async () => {
       const res = await fetch(`/api/clients/${clientId}/capital-transactions`);
+      if (!res.ok) throw new Error(await res.text());
       return res.json();
     },
   });
@@ -3370,14 +3376,16 @@ function CapitalTransactionForm({
     };
     try {
       if (existing) {
-        await fetch(`/api/clients/${clientId}/capital-transactions/${existing.id}`, {
+        const res = await fetch(`/api/clients/${clientId}/capital-transactions/${existing.id}`, {
           method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
         });
+        if (!res.ok) throw new Error(await res.text());
         toast({ title: "Transaction updated" });
       } else {
-        await fetch(`/api/clients/${clientId}/capital-transactions`, {
+        const res = await fetch(`/api/clients/${clientId}/capital-transactions`, {
           method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
         });
+        if (!res.ok) throw new Error(await res.text());
         toast({ title: "Transaction added" });
       }
       onSaved();
@@ -3492,6 +3500,7 @@ function RentalPropertiesTab({ clientId, taxYear }: { clientId: number; taxYear:
     queryKey: ["rental-properties", clientId],
     queryFn: async () => {
       const res = await fetch(`/api/clients/${clientId}/rental-properties`);
+      if (!res.ok) throw new Error(await res.text());
       return res.json();
     },
   });
@@ -3628,14 +3637,16 @@ function RentalPropertyForm({
     };
     try {
       if (existing) {
-        await fetch(`/api/clients/${clientId}/rental-properties/${existing.id}`, {
+        const res = await fetch(`/api/clients/${clientId}/rental-properties/${existing.id}`, {
           method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
         });
+        if (!res.ok) throw new Error(await res.text());
         toast({ title: "Property updated" });
       } else {
-        await fetch(`/api/clients/${clientId}/rental-properties`, {
+        const res = await fetch(`/api/clients/${clientId}/rental-properties`, {
           method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
         });
+        if (!res.ok) throw new Error(await res.text());
         toast({ title: "Property added" });
       }
       onSaved();
@@ -3863,11 +3874,12 @@ function ScheduleCAssetForm({
       const url = existing
         ? `/api/clients/${clientId}/schedule-c-assets/${existing.id}`
         : `/api/clients/${clientId}/schedule-c-assets`;
-      await fetch(url, {
+      const res = await fetch(url, {
         method: existing ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
+      if (!res.ok) throw new Error(await res.text());
       toast({ title: existing ? "Asset updated" : "Asset added" });
       onSaved();
     } catch (err) {
@@ -4073,7 +4085,7 @@ function AssetBalancesTab({ clientId, taxYear }: { clientId: number; taxYear: nu
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["asset-balances", clientId] });
-      qc.invalidateQueries({ queryKey: ["tax-return", clientId] });
+      qc.invalidateQueries({ queryKey: getGetTaxReturnQueryKey(clientId) });
       reset();
       toast({ title: editingId ? "Asset updated" : "Asset added" });
     },
@@ -4087,7 +4099,7 @@ function AssetBalancesTab({ clientId, taxYear }: { clientId: number; taxYear: nu
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["asset-balances", clientId] });
-      qc.invalidateQueries({ queryKey: ["tax-return", clientId] });
+      qc.invalidateQueries({ queryKey: getGetTaxReturnQueryKey(clientId) });
       toast({ title: "Asset deleted" });
     },
   });
@@ -4299,6 +4311,7 @@ function ScheduleK1Tab({ clientId, taxYear }: { clientId: number; taxYear: numbe
     queryKey: ["schedule-k1", clientId],
     queryFn: async () => {
       const res = await fetch(`/api/clients/${clientId}/k1s`);
+      if (!res.ok) throw new Error(await res.text());
       return res.json();
     },
   });
@@ -4466,14 +4479,16 @@ function ScheduleK1Form({
     };
     try {
       if (existing) {
-        await fetch(`/api/clients/${clientId}/k1s/${existing.id}`, {
+        const res = await fetch(`/api/clients/${clientId}/k1s/${existing.id}`, {
           method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
         });
+        if (!res.ok) throw new Error(await res.text());
         toast({ title: "K-1 updated" });
       } else {
-        await fetch(`/api/clients/${clientId}/k1s`, {
+        const res = await fetch(`/api/clients/${clientId}/k1s`, {
           method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
         });
+        if (!res.ok) throw new Error(await res.text());
         toast({ title: "K-1 added" });
       }
       onSaved();

@@ -216,8 +216,14 @@ export function buildTaxReturnPdf(client: Client, ret: ComputedTaxReturn): Promi
     if (ret.stateRetirementExemption > 0) stateRows.push(["State retirement exemption applied", `(${fmt(ret.stateRetirementExemption)})`]);
     if (ret.multiState.nonresidentStateTaxes.length > 0) {
       for (const nr of ret.multiState.nonresidentStateTaxes) {
-        if (nr.reciprocityApplied) {
-          stateRows.push([`Non-resident ${nr.state} (reciprocity, no tax)`, fmt(0)]);
+        // Reciprocity exempts WAGES only — a reciprocity pair can still carry tax
+        // on non-wage source (rental / pass-through / real-property situs gain), so
+        // print the REAL nr.tax, not $0, or the itemized rows won't reconcile to the
+        // total (which includes it). (audit 2026-06-23 code-review.)
+        if (nr.reciprocityApplied && nr.tax <= 0) {
+          stateRows.push([`Non-resident ${nr.state} (reciprocity — wages exempt)`, fmt(0)]);
+        } else if (nr.reciprocityApplied) {
+          stateRows.push([`Non-resident ${nr.state} tax on $${nr.wages.toFixed(0)} non-wage source (reciprocity exempts wages)`, fmt(nr.tax)]);
         } else {
           stateRows.push([`Non-resident ${nr.state} tax on $${nr.wages.toFixed(0)} source income`, fmt(nr.tax)]);
         }

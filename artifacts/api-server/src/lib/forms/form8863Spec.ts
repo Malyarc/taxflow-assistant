@@ -100,8 +100,8 @@ export function buildForm8863(ctx: FormBuildContext): FormInstance | null {
       moneyLine("1", "Total tentative American opportunity credit (all Parts III, line 30)", ec.aocPreliminary, {
         note: "Per student: 100% of the first $2,000 of qualified expenses + 25% of the next $2,000 — max $2,500/student (§25A(b)(1)).",
       }),
-      moneyLine("3", "Modified adjusted gross income (Form 1040 line 11)", ret.adjustedGrossIncome, {
-        note: "Engine MAGI = AGI; §911/§931/§933 foreign-exclusion add-backs not modeled.",
+      moneyLine("3", "Modified adjusted gross income (Form 1040 line 11)", ret.adjustedGrossIncome + ret.feie.totalExclusion, {
+        note: "§25A(d) MAGI = AGI + the §911 foreign-earned-income/housing exclusion (Form 2555), which the engine DOES add back (matches Form 8812/8839). §931/§933 possessions exclusions are not modeled (no input). (audit 2026-06-23: line 3 showed plain AGI, contradicting the engine's phase-out for FEIE filers.)",
       }),
       pctLine("6", "Phase-out fraction retained (line 4 ÷ line 5)", ec.phaseOutFraction, {
         note: "MAGI band §25A(d): $80,000–$90,000 single/HoH; $160,000–$180,000 MFJ/QSS (not inflation-indexed). 100% = no phase-out.",

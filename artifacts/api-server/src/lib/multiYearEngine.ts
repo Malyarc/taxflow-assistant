@@ -119,6 +119,41 @@ const CARRYFORWARD_NO_SCALE_TYPES: ReadonlySet<string> = new Set([
   "general_business_credit_carryforward",
 ]);
 
+/**
+ * One-time DISPOSITION gain/loss adjustments. Like capitalTransactions and
+ * form4797 (dropped from projection years below), these represent a SPECIFIC
+ * realized event — a home sale (§121), a like-kind exchange (§1031), a
+ * QSBS/§1231 disposition, an ISO/ESPP disqualifying disposition, or a §1250/28%
+ * disposition sub-bucket. Carrying them into projection years — worse, SCALED by
+ * the income-growth factor — fabricates an annual gain (repro: a one-time $400k
+ * §121 home sale recurred as $412k the next year, inflating projected AGI and the
+ * §6654 vouchers). They are year-0 only. A detector that intends a gain to recur
+ * (e.g. the §453 installment spread) injects it via per-year what-if mutations,
+ * applied AFTER this projection — so dropping the baseline copy does not affect
+ * those. (audit 2026-06-23)
+ *
+ * NOTE the general `long_term_capital_gain` / `short_term_capital_gain` levers are
+ * DELIBERATELY NOT here: they are the catch-all recurring-gain inputs (a
+ * buy-and-hold investor's annual Schedule-D distributions; prospectAnalyzer uses
+ * `long_term_capital_gain` for a client's recurring 1040 line 7). `taxProjection`
+ * and `rothOptimizer` consume `projectYearForward` DIRECTLY with no re-injection,
+ * so dropping those would understate the projection / §6654 vouchers — the very
+ * failure class the quarterlyAutopilot fix in this same audit was preventing.
+ * (code-review 2026-06-23: caught long_term_capital_gain wrongly added here.)
+ */
+const ONE_TIME_DISPOSITION_ADJ_TYPES: ReadonlySet<string> = new Set([
+  "home_sale_gross_gain_primary_residence",
+  "section_1031_realized_gain",
+  "section_1031_boot_received",
+  "qsbs_gross_gain",
+  "qsbs_adjusted_basis",
+  "iso_disqualifying_disposition_ordinary",
+  "espp_disqualifying_disposition_ordinary",
+  "unrecaptured_section_1250_gain",
+  "collectibles_28_rate_gain",
+  "section_1231_lookback_loss",
+]);
+
 function scaleAdjustments(adjs: AdjustmentFact[], factor: number): AdjustmentFact[] {
   // Only scale dollar-amount adjustments. Carry-forwards are FIXED dollars
   // (a depleting prior-year balance, not recurring income) — held unchanged.
@@ -203,12 +238,32 @@ export function projectYearForward(
   }
   const factor = Math.pow(growth, yearsAhead);
   const newTaxYear = baseline.taxYear + yearsAhead;
+  // Age advances WITH the year so age-gated benefits turn on mid-horizon: the
+  // §63(f) additional standard deduction AND the OBBBA senior deduction both key
+  // on 65. Pre-fix the age was frozen at baseline while the SAME module aged the
+  // taxpayer for RMD (baseAge + y) — the std-deduction logic and the RMD logic
+  // then disagreed, over-stating projected tax for anyone crossing 65 in-horizon
+  // (audit 2026-06-23 F3).
+  const baseAge = baseline.client.taxpayerAge;
+  const baseSpouseAge = baseline.client.spouseAge;
+  const newTaxpayerAge = baseAge != null ? baseAge + yearsAhead : baseAge;
+  const newSpouseAge = baseSpouseAge != null ? baseSpouseAge + yearsAhead : baseSpouseAge;
   return {
     ...baseline,
-    client: { ...baseline.client, taxYear: newTaxYear },
+    client: {
+      ...baseline.client,
+      taxYear: newTaxYear,
+      taxpayerAge: newTaxpayerAge,
+      spouseAge: newSpouseAge,
+    },
     w2s: baseline.w2s.map((w) => scaleW2(w, factor, newTaxYear)),
     form1099s: baseline.form1099s.map((r) => scale1099(r, factor, newTaxYear)),
-    adjustments: scaleAdjustments(baseline.adjustments, factor),
+    // One-time disposition gains do NOT recur in projection years (mirror the
+    // capitalTransactions/form4797 treatment below) — audit 2026-06-23.
+    adjustments: scaleAdjustments(
+      baseline.adjustments.filter((a) => !ONE_TIME_DISPOSITION_ADJ_TYPES.has(a.adjustmentType)),
+      factor,
+    ),
     // T1.0g (H1) — RECURRING pass-through income advances + scales (the engine
     // year-filters these arrays; pre-fix they silently dropped out of every
     // projection year). Disposed rentals do not recur.

@@ -42,7 +42,18 @@ const W2_DOLLAR_FIELDS = [
   "box18LocalWages", "box19LocalIncomeTax", "box10DependentCare", "allocatedTips",
 ] as const;
 
-/** 1099 DOLLAR fields — explicitly EXCLUDES distributionCode / formType / names. */
+/** 1099 DOLLAR fields — explicitly EXCLUDES distributionCode / formType / names.
+ *  `nonemployeeCompensation` (1099-NEC) IS halved: in the MFS optimizer's
+ *  community path each spouse receives the SAME halved array (filingStatusOptimizer
+ *  `pick`), so the 50/50 Form 8958 split is achieved ENTIRELY by halving — removing
+ *  a field from this list would make the FULL amount land on BOTH spouses
+ *  (double-count). DOCUMENTED SUB-GAP (audit 2026-06-23): for SE-tax, §1402(a)(5)(A)
+ *  attributes community trade/business income 100% to the spouse who carries it on
+ *  (NOT 50/50 on Schedule SE), so halving the NEC slightly over-states the
+ *  optimizer's SE tax when community SE income EXCEEDS the SS wage base (two
+ *  half-bases capture more than one full base) — an advisory-tool imprecision that
+ *  biases toward MFJ. A faithful fix needs per-spouse SE attribution the
+ *  give-same-halved-array mechanism can't express; tracked, not yet built. */
 const F1099_DOLLAR_FIELDS = [
   "nonemployeeCompensation", "interestIncome", "usTreasuryInterest", "taxExemptInterest",
   "earlyWithdrawalPenalty", "ordinaryDividends", "qualifiedDividends", "totalCapitalGainDistribution",

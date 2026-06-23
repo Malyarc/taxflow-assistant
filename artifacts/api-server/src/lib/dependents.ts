@@ -125,8 +125,11 @@ export function deriveDependentCounts(
     // NOT younger — conservative; the rare sub-year case is the CPA's call.)
     const eitcAgeOk =
       disabled || (age != null && (age < 19 || (age < 24 && student)));
+    // §32(c)(3)(C)/Pub 596: a permanently & totally disabled child is a qualifying
+    // child at ANY age and is EXEMPT from the "younger than the taxpayer" test.
+    // (audit 2026-06-23 — was applying the younger-than test to disabled children.)
     const youngerThanTaxpayer =
-      taxpayerBirthYear == null || age == null || age < (taxYear - taxpayerBirthYear);
+      disabled || taxpayerBirthYear == null || age == null || age < (taxYear - taxpayerBirthYear);
     if (qualChildRel && resident && hasSsn && eitcAgeOk && youngerThanTaxpayer) eitc++;
 
     // §21 dependent care: a QUALIFYING CHILD under 13 (§21(b)(1)(A) → §152(c)),

@@ -3821,10 +3821,17 @@ function detectSpousalIra(args: {
   if (client.filingStatus !== "married_filing_jointly" &&
       client.filingStatus !== "qualifying_widow") return null;
 
-  // Heuristic: total earnings (W-2 + net SE) > $7k. Engine can't verify
-  // per-spouse split — CPA confirms one spouse has $0 earned income.
-  const totalEarnings = computed.totalIncome - (computed.form1099Summary?.retirementIncome ?? 0)
-                       - (computed.form1099Summary?.unemploymentCompensationOnly ?? 0);
+  // §219(c)/§219(f)(1): a spousal IRA requires the working spouse to have
+  // COMPENSATION = wages + net SE earnings. SS, pensions, IRA/retirement
+  // distributions, interest, dividends, capital gains, rents, and royalties are
+  // NOT compensation. Engine can't verify the per-spouse split — CPA confirms one
+  // spouse has $0 earned income. (audit 2026-06-23 — the old proxy subtracted only
+  // retirement + unemployment from totalIncome, so taxable SS / dividends / LTCG
+  // counted as "earned" and the strategy fired for couples with ZERO compensation;
+  // because it carries an engine-verified what-if it then ranked at the TOP. Now
+  // uses the same wage/SE signal as the other earned-income detectors.)
+  const { wages } = w2WagesSignal(computed, baselineInputs);
+  const totalEarnings = wages + Math.max(0, computed.detail.se.netSeEarnings ?? 0);
   if (totalEarnings < G1_46_MIN_EARNED_INCOME) return null;
 
   // Suppress if any spouse_ira_contribution marker already on return.

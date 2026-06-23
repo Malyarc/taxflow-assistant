@@ -80,6 +80,16 @@ export function buildSchedule3(ctx: FormBuildContext): FormInstance | null {
       }),
     );
   }
+  // Sch 3 line 11 → 1040 line 31. Form 1040 already reports this on line 31; the
+  // workpaper omitted the supporting Schedule 3 line so it couldn't be traced
+  // (audit 2026-06-23, forms F-excessSS).
+  if (nz(ret.excessSocialSecurityCredit)) {
+    partIILines.push(
+      moneyLine("11", "Excess social security and tier 1 RRTA tax withheld", ret.excessSocialSecurityCredit, {
+        note: "One employee with 2+ employers whose combined Box 4 exceeds the year's SS wage-base max → the excess is a refundable payment (→ Form 1040 line 31).",
+      }),
+    );
+  }
   if (nz(ret.adoptionCredit.refundablePortion)) {
     partIILines.push(
       moneyLine("13z", "Adoption credit — refundable portion (OBBBA, Form 8839)", ret.adoptionCredit.refundablePortion, {
@@ -102,7 +112,7 @@ export function buildSchedule3(ctx: FormBuildContext): FormInstance | null {
     ),
   );
 
-  if (partISum === 0 && !nz(netPtc) && !nz(ret.adoptionCredit.refundablePortion) && !nz(ret.manualCreditsApplied)) {
+  if (partISum === 0 && !nz(netPtc) && !nz(ret.excessSocialSecurityCredit) && !nz(ret.adoptionCredit.refundablePortion) && !nz(ret.manualCreditsApplied)) {
     return null;
   }
 

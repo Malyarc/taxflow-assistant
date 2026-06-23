@@ -577,6 +577,34 @@ async function pdfSmoke(): Promise<void> {
   checkStr("S6 PDF: starts with %PDF- magic", buf.slice(0, 5).toString("latin1"), "%PDF-");
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// Scenario 7 — §25D residential clean energy WITH a §25D(c) carryforward
+//   MFJ/CA, $120k W-2, 2 kids, $30k §25D solar. cleanEnergyCredit = 30%×$30k =
+//   $9,000, which exceeds the income tax remaining after the CTC, so part carries
+//   forward (§25D applies AFTER the CTC). The recon Part-5 nonrefundable-
+//   components tie MUST hold (✓) — pre-fix it pushed the full $9,000 COMPUTED
+//   total pre-CTC and showed a FALSE "⚠ off by" on this correct return
+//   (audit 2026-06-23, forms F-§25D).
+// ════════════════════════════════════════════════════════════════════════════
+{
+  const inputs: TaxReturnInputs = {
+    client: { filingStatus: "married_filing_jointly", state: "CA", taxYear: 2024, taxpayerAge: 40, dependentsUnder17: 2 },
+    w2s: [{ taxYear: 2024, wagesBox1: 120000, federalTaxWithheldBox2: 12000, stateCode: "CA" }],
+    form1099s: [],
+    adjustments: [{ adjustmentType: "residential_clean_energy", amount: 30000, isApplied: true }],
+    taxYear: 2024,
+  };
+  const ret = computeTaxReturnPure(inputs);
+  const ws = buildReconciliationWorksheet(buildCtx(inputs, ret));
+  const p5 = partLines(ws, 4);
+  // Sanity: this scenario actually produces a §25D carryforward (the bug trigger).
+  checkTrue("S7 engine: §25D carryforward > 0 (bug trigger present)", ret.residentialCleanEnergyCarryforward > 0);
+  const tie = findByLabel(p5, "Nonrefundable components tie");
+  checkTrue("S7 Part 5: nonrefundable components TIE (✓, no false ⚠)", (tie?.label ?? "").startsWith("✓"));
+  // §25C/§30C row pre-CTC + §25D applied row post-CTC both present.
+  checkTrue("S7 Part 5: §25D applied row (S3-5a) present", findLine(p5, "S3-5a") !== undefined);
+}
+
 // ── Summary ──────────────────────────────────────────────────────────────────
 (async () => {
   await pdfSmoke();

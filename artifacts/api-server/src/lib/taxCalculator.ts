@@ -1630,30 +1630,44 @@ export function calculateMultiStateTax(params: {
   // intangibles follow the owner's DOMICILE) and pension/IRA/401(k)/SS
   // (4 U.S.C. §114(b) — a state may not tax a non-resident's retirement income).
   // The CPA simply never places those in perStateNonResidentOtherSourced.
-  const nrSourceByState = new Map<string, number>();
-  const addNrSource = (rawCode: string | undefined, amount: number): void => {
+  // WAGES and NON-WAGE source are tracked SEPARATELY because a reciprocity
+  // agreement exempts only COMPENSATION (wages) — a nonresident's rental
+  // real-estate / pass-through business / real-property situs gain sourced to the
+  // work state remains fully taxable there (audit 2026-06-23). Merging them and
+  // skipping the whole NR tax on a reciprocity pair zeroed the non-wage NR return.
+  const nrWageByState = new Map<string, number>();
+  const nrNonWageByState = new Map<string, number>();
+  const addNr = (target: Map<string, number>, rawCode: string | undefined, amount: number): void => {
     const code = (rawCode || "").toUpperCase();
     if (!code || code === resident) return; // resident-state income is covered by the resident calc
     if (partYearFormerState && code === partYearFormerState) return; // covered by part-year formerStateTax
     const v = Math.max(0, amount);
     if (v === 0) return;
-    nrSourceByState.set(code, (nrSourceByState.get(code) ?? 0) + v);
+    target.set(code, (target.get(code) ?? 0) + v);
   };
-  for (const entry of params.perStateWages) addNrSource(entry.stateCode, entry.wages);
+  for (const entry of params.perStateWages) addNr(nrWageByState, entry.stateCode, entry.wages);
   for (const [code, amt] of Object.entries(params.options?.perStateNonResidentOtherSourced ?? {})) {
-    addNrSource(code, amt);
+    addNr(nrNonWageByState, code, amt);
   }
+  const allNrStates = new Set<string>([...nrWageByState.keys(), ...nrNonWageByState.keys()]);
 
-  // Compute non-resident state tax for each (skip reciprocity pairs)
+  // Compute non-resident state tax for each state.
   const nonresidentStateTaxes: MultiStateTaxResult["nonresidentStateTaxes"] = [];
   let totalNrTax = 0;
-  let totalNrWages = 0; // total NR-SOURCE income (wages + non-wage source) — credit cap base
+  let totalNrWages = 0; // total NR-SOURCE income actually TAXED by other states — credit cap base
 
-  for (const [nrState, nrSource] of nrSourceByState.entries()) {
+  for (const nrState of allNrStates) {
+    const nrWages = nrWageByState.get(nrState) ?? 0;
+    const nrNonWage = nrNonWageByState.get(nrState) ?? 0;
     const reciprocity = hasReciprocity(resident, nrState);
-    if (reciprocity) {
-      // Reciprocity: NR state does not tax. Resident state taxes the wages.
-      nonresidentStateTaxes.push({ state: nrState, tax: 0, wages: nrSource, reciprocityApplied: true });
+    // Reciprocity exempts wages only; non-wage source stays taxable by the NR state.
+    const nrSource = reciprocity ? nrNonWage : nrWages + nrNonWage;
+    if (nrSource === 0) {
+      // Pure wage reciprocity (no taxable non-wage source): NR state taxes nothing;
+      // the resident state taxes the wages. Preserve the existing disclosure row.
+      if (reciprocity && nrWages > 0) {
+        nonresidentStateTaxes.push({ state: nrState, tax: 0, wages: nrWages, reciprocityApplied: true });
+      }
       continue;
     }
 
@@ -1683,7 +1697,9 @@ export function calculateMultiStateTax(params: {
       // approximation — usually lower than the proportional method).
       nrTax = calculateStateTax(nrSource, nrState, params.filingStatus, params.taxYear, {});
     }
-    nonresidentStateTaxes.push({ state: nrState, tax: nrTax, wages: nrSource, reciprocityApplied: false });
+    // reciprocityApplied is true when an agreement exists (it exempted the wage
+    // portion); the tax here is on the still-taxable non-wage source.
+    nonresidentStateTaxes.push({ state: nrState, tax: nrTax, wages: nrSource, reciprocityApplied: reciprocity });
     totalNrTax += nrTax;
     totalNrWages += nrSource;
   }
@@ -1765,7 +1781,13 @@ export function calculateMultiStateTax(params: {
     // resident with CA+AZ wages was over-credited $1,804.75).
     if (params.federalAgi > 0) {
       for (const nr of nonresidentStateTaxes) {
-        if (nr.reciprocityApplied) continue; // reciprocal wages: no NR tax, no credit
+        // Credit any NR tax actually PAID. A reciprocity pair's WAGE row carries
+        // tax 0 (skipped here, correctly), but a reciprocity pair can still levy
+        // tax on NON-WAGE source (rental / pass-through / situs gain) — that tax
+        // IS credit-eligible, so gate on the tax amount, not the reciprocity flag
+        // (audit 2026-06-23 code-review: `if (reciprocityApplied) continue` denied
+        // the resident credit on non-wage NR tax → double taxation).
+        if (nr.tax <= 0) continue;
         const perStateCap = (nr.wages / params.federalAgi) * residentTaxFull;
         residentCreditApplied += Math.min(nr.tax, Math.max(0, perStateCap));
       }
@@ -6421,8 +6443,17 @@ export function computeScheduleCAssetDepreciation(
   let section280FCapApplied = false;
   // T1.0c #8 — current-year §179-elected assets, collected so the DOLLAR-cap-
   // disallowed portion of each election can be re-based into bonus/MACRS after
-  // the cap is known (the loop can't know it mid-stream).
-  const section179ElectedCurrentYearAssets: ScheduleCAsset[] = [];
+  // the cap is known (the loop can't know it mid-stream). Normalized to a
+  // descriptor (not the raw asset) so heavy SUVs — whose elected amount is the
+  // §179(b)(5) SUV cap, not full cost — share the SAME post-cap re-basing path
+  // (audit 2026-06-23 F4): `elected` competes for the dollar cap, and any
+  // disallowed portion recovers as bonus/MACRS on `basis − allowed`.
+  const section179ElectedCurrentYearAssets: Array<{
+    elected: number;
+    basis: number;
+    bonusRate: number;
+    schedule: readonly number[];
+  }> = [];
   for (const a of p.assets) {
     const cost = Math.max(0, a.cost);
     if (cost <= 0 || a.placedInServiceYear > p.taxYear) continue; // not in service
@@ -6456,14 +6487,7 @@ export function computeScheduleCAssetDepreciation(
       // only the luxury DOLLAR caps, not the predominant-use rules).
       const predominant = bu > 0.5;
       const year1S179 = predominant && a.section179 ? Math.min(suvCap, businessBasis) : 0;
-      if (isCurrentYear && year1S179 > 0) {
-        currentYearSection179Elected += year1S179;
-        currentYearQualifiedPropertyCost += businessBasis;
-      }
-      const remBasis = Math.max(0, businessBasis - year1S179);
       const suvBonusRate = !predominant || !a.bonus ? 0 : a.bonusFullObbba ? 1.0 : Math.max(0, Math.min(1, p.bonusRateByYear[a.placedInServiceYear] ?? 0));
-      const suvBonusBasis = suvBonusRate * remBasis;
-      const suvMacrsBasis = remBasis - suvBonusBasis;
       const sq = a.placedInServiceQuarter;
       // Vehicles are statutory 5-year property (force 5, ignore a.recoveryYears).
       const suvSchedule = !predominant
@@ -6471,6 +6495,28 @@ export function computeScheduleCAssetDepreciation(
         : midQuarterYears.has(a.placedInServiceYear) && sq != null
           ? midQuarterSchedule(5, sq)
           : MACRS_HALF_YEAR_TABLE[5] ?? [];
+      // Current-year §179-elected SUV: route the elected amount through the global
+      // §179 dollar-cap pool + post-cap re-basing (audit 2026-06-23 F4). Previously
+      // the SUV competed for the dollar cap but always depreciated `businessBasis −
+      // year1S179` as if its full election were allowed, so a dollar-cap-disallowed
+      // SUV §179 was NEVER expensed AND never recovered — permanently lost basis.
+      if (isCurrentYear && year1S179 > 0) {
+        currentYearSection179Elected += year1S179;
+        currentYearQualifiedPropertyCost += businessBasis;
+        section179ElectedCurrentYearAssets.push({
+          elected: year1S179,
+          basis: businessBasis,
+          bonusRate: suvBonusRate,
+          schedule: suvSchedule,
+        });
+        continue;
+      }
+      // Otherwise (prior-year SUV, ≤50% business use, or no §179 election): inline.
+      // year1S179 is 0 here, or a prior-year election assumed fully allowed in its
+      // origin year (same documented sub-gap as regular prior-year §179).
+      const remBasis = Math.max(0, businessBasis - year1S179);
+      const suvBonusBasis = suvBonusRate * remBasis;
+      const suvMacrsBasis = remBasis - suvBonusBasis;
       const syi = p.taxYear - a.placedInServiceYear;
       const suvMacrsPct = syi >= 0 && syi < suvSchedule.length ? suvSchedule[syi] : 0;
       macrsTotal += suvMacrsPct * suvMacrsBasis;
@@ -6487,7 +6533,22 @@ export function computeScheduleCAssetDepreciation(
       if (isCurrentYear) {
         currentYearSection179Elected += cost;
         currentYearQualifiedPropertyCost += cost;
-        section179ElectedCurrentYearAssets.push(a);
+        const s179BonusRate = !a.bonus
+          ? 0
+          : a.bonusFullObbba
+            ? 1.0
+            : Math.max(0, Math.min(1, p.bonusRateByYear[a.placedInServiceYear] ?? 0));
+        const s179Q = a.placedInServiceQuarter;
+        const s179Schedule =
+          midQuarterYears.has(a.placedInServiceYear) && s179Q != null
+            ? midQuarterSchedule(a.recoveryYears, s179Q)
+            : MACRS_HALF_YEAR_TABLE[a.recoveryYears] ?? [];
+        section179ElectedCurrentYearAssets.push({
+          elected: cost,
+          basis: cost,
+          bonusRate: s179BonusRate,
+          schedule: s179Schedule,
+        });
       }
       continue;
     }
@@ -6540,27 +6601,20 @@ export function computeScheduleCAssetDepreciation(
   // the whole §179-flagged cost — a convention-selection nuance, documented.)
   {
     let s179CapRoom = electedAfterDollarCap;
-    for (const a of section179ElectedCurrentYearAssets) {
-      const cost = Math.max(0, a.cost);
-      const expensed = Math.min(cost, s179CapRoom);
+    for (const e of section179ElectedCurrentYearAssets) {
+      const expensed = Math.min(e.elected, s179CapRoom);
       s179CapRoom -= expensed;
-      const excessBasis = cost - expensed;
+      // Depreciable basis = total basis net of the §179 actually ALLOWED (after the
+      // dollar cap). Regular asset: basis = cost. Heavy SUV: basis = businessBasis,
+      // elected = the SUV cap, so the SUV-cap excess (basis − SUV cap) is always
+      // here and any dollar-cap-disallowed SUV §179 joins it.
+      const excessBasis = e.basis - expensed;
       if (excessBasis <= 0) continue;
-      const bonusRate = !a.bonus
-        ? 0
-        : a.bonusFullObbba
-          ? 1.0
-          : Math.max(0, Math.min(1, p.bonusRateByYear[a.placedInServiceYear] ?? 0));
-      const bonusBasis = bonusRate * excessBasis;
+      const bonusBasis = e.bonusRate * excessBasis;
       const macrsBasis = excessBasis - bonusBasis;
-      const q = a.placedInServiceQuarter;
-      const schedule =
-        midQuarterYears.has(a.placedInServiceYear) && q != null
-          ? midQuarterSchedule(a.recoveryYears, q)
-          : MACRS_HALF_YEAR_TABLE[a.recoveryYears] ?? [];
       // These are isCurrentYear assets → recovery year 1.
       bonusTotal += bonusBasis;
-      macrsTotal += (schedule[0] ?? 0) * macrsBasis;
+      macrsTotal += (e.schedule[0] ?? 0) * macrsBasis;
     }
   }
 

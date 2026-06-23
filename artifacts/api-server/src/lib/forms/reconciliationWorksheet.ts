@@ -305,9 +305,17 @@ export function buildReconciliationWorksheet(ctx: FormBuildContext): FormInstanc
   pushCapped("S3-2", "Dependent care credit (Form 2441)", ret.dependentCareCredit.appliedCredit);
   pushCapped("S3-3", "Education credits — nonrefundable AOC + LLC (Form 8863)", ret.educationCredits.aocNonRefundable + ret.educationCredits.llcApplied);
   pushCapped("S3-4", "Retirement savings credit (Form 8880)", ret.saversCredit.appliedCredit);
-  pushCapped("S3-5", "Residential energy credits (Form 5695)", ret.residentialEnergyCredits.total);
+  // §25C/§30C energy credits apply BEFORE the CTC (capped against the running
+  // income tax); the §25D residential clean energy credit applies AFTER the CTC
+  // with a §25D(c) carryforward (engine: taxReturnEngine ~4342-4429). Splitting
+  // them — and using the §25D APPLIED amount (not the computed total) — makes the
+  // Part-5 tie-out tie for a §25D-with-carryforward return; pushing the full
+  // computed total pre-CTC produced a FALSE "⚠ off by" on a correct packet
+  // (audit 2026-06-23).
+  pushCapped("S3-5", "Residential energy credits §25C/§30C (Form 5695)", ret.residentialEnergyCredits.total - ret.residentialEnergyCredits.cleanEnergyCredit);
   pushApplied("S3-6c", "Adoption credit — nonrefundable (Form 8839)", ret.adoptionCredit.nonRefundableApplied);
   pushApplied("19", "Child tax credit + ODC — nonrefundable (Form 8812)", ret.childTaxCredit.nonRefundablePortion);
+  pushApplied("S3-5a", "Residential clean energy §25D (Form 5695)", ret.residentialCleanEnergyApplied);
   pushApplied("S3-6b", "Prior-year minimum tax credit (Form 8801)", ret.amtCreditApplied);
   pushApplied("S3-6a", "R&D credit applied under §38 limit (Form 6765)", ret.rdCreditApplied);
   pushApplied("S3-6a", "Other general business credits (WOTC §51 / FMLA §45S)", ret.otherGeneralBusinessCreditApplied);

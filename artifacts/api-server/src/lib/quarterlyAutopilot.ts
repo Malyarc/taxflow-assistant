@@ -234,10 +234,27 @@ function projectFromFeed(
       : []),
   ] as TaxReturnInputs["adjustments"];
 
+  // Carry the baseline's portfolio / retirement 1099s (DIV / INT / R / B / MISC /
+  // G / K) UNCHANGED — the feed refreshes only wages, withholding, net-SE, and
+  // other ordinary income, NOT investment/pension income. Drop 1099-NEC
+  // (nonemployee compensation = self-employment, which the feed's net-SE figure
+  // replaces) so SE isn't double-counted. (audit 2026-06-23 — previously
+  // `form1099s: []` wiped ALL baseline 1099 income, collapsing the §6654
+  // safe-harbor target and under-billing estimates → real underpayment penalties.)
+  // …and zero each carried 1099's federalTaxWithheld: the feed's
+  // `ytdFederalWithheld` is documented as the TOTAL (W-2 Box 2 + 1099 withholding)
+  // and is folded into the synthetic W-2 above, so leaving it on the carried 1099s
+  // too would double-count withholding → overstate payments → undersize the
+  // §6654 target (code-review 2026-06-23). State withholding is not in the feed, so
+  // it is preserved.
+  const carriedForm1099s = (baselineInputs.form1099s ?? [])
+    .filter((f) => String((f as { formType?: unknown }).formType ?? "").toUpperCase() !== "NEC")
+    .map((f) => ({ ...f, federalTaxWithheld: 0 }));
+
   const projectedInputs: TaxReturnInputs = {
     ...baselineInputs,
     w2s: w2s as TaxReturnInputs["w2s"],
-    form1099s: [],
+    form1099s: carriedForm1099s as TaxReturnInputs["form1099s"],
     adjustments,
   };
   const ret = computeTaxReturnPure(projectedInputs);
