@@ -47,6 +47,7 @@ const INFO_RETURN_DOC_TYPES = new Set<string>([
 ]);
 import { encryptField, decryptField, isDecryptErrorSentinel } from "../lib/fieldCrypto";
 import { consentRequired, hasValidConsent, AI_EXTRACTION_SCOPE } from "../lib/consentGate";
+import { recordDisclosure } from "../lib/disclosureLedgerStore";
 import { logger } from "../lib/logger";
 import { setSecureDownloadHeaders } from "../lib/httpSecurity";
 import { recalculateAfterMutation } from "../lib/taxReturnPipeline";
@@ -196,6 +197,15 @@ router.post("/clients/:clientId/documents", async (req, res): Promise<void> => {
         logger.warn({ docId: doc.id }, "Extraction aborted at transmission — §7216 consent not present");
         return;
       }
+      // T0.2 C1 — record the §7216 disclosure to the tamper-evident ledger at the
+      // transmission point (the document is about to be sent to the LLM).
+      await recordDisclosure({
+        clientId: params.data.clientId,
+        action: "ai_disclosure",
+        recipient: "google_gemini",
+        purpose: `${parsed.data.documentType} extraction: ${parsed.data.fileName}`,
+        scope: AI_EXTRACTION_SCOPE,
+      });
       const mimeType = verifiedMimeType;
       const isVisual = isVisualMimeType(mimeType);
       const extractedText = isVisual

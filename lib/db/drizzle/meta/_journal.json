@@ -176,6 +176,13 @@
       "when": 1781183909182,
       "tag": "0024_chilly_phil_sheldon",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1782186789885,
+      "tag": "0025_amazing_metal_master",
+      "breakpoints": true
     }
   ]
 }

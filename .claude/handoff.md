@@ -1,3 +1,26 @@
+# Handoff Note — 2026-06-22c (DEPLOY-SCRIPT HARDENING + T0.2 C1 DISCLOSURE LEDGER)
+
+Two things this session: (1) a fail-fast deploy script; (2) the §7216/§6713 tamper-evident disclosure ledger.
+
+**Green bar:** all typechecks clean; `test:no-api` = **138 suites / 8,320 / 0**; ledger core 61 + integration 11 (incl. a 15-way concurrency stress) verified against a LIVE local DB; 3-lens adversarial review → "safe to ship."
+
+### 1. `deploy-ec2.sh` (root) — fail-fast deploy
+Replaces the ad-hoc deploy that masked a build failure behind `| tail` and restarted a stale dist. `set -euo pipefail`, build+typecheck UNPIPED **before** `pm2 restart`, local Vite build first, `curl -fsS` health gates. CLAUDE.md "EC2 deploy" now points to it. (Documented honest limitation: it gates build/typecheck failures, NOT boot crashes — auto-rollback is a tracked follow-up.)
+
+### 2. T0.2 C1 — disclosure & use ledger (CORE SHIPPED)
+- **Pure core** `disclosureLedger.ts`: HMAC-keyed hash chain (`DISCLOSURE_LEDGER_KEY`; unkeyed SHA-256 demo fallback). `verifyLedger` detects payload-edit / hash-edit / reorder / interior-delete / insert / wrong-key, AND — via a committed `LedgerAnchor` — TAIL-truncation. `HASHED_FIELDS` + a guard test prevent a future field becoming silently un-hashed.
+- **Store** `disclosureLedgerStore.ts`: append serialized by `pg_advisory_xact_lock` (concurrency-proven), with a **monotonic single-row checkpoint** (`disclosure_ledger_checkpoint`) advanced atomically in the same tx → makes tail-truncation detectable. Best-effort (never throws, like writeAudit).
+- **Schema/migration:** `disclosure_ledger` + `disclosure_ledger_checkpoint` (migration **0025**, additive, **0 FKs** — clientId is intentionally a non-FK IMMUTABLE integer: a set-null FK mutated a hashed field on client-delete and broke the chain; the integration test caught that).
+- **Seams wired:** AI extraction (documents.ts), planning LLM ×5 (memo/email/missing-data/discovery/Q&A, gated on `result.aiUsed`), exports CSV/JSON/TXT (fire-and-forget), consent record/revoke.
+- **Endpoints:** `GET /clients/:id/disclosure-ledger` (rows + O(1) checkpoint summary), `GET /disclosure-ledger/verify` (full cryptographic re-verify vs the anchor).
+- **Documented real-PII follow-ups** (in the module docstrings + MASTER-TODO C1): external append-only anchor / signed receipt; fail-CLOSED mode + escalate a 23505 unique-violation; wire the ~10 PDF/form export handlers (same "export" class); suffix-since-checkpoint verify + `PG_POOL_MAX` ≥ peak append depth; the unkeyed→keyed regime boundary.
+
+### Deploy notes for THIS chunk
+- **Schema migration 0025 (additive, 2 CREATE TABLEs).** No frontend change → **no Vite rebuild / rsync.** Prod path: pull → install → `drizzle-kit migrate` (prod is baselined, so it applies ONLY 0025). **If prod's migrate drifts (the LOCAL dev DB did — collides on an earlier migration), fall back to the additive DDL** `CREATE TABLE IF NOT EXISTS disclosure_ledger(...)` + `disclosure_ledger_checkpoint(...)` per the CLAUDE.md additive rule, then build/restart.
+- The ledger is INERT until exercised; `DISCLOSURE_LEDGER_KEY` is unset on the demo box (unkeyed SHA-256) — that's the intended demo posture.
+
+---
+
 # Handoff Note — 2026-06-22 (PURE-CODE BATCH: T0.2 security hardening + T5 G-9 + G-10)
 
 **Shipped a self-contained "pure-code only" batch — no new schema, no frontend changes, no external deps.** Three workstreams, all hand-calc-tested + adversarially reviewed (a 4-lens fan-out: security / G-9-correctness / G-10-correctness / regression → "safe to ship, no blockers"; its 3 small findings were fixed).

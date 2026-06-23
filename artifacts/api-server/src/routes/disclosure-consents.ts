@@ -11,6 +11,7 @@ import {
   MAX_CONSENT_SIGNER_NAME_LEN,
   MAX_CONSENT_SIGNATURE_REF_LEN,
 } from "../lib/consentGate";
+import { recordDisclosure, loadClientLedger, verifyGlobalLedger } from "../lib/disclosureLedgerStore";
 
 // P0-2 — record / list / revoke a taxpayer's §7216 disclosure consent. These
 // endpoints sit behind the API auth gate (mounted after requireApiAuth). The
@@ -70,6 +71,13 @@ router.post("/clients/:clientId/disclosure-consents", async (req, res): Promise<
     entityId: row.id,
     after: { scope: row.scope, documentVersion: row.documentVersion, signedAt: row.signedAt, expiresAt: row.expiresAt },
   });
+  await recordDisclosure({
+    clientId,
+    action: "consent_recorded",
+    recipient: "internal",
+    purpose: `§7216 consent captured (${documentVersion})`,
+    scope,
+  });
   res.status(201).json(row);
 });
 
@@ -112,7 +120,40 @@ router.post("/clients/:clientId/disclosure-consents/:id/revoke", async (req, res
     return;
   }
   await writeAudit({ clientId, action: "update", entityType: "disclosure_consent", entityId: row.id, after: { revokedAt: row.revokedAt } });
+  await recordDisclosure({
+    clientId,
+    action: "consent_revoked",
+    recipient: "internal",
+    purpose: `§7216 consent #${row.id} revoked`,
+    scope: row.scope,
+  });
   res.json(row);
+});
+
+// ── Disclosure ledger (T0.2 C1) — read + integrity verification ─────────────
+// Per-client disclosure history + the GLOBAL chain integrity check (the chain
+// is firm-wide; a per-client subsequence can't be independently verified).
+router.get("/clients/:clientId/disclosure-ledger", async (req, res): Promise<void> => {
+  const clientId = Number(req.params.clientId);
+  if (!Number.isInteger(clientId)) {
+    res.status(400).json({ error: "invalid clientId" });
+    return;
+  }
+  if (!(await clientExists(clientId))) {
+    res.status(404).json({ error: "client not found" });
+    return;
+  }
+  // Per-client display + the O(1) committed-checkpoint summary (count + head).
+  // The full cryptographic re-verify is GET /disclosure-ledger/verify.
+  const { rows, checkpoint } = await loadClientLedger(clientId);
+  res.json({ clientId, entries: rows, checkpoint });
+});
+
+// Firm-wide tamper-evidence check — returns the verification summary only (not
+// the full entry list).
+router.get("/disclosure-ledger/verify", async (_req, res): Promise<void> => {
+  const { verification } = await verifyGlobalLedger();
+  res.json(verification);
 });
 
 export default router;

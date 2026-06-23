@@ -36,6 +36,7 @@ import {
   buildTaxReturnSummaryText,
 } from "../lib/taxReturnExports";
 import { setSecureDownloadHeaders, setNoStorePii } from "../lib/httpSecurity";
+import { recordDisclosure } from "../lib/disclosureLedgerStore";
 import { buildAllFormInstances } from "../lib/forms/registry";
 import { buildWorkpaperPacketPdf } from "../lib/forms/formRenderer";
 import type { WorkpaperTaxpayer } from "../lib/forms/formSpec";
@@ -764,6 +765,12 @@ router.get("/clients/:clientId/tax-return/csv", async (req, res): Promise<void> 
     fileName, contentType: "text/csv; charset=utf-8", disposition: "attachment",
     fallbackExt: ".csv",
   });
+  void recordDisclosure({
+    clientId: params.data.clientId,
+    action: "export",
+    recipient: "csv_download",
+    purpose: `tax-return CSV (TY${computed.result.taxYear})`,
+  });
   res.send(csv);
 });
 
@@ -788,6 +795,12 @@ router.get("/clients/:clientId/tax-return/json", async (req, res): Promise<void>
   setSecureDownloadHeaders(res, {
     fileName, contentType: "application/json; charset=utf-8", disposition: "attachment",
     fallbackExt: ".json",
+  });
+  void recordDisclosure({
+    clientId: params.data.clientId,
+    action: "export",
+    recipient: "json_download",
+    purpose: `tax-return JSON (TY${computed.result.taxYear})`,
   });
   res.send(json);
 });
@@ -816,6 +829,12 @@ router.get("/clients/:clientId/tax-return/ultratax", async (req, res): Promise<v
   setSecureDownloadHeaders(res, {
     fileName, contentType: "text/plain; charset=utf-8", disposition: "attachment",
     fallbackExt: ".txt",
+  });
+  void recordDisclosure({
+    clientId: params.data.clientId,
+    action: "export",
+    recipient: "txt_download",
+    purpose: `tax-return summary TXT (TY${computed.result.taxYear})`,
   });
   res.send(summary);
 });

@@ -46,6 +46,16 @@ import {
   type CampaignClientHit,
 } from "../lib/planningCampaigns";
 import { buildFirmBenchmark, type FirmBenchmarkClient } from "../lib/firmBenchmarking";
+import { recordDisclosure } from "../lib/disclosureLedgerStore";
+
+/** Record an AI disclosure to the §7216 ledger when the LLM was actually used
+ *  (the deterministic/no-consent fallback does NOT disclose, so must NOT record).
+ *  Fire-and-forget + best-effort — keeps the global ledger lock off the response. */
+function recordAiDisclosure(clientId: number, aiUsed: boolean, purpose: string): void {
+  if (aiUsed) {
+    void recordDisclosure({ clientId, action: "ai_disclosure", recipient: "google_gemini", purpose, scope: AI_EXTRACTION_SCOPE });
+  }
+}
 import { setSecureDownloadHeaders } from "../lib/httpSecurity";
 import { optimizeRothConversionLadder } from "../lib/rothOptimizer";
 import { runMonteCarlo } from "../lib/monteCarloEngine";
@@ -336,6 +346,7 @@ router.get("/clients/:clientId/planning-memo", async (req, res): Promise<void> =
       client: ctx.client, computed: ctx.computed, hits: ctx.hits,
       forceDeterministic: await aiDisclosureBlocked(params.data.clientId),
     });
+    recordAiDisclosure(params.data.clientId, result.aiUsed, "planning memo");
     res.json({
       clientId: params.data.clientId,
       taxYear: ctx.computed.taxYear,
@@ -359,6 +370,7 @@ router.get("/clients/:clientId/planning-email", async (req, res): Promise<void> 
       client: ctx.client, computed: ctx.computed, hits: ctx.hits,
       forceDeterministic: await aiDisclosureBlocked(params.data.clientId),
     });
+    recordAiDisclosure(params.data.clientId, result.aiUsed, "client outreach email");
     res.json({
       clientId: params.data.clientId,
       taxYear: ctx.computed.taxYear,
@@ -382,6 +394,7 @@ router.get("/clients/:clientId/planning-missing-data", async (req, res): Promise
       client: ctx.client, computed: ctx.computed, hits: ctx.hits,
       forceDeterministic: await aiDisclosureBlocked(params.data.clientId),
     });
+    recordAiDisclosure(params.data.clientId, result.aiUsed, "missing-data inference");
     res.json({
       clientId: params.data.clientId,
       items: result.items,
@@ -409,6 +422,7 @@ router.get("/clients/:clientId/planning-discovery", async (req, res): Promise<vo
     const result = await discoverPlanningCandidates({
       client: ctx.client, computed: ctx.computed, hits: ctx.hits,
     });
+    recordAiDisclosure(params.data.clientId, result.aiUsed, "strategy discovery");
     res.json({
       clientId: params.data.clientId,
       candidates: result.candidates,
@@ -1064,6 +1078,7 @@ router.post("/clients/:clientId/return-qa", async (req, res): Promise<void> => {
       // §7216 — the grounding snapshot is tax-return information.
       forceDeterministic: await aiDisclosureBlocked(params.data.clientId),
     });
+    recordAiDisclosure(params.data.clientId, result.aiUsed, "return Q&A");
     res.json({
       clientId: params.data.clientId,
       taxYear: ctx.computed.taxYear,

@@ -224,6 +224,8 @@ Future-you will be tempted to "simplify" these. Don't.
   | `tax-engine-export-sanitization-tests.ts` | no (**T0.2 C4, 2026-06-22** — 25: `neutralizeFormula` OWASP CSV/formula-injection guard applied uniformly to CSV/TXT/JSON exports; negative/decimal numbers preserved; benign names unchanged.) |
   | `tax-engine-firm-benchmarking-tests.ts` | no (**T5 G-9, 2026-06-22** — 38 hand-calc'd: `buildFirmBenchmark` nearest-rank effective-rate percentiles + AGI-band histogram + strategy-adoption gap table + firm opportunity total; $100-rounding anonymization; empty + negative-AGI edges.) |
   | `tax-engine-notification-events-tests.ts` | no (**T5 G-10, 2026-06-22** — 34 hand-calc'd: `deriveNotificationEvents` day-count math (UTC-pinned), urgency tiers + windowing, doc-request urgency, stable dedupe keys, urgency/daysUntil/dedupeKey sort.) |
+  | `security-disclosure-ledger-tests.ts` | no (**T0.2 C1, 2026-06-22** — 61: the §7216/§6713 tamper-evident hash-chain core (`disclosureLedger.ts`) — build/verify round-trip, genesis+linkage, determinism, detection of payload-edit/hash-edit/reorder/interior-delete/insert/wrong-key for BOTH HMAC + SHA-256, the FIELD_ORDER coverage guard, and the checkpoint-anchor TAIL-truncation detection.) |
+  | `tax-engine-disclosure-ledger-integration-tests.ts` | yes (**T0.2 C1, 2026-06-22** — 11: live append path — consent + CSV-export seams append entries; the chain verifies against the committed checkpoint; and a **15-way CONCURRENCY stress proves the advisory lock prevents chain forks** (all 15 land, global chain valid, count grows by exactly 15). Run against a live API+DB.) |
 
 **Non-test scripts:**
 - `build-validation-packet-v2.ts` — generates 15 new validation packet cases (Cases 11-25: Form 8606 backdoor Roth, §1031, §121, §1202, kiddie tax, FEIE, ACA PTC, HSA, Roth conv, NOL, cap-loss CF, multi-state NR, part-year residency, §163(j), §461(l)). Pure-function; no live API needed.
@@ -246,6 +248,8 @@ Future-you will be tempted to "simplify" these. Don't.
 - **When running commands from a parallel worktree:** preview tools use the harness CWD, which may not match where the work is. Use `pnpm --dir /path/to/worktree --filter @workspace/x run ...` or update the `.claude/launch.json` `runtimeArgs` with `--dir`.
 
 ## EC2 deploy
+
+**PREFERRED: run `./deploy-ec2.sh` from the repo root** — one-shot, FAIL-FAST deploy (local Vite build → remote pull/install/migrate/**typecheck+build**/restart → frontend rsync → public health gate). It exists because an ad-hoc deploy once piped the api-server build through `| tail`, which MASKED the build's non-zero exit so the script restarted a STALE dist (2026-06-22). The script uses `set -euo pipefail` with the build UNPIPED and TYPECHECKED **before** the `pm2 restart`, so a build break leaves the last-good process untouched; the restart is health-gated. Env overrides: `SSH_KEY` / `EC2_HOST` / `REMOTE_DIR` / `SKIP_FRONTEND=1` (api-server only). The manual steps below remain the source of truth for what it does (and for out-of-band hotfixes).
 
 SSH: `ssh -i ~/Downloads/taxflow-key.pem ubuntu@ec2-18-188-192-154.us-east-2.compute.amazonaws.com`. Project lives at `~/taxflow-pro` (NOT `taxflow-assistant`).
 
