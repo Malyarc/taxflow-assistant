@@ -12,9 +12,11 @@ import {
   useGetPlanningHitList,
   useGetSettings,
   useListPlanningCampaigns,
+  useGetFirmBenchmarking,
   getGetPlanningHitListQueryKey,
   getGetSettingsQueryKey,
   getListPlanningCampaignsQueryKey,
+  getGetFirmBenchmarkingQueryKey,
   useDraftCampaignEmail,
 } from "@workspace/api-client-react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -26,7 +28,7 @@ import { SectionCard } from "@/components/patterns/SectionCard";
 import { StatTile } from "@/components/patterns/StatTile";
 import { Money } from "@/components/patterns/Money";
 import { money, pctScaled } from "@/lib/format";
-import { Target, Megaphone, ChevronRight, Banknote, Users } from "lucide-react";
+import { Target, Megaphone, ChevronRight, Banknote, Users, BarChart3, Gauge, Layers } from "lucide-react";
 
 export default function Planning() {
   const { data: settings } = useGetSettings({ query: { queryKey: getGetSettingsQueryKey() } });
@@ -44,6 +46,7 @@ export default function Planning() {
       ) : (
         <>
           <HitListSummary />
+          <BookBenchmarking />
           <HitList />
           <Campaigns />
         </>
@@ -64,6 +67,108 @@ function HitListSummary() {
       <StatTile icon={Target} label="Top opportunity" value={money(data.entries[0]?.totalEstSavings)} tone="success"
         footnote={`${data.entries[0]?.firstName ?? ""} ${data.entries[0]?.lastName ?? ""}`.trim()} />
     </div>
+  );
+}
+
+// ── G-9 Firm benchmarking ("your book vs. opportunity") ─────────────────────
+interface BenchRate { min: number; p25: number; median: number; p75: number; p90: number; max: number; mean: number }
+interface BenchBand { label: string; clientCount: number }
+interface BenchStrategy {
+  strategyId: string; name: string; category?: string;
+  clientsWithOpportunity: number; reachPct: number; totalEstSavings: number; medianEstSavings: number;
+}
+interface BenchReport {
+  clientsEvaluated: number; clientCount: number;
+  effectiveRatePct: BenchRate; agiBands: BenchBand[]; strategyAdoption: BenchStrategy[];
+  firmOpportunity: { totalEstSavings: number; clientsWithAnyOpportunity: number; avgSavingsPerOpportunityClient: number };
+}
+
+/** Percentages from the engine are already scaled (e.g. 16.4 = 16.4%). */
+const pctLabel = (n: number) => `${(Number.isFinite(n) ? n : 0).toFixed(1)}%`;
+
+function BookBenchmarking() {
+  const { data, isLoading, isError } = useGetFirmBenchmarking(
+    { limit: 100 },
+    { query: { queryKey: getGetFirmBenchmarkingQueryKey({ limit: 100 }), staleTime: 5 * 60 * 1000 } },
+  );
+  const r = data as unknown as BenchReport | undefined;
+
+  return (
+    <SectionCard
+      icon={BarChart3}
+      title="Book benchmarking"
+      description="Anonymized practice-management view across your top planning-opportunity clients — effective-rate spread, AGI mix, and where the unrealized strategy dollars are. Counts + $100-rounded aggregates only."
+    >
+      {isLoading ? (
+        <Skeleton className="h-48 w-full" />
+      ) : isError ? (
+        <div className="py-4 text-sm text-muted-foreground">Benchmarking is unavailable right now.</div>
+      ) : !r || r.clientCount === 0 ? (
+        <div className="py-4 text-sm text-muted-foreground">No benchmarkable clients yet — add returns with planning opportunities to populate the book view.</div>
+      ) : (
+        <div className="space-y-6">
+          <div className="grid gap-4 sm:grid-cols-3">
+            <StatTile icon={Gauge} label="Median effective rate" value={pctLabel(r.effectiveRatePct.median)} tone="brand"
+              footnote={`book ${pctLabel(r.effectiveRatePct.min)}–${pctLabel(r.effectiveRatePct.max)}`} />
+            <StatTile icon={Banknote} label="Unrealized opportunity" value={money(r.firmOpportunity.totalEstSavings)} tone="success"
+              footnote={`${r.firmOpportunity.clientsWithAnyOpportunity} clients · avg ${money(r.firmOpportunity.avgSavingsPerOpportunityClient)}`} />
+            <StatTile icon={Users} label="Clients benchmarked" value={r.clientCount} tone="muted"
+              footnote={r.strategyAdoption.length > 0 ? `${r.strategyAdoption.length} strategies in play` : undefined} />
+          </div>
+
+          {/* Effective-rate distribution */}
+          <div>
+            <div className="t-eyebrow mb-2 text-muted-foreground">Effective-rate distribution</div>
+            <div className="grid grid-cols-4 gap-2 text-center">
+              {([["p25", r.effectiveRatePct.p25], ["median", r.effectiveRatePct.median], ["p75", r.effectiveRatePct.p75], ["p90", r.effectiveRatePct.p90]] as const).map(([k, v]) => (
+                <div key={k} className="rounded-lg border border-border bg-secondary/40 p-2">
+                  <div className="t-num text-lg font-semibold tabular-nums">{pctLabel(v)}</div>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">{k}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* AGI-band histogram */}
+          <div>
+            <div className="t-eyebrow mb-2 text-muted-foreground">AGI mix</div>
+            <div className="space-y-1.5">
+              {(() => {
+                const maxBand = Math.max(1, ...r.agiBands.map((b) => b.clientCount));
+                return r.agiBands.map((b) => (
+                  <div key={b.label} className="flex items-center gap-3">
+                    <div className="w-28 shrink-0 text-xs text-muted-foreground">{b.label}</div>
+                    <div className="h-3 flex-1 overflow-hidden rounded-full bg-secondary">
+                      <div className="h-full rounded-full bg-brand/70" style={{ width: `${(b.clientCount / maxBand) * 100}%` }} />
+                    </div>
+                    <div className="w-8 shrink-0 text-right text-xs tabular-nums text-muted-foreground">{b.clientCount}</div>
+                  </div>
+                ));
+              })()}
+            </div>
+          </div>
+
+          {/* Strategy-adoption "opportunity gap" table */}
+          <div>
+            <div className="t-eyebrow mb-2 flex items-center gap-1.5 text-muted-foreground"><Layers className="h-3.5 w-3.5" /> Opportunity gap by strategy</div>
+            <div className="space-y-1.5">
+              {r.strategyAdoption.slice(0, 8).map((s) => (
+                <div key={s.strategyId} className="flex items-center justify-between gap-3 rounded-lg border border-border p-2.5">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium">{s.name}</div>
+                    <div className="truncate text-xs text-muted-foreground">{s.clientsWithOpportunity} client{s.clientsWithOpportunity === 1 ? "" : "s"} · {pctLabel(s.reachPct)} of book</div>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <Money value={s.totalEstSavings} tone="success" className="text-sm font-semibold" />
+                    <div className="text-xs text-muted-foreground">~{money(s.medianEstSavings)}/client</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </SectionCard>
   );
 }
 

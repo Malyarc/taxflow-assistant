@@ -3220,6 +3220,8 @@ export type GetTaxProjectionParams = {
 
 export type GetTaxProjection200 = { [key: string]: unknown };
 
+export type GetNotificationEvents200 = { [key: string]: unknown };
+
 export type GetMfjVsMfs200 = { [key: string]: unknown };
 
 export type GetYearOverYearParams = {
@@ -3261,6 +3263,15 @@ export type ListEngagementsParams = {
 export type ListEngagements200 = { [key: string]: unknown };
 
 export type AskReturnQuestion200 = { [key: string]: unknown };
+
+export type GetFirmBenchmarkingParams = {
+  /**
+   * Max clients evaluated (default 50, cap 200).
+   */
+  limit?: number;
+};
+
+export type GetFirmBenchmarking200 = { [key: string]: unknown };
 
 export type ListPlanningCampaignsParams = {
   /**

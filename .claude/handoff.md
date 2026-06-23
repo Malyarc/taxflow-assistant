@@ -23,8 +23,11 @@
 ### Deploy
 **Additive, no schema migration, no frontend change** → deploy = api-server build + `pm2 restart` + health check (NO drizzle migrate needed beyond the no-op; NO frontend rsync). Prod posture is unaffected: `PII_ENCRYPTION_KEY` unset (encrypt = passthrough), `REQUIRE_7216_CONSENT=false`, no proxy (trust-proxy `false` is correct + safer for the box).
 
+### 2026-06-22b addendum — G-9 + G-10 FRONTEND SHIPPED
+Surfaced both in the product: added `getFirmBenchmarking` + `getNotificationEvents` to `lib/api-spec/openapi.yaml` (loose `{object, additionalProperties:true}` responses, matching the campaigns/engagements convention) → `pnpm --filter @workspace/api-spec run codegen` (+244 lines, additive) → **"Book benchmarking" `SectionCard` on the Planning workspace** (`Planning.tsx`: StatTiles + effective-rate distribution + AGI histogram + opportunity-gap table) + a **`NotificationsCard` at the top of the CPA Tools tab** (`CpaToolsTab.tsx`: urgency pills + timing). **Browser-verified against LIVE PROD data** via a Vite dev server proxied at prod (`API_PROXY_TARGET`): Planning shows median 16.4% / $102,900 unrealized / 8 clients / dist 10.8-16.4-19.1-28.7 / AGI mix 0-4-1-3-0 / §132(f) 100% reach; client 9's CPA Tools shows 3 OVERDUE notifications (Q1/filing/Q2). No console errors; tax-app typecheck + `lint:tokens` clean; **frontend needs a Vite rebuild + rsync this deploy** (unlike the 06-22 backend-only chunk).
+
 ### Follow-ups (documented, NOT done)
-- OpenAPI/codegen entries + frontend surfaces for `/firm-benchmarking` + `/notification-events` (like G-1…G-8's documented follow-ups).
+- (G-9/G-10 OpenAPI + frontend now DONE — see 06-22b above.)
 - T0.2 C1 **hash-chained disclosure ledger** — deliberately NOT built this session: its correct form needs a persisted, serialized-append, tamper-evident chain whose concurrency can't be verified headless; its real home is Haven. The §7216 consent *validation* (C4) shipped; the *lifecycle*/ledger remains.
 - C2 masked-rendering (frontend), key rotation/KMS (infra), document-blob S3 (infra) — not pure-code.
 

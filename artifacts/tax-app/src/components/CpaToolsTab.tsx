@@ -18,6 +18,8 @@ import {
   getGetEntityChoiceQueryKey,
   useGetClientOrganizer,
   getGetClientOrganizerQueryKey,
+  useGetNotificationEvents,
+  getGetNotificationEventsQueryKey,
   useGetTaxReturn,
   getGetTaxReturnQueryKey,
   useUpdateEngagement,
@@ -678,9 +680,84 @@ function RollForwardCard({ clientId }: { clientId: number }) {
   );
 }
 
+// ════════════════════════════════════════════════════════════════════════════
+// Card 0 — Notifications (T5 G-10): currently-due deadlines / vouchers / docs
+// ════════════════════════════════════════════════════════════════════════════
+interface NotifEvent {
+  kind: "filing_deadline" | "extension_deadline" | "estimate_voucher" | "doc_request";
+  dedupeKey: string;
+  title: string;
+  body: string;
+  dueDate: string | null;
+  daysUntil: number | null;
+  urgency: "overdue" | "urgent" | "upcoming" | "scheduled";
+  amount: number | null;
+}
+interface NotificationsResp { clientId: number; taxYear: number; asOfDate: string; events: NotifEvent[] }
+
+const URGENCY_PILL: Record<NotifEvent["urgency"], { cls: string; label: string }> = {
+  overdue: { cls: "bg-destructive/10 text-destructive", label: "Overdue" },
+  urgent: { cls: "bg-amber-500/15 text-amber-700 dark:text-amber-400", label: "Urgent" },
+  upcoming: { cls: "bg-brand/10 text-brand-ink", label: "Upcoming" },
+  scheduled: { cls: "bg-secondary text-muted-foreground", label: "Scheduled" },
+};
+
+function timing(e: NotifEvent): string {
+  if (e.daysUntil == null) return "no due date";
+  if (e.daysUntil < 0) return `${Math.abs(e.daysUntil)} day${e.daysUntil === -1 ? "" : "s"} overdue`;
+  if (e.daysUntil === 0) return "due today";
+  return `in ${e.daysUntil} day${e.daysUntil === 1 ? "" : "s"}`;
+}
+
+function NotificationsCard({ clientId }: { clientId: number }) {
+  const { data, isLoading, error } = useGetNotificationEvents(clientId, {
+    query: { queryKey: getGetNotificationEventsQueryKey(clientId), staleTime: ANALYSIS_STALE_MS },
+  });
+  if (isLoading) return <Skeleton className="h-24 w-full" />;
+  if (error || !data) return null;
+  const n = data as unknown as NotificationsResp;
+  const events = n.events ?? [];
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center justify-between text-base">
+          <span>
+            Notifications
+            <span className="ml-2 text-xs font-normal text-muted-foreground">
+              {events.length === 0 ? "nothing due" : `${events.length} due · as of ${n.asOfDate}`}
+            </span>
+          </span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {events.length === 0 ? (
+          <div className="text-sm text-muted-foreground">All caught up — no deadlines, vouchers, or document requests are due.</div>
+        ) : (
+          events.map((e) => {
+            const pill = URGENCY_PILL[e.urgency];
+            return (
+              <div key={e.dedupeKey} className="flex items-start justify-between gap-3 rounded-lg border border-border p-2.5">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${pill.cls}`}>{pill.label}</span>
+                    <span className="truncate text-sm font-medium">{e.title}</span>
+                  </div>
+                  <div className="mt-0.5 truncate text-xs text-muted-foreground">{e.body}</div>
+                </div>
+                <div className="shrink-0 text-right text-xs text-muted-foreground">{timing(e)}</div>
+              </div>
+            );
+          })
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function CpaToolsTab({ clientId }: { clientId: number }) {
   return (
     <div className="space-y-4">
+      <NotificationsCard clientId={clientId} />
       <EngagementCard clientId={clientId} />
       <ProjectionCard clientId={clientId} />
       <MfjVsMfsCard clientId={clientId} />

@@ -1806,6 +1806,31 @@ paths:
               schema: { type: object, additionalProperties: true }
         "404": { description: Client not found }
 
+  /clients/{clientId}/notification-events:
+    get:
+      operationId: getNotificationEvents
+      tags: [taxReturns]
+      summary: Client notification events — deadlines, vouchers, doc requests (T5 G-10)
+      description: >
+        The currently-due notification events for a client: the filing/extension
+        deadline, unpaid estimated-tax (§6654) vouchers, and outstanding document
+        requests — each with a stable dedupe key (send-once), an urgency tier
+        (overdue/urgent/upcoming/scheduled), and the days-until timing. The pure
+        spine derives these; the delivery layer (push/SMS/email + portal UI) is
+        Haven's last mile and consumes this read endpoint.
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: The derived notification events (most urgent first)
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "404": { description: Client not found }
+
   /clients/{clientId}/mfj-vs-mfs:
     get:
       operationId: getMfjVsMfs
@@ -2100,6 +2125,37 @@ paths:
               schema:
                 $ref: "#/components/schemas/ProTierRequired"
         "404": { description: Client not found }
+
+  /firm-benchmarking:
+    get:
+      operationId: getFirmBenchmarking
+      tags: [planning]
+      summary: Firm benchmarking analytics — your book vs. opportunity (T5 G-9)
+      description: >
+        An anonymized "your book vs. opportunity" report over the firm's top
+        planning-score clients (bounded ≤200, same machinery as the hit-list):
+        the effective-tax-rate distribution (nearest-rank percentiles), an
+        AGI-band histogram, a strategy-adoption "opportunity gap" table, and the
+        firm-wide opportunity total. Privacy by design — counts + $100-rounded
+        aggregate dollars only; no individual client identity or exact figure.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: Max clients evaluated (default 50, cap 200).
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Firm benchmarking report (anonymized aggregates)
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "402":
+          description: Pro tier disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProTierRequired"
 
   /planning-campaigns:
     get:

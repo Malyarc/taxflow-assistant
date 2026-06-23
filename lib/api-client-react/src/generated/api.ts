@@ -44,6 +44,8 @@ import type {
   GetClientOrganizerPdfParams,
   GetEntityChoice200,
   GetEntityChoiceParams,
+  GetFirmBenchmarking200,
+  GetFirmBenchmarkingParams,
   GetForm8824200,
   GetForm8824Params,
   GetForm8824PdfParams,
@@ -51,6 +53,7 @@ import type {
   GetForm8990Params,
   GetForm8990PdfParams,
   GetMfjVsMfs200,
+  GetNotificationEvents200,
   GetPeerBenchmarkParams,
   GetPlanningHitListParams,
   GetTaxProjection200,
@@ -6498,6 +6501,100 @@ export function useGetTaxProjection<
 }
 
 /**
+ * The currently-due notification events for a client: the filing/extension deadline, unpaid estimated-tax (§6654) vouchers, and outstanding document requests — each with a stable dedupe key (send-once), an urgency tier (overdue/urgent/upcoming/scheduled), and the days-until timing. The pure spine derives these; the delivery layer (push/SMS/email + portal UI) is Haven's last mile and consumes this read endpoint.
+
+ * @summary Client notification events — deadlines, vouchers, doc requests (T5 G-10)
+ */
+export const getGetNotificationEventsUrl = (clientId: number) => {
+  return `/api/clients/${clientId}/notification-events`;
+};
+
+export const getNotificationEvents = async (
+  clientId: number,
+  options?: RequestInit,
+): Promise<GetNotificationEvents200> => {
+  return customFetch<GetNotificationEvents200>(
+    getGetNotificationEventsUrl(clientId),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetNotificationEventsQueryKey = (clientId: number) => {
+  return [`/api/clients/${clientId}/notification-events`] as const;
+};
+
+export const getGetNotificationEventsQueryOptions = <
+  TData = Awaited<ReturnType<typeof getNotificationEvents>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getNotificationEvents>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetNotificationEventsQueryKey(clientId);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getNotificationEvents>>
+  > = ({ signal }) =>
+    getNotificationEvents(clientId, { signal, ...requestOptions });
+
+  return {
+    queryKey,
+    queryFn,
+    enabled: !!clientId,
+    ...queryOptions,
+  } as UseQueryOptions<
+    Awaited<ReturnType<typeof getNotificationEvents>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetNotificationEventsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getNotificationEvents>>
+>;
+export type GetNotificationEventsQueryError = ErrorType<void>;
+
+/**
+ * @summary Client notification events — deadlines, vouchers, doc requests (T5 G-10)
+ */
+
+export function useGetNotificationEvents<
+  TData = Awaited<ReturnType<typeof getNotificationEvents>>,
+  TError = ErrorType<void>,
+>(
+  clientId: number,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getNotificationEvents>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetNotificationEventsQueryOptions(clientId, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
  * Computes a married couple's tax both as Married Filing Jointly and as two Married-Filing-Separately returns (income split by spouse tags), and recommends the cheaper option with the dollar delta. Returns { applicable: false } when the baseline is not MFJ.
 
  * @summary MFJ-vs-MFS filing-status optimizer (T2.2)
@@ -7555,6 +7652,111 @@ export const useAskReturnQuestion = <
 > => {
   return useMutation(getAskReturnQuestionMutationOptions(options));
 };
+
+/**
+ * An anonymized "your book vs. opportunity" report over the firm's top planning-score clients (bounded ≤200, same machinery as the hit-list): the effective-tax-rate distribution (nearest-rank percentiles), an AGI-band histogram, a strategy-adoption "opportunity gap" table, and the firm-wide opportunity total. Privacy by design — counts + $100-rounded aggregate dollars only; no individual client identity or exact figure.
+
+ * @summary Firm benchmarking analytics — your book vs. opportunity (T5 G-9)
+ */
+export const getGetFirmBenchmarkingUrl = (
+  params?: GetFirmBenchmarkingParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : value.toString());
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/api/firm-benchmarking?${stringifiedParams}`
+    : `/api/firm-benchmarking`;
+};
+
+export const getFirmBenchmarking = async (
+  params?: GetFirmBenchmarkingParams,
+  options?: RequestInit,
+): Promise<GetFirmBenchmarking200> => {
+  return customFetch<GetFirmBenchmarking200>(
+    getGetFirmBenchmarkingUrl(params),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getGetFirmBenchmarkingQueryKey = (
+  params?: GetFirmBenchmarkingParams,
+) => {
+  return [`/api/firm-benchmarking`, ...(params ? [params] : [])] as const;
+};
+
+export const getGetFirmBenchmarkingQueryOptions = <
+  TData = Awaited<ReturnType<typeof getFirmBenchmarking>>,
+  TError = ErrorType<ProTierRequired>,
+>(
+  params?: GetFirmBenchmarkingParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getFirmBenchmarking>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getGetFirmBenchmarkingQueryKey(params);
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getFirmBenchmarking>>
+  > = ({ signal }) =>
+    getFirmBenchmarking(params, { signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getFirmBenchmarking>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetFirmBenchmarkingQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getFirmBenchmarking>>
+>;
+export type GetFirmBenchmarkingQueryError = ErrorType<ProTierRequired>;
+
+/**
+ * @summary Firm benchmarking analytics — your book vs. opportunity (T5 G-9)
+ */
+
+export function useGetFirmBenchmarking<
+  TData = Awaited<ReturnType<typeof getFirmBenchmarking>>,
+  TError = ErrorType<ProTierRequired>,
+>(
+  params?: GetFirmBenchmarkingParams,
+  options?: {
+    query?: UseQueryOptions<
+      Awaited<ReturnType<typeof getFirmBenchmarking>>,
+      TError,
+      TData
+    >;
+    request?: SecondParameter<typeof customFetch>;
+  },
+): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetFirmBenchmarkingQueryOptions(params, options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 /**
  * Groups the firm's top planning-score clients (bounded re-run, same machinery as the hit-list) into one campaign per strategy: client cohort, per-client engine savings, and combined totals — the target list for batch outreach.

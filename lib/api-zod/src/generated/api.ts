@@ -5029,6 +5029,20 @@ export const GetTaxProjectionQueryParams = zod.object({
 export const GetTaxProjectionResponse = zod.record(zod.string(), zod.unknown());
 
 /**
+ * The currently-due notification events for a client: the filing/extension deadline, unpaid estimated-tax (§6654) vouchers, and outstanding document requests — each with a stable dedupe key (send-once), an urgency tier (overdue/urgent/upcoming/scheduled), and the days-until timing. The pure spine derives these; the delivery layer (push/SMS/email + portal UI) is Haven's last mile and consumes this read endpoint.
+
+ * @summary Client notification events — deadlines, vouchers, doc requests (T5 G-10)
+ */
+export const GetNotificationEventsParams = zod.object({
+  clientId: zod.coerce.number(),
+});
+
+export const GetNotificationEventsResponse = zod.record(
+  zod.string(),
+  zod.unknown(),
+);
+
+/**
  * Computes a married couple's tax both as Married Filing Jointly and as two Married-Filing-Separately returns (income split by spouse tags), and recommends the cheaper option with the dollar delta. Returns { applicable: false } when the baseline is not MFJ.
 
  * @summary MFJ-vs-MFS filing-status optimizer (T2.2)
@@ -5353,6 +5367,23 @@ export const AskReturnQuestionBody = zod.object({
 });
 
 export const AskReturnQuestionResponse = zod.record(
+  zod.string(),
+  zod.unknown(),
+);
+
+/**
+ * An anonymized "your book vs. opportunity" report over the firm's top planning-score clients (bounded ≤200, same machinery as the hit-list): the effective-tax-rate distribution (nearest-rank percentiles), an AGI-band histogram, a strategy-adoption "opportunity gap" table, and the firm-wide opportunity total. Privacy by design — counts + $100-rounded aggregate dollars only; no individual client identity or exact figure.
+
+ * @summary Firm benchmarking analytics — your book vs. opportunity (T5 G-9)
+ */
+export const GetFirmBenchmarkingQueryParams = zod.object({
+  limit: zod.coerce
+    .number()
+    .optional()
+    .describe("Max clients evaluated (default 50, cap 200)."),
+});
+
+export const GetFirmBenchmarkingResponse = zod.record(
   zod.string(),
   zod.unknown(),
 );
