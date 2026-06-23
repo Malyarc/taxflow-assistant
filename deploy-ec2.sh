@@ -7,9 +7,11 @@
 # failure didn't stop the script — it went on to `pm2 restart` a STALE dist and
 # briefly served the old build. This script makes that impossible:
 #   * `set -euo pipefail` + a build that runs UNPIPED → a build failure aborts.
-#   * the api-server is built and TYPECHECKED **before** the restart; if either
-#     fails the running process is left UNTOUCHED (no stale-dist restart). NOTE:
-#     this gates BUILD/TYPECHECK failures only — a build that succeeds but CRASHES
+#   * the api-server esbuild BUILD runs **before** the restart; if it fails the
+#     running process is left UNTOUCHED (no stale-dist restart). Typecheck is NOT
+#     run on the box (tsc OOM-kills the 908 MiB instance, exit 137 — same reason
+#     Vite can't build here); it is part of the LOCAL pre-deploy green bar. NOTE:
+#     this gates BUILD failures only — a build that succeeds but CRASHES
 #     ON BOOT (a runtime error tsc can't catch) restarts onto the broken dist;
 #     the health gate then aborts the deploy non-zero, but prod is left on the
 #     broken build with NO automatic rollback (migrations are additive, so the
@@ -66,9 +68,11 @@ export DATABASE_URL AI_API_KEY
 # Apply any pending versioned migrations (no-op when there are none).
 pnpm --filter @workspace/db run migrate
 
-# Gate the restart on a clean build: typecheck THEN build, both UNPIPED so a
-# failure aborts here — the running pm2 process keeps its last-good dist.
-pnpm --filter @workspace/api-server run typecheck
+# Gate the restart on a clean BUILD (UNPIPED so a failure aborts here — the
+# running pm2 process keeps its last-good dist). NOTE: typecheck is NOT run on
+# the box — `tsc` OOM-kills the 908 MiB instance (exit 137), same reason Vite
+# can't build here. Typecheck is part of the LOCAL pre-deploy green bar (run it
+# before invoking this script); esbuild here only bundles.
 pnpm --filter @workspace/api-server run build
 
 pm2 restart taxflow
