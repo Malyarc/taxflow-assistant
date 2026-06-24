@@ -56,3 +56,6 @@ Thumbs.db
 # Claude harness runtime lock (never commit)
 .claude/scheduled_tasks.lock
 .claude/worktrees/
+
+# Agent/dev scratch probes (round-3 audit; deleted in post-run cleanup)
+scripts/src/zz-*.ts
