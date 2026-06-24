@@ -357,7 +357,12 @@ export function ReviewExtractionModal({ open, onClose, clientId, clientTaxYear, 
     }
     setValues(initial);
     setTaxYear(clientTaxYear);
-    setFormType(typeof extracted.formType === "string" ? extracted.formType : "");
+    // UPPERCASE: the AI extractor returns formType lowercase ("nec"/"int"/…), but
+    // the subtype <Select> items + FORM_1099_BY_TYPE keys + the server schema are
+    // all UPPERCASE. Seeding lowercase left the Select unmatched (placeholder) and
+    // — if the CPA approved without re-picking — sent a lowercase formType the
+    // server rejects (HTTP 400, income dropped). (audit 2026-06-24)
+    setFormType(typeof extracted.formType === "string" ? extracted.formType.toUpperCase() : "");
     setShowAll(false);
     setFocusedField(null);
     setRejectMode(false);

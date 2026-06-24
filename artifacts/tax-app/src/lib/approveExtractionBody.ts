@@ -96,7 +96,13 @@ export function buildApproveBody(args: BuildApproveBodyArgs): Record<string, unk
       body[key] = raw;
     }
   }
-  if (formType != null) body.formType = formType;
+  // 1099 formType must be UPPERCASE to match ApproveExtractionBody's literal union
+  // ("NEC"|"MISC"|...). The AI extractor returns it LOWERCASE ("nec"/"int"/…), so
+  // normalize here (defense-in-depth alongside the modal seed) — otherwise the
+  // approve POST 400s and the 1099 income is never recorded (audit 2026-06-24, the
+  // incomplete-fix sibling of the W-2 box12Codes bug). infoType literals ARE
+  // lowercase ("1098"/"ssa1099"/…) and must NOT be uppercased.
+  if (formType != null) body.formType = formType.toUpperCase();
   if (infoType != null) body.infoType = infoType;
   return body;
 }

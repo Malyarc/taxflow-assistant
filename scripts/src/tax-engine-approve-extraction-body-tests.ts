@@ -96,6 +96,22 @@ const ssa = buildApproveBody({
 parses("SSA-1099 (Box 6 withholding) approve body PARSES", ssa);
 checkExact("voluntaryFederalWithholding coerced to number", ssa.voluntaryFederalWithholding, 3600);
 
+// ── 1099 formType case-normalization (audit 2026-06-24) ──
+// The AI extractor returns formType LOWERCASE ("nec"/"int"/…); the server schema
+// is an UPPERCASE-only union, so the builder must uppercase it or the approve POST
+// 400s and the 1099 income is never recorded (the incomplete-fix sibling of the
+// W-2 box12Codes bug). Verify all 8 lowercase subtypes uppercase + parse.
+for (const lc of ["nec", "misc", "int", "div", "b", "r", "g", "k"]) {
+  const body = buildApproveBody({
+    recordType: "form1099", taxYear: 2024, formType: lc, allKeys: B_KEYS,
+    values: { proceeds: "10000", costBasis: "8000" },
+  });
+  checkExact(`1099 formType "${lc}" → uppercased to "${lc.toUpperCase()}"`, body.formType, lc.toUpperCase());
+  parses(`1099 lowercase formType "${lc}" → approve body PARSES`, body);
+}
+// infoType stays lowercase (its schema literals are lowercase).
+checkExact("infoType '1098' NOT uppercased", i1098.infoType, "1098");
+
 // ── Negative controls: the OLD buggy shapes (one field off a known-good body) ──
 rejects("OLD box12Codes as STRING → schema rejects", { ...w2, box12Codes: "D=23000" });
 rejects("OLD box12Codes as NULL → schema rejects (.optional)", { ...w2, box12Codes: null });
