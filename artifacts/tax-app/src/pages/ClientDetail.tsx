@@ -589,12 +589,15 @@ function W2DataTab({ clientId }: { clientId: number }) {
   const reviewingRec = w2Records?.find((r) => r.id === reviewingId);
 
   function toPayload(f: W2FormData) {
-    // Cleared numeric boxes must send null (not undefined) — undefined is dropped
-    // by JSON.stringify, so the server would keep the old DB value.
+    // Cleared fields (numeric AND string) must send null (not undefined) — undefined
+    // is dropped by JSON.stringify, so a partial server update would KEEP the old DB
+    // value and the field could never be cleared (audit 2026-06-24 R2-F1: string
+    // fields like stateCode/EIN couldn't be cleared). All Update-body columns here
+    // are `…| null`.
     return {
       taxYear: Number(f.taxYear),
-      employerName: f.employerName || undefined,
-      employerEin: f.employerEin || undefined,
+      employerName: f.employerName || null,
+      employerEin: f.employerEin || null,
       wagesBox1: f.wagesBox1 ? Number(f.wagesBox1) : null,
       federalTaxWithheldBox2: f.federalTaxWithheldBox2 ? Number(f.federalTaxWithheldBox2) : null,
       socialSecurityWagesBox3: f.socialSecurityWagesBox3 ? Number(f.socialSecurityWagesBox3) : null,
@@ -603,7 +606,7 @@ function W2DataTab({ clientId }: { clientId: number }) {
       medicareTaxBox6: f.medicareTaxBox6 ? Number(f.medicareTaxBox6) : null,
       stateWagesBox16: f.stateWagesBox16 ? Number(f.stateWagesBox16) : null,
       stateTaxWithheldBox17: f.stateTaxWithheldBox17 ? Number(f.stateTaxWithheldBox17) : null,
-      stateCode: f.stateCode || undefined,
+      stateCode: f.stateCode || null,
     };
   }
 
@@ -2501,11 +2504,14 @@ function Form1099Tab({ clientId, taxYear }: { clientId: number; taxYear: number 
   }
 
   function toPayload(f: Form1099FormState) {
-    // Cleared numeric boxes must send null (not undefined) — undefined is dropped
-    // by JSON.stringify, so the server would keep the old DB value. String fields
-    // (payer/recipient TIN, stateCode, etc.) accept undefined (string|null|undefined).
+    // Cleared fields (numeric AND string) must send null (not undefined) — undefined
+    // is dropped by JSON.stringify, so a partial server update KEEPS the old DB value
+    // and the field can never be cleared. This matters for string fields too:
+    // clearing distributionCode (1099-R Box 7) must remove an erroneous "1"/"S" or the
+    // 10%/25% §72(t) penalty wrongly persists; clearing stateCode/TIN must stick.
+    // All Update-body string columns are `string | null` (audit 2026-06-24 R2-F1).
     const numField = (s: string) => (s ? Number(s) : null);
-    const strField = (s: string) => (s ? s : undefined);
+    const strField = (s: string) => (s ? s : null);
     return {
       taxYear,
       formType: f.formType as CreateForm1099DataBodyFormType,
@@ -3221,7 +3227,8 @@ function CapitalTransactionsTab({ clientId, taxYear }: { clientId: number; taxYe
 
   async function handleDelete(id: number) {
     if (!confirm("Delete this transaction? Tax return will recalculate.")) return;
-    await fetch(`/api/clients/${clientId}/capital-transactions/${id}`, { method: "DELETE" });
+    const res = await fetch(`/api/clients/${clientId}/capital-transactions/${id}`, { method: "DELETE" });
+    if (!res.ok) { toast({ title: "Delete failed", description: await res.text(), variant: "destructive" }); return; }
     invalidate();
     toast({ title: "Transaction deleted" });
   }
@@ -3517,7 +3524,8 @@ function RentalPropertiesTab({ clientId, taxYear }: { clientId: number; taxYear:
 
   async function handleDelete(id: number) {
     if (!confirm("Delete this rental property? Tax return will recalculate.")) return;
-    await fetch(`/api/clients/${clientId}/rental-properties/${id}`, { method: "DELETE" });
+    const res = await fetch(`/api/clients/${clientId}/rental-properties/${id}`, { method: "DELETE" });
+    if (!res.ok) { toast({ title: "Delete failed", description: await res.text(), variant: "destructive" }); return; }
     invalidate();
     toast({ title: "Property deleted" });
   }
@@ -3739,6 +3747,7 @@ function ScheduleCAssetsTab({ clientId, taxYear }: { clientId: number; taxYear: 
     queryKey: ["schedule-c-assets", clientId],
     queryFn: async () => {
       const res = await fetch(`/api/clients/${clientId}/schedule-c-assets`);
+      if (!res.ok) throw new Error(await res.text()); // R2-F2: was parsing error body as the asset array
       return res.json();
     },
   });
@@ -3754,7 +3763,8 @@ function ScheduleCAssetsTab({ clientId, taxYear }: { clientId: number; taxYear: 
   }
   async function handleDelete(id: number) {
     if (!confirm("Delete this asset? The tax return will recalculate.")) return;
-    await fetch(`/api/clients/${clientId}/schedule-c-assets/${id}`, { method: "DELETE" });
+    const res = await fetch(`/api/clients/${clientId}/schedule-c-assets/${id}`, { method: "DELETE" });
+    if (!res.ok) { toast({ title: "Delete failed", description: await res.text(), variant: "destructive" }); return; }
     invalidate();
     toast({ title: "Asset deleted" });
   }
@@ -4327,7 +4337,8 @@ function ScheduleK1Tab({ clientId, taxYear }: { clientId: number; taxYear: numbe
 
   async function handleDelete(id: number) {
     if (!confirm("Delete this K-1? Tax return will recalculate.")) return;
-    await fetch(`/api/clients/${clientId}/k1s/${id}`, { method: "DELETE" });
+    const res = await fetch(`/api/clients/${clientId}/k1s/${id}`, { method: "DELETE" });
+    if (!res.ok) { toast({ title: "Delete failed", description: await res.text(), variant: "destructive" }); return; }
     invalidate();
     toast({ title: "K-1 deleted" });
   }

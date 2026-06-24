@@ -1169,6 +1169,48 @@ function build2025Data(): Record<string, StateTaxInfo> {
       married_filing_jointly: [{ upTo: 26050, rate: 0 }, { upTo: 100000, rate: 0.0275 }, { upTo: Infinity, rate: 0.03125 }],
     },
   };
+  // Missouri TY2025 (R2-S-MO): top rate dropped 4.8%→4.7% (SB3 of 2022, revenue
+  // trigger met; EY Tax Alert 2024-2158) AND the brackets re-indexed to $1,313
+  // increments. VERIFIED vs the MO DOR 2025 Tax Chart (dor.mo.gov): top bracket
+  // = "$256 plus 4.7% of excess over $9,191" — the cumulative tax through the
+  // 4.5% band on $1,313 steps hand-calcs to exactly $256.035. MO has no
+  // single/joint distinction; std ded follows federal (FED_CONFORMING set).
+  data.MO = {
+    ...data.MO,
+    brackets: {
+      single: [
+        { upTo: 1313, rate: 0 }, { upTo: 2626, rate: 0.02 }, { upTo: 3939, rate: 0.025 },
+        { upTo: 5252, rate: 0.03 }, { upTo: 6565, rate: 0.035 }, { upTo: 7878, rate: 0.04 },
+        { upTo: 9191, rate: 0.045 }, { upTo: Infinity, rate: 0.047 },
+      ],
+      married_filing_jointly: [
+        { upTo: 1313, rate: 0 }, { upTo: 2626, rate: 0.02 }, { upTo: 3939, rate: 0.025 },
+        { upTo: 5252, rate: 0.03 }, { upTo: 6565, rate: 0.035 }, { upTo: 7878, rate: 0.04 },
+        { upTo: 9191, rate: 0.045 }, { upTo: Infinity, rate: 0.047 },
+      ],
+    },
+    notes: "MO TY2025: top rate 4.7% (SB3 trigger), $1,313-step brackets; std ded mirrors federal.",
+  };
+  // Oregon TY2025 (R2-S-OR): brackets + std ded were one year stale (2024
+  // values flowed through unchanged). VERIFIED vs OR-40 2025: the joint tax-
+  // computation line "$3,756 plus 8.75% over $50,000" reconstructs to thresholds
+  // $8,800/$22,200 (the old $8,600/$21,500 gives $3,773 — wrong). Single = half.
+  // Std ded $2,835/$5,670/$4,560 (OR DoR 2025; Oregon does not conform to federal).
+  data.OR = {
+    ...data.OR,
+    brackets: {
+      single: [
+        { upTo: 4400, rate: 0.0475 }, { upTo: 11100, rate: 0.0675 },
+        { upTo: 125000, rate: 0.0875 }, { upTo: Infinity, rate: 0.099 },
+      ],
+      married_filing_jointly: [
+        { upTo: 8800, rate: 0.0475 }, { upTo: 22200, rate: 0.0675 },
+        { upTo: 250000, rate: 0.0875 }, { upTo: Infinity, rate: 0.099 },
+      ],
+    },
+    standardDeduction: { single: 2835, married_filing_jointly: 5670, head_of_household: 4560, married_filing_separately: 2835 },
+    notes: "OR TY2025: inflation-indexed brackets ($4,400/$11,100 single; $8,800/$22,200 MFJ) + std ded $2,835/$5,670/$4,560.",
+  };
   // Minnesota 2025 std deduction (MN-indexed, NOT federal — MN was removed from
   // the conforming set; audit S2): $14,950 single / $29,900 MFJ / $22,500 HoH.
   // (The 2024 brackets are cloned — MN bracket inflation is a documented sub-gap.)

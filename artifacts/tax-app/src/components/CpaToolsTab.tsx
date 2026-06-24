@@ -631,8 +631,15 @@ function RollForwardCard({ clientId }: { clientId: number }) {
       await queryClient.invalidateQueries({
         predicate: (q) => {
           const key = q.queryKey[0];
-          if (typeof key !== "string") return false;
-          return key === prefix || key.startsWith(`${prefix}/`) || key.startsWith(`${prefix}?`);
+          if (typeof key === "string" && (key === prefix || key.startsWith(`${prefix}/`) || key.startsWith(`${prefix}?`))) {
+            return true;
+          }
+          // Hand-written TUPLE keys carry clientId as a later element, e.g.
+          // ["capital-transactions", clientId] / ["schedule-c-assets", clientId] /
+          // ["schedule-k1", clientId] / ["asset-balances", clientId] — the string
+          // prefix above misses them, so those sub-tabs showed STALE data after a
+          // roll-forward (audit 2026-06-24 R2-F4). An extra refetch is harmless.
+          return q.queryKey.includes(clientId);
         },
       });
       await queryClient.invalidateQueries({ queryKey: ["/api/engagements"], exact: false });

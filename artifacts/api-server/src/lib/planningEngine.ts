@@ -3384,9 +3384,14 @@ function detectSaversCredit(args: {
   // verifiedSavings collapsed to $0 and BURIED a valid high-confidence credit in
   // the hit-list ranking. Use the engine's actual credit (cap-fallback to the
   // heuristic) and DON'T attach the misleading add-more what-if.
-  const engineSaversCredit = Math.round(computed.saversCredit?.appliedCredit ?? 0);
-  const cappedSavings = engineSaversCredit > 0
-    ? engineSaversCredit
+  // The engine's saversCredit is AUTHORITATIVE when present — it enforces the
+  // §25B(c)(2) bars the heuristic can't see: claimed-as-dependent → $0, full-time
+  // student → $0, and the AGI ceiling. Only fall back to the heuristic when the
+  // engine did NOT compute the field at all; do NOT treat an engine-computed $0
+  // (a real disqualification) as "not computed" (audit 2026-06-24: fired a phantom
+  // ~$540 for a dependent the §25B(c)(2)(B) bar zeroes).
+  const cappedSavings = computed.saversCredit != null
+    ? Math.round(computed.saversCredit.appliedCredit)
     : Math.min(estSavings, Math.round(computed.federalTaxLiability));
   if (cappedSavings <= 0) return null;
   const whatIf = undefined;
@@ -8105,8 +8110,13 @@ function phaseOutLinear(base: number, magi: number, threshold: number, ratePerDo
   if (magi <= threshold) return base;
   return Math.max(0, base - ratePerDollar * (magi - threshold));
 }
-const obbbaIsJoint = (fs: string): boolean =>
-  fs === "married_filing_jointly" || fs === "qualifying_widow";
+// OBBBA Sch 1-A doubled caps/thresholds key on "a joint return". A §2(a)
+// qualifying surviving spouse does NOT file jointly → single caps/thresholds +
+// one living senior. This MUST mirror the engine's `calculateObbbaSchedule1A
+// Deductions` (taxCalculator.ts), which uses MFJ-only `isJoint` (audit test A8) —
+// else the detectors over-state QSS deductions vs what the engine actually allows
+// (audit 2026-06-24). (car-loan QSS → $100k threshold also matches the engine.)
+const obbbaIsJoint = (fs: string): boolean => fs === "married_filing_jointly";
 const fmtUsd0 = (n: number) =>
   n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 
@@ -8117,6 +8127,10 @@ function detectTipsDeduction(args: {
 }): OpportunityHit | null {
   const { client, computed, adjustments } = args;
   if (!obbbaDedActive(computed.taxYear)) return null;
+  // §224(f): tips deduction requires a JOINT return for married filers → MFS $0
+  // (the engine zeroes it; the detector must too, else it recommends a phantom
+  // deduction the return can't take — audit 2026-06-24).
+  if (client.filingStatus === "married_filing_separately") return null;
   const tips = sumAdjustment(adjustments, "qualified_tips");
   if (tips <= 0) return null;
   const magi = computed.adjustedGrossIncome;
@@ -8163,6 +8177,9 @@ function detectOvertimeDeduction(args: {
 }): OpportunityHit | null {
   const { client, computed, adjustments } = args;
   if (!obbbaDedActive(computed.taxYear)) return null;
+  // §225(e): overtime deduction requires a JOINT return for married filers → MFS
+  // $0 (engine zeroes it; mirror that — audit 2026-06-24).
+  if (client.filingStatus === "married_filing_separately") return null;
   const ot = sumAdjustment(adjustments, "qualified_overtime");
   if (ot <= 0) return null;
   const magi = computed.adjustedGrossIncome;
@@ -8254,6 +8271,9 @@ function detectSeniorDeduction(args: {
 }): OpportunityHit | null {
   const { client, computed } = args;
   if (!obbbaDedActive(computed.taxYear)) return null;
+  // §151(d)(5): senior bonus requires a JOINT return for married filers → MFS $0
+  // (engine zeroes it; mirror that — audit 2026-06-24).
+  if (client.filingStatus === "married_filing_separately") return null;
   const isJoint = obbbaIsJoint(client.filingStatus);
   const numSeniors =
     ((client.taxpayerAge ?? 0) >= 65 ? 1 : 0) +

@@ -205,6 +205,7 @@ export function buildTaxReturnPdf(client: Client, ret: ComputedTaxReturn): Promi
     if (ret.premiumTaxCredit.netPtc > 0) fedRows.push(["Net Premium Tax Credit (Sched 3 L9)", `(${fmt(ret.premiumTaxCredit.netPtc)})`]);
     if (ret.premiumTaxCredit.netPtc < 0) fedRows.push(["Excess Advance APTC (Sched 2 L2)", fmt(Math.abs(ret.premiumTaxCredit.netPtc))]);
     if (ret.manualCreditsApplied > 0) fedRows.push(["Other credits applied (manual)", `(${fmt(ret.manualCreditsApplied)})`]);
+    if ((ret.excessSocialSecurityCredit ?? 0) > 0) fedRows.push(["Excess SS withheld, 2+ employers (Sched 3 L11)", `(${fmt(ret.excessSocialSecurityCredit)})`]);
     fedRows.push(["Federal tax withheld (1040 L25a)", fmt(ret.federalTaxWithheld)]);
     const fedRefund = ret.federalRefundOrOwed;
     fedRows.push([fedRefund >= 0 ? "Federal refund (1040 L34)" : "Federal balance due (1040 L37)", fmt(Math.abs(fedRefund))]);

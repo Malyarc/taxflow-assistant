@@ -908,6 +908,15 @@ export interface LocalityInfo {
    */
   localBrackets?: { single: StateBracket[]; joint: StateBracket[] };
   /**
+   * R2-M2 — year-indexed GRADUATED bracket overrides (the bracket analogue of
+   * `rateByYear`). For a locality whose graduated schedule changed mid-cycle
+   * (MD Anne Arundel raised its middle band 2.81% → 2.94% and its top band
+   * 3.20% → 3.30% for TY2025 under HB 352's higher county cap). Resolved via
+   * `resolveTaxYear`; a missing year falls back to `localBrackets`. Keep SPARSE
+   * — only DOR-verified schedule changes.
+   */
+  localBracketsByYear?: Partial<Record<number, { single: StateBracket[]; joint: StateBracket[] }>>;
+  /**
    * T1.0f #25 — year-indexed rate overrides for localities with verified
    * mid-cycle rate changes (`rate` stays the TY2024 baseline). Resolved via
    * `resolveTaxYear`; a missing year falls back to `rate`. Keep this SPARSE —
@@ -930,6 +939,19 @@ export const LOCAL_TAX_DATA: Record<string, LocalityInfo> = {
     localBrackets: {
       single: [{ upTo: 50000, rate: 0.0270 }, { upTo: 400000, rate: 0.0281 }, { upTo: Infinity, rate: 0.0320 }],
       joint:  [{ upTo: 75000, rate: 0.0270 }, { upTo: 480000, rate: 0.0281 }, { upTo: Infinity, rate: 0.0320 }],
+    },
+    // R2-M2 — TY2025+ (MD Comptroller "Changes to ... State and Local Income
+    // Tax Rates from the 2025 Legislative Session" alert; HB 352 raised the
+    // county cap to 3.30%): middle band 2.81% → 2.94%, top band 3.20% → 3.30%.
+    localBracketsByYear: {
+      2025: {
+        single: [{ upTo: 50000, rate: 0.0270 }, { upTo: 400000, rate: 0.0294 }, { upTo: Infinity, rate: 0.0330 }],
+        joint:  [{ upTo: 75000, rate: 0.0270 }, { upTo: 480000, rate: 0.0294 }, { upTo: Infinity, rate: 0.0330 }],
+      },
+      2026: {
+        single: [{ upTo: 50000, rate: 0.0270 }, { upTo: 400000, rate: 0.0294 }, { upTo: Infinity, rate: 0.0330 }],
+        joint:  [{ upTo: 75000, rate: 0.0270 }, { upTo: 480000, rate: 0.0294 }, { upTo: Infinity, rate: 0.0330 }],
+      },
     } },
   "MD-BALTIMORE_CITY":{ jurisdictionLabel: "Baltimore City, MD",        state: "MD", rate: 0.0320, base: "state_taxable" },
   "MD-BALTIMORE_CO":  { jurisdictionLabel: "Baltimore County, MD",      state: "MD", rate: 0.0320, base: "state_taxable" },
@@ -1146,6 +1168,9 @@ export function calculateFlatRateLocalTax(params: {
     // T1.0f #25 — year-indexed rate override (MD Dorchester/Kent/Allegany,
     // IN Monroe, Philadelphia); missing year falls back to the TY2024 rate.
     const effectiveRate = info.rateByYear?.[resolveTaxYear(params.taxYear)] ?? info.rate;
+    // R2-M2 — year-indexed graduated brackets (MD Anne Arundel TY2025+).
+    const effectiveLocalBrackets =
+      info.localBracketsByYear?.[resolveTaxYear(params.taxYear)] ?? info.localBrackets;
     return computeFlatRateLocalTaxFromInfo(
       params.localityCode,
       effectiveRate,
@@ -1163,7 +1188,7 @@ export function calculateFlatRateLocalTax(params: {
         creditRate: info.creditRate,
         creditLimitRate: info.creditLimitRate,
         workCityTaxPaid: params.ohWorkCityTaxPaid,
-        localBrackets: info.localBrackets,
+        localBrackets: effectiveLocalBrackets,
         taxableSocialSecurity: params.taxableSocialSecurity,
         medicareWages: params.totalMedicareWages,
       },
@@ -7716,6 +7741,11 @@ export interface QbiCalculation {
   qbiAmount: number;
   preliminaryDeduction: number;
   taxableIncomeCap: number;
+  /** §199A(e)(1) "taxable income before the QBI deduction" — the cap/SSTB base
+   *  the engine actually used (post-NOL taxable income net of the line-13b OBBBA
+   *  deductions). Echoed so workpapers display the engine's exact base rather than
+   *  re-deriving it (which mis-ties when taxable income floors to 0). */
+  taxableIncomeBeforeQbi: number;
   finalDeduction: number;
   /** §199A(b)(2)(B) wage/UBIA limit = max(50% W-2 wages, 25% wages + 2.5% UBIA). 0 = not computed. */
   wageUbiaLimit?: number;
@@ -7808,7 +7838,7 @@ export function calculateQbi(params: {
 }): QbiCalculation {
   const { qbiIncome, taxableIncomeBeforeQbi, netCapitalGain = 0 } = params;
   if (qbiIncome <= 0) {
-    return { qbiAmount: 0, preliminaryDeduction: 0, taxableIncomeCap: 0, finalDeduction: 0 };
+    return { qbiAmount: 0, preliminaryDeduction: 0, taxableIncomeCap: 0, taxableIncomeBeforeQbi, finalDeduction: 0 };
   }
   const preliminary = qbiIncome * 0.20;
   const cap = Math.max(0, taxableIncomeBeforeQbi - Math.max(0, netCapitalGain)) * 0.20;
@@ -7900,6 +7930,7 @@ export function calculateQbi(params: {
     qbiAmount: qbiIncome,
     preliminaryDeduction: preliminary,
     taxableIncomeCap: cap,
+    taxableIncomeBeforeQbi,
     finalDeduction,
     wageUbiaLimit,
     wageUbiaLimitBinds,

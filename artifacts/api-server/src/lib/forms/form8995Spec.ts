@@ -94,8 +94,13 @@ export function buildForm8995(ctx: FormBuildContext): FormInstance | null {
   const perBiz = ret.qbiPerBusiness ?? [];
   const isVariantA = q.wageUbiaLimitBinds === true || perBiz.length > 0;
 
-  // Derived bases (see header). Both exact engine reconstructions.
-  const tiBeforeQbi = ret.taxableIncome + ret.qbiDeduction + ret.obbbaSchedule1A.total;
+  // §199A(e)(1) "taxable income before the QBI deduction" — read the engine's
+  // EXACT base (post-NOL taxable income net of the line-13b OBBBA deductions)
+  // rather than re-deriving it. The old reconstruction (taxableIncome + qbi +
+  // obbba) mis-tied whenever taxable income floored to 0, emitting a FALSE
+  // "⚠ off by" on a correct return (audit 2026-06-24 R2-FM2); it is also stale
+  // now that the engine's cap base nets out line 13b (R2-Q1).
+  const tiBeforeQbi = q.taxableIncomeBeforeQbi;
   const netCapGain = Math.max(0, ret.preferentialIncome + ret.investmentInterestElectionAmount);
   const tiLessNcg = Math.max(0, tiBeforeQbi - netCapGain);
 

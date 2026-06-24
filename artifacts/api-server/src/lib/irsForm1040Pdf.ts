@@ -344,10 +344,13 @@ export async function buildIrsForm1040Pdf(options: BuildIrsForm1040Options): Pro
   safeSet(form, F1040_2024_FIELDS.line28, fmt(ret.additionalChildTaxCredit ?? 0));
   safeSet(form, F1040_2024_FIELDS.line29, fmt(ret.educationCredits?.aocRefundable ?? 0));
   // Line 31 (Schedule 3 line 13): net PTC + refundable adoption (OBBBA) +
-  // manual CPA credit adjustments — mirrors the workpaper.
+  // excess SS withholding (Sch 3 line 11, 2+ employers) + manual CPA credit
+  // adjustments — mirrors the workpaper (form1040Spec.ts). FM1: excess-SS was
+  // omitted here, understating lines 31/32/33 for 2-employer filers.
   const line31Val =
     Math.max(0, ret.premiumTaxCredit?.netPtc ?? 0) +
     (ret.adoptionCredit?.refundablePortion ?? 0) +
+    (ret.excessSocialSecurityCredit ?? 0) +
     (ret.manualCreditsApplied ?? 0);
   safeSet(form, F1040_2024_FIELDS.line31, fmt(line31Val));
   // Line 32 = 27 + 28 + 29 + 31; Line 33 (total payments) = 25d + 32 (H5 —

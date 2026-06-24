@@ -3433,22 +3433,44 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // the BASELINE (NOL-stripped) pass per §172(a)(2)(B)(ii).
   const taxableAfterNol = Math.max(0, calc.taxableIncome);
 
-  // §199A(e)(2): the SSTB phase-out is keyed to TAXABLE INCOME computed without
-  // regard to §199A (Form 8995-A "taxable income before the QBI deduction" =
-  // post-NOL, pre-QBI taxable income) — NOT AGI. This MUST use the same base as
-  // the §199A(b)(2)(B) wage/UBIA limit (calculateQbi's taxableIncomeBeforeQbi =
-  // taxableAfterNol, below) so the two §199A mechanics can never diverge. Keying
-  // off AGI (which exceeds taxable income by the std/itemized + OBBBA deductions)
-  // phased SSTB owners — doctors, lawyers, consultants, financial advisors — out
-  // of the deduction too early, under-stating QBI and over-stating their tax.
-  // Computed unconditionally; APPLIED only to the SSTB QBI portion (0 for non-
-  // SSTB returns), so it is a no-op when no business is an SSTB.
+  // OBBBA Schedule 1-A deductions (line 13b: tips §224 / overtime §225 / car-loan
+  // §163(h)(4) / senior §151(d)) are computed HERE — they depend only on AGI +
+  // ages, NOT on QBI or taxable income, so there is no circularity. They are
+  // APPLIED to taxable income below (after QBI); they are surfaced now because the
+  // §199A base must net them out (next).
+  const obbbaDeductions = calculateObbbaSchedule1ADeductions({
+    taxYear,
+    filingStatus: client.filingStatus,
+    magi: calc.adjustedGrossIncome,
+    qualifiedTips: sumByType("qualified_tips"),
+    qualifiedOvertime: sumByType("qualified_overtime"),
+    qualifiedCarLoanInterest: sumByType("qualified_car_loan_interest"),
+    taxpayerAge: client.taxpayerAge,
+    spouseAge: client.spouseAge,
+  });
+  // §199A(e)(1) + 2025 Form 8995/8995-A: "taxable income before the QBI deduction"
+  // = Form 1040 line 11 (AGI) − line 12 (std/itemized) − line 13b (OBBBA) — i.e.
+  // taxable income net of EVERYTHING except the §199A deduction itself. Both the
+  // §199A 20%-of-taxable cap (calculateQbi's taxableIncomeBeforeQbi) AND the SSTB
+  // phase-out base use THIS. (audit 2026-06-24 R2-Q1: previously used
+  // taxableAfterNol — pre-line-13b — which over-deducted QBI when the 20% cap
+  // binds and over-phased SSTB owners; the engine's own Form 8995 workpaper
+  // already reconstructed the base as taxable + QBI + line-13b, confirming the
+  // inconsistency.) The FINAL taxable-income chain still subtracts line 13b once,
+  // below — qbiCapBase is used ONLY for the §199A limits, not the settlement.
+  const qbiCapBase = Math.max(0, taxableAfterNol - obbbaDeductions.total);
+
+  // §199A(e)(2): the SSTB phase-out is keyed to qbiCapBase (the SAME base as the
+  // §199A(b)(2)(B) wage/UBIA limit via calculateQbi below) so the two §199A
+  // mechanics can never diverge. Computed unconditionally; APPLIED only to the
+  // SSTB QBI portion (0 for non-SSTB returns), so it is a no-op when no business
+  // is an SSTB.
   let sstbPhaseFraction = 1;
-  if (taxableAfterNol >= phaseIn.end) {
+  if (qbiCapBase >= phaseIn.end) {
     sstbPhaseFraction = 0;
-  } else if (taxableAfterNol > phaseIn.start) {
+  } else if (qbiCapBase > phaseIn.start) {
     sstbPhaseFraction =
-      (phaseIn.end - taxableAfterNol) / (phaseIn.end - phaseIn.start);
+      (phaseIn.end - qbiCapBase) / (phaseIn.end - phaseIn.start);
   }
 
   // Per-business SSTB split: the Sch C QBI is SSTB when schCIsSstb; each K-1's
@@ -3518,8 +3540,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
 
   const qbi = calculateQbi({
     qbiIncome: qbiCombinedIncome,
-    // FED-04: cap base is POST-NOL taxable income, per Form 8995 Line 11.
-    taxableIncomeBeforeQbi: taxableAfterNol,
+    // §199A(e)(1): cap base = post-NOL taxable income net of the line-13b OBBBA
+    // deductions (Form 8995 Line 11 / 8995-A Line 33). See qbiCapBase above.
+    taxableIncomeBeforeQbi: qbiCapBase,
     // §199A(e)(3): the taxable-income limit is 20% of (taxable income − net
     // capital gain), where net capital gain = preferential LTCG + qualified
     // dividends. Omitting it lets QBI wrongly shelter preferential-rate income.
@@ -3536,21 +3559,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
 
   const taxableAfterQbi = Math.max(0, taxableAfterNol - qbi.finalDeduction);
 
-  // OBBBA Schedule 1-A deductions (TY2025–2028): tips §224 / overtime §225 /
-  // car-loan interest §163(h)(4) / senior §151(d). Flow to Form 1040 line 13b —
-  // they reduce TAXABLE income (subtracted from AGI alongside the std/itemized
-  // deduction + QBI), NOT AGI; their MAGI phase-out base is AGI (no circularity).
-  // They offset the ORDINARY portion (the preferential LTCG/QDIV is preserved).
-  const obbbaDeductions = calculateObbbaSchedule1ADeductions({
-    taxYear,
-    filingStatus: client.filingStatus,
-    magi: calc.adjustedGrossIncome,
-    qualifiedTips: sumByType("qualified_tips"),
-    qualifiedOvertime: sumByType("qualified_overtime"),
-    qualifiedCarLoanInterest: sumByType("qualified_car_loan_interest"),
-    taxpayerAge: client.taxpayerAge,
-    spouseAge: client.spouseAge,
-  });
+  // OBBBA Schedule 1-A deductions (line 13b) were computed above (their amount is
+  // independent of QBI). They reduce FINAL taxable income here, AFTER the QBI
+  // deduction, offsetting the ORDINARY portion (preferential LTCG/QDIV preserved).
   const taxableAfterObbba = Math.max(0, taxableAfterQbi - obbbaDeductions.total);
 
   // ── Step 6: Federal tax (ordinary + preferential) ──────────────────
