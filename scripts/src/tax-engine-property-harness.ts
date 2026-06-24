@@ -214,6 +214,78 @@ runProp("P4 boundary: no >$1 cliff at ordinary-bracket edges", () => {
   }
 });
 
+// P5 — CREDIT CAPS: no credit may exceed its statutory ceiling given the inputs
+//      (catches double-counts / phase-out-skip over-crediting). Upper bounds only
+//      (a within-cap under-credit is not caught here — that's the oracle's job).
+runProp("P5 credits never exceed statutory caps (1200 runs)", () =>
+  fc.assert(fc.property(inputsArb(money), (inp) => {
+    const r = computeTaxReturnPure(inp);
+    runCount++;
+    const kids = inp.client.dependentsUnder17 ?? 0;
+    const odeps = inp.client.otherDependents ?? 0;
+    // CTC: `appliedCredit` is the GRAND TOTAL (= nonRefundablePortion + refundableActc),
+    // bounded by the engine's own pre-limit `preliminaryCredit`, itself bounded by the
+    // statutory $2,200/child (year-max ≥ 2024's $2,000) + $500/other-dependent ODC.
+    const ctc = r.childTaxCredit;
+    if (ctc) {
+      if (Number.isFinite(ctc.appliedCredit) && ctc.appliedCredit > ctc.preliminaryCredit + 1)
+        throw new Error(`CTC applied ${ctc.appliedCredit.toFixed(2)} > preliminary ${ctc.preliminaryCredit.toFixed(2)}`);
+      if (Number.isFinite(ctc.preliminaryCredit) && ctc.preliminaryCredit > 2200 * kids + 500 * odeps + 1)
+        throw new Error(`CTC preliminary ${ctc.preliminaryCredit.toFixed(2)} > statutory ${2200 * kids + 500 * odeps} (kids ${kids}, odeps ${odeps})`);
+      if (Number.isFinite(ctc.refundableActc) && ctc.refundableActc > ctc.appliedCredit + 1)
+        throw new Error(`refundableActc ${ctc.refundableActc.toFixed(2)} > total applied ${ctc.appliedCredit.toFixed(2)}`);
+    }
+    // EITC: max across years/children ≈ $8,046 (2025, 3+); $8,500 is a safe ceiling.
+    if (Number.isFinite(r.eitc?.appliedCredit) && (r.eitc?.appliedCredit ?? 0) > 8500)
+      throw new Error(`EITC ${r.eitc.appliedCredit.toFixed(2)} > $8,500 ceiling`);
+    // Saver's §25B: 50% × $2,000 single / $4,000 MFJ contribution = $1,000/$2,000.
+    const saversCap = inp.client.filingStatus === "married_filing_jointly" ? 2000 : 1000;
+    if (Number.isFinite(r.saversCredit?.appliedCredit) && (r.saversCredit?.appliedCredit ?? 0) > saversCap + 1)
+      throw new Error(`Saver's ${r.saversCredit.appliedCredit.toFixed(2)} > ${saversCap}`);
+  }), fcOpts(1200)));
+
+// P6 — MARGINAL ≤ 100%: on a pure-wage single/no-dep sweep there are no credit
+//      cliffs, so an extra dollar of wage can never raise federal liability by
+//      more than itself (a >100% marginal there is a bracket/phase-out bug).
+runProp("P6 marginal federal rate ≤ 100% on pure-wage single (900 runs)", () =>
+  fc.assert(fc.property(
+    fc.double({ min: 25_000, max: 700_000, noNaN: true }),
+    fc.double({ min: 500, max: 5_000, noNaN: true }),
+    fc.constantFrom(...YEARS),
+    (base, delta, year) => {
+      const mk = (w: number): TaxReturnInputs => ({
+        client: { filingStatus: "single", state: "FL", taxYear: year },
+        w2s: [{ wagesBox1: w, federalTaxWithheldBox2: 0, stateCode: "FL" }],
+        form1099s: [], adjustments: [], taxYear: year,
+      });
+      const lo = computeTaxReturnPure(mk(base)).federalTaxLiability;
+      const hi = computeTaxReturnPure(mk(base + delta)).federalTaxLiability;
+      runCount += 2;
+      if (Number.isFinite(lo) && Number.isFinite(hi) && (hi - lo) > delta + 0.5)
+        throw new Error(`marginal ${((hi - lo) / delta * 100).toFixed(1)}% > 100% at wage≈${base.toFixed(0)} (yr ${year})`);
+    }), fcOpts(900)));
+
+// P7 — SETTLEMENT IDENTITY (refund = payments − liability): in a no-credit
+//      scenario, an extra dollar of withholding must increase the refund by
+//      exactly one dollar (catches settlement sign/arithmetic bugs).
+runProp("P7 refund moves dollar-for-dollar with withholding (600 runs)", () =>
+  fc.assert(fc.property(
+    fc.double({ min: 40_000, max: 400_000, noNaN: true }),
+    fc.double({ min: 1_000, max: 50_000, noNaN: true }),
+    fc.constantFrom(...YEARS),
+    (wage, whDelta, year) => {
+      const mk = (wh: number): TaxReturnInputs => ({
+        client: { filingStatus: "single", state: "FL", taxYear: year },
+        w2s: [{ wagesBox1: wage, federalTaxWithheldBox2: wh, stateCode: "FL" }],
+        form1099s: [], adjustments: [], taxYear: year,
+      });
+      const a = computeTaxReturnPure(mk(10_000)).federalRefundOrOwed;
+      const b = computeTaxReturnPure(mk(10_000 + whDelta)).federalRefundOrOwed;
+      runCount += 2;
+      if (Number.isFinite(a) && Number.isFinite(b) && Math.abs((b - a) - whDelta) > 0.5)
+        throw new Error(`Δrefund ${(b - a).toFixed(2)} ≠ Δwithholding ${whDelta.toFixed(2)} (wage ${wage.toFixed(0)}, yr ${year})`);
+    }), fcOpts(600)));
+
 console.log(`\nRuns: ~${runCount}`);
 if (VIOLATIONS.length === 0) {
   console.log("✅ ALL PROPERTY/FUZZ/BOUNDARY/METAMORPHIC INVARIANTS HOLD");
