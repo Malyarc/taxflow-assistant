@@ -1709,16 +1709,25 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const ssMaxWithholding = 0.062 * SS_WAGE_BASE[resolvedMapYear];
   const excessSsForPerson = (records: W2Fact[]): number => {
     if (records.length < 2) return 0;
-    const named = new Set<string>();
-    let unnamed = 0;
+    // Aggregate Box 4 BY EMPLOYER (same-name W-2s combine; each unnamed W-2 is a
+    // distinct employer), then cap EACH employer at the per-employer SS max BEFORE
+    // summing. Per Pub 505 Worksheet 3-3 / Sch 3 line 11: "...not counting more
+    // than $<max> for each employer." A single employer's over-withholding is
+    // recovered from the employer (Form 843), NOT creditable here — so it must be
+    // capped out before the excess is computed (R3-verify EXCESS-SS-1).
+    const byEmployer = new Map<string, number>();
+    let unnamedCappedTotal = 0;
+    let unnamedCount = 0;
     for (const r of records) {
+      const box4 = Math.max(0, toNum(r.socialSecurityTaxBox4));
       const name = (r.employerName ?? "").trim().toLowerCase();
-      if (name) named.add(name);
-      else unnamed += 1;
+      if (name) byEmployer.set(name, (byEmployer.get(name) ?? 0) + box4);
+      else { unnamedCappedTotal += Math.min(box4, ssMaxWithholding); unnamedCount += 1; }
     }
-    if (named.size + unnamed < 2) return 0;
-    const totalBox4 = records.reduce((s, r) => s + Math.max(0, toNum(r.socialSecurityTaxBox4)), 0);
-    return Math.max(0, totalBox4 - ssMaxWithholding);
+    if (byEmployer.size + unnamedCount < 2) return 0;
+    let totalCapped = unnamedCappedTotal;
+    for (const v of byEmployer.values()) totalCapped += Math.min(v, ssMaxWithholding);
+    return Math.max(0, totalCapped - ssMaxWithholding);
   };
   const excessSocialSecurityCredit =
     excessSsForPerson(w2Records.filter((r) => (r.spouse ?? "taxpayer") === "taxpayer")) +

@@ -8144,12 +8144,17 @@ export function calculateAmt(params: {
   /** K3 — LTCG + QDIV portion of taxable income (Form 6251 Part III).
    *  When > 0, AMT is computed both ways and the lower is used. */
   ltcgPlusQdiv?: number;
-  /** T1.1a — unrecaptured §1250 gain within ltcgPlusQdiv (Form 6251 Part III
-   *  lines 36-39: taxed at a flat 25%, same as the Schedule D Tax Worksheet).
-   *  A subset of ltcgPlusQdiv. */
+  /** T1.1a — unrecaptured §1250 gain within ltcgPlusQdiv (Form 6251 Part III).
+   *  A subset of ltcgPlusQdiv. When `schedDWorksheet` is supplied (the engine's
+   *  path), Part III INTERLEAVES this with the ordinary brackets exactly as the
+   *  regular Schedule D Tax Worksheet does (25% is the per-layer MAXIMUM, not a
+   *  flat rate — the global final-min enforces it; see T1.0(l) below). The flat
+   *  25% path runs ONLY for direct callers that omit `schedDWorksheet`. */
   unrecaptured1250Gain?: number;
   /** T1.1a — 28%-rate gain (collectibles + §1202) within ltcgPlusQdiv (Form 6251
-   *  Part III line 40: flat 28%). A subset of ltcgPlusQdiv. */
+   *  Part III). A subset of ltcgPlusQdiv. As with §1250, when `schedDWorksheet`
+   *  is supplied the 28% is a per-layer MAXIMUM enforced by the final-min, not a
+   *  flat rate; the flat 28% path runs only for direct callers without it. */
   collectibles28Gain?: number;
   /** AMT NOL carryforward (ATNOLD, §56(d)) — the AMT-basis NOL the CPA carries
    *  in. Applied against AMTI, limited to 90% of AMTI before the ATNOLD. */

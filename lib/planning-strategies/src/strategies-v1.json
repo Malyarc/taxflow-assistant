@@ -2130,7 +2130,7 @@
       "ircSection": "IRC §132(f); TCJA §13304 (employer-deduction repeal)",
       "irsPub": "Pub 15-B (Employer's Tax Guide to Fringe Benefits); Notice 2023-75",
       "trigger": "netSeIncome > $100,000 (proxy for biz that may sponsor) OR W-2 wages exist (employee eligible).",
-      "formula": "§132(f) qualified transportation fringe — EMPLOYEE excludes up to monthly cap × 12 from gross income for: (a) transit pass + commuter highway vehicle pass per §132(f)(2)(A) TY2024 $315/mo (Notice 2023-75); (b) qualified parking per §132(f)(2)(B) TY2024 $315/mo; (c) qualified bicycle commuting per §132(f)(2)(C) SUSPENDED TY2018-TY2025 by TCJA §11047. Heuristic: $315/mo × 12 × 24% marginal = $907 employee tax savings; employer cost ${{315 × 12 = $3,780}} (BUT post-TCJA §132(f) NOT deductible by employer for transit/parking — pure employee benefit).",
+      "formula": "§132(f) qualified transportation fringe — EMPLOYEE excludes up to monthly cap × 12 from gross income for: (a) transit pass + commuter highway vehicle pass per §132(f)(2)(A); (b) qualified parking per §132(f)(2)(B); (c) qualified bicycle commuting per §132(f)(2)(C) SUSPENDED TY2018-TY2025 by TCJA §11047. Monthly cap is year-indexed (the detector reads the year-indexed map): $315/mo TY2024 (Notice 2023-75), $325/mo TY2025 (Notice 2024-80), $340/mo TY2026 — transit + parking each. Heuristic (illustrative, TY2024): $315/mo × 12 × 24% marginal = $907 employee tax savings; employer cost ${{315 × 12 = $3,780}} (BUT post-TCJA §132(f) NOT deductible by employer for transit/parking — pure employee benefit).",
       "confidence": 0.5,
       "cpaEffortHours": 1.0,
       "recurring": true,
@@ -2138,6 +2138,7 @@
       "prerequisiteData": [
         "TY2024 monthly cap $315 (transit + parking each, Notice 2023-75)",
         "TY2025 monthly cap $325 (Notice 2024-80)",
+        "TY2026 monthly cap $340 (year-indexed — the detector reads the year-indexed map, not this prose)",
         "Transit pass per §132(f)(5)(A) — token, fare card, voucher, similar instrument",
         "Commuter highway vehicle per §132(f)(5)(B) — vehicle seat ≥ 6 adults; 50%+ of mileage transports employees between home + workplace",
         "Qualified parking per §132(f)(5)(C) — on/near employer premises or near transit terminal employee uses for commute",
@@ -2195,7 +2196,7 @@
       "category": "credits",
       "ircSection": "IRC §163(h)(4) (OBBBA P.L. 119-21)",
       "irsPub": "IRS 'OBBB tax deductions for working Americans and seniors'; Federal Register car-loan-interest regs; Schedule 1-A (Form 1040). NEW above-the-line deduction, TY2025–2028 only.",
-      "trigger": "qualified_car_loan_interest adjustment > 0 AND taxYear 2025–2028 AND MAGI below the phase-out ceiling (single $150k / MFJ $250k).",
+      "trigger": "qualified_car_loan_interest adjustment > 0 AND taxYear 2025–2028 AND MAGI below the FULL phase-out endpoint (single $150k / MFJ $250k). NOTE: the $200-per-$1,000 phase-out STARTS at $100k single / $200k MFJ; $150k/$250k are where the deduction reaches $0, not the phase-out start.",
       "formula": "deduction = min(carLoanInterest, $10,000), reduced by $200 per $1,000 of MAGI over $100,000 single / $200,000 MFJ (DOUBLE the tips/overtime rate; floored at 0). estSavings = deduction × (federal + state marginal rate). Available to itemizers AND non-itemizers.",
       "confidence": 0.6,
       "cpaEffortHours": 0.5,
@@ -2204,7 +2205,8 @@
       "prerequisiteData": [
         "Interest paid on a qualifying auto loan (loan originated after 2024-12-31, secured by a first lien on the vehicle, VIN reported)",
         "Vehicle is NEW (original use begins with taxpayer), personal-use, FINAL ASSEMBLY IN THE U.S. — leases + used vehicles do NOT qualify",
-        "MAGI (drives the $200-per-$1,000 phase-out over $100k single / $200k MFJ)"
+        "MAGI (drives the $200-per-$1,000 phase-out over $100k single / $200k MFJ)",
+        "Unlike tips/overtime/senior, the car-loan deduction is NOT barred for MFS filers (REG-113515-25 — MFS keeps it at the $100k threshold)"
       ],
       "action": "Deduct qualified passenger-vehicle loan interest above-the-line under OBBBA §163(h)(4) — deductible portion ~{{deduction}} this year (cap $10,000). Estimated tax savings ~{{estSavings}}.",
       "formulaRev": 1
