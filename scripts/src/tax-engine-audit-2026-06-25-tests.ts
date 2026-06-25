@@ -28,6 +28,7 @@ import {
   calculateStateTax,
   calculateDependentCareCredit,
   calculateMultiStateTax,
+  calculateEducationCredits,
 } from "../../artifacts/api-server/src/lib/taxCalculator";
 import { evaluatePlanningOpportunities } from "../../artifacts/api-server/src/lib/planningEngine";
 
@@ -248,6 +249,24 @@ header("C3-wages — third-state W-2 wages stay on the NR path (no triple-tax)")
   } as Parameters<typeof calculateMultiStateTax>[0]);
   const sum = (s.partYearResidency?.formerStateAgi ?? 0) + (s.partYearResidency?.currentStateAgi ?? 0);
   check("C3-situs control: third-state TX rental pro-rates → periods sum to federal AGI $105k", sum, 105000, 1);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// C17 — refundable AOC denied to a kiddie-tax-subject claimant (§25A(i)(5)).
+// ════════════════════════════════════════════════════════════════════════════
+header("C17 — kiddie-tax claimant gets NO refundable AOC (Form 8863 line 7 / §25A(i)(5))");
+{
+  const ed = (kiddie: boolean) => calculateEducationCredits({
+    agi: 30000, filingStatus: "single", aocExpenses: [4000], llcExpenses: 0,
+    claimantSubjectToKiddieTax: kiddie,
+  });
+  // $4,000 expenses → AOC max $2,500 (100% of first $2k + 25% of next $2k).
+  check("C17 kiddie: aocApplied = $2,500 (full allowed credit)", ed(true).aocApplied, 2500);
+  check("C17 kiddie: aocRefundable = $0 (40% refundable disallowed)", ed(true).aocRefundable, 0);
+  check("C17 kiddie: aocNonRefundable = $2,500 (whole credit nonrefundable)", ed(true).aocNonRefundable, 2500);
+  // Control: a non-kiddie claimant keeps the 40% refundable split.
+  check("C17 non-kiddie: aocRefundable = 40% × $2,500 = $1,000", ed(false).aocRefundable, 1000);
+  check("C17 non-kiddie: aocNonRefundable = $1,500", ed(false).aocNonRefundable, 1500);
 }
 
 // ── Summary ──

@@ -4362,6 +4362,8 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     filingStatus: client.filingStatus,
     aocExpenses: aocExpensesPerStudent,
     llcExpenses: llcExpensesAdj,
+    // R3-C17 — §25A(i)(5): deny the 40% refundable AOC to a kiddie-tax-subject claimant.
+    claimantSubjectToKiddieTax: client.isKiddieTaxFiler ?? false,
   });
   const aocNonRefundableApplied = Math.min(educationCredits.aocNonRefundable, availableForNonRefundable);
   availableForNonRefundable = Math.max(0, availableForNonRefundable - aocNonRefundableApplied);

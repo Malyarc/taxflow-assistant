@@ -4838,8 +4838,11 @@ export function calculateEducationCredits(params: {
   aocExpenses: number[];
   // Aggregate qualified expenses for LLC (single number across all students)
   llcExpenses: number;
+  // R3-C17 — §25A(i)(5) / Form 8863 line 7: a claimant to whom the §1(g) kiddie-tax
+  // rules apply gets NO refundable (40%) AOC — the entire allowed AOC is nonrefundable.
+  claimantSubjectToKiddieTax?: boolean;
 }): EducationCreditsCalculation {
-  const { agi, filingStatus, aocExpenses, llcExpenses } = params;
+  const { agi, filingStatus, aocExpenses, llcExpenses, claimantSubjectToKiddieTax = false } = params;
 
   // IRS Form 8863 + Publication 970: Married Filing Separately filers are NOT
   // eligible for either the American Opportunity Credit or the Lifetime
@@ -4883,7 +4886,10 @@ export function calculateEducationCredits(params: {
   aocPreliminary = Math.min(aocPreliminary, aocExpenses.length * AOC_PER_STUDENT_MAX);
 
   const aocApplied = aocPreliminary * phaseOutFraction;
-  const aocRefundable = aocApplied * AOC_REFUNDABLE_PCT;
+  // R3-C17 — §25A(i)(5): if the §1(g) kiddie-tax rules apply to the claimant, the
+  // 40% refundable AOC is disallowed (Form 8863 line 7) — the whole allowed AOC is
+  // nonrefundable (then capped against income tax in the cascade).
+  const aocRefundable = claimantSubjectToKiddieTax ? 0 : aocApplied * AOC_REFUNDABLE_PCT;
   const aocNonRefundable = aocApplied - aocRefundable;
 
   // LLC: 20% of up to $10,000 of expenses, max $2,000 per return
