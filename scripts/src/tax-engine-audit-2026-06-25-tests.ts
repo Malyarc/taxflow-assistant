@@ -27,6 +27,7 @@ import {
 import {
   calculateStateTax,
   calculateDependentCareCredit,
+  calculateMultiStateTax,
 } from "../../artifacts/api-server/src/lib/taxCalculator";
 import { evaluatePlanningOpportunities } from "../../artifacts/api-server/src/lib/planningEngine";
 
@@ -213,6 +214,40 @@ header("C5/C12/C21/C22 — planning QSS single caps + year-indexed family-employ
   const g149 = famEmp.find((h) => h.strategyId === "G1.49");
   checkTrue("C22 G1.49 fires for a sole-prop with a child", g149 != null);
   if (g149) check("C22 G1.49 wagesPerChild = TY2025 single std ded $15,750", Number((g149.inputs as any)?.wagesPerChild ?? 0), 15750, 1);
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// C3-wages (code-review) — third-state WAGES must NOT pro-rate into the residence
+// periods (they are taxed via the non-resident path); only third-state SITUS does.
+// ════════════════════════════════════════════════════════════════════════════
+header("C3-wages — third-state W-2 wages stay on the NR path (no triple-tax)");
+{
+  // NY→FL part-year mover, W-2 source allocation on: NY wages $50k (former-resident
+  // period) + PA wages $30k (a THIRD state). The PA wages must NOT land in either
+  // residence period (they're NR-taxed); formerStateAgi = the NY wages only.
+  const r = calculateMultiStateTax({
+    residentState: "FL",
+    federalAgi: 80000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "NY", wages: 50000 }, { stateCode: "PA", wages: 30000 }],
+    partYearResidency: { formerState: "NY", residencyChangeDate: "2024-07-01", useW2SourceAllocation: true },
+  } as Parameters<typeof calculateMultiStateTax>[0]);
+  check("C3-wages formerStateAgi (NY) = $50,000 (PA wages NOT pro-rated in)", r.partYearResidency?.formerStateAgi ?? -1, 50000, 1);
+  check("C3-wages currentStateAgi (FL, no FL wages) = $0", r.partYearResidency?.currentStateAgi ?? -1, 0, 1);
+  // Control: a third-state SITUS amount (rental) STILL pro-rates (the real C3 fix) —
+  // CA→NY mover, NY wages $90k, $15k TX rental situs → periods sum to federal AGI.
+  const s = calculateMultiStateTax({
+    residentState: "NY",
+    federalAgi: 105000,
+    filingStatus: "single",
+    taxYear: 2024,
+    perStateWages: [{ stateCode: "NY", wages: 90000 }],
+    partYearResidency: { formerState: "CA", residencyChangeDate: "2024-04-01", useW2SourceAllocation: true },
+    options: { perStateOtherSourced: { TX: 15000 } },
+  } as Parameters<typeof calculateMultiStateTax>[0]);
+  const sum = (s.partYearResidency?.formerStateAgi ?? 0) + (s.partYearResidency?.currentStateAgi ?? 0);
+  check("C3-situs control: third-state TX rental pro-rates → periods sum to federal AGI $105k", sum, 105000, 1);
 }
 
 // ── Summary ──

@@ -2167,18 +2167,22 @@ function computePartYearAllocation(
     const situsCurrent = perStateOtherSourced
       ? Math.max(0, perStateOtherSourced[currentStateUpper] ?? 0)
       : 0;
-    // Remaining income that pro-rates by days = federal AGI minus ONLY the income
-    // explicitly assigned to a residence period (former- and current-state wages +
-    // situs). R3-C3: subtracting the ALL-state totals (totalW2Wages /
-    // situsSourcedTotal) dropped any THIRD-state wages or situs income entirely —
-    // it was removed from the residual but never re-added to either period, so a
-    // part-year resident was under-taxed. Subtracting only the period-assigned
-    // shares makes third-state (and intangible/other) income pro-rate by days into
-    // the two periods, so formerStateAgi + currentStateAgi == federalAgi.
-    void totalW2Wages; void situsSourcedTotal; // retained for clarity; no longer subtracted whole
+    // Remaining income that pro-rates by days. R3-C3 + code-review:
+    //  - WAGES: subtract ALL of them (totalW2Wages). Former/current wages are added
+    //    back to their periods below; THIRD-state wages are NOT pro-rated here
+    //    because they are independently taxed via the non-resident `perStateWages`
+    //    path (which does NOT exclude a third state) — pro-rating them too would
+    //    triple-tax them (former + current periods + NR, no resident credit).
+    //  - SITUS (K-1/rental): subtract ONLY the former/current shares, so THIRD-state
+    //    situs STAYS in the residual and pro-rates by days. (Situs uses the
+    //    part-year `perStateOtherSourced`, which is DISJOINT from the NR path's
+    //    `perStateNonResidentOtherSourced`, so a third-state situs amount is taxed
+    //    by NEITHER unless it pro-rates here — that was the original C3 drop.)
+    // Net: third-state situs + intangibles pro-rate; third-state wages do not.
+    void situsSourcedTotal; // superseded by the per-period situs shares
     const nonW2NonSitusAgi = Math.max(
       0,
-      federalAgiSafe - w2WagesFormer - w2WagesCurrent - situsFormer - situsCurrent,
+      federalAgiSafe - totalW2Wages - situsFormer - situsCurrent,
     );
     const nonW2Former =
       daysInYear > 0 ? nonW2NonSitusAgi * (daysFormer / daysInYear) : 0;

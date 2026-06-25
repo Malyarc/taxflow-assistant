@@ -45,7 +45,13 @@ export function buildSchedule3(ctx: FormBuildContext): FormInstance | null {
   // Base = Form 1040 line 18 = line 16 (regular tax) + Schedule 2 line 3 (AMT +
   // the Sch 2 line 2 excess-APTC repayment, which credits DO offset — FC-09).
   // SE tax / NIIT / Add'l Medicare / §72(t) / §4973(g) / Sch H stay OUT (§26(b)).
-  const excessAptc = Math.max(0, -ret.premiumTaxCredit.netPtc);
+  // R3 code-review fix: the §26 credit base = regular income tax + AMT + the Sch 2
+  // line 2 excess-APTC repayment (which §26 credits DO offset — FC-09), matching
+  // the engine's `availableForNonRefundable = (regularTax + AMT) + excessAPTC`
+  // (taxReturnEngine.ts). `federalTaxLiability` ALREADY includes the excess-APTC
+  // repayment, so we subtract ONLY the §26(b) carve-outs (SE / NIIT / Add'l
+  // Medicare / §72(t) / §4973(g) / Sch H) and must NOT also subtract excess-APTC —
+  // doing so undersized the room by the repayment and false-⚠'d the tie-out.
   const incomeTaxOnly =
     ret.federalTaxLiability -
     ret.selfEmploymentTax -
@@ -53,8 +59,7 @@ export function buildSchedule3(ctx: FormBuildContext): FormInstance | null {
     ret.additionalMedicareTax -
     ret.earlyWithdrawalPenalty -
     ret.hsaExcessExcise -
-    ret.scheduleH.total -
-    excessAptc; // = regular income tax + AMT, the §26 credit base
+    ret.scheduleH.total; // = regular income tax + AMT + excess-APTC repayment
   let creditRoom = Math.max(0, incomeTaxOnly);
   // applyCap: re-cap a CALC-LEVEL computed credit against the running room.
   const applyCap = (computed: number): number => {

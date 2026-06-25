@@ -231,12 +231,13 @@ const STATE_TAX_DATA_2024: Record<string, StateTaxInfo> = {
     // TY2024 = 5.695% flat (H.521, retroactive to 1/1/2024). TY2025 → 5.3% (HB40),
     // applied in build2025Data. Idaho State Tax Commission rate schedule.
     // R3-C8 — Idaho is NOT a pure flat tax: its rate schedule has a 0% ZERO-RATE
-    // bracket on the first $4,673 (single/MFS) / $9,346 (MFJ/HoH/QSS) of Idaho
+    // bracket on the first ~$4,673 (single/MFS/HoH) / $9,346 (MFJ/QSS) of Idaho
     // taxable income (2024), with the flat rate applying only above it. Modeling
     // it as a single flat band over-taxed EVERY Idaho filer by ~5.695%×$4,673 ≈
-    // $266 (single). (HoH maps to `single` via the picker — conservative; Idaho's
-    // schedule groups HoH with MFJ, so HoH may merit the $9,346 zero-bracket — a
-    // small residual to confirm against the published HoH column.)
+    // $266 (single). HoH maps to `single` via pickStateBrackets, matching Idaho's
+    // rate schedule (it groups HoH at the single level, as with its std deduction);
+    // QSS maps to MFJ. This is also the conservative direction (never under-taxes)
+    // should a published HoH column ever differ.
     brackets: {
       single: [{ upTo: 4673, rate: 0 }, { upTo: Infinity, rate: 0.05695 }],
       married_filing_jointly: [{ upTo: 9346, rate: 0 }, { upTo: Infinity, rate: 0.05695 }],
