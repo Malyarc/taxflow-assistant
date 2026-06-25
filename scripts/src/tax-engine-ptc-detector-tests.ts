@@ -12,7 +12,7 @@
  *   applicableFigure at 2.50 = 0.04 (band 2.50–3.00 starts at 0.04).
  *   expectedContribution = 36,450 × 0.04 = $1,458.
  *   SLCSP $8,000 → ptcUncapped = 8,000 − 1,458 = $6,542; computedPtc = min(premium, 6,542).
- *   Repayment cap (single, 2.0–3.0 band, TY2024) = $975.
+ *   Repayment cap (single, 2.0–3.0 band, TY2024) = $950.
  *
  * Run: pnpm --filter @workspace/scripts exec tsx src/tax-engine-ptc-detector-tests.ts
  */
@@ -72,8 +72,8 @@ function runG130(args: {
 
 // ── PTC-A — clawback (capped): MAGI $36,450, SLCSP 8k, premium 7k, advance 9k.
 //   computedPtc = min(7000, 6542) = 6542 · netPtc = 6542 − 9000 = −2458,
-//   capped to −$975 (single, 2.0–3.0 band). |netPtc| = 975.
-header("PTC-A: engine-verified clawback (capped at $975)");
+//   capped to −$950 (single, 2.0–3.0 band). |netPtc| = 950.
+header("PTC-A: engine-verified clawback (capped at $950)");
 {
   const { computed, hit } = runG130({ wages: 36450, acaAnnualPremium: 7000, acaAnnualSlcsp: 8000, acaAdvanceAptc: 9000 });
   const ptc = computed.premiumTaxCredit;
@@ -81,18 +81,18 @@ header("PTC-A: engine-verified clawback (capped at $975)");
   check("PTC-A engine applicableFigure", ptc.applicableFigure, 0.04, 0.0001);
   check("PTC-A engine expectedContribution", ptc.expectedContribution, 1458);
   check("PTC-A engine computedPtc", ptc.computedPtc, 6542);
-  check("PTC-A engine netPtc (capped)", ptc.netPtc, -975);
-  check("PTC-A engine repaymentCap", ptc.repaymentCap ?? -1, 975); // null = no-cap sentinel (T1.0d #14)
+  check("PTC-A engine netPtc (capped)", ptc.netPtc, -950);
+  check("PTC-A engine repaymentCap", ptc.repaymentCap ?? -1, 950); // null = no-cap sentinel (T1.0d #14)
   checkBool("PTC-A G1.30 fires", hit != null, true);
   if (hit) {
     checkEq("PTC-A savingsSource", hit.savingsSource, "engine-verified");
-    check("PTC-A verifiedSavings = |netPtc| = 975", hit.verifiedSavings ?? -1, 975);
-    check("PTC-A estSavings (not $1k heuristic)", hit.estSavings, 975);
-    check("PTC-A inputs.netPtc", Number(hit.inputs?.netPtc ?? 0), -975);
-    check("PTC-A inputs.repaymentCap", Number(hit.inputs?.repaymentCap ?? 0), 975);
+    check("PTC-A verifiedSavings = |netPtc| = 950", hit.verifiedSavings ?? -1, 950);
+    check("PTC-A estSavings (not $1k heuristic)", hit.estSavings, 950);
+    check("PTC-A inputs.netPtc", Number(hit.inputs?.netPtc ?? 0), -950);
+    check("PTC-A inputs.repaymentCap", Number(hit.inputs?.repaymentCap ?? 0), 950);
     annotateVerifiedSavings([hit]);
     checkEq("PTC-A engine-verified preserved post-annotate", hit.savingsSource, "engine-verified");
-    check("PTC-A verifiedSavings preserved", hit.verifiedSavings ?? -1, 975);
+    check("PTC-A verifiedSavings preserved", hit.verifiedSavings ?? -1, 950);
   }
 }
 

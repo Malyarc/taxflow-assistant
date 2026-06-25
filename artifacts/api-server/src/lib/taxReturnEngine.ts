@@ -71,6 +71,7 @@ import {
   type ScheduleCAssetDepreciationResult,
   getFederalStandardDeduction,
   getDependentStandardDeductionBase,
+  getFederalStdDedAgeBlindAddOn,
   getSaltCap,
   type TaxYear,
   type MultiStateTaxResult,
@@ -3252,6 +3253,21 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   const stdDed = claimedAsDependent
     ? getDependentStandardDeductionBase(client.filingStatus, taxYear, earnedIncomeForStdDed)
     : getFederalStandardDeduction(client.filingStatus, taxYear);
+  // R3-C6 — the itemize-vs-standard decision must compare against the FULL standard
+  // deduction INCLUDING the §63(f) age-65/blind add-on (which runTaxCalculation adds
+  // internally before taking max(itemized, std)). Omitting it flipped useItemizedDeductions
+  // to true for an elderly/blind filer whose itemizable total sits in the gap
+  // (base-std, std+add-on] even though the (larger) standard deduction is actually
+  // used — which then skipped the §56(b)(1)(E) AMT std-ded addback (under-collecting
+  // AMT) and mis-reported a non-null itemized total.
+  const stdDedWithAddOn = stdDed + getFederalStdDedAgeBlindAddOn({
+    taxpayerAge: client.taxpayerAge,
+    spouseAge: client.spouseAge,
+    taxpayerBlind: client.taxpayerBlind,
+    spouseBlind: client.spouseBlind,
+    filingStatus: client.filingStatus,
+    taxYear,
+  });
   // FS-1/FS-4 — the filing-status optimizer's forced deduction modes (see
   // RecalcOverrides). forceItemized wins over forceStandardDeduction.
   const forceItemized = overrides.forceItemized === true;
@@ -3265,7 +3281,7 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
           ? true
           : useItemizedDeductionsOverride === false && additionalDeductions === 0 && scheduleAItemizedWithInvInt === 0
             ? false
-            : itemizedTotal > stdDed;
+            : itemizedTotal > stdDedWithAddOn;
 
   // ── Step 5: Run base tax calc (federal AGI + taxable + state) ──────
   // additionalIncome now includes the taxable portion of Social Security
@@ -3512,13 +3528,18 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // with no supplied wage data) reproduces the aggregate path EXACTLY. Sch C
   // §199A wages/UBIA come from optional `qbi_w2_wages`/`qbi_ubia` adjustments
   // (a sole prop WITH employees); default 0 → Sch C stays unlimited (escape).
+  // R3-C7 — Treas. Reg. §1.199A-1(d)(2)(iii): for an SSTB whose taxable income is
+  // IN the phase-in band, the applicable percentage (sstbPhaseFraction) reduces
+  // QBI, W-2 wages, AND UBIA before the §199A(b)(2)(B) wage/UBIA limit. The engine
+  // phased only QBI, leaving the full wages → the 50%-wage limit was too high (bound
+  // less) → over-deduction. phaseQbi now applies to all three for SSTB businesses.
   const phaseQbi = (raw: number, isSstb: boolean) => (isSstb ? raw * sstbPhaseFraction : raw);
   const qbiBusinesses: Array<{ qbiIncome: number; w2Wages: number; ubia: number; label?: string }> = [];
   if (schCComponentSigned > 0) {
     qbiBusinesses.push({
       qbiIncome: phaseQbi(schCComponentSigned, schCIsSstb),
-      w2Wages: Math.max(0, sumByType("qbi_w2_wages")),
-      ubia: Math.max(0, sumByType("qbi_ubia")),
+      w2Wages: phaseQbi(Math.max(0, sumByType("qbi_w2_wages")), schCIsSstb),
+      ubia: phaseQbi(Math.max(0, sumByType("qbi_ubia")), schCIsSstb),
       label: "Schedule C",
     });
   }
@@ -3532,8 +3553,8 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     if (raw <= 0) continue;
     qbiBusinesses.push({
       qbiIncome: phaseQbi(raw, k.isSstb === true),
-      w2Wages: Math.max(0, toNum(k.section199aW2Wages)),
-      ubia: Math.max(0, toNum(k.section199aUbia)),
+      w2Wages: phaseQbi(Math.max(0, toNum(k.section199aW2Wages)), k.isSstb === true),
+      ubia: phaseQbi(Math.max(0, toNum(k.section199aUbia)), k.isSstb === true),
       label: k.entityName ?? undefined,
     });
   }
@@ -3546,7 +3567,14 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     // §199A(e)(3): the taxable-income limit is 20% of (taxable income − net
     // capital gain), where net capital gain = preferential LTCG + qualified
     // dividends. Omitting it lets QBI wrongly shelter preferential-rate income.
-    netCapitalGain: ltcgPreferential + qualifiedDividends,
+    // R3-R2 — use the POST-§163(d)(4)(B)-election figures: §1(h)(2) reduces net
+    // capital gain by the elected investment-income amount, and §199A(e)(3) takes
+    // "net capital gain (within the meaning of §1(h))", so an elected amount is no
+    // longer net capital gain for the cap. The federal-tax path already uses these
+    // AfterElection values (lines below); the cap must too, else the elected amount
+    // both lowers the base AND is subtracted as net cap gain (double penalty →
+    // over-tax). Inert when there is no election (AfterElection == pre-election).
+    netCapitalGain: ltcgPreferentialAfterElection + qualifiedDividendsAfterElection,
     // §199A(b)(2)(B) wage/UBIA limit (K-1 depth) — only binds above the threshold.
     // Aggregate values kept for the no-perBusiness fallback path; perBusiness
     // (when non-empty) supersedes them with the per-business §199A(b)(1) limit.
@@ -4313,6 +4341,8 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     filingStatus: client.filingStatus,
     // §21(e)(2): MFS may claim only if treated as not married (lived apart).
     mfsLivedApart: client.mfsLivedApartAllYear ?? false,
+    // R3-C1: OBBBA §21(a)(2) 50% rate + two-step phase-down for TY2026+.
+    taxYear,
   });
   const depCareApplied = Math.min(dependentCareCredit.appliedCredit, availableForNonRefundable);
   availableForNonRefundable = Math.max(0, availableForNonRefundable - depCareApplied);
@@ -4735,6 +4765,8 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     childrenUnder17: client.dependentsUnder17 ?? 0,
     federalCtcApplied: ctc.nonRefundablePortion + ctc.refundableActc,
     caEitcEligible: caEitcEligibleForYctc,
+    // R3-C11 — the CA YCTC phase-out is keyed to EARNED income (FTB 3514).
+    earnedIncome: earnedIncomeHousehold,
     // T1.0f — IL CTC = 20% (TY2024) / 40% (TY2025+) of the IL EITC (PA
     // 103-0592), so the computed state EITC is threaded through.
     stateEitcCredit: stateEitc.credit,
@@ -4965,7 +4997,12 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     section461lExcessLossAddback,
     feie,
     nolDeduction,
-    nolCarryforwardRemaining,
+    // R3-C18 — §461(l)(2): the disallowed excess business loss "shall be treated
+    // as a net operating loss carryover to the following taxable year." It was
+    // added back to current income (capping this year's deduction) but never
+    // carried forward → permanently lost. Roll it into the NOL carryforward the
+    // pipeline already seeds next year (where §172's 80% cap then applies).
+    nolCarryforwardRemaining: nolCarryforwardRemaining + Math.max(0, section461lExcessLossAddback),
     qbiLossCarryforward,
     section1231TxnLookbackRecharacterized: txnSection1231LookbackRecharacterized,
     amtNolDeduction: amt.atnoldApplied,

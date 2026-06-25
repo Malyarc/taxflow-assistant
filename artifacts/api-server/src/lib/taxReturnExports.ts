@@ -282,7 +282,18 @@ export function buildTaxReturnJsonExport(client: Client, ret: ComputedTaxReturn)
     /** Full computed result for downstream tools that want everything */
     fullResult: ret,
   };
-  return JSON.stringify(exportObject, null, 2);
+  // Neutralize formula injection on EVERY string leaf (CWE-1236). The curated
+  // client block above is already neutralized, but `fullResult` echoes raw
+  // client-controlled free text (e.g. form1099Summary.scheduleBPayers[].payerName,
+  // qbi.perBusiness[].label / qbiPerBusiness[].label from K-1 entityName) — and
+  // metadata.state is a free zod.string(). A replacer guards all of them (and any
+  // future string field) when the JSON is pulled into a spreadsheet via Power
+  // Query; numbers/booleans pass through untouched.
+  return JSON.stringify(
+    exportObject,
+    (_k, v) => (typeof v === "string" ? neutralizeFormula(v) : v),
+    2,
+  );
 }
 
 // ── CSV export (CPA-reviewable spreadsheet) ─────────────────────────────────
@@ -374,7 +385,7 @@ export function buildTaxReturnSummaryText(client: Client, ret: ComputedTaxReturn
   lines.push(`CLIENT_LAST_NAME=${neutralizeFormula(client.lastName)}`);
   lines.push(`CLIENT_EMAIL=${neutralizeFormula(client.email)}`);
   lines.push(`FILING_STATUS=${FILING_STATUS_LABELS[client.filingStatus] ?? client.filingStatus}`);
-  lines.push(`STATE=${client.state}`);
+  lines.push(`STATE=${neutralizeFormula(client.state)}`);
   lines.push(`TAX_YEAR=${ret.taxYear}`);
   lines.push(`DEPENDENTS_UNDER_17=${client.dependentsUnder17 ?? 0}`);
   lines.push(`OTHER_DEPENDENTS=${client.otherDependents ?? 0}`);

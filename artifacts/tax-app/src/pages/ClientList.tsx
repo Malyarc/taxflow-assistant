@@ -80,6 +80,7 @@ export default function ClientList() {
           queryClient.invalidateQueries({ queryKey: [CLIENTS_LIST_KEY] });
           toast({ title: "Client deleted" });
         },
+        onError: (e) => toast({ title: "Delete failed", description: String((e as Error)?.message ?? e), variant: "destructive" }),
       }
     );
   }

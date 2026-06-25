@@ -315,7 +315,7 @@ export function buildForm4797Form(ctx: FormBuildContext): FormInstance | null {
   const crossRef: FormLine[] = [
     moneyLine("", "Unrecaptured §1250 gain from this form (pool, capped at the surviving §1231 LTCG)", f.unrecaptured1250Gain, {
       emphasis: true,
-      note: "→ Schedule D line 19 — taxed at a FLAT 25% inside the Schedule D Tax Worksheet (IRC §1(h)(1)(E)); the statutory \"maximum rate\" binds only through the worksheet's global final-min.",
+      note: "→ Schedule D line 19 — the Schedule D Tax Worksheet INTERLEAVES this layer with the ordinary brackets (taxed at ordinary rates up to the top of the 24% bracket), with the IRC §1(h)(1)(E) 25% statutory maximum applying only to the remainder above that. NOT a flat 25%.",
     }),
     moneyLine("", "Unrecaptured §1250 gain reported on the return (Schedule D line 19 bucket)", ret.unrecapturedSection1250Gain, {
       note: "Return-level bucket. May exceed this form's pool (direct Form 8949 §1250-class lots / aggregate adjustments) or fall below it (long-term loss absorption — losses erode the 28% bucket first, then §1250; bounded by net LTCG).",

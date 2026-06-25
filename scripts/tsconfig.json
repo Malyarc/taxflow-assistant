@@ -110,6 +110,7 @@
     "src/tax-engine-audit-2026-06-11-tests.ts",
     "src/tax-engine-audit-2026-06-23-tests.ts",
     "src/tax-engine-audit-2026-06-24-tests.ts",
+    "src/tax-engine-audit-2026-06-25-tests.ts",
     "src/tax-engine-approve-extraction-body-tests.ts",
     "src/tax-engine-t10a-credits-tests.ts",
     "src/tax-engine-t10b-othertax-tests.ts",

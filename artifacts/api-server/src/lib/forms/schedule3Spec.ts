@@ -32,32 +32,87 @@ export function buildSchedule3(ctx: FormBuildContext): FormInstance | null {
   const re = ret.residentialEnergyCredits;
 
   // ── Part I — Nonrefundable credits ──
-  const educationNonRef = ec.aocNonRefundable + ec.llcApplied;
-  // FC-11 — line 5a shows the §25D amount APPLIED (post-CTC ordering, incl.
-  // any §25D(c) carryforward consumed), not the pre-limit credit — the unused
-  // balance rolls forward and is disclosed on Form 5695 line 16.
-  const energy5a = ret.residentialCleanEnergyApplied;
-  const energy5b = re.efficientHomeCredit + re.heatPumpCredit;
-  const gbc = ret.rdCreditApplied + ret.otherGeneralBusinessCreditApplied;
+  // C14 (audit 2026-06-24): list the APPLIED (income-tax-capped) amounts, NOT
+  // the calc-level computed amounts. The engine applies each §26 nonrefundable
+  // credit as min(computed, remaining income tax) in the Schedule 8812 Credit
+  // Limit Worksheet order; when that limit binds (common on low/moderate-income
+  // returns with credits), summing the calc-level amounts OVERSTATES Part I and
+  // false-⚠s the line-8 tie-out (which compares against the genuinely-capped
+  // totalNonRefundableApplied − CTC). Reconstruct the same sequential mins from
+  // engine outputs — the identical reconstruction the Reconciliation Worksheet
+  // Part 5 and the per-form 2441/8863/8880 builders do.
+  //
+  // Base = Form 1040 line 18 = line 16 (regular tax) + Schedule 2 line 3 (AMT +
+  // the Sch 2 line 2 excess-APTC repayment, which credits DO offset — FC-09).
+  // SE tax / NIIT / Add'l Medicare / §72(t) / §4973(g) / Sch H stay OUT (§26(b)).
+  const excessAptc = Math.max(0, -ret.premiumTaxCredit.netPtc);
+  const incomeTaxOnly =
+    ret.federalTaxLiability -
+    ret.selfEmploymentTax -
+    ret.niitTax -
+    ret.additionalMedicareTax -
+    ret.earlyWithdrawalPenalty -
+    ret.hsaExcessExcise -
+    ret.scheduleH.total -
+    excessAptc; // = regular income tax + AMT, the §26 credit base
+  let creditRoom = Math.max(0, incomeTaxOnly);
+  // applyCap: re-cap a CALC-LEVEL computed credit against the running room.
+  const applyCap = (computed: number): number => {
+    const applied = Math.min(Math.max(0, computed), creditRoom);
+    creditRoom = Math.max(0, creditRoom - applied);
+    return applied;
+  };
+  // takeApplied: consume room for a credit the engine already exposes POST-cap
+  // (adoption / CTC / §25D / §53 / §38) — don't re-cap, just draw down the room.
+  const takeApplied = (applied: number): number => {
+    creditRoom = Math.max(0, creditRoom - Math.max(0, applied));
+    return Math.max(0, applied);
+  };
 
-  const partIComponents: Array<[string, string, number, string?]> = [
-    ["1", "Foreign tax credit (Form 1116)", ret.foreignTaxCredit.credit],
-    ["2", "Credit for child & dependent care expenses (Form 2441)", ret.dependentCareCredit.appliedCredit],
-    ["3", "Education credits — nonrefundable (Form 8863): AOC nonref + LLC", educationNonRef],
-    ["4", "Retirement savings contributions credit (Form 8880)", ret.saversCredit.appliedCredit],
-    ["5a", "Residential clean energy credit §25D (Form 5695 Part I) — applied", energy5a, "Solar/wind/geothermal/battery — 30%, no annual cap, §25D(c) carryforward; applied AFTER the CTC (FC-11)."],
-    ["5b", "Energy efficient home improvement credit §25C (Form 5695 Part II)", energy5b, "$1,200 general cap + $2,000 heat-pump cap = $3,200/yr."],
-    ["6j", "Alternative fuel vehicle refueling property §30C (Form 8911)", re.evChargerCredit, "Engine models the EV-charger credit here (officially Form 8911 → Schedule 3 line 6j)."],
-    ["6c", "Adoption credit — nonrefundable (Form 8839)", ret.adoptionCredit.nonRefundableApplied],
-    ["6b", "Prior-year minimum tax credit (Form 8801)", ret.amtCreditApplied],
-    ["6a", "General business credit (Form 3800): R&D §41 + WOTC §51 + FMLA §45S", gbc],
-  ];
+  const educationNonRef = ec.aocNonRefundable + ec.llcApplied;
+  // §25C/§30C (efficient-home + heat-pump + EV-charger) apply BEFORE the CTC;
+  // §25D (residential clean energy) applies AFTER the CTC with a §25D(c)
+  // carryforward (engine: taxReturnEngine ~4406-4486). The CTC itself is NOT on
+  // Schedule 3 (Form 1040 line 19) but its applied amount consumes credit room
+  // BETWEEN the §25C/§30C credits and §25D — so the cap sequence must step over
+  // it. line 5a therefore shows the §25D amount APPLIED (post-CTC ordering, incl.
+  // any §25D(c) carryforward consumed); the unused balance rolls forward and is
+  // disclosed on Form 5695 line 16 (FC-11).
+  const energy25c = re.efficientHomeCredit + re.heatPumpCredit;
+
+  // [line, label, applied, computed, note?] — applied via the sequential cap;
+  // computed retained so a binding-limit note can be shown.
+  const partIComponents: Array<[string, string, number, number, string?]> = [];
+  const pushCapped = (line: string, label: string, computed: number, note?: string) => {
+    partIComponents.push([line, label, applyCap(computed), computed, note]);
+  };
+  const pushApplied = (line: string, label: string, applied: number, note?: string) => {
+    partIComponents.push([line, label, takeApplied(applied), applied, note]);
+  };
+  // Sequence MUST match the engine cascade (taxReturnEngine ~4322-4601).
+  pushCapped("1", "Foreign tax credit (Form 1116)", ret.foreignTaxCredit.credit);
+  pushCapped("2", "Credit for child & dependent care expenses (Form 2441)", ret.dependentCareCredit.appliedCredit);
+  pushCapped("3", "Education credits — nonrefundable (Form 8863): AOC nonref + LLC", educationNonRef);
+  pushCapped("4", "Retirement savings contributions credit (Form 8880)", ret.saversCredit.appliedCredit);
+  pushCapped("5b", "Energy efficient home improvement credit §25C (Form 5695 Part II)", energy25c, "$1,200 general cap + $2,000 heat-pump cap = $3,200/yr. Applied BEFORE the CTC.");
+  pushCapped("6j", "Alternative fuel vehicle refueling property §30C (Form 8911)", re.evChargerCredit, "Engine models the EV-charger credit here (officially Form 8911 → Schedule 3 line 6j). Applied BEFORE the CTC.");
+  // CTC nonrefundable consumes room here (Form 1040 line 19 — not listed in Part I).
+  takeApplied(ret.childTaxCredit.nonRefundablePortion);
+  pushApplied("5a", "Residential clean energy credit §25D (Form 5695 Part I) — applied", ret.residentialCleanEnergyApplied, "Solar/wind/geothermal/battery — 30%, no annual cap, §25D(c) carryforward; applied AFTER the CTC (FC-11).");
+  pushApplied("6c", "Adoption credit — nonrefundable (Form 8839)", ret.adoptionCredit.nonRefundableApplied);
+  pushApplied("6b", "Prior-year minimum tax credit (Form 8801)", ret.amtCreditApplied);
+  pushApplied("6a", "General business credit (Form 3800): R&D §41 + WOTC §51 + FMLA §45S", ret.rdCreditApplied + ret.otherGeneralBusinessCreditApplied);
+
   const partILines: FormLine[] = [];
   let partISum = 0;
-  for (const [line, label, value, note] of partIComponents) {
-    if (!nz(value)) continue;
-    partISum += value;
-    partILines.push(moneyLine(line, label, value, note ? { note } : {}));
+  for (const [line, label, applied, computed, note] of partIComponents) {
+    if (!nz(applied) && !nz(computed)) continue;
+    partISum += applied;
+    const bindingNote =
+      computed - applied > 0.005
+        ? `Income-tax limit binds — computed ${computed.toLocaleString("en-US", { style: "currency", currency: "USD" })}, applied as shown.${note ? " " + note : ""}`
+        : note;
+    partILines.push(moneyLine(line, label, applied, bindingNote ? { note: bindingNote } : {}));
   }
   partILines.push(
     moneyLine("8", "Total nonrefundable credits — to Form 1040 line 20", partISum, { emphasis: true }),

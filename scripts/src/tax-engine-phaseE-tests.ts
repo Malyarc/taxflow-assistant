@@ -980,44 +980,48 @@ function stateCtc(state: string, params: {
   }).credit;
 }
 
-// CA YCTC — requires CalEITC + child under 6. $1,154/child max, peak ≤ $6,800
-//   AGI, phased to $0 by $30,950.
+// CA YCTC — requires CalEITC + child under 6. A PER-RETURN $1,154 (not
+//   per-child; R3-C11), full until EARNED income exceeds $26,626, then phased.
 // Hand-calc: 1 child under 6, AGI $5,000 → full $1,154 (in peak window).
 check("E9+CA-peak", "CA YCTC peak $1,154", stateCtc("CA", {
   agi: 5000, childrenUnder6: 1, caEitcEligible: true,
 }), 1154, 1, "CA YCTC TY2024 FTB Form 3514");
-// Hand-calc: AGI $20k → linear phase: pct = (30950 - 20000) / (30950 - 6800) = 0.4534;
-// credit = $1,154 × 0.4534 = $523
-check("E9+CA-phase", "CA YCTC phased $20k AGI = $523", stateCtc("CA", {
+// Hand-calc: AGI $20k < $26,626 earned-income threshold → still the full
+//   per-return $1,154 (no phase-out yet).
+check("E9+CA-phase", "CA YCTC full $20k AGI = $1,154 (below $26,626)", stateCtc("CA", {
   agi: 20000, childrenUnder6: 1, caEitcEligible: true,
-}), 523, 2);
+}), 1154, 2);
 // No CalEITC eligibility → $0
 check("E9-CA-nocaeitc", "CA YCTC = 0 without CalEITC", stateCtc("CA", {
   agi: 5000, childrenUnder6: 1, caEitcEligible: false,
 }), 0, 1);
 
-// CO Family Affordability TC — $1,200 < age 6, $200 age 6-15. Phased.
-// Hand-calc: AGI $30k MFJ, 2 children both under 6: 2 × $1,200 = $2,400 full
-check("E9+CO-full", "CO TY2024 $30k MFJ 2 under 6 = $2,400", stateCtc("CO", {
+// CO Family Affordability TC — $3,200/child under 6 (R3-C4), reduced 6.875% per
+//   $5,000 (or part) of AGI over the $25,000 MFJ threshold.
+// Hand-calc: AGI $30k MFJ, 2 children both under 6:
+//   steps = ceil((30,000 − 25,000) / 5,000) = 1 → factor = 1 − 0.06875 = 0.93125;
+//   credit = 2 × $3,200 × 0.93125 = $5,960
+check("E9+CO-full", "CO TY2024 $30k MFJ 2 under 6 = $5,960", stateCtc("CO", {
   agi: 30000, filingStatus: "married_filing_jointly",
   childrenUnder6: 2, childrenUnder17: 2,
-}), 2400, 1, "CO Family Affordability TC");
-// Hand-calc: $60k MFJ, 1 child under 6: full at $35k → $0 at $95k.
-//   pct = (95000 - 60000) / (95000 - 35000) = 35/60 = 0.5833
-//   credit = $1,200 × 0.5833 = $700
-check("E9+CO-phase", "CO $60k MFJ 1 under 6 = $700 phased", stateCtc("CO", {
+}), 5960, 1, "CO Family Affordability TC");
+// Hand-calc: $60k MFJ, 1 child under 6:
+//   steps = ceil((60,000 − 25,000) / 5,000) = 7 → factor = 1 − 7 × 0.06875 = 0.51875;
+//   credit = $3,200 × 0.51875 = $1,660
+check("E9+CO-phase", "CO $60k MFJ 1 under 6 = $1,660 phased", stateCtc("CO", {
   agi: 60000, filingStatus: "married_filing_jointly", childrenUnder6: 1, childrenUnder17: 1,
-}), 700, 1);
+}), 1660, 1);
 
-// NJ CTC — $1,000/child under 6, phase $50k-$80k AGI to $0.
-// Hand-calc: 2 kids under 6, AGI $40k single → full $2,000
-check("E9+NJ-full", "NJ CTC $40k 2 under 6 = $2,000", stateCtc("NJ", {
+// NJ CTC — a STEPPED per-child amount by NJ income (R3-C10): ≤$30k→$1,000;
+//   ≤$40k→$800; ≤$50k→$600; ≤$60k→$400; ≤$70k→$300; ≤$80k→$200; else $0.
+// Hand-calc: 2 kids under 6, AGI $40k single → >$30k–$40k band = $800 × 2 = $1,600
+check("E9+NJ-full", "NJ CTC $40k 2 under 6 = $1,600", stateCtc("NJ", {
   agi: 40000, childrenUnder6: 2, childrenUnder17: 2,
-}), 2000, 1, "NJ-1040 line 67");
-// AGI $65k single, 1 child under 6: pct = (80 - 65) / 30 = 0.5; credit = $500.
-check("E9+NJ-phase", "NJ CTC $65k 1 under 6 = $500", stateCtc("NJ", {
+}), 1600, 1, "NJ-1040 line 67");
+// AGI $65k single, 1 child under 6: >$60k–$70k band = $300 × 1 = $300.
+check("E9+NJ-phase", "NJ CTC $65k 1 under 6 = $300", stateCtc("NJ", {
   agi: 65000, childrenUnder6: 1, childrenUnder17: 1,
-}), 500, 1);
+}), 300, 1);
 
 // IL CTC — REBUILT T1.0f (2026-06-11) per the actual PA 103-0592 / IL DOR
 // "Child Tax Credit" page: the credit = 20% of the taxpayer's ILLINOIS EITC

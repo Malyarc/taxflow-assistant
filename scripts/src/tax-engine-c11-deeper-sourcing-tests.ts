@@ -59,20 +59,24 @@ header("C11d+1 — K-1 sourced to former state (CA), wages to current (NY), no i
   check("C11d+1", "currentStateAgi (NY) = $80,000", r.partYearResidency?.currentStateAgi ?? -1, 80_000);
 }
 
-header("C11d+2 — Rental net sourced to TX, wages to NY, no other income");
+header("C11d+2 — Rental net sourced to TX, wages to NY, third-state income pro-rates");
 {
-  // CA→NY 2024-04-01. W-2 $90k (NY). Rental net $15k in TX (NR state).
-  // With full source allocation:
-  //   Wages: $90k → NY, $0 → CA
-  //   Rental: $15k → TX (NOT included in resident/former since TX is neither)
-  //   The engine routes the TX portion to "neither" — i.e., the pro-rata
-  //   residual is the leftover. The TX $15k is subtracted from the pro-rata
-  //   pool, so it's allocated to NEITHER state in part-year split.
-  // Hand-calc:
-  //   totalW2 = $90k; situsSourced = $15k; nonW2NonSitusAgi = $105k − $90k − $15k = $0
-  //   CA AGI = wagesFormer (0) + situsFormer (CA: 0) + 0 pro-rata = $0
-  //   NY AGI = wagesCurrent (90k) + situsCurrent (NY: 0) + 0 pro-rata = $90k
-  // (TX $15k is excluded because TX is not the former or current state.)
+  // CA→NY 2024-04-01. W-2 $90k (NY). Rental net $15k in TX (a no-tax third state
+  // that is neither the former CA nor the current NY residence state).
+  // CORRECTED (R3-C3): a part-year resident is taxed on WORLDWIDE income during
+  // each residence period, so the $15k TX rental must NOT be dropped — it
+  // pro-rates by residence days into BOTH the CA and NY residence periods. (The
+  // old treatment subtracted it from the pro-rata pool and allocated it to
+  // "neither," under-taxing $15k: the periods summed to only $90k of the $105k
+  // federal AGI.)
+  // Hand-calc (2024 leap year, 366 days; CA period Jan 1–Mar 31 = 91 days,
+  //   NY period Apr 1–Dec 31 = 275 days):
+  //   Wages: $90k → NY (current), $0 → CA (former)
+  //   Third-state $15k pro-rates: CA = 15,000 × (91/366) = $3,729.51;
+  //                               NY = 15,000 × (275/366) = $11,270.49
+  //   CA AGI = 0 + 3,729.51                       = $3,729.51
+  //   NY AGI = 90,000 + 11,270.49                 = $101,270.49
+  //   Sum = $3,729.51 + $101,270.49 = $105,000 = federalAgi  ✓ (no income lost)
   const r = calculateMultiStateTax({
     residentState: "NY",
     federalAgi: 105_000,
@@ -88,8 +92,8 @@ header("C11d+2 — Rental net sourced to TX, wages to NY, no other income");
       perStateOtherSourced: { TX: 15_000 },
     },
   });
-  check("C11d+2", "formerStateAgi (CA) = $0", r.partYearResidency?.formerStateAgi ?? -1, 0);
-  check("C11d+2", "currentStateAgi (NY) = $90,000", r.partYearResidency?.currentStateAgi ?? -1, 90_000);
+  check("C11d+2", "formerStateAgi (CA) = $3,729.51", r.partYearResidency?.formerStateAgi ?? -1, 3729.51);
+  check("C11d+2", "currentStateAgi (NY) = $101,270.49", r.partYearResidency?.currentStateAgi ?? -1, 101_270.49);
 }
 
 header("C11d+3 — K-1 sourced to current state (NY) + W-2 to NY → all $110k to NY");

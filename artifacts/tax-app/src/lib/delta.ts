@@ -35,10 +35,35 @@ export const AMEND_BETTER_WHEN_HIGHER: ReadonlySet<string> = new Set([
  * Year-over-year metric labels where a HIGHER value is WORSE (income/tax lines —
  * an increase is unfavorable). Everything else (deductions/credits/refunds) is
  * higher-is-better. (Was YOY_HIGHER_IS_WORSE in ClientDetail.)
+ *
+ * Carries BOTH label vocabularies: the legacy ClientDetail DiffCard labels AND
+ * the exact strings emitted by the api-server `yearOverYear.ts` deltas (the
+ * CpaToolsTab YoY card). A regex heuristic (`/tax|owed/`) used to mis-color
+ * "Child Tax Credit (applied)" / "Earned Income Tax Credit" red-on-increase
+ * because the label contains "Tax" — keep this an explicit, label-driven set.
  */
 export const YOY_HIGHER_IS_WORSE: ReadonlySet<string> = new Set([
+  // Legacy ClientDetail DiffCard labels.
   "Total Income", "AGI", "Taxable Income", "Federal Tax", "State Tax",
   "AMT", "SE Tax", "NIIT", "Net Capital Gain/Loss (Sch D)", "Rental Net (Sch E)",
+  // api-server yearOverYear.ts income/tax delta labels.
+  "Total income", "Adjusted gross income", "Taxable income",
+  "Federal tax (pre-credit)", "Self-employment tax",
+  "Net investment income tax", "Additional Medicare tax",
+  "Alternative minimum tax", "Effective tax rate",
+]);
+
+/**
+ * Year-over-year labels where a HIGHER value is BETTER (deductions/credits/the
+ * refund line). Defaulting to higher-is-better already covers these, but listing
+ * them explicitly stops a future "…Tax Credit" label from ever being mistaken
+ * for a tax line. From `yearOverYear.ts`.
+ */
+export const YOY_HIGHER_IS_BETTER: ReadonlySet<string> = new Set([
+  "QBI deduction (§199A)",
+  "Child Tax Credit (applied)",
+  "Earned Income Tax Credit",
+  "Federal refund/(owed)",
 ]);
 
 /** Favorable direction for a 1040-X line ref. */
@@ -48,6 +73,8 @@ export function amendLineDirection(lineRef: string): FavorableDirection {
 
 /** Favorable direction for a YoY metric label. */
 export function yoyLabelDirection(label: string): FavorableDirection {
+  // Income/tax lines: an increase is unfavorable. Everything else
+  // (deductions, credits, the refund line) is higher-is-better.
   return YOY_HIGHER_IS_WORSE.has(label) ? "down" : "up";
 }
 

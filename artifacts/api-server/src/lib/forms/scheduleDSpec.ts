@@ -357,10 +357,10 @@ export function buildScheduleD(ctx: FormBuildContext): FormInstance | null {
       const u1250 = ret.unrecapturedSection1250Gain;
       p3.push(
         moneyLine("18", "28%-rate gain (28%-Rate Gain Worksheet — collectibles + taxable §1202)", c28, {
-          note: "A character SUBSET of the line-16 gain, NOT additive. Taxed at a flat 28% inside the Schedule D Tax Worksheet (§1(h)(1)(F)); the only max-rate cap is the global final ordinary-tax minimum.",
+          note: "A character SUBSET of the line-16 gain, NOT additive. The Schedule D Tax Worksheet INTERLEAVES this layer with the ordinary brackets: it is taxed at ordinary rates up to the top of the 24% bracket, with the §1(h)(1)(F) 28% statutory maximum applying only to the remainder above that. An LT loss erodes the 28% bucket FIRST, then §1250.",
         }),
         moneyLine("19", "Unrecaptured §1250 gain (Unrecaptured Section 1250 Gain Worksheet)", u1250, {
-          note: "A character SUBSET of the line-16 gain, NOT additive. Taxed at a flat 25% (§1(h)(1)(E)). An LT loss erodes the 28% bucket FIRST, then §1250.",
+          note: "A character SUBSET of the line-16 gain, NOT additive. The Schedule D Tax Worksheet INTERLEAVES this layer with the ordinary brackets: taxed at ordinary rates up to the top of the 24% bracket, with the §1(h)(1)(E) 25% statutory maximum applying only to the remainder above that. An LT loss erodes the 28% bucket FIRST, then §1250.",
         }),
         boolLine("20", "Are lines 18 and 19 both zero or blank?", !nz(c28) && !nz(u1250), {
           note:
@@ -438,7 +438,7 @@ export function buildScheduleD(ctx: FormBuildContext): FormInstance | null {
     "Amounts are engine-exact (cents); official forms round to whole dollars. Line numbers follow the TY2024 Schedule D.",
     "Lines 1a/8a (direct broker-aggregate, no-adjustment path) are unused — all activity is decomposed via the Form 8949-equivalent rows plus the engine's component channels.",
     "The §121 / §1202 / §1031 / Form 4797 / manual-LTCG rows are engine adjustment channels; the official form would carry them inside Form 8949 (codes H/Q) or line 11. Here they are additive rows into line 15.",
-    "Lines 18/19 are character SUBSETS of the line-16 gain (never additive). The engine taxes them at flat 25%/28% inside the Schedule D Tax Worksheet — the \"maximum rate\" is enforced only by the global final ordinary-tax minimum (IRC §1(h)(1)(E)/(F)).",
+    "Lines 18/19 are character SUBSETS of the line-16 gain (never additive). The engine taxes them via the IRS Schedule D Tax Worksheet, which INTERLEAVES the §1250 (25%) and 28% layers with the ordinary brackets — they are taxed at ordinary rates up to the top of the 24% bracket, and the 25%/28% statutory maxima (IRC §1(h)(1)(E)/(F)) apply only to the remainder above that. They are NOT taxed at a flat 25%/28%.",
   ];
   if (perTxnMode && autoWash) {
     footnotes.push(

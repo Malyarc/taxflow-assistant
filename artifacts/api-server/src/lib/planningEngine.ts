@@ -3734,8 +3734,10 @@ function detectSection1244(args: {
   const capLossCf = cfShort + cfLong;
   if (capLossCf < G1_40_MIN_CAP_LOSS_CF) return null;
 
-  const cap = client.filingStatus === "married_filing_jointly" ||
-              client.filingStatus === "qualifying_widow"
+  // R3-C5 — §1244(b)(2) doubles the $50k ordinary-loss limit to $100k ONLY for a
+  // "joint return ... under section 6013". A §2(a) QSS does not file jointly → $50k
+  // (matches this detector's own assumption text + the engine's QSS≠joint handling).
+  const cap = client.filingStatus === "married_filing_jointly"
     ? G1_40_ORDINARY_CAP_MFJ
     : G1_40_ORDINARY_CAP_SINGLE;
   // Recharacterizable portion = min(carryforward, cap).
@@ -4088,7 +4090,6 @@ function detectSection83b(args: {
 // ── G1.49 — Family Employment of Children §3121(b)(3)(A) ─────────────────
 
 const G1_49_MIN_NET_SE = 50_000;
-const G1_49_CHILD_STD_DED_2024 = 14_600;
 const G1_49_SE_FICA_RATE = 0.153; // both employer + employee = 15.3% on SE
 const G1_49_DEFAULT_NUM_CHILDREN = 1;
 
@@ -4134,7 +4135,10 @@ function detectFamilyEmployment(args: {
   if (existingFamEmp) return null;
 
   const numChildren = Math.min(eligibleChildren, G1_49_DEFAULT_NUM_CHILDREN);
-  const wagesPerChild = G1_49_CHILD_STD_DED_2024;
+  // R3-C22 — the child's income-tax shield = the SINGLE standard deduction for the
+  // relevant year (year-indexed), not a frozen TY2024 $14,600 ($15,750 TY2025 /
+  // ~$16,100 TY2026). Understated the shieldable wages + the what-if for current years.
+  const wagesPerChild = getFederalStandardDeduction("single", computed.taxYear);
   const totalWages = wagesPerChild * numChildren;
 
   const fedRate = federalMarginalRate(computed);
@@ -4176,7 +4180,7 @@ function detectFamilyEmployment(args: {
     rationale:
       `Sole prop with ${fmt(Math.round(netSe))} net SE income + ${eligibleChildren} eligible child dependent(s). ` +
       `Employing child(ren) under 18 in the business shields wages from FICA per §3121(b)(3)(A) ` +
-      `AND the child's standard deduction (${fmt(G1_49_CHILD_STD_DED_2024)}) shields the wages from ` +
+      `AND the child's standard deduction (${fmt(wagesPerChild)}) shields the wages from ` +
       `federal income tax. Net savings ~${fmt(estSavings)} per year per child.`,
     action: interpolate(strategy.action, vars),
     prerequisiteData: strategy.prerequisiteData,
@@ -4195,12 +4199,12 @@ function detectFamilyEmployment(args: {
       `STRICT requirement: business MUST be sole prop or husband-wife partnership. S-corp / C-corp wages to children ARE FICA-subject.`,
       `Child must actually perform real work + receive reasonable wages (no sham employment). IRS scrutinizes — document carefully (timesheets, job description, W-2, payroll records).`,
       `Child under 18: FICA + Medicare exempt (§3121(b)(3)(A)). Under 21: also FUTA exempt (§3306(c)(5)).`,
-      `TY2024 child standard deduction: $14,600 — shields wages from federal income tax up to that amount.`,
+      `Child standard deduction (${fmt(wagesPerChild)}, TY${computed.taxYear}) — shields wages from federal income tax up to that amount.`,
       `Wages above std ded taxed at child's marginal rate (likely 10-12%) — still much lower than parent's marginal.`,
       `BONUS: child can fund Roth IRA up to earned income — powerful long-term tax-free growth.`,
       `State income tax + state SUTA may still apply — varies by state.`,
-      `Engine heuristic: 1 child × $14,600 wages. Multiple children scale linearly up to the dependentsUnder17 count.`,
-      `H2 mutation models wages as a "deduction" — reduces parent's AGI by $14,600 (above-the-line equivalent).`,
+      `Engine heuristic: 1 child × ${fmt(wagesPerChild)} wages. Multiple children scale linearly up to the dependentsUnder17 count.`,
+      `H2 mutation models wages as a "deduction" — reduces parent's AGI by ${fmt(totalWages)} (above-the-line equivalent).`,
     ],
     whatIf,
   };
@@ -4214,7 +4218,9 @@ const G1_51_AGI_PHASE_OUT_TOP: Record<string, number> = {
   single: 90_000,
   head_of_household: 90_000,
   married_filing_jointly: 180_000,
-  qualifying_widow: 180_000,
+  // R3-C12 — §25A(d)(2) doubles the phase-out band only for a JOINT return; a §2(a)
+  // QSS uses the single $90k band (matches the engine's education-credit calc).
+  qualifying_widow: 90_000,
   married_filing_separately: 0, // MFS cannot claim
 };
 
@@ -5199,7 +5205,9 @@ const G1_59_AGI_PHASE_OUT_TOP: Record<string, number> = {
   single: 110_000,
   head_of_household: 110_000,
   married_filing_jointly: 220_000,
-  qualifying_widow: 220_000,
+  // R3-C21 — §530(c)(1) doubles the contributor MAGI phase-out only for a JOINT
+  // return; a §2(a) QSS uses the single $110k top.
+  qualifying_widow: 110_000,
   married_filing_separately: 0,
 };
 const G1_59_CONTRIBUTION_CAP = 2_000;

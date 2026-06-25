@@ -150,7 +150,7 @@ function Layout({ children }: { children: React.ReactNode }) {
             {NAV.map((n) => <NavLink key={n.href} {...n} />)}
           </nav>
           <div className="relative flex items-center justify-between border-t border-white/10 px-4 py-3">
-            <span className="text-[10px] uppercase tracking-wider text-white/40">Tax Year 2024</span>
+            <span className="text-[10px] uppercase tracking-wider text-white/40">Tax Year {new Date().getFullYear() - 1}</span>
             <ThemeToggle className="text-white/70 hover:bg-white/10 hover:text-white" />
           </div>
         </aside>

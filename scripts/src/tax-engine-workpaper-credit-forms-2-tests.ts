@@ -105,19 +105,20 @@ const warnCount = (inst: FormInstance): number => allLines(inst).filter((l) => l
 //   Line 11d: max(0, 8,000 − 1,458)           = $6,542.00
 //   Line 11e PTC: min(7,000, 6,542)           = $6,542.00
 //   Line 27 excess APTC: 9,000 − 6,542        = $2,458.00
-//   Line 28 cap (single, 200–300% FPL tier)   = $975
-//   Line 29 repayment: min(2,458, 975)        = $975.00  → Schedule 2 line 2
+//   Line 28 cap (single, 200–<300% FPL tier)  = $950   (R3-C13; 2024 Form 8962
+//                                                Table 5 — $950 single, not $975)
+//   Line 29 repayment: min(2,458, 950)        = $950.00  → Schedule 2 line 2
 //   Income tax: taxable = 36,450 − 14,600 std = 21,850
 //     = 1,160 (10% × 11,600) + 12% × 10,250 = 1,160 + 1,230 = $2,390.00
-//   federalTaxLiability = 2,390 + 975 (repayment bundled) = $3,365.00
+//   federalTaxLiability = 2,390 + 950 (repayment bundled) = $3,340.00
 {
   const inputs = mkInputs({
     wages: 36450,
     client: { acaAnnualPremium: 7000, acaAnnualSlcsp: 8000, acaAdvanceAptc: 9000 },
   });
   const ret = computeTaxReturnPure(inputs);
-  check("S1 engine netPtc capped at −975", ret.premiumTaxCredit.netPtc, -975);
-  check("S1 engine federalTaxLiability = 2,390 tax + 975 repayment", ret.federalTaxLiability, 3365);
+  check("S1 engine netPtc capped at −950", ret.premiumTaxCredit.netPtc, -950);
+  check("S1 engine federalTaxLiability = 2,390 tax + 950 repayment", ret.federalTaxLiability, 3340);
 
   const inst = buildForm8962(ctxFor(ret, inputs));
   checkTrue("S1 8962 applicable (not null)", inst != null);
@@ -134,8 +135,8 @@ const warnCount = (inst: FormInstance): number => allLines(inst).filter((l) => l
     check("S1 line 25 advance APTC $9,000", num(findLine(inst, "25")), 9000);
     checkTrue("S1 line 26 (net PTC) omitted on a clawback", findLine(inst, "26") == null);
     check("S1 line 27 excess APTC $2,458", num(findLine(inst, "27")), 2458);
-    check("S1 line 28 repayment limitation $975", num(findLine(inst, "28")), 975);
-    check("S1 line 29 repayment $975", num(findLine(inst, "29")), 975);
+    check("S1 line 28 repayment limitation $950", num(findLine(inst, "28")), 950);
+    check("S1 line 29 repayment $950", num(findLine(inst, "29")), 950);
     check("S1 line 29 ties engine repayment", num(findLine(inst, "29")), Math.max(0, -ret.premiumTaxCredit.netPtc));
     checkTrue("S1 has Parts I, II, III", inst.parts.length === 3);
     check("S1 all tie-out rows pass (no ⚠)", warnCount(inst), 0);

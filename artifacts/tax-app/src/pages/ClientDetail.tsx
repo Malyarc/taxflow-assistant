@@ -165,20 +165,34 @@ function DocumentsTab({ clientId, clientTaxYear, clientState }: { clientId: numb
     setUploading(true);
     const reader = new FileReader();
     reader.onload = () => {
-      const dataUrl = reader.result as string;
-      const base64 = dataUrl.split(",")[1] ?? "";
-      upload.mutate(
-        { clientId, data: { documentType: docType as UploadDocumentBodyDocumentType, fileName: file.name, fileContent: base64 } },
-        {
-          onSuccess: () => {
-            qc.invalidateQueries({ queryKey: getListDocumentsQueryKey(clientId) });
-            toast({ title: "Document uploaded", description: "AI extraction running — you'll review the extracted values before they're saved." });
-            if (fileRef.current) fileRef.current.value = "";
-          },
-          onError: () => toast({ title: "Upload failed", variant: "destructive" }),
-          onSettled: () => setUploading(false),
-        }
-      );
+      try {
+        const dataUrl = reader.result as string;
+        const base64 = dataUrl.split(",")[1] ?? "";
+        upload.mutate(
+          { clientId, data: { documentType: docType as UploadDocumentBodyDocumentType, fileName: file.name, fileContent: base64 } },
+          {
+            onSuccess: () => {
+              qc.invalidateQueries({ queryKey: getListDocumentsQueryKey(clientId) });
+              toast({ title: "Document uploaded", description: "AI extraction running — you'll review the extracted values before they're saved." });
+              if (fileRef.current) fileRef.current.value = "";
+            },
+            onError: () => toast({ title: "Upload failed", variant: "destructive" }),
+            onSettled: () => setUploading(false),
+          }
+        );
+      } catch {
+        // Don't strand the disabled file Input if reading the result throws.
+        setUploading(false);
+        toast({ title: "Could not read file", variant: "destructive" });
+        if (fileRef.current) fileRef.current.value = "";
+      }
+    };
+    // FileReader can fail (permissions, deleted-mid-read) — without this the
+    // `uploading` flag never clears and the disabled file Input goes dead.
+    reader.onerror = () => {
+      setUploading(false);
+      toast({ title: "Could not read file", variant: "destructive" });
+      if (fileRef.current) fileRef.current.value = "";
     };
     reader.readAsDataURL(file);
   }
@@ -192,6 +206,7 @@ function DocumentsTab({ clientId, clientTaxYear, clientState }: { clientId: numb
           qc.invalidateQueries({ queryKey: getListDocumentsQueryKey(clientId) });
           toast({ title: "Document deleted" });
         },
+        onError: (e) => toast({ title: "Delete failed", description: String((e as Error)?.message ?? e), variant: "destructive" }),
       }
     );
   }
@@ -643,6 +658,10 @@ function W2DataTab({ clientId }: { clientId: number }) {
           qc.invalidateQueries({ queryKey: getListW2DataQueryKey(clientId) });
           qc.invalidateQueries({ queryKey: getGetTaxReturnQueryKey(clientId) });
           qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
+          // Sanity flags are derived from the W-2 box values — editing a W-2
+          // changes them without changing the record count, so refetch by
+          // partial key (the count is in queryKey[2] and won't have moved).
+          qc.invalidateQueries({ queryKey: ["w2-flags", clientId] });
           toast({ title: "W-2 record updated" });
           setEditingId(null);
         },
@@ -659,6 +678,7 @@ function W2DataTab({ clientId }: { clientId: number }) {
           qc.invalidateQueries({ queryKey: getListW2DataQueryKey(clientId) });
           qc.invalidateQueries({ queryKey: getGetTaxReturnQueryKey(clientId) });
           qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
+          qc.invalidateQueries({ queryKey: ["w2-flags", clientId] });
           toast({ title: "W-2 record added" });
           setShowNew(false);
           setNewForm(blankW2Form());
@@ -677,8 +697,10 @@ function W2DataTab({ clientId }: { clientId: number }) {
           qc.invalidateQueries({ queryKey: getListW2DataQueryKey(clientId) });
           qc.invalidateQueries({ queryKey: getGetTaxReturnQueryKey(clientId) });
           qc.invalidateQueries({ queryKey: getGetDashboardSummaryQueryKey() });
+          qc.invalidateQueries({ queryKey: ["w2-flags", clientId] });
           toast({ title: "W-2 record deleted" });
         },
+        onError: (e) => toast({ title: "Delete failed", description: String((e as Error)?.message ?? e), variant: "destructive" }),
       }
     );
   }
@@ -2604,7 +2626,10 @@ function Form1099Tab({ clientId, taxYear }: { clientId: number; taxYear: number 
     if (!confirm("Delete this 1099 record?")) return;
     del.mutate(
       { clientId, form1099Id: id },
-      { onSuccess: () => { invalidate(); toast({ title: "1099 deleted" }); } },
+      {
+        onSuccess: () => { invalidate(); toast({ title: "1099 deleted" }); },
+        onError: (e) => toast({ title: "Delete failed", description: String((e as Error)?.message ?? e), variant: "destructive" }),
+      },
     );
   }
 
@@ -2869,7 +2894,13 @@ function AdjustmentsTab({ clientId }: { clientId: number }) {
 
   function handleDelete(id: number) {
     if (!confirm("Delete this adjustment?")) return;
-    deleteAdj.mutate({ clientId, adjustmentId: id }, { onSuccess: () => { invalidate(); toast({ title: "Deleted" }); } });
+    deleteAdj.mutate(
+      { clientId, adjustmentId: id },
+      {
+        onSuccess: () => { invalidate(); toast({ title: "Deleted" }); },
+        onError: (e) => toast({ title: "Delete failed", description: String((e as Error)?.message ?? e), variant: "destructive" }),
+      },
+    );
   }
 
   function toggleApplied(id: number, current: boolean) {
@@ -4112,6 +4143,7 @@ function AssetBalancesTab({ clientId, taxYear }: { clientId: number; taxYear: nu
       qc.invalidateQueries({ queryKey: getGetTaxReturnQueryKey(clientId) });
       toast({ title: "Asset deleted" });
     },
+    onError: (e: unknown) => toast({ title: "Delete failed", description: String((e as Error)?.message ?? e), variant: "destructive" }),
   });
 
   const totalBy = (predicate: (r: AssetBalanceRow) => boolean): number =>

@@ -251,7 +251,12 @@
   --brand-foreground: 244 47% 12%;
   --brand-ink: 197 75% 70%;
   --gold: 49 88% 56%;
-  --gold-foreground: 244 47% 12%;
+  /* C16 — in dark mode `gold-foreground` is ONLY ever used as text/icon over a
+     translucent gold tint (bg-gold/10–20) on the dark page bg — never on a solid
+     gold fill (the demo banner, StatusPill/StatTile warn, ReturnReview tie-out +
+     diagnostics, UpgradeProCard all use bg-gold/N). Dark navy was invisible
+     there, so this is a LIGHT yellow that reads clearly on the dark surface. */
+  --gold-foreground: 49 88% 70%;
   --success: 158 58% 48%;
   --success-foreground: 244 47% 10%;
   --powder: 197 60% 70%;

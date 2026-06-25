@@ -91,7 +91,7 @@ export function buildForm6251(ctx: FormBuildContext): FormInstance | null {
     }),
     moneyLine("", "Path B — Part III: LTCG/QDIV preserved at 0/15/20%", amt.amtWithPreferentialRates, {
       indent: 1,
-      note: `LTCG + qualified dividends inside the AMT base: $${amt.ltcgQdivInAmtBase.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. Unrecaptured §1250 (25%) and 28%-rate collectibles/§1202 buckets pass through Part III at their flat special rates (Form 6251 lines 36–40).`,
+      note: `LTCG + qualified dividends inside the AMT base: $${amt.ltcgQdivInAmtBase.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}. Unrecaptured §1250 (25%) and 28%-rate collectibles/§1202 buckets pass through Part III via the Schedule D Tax Worksheet, which INTERLEAVES them with the ordinary brackets — taxed at ordinary rates up to the top of the 24% bracket, with the 25%/28% statutory maxima applying only to the remainder above that (Form 6251 lines 36–40); they are NOT a flat 25%/28%.`,
     }),
     moneyLine("7", "Tentative minimum tax rate computation (lesser of Path A / Path B)", amt.amtBeforeRegular, {
       emphasis: true,

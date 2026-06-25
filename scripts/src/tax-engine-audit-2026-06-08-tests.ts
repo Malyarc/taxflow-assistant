@@ -211,9 +211,15 @@ header("State rate corrections — 2024 base + 2025/2026 overrides");
   // $25k single: stdDed phases to 13,230 − 0.12×(25,000−19,070)=12,518.40;
   // taxable 12,481.60 → all in bracket 1 @ 3.5% = $436.86.
   check("S1 WI 2024 single $25k bottom rate 3.5%", calculateStateTax(25000, "WI", "single", 2024), 436.86, 0.5);
-  // S3 — Idaho 5.695% (2024) → 5.3% (2025). std ded conforms.
-  check("S3 ID 2024 $80k = (80k−14.6k)×5.695%", calculateStateTax(80000, "ID", "single", 2024), (80000 - 14600) * 0.05695, 0.5);
-  check("S3 ID 2025 $80k = (80k−15.75k)×5.3%", calculateStateTax(80000, "ID", "single", 2025), (80000 - 15750) * 0.053, 0.5);
+  // S3 — Idaho 5.695% (2024) → 5.3% (2025). std ded conforms, but a 0%-rate
+  // first bracket applies (R3-C8; Idaho Code §63-3024): $4,673 (single, 2024) /
+  // $4,811 (single, 2025) of taxable income is taxed at 0%.
+  // 2024 hand-calc: taxable = 80,000 − 14,600 = 65,400; tax = (65,400 − 4,673) ×
+  //   5.695% = 60,727 × 0.05695 = $3,458.40 (was wrongly (80k−14.6k)×5.695%).
+  check("S3 ID 2024 $80k = (65,400−4,673 zero-bracket)×5.695%", calculateStateTax(80000, "ID", "single", 2024), 3458.40, 0.5);
+  // 2025 hand-calc: taxable = 80,000 − 15,750 = 64,250; tax = (64,250 − 4,811) ×
+  //   5.3% = 59,439 × 0.053 = $3,150.27.
+  check("S3 ID 2025 $80k = (64,250−4,811 zero-bracket)×5.3%", calculateStateTax(80000, "ID", "single", 2025), 3150.27, 0.5);
   // S4 — Colorado 4.25% (2024 temp) → 4.40% base (2025).
   check("S4 CO 2024 $80k = (80k−14.6k)×4.25%", calculateStateTax(80000, "CO", "single", 2024), (80000 - 14600) * 0.0425, 0.5);
   check("S4 CO 2025 $80k = (80k−15.75k)×4.40%", calculateStateTax(80000, "CO", "single", 2025), (80000 - 15750) * 0.044, 0.5);
@@ -228,11 +234,12 @@ header("State rate corrections — 2024 base + 2025/2026 overrides");
   // 2026 flat 2.75% over $26,050: 2.75%×(150,000−26,050) = $3,408.625.
   check("S6 OH 2026 $150k flat 2.75%", calculateStateTax(150000, "OH", "single", 2026), 3408.63, 0.5);
   // S7 — Nebraska 2025 top 5.20% (LB754; lower 2.46/3.51/5.01% unchanged).
-  // $80k single; NE std ded ~$8,300 (pre-existing) → taxable ≈ 71,700:
-  // 2.46%×3,700 + 3.51%×(22,170−3,700) + 5.01%×(35,730−22,170) + 5.2%×(71,700−35,730)
-  // = 91.02 + 648.30 + 679.36 + 1,870.44 = $3,289.11. The corrected 5.20% top rate
-  // is what's verified (was 5.84%); the std ded is unchanged by this fix.
-  check("S7 NE 2025 $80k top 5.20%", calculateStateTax(80000, "NE", "single", 2025), 3289.11, 1.0);
+  // $80k single; NE 2025 std ded corrected $8,300 → $8,600 (R3-C19) → taxable
+  // base = 80,000 − 8,600 = 71,400:
+  // 2.46%×3,700 + 3.51%×(22,170−3,700) + 5.01%×(35,730−22,170) + 5.2%×(71,400−35,730)
+  // = 91.02 + 648.30 + 679.36 + 1,854.84 = $3,273.51. The corrected 5.20% top rate
+  // (was 5.84%) AND the corrected $8,600 std ded are both verified here.
+  check("S7 NE 2025 $80k top 5.20%", calculateStateTax(80000, "NE", "single", 2025), 3273.51, 1.0);
 }
 
 // ════════════════════════════════════════════════════════════════════════════

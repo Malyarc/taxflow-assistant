@@ -157,7 +157,8 @@ const FLAT_STATES_2024: Array<[string, number, number]> = [
   ["AZ", 0.025, 14600],
   ["CO", 0.0425, 14600], // 2024 temporary TABOR-surplus reduction (audit S4)
   ["GA", 0.0539, 12000],
-  ["ID", 0.05695, 14600], // 2024 = 5.695% (H.521); was 5.8% (audit S3)
+  // ID handled separately below — it has a 0%-rate first bracket (R3-C8), so the
+  // simple (AGI − std) × rate formula no longer holds.
   ["IL", 0.0495, 2775], // IL personal exemption $2,775/filer (2024) — modeled as deduction
   ["IN", 0.0305, 1000], // IN $1,000 personal exemption (single, 0 deps) modeled as deduction (#7)
   ["KY", 0.04, 3160],
@@ -170,6 +171,13 @@ for (const [st, rate, stdDed] of FLAT_STATES_2024) {
   const expected = Math.max(0, (80000 - stdDed)) * rate;
   check(`${st} 2024 $80k → ${(rate * 100).toFixed(2)}%`, calculateStateTax(80000, st, "single", 2024), expected);
 }
+
+// ID — 5.695% (2024, H.521) but with a 0%-rate first bracket on the first $4,673
+// of taxable income (single) per Idaho Code §63-3024 (R3-C8). std ded conforms
+// to the federal $14,600.
+// Hand-calc: taxable = 80,000 − 14,600 = 65,400; the first $4,673 is taxed at 0%,
+//            so tax = (65,400 − 4,673) × 5.695% = 60,727 × 0.05695 = $3,458.40.
+check("ID 2024 $80k → 5.70%", calculateStateTax(80000, "ID", "single", 2024), 3458.40);
 
 // MS — decomposed components (T1.0e #16, 2026-06-11; MS DOR dor.ms.gov
 // "Tax Rates" + Form 80-105): 0% on the FIRST $10,000 of TAXABLE income (a

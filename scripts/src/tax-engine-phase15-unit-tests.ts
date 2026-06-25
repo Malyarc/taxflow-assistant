@@ -328,14 +328,15 @@ header("ACA Premium Tax Credit");
   // PTC uncapped = max(0, 11000 - 2070) = $8,930.
   // PTC = min(10000, 8930) = $8,930.
   // Net = $8,930 - $12,000 = -$3,070 owed.
-  // FPL 253.5% < 3.00 → MFJ repayment cap = $1,950.
-  // Capped: max(-3070, -1950) = -$1,950 owed.
+  // FPL 253.5% (200–<300% tier) → MFJ/other-statuses cap = $1,900 (R3-C13;
+  // 2024 Form 8962 Table 5 §36B(f)(2)(B) — $950/$1,900 single/other, not $975/$1,950).
+  // Capped: max(-3070, -1900) = -$1,900 owed.
   const r = calculatePremiumTaxCredit({
     annualPremium: 10000, annualSlcsp: 11000, advanceAptc: 12000,
     modifiedAgi: 50000, householdSize: 2, filingStatus: "married_filing_jointly", taxYear: 2024,
   });
-  check("Repayment capped at $1,950 (MFJ, FPL%<300)", r.netPtc, -1950, 1);
-  check("Repayment cap value = $1,950", r.repaymentCap ?? -1, 1950); // null = no-cap sentinel (T1.0d #14)
+  check("Repayment capped at $1,900 (MFJ, FPL%<300)", r.netPtc, -1900, 1);
+  check("Repayment cap value = $1,900", r.repaymentCap ?? -1, 1900); // null = no-cap sentinel (T1.0d #14)
 }
 {
   // Single, MAGI $60k, household 1. FPL%= 60000/14580 = 411% → ≥ 400%.
@@ -364,16 +365,16 @@ header("ACA Premium Tax Credit");
   // on the household income reported on each tax return").
   // Hand-calc: MAGI $30,000 / FPL $14,580 (household 1) = 2.0576 → the
   // 200–<300% tier; MFS is NOT a §1(c) single → "all other filing statuses"
-  // column = $1,950 (TY2024, Rev. Proc. 2023-34). Excess APTC = $3,000 − $0
-  // = $3,000 → capped at $1,950. (The old uncapped −$3,000 expectation
-  // predated FC-10 and was WRONG.)
+  // column = $1,900 (R3-C13; 2024 Form 8962 Table 5 §36B(f)(2)(B), not $1,950).
+  // Excess APTC = $3,000 − $0 = $3,000 → capped at $1,900. (The old uncapped
+  // −$3,000 expectation predated FC-10 and was WRONG.)
   const r = calculatePremiumTaxCredit({
     annualPremium: 6000, annualSlcsp: 6500, advanceAptc: 3000,
     modifiedAgi: 30000, householdSize: 1, filingStatus: "married_filing_separately", taxYear: 2024,
   });
   checkExact("MFS ineligible", r.eligible, false);
-  check("MFS repayment capped at $1,950 (Table 5 other-statuses column)", r.netPtc, -1950, 0.01);
-  check("MFS repayment cap value", r.repaymentCap ?? -1, 1950);
+  check("MFS repayment capped at $1,900 (Table 5 other-statuses column)", r.netPtc, -1900, 0.01);
+  check("MFS repayment cap value", r.repaymentCap ?? -1, 1900);
 }
 {
   // No premium → no eligibility (not enrolled in Marketplace)

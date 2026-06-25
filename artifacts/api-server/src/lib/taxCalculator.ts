@@ -2167,10 +2167,18 @@ function computePartYearAllocation(
     const situsCurrent = perStateOtherSourced
       ? Math.max(0, perStateOtherSourced[currentStateUpper] ?? 0)
       : 0;
-    // Remaining (intangible + other) income that pro-rates by days.
+    // Remaining income that pro-rates by days = federal AGI minus ONLY the income
+    // explicitly assigned to a residence period (former- and current-state wages +
+    // situs). R3-C3: subtracting the ALL-state totals (totalW2Wages /
+    // situsSourcedTotal) dropped any THIRD-state wages or situs income entirely —
+    // it was removed from the residual but never re-added to either period, so a
+    // part-year resident was under-taxed. Subtracting only the period-assigned
+    // shares makes third-state (and intangible/other) income pro-rate by days into
+    // the two periods, so formerStateAgi + currentStateAgi == federalAgi.
+    void totalW2Wages; void situsSourcedTotal; // retained for clarity; no longer subtracted whole
     const nonW2NonSitusAgi = Math.max(
       0,
-      federalAgiSafe - totalW2Wages - situsSourcedTotal,
+      federalAgiSafe - w2WagesFormer - w2WagesCurrent - situsFormer - situsCurrent,
     );
     const nonW2Former =
       daysInYear > 0 ? nonW2NonSitusAgi * (daysFormer / daysInYear) : 0;
@@ -3723,6 +3731,9 @@ export function calculateStateCtc(params: {
   federalCtcApplied: number;
   /** CalEITC eligibility — required for the CA Young Child Tax Credit. */
   caEitcEligible?: boolean;
+  /** R3-C11 — household EARNED income (the CA YCTC phase-out base per FTB 3514).
+   *  Falls back to `agi` when absent (the legacy approximation). */
+  earnedIncome?: number;
   /** T1.0f — the computed STATE EITC amount (calculateStateEitc().credit).
    *  IL's CTC is defined as a percentage OF THE IL EITC (PA 103-0592), not of
    *  the federal CTC. Default 0 → IL CTC 0 (it requires IL EITC eligibility). */
@@ -3730,57 +3741,61 @@ export function calculateStateCtc(params: {
   taxYear: number;
 }): StateCtcCalculation {
   const { state, agi, filingStatus, childrenUnder6, childrenUnder17, federalCtcApplied } = params;
+  const earnedIncome = params.earnedIncome ?? agi;
   const code = state.toUpperCase();
   const isMfj = filingStatus === "married_filing_jointly" || filingStatus === "qualifying_widow";
 
-  // CA — Young Child Tax Credit (YCTC). $1,154 per child under 6 (TY2024).
-  // Requires CalEITC eligibility. We approximate the income-phase identically
-  // to CalEITC (peak at low income, phased to 0 by $30,950 AGI).
+  // CA — Young Child Tax Credit (YCTC), FTB Form 3514. R3-C11: the YCTC is a
+  // SINGLE PER-RETURN credit ($1,154 TY2024 regardless of how many children
+  // under 6), NOT per child; it stays at the full amount until EARNED INCOME
+  // exceeds $26,626 and phases linearly to $0 at $31,951. (The prior code paid
+  // $1,154 × childrenUnder6 and phased from $6,800 AGI — over-crediting 2+-child
+  // families and under-crediting families with $6,800–$26,626 earned income.)
   if (code === "CA") {
     if (!params.caEitcEligible || childrenUnder6 <= 0) {
       return { state: code, credit: 0, approximate: true,
         notes: "CA YCTC requires CalEITC eligibility + child under 6" };
     }
-    // Phase same as CalEITC: peak ≤ $6,800 earned, linear phase to 0 by $30,950
-    const yctcMaxPerChild = 1154; // FTB Form 3514 TY2024
+    const yctcMax = 1154; // FTB Form 3514 TY2024 — per RETURN
     let pct = 1;
-    if (agi > 6800) {
-      const phaseOutRange = 30950 - 6800;
-      pct = Math.max(0, (30950 - agi) / phaseOutRange);
+    if (earnedIncome > 26626) {
+      pct = Math.max(0, (31951 - earnedIncome) / (31951 - 26626));
     }
-    return { state: code, credit: yctcMaxPerChild * childrenUnder6 * pct,
-      approximate: true, notes: "CA YCTC TY2024 $1,154/child under 6" };
+    return { state: code, credit: yctcMax * pct,
+      approximate: true, notes: "CA YCTC TY2024 $1,154 per return (earned-income phase-out $26,626→$31,951)" };
   }
 
-  // CO — Family Affordability Tax Credit (TY2024+). $1,200 per child under 6,
-  // $200 per child age 6-15. Phase-out by AGI (full at $25k single / $35k MFJ;
-  // $0 at $85k single / $95k MFJ).
+  // CO — Family Affordability Tax Credit (TY2024, HB24-1311 / DR 0104CN). R3-C4:
+  // $3,200 per child under 6, $2,400 per child age 6-16 (the prior $1,200/$200
+  // under-credited ~2.7×). Each per-child amount is reduced by 6.875% of itself
+  // for each $5,000 (or fraction) of AGI over $15,000 (single) / $25,000 (joint),
+  // floored at 0 — which naturally zeroes the credit at ~$85k single / ~$95k joint.
   if (code === "CO") {
     if (childrenUnder17 <= 0) return { state: code, credit: 0, approximate: true };
-    const fullThreshold = isMfj ? 35000 : 25000;
-    const zeroThreshold = isMfj ? 95000 : 85000;
-    let pct = 1;
-    if (agi >= zeroThreshold) pct = 0;
-    else if (agi > fullThreshold) {
-      pct = (zeroThreshold - agi) / (zeroThreshold - fullThreshold);
-    }
+    const threshold = isMfj ? 25000 : 15000;
+    const steps = agi > threshold ? Math.ceil((agi - threshold) / 5000) : 0;
+    const reduceFactor = Math.max(0, 1 - steps * 0.06875);
     const childrenOlder = Math.max(0, childrenUnder17 - childrenUnder6);
-    const credit = (childrenUnder6 * 1200 + childrenOlder * 200) * pct;
+    const credit = (childrenUnder6 * 3200 + childrenOlder * 2400) * reduceFactor;
     return { state: code, credit, approximate: true,
-      notes: "CO Family Affordability TC TY2024 $1,200 < age 6, $200 age 6-15" };
+      notes: "CO Family Affordability TC TY2024 $3,200 <age 6 / $2,400 age 6-16 (−6.875%/$5k over $15k/$25k)" };
   }
 
-  // NJ — Child Tax Credit. $1,000 per child under 6 (refundable). Phase-out
-  // by AGI (full at $50k, $0 at $80k MFJ; same for single per NJ-1040 line 67).
+  // NJ — Child Tax Credit (NJ-1040, N.J.S.A. 54A:4-17.1). R3-C10: stepped table
+  // keyed on income (per qualifying child age 5 or younger), NOT a $50k-full
+  // linear phase to $80k. (Base is NJ gross income; engine uses AGI — documented
+  // approximation.)
   if (code === "NJ") {
     if (childrenUnder6 <= 0) return { state: code, credit: 0, approximate: true };
-    let pct = 1;
-    if (agi >= 80000) pct = 0;
-    else if (agi > 50000) {
-      pct = (80000 - agi) / (80000 - 50000);
-    }
-    return { state: code, credit: 1000 * childrenUnder6 * pct, approximate: true,
-      notes: "NJ-1040 CTC TY2024 $1,000/child under 6" };
+    const perChild =
+      agi <= 30000 ? 1000 :
+      agi <= 40000 ? 800 :
+      agi <= 50000 ? 600 :
+      agi <= 60000 ? 400 :
+      agi <= 70000 ? 300 :
+      agi <= 80000 ? 200 : 0;
+    return { state: code, credit: perChild * childrenUnder6, approximate: true,
+      notes: "NJ-1040 CTC TY2024 stepped $1,000→$0 (per child age 5 or younger)" };
   }
 
   // IL — Child Tax Credit (HB 4951 / PA 103-0592) — REBUILT T1.0f (2026-06-11).
@@ -5146,17 +5161,23 @@ export function calculateSaversCredit(params: {
 }
 
 // ── Dependent Care Credit (Form 2441) ────────────────────────────────────────
-// 20-35% of qualified expenses up to $3,000 (1 child) / $6,000 (2+ children).
-// Rate phases down with AGI:
-//   AGI ≤ $15,000 = 35%
-//   $15,001-$43,000: declines 1% per $2k bracket to 20%
-//   AGI > $43,000 = 20%
+// Expenses up to $3,000 (1 child) / $6,000 (2+ children) × the applicable %.
+// PRE-2026 §21(a)(2): 35% max, declines 1pt per $2,000 (or fraction) of AGI over
+//   $15,000, floor 20%.
+// TY2026+ (OBBBA §70405 amending §21(a)(2)): 50% max —
+//   (A) reduced (not below 35%) by 1pt per $2,000 (or fraction) of AGI over $15,000;
+//   (B) further reduced (not below 20%) by 1pt per $2,000 ($4,000 for a JOINT return)
+//       (or fraction) of AGI over $75,000 ($150,000 for a JOINT return).
+//   "Joint return" = §6013 = MFJ only (a §2(a) QSS is NOT a joint return → single
+//   thresholds, consistent with the engine's other QSS≠joint handling).
 // Both spouses (if MFJ) must have earned income.
 
 const DEPCARE_LIMIT_1 = 3000;
 const DEPCARE_LIMIT_2_PLUS = 6000;
 const DEPCARE_MIN_RATE = 0.20;
 const DEPCARE_MAX_RATE = 0.35;
+const DEPCARE_MAX_RATE_OBBBA = 0.50; // TY2026+ top applicable percentage
+const DEPCARE_OBBBA_FLOOR_1 = 0.35;  // floor after the first (over-$15k) phase-down
 
 export interface DependentCareCreditCalculation {
   expenses: number;
@@ -5179,8 +5200,12 @@ export function calculateDependentCareCredit(params: {
    *  apart from their spouse for the last 6 months and are treated as not
    *  married. Defaults false (the standard MFS case → no credit). */
   mfsLivedApart?: boolean;
+  /** R3-C1 — the OBBBA §21(a)(2) 50% rate + two-step phase-down applies for
+   *  taxable years beginning after 2025. Defaults to a pre-2026 year (35% top)
+   *  so omitting it preserves the legacy behavior. */
+  taxYear?: number;
 }): DependentCareCreditCalculation {
-  const { expenses, qualifyingDependents, earnedIncomeTaxpayer, earnedIncomeSpouse, agi, filingStatus, mfsLivedApart = false } = params;
+  const { expenses, qualifyingDependents, earnedIncomeTaxpayer, earnedIncomeSpouse, agi, filingStatus, mfsLivedApart = false, taxYear } = params;
   const expenseLimit = qualifyingDependents <= 0 ? 0 : qualifyingDependents === 1 ? DEPCARE_LIMIT_1 : DEPCARE_LIMIT_2_PLUS;
 
   // §21(e)(2): married-filing-separately filers generally CANNOT claim the
@@ -5210,18 +5235,30 @@ export function calculateDependentCareCredit(params: {
 
   const eligibleExpenses = Math.min(Math.max(0, expenses), expenseLimit, earnedIncomeLimit);
 
-  // §21(a)(2) applicable-percentage phase-down: the 35% rate drops by 1
-  // percentage point for each $2,000 — OR FRACTION THEREOF — of AGI over
-  // $15,000, not below 20%. "Fraction thereof" ⇒ Math.ceil, not Math.floor:
-  // e.g. AGI $16,000 is already in the $15,000–$17,000 band (34%), and AGI
-  // $43,000 is the last 21% band ($41,000–$43,000) — only AGI > $43,000 reaches
-  // the 20% floor. The Math.max clamps to 20% once reductions ≥ 15, so no
-  // separate cutoff is needed (the prior `agi >= 43000 → 20%` line was off by
-  // one band: it forced 20% at exactly $43,000, which Form 2441 puts at 21%).
-  let rate = DEPCARE_MAX_RATE;
-  if (agi > 15000) {
-    const reductions = Math.ceil((agi - 15000) / 2000);
-    rate = Math.max(DEPCARE_MIN_RATE, DEPCARE_MAX_RATE - reductions * 0.01);
+  // §21(a)(2) applicable-percentage phase-down. "Fraction thereof" ⇒ Math.ceil:
+  // e.g. AGI $16,000 is already in the $15,000–$17,000 band. The Math.max clamps
+  // to the floor, so no separate cutoff band is needed.
+  let rate: number;
+  if (taxYear != null && resolveTaxYear(taxYear) >= 2026) {
+    // OBBBA §70405: 50% base; (A) −1pt/$2,000 over $15,000 floor 35%; (B) further
+    // −1pt/$2,000 ($4,000 joint) over $75,000 ($150,000 joint) floor 20%.
+    // "Joint return" (§6013) = MFJ only; QSS/HoH/single use the single thresholds.
+    const isJoint = filingStatus === "married_filing_jointly";
+    rate = DEPCARE_MAX_RATE_OBBBA;
+    if (agi > 15000) {
+      rate = Math.max(DEPCARE_OBBBA_FLOOR_1, DEPCARE_MAX_RATE_OBBBA - Math.ceil((agi - 15000) / 2000) * 0.01);
+    }
+    const t2 = isJoint ? 150000 : 75000;
+    const step2 = isJoint ? 4000 : 2000;
+    if (agi > t2) {
+      rate = Math.max(DEPCARE_MIN_RATE, rate - Math.ceil((agi - t2) / step2) * 0.01);
+    }
+  } else {
+    // Pre-2026: 35% top, −1pt/$2,000 over $15,000, floor 20%.
+    rate = DEPCARE_MAX_RATE;
+    if (agi > 15000) {
+      rate = Math.max(DEPCARE_MIN_RATE, DEPCARE_MAX_RATE - Math.ceil((agi - 15000) / 2000) * 0.01);
+    }
   }
 
   return {
@@ -5801,10 +5838,14 @@ const FPL_GUIDELINE_BY_PTC_YEAR: Record<TaxYear, { base: number; perAdditional: 
 // Repayment is fully required when FPL% ≥ 400%; for TY2026+ the limitation
 // was REPEALED entirely by OBBBA (see aptcRepaymentCap).
 const PTC_REPAYMENT_CAPS_2024 = {
+  // R3-C13 — 2024 Form 8962 Table 5 / Rev. Proc. 2023-34 §3.07: the 200-<300%
+  // and 300-<400% caps are $950/$1,900 and $1,575/$3,150 (the prior $975/$1,950
+  // and $1,625/$3,250 were wrong — the real 2023→2024 step was $900→$950 and
+  // $1,500→$1,575). The <200% $375/$750 tier was already correct.
   tiers: [
     { fplLessThan: 2.00, capSingle: 375, capMfj: 750 },
-    { fplLessThan: 3.00, capSingle: 975, capMfj: 1950 },
-    { fplLessThan: 4.00, capSingle: 1625, capMfj: 3250 },
+    { fplLessThan: 3.00, capSingle: 950, capMfj: 1900 },
+    { fplLessThan: 4.00, capSingle: 1575, capMfj: 3150 },
   ],
 };
 const PTC_REPAYMENT_CAPS_2025 = {
@@ -7304,10 +7345,13 @@ export function calculateFederalTaxWithCapitalGains(params: {
 
   // K8 — Kiddie tax (Form 8615 Line 18).
   // When the child has net unearned income > $2,600, that excess is taxed
-  // at the parent's marginal rate instead of the child's. Engine simplification:
-  // amount-at-parent-rate is treated as ordinary (sub-gap: small LTCG/QDIV
-  // portion within kiddie income is also taxed at parent rate in this model;
-  // IRS Form 8615 uses a more elaborate stacking with the QDCG worksheet).
+  // at the parent's marginal rate instead of the child's. The parent-rate slice
+  // CONSUMES the child's ordinary income first, then its preferential bucket;
+  // the preferential (QDIV / net-LTCG) portion of that slice retains its
+  // preferential CHARACTER and is taxed at the PARENT's capital-gains rate, not
+  // the parent's ordinary rate (Form 8615 Line 9 via the §1(h) / Sch D / QDCGT
+  // worksheet). (R3-C2 fix: the prior model taxed the whole parent-rate slice
+  // ordinary — a ~5-22pt over-tax on an all-QDIV/LTCG UTMA account, the common case.)
   let kiddieTotal = ordinaryTax + prefTax;
   // FED-02: net-unearned threshold is year-indexed ($2,600 TY2024 / $2,700 TY2025).
   const kiddieThreshold = KIDDIE_TAX_THRESHOLD[year];
@@ -7324,7 +7368,18 @@ export function calculateFederalTaxWithCapitalGains(params: {
         : calculateFederalTax(ordinaryRemaining, status, year, taxMethod);
       const childPrefStackBase = feie > 0 ? ordinaryRemaining + feie : ordinaryRemaining;
       const childPrefTax = calculateLtcgQdivStackedTax(childPrefStackBase, ltcgRemaining, status, year);
-      const parentAdditionalTax = amountAtParentRate * Math.max(0, params.kiddieTax.parentsTopMarginalRate);
+      // Split the parent-rate slice into its ordinary vs preferential components
+      // (ordinary consumed first), then tax the preferential portion at the
+      // PARENT's §1(h) capital-gains rate, derived from the parent's top ordinary
+      // marginal rate (the only parent datum available): 0% in the 10/12% brackets,
+      // 20% at 37%, else 15%. (This bracket-from-marginal mapping is an
+      // approximation only at the 35%-vs-20%-LTCG overlap; it is exact otherwise
+      // and always far closer than the old full-ordinary treatment.)
+      const pMarginal = Math.max(0, params.kiddieTax.parentsTopMarginalRate);
+      const prefAtParentRate = Math.max(0, amountAtParentRate - ordinaryWithStcg);
+      const ordinaryAtParentRate = amountAtParentRate - prefAtParentRate;
+      const parentLtcgRate = pMarginal <= 0.12 ? 0 : pMarginal >= 0.37 ? 0.20 : 0.15;
+      const parentAdditionalTax = ordinaryAtParentRate * pMarginal + prefAtParentRate * parentLtcgRate;
       const kiddieMethod = childOrdinaryTax + childPrefTax + parentAdditionalTax;
       // Form 8615 Line 18: child's tax = larger of regular method or kiddie method.
       kiddieTotal = Math.max(ordinaryTax + prefTax, kiddieMethod);

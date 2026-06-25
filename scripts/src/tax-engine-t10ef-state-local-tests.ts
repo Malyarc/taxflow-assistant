@@ -249,10 +249,11 @@ header("LA / ME / DC / VA std deductions");
     calculateStateTax(60000, "LA", "head_of_household", 2025), 1050.00);
   check("LA 2025 single $60k → $1,425 ((60,000 − 12,500) × 3%)",
     calculateStateTax(60000, "LA", "single", 2025), 1425.00);
-  // ME 2025: taxable = 50,000 − 15,000 = 35,000 (2024 brackets held):
-  //   5.8%×26,050 (1,510.90) + 6.75%×8,950 (604.13) = $2,115.03
-  check("ME 2025 single $50k → $2,115.03 (MRS $15,000 std ded — NOT OBBBA $15,750)",
-    calculateStateTax(50000, "ME", "single", 2025), 2115.03);
+  // ME 2025: taxable = 50,000 − 15,000 = 35,000; the brackets are inflation-
+  // indexed for 2025 (R3-C20; first-bracket top $26,800, was $26,050 in 2024):
+  //   5.8%×26,800 (1,554.40) + 6.75%×(35,000−26,800) (553.50) = $2,107.90
+  check("ME 2025 single $50k → $2,107.90 (MRS $15,000 std ded + 2025-indexed brackets)",
+    calculateStateTax(50000, "ME", "single", 2025), 2107.90);
   // ME 2026: taxable = 50,000 − 15,300 = 34,700 (MRS 2026 schedule:
   //   5.8% < $27,400): 5.8%×27,400 (1,589.20) + 6.75%×7,300 (492.75) = $2,081.95
   check("ME 2026 single $50k → $2,081.95 (ME-indexed $15,300 + 2026 brackets)",
@@ -659,7 +660,9 @@ header("calculateStateTaxWithBreakdown — parity with calculateStateTax");
 // ════════════════════════════════════════════════════════════════════════════
 // 22. childrenUnder6 e2e (T1.0f/M4, migration 0021) — the pipeline now
 // threads the client field into the under-6 state CTCs.
-// NJ CTC (NJ-1040 line 67): $1,000/child under 6, full at NJ income ≤ $50k.
+// NJ CTC (NJ-1040 line 67): a STEPPED per-child amount by NJ taxable income
+// (R3-C10): ≤$30k→$1,000; ≤$40k→$800; ≤$50k→$600; ≤$60k→$400; ≤$70k→$300;
+// ≤$80k→$200; else $0. (The old "$1,000/child full ≤$50k linear" rule was wrong.)
 // ════════════════════════════════════════════════════════════════════════════
 header("childrenUnder6 — e2e through computeTaxReturnPure (NJ CTC)");
 {
@@ -673,8 +676,9 @@ header("childrenUnder6 — e2e through computeTaxReturnPure (NJ CTC)");
     adjustments: [],
     taxYear: 2024,
   } as Parameters<typeof computeTaxReturnPure>[0]);
-  check("NJ client, 2 children under 6, $40k → stateChildTaxCredit $2,000",
-    (r as { stateChildTaxCredit: number }).stateChildTaxCredit, 2000.00);
+  // $40k AGI lands in the >$30k–$40k band = $800/child × 2 = $1,600.
+  check("NJ client, 2 children under 6, $40k → stateChildTaxCredit $1,600",
+    (r as { stateChildTaxCredit: number }).stateChildTaxCredit, 1600.00);
   // Defensive cap: childrenUnder6 can never exceed dependentsUnder17.
   const r2 = computeTaxReturnPure({
     client: {
@@ -686,8 +690,9 @@ header("childrenUnder6 — e2e through computeTaxReturnPure (NJ CTC)");
     adjustments: [],
     taxYear: 2024,
   } as Parameters<typeof computeTaxReturnPure>[0]);
-  check("childrenUnder6 capped at dependentsUnder17 (5 → 1 → $1,000)",
-    (r2 as { stateChildTaxCredit: number }).stateChildTaxCredit, 1000.00);
+  // $40k AGI → $800/child band; capped to 1 child → $800 × 1 = $800.
+  check("childrenUnder6 capped at dependentsUnder17 (5 → 1 → $800)",
+    (r2 as { stateChildTaxCredit: number }).stateChildTaxCredit, 800.00);
   // Default 0 → no under-6 credit (prior behavior preserved).
   const r3 = computeTaxReturnPure({
     client: { filingStatus: "single", state: "NJ", taxYear: 2024, dependentsUnder17: 2 },

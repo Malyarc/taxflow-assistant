@@ -237,6 +237,12 @@ export default function ClientForm({ editId }: Props) {
       toast({ title: "Please fill in required fields", variant: "destructive" });
       return;
     }
+    // The email Input is type="email" but that's only enforced by native form
+    // submission — guard the value so "abc" can't reach the API.
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      toast({ title: "Please enter a valid email address", variant: "destructive" });
+      return;
+    }
     const payload = {
       ...form,
       taxYear: Number(form.taxYear),

@@ -38,6 +38,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { downloadFile } from "@/lib/download";
+import { yoyLabelDirection, deltaTone, toneTextClass } from "@/lib/delta";
 
 // These read-only analyses cost full engine runs server-side (entity-choice
 // alone is 4) — keep them fresh for 5 minutes instead of refetching on every
@@ -53,6 +54,18 @@ const usd2 = (n: number | null | undefined): string =>
     ? "—"
     : n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const pct = (n: number | null | undefined): string => (n == null ? "—" : `${(n * 100).toFixed(1)}%`);
+
+// C31 — a server error must not make the card silently vanish (which reads as
+// "no issue here"). Render a small inline notice instead, mirroring Planning.tsx.
+// `return null` is reserved for the genuinely not-applicable (!data/!applicable)
+// case below in each card.
+function CardLoadError() {
+  return (
+    <Card className="border-dashed">
+      <CardContent className="py-4 text-xs text-muted-foreground">Couldn't load this analysis.</CardContent>
+    </Card>
+  );
+}
 
 // ── Local response shapes (mirror the api-server lib types) ──
 interface YearSummary {
@@ -113,12 +126,6 @@ interface YoyResp {
   priorYearHasData: boolean;
 }
 
-function deltaClass(n: number, goodWhenUp = false): string {
-  if (Math.abs(n) < 0.5) return "text-muted-foreground";
-  const up = n > 0;
-  return up === goodWhenUp ? "text-success" : "text-destructive";
-}
-
 // ════════════════════════════════════════════════════════════════════════════
 // Card 1 — Tax projection + 1040-ES quarterly estimates
 // ════════════════════════════════════════════════════════════════════════════
@@ -127,7 +134,8 @@ function ProjectionCard({ clientId }: { clientId: number }) {
     query: { queryKey: getGetTaxProjectionQueryKey(clientId), staleTime: ANALYSIS_STALE_MS },
   });
   if (isLoading) return <Skeleton className="h-48 w-full" />;
-  if (error || !data) return null;
+  if (error) return <CardLoadError />;
+  if (!data) return null;
   const p = data as unknown as ProjectionResp;
   const est = p.estimatedTax;
 
@@ -226,7 +234,8 @@ function MfjVsMfsCard({ clientId }: { clientId: number }) {
     query: { queryKey: getGetMfjVsMfsQueryKey(clientId), staleTime: ANALYSIS_STALE_MS },
   });
   if (isLoading) return <Skeleton className="h-40 w-full" />;
-  if (error || !data) return null;
+  if (error) return <CardLoadError />;
+  if (!data) return null;
   const m = data as unknown as MfsResp;
 
   if (!m.applicable) {
@@ -281,7 +290,8 @@ function YearOverYearCard({ clientId }: { clientId: number }) {
     query: { queryKey: getGetYearOverYearQueryKey(clientId), staleTime: ANALYSIS_STALE_MS },
   });
   if (isLoading) return <Skeleton className="h-40 w-full" />;
-  if (error || !data) return null;
+  if (error) return <CardLoadError />;
+  if (!data) return null;
   const y = data as unknown as YoyResp;
 
   return (
@@ -321,9 +331,8 @@ function YearOverYearCard({ clientId }: { clientId: number }) {
             <div className="text-right font-medium text-muted-foreground">%</div>
             {y.notableSwings.map((d) => {
               const isRate = d.label === "Effective tax rate";
-              const taxLike = /tax|owed/i.test(d.label) && !/refund/i.test(d.label);
               return (
-                <YoySwingRow key={d.label} d={d} isRate={isRate} taxLike={taxLike} />
+                <YoySwingRow key={d.label} d={d} isRate={isRate} />
               );
             })}
           </div>
@@ -341,9 +350,11 @@ function YearOverYearCard({ clientId }: { clientId: number }) {
     </Card>
   );
 }
-function YoySwingRow({ d, isRate, taxLike }: { d: LineDelta; isRate: boolean; taxLike: boolean }) {
-  // Tax/owed up = bad (red); income/refund up = good (green).
-  const cls = taxLike ? deltaClass(d.change, false) : deltaClass(d.change, true);
+function YoySwingRow({ d, isRate }: { d: LineDelta; isRate: boolean }) {
+  // One diff grammar (lib/delta): income/tax lines red-on-increase,
+  // credits/deductions/refund green-on-increase — by EXACT label, not a regex
+  // (so "Child Tax Credit (applied)" / "Earned Income Tax Credit" stay green).
+  const cls = toneTextClass(deltaTone(d.change, yoyLabelDirection(d.label)));
   return (
     <>
       <div className="col-span-2">{d.label}</div>
@@ -385,7 +396,8 @@ function EntityChoiceCard({ clientId }: { clientId: number }) {
   });
   const [showAssumptions, setShowAssumptions] = useState(false);
   if (isLoading) return <Skeleton className="h-40 w-full" />;
-  if (error || !data) return null;
+  if (error) return <CardLoadError />;
+  if (!data) return null;
   const e = data as unknown as EntityChoiceResp;
   if (!e.applicable) {
     return (
@@ -559,7 +571,8 @@ function OrganizerCard({ clientId }: { clientId: number }) {
   });
   const [expanded, setExpanded] = useState(false);
   if (isLoading) return <Skeleton className="h-24 w-full" />;
-  if (error || !data) return null;
+  if (error) return <CardLoadError />;
+  if (!data) return null;
   const o = data as unknown as OrganizerResp;
   const visible = expanded ? o.items : o.items.filter((i) => i.status === "missing").slice(0, 6);
   return (
@@ -721,7 +734,8 @@ function NotificationsCard({ clientId }: { clientId: number }) {
     query: { queryKey: getGetNotificationEventsQueryKey(clientId), staleTime: ANALYSIS_STALE_MS },
   });
   if (isLoading) return <Skeleton className="h-24 w-full" />;
-  if (error || !data) return null;
+  if (error) return <CardLoadError />;
+  if (!data) return null;
   const n = data as unknown as NotificationsResp;
   const events = n.events ?? [];
   return (

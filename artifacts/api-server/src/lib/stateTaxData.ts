@@ -230,7 +230,17 @@ const STATE_TAX_DATA_2024: Record<string, StateTaxInfo> = {
     name: "Idaho", hasIncomeTax: true,
     // TY2024 = 5.695% flat (H.521, retroactive to 1/1/2024). TY2025 → 5.3% (HB40),
     // applied in build2025Data. Idaho State Tax Commission rate schedule.
-    brackets: { single: flat(0.05695), married_filing_jointly: flat(0.05695) },
+    // R3-C8 — Idaho is NOT a pure flat tax: its rate schedule has a 0% ZERO-RATE
+    // bracket on the first $4,673 (single/MFS) / $9,346 (MFJ/HoH/QSS) of Idaho
+    // taxable income (2024), with the flat rate applying only above it. Modeling
+    // it as a single flat band over-taxed EVERY Idaho filer by ~5.695%×$4,673 ≈
+    // $266 (single). (HoH maps to `single` via the picker — conservative; Idaho's
+    // schedule groups HoH with MFJ, so HoH may merit the $9,346 zero-bracket — a
+    // small residual to confirm against the published HoH column.)
+    brackets: {
+      single: [{ upTo: 4673, rate: 0 }, { upTo: Infinity, rate: 0.05695 }],
+      married_filing_jointly: [{ upTo: 9346, rate: 0 }, { upTo: Infinity, rate: 0.05695 }],
+    },
     standardDeduction: { single: FED_STD_DEDUCTION_2024.single, married_filing_jointly: FED_STD_DEDUCTION_2024.married_filing_jointly, head_of_household: FED_STD_DEDUCTION_2024.head_of_household, married_filing_separately: FED_STD_DEDUCTION_2024.married_filing_separately, qualifying_widow: FED_STD_DEDUCTION_2024.qualifying_widow },
   },
   IL: {
@@ -966,10 +976,15 @@ function build2025Data(): Record<string, StateTaxInfo> {
     ...data.GA,
     brackets: { single: flat(0.0519), married_filing_jointly: flat(0.0519) },
   };
-  // Idaho reduced flat rate to 5.3% for 2025 (HB40, retroactive to 1/1/2025)
+  // Idaho reduced flat rate to 5.3% for 2025 (HB40, retroactive to 1/1/2025).
+  // R3-C8 — preserve the 0% zero-rate bracket: 2025 thresholds $4,811 (single/MFS)
+  // / $9,622 (MFJ/HoH/QSS), then 5.3% (Idaho State Tax Commission 2025 schedule).
   data.ID = {
     ...data.ID,
-    brackets: { single: flat(0.053), married_filing_jointly: flat(0.053) },
+    brackets: {
+      single: [{ upTo: 4811, rate: 0 }, { upTo: Infinity, rate: 0.053 }],
+      married_filing_jointly: [{ upTo: 9622, rate: 0 }, { upTo: Infinity, rate: 0.053 }],
+    },
   };
   // Colorado: 4.40% for TY2025 — VERIFIED 2026-06-11 (T1.0e #3) against the
   // official 2025 DR 0104 booklet (tax.colorado.gov Book104_2025.pdf,
@@ -1116,8 +1131,17 @@ function build2025Data(): Record<string, StateTaxInfo> {
   // explicit MRS-published values are pinned per year instead.
   data.ME = {
     ...data.ME,
+    // R3-C20 — ME indexes its brackets annually (36 M.R.S. §5403); the 2025
+    // override previously updated only the std ded, leaving the TY2024 thresholds.
+    // 2025 MRS schedule: single $26,800/$63,450; MFJ = 2× single; HoH = 1.5× single
+    // (the ratio MRS uses, confirmed by the 2026 schedule), rounded down to $50.
+    brackets: {
+      single: [{ upTo: 26800, rate: 0.058 }, { upTo: 63450, rate: 0.0675 }, { upTo: Infinity, rate: 0.0715 }],
+      married_filing_jointly: [{ upTo: 53600, rate: 0.058 }, { upTo: 126900, rate: 0.0675 }, { upTo: Infinity, rate: 0.0715 }],
+      head_of_household: [{ upTo: 40200, rate: 0.058 }, { upTo: 95150, rate: 0.0675 }, { upTo: Infinity, rate: 0.0715 }],
+    },
     standardDeduction: { single: 15000, married_filing_jointly: 30000, head_of_household: 22500, married_filing_separately: 15000, qualifying_widow: 30000 },
-    notes: "ME TY2025 std ded $15,000/$30,000/$22,500 (MRS 1040ME instructions — Maine did NOT conform to OBBBA's $15,750). TY2026 decoupled + ME-indexed (build2026Data).",
+    notes: "ME TY2025 brackets $26,800/$63,450 (single) + std ded $15,000/$30,000/$22,500 (MRS 1040ME — ME did NOT conform to OBBBA's $15,750). TY2026 in build2026Data.",
   };
   // DC TY2025 (D.C. Law 26-89 — Income and Franchise Tax Conformity and
   // Revision Temporary Amendment Act of 2025): DC DECOUPLED from the OBBBA
@@ -1160,6 +1184,26 @@ function build2025Data(): Record<string, StateTaxInfo> {
         { upTo: 71460, rate: 0.0501 }, { upTo: Infinity, rate: 0.052 },
       ],
     },
+    // R3-C19 — NE indexes its std ded annually; the 2025 override updated only the
+    // rate. TY2025 = $8,600/$17,200/$12,600 (NE DOR 2025 booklet). (Bracket-
+    // threshold inflation remains a documented sub-gap, like MN.)
+    standardDeduction: { single: 8600, married_filing_jointly: 17200, head_of_household: 12600, married_filing_separately: 8600 },
+  };
+  // R3-C19 — Rhode Island indexes its std ded annually (RI Div. of Taxation
+  // ADV 2024-26); TY2025 = $10,900/$21,800/$16,350 (MFS $10,925). RI brackets are
+  // also indexed (documented sub-gap; the rate schedule is unchanged for 2025).
+  data.RI = {
+    ...data.RI,
+    standardDeduction: { single: 10900, married_filing_jointly: 21800, head_of_household: 16350, married_filing_separately: 10925 },
+  };
+  // R3-C9 — Vermont indexes BOTH its std ded and its per-filer/per-dependent
+  // personal exemption annually (32 V.S.A. §5811/§5830a). TY2025 (VT Dept. of
+  // Taxes): std ded $7,650/$15,300/$11,450; personal exemption $5,300 each.
+  data.VT = {
+    ...data.VT,
+    standardDeduction: { single: 7650, married_filing_jointly: 15300, head_of_household: 11450, married_filing_separately: 7650 },
+    personalExemption: { single: 5300, married_filing_jointly: 10600, head_of_household: 5300, married_filing_separately: 5300 },
+    personalExemptionPerDependent: 5300,
   };
   // Ohio reduced the top rate to 3.125% for 2025 (HB96, retroactive to 1/1/2025).
   data.OH = {

@@ -458,8 +458,9 @@ async function testPremiumTaxCredit() {
   // Expected contribution = $50,000 × 0.07073 = $3,536.50.
   // Computed PTC = min($10,000, max(0, $8,000 - $3,536.50)) = $4,463.50.
   // Net = $4,463.50 - $12,000 = -$7,536.50 owed.
-  // Repayment cap (FPL 3.00-4.00, single) = $1,625. Capped to -$1,625.
-  console.log("── 5b. Single MAGI $50k, advance $12k overstated → repayment capped at $1,625 ──");
+  // Repayment cap (FPL 3.00-4.00, single) = $1,575 (R3-C13: 2024 Form 8962 Table 5
+  // / Rev. Proc. 2023-34 — the 300-<400% single cap is $1,575, not $1,625). Capped to -$1,575.
+  console.log("── 5b. Single MAGI $50k, advance $12k overstated → repayment capped at $1,575 ──");
   {
     const cid = await makeClient({
       firstName: "PTCRepay",
@@ -472,7 +473,7 @@ async function testPremiumTaxCredit() {
       await api(`/clients/${cid}/w2data`, { method: "POST", body: JSON.stringify({ taxYear: 2024, wagesBox1: 50000, federalTaxWithheldBox2: 5000, stateCode: "FL" }) });
       await settle();
       const r = await getReturn(cid);
-      check("Net PTC (excess repayment, capped) = -$1,625", Number(r.premiumTaxCredit), -1625, 2);
+      check("Net PTC (excess repayment, capped) = -$1,575", Number(r.premiumTaxCredit), -1575, 2);
     } finally {
       await delClient(cid);
     }
