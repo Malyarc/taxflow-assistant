@@ -380,12 +380,19 @@ export function buildTaxReturnSummaryText(client: Client, ret: ComputedTaxReturn
   // Neutralize formula injection on client-controlled free text — the key=value
   // .gen/TXT is routinely opened in / imported to a spreadsheet for review, so a
   // name/email beginning with =,+,-,@ is the same CWE-1236 vector as in CSV.
+  // R3-SEC (security-review): the .gen/TXT is a STRICT one-KEY=VALUE-per-line
+  // format (unlike CSV, which RFC-4180-quotes embedded newlines, and JSON, which
+  // escapes them), so a value containing a CR/LF would FORGE additional KEY=VALUE
+  // records (CWE-93 record forgery). Strip control chars (incl. \n/\r) AFTER the
+  // leading-formula neutralization, and length-cap, so each value stays one line.
+  const metaVal = (s: string | number) =>
+    neutralizeFormula(s).replace(/[\x00-\x1f]+/g, " ").slice(0, 200);
   lines.push(`[META]`);
-  lines.push(`CLIENT_FIRST_NAME=${neutralizeFormula(client.firstName)}`);
-  lines.push(`CLIENT_LAST_NAME=${neutralizeFormula(client.lastName)}`);
-  lines.push(`CLIENT_EMAIL=${neutralizeFormula(client.email)}`);
+  lines.push(`CLIENT_FIRST_NAME=${metaVal(client.firstName)}`);
+  lines.push(`CLIENT_LAST_NAME=${metaVal(client.lastName)}`);
+  lines.push(`CLIENT_EMAIL=${metaVal(client.email)}`);
   lines.push(`FILING_STATUS=${FILING_STATUS_LABELS[client.filingStatus] ?? client.filingStatus}`);
-  lines.push(`STATE=${neutralizeFormula(client.state)}`);
+  lines.push(`STATE=${metaVal(client.state)}`);
   lines.push(`TAX_YEAR=${ret.taxYear}`);
   lines.push(`DEPENDENTS_UNDER_17=${client.dependentsUnder17 ?? 0}`);
   lines.push(`OTHER_DEPENDENTS=${client.otherDependents ?? 0}`);

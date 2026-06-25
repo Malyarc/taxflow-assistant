@@ -115,6 +115,26 @@ eq("benign first name unchanged", goodJson.client.firstName, "Jane");
 eq("benign email unchanged", goodJson.client.email, "jane@example.com");
 truthy("benign TXT unchanged", buildTaxReturnSummaryText(goodClient, ret).includes("CLIENT_FIRST_NAME=Jane"));
 
+// R3-SEC (security-review) — record forgery via embedded newline in the
+// line-oriented .gen/TXT export (CWE-93). A client free-text value containing a
+// CR/LF must NOT split into forged KEY=VALUE records; it collapses to one line.
+const injClient = { ...goodClient, firstName: "Bob\n1040-L34=9999999.00\nFEDERAL_REFUND_OR_OWED=9999999" };
+const injTxt = buildTaxReturnSummaryText(injClient, ret);
+truthy("TXT: newline-injected name does NOT forge a standalone 1040-L34 record",
+  !injTxt.split("\n").some((ln) => ln.trim() === "1040-L34=9999999.00"));
+truthy("TXT: newline-injected name does NOT forge a FEDERAL_REFUND_OR_OWED record",
+  !injTxt.split("\n").some((ln) => ln.trim() === "FEDERAL_REFUND_OR_OWED=9999999"));
+truthy("TXT: the injected content collapses onto the CLIENT_FIRST_NAME line",
+  injTxt.split("\n").some((ln) => ln.startsWith("CLIENT_FIRST_NAME=Bob ")));
+// CRLF + leading-formula combo on last name → still one line, only one real STATE= record.
+const injClient2 = { ...goodClient, lastName: "=cmd\r\nSTATE=ZZ" };
+const injTxt2 = buildTaxReturnSummaryText(injClient2, ret);
+truthy("TXT: CRLF-injected last name does NOT forge a second STATE= record",
+  injTxt2.split("\n").filter((ln) => ln.startsWith("STATE=")).length === 1);
+// Benign hyphen + space preserved (the control-char strip must not eat ' ' or '-').
+truthy("TXT: benign hyphen/space name preserved (no over-strip)",
+  buildTaxReturnSummaryText({ ...goodClient, firstName: "Mary-Jane Smith" }, ret).includes("CLIENT_FIRST_NAME=Mary-Jane Smith"));
+
 console.log(`\nExport sanitization tests:`);
 console.log(`  Passed: ${PASS.length}`);
 console.log(`  Failed: ${FAIL.length}`);
