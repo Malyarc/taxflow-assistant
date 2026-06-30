@@ -648,9 +648,20 @@ function W2DataTab({ clientId }: { clientId: number }) {
     setEditingId(id);
   }
 
+  // A blank Tax Year coerces to Number("")===0 in toPayload, persisting a year-0
+  // W-2 that never matches any return year (its wages silently vanish from every
+  // calculation). Reject it up front with a clear message.
+  function validTaxYear(raw: string | number): boolean {
+    const y = Number(raw);
+    if (Number.isInteger(y) && y >= 2000 && y <= 2100) return true;
+    toast({ title: "Enter a valid tax year", description: "A 4-digit tax year (e.g. 2024) is required.", variant: "destructive" });
+    return false;
+  }
+
   function saveEdit(id: number) {
     const f = editForms[id];
     if (!f) return;
+    if (!validTaxYear(f.taxYear)) return;
     updateW2.mutate(
       { clientId, w2Id: id, data: toPayload(f) },
       {
@@ -671,6 +682,7 @@ function W2DataTab({ clientId }: { clientId: number }) {
   }
 
   function saveNew() {
+    if (!validTaxYear(newForm.taxYear)) return;
     createW2.mutate(
       { clientId, data: toPayload(newForm) },
       {

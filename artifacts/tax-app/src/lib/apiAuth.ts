@@ -42,3 +42,19 @@ export function setApiToken(token: string): void {
 export function clearApiToken(): void {
   localStorage.removeItem(TOKEN_KEY);
 }
+
+/**
+ * Authorization header for RAW `fetch` calls that don't go through the generated
+ * client's custom-fetch (which already attaches the token). Returns `{}` in demo
+ * mode (no token) so the open API still responds normally. Use this anywhere a
+ * component reaches the API with a bare `fetch` so it works when the app-layer
+ * gate (API_AUTH_TOKEN) is enabled without edge-auth cookies.
+ */
+export function authHeaders(): Record<string, string> {
+  try {
+    const t = localStorage.getItem(TOKEN_KEY);
+    return t ? { Authorization: `Bearer ${t}` } : {};
+  } catch {
+    return {};
+  }
+}

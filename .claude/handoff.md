@@ -1,3 +1,31 @@
+# Handoff Note — 2026-06-30 (FULL-APP AUDIT — engine + planning + whole-app review + browser)
+
+Independent from-scratch audit on `claude/complete-app-audit-testing-wewqm5` (PR #5). Full ledger:
+`docs/accuracy-audit/full-app-audit-2026-06-30.md`. **Green bar:** 4 typechecks + no-API battery
+(**145 suites / 0 failed**, +the new `tax-engine-audit-2026-06-30-tests.ts`, 26 hand-calc'd) + 17/17
+yes-API + property harness (~9,836) + tenforty oracle (758, 0 div). Frontend rebuilt + browser-clean.
+
+**Fixed (engine, all regression-locked):** ENG-1 Sch SE non-farm OPTIONAL METHOD double-haircut
+($941.97→$1,020; a wrong-expectation test pinned it — corrected); ENG-2 NIIT §163(d) line-9c reduction
+(itemized-only, AND gated on schedA-with-invInt ≥ legacy override per /code-review); ENG-4/5/6 OBBBA
+1-A phase-out per-$1,000 rounding (car-loan ceil, tips/overtime floor); ENG-7/8 IRA phase-out $200 floor
++ round-to-$10 (Pub 590-A Wksht 1-2).
+**Fixed (app):** HIGH cross-year itemized contamination in `taxReturnPipeline` (year-scope the `existing`
+select — was leaking another year's itemized + silently persisting wrong tax); planning-hit-list `?limit`
+floor+cap; W-2/1099 recalc the record's OWN year (+1099 PATCH year-MOVE recalcs both, per /code-review);
+child-CREATE FK→404 (global handler, walks the Drizzle cause chain); export `no-store`; rothOptimizer +
+multiYearEngine growth-factor clamp; W-2 taxYear validation; dark-mode amber; ReturnReview auth header;
+dashboard "Top planning" copy (score-ranked, not "highest-value").
+**Planning:** 107/107 strategies confirmed firing+suppressing, 0 bugs.
+**DEFERRED (documented, LOW):** ENG-3 §1250/28% net-STCL ordering (conflicts with the prior verified F3
+fix; couldn't fetch the IRS Unrecap-§1250 Worksheet — network blocked); ENG-9 §280F pre-2024 vintage caps
+(network-blocked Rev. Proc. tables). Both tracked, neither guessed.
+**Note:** `/deep-research` ran but the remote env blocks outbound web (all 25 IRS fetches failed) — used the
+tenforty oracle + first-principles re-derivation instead. NOT yet deployed to EC2 (engine + route + frontend
+changes; no schema migration — deploy via the normal cycle when ready).
+
+---
+
 # Handoff Note — 2026-06-22c (DEPLOY-SCRIPT HARDENING + T0.2 C1 DISCLOSURE LEDGER)
 
 Two things this session: (1) a fail-fast deploy script; (2) the §7216/§6713 tamper-evident disclosure ledger.

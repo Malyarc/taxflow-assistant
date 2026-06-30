@@ -118,7 +118,9 @@ router.post("/clients/:clientId/w2data", async (req, res): Promise<void> => {
   if (insertData.employeeSSN != null) insertData.employeeSSN = encryptField(insertData.employeeSSN as string);
   const [record] = await db.insert(w2DataTable).values(insertData as typeof w2DataTable.$inferInsert).returning();
   await writeAudit({ clientId: params.data.clientId, action: "create", entityType: "w2", entityId: record.id, after: record });
-  await recalculateAfterMutation(params.data.clientId);
+  // Recalc the W-2's OWN tax year — a multi-year client's other-year return must
+  // not be left stale (the DELETE handler already passes record.taxYear).
+  await recalculateAfterMutation(params.data.clientId, record.taxYear);
   const r = record;
   setNoStorePii(res); // response carries decrypted SSN
   res.status(201).json({
@@ -168,7 +170,7 @@ router.patch("/clients/:clientId/w2data/:w2Id", async (req, res): Promise<void> 
     return;
   }
   await writeAudit({ clientId: params.data.clientId, action: "update", entityType: "w2", entityId: record.id, before, after: record });
-  await recalculateAfterMutation(params.data.clientId);
+  await recalculateAfterMutation(params.data.clientId, record.taxYear);
   const r = record;
   setNoStorePii(res); // response carries decrypted SSN
   res.json({

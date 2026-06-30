@@ -730,9 +730,9 @@ function FieldRow({ field, value, onChange, onFocus, onBlur, edited, originalAiV
     <div
       className={cn(
         "space-y-1 rounded-md transition-colors px-2 -mx-2 py-1",
-        edited && !hasError && !hasWarning && "bg-amber-50 border-l-2 border-amber-500 pl-3",
+        edited && !hasError && !hasWarning && "bg-amber-50 dark:bg-amber-950/30 border-l-2 border-amber-500 pl-3",
         hasError && "bg-destructive/5 border-l-2 border-destructive pl-3",
-        hasWarning && !hasError && "bg-amber-50 border-l-2 border-amber-500 pl-3",
+        hasWarning && !hasError && "bg-amber-50 dark:bg-amber-950/30 border-l-2 border-amber-500 pl-3",
       )}
     >
       <div className="flex items-baseline justify-between gap-2">
@@ -771,7 +771,7 @@ function FieldRow({ field, value, onChange, onFocus, onBlur, edited, originalAiV
               className={cn(
                 "flex gap-1.5 items-start text-[11px] leading-snug",
                 flag.severity === "error" && "text-destructive",
-                flag.severity === "warning" && "text-amber-800",
+                flag.severity === "warning" && "text-amber-800 dark:text-amber-300",
                 flag.severity === "info" && "text-brand-ink",
               )}
             >
@@ -834,7 +834,7 @@ function DiffIndicator({ state, field, aiValue, cpaValue }: DiffIndicatorProps):
   if (state === "changed") {
     return (
       <span
-        className="inline-flex items-center gap-1 text-[10px] text-amber-700"
+        className="inline-flex items-center gap-1 text-[10px] text-amber-700 dark:text-amber-300"
         title={`AI extracted "${aiFmt}"; CPA changed to "${cpaFmt}"`}
       >
         <Pencil className="size-3 shrink-0" />
@@ -860,7 +860,7 @@ function DiffIndicator({ state, field, aiValue, cpaValue }: DiffIndicatorProps):
   // cleared: AI had a value, CPA blanked it
   return (
     <span
-      className="inline-flex items-center gap-1 text-[10px] text-amber-700"
+      className="inline-flex items-center gap-1 text-[10px] text-amber-700 dark:text-amber-300"
       title={`AI extracted "${aiFmt}"; CPA cleared the value`}
     >
       <CircleSlash className="size-3 shrink-0" />

@@ -443,7 +443,10 @@ router.get("/planning-hit-list", async (req, res): Promise<void> => {
   const maxAgi = typeof req.query.maxAgi === "string" ? Number(req.query.maxAgi) : null;
   const limit = typeof req.query.limit === "string" ? Number(req.query.limit) : 50;
 
-  const effectiveLimit = Number.isFinite(limit) && limit > 0 ? limit : 50;
+  // Floor + cap (mirrors campaignLimit()): a fractional limit would reach Postgres
+  // as a non-integer LIMIT and 500; an unbounded limit would fan the engine out over
+  // the whole book. Math.floor + min(…, 200) keeps it a sane, valid integer.
+  const effectiveLimit = Number.isFinite(limit) && limit > 0 ? Math.min(Math.floor(limit), 200) : 50;
 
   type Entry = {
     clientId: number;

@@ -9,7 +9,9 @@
  * NII (§163(d)(4)) = ordinary investment income: interest + NON-qualified dividends
  * + net STCG + royalties (investment expenses treated as 0 — documented sub-gap).
  * The elected amount STAYS in the §1411 NIIT base (the election is a §163(d)
- * characterization, not §1411).
+ * characterization, not §1411). But the allowed §163(d) interest deduction IS a
+ * Form 8960 line-9c reduction to NII (Treas. Reg. §1.1411-4(f)(2)(ii)) when the
+ * return itemizes — so freeing more interest via the election ALSO lowers NIIT.
  *
  * Run: pnpm --filter @workspace/scripts exec tsx src/tax-engine-section163d-tests.ts
  */
@@ -73,7 +75,8 @@ header("IIE-1: §163(d)(1) deduction capped at NII (no election)");
 // ── IIE-2 — the §163(d)(4)(B) election frees the disallowed interest ──
 // Elect $40k: NII = $10k + $40k = $50k → allowed = min($50k, $50k) = $50k, disallowed 0.
 // Preferential = $100k − $40k = $60k. Itemized = $30k + $50k = $80k.
-// Clean δ=E case (itemizes anyway) → election saves $40k × 15% preferential = $6,000.
+// Clean δ=E case (itemizes anyway): income tax saves $40k × 15% preferential = $6,000,
+// AND NIIT drops by 3.8% × the $40k of newly-freed line-9c interest = $1,520 → total $7,520.
 header("IIE-2: §163(d)(4)(B) election frees disallowed interest");
 {
   const noElect = computeTaxReturnPure(mk([A("investment_interest_expense", 50000)]));
@@ -85,10 +88,15 @@ header("IIE-2: §163(d)(4)(B) election frees disallowed interest");
   check("IIE-2 itemized = $30k + $50k", elect.itemizedDeductions ?? -1, 80000);
   // Election saves the 15% preferential rate on the elected $40k (freed deduction
   // offsets it in ordinary income); both are under the $518,900 single LTCG breakpoint.
+  // Plus the NIIT line-9c reduction below → total refund delta $6,000 + $1,520 = $7,520.
   const electionDelta = elect.federalRefundOrOwed - noElect.federalRefundOrOwed;
-  check("IIE-2 election refund delta ≈ $6,000 ($40k × 15%)", electionDelta, 6000, 60);
-  // The elected amount stays in the §1411 NIIT base → NIIT unchanged by the election.
-  check("IIE-2 NIIT unchanged by election (elected stays in §1411 base)", elect.niitTax, noElect.niitTax, 1);
+  check("IIE-2 election refund delta ≈ $7,520 ($40k × 15% income tax + $40k × 3.8% NIIT)", electionDelta, 7520, 60);
+  // The elected amount stays in the §1411 NIIT base, but the election frees $40k more
+  // §163(d) interest deduction (Form 8960 line 9c) → NII drops $40k → NIIT − $1,520.
+  // noElect NIIT = 3.8% × ($110k NII − $10k allowed int) = $3,800;
+  // elect   NIIT = 3.8% × ($110k NII − $50k allowed int) = $2,280.
+  check("IIE-2 noElect NIIT = $3,800 (line-9c reduces NII by the $10k allowed interest)", noElect.niitTax, 3800, 1);
+  check("IIE-2 elect NIIT = $2,280 (election frees $40k more line-9c interest)", elect.niitTax, 2280, 1);
 }
 
 // ── IIE-3 — std-deduction client: §163(d) deduction is computed but UNUSED ──
@@ -141,11 +149,11 @@ header("IIE-5: G1.93 engine-verified what-if + independent cross-check");
     checkBool("IIE-5 whatIf attached", hit.whatIf != null, true);
     if (hit.whatIf) {
       check("IIE-5 whatIf delta == independent engine run", hit.whatIf.delta.combinedRefundDelta, independentDelta, 1);
-      check("IIE-5 whatIf delta ≈ $6,000", hit.whatIf.delta.combinedRefundDelta, 6000, 60);
+      check("IIE-5 whatIf delta ≈ $7,520 (income tax + NIIT line-9c)", hit.whatIf.delta.combinedRefundDelta, 7520, 60);
     }
     annotateVerifiedSavings([hit]);
     checkEq("IIE-5 savingsSource engine-verified", hit.savingsSource, "engine-verified");
-    check("IIE-5 verifiedSavings ≈ $6,000", hit.verifiedSavings ?? -1, 6000, 60);
+    check("IIE-5 verifiedSavings ≈ $7,520", hit.verifiedSavings ?? -1, 7520, 60);
   }
 }
 

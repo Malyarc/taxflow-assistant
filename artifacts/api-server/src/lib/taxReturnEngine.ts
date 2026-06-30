@@ -2528,7 +2528,9 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     const seTaxBaseTaxpayer = Math.max(0, taxpayerSeBaseSchedC + k1SelfEmploymentEarnings + clergyHousingAllowance + churchEmployeeIncome);
     const seTaxBaseSpouse = Math.max(0, spouseNetSe);
 
-    const seTaxpayer = calculateSelfEmploymentTax(seTaxBaseTaxpayer, taxYear, w2SsByTaxpayer, churchSeFloor);
+    // Sch SE Line 4b — the optional-method amount is already net (no ×0.9235),
+    // so remove it from the ×92.35% haircut input and pass it through un-reduced.
+    const seTaxpayer = calculateSelfEmploymentTax(Math.max(0, seTaxBaseTaxpayer - seOptionalReported), taxYear, w2SsByTaxpayer, churchSeFloor, seOptionalReported);
     const seSpouse = calculateSelfEmploymentTax(seTaxBaseSpouse, taxYear, w2SsBySpouse);
     // Combine the two Sch SE results into a single SeTaxCalculation.
     se = {
@@ -2545,10 +2547,11 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
     // pass 0 to calculateSelfEmploymentTax (no Line 9 applied). The CPA
     // can opt in to per-spouse Sch SE by tagging at least one W-2 or
     // 1099-NEC with spouse="spouse".
-    se = calculateSelfEmploymentTax(seTaxBase, taxYear, 0, churchSeFloor);
+    se = calculateSelfEmploymentTax(Math.max(0, seTaxBase - seOptionalReported), taxYear, 0, churchSeFloor, seOptionalReported);
   } else {
     // Single, HoH, MFS, QSS — single filer; original Sch SE Line 9 path.
-    se = calculateSelfEmploymentTax(seTaxBase, taxYear, w2SocialSecurityWages, churchSeFloor);
+    // Sch SE Line 4b (optional method) is already net — pass it un-reduced.
+    se = calculateSelfEmploymentTax(Math.max(0, seTaxBase - seOptionalReported), taxYear, w2SocialSecurityWages, churchSeFloor, seOptionalReported);
   }
 
   // K5 — SEHI deduction (Form 7206). Cap = net SE − half-SE. Adjustment is
@@ -3853,6 +3856,16 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
   // label is "Investment Income (NIIT)") — per §1411(c)(1)(A)(i) it may carry
   // ANNUITY income, which §32(i) does not count, so it joins the NIIT base
   // only (FC-12).
+  // Form 8960 line 9c — §163(d) investment interest expense allocable to NII.
+  // Deducted (and thus NII-reducing) only when the return itemizes AND the
+  // Schedule-A-with-investment-interest total is the one actually used. When the
+  // LEGACY flat itemized override (`additionalDeductions`) is larger, the engine
+  // deducts that opaque number instead and the investment interest is NOT a real
+  // Schedule A component — so it must not reduce NII either.
+  const niitInvestmentInterestDeduction =
+    useItemizedDeductions && scheduleAItemizedWithInvInt >= additionalDeductions
+      ? allowedInvestmentInterest
+      : 0;
   const totalInvestmentIncomeForNiit = Math.max(
     0,
     investmentIncomeFromAdj + investmentIncomeStructuredComponents +
@@ -3874,7 +3887,15 @@ export function computeTaxReturnPure(inputs: TaxReturnInputs): ComputedTaxReturn
       // §32(i)(2)(D) counts capital-GAIN net income (a positive-only concept),
       // so the EITC base never subtracts the allowed loss (FC-12).
       capitalLossDeducted -
-      nonPassiveSection1231NiitCarve,
+      nonPassiveSection1231NiitCarve -
+      // §1411(c)(1)(B) / Treas. Reg. §1.1411-4(f)(2)(ii) — the §163(d) investment
+      // interest expense is a deduction properly allocable to net investment
+      // income (Form 8960 line 9c = Form 4952 line 8), so it REDUCES the NII base.
+      // Only when it was actually deducted, i.e. the return itemized (it's a
+      // Schedule A item); a standard-deduction filer deducts no investment interest
+      // and so gets no line-9c reduction. `allowedInvestmentInterest` is already
+      // capped at the §163(d) NII, so it can only ever be allocable-to-NII dollars.
+      niitInvestmentInterestDeduction,
   );
   const niit = calculateNiit({
     investmentIncome: totalInvestmentIncomeForNiit,
