@@ -5046,7 +5046,23 @@ export function calculateRetirementDeductions(params: {
       }
     }
   }
-  const iraDeductible = iraContributionCapped * iraPhaseOutFraction;
+  // IRC §219(g)(2)(B) / IRS Pub 590-A Worksheet 1-2 line 8: when the deduction is
+  // PHASED (MAGI strictly inside the band), round the reduced limit UP to the next
+  // $10, and apply the $200 minimum floor to any positive in-band amount (the floor
+  // is itself capped at what was actually contributed). At/above the band top the
+  // deduction is $0 (no floor); at/below the band bottom it is the full amount.
+  let iraDeductible: number;
+  if (iraPhaseOutFraction <= 0) {
+    iraDeductible = 0;
+  } else if (iraPhaseOutFraction >= 1) {
+    iraDeductible = iraContributionCapped;
+  } else {
+    const reduced = iraContributionCapped * iraPhaseOutFraction;
+    iraDeductible =
+      reduced < 200
+        ? Math.min(200, iraContributionCapped)
+        : Math.min(Math.ceil(reduced / 10) * 10, iraContributionCapped);
+  }
 
   return {
     hsaContribution: params.hsaContribution,
@@ -7457,22 +7473,31 @@ export function calculateSelfEmploymentTax(
    *  church income (Sch SE Line 5a) has a $108.28 income / $100 net-earnings trigger,
    *  NOT the $400 floor, so it is SE-taxed even when the combined net is below $400. */
   netEarningsFloor = 400,
+  /** Sch SE Part I Line 4b — net SE earnings reported via the Part II OPTIONAL
+   *  METHOD (Line 15 nonfarm = ⅔ of gross / Line 17 farm). These are ALREADY net
+   *  earnings: the ⅔ factor is the optional method's substitute for the 92.35%
+   *  reduction, so Line 4b is added to Line 4c WITHOUT a second ×0.9235. Passing
+   *  it here (instead of folding it into `seIncome`) prevents the double-haircut
+   *  that under-stated SE tax + creditable SS earnings on the optional method. */
+  preNetOptionalEarnings = 0,
 ): SeTaxCalculation {
   const year = resolveTaxYear(taxYear);
   const ssBase = SS_WAGE_BASE[year];
   const w2Ss = Math.max(0, w2SocialSecurityWages);
   const ssBaseAvailableForSe = Math.max(0, ssBase - w2Ss);
-  if (seIncome <= 0) {
+  const optionalNet = Math.max(0, preNetOptionalEarnings);
+  if (seIncome <= 0 && optionalNet <= 0) {
     return { seIncomeReported: seIncome, netSeEarnings: 0, socialSecurityPortion: 0, medicarePortion: 0, seTaxTotal: 0, deductibleHalf: 0, ssBaseAvailableForSe };
   }
-  // Form Schedule SE: net SE earnings = gross × 92.35%
-  const netSeEarnings = seIncome * SE_NET_EARNINGS_FACTOR;
+  // Form Schedule SE Line 4c: net SE earnings = Line 4a (Sch C net × 92.35%) +
+  // Line 4b (optional-method amount, already net — no second haircut).
+  const netSeEarnings = Math.max(0, seIncome) * SE_NET_EARNINGS_FACTOR + optionalNet;
   // IRS Schedule SE Part I Line 4c: if net SE earnings < $400, no SE tax is owed.
   // (See "Note: If line 4c is less than $400 ... you don't owe self-employment tax.")
   // This is a true cliff — at $399.99 you owe nothing, at $400.00 the full 15.3% kicks in.
   // (The floor is lowered to $100 when church-employee income ≥ $108.28 is present.)
   if (netSeEarnings < netEarningsFloor) {
-    return { seIncomeReported: seIncome, netSeEarnings, socialSecurityPortion: 0, medicarePortion: 0, seTaxTotal: 0, deductibleHalf: 0, ssBaseAvailableForSe };
+    return { seIncomeReported: Math.max(0, seIncome) + optionalNet, netSeEarnings, socialSecurityPortion: 0, medicarePortion: 0, seTaxTotal: 0, deductibleHalf: 0, ssBaseAvailableForSe };
   }
   // Sch SE Part I Line 10: SS portion = smaller of (net SE earnings, available SS base) × 12.4%.
   // Line 11: Medicare portion = net SE earnings × 2.9% (no Medicare cap).
@@ -7480,7 +7505,7 @@ export function calculateSelfEmploymentTax(
   const medicarePortion = netSeEarnings * MEDICARE_RATE;
   const seTaxTotal = ssPortion + medicarePortion;
   return {
-    seIncomeReported: seIncome,
+    seIncomeReported: Math.max(0, seIncome) + optionalNet,
     netSeEarnings,
     socialSecurityPortion: ssPortion,
     medicarePortion,
@@ -8020,10 +8045,30 @@ export interface ObbbaSchedule1ADeductions {
   senior: number;
   total: number;
 }
-function obbbaPhaseOut(base: number, magi: number, threshold: number, ratePerDollar: number): number {
+/**
+ * OBBBA Schedule 1-A phase-out. `rounding` selects how the per-$1,000 step is taken:
+ *  - "ceil"  — §163(h)(4)(E) car-loan: "$200 for each $1,000 (OR FRACTION THEREOF)"
+ *              → ROUND UP the excess/$1,000 (a $1 overage still costs a full step).
+ *  - "floor" — §224 tips / §225 overtime: "$100 for each $1,000" (no fraction clause)
+ *              → ROUND DOWN: only complete $1,000 increments reduce the deduction
+ *              (the 2025 Schedule 1-A worksheets divide the excess by $1,000 and drop
+ *              the fraction).
+ *  - "none"  — §151(d) senior bonus: a straight 6%-of-excess phase-out (no per-$1,000 step).
+ */
+function obbbaPhaseOut(
+  base: number,
+  magi: number,
+  threshold: number,
+  ratePerDollar: number,
+  rounding: "ceil" | "floor" | "none" = "none",
+): number {
   if (base <= 0) return 0;
   if (magi <= threshold) return base;
-  return Math.max(0, base - ratePerDollar * (magi - threshold));
+  const excess = magi - threshold;
+  if (rounding === "none") return Math.max(0, base - ratePerDollar * excess);
+  const steps = rounding === "ceil" ? Math.ceil(excess / 1000) : Math.floor(excess / 1000);
+  // ratePerDollar × 1000 = the per-$1,000 dollar step ($100 tips/overtime, $200 car-loan).
+  return Math.max(0, base - steps * ratePerDollar * 1000);
 }
 export function calculateObbbaSchedule1ADeductions(params: {
   taxYear: number;
@@ -8058,16 +8103,16 @@ export function calculateObbbaSchedule1ADeductions(params: {
   const isMfs = params.filingStatus === "married_filing_separately";
   const magi = Math.max(0, params.magi);
 
-  // §224 tips: cap $25,000 (single + MFJ); phase-out $150k/$300k, −$100 per $1,000.
+  // §224 tips: cap $25,000 (single + MFJ); phase-out $150k/$300k, −$100 per COMPLETE $1,000 (round DOWN).
   const tips = isMfs ? 0 : obbbaPhaseOut(Math.min(Math.max(0, params.qualifiedTips ?? 0), 25_000),
-    magi, isJoint ? 300_000 : 150_000, 0.10);
-  // §225 overtime (FLSA premium): cap $12,500 single / $25,000 MFJ; phase-out $150k/$300k, −$100/$1k.
+    magi, isJoint ? 300_000 : 150_000, 0.10, "floor");
+  // §225 overtime (FLSA premium): cap $12,500 single / $25,000 MFJ; phase-out $150k/$300k, −$100 per complete $1,000.
   const overtime = isMfs ? 0 : obbbaPhaseOut(Math.min(Math.max(0, params.qualifiedOvertime ?? 0), isJoint ? 25_000 : 12_500),
-    magi, isJoint ? 300_000 : 150_000, 0.10);
-  // §163(h)(4) car-loan interest: cap $10,000; phase-out $100k/$200k, −$200/$1k (double rate).
+    magi, isJoint ? 300_000 : 150_000, 0.10, "floor");
+  // §163(h)(4) car-loan interest: cap $10,000; phase-out $100k/$200k, −$200 per $1,000 OR FRACTION (round UP).
   // (No MFS bar — see above.)
   const carLoanInterest = obbbaPhaseOut(Math.min(Math.max(0, params.qualifiedCarLoanInterest ?? 0), 10_000),
-    magi, isJoint ? 200_000 : 100_000, 0.20);
+    magi, isJoint ? 200_000 : 100_000, 0.20, "ceil");
   // §151(d) senior bonus: $6,000 per individual age 65+; phase-out $75k/$150k, −6% of excess.
   const numSeniors = isMfs ? 0 : ((params.taxpayerAge ?? 0) >= 65 ? 1 : 0) + (isJoint && (params.spouseAge ?? 0) >= 65 ? 1 : 0);
   const senior = obbbaPhaseOut(6_000 * numSeniors, magi, isJoint ? 150_000 : 75_000, 0.06);

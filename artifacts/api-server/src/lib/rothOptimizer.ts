@@ -128,6 +128,16 @@ export function irmaaAnnualSurchargePerPerson(magi: number, filingStatus: string
  * unknown (RMD timing is then unknowable). Testable in isolation with explicit
  * conversions (the optimizer calls it with its computed ladder).
  */
+/**
+ * Clamp a user-supplied annual growth factor to a sane POSITIVE range. An
+ * unbounded/negative factor compounds the IRA balance NEGATIVE (driving a
+ * nonsensical NEGATIVE recommended conversion) and makes income projections
+ * oscillate/explode. Mirrors multiYearOptimizer's clamp.
+ */
+function clampGrowth(n: number | undefined, dflt: number, hi: number): number {
+  return Number.isFinite(n) ? Math.max(0.5, Math.min(hi, n as number)) : dflt;
+}
+
 export function projectRmdAvoidance(
   baseline: TaxReturnInputs,
   opts: {
@@ -140,8 +150,8 @@ export function projectRmdAvoidance(
 ): RmdAvoidanceProjection | null {
   const baseAge = baseline.client.taxpayerAge;
   if (baseAge == null) return null;
-  const incomeGrowth = opts.incomeGrowth ?? 1.03;
-  const iraGrowth = opts.iraGrowth ?? 1.05;
+  const incomeGrowth = clampGrowth(opts.incomeGrowth, 1.03, 3);
+  const iraGrowth = clampGrowth(opts.iraGrowth, 1.05, 2);
   // Clamp to a human planning horizon — each year runs the full engine twice,
   // so an unbounded horizon is a DoS (audit 2026-06-08 SEC2). Belt-and-braces
   // with the openapi `maximum: 75`; protects direct/Haven callers too.
@@ -256,8 +266,8 @@ export function optimizeRothConversionLadder(
   if (opts.horizonYears < 1) throw new Error("horizonYears must be >= 1");
   // Clamp the loop bound (DoS guard, audit SEC2) — mirrors the openapi maximum.
   const horizonYears = Math.min(MAX_PLANNING_HORIZON, Math.floor(opts.horizonYears));
-  const incomeGrowth = opts.incomeGrowth ?? 1.03;
-  const iraGrowth = opts.iraGrowth ?? 1.05;
+  const incomeGrowth = clampGrowth(opts.incomeGrowth, 1.03, 3);
+  const iraGrowth = clampGrowth(opts.iraGrowth, 1.05, 2);
   let iraBalance = Math.max(0, opts.traditionalIraBalance);
 
   const years: RothLadderYear[] = [];

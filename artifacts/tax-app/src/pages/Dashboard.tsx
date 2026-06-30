@@ -125,7 +125,7 @@ function PlanningPeek() {
     <SectionCard
       icon={Target}
       title="Top planning opportunities"
-      description="Highest-value tax-saving opportunities across the roster."
+      description="Clients ranked by planning-opportunity score (leverage-weighted, not raw $)."
       actions={<Link href="/planning" className="inline-flex items-center gap-1 text-xs text-brand-ink underline-offset-2 hover:underline">All <ArrowRight className="h-3 w-3" /></Link>}
       contentClassName="space-y-2"
     >

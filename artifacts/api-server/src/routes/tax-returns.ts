@@ -765,6 +765,7 @@ router.get("/clients/:clientId/tax-return/csv", async (req, res): Promise<void> 
     fileName, contentType: "text/csv; charset=utf-8", disposition: "attachment",
     fallbackExt: ".csv",
   });
+  setNoStorePii(res); // embeds client name/email — keep it out of shared/proxy caches
   void recordDisclosure({
     clientId: params.data.clientId,
     action: "export",
@@ -796,6 +797,7 @@ router.get("/clients/:clientId/tax-return/json", async (req, res): Promise<void>
     fileName, contentType: "application/json; charset=utf-8", disposition: "attachment",
     fallbackExt: ".json",
   });
+  setNoStorePii(res); // embeds the full computed return + client PII
   void recordDisclosure({
     clientId: params.data.clientId,
     action: "export",
@@ -830,6 +832,7 @@ router.get("/clients/:clientId/tax-return/ultratax", async (req, res): Promise<v
     fileName, contentType: "text/plain; charset=utf-8", disposition: "attachment",
     fallbackExt: ".txt",
   });
+  setNoStorePii(res); // embeds client name/email
   void recordDisclosure({
     clientId: params.data.clientId,
     action: "export",

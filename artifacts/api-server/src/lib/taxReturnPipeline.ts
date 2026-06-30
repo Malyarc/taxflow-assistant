@@ -103,14 +103,21 @@ export async function computeTaxReturn(
     .where(eq(clientsTable.id, clientId));
   if (!client) return null;
 
+  // Tax year resolution: explicit override > client.taxYear (NOT NULL in the
+  // schema, so the old `existing?.taxYear` tail was dead) > prior calendar year.
+  const taxYear =
+    overrides.taxYear ?? client.taxYear ?? new Date().getFullYear() - 1;
+
+  // The existing return MUST be scoped to the resolved tax year. Selecting by
+  // clientId alone returned an arbitrary row (the index hands back the LOWEST
+  // tax year for a multi-year client), and existing.itemizedDeductions then
+  // leaked into `existingItemizedFallback` for a DIFFERENT year — forcing a
+  // standard-deduction year to itemize the other year's total and silently
+  // persisting an understated tax. (Confirmed end-to-end, full-app audit 2026-06-30.)
   const [existing] = await db
     .select()
     .from(taxReturnsTable)
-    .where(eq(taxReturnsTable.clientId, clientId));
-
-  // Tax year resolution: explicit override > client.taxYear > existing.taxYear
-  const taxYear =
-    overrides.taxYear ?? client.taxYear ?? existing?.taxYear ?? new Date().getFullYear() - 1;
+    .where(and(eq(taxReturnsTable.clientId, clientId), eq(taxReturnsTable.taxYear, taxYear)));
 
   // W-2s for the requested year only
   // Code-quality optimization: load all per-year tables in parallel.
@@ -567,7 +574,11 @@ export async function recalculateAndUpsertTaxReturn(
     stateTaxLiability: String(result.stateTaxLiability),
     stateTaxWithheld: String(result.stateTaxWithheld),
     stateRefundOrOwed: String(result.stateRefundOrOwed),
-    effectiveTaxRate: String(result.effectiveTaxRate),
+    // Clamp to the effective_tax_rate numeric(6,4) range. A degenerate return
+    // (tiny income + fixed mandate/SE/carryforward taxes) can produce a rate ≥ 100,
+    // which would overflow the column and throw — failing (and silently swallowing,
+    // per recalculateAfterMutation) the WHOLE recalc, leaving the row stale.
+    effectiveTaxRate: String(Math.max(-9.9999, Math.min(99.9999, result.effectiveTaxRate))),
     selfEmploymentTax: result.selfEmploymentTax != null ? String(result.selfEmploymentTax) : null,
     qbiDeduction: result.qbiDeduction != null ? String(result.qbiDeduction) : null,
     amtTax: result.amtTax != null ? String(result.amtTax) : null,

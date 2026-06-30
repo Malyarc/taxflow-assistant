@@ -249,7 +249,7 @@ export function buildScheduleSE(ctx: FormBuildContext): FormInstance | null {
   }
   if (nz(seOptionalGross)) {
     footnotes.push(
-      "Non-farm optional method elected (Sch SE Part II): the engine REPLACES the Schedule C net with the optional-method amount and multiplies it by 92.35% with the rest of the base. The official form enters the Part II amount directly on line 4b WITHOUT the 92.35% factor — a documented engine simplification (understates net earnings by 7.65% of the optional amount).",
+      "Non-farm optional method elected (Sch SE Part II): the engine REPLACES the Schedule C net with the optional-method amount (Line 15 = ⅔ of gross nonfarm, capped at the year max) and enters it on line 4b WITHOUT the 92.35% factor — the ⅔ factor is itself the optional method's substitute for the net-earnings reduction (line 4c = line 4a + line 4b). Net earnings shown above reflect this.",
     );
   }
 

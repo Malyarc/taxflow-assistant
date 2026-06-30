@@ -103,8 +103,10 @@ header("SE edges — non-farm optional method (Sch SE Part II election)");
 {
   // Gross SE $10k − $7k expenses → actual net $3,000. Without the election SE tax
   // = 15.3% × (3,000 × 0.9235) = $423.89. WITH the election (eligible: net <
-  // $7,493 AND < 72.189%×10,000) report ⅔×10,000 = $6,666.67 → SE tax = 15.3% ×
-  // (6,666.67 × 0.9235) = $941.97. Raises SE tax + earned income (not AGI).
+  // $7,493 AND < 72.189%×10,000) report ⅔×10,000 = $6,666.67. That ⅔ amount goes
+  // on Sch SE Line 15 → Line 4b → Line 4c WITHOUT a second 92.35% reduction (the
+  // ⅔ factor IS the optional method's substitute for the net-earnings haircut), so
+  // SE tax = 15.3% × $6,666.67 = $1,020.00. Raises SE tax + earned income (not AGI).
   const mk = (elect: boolean): TaxReturnInputs => ({
     client: { filingStatus: "single", state: "FL", taxYear: 2024 },
     w2s: [], form1099s: [],
@@ -116,11 +118,11 @@ header("SE edges — non-farm optional method (Sch SE Part II election)");
     taxYear: 2024,
   });
   check("no election → SE tax $423.89 (on actual $3,000 net)", computeTaxReturnPure(mk(false)).selfEmploymentTax, 423.89, 1);
-  check("optional method → SE tax $941.97 (on ⅔ × $10k = $6,666.67)", computeTaxReturnPure(mk(true)).selfEmploymentTax, 941.97, 1);
+  check("optional method → SE tax $1,020.00 (Sch SE Line 4b: ⅔ × $10k = $6,666.67, no ×0.9235)", computeTaxReturnPure(mk(true)).selfEmploymentTax, 1020.00, 1);
   // The actual $3,000 Sch C net still flows to AGI both ways; AGI differs ONLY by
-  // the extra ½-SE deduction ($941.97−$423.89)/2 = $259.04.
-  check("AGI delta = the ½-SE deduction delta ($259.04)",
-    computeTaxReturnPure(mk(false)).adjustedGrossIncome - computeTaxReturnPure(mk(true)).adjustedGrossIncome, 259.04, 1);
+  // the extra ½-SE deduction ($1,020.00−$423.89)/2 = $298.06.
+  check("AGI delta = the ½-SE deduction delta ($298.06)",
+    computeTaxReturnPure(mk(false)).adjustedGrossIncome - computeTaxReturnPure(mk(true)).adjustedGrossIncome, 298.06, 1);
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -216,8 +218,8 @@ header("HIGH-2 — crypto-mining is SE-taxed on the MFJ per-spouse path");
 header("HIGH-3 — SE optional method honored on the MFJ per-spouse path");
 {
   // MFJ: taxpayer gross $10k − $7k exp (net $3k) + optional election, spouse NEC $1
-  // (triggers per-spouse). SE on the elected ⅔×$10k=$6,666.67 → $941.97 (was
-  // $423.89 on the actual $3k — the election was silently dropped).
+  // (triggers per-spouse). SE on the elected ⅔×$10k=$6,666.67 → $1,020.00 (Sch SE
+  // Line 4b, no ×0.9235; was $423.89 on the actual $3k — the election was dropped).
   const r = computeTaxReturnPure({
     client: { filingStatus: "married_filing_jointly", state: "FL", taxYear: 2024 },
     w2s: [],
@@ -229,7 +231,7 @@ header("HIGH-3 — SE optional method honored on the MFJ per-spouse path");
     ],
     taxYear: 2024,
   });
-  check("MFJ optional-method SE tax = $941.97", r.selfEmploymentTax, 941.97, 1.5);
+  check("MFJ optional-method SE tax = $1,020.00", r.selfEmploymentTax, 1020.00, 1.5);
 }
 
 header("MEDIUM-1 — disposed rental's positive net is in the NIIT base");

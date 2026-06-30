@@ -168,6 +168,22 @@ app.use(
   (err: unknown, req: express.Request, res: express.Response, next: express.NextFunction) => {
     logger.error({ err, method: req.method, url: req.url?.split("?")[0] }, "Unhandled request error");
     if (res.headersSent) return next(err);
+    // A Postgres foreign-key violation (23503) on a child-record write means the
+    // referenced parent (e.g. a stale :clientId) doesn't exist — a recoverable
+    // client error, not a server fault. Map it to 404 instead of an opaque 500,
+    // matching the explicit 404 the read/update/delete paths already return.
+    // Drizzle wraps the driver error, so the pg `code` may sit on `.cause` — walk
+    // the cause chain a few levels to find it.
+    const pgCode = (e: unknown, depth = 0): string | undefined => {
+      if (depth > 5 || typeof e !== "object" || e === null) return undefined;
+      const code = (e as { code?: unknown }).code;
+      if (typeof code === "string") return code;
+      return pgCode((e as { cause?: unknown }).cause, depth + 1);
+    };
+    if (pgCode(err) === "23503") {
+      res.status(404).json({ error: "Referenced record not found" });
+      return;
+    }
     res.status(500).json({ error: "Internal server error" });
   },
 );

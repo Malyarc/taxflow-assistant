@@ -226,7 +226,12 @@ export function projectYearForward(
   yearsAhead: number,
   options?: { incomeGrowth?: number },
 ): TaxReturnInputs {
-  const growth = options?.incomeGrowth ?? DEFAULT_INCOME_GROWTH;
+  // Clamp the growth factor to a sane POSITIVE range. A non-positive or non-finite
+  // factor would make Math.pow(growth, yearsAhead) alternate sign / explode, scaling
+  // every income field into garbage (the Roth optimizer + Monte Carlo forward
+  // unbounded user-supplied growth into here). 0.5–3.0 = −50%…+200% per year.
+  const rawGrowth = options?.incomeGrowth ?? DEFAULT_INCOME_GROWTH;
+  const growth = Number.isFinite(rawGrowth) ? Math.max(0.5, Math.min(3, rawGrowth)) : DEFAULT_INCOME_GROWTH;
   if (yearsAhead < 0) throw new Error("yearsAhead must be >= 0");
   if (yearsAhead === 0) {
     // Year 0 = baseline as-is (with fresh adjustments array to maintain

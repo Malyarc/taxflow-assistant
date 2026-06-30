@@ -81,7 +81,8 @@ router.post("/clients/:clientId/form1099data", async (req, res): Promise<void> =
     .values(insertData as typeof form1099DataTable.$inferInsert)
     .returning();
   await writeAudit({ clientId: params.data.clientId, action: "create", entityType: "form1099", entityId: record.id, after: record });
-  await recalculateAfterMutation(params.data.clientId);
+  // Recalc the 1099's OWN tax year (multi-year client safety; mirrors DELETE).
+  await recalculateAfterMutation(params.data.clientId, record.taxYear);
   setNoStorePii(res); // response carries decrypted payer/recipient TINs
   res.status(201).json(mapRecord(record));
 });
@@ -121,7 +122,13 @@ router.patch("/clients/:clientId/form1099data/:form1099Id", async (req, res): Pr
     return;
   }
   await writeAudit({ clientId: params.data.clientId, action: "update", entityType: "form1099", entityId: record.id, before, after: record });
-  await recalculateAfterMutation(params.data.clientId);
+  await recalculateAfterMutation(params.data.clientId, record.taxYear);
+  // UpdateForm1099DataBody allows editing taxYear: if the edit MOVED the 1099 to a
+  // different year, the SOURCE year's return still reflects income that has left it
+  // — refresh it too (the new year was handled above).
+  if (before != null && before.taxYear !== record.taxYear) {
+    await recalculateAfterMutation(params.data.clientId, before.taxYear);
+  }
   setNoStorePii(res); // response carries decrypted payer/recipient TINs
   res.json(mapRecord(record));
 });

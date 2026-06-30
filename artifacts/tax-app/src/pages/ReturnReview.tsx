@@ -23,6 +23,7 @@ import { Money } from "@/components/patterns/Money";
 import { StatusPill, engagementStatusMeta } from "@/components/patterns/StatusPill";
 import { DocRequestTracker } from "@/components/patterns/DocRequestTracker";
 import { buildReturnModel, type FormNode } from "@/lib/returnModel";
+import { authHeaders } from "@/lib/apiAuth";
 import { cn } from "@/lib/utils";
 import {
   ArrowLeft, Check, TriangleAlert, Info, AlertCircle, CheckCircle2, FileSpreadsheet, Keyboard,
@@ -55,7 +56,9 @@ export default function ReturnReview({ params }: { params: { id: string } }) {
     enabled: taxYear != null,
     retry: false,
     queryFn: async () => {
-      const res = await fetch(`/api/clients/${clientId}/tax-return/diagnostics?taxYear=${taxYear}`);
+      const res = await fetch(`/api/clients/${clientId}/tax-return/diagnostics?taxYear=${taxYear}`, {
+        headers: authHeaders(),
+      });
       if (!res.ok) throw new Error("Diagnostics failed");
       return res.json();
     },

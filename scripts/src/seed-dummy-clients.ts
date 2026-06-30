@@ -890,8 +890,14 @@ ARCHETYPES.push({
 // ── Runner ────────────────────────────────────────────────────────────────
 
 async function existingClientIdByEmail(email: string): Promise<number | null> {
-  const list = await api<Array<{ id: number; email: string }>>(`/clients`);
-  const match = list.find((c) => c.email === email);
+  // GET /clients is keyset-paginated now ({ items, nextCursor }); the ?q filter
+  // searches name/email, so scope the lookup to this email instead of the old
+  // whole-array .find (which broke when the response shape changed).
+  const res = await api<{ items: Array<{ id: number; email: string }> }>(
+    `/clients?q=${encodeURIComponent(email)}&limit=200`,
+  );
+  const items = Array.isArray(res) ? res : (res?.items ?? []);
+  const match = items.find((c) => c.email === email);
   return match ? match.id : null;
 }
 
